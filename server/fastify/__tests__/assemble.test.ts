@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { Chat, Database, Message, character, loreBook } from '../../../src/ts/storage/database.svelte'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
+import type { AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
 import { openDatabase } from '../src/db.js'
 import {
   createMemoryChunk,
@@ -210,6 +211,25 @@ const baseInput = (overrides: Partial<AssembleInput> = {}): AssembleInput => ({
   ...overrides,
 })
 
+function agentPresetStep(overrides: Partial<AgentPresetStepRecord> = {}): AgentPresetStepRecord {
+  return {
+    id: 'aps_context',
+    name: 'Gather Context',
+    enabled: true,
+    phase: 'beforeMain',
+    dependencies: [],
+    instruction: 'Gather useful context.',
+    model: { mode: 'inheritMain' },
+    runtime: { maxInputChars: 2_000, maxOutputChars: 200, timeoutMs: 5_000 },
+    inputScopes: ['currentUserMessage'],
+    outputKey: 'context',
+    outputFormat: 'text',
+    destination: 'promptOutput',
+    failurePolicy: { mode: 'required' },
+    ...overrides,
+  }
+}
+
 function expectIncompleteAssembly(
   db: Database,
   expectedCodes: string[],
@@ -325,79 +345,481 @@ describe('prompt summary hashes', () => {
     expect(result.promptSummary).toEqual(summarizePromptRows(result.formated ?? []))
   })
 
-  it('runs the context agent before prompt expansion and injects {{agent}}', async () => {
+  it('runs before-main Agent Preset steps and expands {{agent::name}}', async () => {
     const db = makeDatabase({
       maxContext: 100_000,
       maxResponse: 50,
-      mainPrompt: 'Agent context:\n{{agent}}',
-      agentContextEnabled: true,
-      agentContextPrompt: 'Find relevant background for {{char}}.',
+      mainPrompt: 'Agent context:\n{{agent::context}}',
+      agentPresets: [
+        {
+          id: 'ap_research',
+          name: 'Research Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep()],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_research',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
     })
-    const runContextAgent = vi.fn(async () => ({
-      text: 'source-backed agent context',
-      skipped: false,
-      toolCalls: 1,
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'success' as const,
+      stepId: 'aps_context',
+      stepName: 'Gather Context',
+      outputKey: 'context',
+      outputText: 'source-backed agent context',
+      outputTruncated: false,
+      diagnostics: {
+        phase: 'beforeMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'promptOutput' as const,
+        failurePolicy: 'required' as const,
+        inputChars: 12,
+        outputChars: 27,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
     }))
 
     const result = await assemblePrompt(
       baseInput({ userMessage: 'latest user turn' }),
-      depsFor(db, { runContextAgent }),
+      depsFor(db, { executeAgentPresetStep }),
     )
 
-    expect(runContextAgent).toHaveBeenCalledTimes(1)
+    expect(executeAgentPresetStep).toHaveBeenCalledTimes(1)
     expect(result.stopSending).toBe(false)
     if (result.stopSending) return
     expect(result.formated?.map((row) => row.content).join('\n')).toContain('source-backed agent context')
   })
 
-  it('keeps {{slot::agent}} as a context agent alias', async () => {
+  it('blocks assembly on required before-main Agent Preset failure', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'Agent context:\n{{agent::context}}',
+      agentPresets: [
+        {
+          id: 'ap_research',
+          name: 'Research Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep()],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_research',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'failed' as const,
+      stepId: 'aps_context',
+      stepName: 'Gather Context',
+      outputKey: 'context',
+      failureKind: 'provider_error' as const,
+      failurePolicyOutcome: 'required_failure' as const,
+      error: 'provider exploded',
+      diagnostics: {
+        phase: 'beforeMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'promptOutput' as const,
+        failurePolicy: 'required' as const,
+        inputChars: 12,
+        outputChars: 0,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
+    }))
+
+    await expect(
+      assemblePrompt(baseInput({ userMessage: 'latest user turn' }), depsFor(db, { executeAgentPresetStep })),
+    ).rejects.toThrow(/Agent Preset step failed: Gather Context/)
+    expect(executeAgentPresetStep).toHaveBeenCalledTimes(1)
+  })
+
+  it('continues assembly with an empty expansion after optional before-main failure', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'Agent context:<{{agent::context}}>END',
+      agentPresets: [
+        {
+          id: 'ap_research',
+          name: 'Research Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep({ failurePolicy: { mode: 'optional' } })],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_research',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'failed' as const,
+      stepId: 'aps_context',
+      stepName: 'Gather Context',
+      outputKey: 'context',
+      failureKind: 'provider_error' as const,
+      failurePolicyOutcome: 'optional_failure' as const,
+      error: 'provider exploded',
+      diagnostics: {
+        phase: 'beforeMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'promptOutput' as const,
+        failurePolicy: 'optional' as const,
+        inputChars: 12,
+        outputChars: 0,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
+    }))
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    expect(result.formated?.map((row) => row.content).join('\n')).toContain('Agent context:<>END')
+  })
+
+  it('does not treat {{slot::agent}} as an Agent Preset alias', async () => {
     const db = makeDatabase({
       maxContext: 100_000,
       maxResponse: 50,
       mainPrompt: 'Agent context:\n{{slot::agent}}',
-      agentContextEnabled: true,
-      agentContextPrompt: 'Find relevant background.',
+      agentPresets: [
+        {
+          id: 'ap_research',
+          name: 'Research Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep()],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_research',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
     })
-    const runContextAgent = vi.fn(async () => ({
-      text: 'slot alias agent context',
-      skipped: false,
-      toolCalls: 1,
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'success' as const,
+      stepId: 'aps_context',
+      stepName: 'Gather Context',
+      outputKey: 'context',
+      outputText: 'slot alias should not appear',
+      outputTruncated: false,
+      diagnostics: {
+        phase: 'beforeMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'promptOutput' as const,
+        failurePolicy: 'required' as const,
+        inputChars: 12,
+        outputChars: 28,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
     }))
 
     const result = await assemblePrompt(
       baseInput({ userMessage: 'latest user turn' }),
-      depsFor(db, { runContextAgent }),
+      depsFor(db, { executeAgentPresetStep }),
     )
 
-    expect(runContextAgent).toHaveBeenCalledTimes(1)
+    expect(executeAgentPresetStep).toHaveBeenCalledTimes(1)
     expect(result.stopSending).toBe(false)
     if (result.stopSending) return
-    expect(result.formated?.map((row) => row.content).join('\n')).toContain('slot alias agent context')
+    expect(result.formated?.map((row) => row.content).join('\n')).not.toContain('slot alias should not appear')
   })
 
-  it('does not run the context agent when agent placeholders are absent', async () => {
+  it('does not run legacy Context Agent settings for {{agent}}', async () => {
     const db = makeDatabase({
       maxContext: 100_000,
       maxResponse: 50,
-      mainPrompt: 'No context slot here.',
+      mainPrompt: 'Legacy context:\n{{agent}}',
       agentContextEnabled: true,
       agentContextPrompt: 'Find relevant background.',
     })
-    const runContextAgent = vi.fn(async () => ({
-      text: 'should not appear',
-      skipped: false,
-      toolCalls: 1,
-    }))
+    const executeAgentPresetStep = vi.fn()
 
     const result = await assemblePrompt(
       baseInput({ userMessage: 'latest user turn' }),
-      depsFor(db, { runContextAgent }),
+      depsFor(db, { executeAgentPresetStep }),
     )
 
-    expect(runContextAgent).not.toHaveBeenCalled()
+    expect(executeAgentPresetStep).not.toHaveBeenCalled()
     expect(result.stopSending).toBe(false)
     if (result.stopSending) return
-    expect(result.formated?.map((row) => row.content).join('\n')).not.toContain('should not appear')
+    expect(result.formated?.map((row) => row.content).join('\n')).not.toContain('Find relevant background')
+  })
+
+  it('runs after-main Agent Preset steps after editoutput and stores diagnostics', async () => {
+    const afterStep = agentPresetStep({
+      id: 'aps_after',
+      name: 'Rewrite Output',
+      phase: 'afterMain',
+      outputKey: 'rewrite',
+      destination: 'finalOutput',
+      inputScopes: ['mainDraft'],
+    })
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      agentPresets: [
+        {
+          id: 'ap_after',
+          name: 'After Agent',
+          enabled: true,
+          version: 1,
+          steps: [afterStep],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          customscript: [
+            { in: 'assistant reply', out: 'edited reply', type: 'editoutput', flag: '', ableFlag: false },
+          ] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_after',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async (input) => {
+      expect(input.mainDraft).toBe('edited reply')
+      return {
+        status: 'success' as const,
+        stepId: 'aps_after',
+        stepName: 'Rewrite Output',
+        outputKey: 'rewrite',
+        outputText: `agent saw ${input.mainDraft}`,
+        outputTruncated: false,
+        diagnostics: {
+          phase: 'afterMain' as const,
+          outputFormat: 'text' as const,
+          destination: 'finalOutput' as const,
+          failurePolicy: 'required' as const,
+          inputChars: 12,
+          outputChars: 22,
+          startedAt: 1,
+          endedAt: 2,
+          durationMs: 1,
+          preparedInputSections: [],
+          preparedInputDiagnostics: [],
+          parseStatus: 'not_applicable' as const,
+        },
+      }
+    })
+
+    const assembled = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const generationInfo: Record<string, unknown> = {}
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-after',
+      generationInfo,
+    })
+
+    expect(post.finalText).toBe('agent saw edited reply')
+    expect(post.textChanged).toBe(true)
+    expect(post.agentPresetError).toBeUndefined()
+    expect(generationInfo.agentPreset).toMatchObject({
+      status: 'ready',
+      presetId: 'ap_after',
+      finalTextModified: true,
+      mainOutputPreview: 'edited reply',
+    })
+  })
+
+  it('preserves the post-editoutput text when required after-main fails', async () => {
+    const afterStep = agentPresetStep({
+      id: 'aps_after',
+      name: 'Rewrite Output',
+      phase: 'afterMain',
+      outputKey: 'rewrite',
+      destination: 'finalOutput',
+      inputScopes: ['mainDraft'],
+      failurePolicy: { mode: 'required' },
+    })
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      agentPresets: [
+        {
+          id: 'ap_after',
+          name: 'After Agent',
+          enabled: true,
+          version: 1,
+          steps: [afterStep],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          customscript: [
+            { in: 'assistant reply', out: 'edited reply', type: 'editoutput', flag: '', ableFlag: false },
+          ] as never,
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_after',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async () => ({
+      status: 'failed' as const,
+      stepId: 'aps_after',
+      stepName: 'Rewrite Output',
+      outputKey: 'rewrite',
+      failureKind: 'provider_error' as const,
+      failurePolicyOutcome: 'required_failure' as const,
+      error: 'provider exploded',
+      diagnostics: {
+        phase: 'afterMain' as const,
+        outputFormat: 'text' as const,
+        destination: 'finalOutput' as const,
+        failurePolicy: 'required' as const,
+        inputChars: 12,
+        outputChars: 0,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
+    }))
+
+    const assembled = await assemblePrompt(
+      baseInput({ userMessage: 'latest user turn' }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const generationInfo: Record<string, unknown> = {}
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'assistant reply',
+      generationId: 'generation-after',
+      generationInfo,
+    })
+
+    expect(post.finalText).toBe('edited reply')
+    expect(post.agentPresetError).toMatchObject({
+      error: 'agent_preset_generation_failed',
+      stepId: 'aps_after',
+      failureKind: 'provider_error',
+      failurePolicyOutcome: 'required_failure',
+    })
+    expect(generationInfo.agentPreset).toMatchObject({
+      finalTextModified: false,
+      mainOutputPreview: 'edited reply',
+      failure: { stepId: 'aps_after' },
+    })
   })
 })
 

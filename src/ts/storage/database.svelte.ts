@@ -2860,6 +2860,7 @@ export interface MessageGenerationInfo {
   inputTokens?: number
   outputTokens?: number
   maxContext?: number
+  agentPreset?: Record<string, unknown>
   stageTiming?: {
     stage1?: number
     stage2?: number

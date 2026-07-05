@@ -2965,6 +2965,11 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       finalText?: string
       revision?: number
       resendChat?: boolean
+      agentPresetError?: {
+        error: string
+        message: string
+        stepId?: string
+      }
       messagePatch?: {
         varChanged?: boolean
         chatVarMutations?: Array<{ key: string; before: unknown; after: unknown }>
@@ -3299,6 +3304,94 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     const persisted = await persistedMessages(assertion)
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo REPLY' })
+  })
+
+  it('runs after-main Agent Preset modifiers before persisting the assistant row', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        customscript: [{ comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false }],
+        chats: [
+          {
+            id: 'chat-1',
+            message: [],
+            note: '',
+            name: 'Chat',
+            localLore: [],
+            generationSettings: {
+              configured: true,
+              personaId: DEFAULT_TEST_PERSONA_ID,
+              modelPresetId: DEFAULT_TEST_MODEL_PRESET_ID,
+              promptPresetId: DEFAULT_TEST_PROMPT_PRESET_ID,
+              agentPresetId: 'ap_after',
+              jailbreakToggle: false,
+              sidebarToggles: {},
+            },
+          },
+        ],
+      }) as Record<string, unknown>),
+      modelProfiles: [
+        {
+          id: 'debug-after',
+          name: 'Debug After',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://agent-after',
+            requestModel: 'agent-after-model',
+          },
+        },
+      ],
+      agentPresets: [
+        {
+          id: 'ap_after',
+          name: 'After Agent',
+          enabled: true,
+          version: 1,
+          steps: [
+            {
+              id: 'aps_after',
+              name: 'After Rewrite',
+              enabled: true,
+              phase: 'afterMain',
+              dependencies: [],
+              instruction: 'Rewrite the final answer.',
+              model: { mode: 'modelProfile', profileId: 'debug-after' },
+              runtime: { maxInputChars: 2_000, maxOutputChars: 500, timeoutMs: 5_000 },
+              inputScopes: ['mainDraft'],
+              outputKey: 'rewrite',
+              outputFormat: 'text',
+              destination: 'finalOutput',
+              failurePolicy: { mode: 'required' },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+    const events = parseEvents(res.body)
+    const done = doneFrame(events)
+
+    expect(done.result).toBe('server echo reply')
+    expect(done.postGeneration?.finalText).toContain('"requestModel": "agent-after-model"')
+    expect(done.postGeneration?.revision).toBe(2)
+
+    const persisted = await persistedMessages(assertion)
+    const assistant = persisted.at(-1)
+    expect(assistant?.data).toContain('"requestModel": "agent-after-model"')
+    const agentPresetInfo = assistant?.generationInfo as { agentPreset?: Record<string, unknown> } | undefined
+    expect(agentPresetInfo?.agentPreset).toMatchObject({
+      presetId: 'ap_after',
+      finalTextModified: true,
+      mainOutputPreview: 'server echo REPLY',
+    })
   })
 
   it('hydrates projected module stubs from the server module table before assembly runtime', async () => {

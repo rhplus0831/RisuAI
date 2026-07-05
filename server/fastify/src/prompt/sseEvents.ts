@@ -1,6 +1,7 @@
 import type { FastifyReply } from 'fastify'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { AssembleMutationPayload } from './assemble.js'
+import type { AgentPresetGenerationErrorBody } from './agentPresetExecution.js'
 import type { PostGenerationLuaProgressEvent } from './luaPostGenerationProgress.js'
 
 /**
@@ -122,6 +123,8 @@ export interface PostGenerationFrame {
    * re-issues `sendChat`; the resend control flow stays browser-side.
    */
   resendChat?: boolean
+  /** Structured Agent Preset after-main failure, when present. */
+  agentPresetError?: AgentPresetGenerationErrorBody
   /**
    * The chat revision after the route persisted the post-gen scriptstate delta.
    * The browser reconciles its cached command revision to it so the follow-up

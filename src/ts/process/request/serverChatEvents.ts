@@ -187,6 +187,21 @@ export interface ErrorEvent {
   restoration?: ServerChatRestoration
 }
 
+export interface ServerChatAgentPresetError {
+  error: 'agent_preset_generation_failed'
+  message: string
+  statusCode: number
+  phase?: 'beforeMain' | 'afterMain'
+  presetId?: string
+  presetName?: string
+  stepId?: string
+  stepName?: string
+  outputKey?: string
+  failureKind?: string
+  failurePolicyOutcome?: string
+  diagnostics?: unknown
+}
+
 /**
  * Server post-generation derivation, surfaced on the terminal `done` frame.
  * Mirrors `PostGenerationFrame` in the server `sseEvents.ts`. The browser applies
@@ -197,6 +212,7 @@ export interface ServerChatPostGeneration {
   finalText?: string
   messagePatch?: ServerChatMessagePatch
   resendChat?: boolean
+  agentPresetError?: ServerChatAgentPresetError
   revision?: number
 }
 

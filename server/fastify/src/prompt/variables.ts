@@ -4,6 +4,7 @@ import type { CbsConditions } from '../../../../src/ts/parser/risuChatParserHelp
 import type { LuaExecBudget } from './luaRuntime.js'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
+import { AgentPresetGenerationError } from './agentPresetExecution.js'
 
 /**
  * Server-side `risuChatParser` entry point.
@@ -42,6 +43,10 @@ export interface ExpandContext {
   runVar?: boolean
   /** Per-call slot map; consumed by `{{slot::X}}`. */
   slot?: Record<string, string>
+  /** Named before-main Agent Preset outputs consumed by `{{agent::name}}`. */
+  agentOutputs?: Record<string, string>
+  /** Whether a named Agent Preset output is allowed to disappear. */
+  agentOutputRequired?: Record<string, boolean>
   /** Optional chat role passed into the matcher arg (`{{role}}`). */
   role?: string
   /** Conditional flags for `{{#when::isfirstmsg}}` etc. */
@@ -89,7 +94,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
   })
 
   try {
-    const text = risuChatParser(input, {
+    const text = risuChatParser(expandAgentPresetOutputs(input, ctx), {
       db: ctx.database,
       chara: ctx.chara ?? char,
       var: ctx.slot,
@@ -103,4 +108,19 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
   } finally {
     clearActivePromptScope()
   }
+}
+
+const AGENT_PRESET_OUTPUT_RE = /\{\{\s*agent::([A-Za-z_][A-Za-z0-9_]{0,63})\s*\}\}/g
+
+function expandAgentPresetOutputs(input: string, ctx: ExpandContext): string {
+  return input.replace(AGENT_PRESET_OUTPUT_RE, (_token, key: string) => {
+    const value = ctx.agentOutputs?.[key]
+    if (typeof value === 'string') return value
+    if (ctx.agentOutputRequired?.[key]) {
+      throw new AgentPresetGenerationError(`Required Agent Preset output is missing: ${key}`, {
+        outputKey: key,
+      })
+    }
+    return ''
+  })
 }

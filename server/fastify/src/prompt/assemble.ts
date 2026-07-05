@@ -96,11 +96,24 @@ import { bumpAssemblyCbsHistoryGeneration, createAssemblyCbsCallbackMemo } from 
 import { buildEffectiveGenerationConfig } from './effectiveGenerationConfig.js'
 import { summarizePromptRows, type PromptRowsSummary } from './promptSummary.js'
 import {
-  runPromptContextAgent,
-  shouldRunPromptContextAgent,
-  type PromptContextAgentInput,
-  type PromptContextAgentResult,
-} from './contextAgent.js'
+  AgentPresetGenerationError,
+  agentPresetStepResultErrorMessage,
+  executeAgentPresetPhase,
+  executeAgentPresetStep,
+  type AgentPresetGenerationErrorBody,
+  type AgentPresetPhaseExecutionResult,
+  type AgentPresetPhaseFailure,
+  type AgentPresetPreviousOutput,
+  type AgentPresetStepExecutionResult,
+  type AgentPresetStepExecutor,
+} from './agentPresetExecution.js'
+import {
+  resolveAgentPresetForChat,
+  type AgentPresetExecutionPlan,
+  type AgentPresetResolution,
+} from '../../../../src/ts/agentPresetResolver.js'
+import { resolveModelProfile, type ResolvedModelProfile } from '../../../../src/ts/model/modelProfileResolver.js'
+import type { AgentPresetRecord } from '../../../../src/ts/agentPresetRecords.js'
 
 /**
  * Root prompt assembly entry point.
@@ -124,7 +137,7 @@ export interface AssembleDeps {
   loadMemoryDatabase?(): DatabaseSync | null
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
-  runContextAgent?: (input: PromptContextAgentInput) => Promise<PromptContextAgentResult>
+  executeAgentPresetStep?: AgentPresetStepExecutor
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   /**
    * Resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>` path) to
@@ -142,7 +155,7 @@ export interface AssembleDeps {
 export type PromptAssemblyStage =
   | 'scope_resolution'
   | 'submit_transforms'
-  | 'context_agent'
+  | 'agent_preset_before_main'
   | 'static_plain_slots'
   | 'lorebook_preflight'
   | 'history_bias'
@@ -229,6 +242,20 @@ export interface AssemblyMessageCaptureInstrumentation {
   rowStringifies: number
   messageReplacementComparisons: number
   messageReplacementCaptures: Partial<Record<Exclude<AssembleMutationSource, 'user_message'>, number>>
+}
+
+export interface AgentPresetRuntimeState {
+  resolution: AgentPresetResolution
+  plan?: AgentPresetExecutionPlan
+  preset?: AgentPresetRecord
+  beforeMain?: AgentPresetPhaseExecutionResult
+  afterMain?: AgentPresetPhaseExecutionResult
+  previousAgentOutputs: AgentPresetPreviousOutput[]
+  promptOutputs: Record<string, string>
+  outputRequired: Record<string, boolean>
+  finalTextModified?: boolean
+  mainOutputText?: string
+  failure?: AgentPresetPhaseFailure
 }
 
 const assemblyMessageCaptureInstrumentation: AssemblyMessageCaptureInstrumentation = {
@@ -402,6 +429,7 @@ export interface AssemblyState {
   promptPresetId?: string
   loadoutId?: string
   activeModuleIds?: string[]
+  resolvedMainProfile?: ResolvedModelProfile
   // --- Lorebook placement + token preflight (set by `fillLorebookSlots`) ---
   /** The lorebook activation report (entries that fired + why). */
   report?: LorebookActivationReport
@@ -454,8 +482,8 @@ export interface AssemblyState {
   promptMemoryFollowUpDiagnostics?: PromptMemoryFollowUpDiagnostics
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   promptMemoryRows?: OpenAIChat[]
-  /** Context-agent result injected into `ctx.slot.agent` before prompt expansion. */
-  contextAgent?: PromptContextAgentResult
+  /** Agent Preset resolution, hidden step outputs, and diagnostics for this generation. */
+  agentPreset?: AgentPresetRuntimeState
   // --- Final render + budget (set by `renderAndBudget`) ---
   /** The budgeted flat prompt for dispatch. */
   formated?: OpenAIChat[]
@@ -484,6 +512,7 @@ export interface AssemblyState {
   memoryDatabase?: DatabaseSync | null
   promptMemoryQueryVectors?: MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
+  executeAgentPresetStep?: AgentPresetStepExecutor
   /**
    * The non-empty asset lookup the history walk resolves inlay / asset bytes
    * through. Built lazily for the history stage from the route's store resolver
@@ -571,6 +600,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
 
   const cbsCallbackMemo = createAssemblyCbsCallbackMemo()
   const luaExecBudget = createLuaExecBudget()
+  const resolvedMainProfile = resolveModelProfile({ database })
   const ctx: ExpandContext = {
     database,
     selectedCharID,
@@ -610,6 +640,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     promptPresetId: currentChat.generationSettings?.promptPresetId,
     loadoutId: input.loadoutId,
     activeModuleIds,
+    resolvedMainProfile,
     initialMessages,
     messageMutationCheckpoint: initialMessages,
     initialScriptstate: cloneScriptstate(currentChat.scriptstate),
@@ -619,6 +650,7 @@ export function beginAssembly(input: AssembleInput, deps: AssembleDeps): Assembl
     promptMemoryQueryVectors: deps.loadPromptMemoryQueryVectors?.() ?? [],
     enqueuePromptMemoryFollowUpJob: deps.enqueuePromptMemoryFollowUpJob,
     resolveStoredAsset: deps.resolveStoredAsset,
+    executeAgentPresetStep: deps.executeAgentPresetStep,
   }
 }
 
@@ -1105,29 +1137,155 @@ export function fillStaticSlots(state: AssemblyState): void {
   unformated.postEverything.push(...buildInlayViewInstruction(currentChar))
 }
 
-function contextAgentInput(state: AssemblyState): PromptContextAgentInput {
-  return {
+export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: AssembleDeps): Promise<void> {
+  const resolution = resolveAgentPresetForChat({
+    database: state.database,
+    currentCharacter: state.currentChar,
+    currentChat: state.currentChat,
+    generationSettings: state.currentChat.generationSettings,
+    resolvedMainProfile: state.resolvedMainProfile,
+  })
+  const runtime = createAgentPresetRuntimeState(resolution)
+  state.agentPreset = runtime
+  syncAgentPresetExpansionContext(state)
+
+  if (resolution.status === 'none' || resolution.status === 'disabled') return
+  if (resolution.status !== 'ready') {
+    throw agentPresetResolutionError(resolution)
+  }
+
+  runtime.preset = resolution.preset
+  runtime.plan = resolution.plan
+  runtime.outputRequired = beforeMainOutputRequiredByKey(resolution.plan)
+  syncAgentPresetExpansionContext(state)
+
+  const beforeMain = await executeAgentPresetPhase({
     database: state.database,
     currentChar: state.currentChar,
     currentChat: state.currentChat,
-    selectedCharID: state.selectedCharID,
-    chatPage: state.chatPage,
-    ctx: state.ctx,
+    currentUserMessage: latestUserMessage(state.currentChat),
+    plan: resolution.plan.beforeMain,
+    resolvedMainProfile: state.resolvedMainProfile,
+    maxConcurrency: resolution.plan.maxConcurrency,
     signal: state.signal,
+    executeStep: state.executeAgentPresetStep ?? deps.executeAgentPresetStep ?? executeAgentPresetStep,
+  })
+  runtime.beforeMain = beforeMain
+  runtime.previousAgentOutputs = beforeMain.previousAgentOutputs
+  runtime.promptOutputs = promptOutputsFromBeforeMain(resolution.plan, beforeMain)
+  syncAgentPresetExpansionContext(state)
+
+  if (beforeMain.blockingFailure) {
+    runtime.failure = beforeMain.blockingFailure
+    throw agentPresetPhaseError(runtime, beforeMain.blockingFailure)
   }
 }
 
-export async function runContextAgentStage(state: AssemblyState, deps: AssembleDeps): Promise<void> {
-  const input = contextAgentInput(state)
-  if (!shouldRunPromptContextAgent(input)) {
-    state.ctx.slot = { ...(state.ctx.slot ?? {}), agent: '' }
-    return
+function createAgentPresetRuntimeState(resolution: AgentPresetResolution): AgentPresetRuntimeState {
+  return {
+    resolution,
+    plan: resolution.status === 'ready' || resolution.status === 'model_not_ready' ? resolution.plan : undefined,
+    preset:
+      resolution.status === 'ready' ||
+      resolution.status === 'disabled' ||
+      resolution.status === 'invalid' ||
+      resolution.status === 'model_not_ready'
+        ? resolution.preset
+        : undefined,
+    previousAgentOutputs: [],
+    promptOutputs: {},
+    outputRequired: {},
   }
+}
 
-  const runner = deps.runContextAgent ?? runPromptContextAgent
-  const result = await runner(input)
-  state.contextAgent = result
-  state.ctx.slot = { ...(state.ctx.slot ?? {}), agent: result.text }
+function latestUserMessage(chat: Chat): string | undefined {
+  const messages = chat.message ?? []
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user' && typeof message.data === 'string') return message.data
+  }
+  return undefined
+}
+
+function syncAgentPresetExpansionContext(state: AssemblyState): void {
+  state.ctx.agentOutputs = state.agentPreset?.promptOutputs ?? {}
+  state.ctx.agentOutputRequired = state.agentPreset?.outputRequired ?? {}
+}
+
+function beforeMainOutputRequiredByKey(plan: AgentPresetExecutionPlan): Record<string, boolean> {
+  const required: Record<string, boolean> = {}
+  for (const planned of plan.beforeMain.steps) {
+    const step = planned.step
+    if (step.destination !== 'promptOutput') continue
+    required[step.outputKey] = step.failurePolicy.mode !== 'optional'
+  }
+  return required
+}
+
+function promptOutputsFromBeforeMain(
+  plan: AgentPresetExecutionPlan,
+  beforeMain: AgentPresetPhaseExecutionResult,
+): Record<string, string> {
+  const promptOutputStepIds = new Set(
+    plan.beforeMain.steps
+      .filter((planned) => planned.step.destination === 'promptOutput')
+      .map((planned) => planned.step.id),
+  )
+  const outputs: Record<string, string> = {}
+  for (const result of beforeMain.stepResults) {
+    if (result.status !== 'success') continue
+    if (!promptOutputStepIds.has(result.stepId)) continue
+    outputs[result.outputKey] = result.outputText
+  }
+  return outputs
+}
+
+function agentPresetResolutionError(
+  resolution: Exclude<AgentPresetResolution, { status: 'none' | 'disabled' | 'ready' }>,
+): AgentPresetGenerationError {
+  switch (resolution.status) {
+    case 'missing':
+      return new AgentPresetGenerationError(`Selected Agent Preset does not exist: ${resolution.selectedPresetId}`, {
+        presetId: resolution.selectedPresetId,
+        diagnostics: { status: resolution.status, summary: resolution.summary },
+      })
+    case 'invalid':
+      return new AgentPresetGenerationError(`Selected Agent Preset is invalid: ${resolution.preset.name}`, {
+        presetId: resolution.preset.id,
+        presetName: resolution.preset.name,
+        diagnostics: { status: resolution.status, issues: resolution.issues, summary: resolution.summary },
+      })
+    case 'model_not_ready':
+      return new AgentPresetGenerationError(
+        `Selected Agent Preset has a step model that is not ready: ${resolution.preset.name}`,
+        {
+          presetId: resolution.preset.id,
+          presetName: resolution.preset.name,
+          diagnostics: {
+            status: resolution.status,
+            modelReadiness: resolution.modelReadiness,
+            summary: resolution.summary,
+          },
+        },
+      )
+  }
+}
+
+function agentPresetPhaseError(
+  runtime: AgentPresetRuntimeState,
+  failure: AgentPresetPhaseFailure,
+): AgentPresetGenerationError {
+  return new AgentPresetGenerationError(`Agent Preset step failed: ${failure.stepName}: ${failure.message}`, {
+    presetId: runtime.preset?.id,
+    presetName: runtime.preset?.name,
+    phase: failure.phase,
+    stepId: failure.stepId,
+    stepName: failure.stepName,
+    outputKey: failure.outputKey,
+    failureKind: failure.failureKind,
+    failurePolicyOutcome: failure.failurePolicyOutcome,
+    diagnostics: buildAgentPresetGenerationDiagnostics(runtime),
+  })
 }
 
 /**
@@ -1804,7 +1962,7 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
     captureSubmitTranscript(state)
     applyCurrentChatRunVars(state)
   })
-  await measureAssemblyStageAsync(state, 'context_agent', () => runContextAgentStage(state, deps))
+  await measureAssemblyStageAsync(state, 'agent_preset_before_main', () => runAgentPresetBeforeMainStage(state, deps))
   measureAssemblyStage(state, 'static_plain_slots', () => fillStaticSlots(state))
   await measureAssemblyStageAsync(state, 'lorebook_preflight', () => fillLorebookSlotsAsync(state))
   await measureAssemblyStageAsync(state, 'history_bias', () => fillHistoryAndBias(state))
@@ -1887,6 +2045,8 @@ export interface ServerPostGenerationResult {
   finalText: string
   /** True when `editoutput` / run-var changed the text vs the reformatted completion. */
   textChanged: boolean
+  /** Structured Agent Preset after-main failure, when finalization stopped at that point. */
+  agentPresetError?: AgentPresetGenerationErrorBody
   /** The post-gen delta (scriptstate + any output-trigger message surgery). */
   mutations: AssembleMutationPayload
   /** The output trigger requested a resend (`sendAIprompt`). Browser re-issues it. */
@@ -2062,6 +2222,152 @@ function assistantTextAfterPass(
   return byId?.data ?? messages.at(-1)?.data ?? fallback
 }
 
+interface AgentPresetAfterMainRun {
+  finalText: string
+  error?: AgentPresetGenerationErrorBody
+}
+
+async function runAgentPresetAfterMainStage(state: AssemblyState, mainDraft: string): Promise<AgentPresetAfterMainRun> {
+  const runtime = state.agentPreset
+  const plan = runtime?.plan
+  if (!runtime || runtime.resolution.status !== 'ready' || !plan) {
+    return { finalText: mainDraft }
+  }
+
+  runtime.mainOutputText = mainDraft
+  if (plan.afterMain.steps.length === 0) {
+    runtime.finalTextModified = false
+    return { finalText: mainDraft }
+  }
+
+  const afterMain = await executeAgentPresetPhase({
+    database: state.database,
+    currentChar: state.currentChar,
+    currentChat: state.currentChat,
+    currentUserMessage: latestUserMessage(state.currentChat),
+    previousAgentOutputs: runtime.previousAgentOutputs,
+    mainDraft,
+    plan: plan.afterMain,
+    resolvedMainProfile: state.resolvedMainProfile,
+    maxConcurrency: plan.maxConcurrency,
+    signal: state.signal,
+    executeStep: state.executeAgentPresetStep ?? executeAgentPresetStep,
+  })
+  runtime.afterMain = afterMain
+  runtime.previousAgentOutputs = afterMain.previousAgentOutputs
+
+  if (afterMain.blockingFailure) {
+    runtime.failure = afterMain.blockingFailure
+    runtime.finalTextModified = false
+    return {
+      finalText: mainDraft,
+      error: agentPresetPhaseError(runtime, afterMain.blockingFailure).body,
+    }
+  }
+
+  const modifier = plan.finalOutputModifierStepId
+    ? afterMain.stepResults.find(
+        (result) => result.status === 'success' && result.stepId === plan.finalOutputModifierStepId,
+      )
+    : undefined
+  const finalText = modifier?.status === 'success' ? modifier.outputText : mainDraft
+  runtime.finalTextModified = finalText !== mainDraft
+  return { finalText }
+}
+
+function attachAgentPresetDiagnostics(generationInfo: Record<string, unknown> | undefined, state: AssemblyState): void {
+  if (!generationInfo || !state.agentPreset) return
+  generationInfo.agentPreset = buildAgentPresetGenerationDiagnostics(state.agentPreset)
+}
+
+function buildAgentPresetGenerationDiagnostics(runtime: AgentPresetRuntimeState): Record<string, unknown> {
+  const preset = runtime.preset
+  const steps = [...(runtime.beforeMain?.stepResults ?? []), ...(runtime.afterMain?.stepResults ?? [])].map((result) =>
+    serializeAgentPresetStepResult(result),
+  )
+
+  return {
+    status: runtime.resolution.status,
+    ...(preset
+      ? {
+          presetId: preset.id,
+          presetName: preset.name,
+          presetVersion: preset.version,
+        }
+      : {}),
+    ...(runtime.plan
+      ? {
+          maxConcurrency: runtime.plan.maxConcurrency,
+          beforeMainStepCount: runtime.plan.beforeMain.steps.length,
+          afterMainStepCount: runtime.plan.afterMain.steps.length,
+          finalOutputModifierStepId: runtime.plan.finalOutputModifierStepId,
+        }
+      : {}),
+    promptOutputKeys: Object.keys(runtime.promptOutputs),
+    steps,
+    finalTextModified: runtime.finalTextModified === true,
+    ...(runtime.mainOutputText !== undefined
+      ? { mainOutputPreview: boundedPreview(runtime.mainOutputText), mainOutputChars: runtime.mainOutputText.length }
+      : {}),
+    ...(runtime.failure ? { failure: runtime.failure } : {}),
+  }
+}
+
+function serializeAgentPresetStepResult(result: AgentPresetStepExecutionResult): Record<string, unknown> {
+  const diagnostics = result.diagnostics
+  return {
+    status: result.status,
+    stepId: result.stepId,
+    stepName: result.stepName,
+    phase: diagnostics.phase,
+    outputKey: result.outputKey,
+    destination: diagnostics.destination,
+    outputFormat: diagnostics.outputFormat,
+    failurePolicy: diagnostics.failurePolicy,
+    inputChars: diagnostics.inputChars,
+    outputChars: diagnostics.outputChars,
+    durationMs: diagnostics.durationMs,
+    provider: diagnostics.provider,
+    profileId: diagnostics.profileId,
+    profileName: diagnostics.profileName,
+    modelId: diagnostics.modelId,
+    requestModel: diagnostics.requestModel,
+    parseStatus: diagnostics.parseStatus,
+    preparedInputSections: diagnostics.preparedInputSections.map((section) => ({
+      scope: section.scope,
+      sourceLabel: section.sourceLabel,
+      charCount: section.charCount,
+      truncated: section.truncated,
+    })),
+    preparedInputDiagnostics: diagnostics.preparedInputDiagnostics,
+    ...(result.status === 'success'
+      ? {
+          outputPreview: boundedPreview(result.outputText),
+          outputTruncated: result.outputTruncated,
+        }
+      : {}),
+    ...(result.status === 'failed'
+      ? {
+          failureKind: result.failureKind,
+          failurePolicyOutcome: result.failurePolicyOutcome,
+          error: result.error,
+        }
+      : {}),
+    ...(result.status === 'skipped'
+      ? {
+          reason: result.reason,
+          error: agentPresetStepResultErrorMessage(result),
+        }
+      : {}),
+  }
+}
+
+function boundedPreview(text: string, maxChars = 4_000): string {
+  if (text.length <= maxChars) return text
+  if (maxChars <= 3) return text.slice(0, maxChars)
+  return `${text.slice(0, maxChars - 3).trimEnd()}...`
+}
+
 /**
  * Run the server post-generation pass over the provider's completion text. Reuses
  * the assembler state from {@link assemblePrompt} (handed back on `AssembleResult.state`).
@@ -2088,8 +2394,20 @@ export async function runServerPostGeneration(
 
   const reformatted = reformatCompletion(continueBase + input.completionText)
   const editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
+  const agentPresetAfterMain = await runAgentPresetAfterMainStage(state, editedText)
+  attachAgentPresetDiagnostics(input.generationInfo, state)
 
-  appendAssistantRow(state, editedText, input, isContinue, continueIndex)
+  appendAssistantRow(state, agentPresetAfterMain.finalText, input, isContinue, continueIndex)
+  if (agentPresetAfterMain.error) {
+    return {
+      finalText: agentPresetAfterMain.finalText,
+      textChanged: agentPresetAfterMain.finalText !== reformatted,
+      agentPresetError: agentPresetAfterMain.error,
+      mutations: buildMutationPayload(state),
+      resendChat: false,
+      changed: false,
+    }
+  }
 
   // The run-var pass rewrites the assistant body (stripping `{{setvar}}` etc.); that
   // rewrite is the *final text*, surfaced on `done`, not a transcript mutation.
@@ -2100,7 +2418,8 @@ export async function runServerPostGeneration(
 
   const resendChat = await runOutputTrigger(state, input.luaTrace, input.luaProgress)
 
-  const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, editedText)
+  const finalText = assistantTextAfterPass(state, input, isContinue, continueIndex, agentPresetAfterMain.finalText)
+  attachAgentPresetDiagnostics(input.generationInfo, state)
   const mutations = buildMutationPayload(state)
   const changed = mutations.varChanged || mutations.chatVarMutations.length > 0
 

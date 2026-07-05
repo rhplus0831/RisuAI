@@ -1,16 +1,17 @@
 # Agent Preset Status
 
-Date: 2026-07-05
+Date: 2026-07-06
 
 This workstream is open. It expands the original Agent Preset Q&A into an
 implementation plan and has completed the durable contract/schema slice, the
 pure resolver/planner/status slice, the command/projection mutation slice, and
-the visible Settings/chat-selection shell slice.
+the visible Settings/chat-selection shell slice, the step-editor/prepared-input
+slice, and the generation guardrails slice.
 
 ## Snapshot
 
-- Plan state: Phase 4 implemented.
-- Current phase: Phase 5 pending.
+- Plan state: Phase 5 implemented.
+- Current phase: Phase 6 pending.
 - Current implementation state:
   - `Database.agentPresets` and `Database.agentPresetDefaultId` now normalize
     through server and client database default paths.
@@ -67,21 +68,45 @@ the visible Settings/chat-selection shell slice.
     provider dispatch boundary with streaming disabled and tools omitted,
     enforce timeout/max output bounds, parse JSON-object output, and return
     diagnostics/failure shapes.
+  - Server-side Agent Preset phase execution can now run planned before-main
+    and after-main dependency levels, apply max-concurrency limits, preserve
+    stable output merge order, and propagate dependency skips/failures.
+  - Prompt assembly now runs selected Agent Preset before-main steps after
+    submit transforms and before static/plain slot filling.
+  - Prompt variable expansion supports `{{agent::name}}` from named
+    before-main prompt outputs; optional missing outputs expand empty, while
+    required missing outputs raise a structured Agent Preset generation error.
+  - Server post-generation now runs selected Agent Preset after-main steps
+    after `editOutput` and before assistant-row append, run-vars, and
+    `onOutput`.
+  - The last valid after-main final-output modifier can replace the assistant
+    text passed into persistence and later post-generation hooks.
+  - Generation metadata stores hidden Agent Preset diagnostics under
+    `generationInfo.agentPreset`, including preset identity, step rows,
+    timings, model/profile fields, output previews, failure details, and final
+    text modification state.
+  - Required after-main failures preserve the post-`editOutput` main draft,
+    attach diagnostics, and surface a structured
+    `postGeneration.agentPresetError` terminal field for the browser.
   - Chat generation settings show an Agent Preset selector alongside model
     preset, prompt preset, and persona. Empty selection is visible and valid,
     missing non-empty selections display an error, and saves go through chat
     generation settings commands.
   - Legacy bot presets and loadouts can save/apply Agent Preset fields through
     existing preset/loadout flows.
-  - Context Agent still exists as the live implementation.
+  - Legacy Context Agent source and settings surfaces still exist for Phase 6
+    cleanup, but prompt assembly no longer calls
+    `shouldRunPromptContextAgent`, `runPromptContextAgent`, or injects
+    `ctx.slot.agent`.
   - `agentContextEnabled`, `agentContextPrompt`, `agentContextMaxOutput`, and
     `agentContextMaxToolRounds` still exist in defaults, settings commands,
     frontend database types, language keys, and the Settings UI; no command
     converts them into Agent Presets.
-  - `server/fastify/src/prompt/contextAgent.ts` still detects and fills
-    `{{agent}}` / `{{slot::agent}}`.
-- Current verification state: focused Phase 3 Settings/chat-selection UI tests
-  and client TypeScript checks passing.
+  - `server/fastify/src/prompt/contextAgent.ts` remains in source until Phase
+    6, but `{{agent}}` and `{{slot::agent}}` are no longer live Agent Preset
+    aliases and do not trigger the old Context Agent runtime from assembly.
+- Current verification state: focused Phase 5 server/client generation tests,
+  strict Fastify TypeScript, and client TypeScript passing.
 
 ## Phase Router
 
@@ -92,24 +117,24 @@ the visible Settings/chat-selection shell slice.
 | Phase 2: Agent Preset Commands And Context Cleanup | Complete | Add command/projection surfaces and explicit Context Agent no-migration cleanup. |
 | Phase 3: Settings Agent Preset Shell | Complete | Build Settings and chat-selection shells for Agent Presets. |
 | Phase 4: Step Editor And Prepared Inputs | Complete | Implement the step editor and prepared-input provider execution support. |
-| Phase 5: Generation Guardrails | Pending | Integrate before-main/after-main execution, prompt syntax, diagnostics, and failure behavior. |
+| Phase 5: Generation Guardrails | Complete | Integrate before-main/after-main execution, prompt syntax, diagnostics, and failure behavior. |
 | Phase 6: Verification And Cleanup | Pending | Remove legacy Context Agent surfaces, update structure docs, and run closeout verification. |
 
 ## Current Blockers
 
-- None for Phase 4 planning.
+- None for Phase 6 planning.
 
 ## Latest Completed Slice
 
-- Implemented Phase 4 step editor and isolated execution helpers: full
-  command-backed step authoring UI, prepared-input collectors, single-step
-  prompt builder, model-profile resolution, non-streaming provider execution
-  wrapper, output bounding, JSON parsing, diagnostics, and focused UI/server
-  coverage.
+- Implemented Phase 5 generation guardrails: before-main and after-main
+  execution integration, `{{agent::name}}` expansion, hidden diagnostics on
+  generation metadata, structured after-main terminal failures, and legacy
+  Context Agent runtime regression coverage.
 
 ## Compatibility Caveats
 
-- Context Agent remains live until the implementation reaches cleanup.
+- Legacy Context Agent source/settings surfaces remain for Phase 6 cleanup, but
+  the prompt assembly runtime no longer executes them.
 - The first Agent Preset release intentionally does not migrate Context Agent
   settings.
 - `{{agent}}` and `{{slot::agent}}` should be treated as legacy placeholders,

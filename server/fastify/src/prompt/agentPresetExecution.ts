@@ -4,6 +4,7 @@ import type {
   AgentPresetStepRecord,
 } from '../../../../src/ts/agentPresetRecords.js'
 import { AGENT_PRESET_STEP_INPUT_SCOPES } from '../../../../src/ts/agentPresetRecords.js'
+import type { AgentPresetPhasePlan } from '../../../../src/ts/agentPresetResolver.js'
 import {
   assertModelProfileGenerationReady,
   modelProfileGenerationBlockReason,
@@ -81,6 +82,8 @@ export type AgentPresetProviderDispatcher = (
   args: AgentPresetProviderDispatchArgs,
 ) => Promise<AsyncIterable<CompletionStreamFrame>> | AsyncIterable<CompletionStreamFrame>
 
+export type AgentPresetStepExecutor = (input: ExecuteAgentPresetStepInput) => Promise<AgentPresetStepExecutionResult>
+
 export interface ExecuteAgentPresetStepInput extends AgentPresetPreparedInputContext {
   step: AgentPresetStepRecord
   resolvedMainProfile?: ResolvedModelProfile | null
@@ -151,6 +154,72 @@ export interface AgentPresetStepExecutionDiagnostics {
   preparedInputSections: AgentPresetPreparedInputSection[]
   preparedInputDiagnostics: AgentPresetPreparedInputDiagnostic[]
   parseStatus?: 'not_applicable' | 'ok' | 'invalid'
+}
+
+export interface AgentPresetPhaseFailure {
+  phase: AgentPresetStepPhase
+  stepId: string
+  stepName: string
+  outputKey: string
+  message: string
+  failureKind?: AgentPresetStepFailureKind
+  failurePolicyOutcome?: AgentPresetStepFailurePolicyOutcome
+}
+
+export interface AgentPresetPhaseExecutionResult {
+  phase: AgentPresetStepPhase
+  stepResults: AgentPresetStepExecutionResult[]
+  successfulOutputs: AgentPresetPreviousOutput[]
+  previousAgentOutputs: AgentPresetPreviousOutput[]
+  outputTextByKey: Record<string, string>
+  blockingFailure?: AgentPresetPhaseFailure
+}
+
+export interface ExecuteAgentPresetPhaseInput extends AgentPresetPreparedInputContext {
+  plan: AgentPresetPhasePlan
+  resolvedMainProfile?: ResolvedModelProfile | null
+  maxConcurrency?: number
+  initialPreviousAgentOutputs?: readonly AgentPresetPreviousOutput[]
+  signal?: AbortSignal
+  dispatchProvider?: AgentPresetProviderDispatcher
+  executeStep?: AgentPresetStepExecutor
+}
+
+export interface AgentPresetGenerationErrorBody {
+  error: 'agent_preset_generation_failed'
+  message: string
+  statusCode: number
+  phase?: AgentPresetStepPhase
+  presetId?: string
+  presetName?: string
+  stepId?: string
+  stepName?: string
+  outputKey?: string
+  failureKind?: AgentPresetStepFailureKind
+  failurePolicyOutcome?: AgentPresetStepFailurePolicyOutcome
+  diagnostics?: unknown
+}
+
+export class AgentPresetGenerationError extends Error {
+  readonly statusCode: number
+  readonly body: AgentPresetGenerationErrorBody
+
+  constructor(message: string, body: Omit<AgentPresetGenerationErrorBody, 'error' | 'message' | 'statusCode'> = {}) {
+    const statusCode = 422
+    super(message)
+    this.name = 'AgentPresetGenerationError'
+    this.statusCode = statusCode
+    this.body = {
+      error: 'agent_preset_generation_failed',
+      message,
+      statusCode,
+      ...body,
+    }
+  }
+}
+
+export function isAgentPresetGenerationError(error: unknown): error is AgentPresetGenerationError {
+  return error instanceof AgentPresetGenerationError
 }
 
 class AgentPresetTimeoutError extends Error {
@@ -396,6 +465,185 @@ export async function executeAgentPresetStep(
     clearTimeout(timeout)
     input.signal?.removeEventListener('abort', parentAbort)
   }
+}
+
+export async function executeAgentPresetPhase(
+  input: ExecuteAgentPresetPhaseInput,
+): Promise<AgentPresetPhaseExecutionResult> {
+  const maxConcurrency = normalizeMaxConcurrency(input.maxConcurrency)
+  const executeStep = input.executeStep ?? executeAgentPresetStep
+  const resultByStepId = new Map<string, AgentPresetStepExecutionResult>()
+  const previousOutputs: AgentPresetPreviousOutput[] = [...(input.initialPreviousAgentOutputs ?? [])]
+  const successfulOutputs: AgentPresetPreviousOutput[] = []
+  const outputTextByKey: Record<string, string> = {}
+
+  for (const level of input.plan.dependencyLevels) {
+    const levelSteps = level.stepIds
+      .map((stepId) => input.plan.steps.find((planned) => planned.step.id === stepId)?.step)
+      .filter((step): step is AgentPresetStepRecord => !!step)
+
+    const levelResults = await runWithConcurrency(levelSteps, maxConcurrency, async (step) => {
+      const dependencySkippedReason = dependencySkippedReasonFor(step, resultByStepId)
+      return executeStep({
+        database: input.database,
+        currentChar: input.currentChar,
+        currentChat: input.currentChat,
+        currentUserMessage: input.currentUserMessage,
+        previousAgentOutputs: previousOutputs,
+        mainDraft: input.mainDraft,
+        step,
+        resolvedMainProfile: input.resolvedMainProfile,
+        dependencySkippedReason,
+        signal: input.signal,
+        dispatchProvider: input.dispatchProvider,
+      })
+    })
+
+    for (const [index, result] of levelResults.entries()) {
+      const step = levelSteps[index]
+      if (!step) continue
+      resultByStepId.set(step.id, result)
+    }
+
+    for (const planned of input.plan.steps) {
+      if (!level.stepIds.includes(planned.step.id)) continue
+      const result = resultByStepId.get(planned.step.id)
+      if (result?.status !== 'success') continue
+      const output: AgentPresetPreviousOutput = {
+        stepId: result.stepId,
+        stepName: result.stepName,
+        phase: planned.step.phase,
+        outputKey: result.outputKey,
+        text: result.outputText,
+      }
+      successfulOutputs.push(output)
+      previousOutputs.push(output)
+      outputTextByKey[result.outputKey] = result.outputText
+    }
+
+    const blockingFailure = firstBlockingFailure(levelSteps, resultByStepId)
+    if (blockingFailure) {
+      return phaseResult(
+        input.plan.phase,
+        input.plan,
+        resultByStepId,
+        successfulOutputs,
+        previousOutputs,
+        outputTextByKey,
+        {
+          blockingFailure,
+        },
+      )
+    }
+  }
+
+  return phaseResult(input.plan.phase, input.plan, resultByStepId, successfulOutputs, previousOutputs, outputTextByKey)
+}
+
+export function agentPresetStepResultErrorMessage(result: AgentPresetStepExecutionResult): string | undefined {
+  if (result.status === 'failed') return result.error
+  if (result.status === 'skipped') {
+    return result.reason === 'dependency_skipped'
+      ? 'Agent Preset step was skipped because a dependency did not produce output.'
+      : 'Agent Preset step was skipped.'
+  }
+  return undefined
+}
+
+function phaseResult(
+  phase: AgentPresetStepPhase,
+  plan: AgentPresetPhasePlan,
+  resultByStepId: ReadonlyMap<string, AgentPresetStepExecutionResult>,
+  successfulOutputs: AgentPresetPreviousOutput[],
+  previousAgentOutputs: AgentPresetPreviousOutput[],
+  outputTextByKey: Record<string, string>,
+  options: { blockingFailure?: AgentPresetPhaseFailure } = {},
+): AgentPresetPhaseExecutionResult {
+  return {
+    phase,
+    stepResults: plan.steps
+      .map((planned) => resultByStepId.get(planned.step.id))
+      .filter((result): result is AgentPresetStepExecutionResult => !!result),
+    successfulOutputs,
+    previousAgentOutputs,
+    outputTextByKey,
+    ...(options.blockingFailure ? { blockingFailure: options.blockingFailure } : {}),
+  }
+}
+
+function normalizeMaxConcurrency(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return Number.POSITIVE_INFINITY
+  return Math.max(1, Math.min(16, Math.trunc(value)))
+}
+
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  run: (item: T) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return []
+  const results = new Array<R>(items.length)
+  let next = 0
+  const workerCount = Math.min(items.length, concurrency)
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (next < items.length) {
+        const index = next
+        next += 1
+        results[index] = await run(items[index])
+      }
+    }),
+  )
+
+  return results
+}
+
+function dependencySkippedReasonFor(
+  step: AgentPresetStepRecord,
+  resultByStepId: ReadonlyMap<string, AgentPresetStepExecutionResult>,
+): string | undefined {
+  for (const dependencyId of step.dependencies) {
+    const result = resultByStepId.get(dependencyId)
+    if (!result) {
+      return `Dependency did not run: ${dependencyId}`
+    }
+    if (result.status !== 'success') {
+      return `Dependency did not produce output: ${result.stepName}`
+    }
+  }
+  return undefined
+}
+
+function firstBlockingFailure(
+  steps: readonly AgentPresetStepRecord[],
+  resultByStepId: ReadonlyMap<string, AgentPresetStepExecutionResult>,
+): AgentPresetPhaseFailure | undefined {
+  for (const step of steps) {
+    const result = resultByStepId.get(step.id)
+    if (!result || !isBlockingResult(step, result)) continue
+    return {
+      phase: step.phase,
+      stepId: step.id,
+      stepName: step.name,
+      outputKey: step.outputKey,
+      message: agentPresetStepResultErrorMessage(result) ?? 'Agent Preset step failed.',
+      ...(result.status === 'failed'
+        ? {
+            failureKind: result.failureKind,
+            failurePolicyOutcome: result.failurePolicyOutcome,
+          }
+        : {}),
+    }
+  }
+  return undefined
+}
+
+function isBlockingResult(step: AgentPresetStepRecord, result: AgentPresetStepExecutionResult): boolean {
+  if (result.status === 'success') return false
+  if (result.status === 'failed') return result.failurePolicyOutcome !== 'optional_failure'
+  if (result.reason === 'disabled') return false
+  return step.failurePolicy.mode === 'required' || step.failurePolicy.mode === 'stopGeneration'
 }
 
 async function defaultAgentPresetProviderDispatcher(

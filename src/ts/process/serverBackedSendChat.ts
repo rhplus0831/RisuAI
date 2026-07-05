@@ -577,6 +577,21 @@ export async function applyServerBackedTerminal(args: {
     })
   }
 
+  if (postGen?.agentPresetError) {
+    return {
+      status: 'failed',
+      error: postGen.agentPresetError.message,
+      currentChat: resolveServerBackedCurrentChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: terminalTarget.characterId,
+        chatId: terminalTarget.chatId,
+        currentChat: args.currentChat,
+      }),
+      resendChat: false,
+    }
+  }
+
   return {
     status: 'ok',
     currentChat: resolveServerBackedCurrentChat({

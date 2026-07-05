@@ -228,6 +228,44 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(staleIndexChat.scriptstate).toBeUndefined()
   })
 
+  it('applies terminal final text before surfacing an Agent Preset terminal error', async () => {
+    const { char, target, staleIndexChat } = seedReorderedTerminalChats()
+    const generationInfo: MessageGenerationInfo = { generationId: 'gen-stable' }
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          postGeneration: {
+            finalText: 'preserved main output',
+            agentPresetError: {
+              error: 'agent_preset_generation_failed',
+              message: 'Agent Preset step failed: Rewrite Output: provider exploded',
+              statusCode: 422,
+              phase: 'afterMain',
+              stepId: 'aps_after',
+              stepName: 'Rewrite Output',
+              outputKey: 'rewrite',
+            },
+          },
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo,
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.error).toContain('Agent Preset step failed')
+    expect(result.currentChat.id).toBe('chat-target')
+    expect(target.message[0].data).toBe('preserved main output')
+    expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
   it('skips terminal mirroring when stable patch ids are present but no live chat matches', async () => {
     const { char, target, staleIndexChat } = seedReorderedTerminalChats()
 

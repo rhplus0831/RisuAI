@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
+import type { AgentPresetRecord, AgentPresetStepRecord } from '../../../src/ts/agentPresetRecords'
+import { planAgentPreset } from '../../../src/ts/agentPresetResolver'
 import { resolveModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { Chat, Database, Message, character } from '../../../src/ts/storage/database.svelte'
 import {
   buildAgentPresetStepMessages,
   collectAgentPresetPreparedInputs,
+  executeAgentPresetPhase,
   executeAgentPresetStep,
   resolveAgentPresetStepProfile,
   type AgentPresetProviderDispatcher,
+  type AgentPresetStepExecutor,
 } from '../src/prompt/agentPresetExecution.js'
 
 function db(overrides: Partial<Database> = {}): Database {
@@ -99,6 +102,22 @@ function step(overrides: Partial<AgentPresetStepRecord> = {}): AgentPresetStepRe
   }
 }
 
+function preset(steps: AgentPresetStepRecord[]): AgentPresetRecord {
+  return {
+    id: 'ap_test',
+    name: 'Test Agent',
+    enabled: true,
+    version: 1,
+    steps,
+  }
+}
+
+function beforeMainPlan(database: Database, steps: AgentPresetStepRecord[]) {
+  const planning = planAgentPreset({ database, preset: preset(steps) })
+  expect(planning.plan).toBeDefined()
+  return planning.plan!.beforeMain
+}
+
 async function* frames(text: string) {
   yield { kind: 'token' as const, content: text }
   yield { kind: 'done' as const, finishReason: 'stop' }
@@ -165,6 +184,147 @@ describe('Agent Preset prepared inputs', () => {
       preparedInputs,
     })
     expect(jsonMessages[0].content).toContain('Return exactly one JSON object')
+  })
+})
+
+describe('Agent Preset phase execution', () => {
+  function successResult(step: AgentPresetStepRecord, outputText: string) {
+    return {
+      status: 'success' as const,
+      stepId: step.id,
+      stepName: step.name,
+      outputKey: step.outputKey,
+      outputText,
+      outputTruncated: false,
+      diagnostics: {
+        phase: step.phase,
+        outputFormat: step.outputFormat,
+        destination: step.destination,
+        failurePolicy: step.failurePolicy.mode,
+        inputChars: 0,
+        outputChars: outputText.length,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: step.outputFormat === 'jsonObject' ? ('ok' as const) : ('not_applicable' as const),
+      },
+    }
+  }
+
+  function failedResult(step: AgentPresetStepRecord, outcome: 'optional_failure' | 'required_failure') {
+    return {
+      status: 'failed' as const,
+      stepId: step.id,
+      stepName: step.name,
+      outputKey: step.outputKey,
+      failureKind: 'provider_error' as const,
+      failurePolicyOutcome: outcome,
+      error: `${step.name} failed`,
+      diagnostics: {
+        phase: step.phase,
+        outputFormat: step.outputFormat,
+        destination: step.destination,
+        failurePolicy: step.failurePolicy.mode,
+        inputChars: 0,
+        outputChars: 0,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+        parseStatus: 'not_applicable' as const,
+      },
+    }
+  }
+
+  function skippedDependencyResult(step: AgentPresetStepRecord) {
+    return {
+      status: 'skipped' as const,
+      reason: 'dependency_skipped' as const,
+      stepId: step.id,
+      stepName: step.name,
+      outputKey: step.outputKey,
+      diagnostics: {
+        phase: step.phase,
+        outputFormat: step.outputFormat,
+        destination: step.destination,
+        failurePolicy: step.failurePolicy.mode,
+        inputChars: 0,
+        outputChars: 0,
+        startedAt: 1,
+        endedAt: 2,
+        durationMs: 1,
+        preparedInputSections: [],
+        preparedInputDiagnostics: [],
+      },
+    }
+  }
+
+  it('runs independent steps with deterministic stable output order', async () => {
+    const database = db()
+    const first = step({ id: 'aps_first', outputKey: 'first', name: 'First' })
+    const second = step({ id: 'aps_second', outputKey: 'second', name: 'Second' })
+    const calls: string[] = []
+    const executeStep: AgentPresetStepExecutor = async (input) => {
+      calls.push(input.step.id)
+      if (input.step.id === 'aps_first') {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+      return successResult(input.step, `${input.step.outputKey}-output`)
+    }
+
+    const result = await executeAgentPresetPhase({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      plan: beforeMainPlan(database, [first, second]),
+      maxConcurrency: 2,
+      executeStep,
+    })
+
+    expect(calls.sort()).toEqual(['aps_first', 'aps_second'])
+    expect(result.blockingFailure).toBeUndefined()
+    expect(result.successfulOutputs.map((output) => output.outputKey)).toEqual(['first', 'second'])
+    expect(result.previousAgentOutputs.map((output) => output.text)).toEqual(['first-output', 'second-output'])
+  })
+
+  it('continues after optional failures but blocks required dependency propagation', async () => {
+    const database = db()
+    const optional = step({
+      id: 'aps_optional',
+      outputKey: 'optional',
+      name: 'Optional',
+      failurePolicy: { mode: 'optional' },
+    })
+    const dependent = step({
+      id: 'aps_dependent',
+      outputKey: 'dependent',
+      name: 'Dependent',
+      dependencies: ['aps_optional'],
+      failurePolicy: { mode: 'required' },
+    })
+    const executeStep = vi.fn<AgentPresetStepExecutor>(async (input) => {
+      if (input.step.id === 'aps_optional') return failedResult(input.step, 'optional_failure')
+      expect(input.dependencySkippedReason).toContain('Optional')
+      return skippedDependencyResult(input.step)
+    })
+
+    const result = await executeAgentPresetPhase({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      plan: beforeMainPlan(database, [optional, dependent]),
+      executeStep,
+    })
+
+    expect(executeStep).toHaveBeenCalledTimes(2)
+    expect(result.blockingFailure).toMatchObject({
+      stepId: 'aps_dependent',
+      outputKey: 'dependent',
+    })
+    expect(result.stepResults.map((entry) => entry.status)).toEqual(['failed', 'skipped'])
   })
 })
 

@@ -51,6 +51,7 @@ import {
 } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
+import { isAgentPresetGenerationError } from '../prompt/agentPresetExecution.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
@@ -604,6 +605,10 @@ function preflightChatGenerationSettings(
 }
 
 function sendAssemblyHttpError(reply: FastifyReply, err: unknown): boolean {
+  if (isAgentPresetGenerationError(err)) {
+    reply.code(err.statusCode).send(err.body)
+    return true
+  }
   if (isChatGenerationSettingsIncompleteAssemblyError(err)) {
     reply.code(err.statusCode).send(err.body)
     return true
@@ -1422,6 +1427,7 @@ function buildPostGenerationFrameBody(
       frame.messagePatch = postGen.mutations
     }
     if (postGen.resendChat) frame.resendChat = true
+    if (postGen.agentPresetError) frame.agentPresetError = postGen.agentPresetError
   }
   return frame
 }
