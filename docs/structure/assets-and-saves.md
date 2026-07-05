@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -18,7 +18,7 @@ data. Save/import/export and user-upload flows should use server asset ids and
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `server/fastify/src/routes/assets.ts`                   | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe.                                             |
 | `server/fastify/src/repository.ts`                      | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.                                        |
-| `server/fastify/src/assetGc.ts`                         | Reference-counted asset garbage collection.                                                                                   |
+| `server/fastify/src/assetGc.ts`                         | Reference-counted asset garbage collection over the current minimal reference projection.                                      |
 | `server/fastify/src/risuSave/assetReferences.ts`        | Known-field asset-reference walker for import/export/GC reports.                                                              |
 | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
 
@@ -44,7 +44,8 @@ unreferenced metadata and stray files. The minimal GC projection currently loads
 settings, module assets, persona icons, bot preset images, character/chat
 reference fields, and active message inlays rather than a full repository
 projection. The broader save-report walker also knows split model/prompt preset
-images, so keep `assetGc.ts` in sync when adding reference-bearing split tables.
+images; those split preset images are not part of the minimal GC projection
+today, so keep `assetGc.ts` in sync when adding reference-bearing split tables.
 A grace window protects upload-then-reference races. GC does not bump the
 revision or emit command events.
 
@@ -108,8 +109,12 @@ low-level-access retry, and older browser fallback handling live in
 `src/ts/characterCards.ts`. Server Realm import is primary but not exclusive:
 unsupported server Realm responses can fall back to the older browser path, and
 local direct `charx` file import still has a browser-native path.
-Non-SSE JSON responses include success, low-level-access confirmation tokens,
-unsupported-download fallbacks, revision conflicts, and upstream/fetch errors.
+Operational guards include a request deadline and client-disconnect abort,
+dynamic JSON size caps, per-asset and cumulative fetched-asset caps, pending
+low-level-access confirmation tokens, and staged/created asset cleanup on
+failure. Non-SSE JSON responses include success, low-level-access confirmation
+tokens, HTTP `415` `unsupported_realm_download` fallbacks, revision conflicts,
+and upstream/fetch errors.
 The `/api/v1/download/dynamic/` string in the route module is an upstream Realm
 path constant, not a local Fastify route.
 
@@ -132,19 +137,22 @@ store.
 | `src/ts/storage/backup.ts`, `src/ts/globalApi.svelte.ts`, `src/lib/Setting/Pages/UserSettings.svelte` | UI-facing backup/import/export wrappers and settings flows. |
 
 Backups live under `data/backups/<id>/`. Current backups contain
-`manifest.json`, `risu.db`, assets when present, and optional legacy `save/`;
-new backups do not write `db.json`. Create, restore, and delete are
-authenticated and active-writer guarded; list is authenticated read-only.
-Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
+`manifest.json`, a file copy of the whole `risu.db`, assets when present, and
+optional legacy `save/`; new backups do not write `db.json`. Create, restore,
+and delete are authenticated and active-writer guarded; list is authenticated
+read-only. Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
 `POST /api/v1/backups/:id/restore`, and `DELETE /api/v1/backups/:id`.
 
 Restore swaps asset/save directories and restores SQLite tables through the
 `SQLITE_BACKUP_TABLES` allowlist in `repository.ts`, then emits
-`state.restored` and triggers browser projection recovery. Keep that allowlist
-in sync when adding durable tables; split model/prompt preset rows are included,
-while operational rows and Web Push subscription/key state are currently outside
-the restore contract. Older backups containing `db.json` are restored by copying
-the file into the data dir and running `ensureDbJsonImported()`.
+`state.restored` and triggers browser projection recovery. Because restore swaps
+tables from the copied backup DB with `ATTACH`, operational tables can be
+present in the backup file but ignored on restore if they are not allowlisted.
+Keep that allowlist in sync when adding durable tables; split model/prompt
+preset rows are included, while operational rows and Web Push subscription/key
+state are currently outside the restore contract. Older backups containing
+`db.json` are restored by copying the file into the data dir and running
+`ensureDbJsonImported()`.
 
 Ordinary module `.risum` import is supported in Fastify-backed browser mode
 through the browser codec in `src/ts/process/modules.ts`: the client decodes the

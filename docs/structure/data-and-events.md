@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 Fastify owns durable state. The browser receives a projected copy and sends
 revision-checked commands or explicit server-owned mutation requests.
@@ -9,7 +9,7 @@ revision-checked commands or explicit server-owned mutation requests.
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; characters/chats; split tables such as `model_presets`, `prompt_presets`, `plugins`, `plugin_custom_storage`, `messages`, `chat_hypa_v3`, `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, `push_subscriptions`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror/projection. |
+| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, `push_subscriptions`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror/projection. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
 | Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
@@ -66,7 +66,8 @@ Examples include `characterSelection`, `characterRow`, `character`, `chat`,
 `moduleScriptDefinition`, `moduleTriggerDefinition`, `scriptDefinition`,
 `triggerDefinition`, collection slices such as `preset`/`promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
-`persona`, `legacyBotPreset`, `plugin`, `asset`, and `generation`. Known
+`agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,
+`asset`, and `generation`. Known
 sprawling resources such as `settings`, `state`, `pluginStorage`, and `prompt`
 are still command-event resources but intentionally fall back to a full
 bootstrap. `asset` is a no-op targeted projection that advances the cached
@@ -85,6 +86,8 @@ not ordinary browser `/commands/*` resource endpoints:
   uploads can be idempotent without a new revision.
 - Periodic asset GC deletes orphan asset metadata/files after the grace window
   without a revision bump or command event.
+- Legacy storage write/remove mutates `data/save/<hex-key>` compatibility files
+  under active-writer guard without a domain revision or command event.
 - `.risu` import, bundle import, Realm import, and backup restore use
   repository/server-owned paths.
 - Server generation can persist assembly-time scriptstate/input-trigger changes
@@ -106,13 +109,16 @@ not ordinary browser `/commands/*` resource endpoints:
   domain revision. They are authenticated runtime state, not projected
   `Database` state.
 - Backup create/delete mutate backup files without a domain revision; restore
-  replaces repository state and emits `state.restored`. Restore swaps only the
-  SQLite table allowlist in `repository.ts`; keep `SQLITE_BACKUP_TABLES` in sync
-  with durable tables. Split `model_presets` and `prompt_presets` are included
-  in the restore allowlist. Operational rows such as
-  `generation_finalization_retries` are intentionally excluded unless added to
-  that list; `push_subscriptions` and `data/__web_push_vapid_keys.json` are also
-  outside the current backup restore contract.
+  replaces repository state and emits `state.restored`. Backup creation
+  file-copies the whole `risu.db` after a WAL checkpoint, but restore swaps only
+  the SQLite table allowlist in `repository.ts` via `ATTACH`; operational tables
+  can exist inside a backup database and still be ignored on restore unless they
+  are allowlisted. Keep `SQLITE_BACKUP_TABLES` in sync with durable tables.
+  Split `model_presets` and `prompt_presets` are included in the restore
+  allowlist. Operational rows such as `generation_finalization_retries` are
+  intentionally excluded unless added to that list; `push_subscriptions` and
+  `data/__web_push_vapid_keys.json` are also outside the current backup restore
+  contract.
 
 ## Auth And Active Writer
 

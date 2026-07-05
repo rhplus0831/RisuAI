@@ -21,8 +21,9 @@ through command helpers or explicit server-owned mutation routes.
   trusted write scopes, revision cache is seeded, projection write guard is
   enabled, active generation jobs are handed to reattach logic, active message
   translations are recorded for row-level busy state and refresh polling,
-  character shell and prompt-template hydration start, chat hydration starts,
-  and `/api/v1/events` subscribes.
+  selected-character shell hydration starts and awaits the selected shell, chat
+  message hydration starts and hydrates the active chat, prompt-template
+  hydration starts, and `/api/v1/events` subscribes.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
 - Startup also installs `setServerCommandSuccessReconciler()`, so successful
@@ -33,10 +34,10 @@ through command helpers or explicit server-owned mutation routes.
 with `cacheRevision: false`, applies the fresh database, caches the new
 revision before stale hydration checks, syncs selected character state, seeds
 active generation reattach state, refreshes active message translations, resets
-chat/lorebook hydration, records already-hydrated lorebooks, force-hydrates the
-active chat/lorebook and selected character shell, then restarts prompt-template
-hydration. Newer resync requests during an in-flight pass cause another pass
-after the first settles.
+chat/lorebook hydration, records already-hydrated lorebooks, awaits the selected
+character shell, force-hydrates the active chat/lorebook, then restarts
+prompt-template hydration. Newer resync requests during an in-flight pass cause
+another pass after the first settles.
 
 | Path                                             | Role                                                                                                       |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -177,8 +178,10 @@ Active writer is server-side. The latest writer-intent bootstrap owns
 Projection write guard is client-side and catches accidental local mutation.
 
 Read-only bootstrap, projection fetches, event streams, durable-generation
-reattach, and immutable asset reads do not require writer ownership. Browser
-writer-session handling lives in `src/ts/server/activeWriterSession.ts`.
+reattach, and immutable asset reads do not require writer ownership. Legacy
+storage `write`/`remove` calls do carry the active-writer session because they
+mutate server-owned compatibility files. Browser writer-session handling lives
+in `src/ts/server/activeWriterSession.ts`.
 
 Server protocol metrics are opt-in with `RISU_PROTOCOL_METRICS=1` (also accepts
 `true`, `yes`, or `on`). Browser protocol debug logs are opt-in with

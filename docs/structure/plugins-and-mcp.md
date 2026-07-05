@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -24,7 +24,10 @@ does not execute browser plugin code.
 Plugin records live in `Database.plugins` and use the plugin `name` as the
 stable id. `currentPluginProvider` selects a plugin-defined provider when one is
 active. Plugin providers remain browser compatibility surfaces; Fastify
-chat/completion does not execute plugin provider code.
+chat/completion does not execute plugin provider code. Plugin V3 provider
+registration also updates browser compatibility maps such as
+`pluginV2.providers` / `providerOptions` and provider stores; unload cleanup is
+guarded by provider ownership and active generation state.
 
 Plugin V3 code runs through an iframe RPC boundary. API functions must accept
 and return serializable data, callback functions, marked remote class instances,
@@ -54,7 +57,10 @@ bootstrap-body-cache path.
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay
 blocked in server-backed mode so plugin code cannot silently mutate projection
-state.
+state. V2 database-bridge calls that write unknown `setDatabaseLite` keys become
+plugin storage writes, while recognized unsupported resource families such as
+`characters`, `botPresets`, `loreBook`, and `pluginV2` are blocked instead of
+being shadowed into plugin storage.
 
 ## Fastify Command Routes
 
@@ -75,6 +81,10 @@ as other command routes:
 Client wrappers live in `src/ts/server/commands.ts`; server validation and
 mutation logic lives in `server/fastify/src/routes/commands.ts` plus
 `server/fastify/src/commands/plugins.ts` and `pluginStorage.ts`.
+Single-key plugin-storage `PUT`/`DELETE` commands skip full database load and
+touch only `plugin_custom_storage`; bulk storage reads and merges current
+storage. Plugin collection commands are similarly scoped, and deleting the
+active provider co-writes the provider selection settings.
 
 ## MCP Runtime
 
@@ -83,6 +93,10 @@ initialization reads MCP URLs from currently active modules via
 `getModuleMcps()` in `src/ts/process/modules.ts`: global enabled modules,
 current chat modules, current character modules, and prompt-preset/global
 `moduleIntergration` entries.
+Initialization dedupes concurrent construction, removes stale clients when the
+active URL inputs change, indexes tools with the first MCP URL winning duplicate
+tool names, and isolates failed internal handshakes so other MCP clients remain
+usable.
 
 MCP/tool orchestration is browser-side and separate from model-hosted
 function/tool dispatch. Fastify stores plugin/MCP-adjacent records and supports
@@ -96,7 +110,7 @@ server provider boundary.
 | `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
 | `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
 | `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
-| `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, chats, and modules.                                        |
+| `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, read-only chat history, and modules.                       |
 | `src/ts/process/mcp/aiaccess.ts`, `googlesearchclient.ts`, `graphmem.ts`, `dice.ts`, `filesystemclient.ts` | Internal tool clients.                                                                                |
 
 Supported MCP URL forms:
@@ -118,7 +132,8 @@ MCP URLs or additional runtime MCP lists.
 tools ask for user confirmation and dispatch command-backed writes where
 Fastify mode supports them. Current Fastify-backed writes cover character info,
 character lorebooks, character regex scripts, character Lua triggers, module
-info, module lorebooks, module regex scripts, and module Lua triggers; character
+info, module lorebooks, module regex scripts, and module Lua triggers. Chat
+Risu access is read-only today through `risu-get-chat-history`; character
 additional asset reference edits still return an unsupported Fastify-mode
 response.
 
@@ -135,10 +150,12 @@ commands. Adding MCP import/update back needs a dedicated command-backed module
 route rather than a direct browser mutation.
 
 OAuth refresh token persistence for remote MCP servers writes
-`Database.authRefreshes` through server-backed settings patches in Fastify mode.
-Google Search MCP credentials are currently unsupported in server-backed web
-mode. Remote MCP tool results may contain text, image/audio base64, or resource
-payloads, but they are not server-persisted unless a later command stores them.
+`Database.authRefreshes` through optimistic patches to the `providers` settings
+group via `/api/v1/commands/settings/providers`, with rollback on command
+failure. Google Search MCP credentials are currently unsupported in
+server-backed web mode. Remote MCP tool results may contain text, image/audio
+base64, or resource payloads, but they are not server-persisted unless a later
+command stores them.
 
 ## UI Surfaces
 

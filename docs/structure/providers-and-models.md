@@ -142,10 +142,15 @@ as chat preflight, and server execution in
 normal provider boundary with streaming disabled and provider tools omitted.
 
 The first Agent Preset release is prepared-input only. Steps can read bounded
-server-selected sections such as recent chat tail, lorebook context, memory
-context, persona/character summaries, previous agent outputs, current user
-message, and after-main main draft. Provider tool-calling is intentionally not
-part of this path yet.
+server-selected sections such as recent chat tail, chat search snippets,
+lorebook context, memory context, persona/character summaries, previous agent
+outputs, current user message, and after-main main draft. Runtime execution runs
+dependency levels up to preset `maxConcurrency`, applies per-step timeout/input/
+output limits, validates JSON-object outputs when requested, follows optional/
+required/fallback/stop failure policies, and writes step outputs to
+`promptOutput`, `intermediate`, or `finalOutput` destinations. After-main final
+outputs can modify the final text before the generation result is persisted.
+Provider tool-calling is intentionally not part of this path yet.
 
 ## Compatibility Caveats
 
@@ -232,12 +237,14 @@ Chat generation has a two-stage effective-config path. Browser preflight uses
 `effectiveModelDatabaseForChat()` with model-runtime preset scope for routing
 and image gates. Server generation then uses
 `buildEffectiveGenerationConfig()` with full chat generation settings,
-persona/sidebar toggles, prompt-preset ownership, and profile-bound runtime
-fields before prompt assembly. Effective preset precedence is selected model
-preset first, prompt preset fields for full generation, prompt-preset model
-overrides after that, then server generation reapplies prompt-preset model
-overrides after profile-bound runtime fields. `chatDispatch.ts` forwards only
-the supported runtime subset to provider adapters.
+persona selection, Agent Preset readiness, jailbreak state, prompt-preset
+module integration, sidebar-toggle materialization, prompt-preset ownership, and
+profile-bound runtime fields before prompt assembly. Effective preset precedence
+is selected model preset first, prompt preset fields for full generation,
+prompt-preset model overrides after that, then server generation reapplies
+prompt-preset model overrides after profile-bound runtime fields.
+`chatDispatch.ts` forwards only the supported runtime subset to provider
+adapters.
 
 `modelTools` are copied into the effective DB; Fastify OpenAI Responses
 dispatch currently sends no hosted tool list, so hosted search/model tool
@@ -324,7 +331,8 @@ SSE headers; chat SSE assembly failures become terminal `error` frames.
 already-shaped messages and sampling intent as `kind: "server-intent"`; the
 server rejects provider/model/options/secrets in that envelope and resolves them
 from persisted settings before calling the same dispatch core. A legacy
-direct-provider envelope remains for compatibility tests/tools.
+direct-provider envelope remains for compatibility tests/tools, routed through
+the current provider adapters and their direct completion streaming rules.
 
 ## Server Assembly Gates
 
@@ -337,7 +345,7 @@ Fastify hard-fails shapes it cannot represent safely:
 | Group chat                                         | Removed/no-port.                                                                 |
 | Plugin/WebLLM/non-server-routable providers        | No Fastify provider adapter.                                                     |
 | Non-vision image-caption fallback                  | Browser captioning pipeline has no server equivalent.                            |
-| Interactive Lua dialogs                            | Server prompt assembly cannot drive browser dialogs mid-request.                 |
+| Interactive Lua dialogs                            | Strict script preflight blocks known dialog sources; otherwise the server Lua runtime fails if a dialog API is invoked because it cannot drive browser dialogs mid-request. Non-interactive Lua remains server-routable. |
 | Plugin V2 edit/replacer hooks                      | Browser plugin execution is no-port.                                             |
 
 Supported multimodal/image/asset/inlay inputs route through server asset ids

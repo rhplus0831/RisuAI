@@ -1,6 +1,6 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.

@@ -76,6 +76,7 @@ the URL. Route changes are not file-system based.
 | Route                               | Store effect                                                  |
 | ----------------------------------- | ------------------------------------------------------------- |
 | `/`                                 | Home, `selectedCharID = -1`, settings/playground closed.      |
+| `/settings`                         | Opens settings; split layout auto-selects model settings, mobile shows the settings list. |
 | `/settings/:section`                | Opens settings and maps section slugs to `SettingsMenuIndex`. |
 | `/grid` and `/characters`           | Opens the character grid.                                     |
 | `/character/:chaId/:chatId?`        | Selects the character and optionally selects a chat.          |
@@ -119,7 +120,7 @@ Important route/store facts:
 | `src/lib/Setting/Wrappers/` | Data-driven setting row renderers for check/text/number/textarea/slider/select/segmented/color/header/button/accordion/custom rows.                                        |
 | `src/lib/Setting/Pages/`    | Concrete settings pages. Some are thin `SettingRenderer` hosts; others are large stateful pages.                                                                           |
 | `src/lib/UI/`               | Shared higher-level UI: accordions, menus, model pickers, provider pickers, prompt rows, Realm UI.                                                                         |
-| `src/lib/UI/GUI/`           | Shared primitive controls: buttons, text/number/textarea/select/option/slider/color inputs, segmented control, portals, multilingual fields.                               |
+| `src/lib/UI/GUI/`           | Shared primitive controls: buttons/icon buttons, text/optional/number/textarea/resizable textarea/syntax-highlighted textarea/select/option/slider/color inputs, segmented control, portals, multilingual fields, sidebar arrows. |
 | `src/lib/Others/`           | Global modals and miscellaneous UI: alerts, grid catalog, bookmark/chat-list modals, Hypa V3, plugin alerts, popup editor, loadout, Iris, legal/setup.                     |
 | `src/lib/Playground/`       | Playground menu and tools for parser/tokenizer/MCP/image/translation/subtitles/inlays/tool conversion.                                                                     |
 | `src/lib/Mobile/`           | Mobile components. `MobileCharacters` is active through `GridCatalog`; the full mobile shell files are currently not mounted by `App.svelte`.                              |
@@ -165,7 +166,11 @@ Relevant tests include `src/lib/ChatScreens/ChatBody.svelte.test.ts`,
 `src/lib/ChatScreens/ChatBody.parseMemo.test.ts`,
 `src/lib/ChatScreens/DefaultChatScreen.loadPages.test.ts`,
 `src/lib/ChatScreens/Suggestion.svelte.test.ts`, and
-`src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`.
+`src/lib/ChatScreens/PartialEditController.sharedHover.test.ts`. Parser,
+loading, and freshness regressions also have focused tests such as
+`Chat.parserDependencies.test.ts`, `BackgroundDom.parserDependencies.test.ts`,
+`chatGenerationLoading.test.ts`, `chatButtonTriggerFreshness.test.ts`, and
+`partialEditFreshness.test.ts`.
 
 ## Sidebar And Navigation UI
 
@@ -215,10 +220,37 @@ Settings have two layers:
   `src/ts/setting/*SettingsData*` through `src/ts/setting/settingRegistry.ts`
   and wrapper components.
 
+Current settings indexes:
+
+| Index | Primary slug       | Page/component behavior                                     |
+| ----- | ------------------ | ----------------------------------------------------------- |
+| `0`   | `backup`           | `UserSettings`.                                             |
+| `1`   | `bot-preset`       | Legacy `BotSettings` when legacy bot presets exist; otherwise model settings. |
+| `2`   | `other-bots`       | `OtherBotSettings`.                                        |
+| `3`   | `display`          | `DisplaySettings`.                                         |
+| `4`   | `plugins`          | `PluginSettings`.                                          |
+| `6`   | `advanced`         | `AdvancedSettings`.                                        |
+| `7`   | `communities`      | `Communities`.                                             |
+| `8`   | `global-lorebook`  | `GlobalLoreBookSettings`.                                  |
+| `9`   | `global-regex`     | `GlobalRegex`.                                             |
+| `10`  | `language`         | `LanguageSettings`.                                        |
+| `11`  | `accessibility`    | `AccessibilitySettings`.                                   |
+| `12`  | `persona`          | `PersonaSettings`.                                         |
+| `13`  | `prompt`           | Prompt-template editing through `PromptSettings`.           |
+| `14`  | `modules`          | `ModuleSettings`.                                          |
+| `15`  | `hotkeys`          | `HotkeySettings`.                                          |
+| `17`  | `model`            | Profile-first model settings.                              |
+| `18`  | `prompt-settings`  | Prompt preset/settings shell.                              |
+| `19`  | `agent-presets`    | `AgentPresetSettings`.                                     |
+| `77`  | `supporter`        | `ThanksPage`.                                              |
+
 Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`.
 Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,
-`bindPath`, `condition`, `getValue`, `setValue`, `onChange`, `options`,
-`keywords`, `componentId`, and `componentProps`.
+`fallbackLabel`, `helpUnrecommended`, `showExperimental`, `bindPath`,
+`condition`, `getValue`, `setValue`, `onChange`, `options`, `keywords`,
+`classes`, `containerClasses`, `componentId`, and `componentProps`.
+`SettingContext` also carries `presetMirrorTarget` for prompt/model preset
+mirror rows.
 
 Agent Presets are not data-driven settings rows. The live UI is
 `AgentPresetSettings.svelte` plus `AgentPresetEditorDrawer.svelte`, using
@@ -291,6 +323,11 @@ Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
 Custom data-driven rows escape through `src/ts/setting/customComponents.ts`.
 Use this for complex controls such as display editors, translator presets,
 separate parameters, custom models, custom sidebar config, and export buttons.
+Current registry entries include `SeparateParametersSection`,
+`TranslatorPresetSettings`, `BanCharacterSetSettings`, `CustomModelsSettings`,
+`SettingsExportButtons`, `CustomSidebarConfig`, `ColorSchemeSelect`,
+`CustomColorSchemeEditor`, `CustomTextThemeEditor`, `CustomBackgroundToggle`,
+`NullableTextColorToggle`, and `NotificationToggle`.
 
 Settings risk areas:
 
@@ -311,10 +348,18 @@ Settings risk areas:
   problems.
 
 Relevant tests include `src/lib/Setting/Settings.svelte.test.ts`,
+`src/lib/Setting/SettingRenderer.svelte.test.ts`,
+`src/lib/Setting/Wrappers/SettingAccordion.svelte.test.ts`,
 `src/lib/Setting/Pages/PluginSettings.svelte.test.ts`,
 `src/lib/Setting/Pages/Module/ModuleSettings.svelte.test.ts`,
-`src/lib/Setting/pickerGenerationSettings.test.ts`, and
-`src/ts/setting/utils.test.ts`.
+`src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte.test.ts`,
+`src/lib/Setting/Pages/Model/ModelProfileList.svelte.test.ts`,
+`src/lib/Setting/Pages/Model/ModelRuntimeDefaultsEditor.svelte.test.ts`,
+`src/lib/Setting/pickerGenerationSettings.test.ts`,
+`src/ts/setting/displaySettingsData.svelte.test.ts`, and
+`src/ts/setting/utils.test.ts`. Shared control coverage includes
+`src/lib/UI/GUI/TextAreaInput.svelte.test.ts` and
+`src/lib/UI/GUI/TextAreaResizable.svelte.test.ts`.
 
 ## Localization
 
@@ -356,6 +401,11 @@ Current live app caveat: the full `MobileHeader`, `MobileBody`, and
 `MobileFooter` shell is not mounted from `src/App.svelte`. Do not debug those
 files for a live mobile issue unless you are deliberately re-enabling that
 shell. `GridCatalog.svelte` and `MobileCharacters.svelte` are active.
+Relevant grid/modal tests include `src/lib/Others/GridCatalog.svelte.test.ts`,
+`src/lib/Others/ChatList.svelte.test.ts`,
+`src/lib/Others/WelcomeRisu.svelte.test.ts`,
+`src/lib/Others/IrisModal.svelte.test.ts`, and
+`src/lib/Others/ProTools/EasyPanel.svelte.test.ts`.
 
 Lite mode is controlled by `VITE_RISU_LITE` and `src/ts/lite.ts`, not by
 `LiteMain.svelte` as a live entrypoint.
@@ -386,6 +436,9 @@ Important values:
 
 Tool-specific issues usually belong in the corresponding
 `src/lib/Playground/*.svelte` file after confirming the route/store mapping.
+Focused playground tests include `ToolConversion.svelte.test.ts`,
+`PlaygroundSubtitle.test.ts`, `PlaygroundSubtitle.sourceLang.svelte.test.ts`,
+and `PlaygroundImageTrans.svelte.test.ts`.
 
 ## Visible-State Testing
 
@@ -400,9 +453,10 @@ Common commands:
 pnpm check
 pnpm test -- src/ts/router.test.ts # light pending-route coverage, not a full route-map matrix
 pnpm test -- src/App.routeEffect.dom.test.ts
-pnpm test -- src/lib/Setting/Settings.svelte.test.ts src/ts/setting/utils.test.ts
+pnpm test -- src/lib/Setting/Settings.svelte.test.ts src/lib/Setting/SettingRenderer.svelte.test.ts src/ts/setting/utils.test.ts
 pnpm test -- src/lib/SideBars/SideChatList.svelte.test.ts
 pnpm test -- src/lib/ChatScreens/ChatBody.svelte.test.ts
+pnpm test -- src/lib/Others/GridCatalog.svelte.test.ts src/lib/Playground/ToolConversion.svelte.test.ts
 pnpm smoke:fastify-browser
 ```
 

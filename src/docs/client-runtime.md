@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -46,19 +46,20 @@ the preloading element.
 5. Record hydrated lorebook coverage.
 6. Cache the server command revision.
 7. Enable the projection write guard.
-8. Seed active generation jobs, active message translation refresh, and durable
-   reattach.
-9. Hydrate the selected character shell, start prompt-template hydration, start
-    chat message hydration, and hydrate the active chat.
-10. Start bridge patch lifecycle flushing.
-11. Subscribe to server events.
-12. If `DBState.db.notification === true`, enable chat-completion push
+8. Seed active generation jobs and active message translations, then start
+   active message translation refresh and durable generation reattach.
+9. Start selected-character shell hydration and await the selected shell.
+10. Start chat message hydration and hydrate the active chat.
+11. Start prompt-template hydration.
+12. Start bridge patch lifecycle flushing.
+13. Subscribe to server events.
+14. If `DBState.db.notification === true`, enable chat-completion push
     notifications.
-13. Load plugins.
-14. Update color scheme, text theme, animation speed, height mode, error
+15. Load plugins.
+16. Update color scheme, text theme, animation speed, height mode, error
     handling, and GUI size CSS variables.
-15. Apply startup UI state such as `botSettingAtStart`.
-16. Set `loadedStore`, start DOM observers, register dynamic models, run module
+17. Apply startup UI state such as `botSettingAtStart`.
+18. Set `loadedStore`, start DOM observers, register dynamic models, run module
     update, and show TOS as needed.
 
 Visible startup bugs often sit at the boundary between `loadedStore`,
@@ -159,17 +160,20 @@ Important files:
 - `src/ts/process/serverBackedSendChat.ts` builds server requests, maps legacy
   inlay ids to server asset refs, calls `/api/v1/generate/chat` or the preview
   route, applies server message patches, and returns terminal data.
-- `src/ts/process/request/serverChat.ts` parses chat SSE frames: job, stage,
-  prompt, patch, info, token, side-effect, post-generation progress, warning,
-  error, and done.
-- `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs` to reattach
-  the current chat to durable server jobs.
+- `src/ts/process/request/serverChat.ts` parses chat SSE frames:
+  `job_accepted`, stage, prompt, patch, info, token, side-effect,
+  post-generation progress, warning, error, and done.
+- `src/ts/process/reattach.ts` uses bootstrap `activeGenerationJobs`, including
+  job mode and regenerate target when present, to reattach the current chat to
+  durable server jobs.
 
 Durable sends such as send, continue, and regenerate set `durable: true` when
 allowed. Disconnect detaches from durable jobs; abort/cancel uses the durable
 DELETE path when a job exists. Terminal `postGeneration` data can advance the
-revision cache. Generation results are persisted server-side, so the browser
-suppresses the old generation-result command in server-backed paths.
+revision cache, apply a server-owned `messagePatch`, render the inlay screen
+over `finalText`, request `resendChat`, or surface an Agent Preset error as a
+failed terminal result. Generation results are persisted server-side, so the
+browser suppresses the old generation-result command in server-backed paths.
 
 Generation profile resolution happens before provider dispatch. Durable profile
 records can own selected model ids, request/wire model ids, provider
@@ -190,10 +194,11 @@ for editing and blocked for active durable generation.
 
 Server chat assembly is profile-bound. The browser sends raw chat inputs; the
 server resolves the effective model-runtime config, overlays the selected
-profile model/request model/provider options/runtime settings, then budgets and
-dispatches with that profile context. This keeps profile runtime defaults and
-profile overrides in the server path instead of borrowing stale `db.aiModel` or
-legacy flat parameter assumptions.
+profile model/request model/provider options/runtime settings, materializes
+chat-scoped Agent Preset readiness, jailbreak, prompt-preset module integration,
+and sidebar toggle state, then budgets and dispatches with that profile context.
+This keeps profile runtime defaults and profile overrides in the server path
+instead of borrowing stale `db.aiModel` or legacy flat parameter assumptions.
 
 Prompt-template assembly uses the same modern-owner precedence on browser
 preflight/parity paths and server generation: chat
@@ -218,7 +223,10 @@ Storage:
 - `src/ts/storage/fastifyStorage.ts` backs `/api/v1/storage/*` compatibility
   endpoints.
 - `src/ts/storage/autoStorage.ts` selects the server-backed storage adapter.
-- `.risu` and backup helpers remain under `src/ts/storage/`.
+- `FastifyStorage` write/remove calls carry `risu-writer-session` and surface
+  `423 active_writer_stale`; read/list/exists calls are authenticated read-only.
+- `.risu` and backup helpers remain under `src/ts/storage/`, but device backup
+  export/import helpers call server routes rather than browser-local storage.
 
 Realm import:
 

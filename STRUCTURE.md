@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -59,7 +59,7 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/app.ts`                                                                                                                 | Fastify composition root: plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.               |
 | `server/fastify/src/config.ts`, `server/fastify/src/routeRateLimits.ts`                                                                     | Runtime env parsing and per-route rate-limit presets.                                                                       |
 | `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v19, migrations, schema version, global revision.                                                             |
-| `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain load/write, projections/body cache, legacy `db.json` import/applyImport, asset metadata, backups, chat message tables. |
+| `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain load/write for settings, characters/chats, split collections, projections/body cache, legacy `db.json` import/applyImport, asset metadata, backups, chat message tables. |
 | `server/fastify/src/routeManifest.ts`                                                                                                       | Auth, active-writer, streaming, and route classification decisions used by tests/audits. Update it for route changes; use `app.printRoutes()` for the endpoint inventory. |
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
@@ -99,7 +99,8 @@ past decisions; they are not the source of current behavior.
 - Revision-tracked domain changes should go through command mutations so
   `baseRevision`, revision bumps, and command events stay aligned. Explicit
   server-owned exceptions include import/restore, asset upload, Realm import,
-  generation persistence, backups, and memory job create/cancel.
+  generation persistence, backups, legacy storage write/remove, and memory job
+  create/cancel.
 - Server-side prompt assembly is the supported chat-send path. Browser preflight
   uses `resolveServerPromptAssembly()` and model-profile resolution; the shared
   provider capability table is reached through the resolved profile. Unsupported
@@ -115,9 +116,10 @@ past decisions; they are not the source of current behavior.
   select presets through `Chat.generationSettings.agentPresetId`, and loadouts
   can save/restore that selection. Before-main steps run after submit
   transforms and feed prompt templates through `{{agent::name}}`; after-main
-  steps run after `editOutput` and before `onOutput`, with hidden diagnostics
-  stored under generation metadata. The legacy Context Agent runtime, settings
-  page, `{{agent}}`, and `{{slot::agent}}` are removed; old `agentContext*`
-  fields may remain only as inert imported data.
+  steps run after `editOutput` and before `onOutput`. Steps run by dependency
+  level up to preset `maxConcurrency`, can target prompt/intermediate/final
+  outputs, and store hidden diagnostics under generation metadata. The legacy
+  Context Agent runtime, settings page, `{{agent}}`, and `{{slot::agent}}` are
+  removed; old `agentContext*` fields may remain only as inert imported data.
 - Root TypeScript is intentionally loose for browser code. Server checking is
   strict and uses the project-reference workflow in `AGENTS.md`.

@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-04.
+Last audited: 2026-07-06.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -291,8 +291,9 @@ Client/build:
 | `VITE_RISU_LITE`                                                                 | Enables lite-mode consumers in settings/theme/legacy mobile code; does not mount `LiteMain` or the legacy mobile shell. |
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                             |
 
-Test/audit summary variables include `CLIENT_THINNING_AUDIT_CHECK_IDS`,
-`UPDATE_FIXTURES`, `RISU_DIRECT_REALM_IMPORT_TEST`,
+Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
+`CLIENT_THINNING_AUDIT_CHECK_IDS`, `UPDATE_FIXTURES`,
+`RISU_DIRECT_REALM_IMPORT_TEST`,
 `RISU_COMMAND_METRIC_SUMMARY`, `RISU_PROJECTION_FULL_SUMMARY`,
 `RISU_ASSET_BYTE_SUMMARY`, `RISU_EXPORT_MATERIALIZE_SUMMARY`, and
 `RISU_GENERATION_METRIC_SUMMARY`.

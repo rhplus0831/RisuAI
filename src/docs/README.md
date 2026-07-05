@@ -1,6 +1,6 @@
 # Source Docs
 
-Last audited: 2026-06-15.
+Last audited: 2026-07-06.
 
 These notes are the current frontend/client documentation for agents working in
 `src/`. They replace the old compact frontend map under `docs/structure/`.

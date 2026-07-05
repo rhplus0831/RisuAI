@@ -35,11 +35,12 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/commands/agentPresets.ts`                                 | Revisioned Agent Preset create/update/duplicate/delete/reorder/default/step commands and delete cleanup. |
 | `server/fastify/src/prompt/luaPostGenerationProgress.ts`                      | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                        |
 
-`buildApp()` is test-friendly. `BuildAppOptions` can inject generation behavior,
-Realm import limits, memory worker behavior, command/memory event sinks,
-generation finalization retry options through the generation-chat options, and
-asset-GC behavior. Config parsing also includes streamed device-backup import
-limits and generation trace sidecar controls.
+`buildApp()` is test-friendly. `BuildAppOptions` can inject generation chat
+behavior, including provider dispatch, push notification service, viewer
+heartbeat cadence, and finalization retry options; Realm import limits; memory
+worker behavior; command/memory event sinks; and asset-GC behavior. Config
+parsing also includes streamed device-backup import limits and generation trace
+sidecar controls.
 
 ## App Wiring
 
@@ -94,11 +95,11 @@ and generation submit `60/min`.
 | --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer and returns body-cache, active generation job metadata, and active message translation metadata. |
 | Projection/events     | `projection.ts`, `events.ts`                              | Targeted projection, chat/lorebook hydration, bulk hydration, command/memory SSE.                                                                                                    |
-| Commands              | `commands.ts` plus `commands/`                            | Revision-checked domain mutations for settings, model profiles/runtime defaults, Agent Presets, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
+| Commands              | `commands.ts` plus `commands/`                            | First-run state initialization plus revision-checked domain mutations for settings, model profiles/role bindings/runtime defaults, Agent Presets, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
 | Push notifications    | `pushNotifications.ts`                                    | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`. |
 | Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
-| Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, chat generation settings/profile preflight, durable reattach/cancel.                                             |
+| Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, internal chat generation settings/profile/Agent Preset readiness preflight, durable reattach/cancel.             |
 | Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus read chunk/summary routes.                                                                                                                               |
 
 `routeManifest.ts` classifies auth, active-writer, and streaming decisions;
@@ -156,13 +157,15 @@ progress emits `post_generation_progress` SSE frames through
 `prompt/luaPostGenerationTrace.ts`, `prompt/luaRuntime.ts`, and
 `routes/generationChat.ts` when `RISU_PROTOCOL_METRICS=1`. Chat-scoped
 generation settings are preflighted and applied through
-`prompt/effectiveGenerationConfig.ts`, covering model/prompt/persona/
-sidebar-toggle overlays.
+`prompt/effectiveGenerationConfig.ts`, covering model/prompt/persona selection,
+Agent Preset readiness, prompt-preset module integration, jailbreak state,
+sidebar-toggle materialization, and profile-bound runtime overlays.
 
 `/api/v1/generate/completion` is lower-level: normal browser traffic sends a
 server-owned `server-intent` request with shaped messages, and the server
 resolves provider/model/options/secrets from persisted settings. A legacy direct
-provider envelope remains for compatibility tests/tools.
+provider envelope remains for compatibility tests/tools, still using the current
+provider adapters and each adapter's direct-streaming limits.
 
 `/api/v1/generate/chat` supports durable send/continue/regenerate as the normal
 client path and an inline non-durable SSE mode for tools/tests. Durable chat jobs
