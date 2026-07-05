@@ -47,6 +47,10 @@ generation, assets, storage, Realm import, plugins, or MCP.
 comes from `VITE_RISU_LITE`, `src/ts/lite.ts`, and consumers in settings/theme
 and legacy mobile code.
 
+`src/App.svelte` also owns app-level drag/drop import. Dropped `.risup` files
+import presets, `.risum` files import modules through the Fastify-backed browser
+module path, and other supported files fall through to character/card import.
+
 ## App Render Priority
 
 `src/App.svelte` renders in this order:
@@ -244,6 +248,10 @@ Current settings indexes:
 | `19`  | `agent-presets`    | `AgentPresetSettings`.                                     |
 | `77`  | `supporter`        | `ThanksPage`.                                              |
 
+When `enableRisuaiProTools` is on, Settings also shows an Easy Panel nav button.
+It opens the global `easyPanelStore` overlay instead of a routed
+`/settings/:section` page.
+
 Data-driven setting definitions use `SettingItem` from `src/ts/setting/types.ts`.
 Important fields are `id`, `type`, `labelKey`, `helpKey`, `bindKey`,
 `fallbackLabel`, `helpUnrecommended`, `showExperimental`, `bindPath`,
@@ -293,6 +301,10 @@ Model settings are profile-first:
   embedded model preset picker/list for `modelPresets` and `modelPresetsId`.
   It can save current role settings, create empty presets, duplicate, reorder,
   delete, and show the prompt-preset model override notice.
+- NanoGPT compatibility/account surfaces still live in `BotSettings.svelte` and
+  shared UI helpers. `NanoGPTDashboard.svelte` fetches balance/subscription
+  state and persists subscription state for request routing;
+  `NanoGPTProviderPicker.svelte` fetches provider metadata for picker/filter UI.
 - Advanced Legacy Settings embeds the old `ModelRoleList.svelte` plus legacy
   main/aux summaries. The legacy flat fields remain compatibility/conversion
   data for imports, presets, loadouts, and provider families without

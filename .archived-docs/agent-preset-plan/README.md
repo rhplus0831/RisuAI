@@ -62,9 +62,9 @@ Preset-specific.
   skeleton only.
 - Current structure notes:
   - [`../../STRUCTURE.md`](../../STRUCTURE.md)
-  - [`../structure/backend.md`](../structure/backend.md)
-  - [`../structure/providers-and-models.md`](../structure/providers-and-models.md)
-  - [`../structure/server-projection-and-bridges.md`](../structure/server-projection-and-bridges.md)
+  - [`../../docs/structure/backend.md`](../../docs/structure/backend.md)
+  - [`../../docs/structure/providers-and-models.md`](../../docs/structure/providers-and-models.md)
+  - [`../../docs/structure/server-projection-and-bridges.md`](../../docs/structure/server-projection-and-bridges.md)
   - [`../../src/docs/svelte-ui.md`](../../src/docs/svelte-ui.md)
 
 ## Source Anchors

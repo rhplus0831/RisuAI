@@ -143,6 +143,33 @@ Model profile projection notes:
   profile commands. Legacy flat settings remain available behind Advanced
   Legacy Settings and as compatibility/conversion data.
 
+## Async Freshness And Import Guards
+
+`src/ts/server/staleStateGuards.ts` is the shared helper for browser async work
+that must not apply after the user changes selection, projection refreshes, or a
+newer operation supersedes it. It provides latest-operation tokens,
+destructive-refresh epochs, attempted-field/list rollback helpers, and dirty
+draft merge helpers used by command bridges and UI import flows.
+
+Specialized guards under `src/ts/server/` cover current import and fetch
+surfaces:
+
+- `biasImport.ts`, `colorSchemeImport.ts`, `naiVibeImport.ts`, and
+  `seperateParametersImport.ts` parse imported JSON and apply it only when the
+  selected prompt preset, display scheme, provider/model context, or parameter
+  slot still matches the captured snapshot.
+- `nanoGPTDashboardFetch.ts` prevents stale NanoGPT balance/subscription fetches
+  from persisting subscription state after the API key changes.
+- `characterAdditionalAssetUpload.ts`, `characterEmotionUpload.ts`,
+  `characterFolderImageUpload.ts`, `characterTtsAssetUpload.ts`,
+  `moduleAssetUpload.ts`, `personaIconUpload.ts`, `promptPresetIconUpload.ts`,
+  and `settingsMediaAssetUpload.ts` apply uploaded asset ids only if the current
+  owner and field snapshots still match.
+
+These guards are client-side freshness checks. Server persistence still happens
+through asset upload routes, command helpers, or settings patches after the
+freshness check passes.
+
 ## Generation Client
 
 `sendChat` in `src/ts/process/index.svelte.ts` is the browser coordinator for
