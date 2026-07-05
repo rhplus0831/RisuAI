@@ -51,6 +51,7 @@ vi.mock('src/ts/setting/utils', () => ({
 
 import Toggles from './Toggles.svelte'
 import GenerationSettingsPickerHost from './GenerationSettingsPickerHost.testHarness.svelte'
+import { language } from 'src/lang'
 import {
   closePersonaListModal,
   closePresetListModal,
@@ -251,6 +252,10 @@ function seedDb(): void {
       },
     ],
     modelPresets: [{ id: 'model-preset-a', name: 'Model Prompt preset Alpha' }],
+    agentPresets: [
+      { id: 'agent-preset-a', name: 'Research Agent', enabled: true, version: 1, steps: [] },
+      { id: 'agent-preset-b', name: 'Critique Agent', enabled: true, version: 1, steps: [] },
+    ],
     promptPresets: [
       {
         id: 'preset-a',
@@ -339,7 +344,7 @@ function elementBySelector<T extends Element>(selector: string, label: string): 
   return element!
 }
 
-function pickerControl(kind: 'model' | 'prompt' | 'persona'): HTMLElement {
+function pickerControl(kind: 'model' | 'prompt' | 'persona' | 'agent-preset'): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-picker-control][data-risu-picker-kind="${kind}"]`,
     `${kind} picker control`,
@@ -354,6 +359,12 @@ function pickerButton(kind: 'model' | 'prompt' | 'persona'): HTMLButtonElement {
 
 function personaNoteLine(): HTMLElement | null {
   return pickerControl('persona').querySelector<HTMLElement>('[data-risu-generation-picker-persona-note]')
+}
+
+function agentPresetSelect(): HTMLSelectElement {
+  const select = pickerControl('agent-preset').querySelector<HTMLSelectElement>('select')
+  expect(select, 'agent preset select').toBeTruthy()
+  return select!
 }
 
 function resetDefaultsButton(): HTMLButtonElement {
@@ -514,6 +525,9 @@ describe('sidebar chat generation settings controls', () => {
     expect(
       target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="persona"]'),
     ).toHaveLength(1)
+    expect(
+      target.querySelectorAll('[data-risu-generation-picker-control][data-risu-picker-kind="agent-preset"]'),
+    ).toHaveLength(1)
   })
 
   it('shows clear chat setup labels when preset and persona are not configured', async () => {
@@ -530,6 +544,92 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerControl('prompt').textContent).toContain('Select prompt preset')
     expect(pickerControl('persona').dataset.risuPickerMode).toBe('active-chat-generation-settings')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
+    expect(pickerControl('agent-preset').dataset.risuPickerMode).toBe('active-chat-generation-settings')
+    expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
+  })
+
+  it('saves and clears Agent Preset selection through active-chat controls', async () => {
+    const calls = stubCommandFetch()
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
+
+    const select = agentPresetSelect()
+    select.value = 'agent-preset-a'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, 1)
+
+    expect(activeChat().generationSettings?.agentPresetId).toBe('agent-preset-a')
+    expect(resolveActiveChatGenerationSettings().agentPreset?.id).toBe('agent-preset-a')
+    expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
+    expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('agent-preset-a')
+    expect(pickerControl('agent-preset').textContent).toContain('Research Agent')
+    expect(generationSettingsSaves(calls)[0]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      authHeader: 'sidebar-generation-settings-token',
+      body: {
+        baseRevision: 300,
+        generationSettings: expect.objectContaining({
+          configured: true,
+          agentPresetId: 'agent-preset-a',
+        }),
+      },
+    })
+
+    const savesBeforeClear = generationSettingsSaves(calls).length
+    select.value = ''
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+    await waitForGenerationSettingsSaveCount(calls, savesBeforeClear + 1)
+
+    expect(activeChat().generationSettings?.agentPresetId).toBe('')
+    expect(resolveActiveChatGenerationSettings().agentPreset).toBeUndefined()
+    expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
+    expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('')
+    expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
+    expect(generationSettingsSaves(calls).at(-1)).toMatchObject({
+      body: {
+        generationSettings: expect.objectContaining({
+          configured: true,
+          agentPresetId: '',
+        }),
+      },
+    })
+  })
+
+  it('shows missing selected Agent Preset as an actionable error', async () => {
+    activeChat().generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      agentPresetId: 'deleted-agent-preset',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mood: '1',
+        flag: '1',
+        note: 'alpha-note',
+        moduleFlag: '1',
+      },
+    }
+
+    mountGenerationSettingsPickerHost()
+    await tick()
+
+    const state = resolveActiveChatGenerationSettings()
+    expect(state.agentPreset).toBeUndefined()
+    expect(state.readiness.ready).toBe(false)
+    expect(state.readiness.missing.map((reason) => reason.code)).toContain('agent_preset_missing')
+    expect(state.missingLabels).toContain('Agent preset')
+    expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('deleted-agent-preset')
+    expect(pickerControl('agent-preset').textContent).toContain(
+      language.agentPresets.missingSelected('deleted-agent-preset'),
+    )
+    expect(target.querySelector('[data-risu-generation-picker-agent-preset-error]')).toBeTruthy()
   })
 
   it('keeps deleted preset and persona ids unconfigured without selecting global rows', async () => {

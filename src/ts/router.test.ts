@@ -125,15 +125,15 @@ describe('router initial application', () => {
     })
   })
 
-  it('routes the context agent settings section', async () => {
-    const router = await importRouterAt('/settings/context-agent')
+  it('routes the agent preset settings section', async () => {
+    const router = await importRouterAt('/settings/agent-presets')
     const stores = await import('./stores.svelte')
     const { SettingsMenuIndex, settingsOpen } = stores
 
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'settings',
-      path: '/settings/context-agent',
-      section: 'context-agent',
+      path: '/settings/agent-presets',
+      section: 'agent-presets',
       index: 19,
     })
 
@@ -144,7 +144,18 @@ describe('router initial application', () => {
     expect(get(SettingsMenuIndex)).toBe(19)
   })
 
-  it('serializes the context agent settings section', async () => {
+  it('keeps the old context agent settings slug as an Agent Presets alias', async () => {
+    const router = await importRouterAt('/settings/context-agent')
+
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'settings',
+      path: '/settings/context-agent',
+      section: 'context-agent',
+      index: 19,
+    })
+  })
+
+  it('serializes the agent preset settings section', async () => {
     const router = await importRouterAt('/')
 
     router.syncRouteFromState({
@@ -155,11 +166,11 @@ describe('router initial application', () => {
       playgroundStore: 0,
     })
 
-    expect(window.location.pathname).toBe('/settings/context-agent')
+    expect(window.location.pathname).toBe('/settings/agent-presets')
     expect(get(router.currentRoute)).toMatchObject({
       kind: 'settings',
-      path: '/settings/context-agent',
-      section: 'context-agent',
+      path: '/settings/agent-presets',
+      section: 'agent-presets',
       index: 19,
     })
   })

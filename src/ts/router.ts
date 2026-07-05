@@ -70,6 +70,8 @@ const settingIndexBySlug = new Map<string, number>([
   ['persona', 12],
   ['prompt', 13],
   ['prompt-template', 13],
+  ['agent-preset', 19],
+  ['agent-presets', 19],
   ['context-agent', 19],
   ['contextagent', 19],
   ['prompt-settings', 18],
@@ -102,7 +104,7 @@ const settingSlugByIndex = new Map<number, string>([
   [15, 'hotkeys'],
   [17, 'model'],
   [18, 'prompt-settings'],
-  [19, 'context-agent'],
+  [19, 'agent-presets'],
   [77, 'supporter'],
 ])
 

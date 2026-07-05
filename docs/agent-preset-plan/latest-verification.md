@@ -2,47 +2,52 @@
 
 Date: 2026-07-05
 
-Verification level: Phase 2 focused command/projection/client-wrapper tests.
+Verification level: Phase 3 focused Settings/chat-selection UI tests plus
+client TypeScript.
 
 ## What Was Checked
 
-- Read `STRUCTURE.md`, the Agent Preset workstream README, status, plan,
-  latest verification, phase index, Phase 0, Phase 1, Phase 2, and relevant
-  backend/projection structure notes before implementation.
-- Added settings-backed Agent Preset command helpers in
-  `server/fastify/src/commands/agentPresets.ts`.
-- Added authenticated, active-writer-protected command routes for Agent Preset
-  create/update/duplicate/delete/reorder/default and step
-  create/update/duplicate/delete/reorder.
-- Added command-event catalog entries plus `agentPreset` and
-  `agentPresetDeleted` targeted projection resources.
-- Added browser command wrappers in `src/ts/server/commands.ts` and a small
-  command-backed local helper module in `src/ts/agentPresets.ts`.
-- Checked create/update/default/reorder projection behavior, step validation,
-  duplicate preset/step id remapping, delete cleanup across defaults/chats/
-  loadouts, and the explicit no-migration rule for Context Agent fields.
-- Re-ran existing Agent Preset record/resolver tests to guard Phase 0/1
-  invariants.
+- Read `STRUCTURE.md`, the Agent Preset workstream README, status, plan, latest
+  verification, phase index, Phase 0, Phase 1, Phase 2, Phase 3, and frontend
+  Svelte UI notes before implementation.
+- Used sub-agents to inspect Phase 0-2 helper/resolver surfaces and the
+  Settings/chat-selection UI patterns before editing.
+- Replaced the active Settings navigation entry with Agent Presets and routed
+  `/settings/agent-presets` to Settings index 19 while preserving the old
+  `/settings/context-agent` alias.
+- Added `AgentPresetSettings.svelte` and `AgentPresetEditorDrawer.svelte` for a
+  command-backed Agent Preset list, metadata drawer, global default selector,
+  resolver statuses, usage count, phase summary, max concurrency, and
+  diagnostics placeholder.
+- Added chat-scoped Agent Preset selection to
+  `ChatGenerationSettingsControls.svelte`, including no-selection and missing
+  selected-preset states.
+- Added English language keys for the visible Agent Preset settings and chat
+  selection shell.
+- Added focused tests for the Settings nav/route swap, empty page rendering,
+  helper-backed create/update/duplicate/delete/reorder/default actions, status
+  display, chat selection save/clear, and missing selected Agent Preset error.
 
 ## Result
 
-- Phase 2 implementation is complete.
-- Agent Presets can be mutated through command-backed APIs and refreshed through
-  targeted projection resources.
-- Chat and loadout Agent Preset references survive normal commands and are
-  cleared atomically when their selected Agent Preset is deleted.
-- Browser code has typed command wrappers and local rollback-aware helper
-  functions ready for the Settings/chat-selection UI shell.
+- Phase 3 implementation is complete.
+- Users can reach an Agent Presets Settings shell, create/select/manage preset
+  metadata, and pick or clear an Agent Preset for the active chat without full
+  step editing.
+- Context Agent remains live at runtime but no longer has an active standalone
+  Settings navigation/page.
 - Context Agent remains live for legacy `{{agent}}` and `{{slot::agent}}`
   behavior until later cleanup phases, and no Context Agent fields are converted
   into Agent Presets.
 
 ## Commands Run
 
-- `pnpm exec prettier --write docs/agent-preset-plan/status.md docs/agent-preset-plan/latest-verification.md server/fastify/src/commands/agentPresets.ts server/fastify/src/commands/events.ts server/fastify/src/routes/commands.ts server/fastify/src/routes/projection.ts src/ts/server/commands.ts src/ts/agentPresets.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/projection.test.ts src/ts/server/commands.test.ts`
-- `pnpm exec tsc -b tsconfig.client-lib.json server/fastify/tsconfig.json --pretty false`
-- `pnpm exec vitest run --config server/fastify/vitest.config.ts server/fastify/__tests__/commands.test.ts server/fastify/__tests__/projection.test.ts`
-- `pnpm exec vitest run src/ts/server/commands.test.ts src/ts/agentPresetRecords.test.ts src/ts/agentPresetResolver.test.ts`
+- `pnpm exec prettier --write docs/agent-preset-plan/status.md docs/agent-preset-plan/latest-verification.md src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte src/lib/Setting/Pages/AgentPresetSettings.svelte src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts src/lib/Setting/Settings.svelte src/lib/Setting/Settings.svelte.test.ts src/lib/SideBars/ChatGenerationSettingsControls.svelte src/lib/SideBars/chatGenerationSettingsControls.test.ts src/ts/router.ts src/ts/router.test.ts src/ts/chatGenerationSettings.ts src/lang/en.ts`
+- `pnpm exec tsc -b tsconfig.client-lib.json --pretty false`
+- `pnpm exec vitest run src/lib/Setting/Pages/AgentPresetSettings.svelte.test.ts src/lib/Setting/Settings.svelte.test.ts src/ts/router.test.ts src/lib/SideBars/chatGenerationSettingsControls.test.ts`
+- `pnpm dev:agent`, then a Playwright smoke for
+  `http://localhost:6418/settings/agent-presets`, followed by stopping the dev
+  server.
 - `git diff --check`
 
 ## Required Verification When Implementation Starts

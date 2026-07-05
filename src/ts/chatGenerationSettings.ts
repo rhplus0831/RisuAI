@@ -42,6 +42,7 @@ export type ChatGenerationPresetReference = ChatGenerationPromptPresetReference
 
 export interface ChatGenerationAgentPresetReference {
   id?: string | null
+  name?: string | null
 }
 
 export interface ChatGenerationModuleReference {

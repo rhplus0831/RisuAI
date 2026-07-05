@@ -3,7 +3,6 @@
     AccessibilityIcon,
     ActivityIcon,
     PackageIcon,
-    BotMessageSquareIcon,
     BotIcon,
     BoxIcon,
     CodeIcon,
@@ -16,6 +15,7 @@
     KeyboardIcon,
     SparkleIcon,
     ArrowLeftIcon,
+    WorkflowIcon,
   } from '@lucide/svelte'
   import { language } from 'src/lang'
   import DisplaySettings from './Pages/DisplaySettings.svelte'
@@ -24,7 +24,7 @@
   import OtherBotSettings from './Pages/OtherBotSettings.svelte'
   import PluginSettings from './Pages/PluginSettings.svelte'
   import AdvancedSettings from './Pages/AdvancedSettings.svelte'
-  import ContextAgentSettings from './Pages/ContextAgentSettings.svelte'
+  import AgentPresetSettings from './Pages/AgentPresetSettings.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
   import { DBState } from 'src/ts/stores.svelte'
   import Communities from './Pages/Communities.svelte'
@@ -121,10 +121,10 @@
             <button
               class={navButtonClass($SettingsMenuIndex === 19)}
               onclick={() => {
-                navigate('/settings/context-agent')
+                navigate('/settings/agent-presets')
               }}>
-              <BotMessageSquareIcon size={20} />
-              <span>{language.settingsNavContextAgent}</span>
+              <WorkflowIcon size={20} />
+              <span>{language.settingsNavAgentPresets}</span>
             </button>
             {#if DBState.db.botPresets?.length > 0}
               <button
@@ -348,7 +348,7 @@
                 navigate('/settings/prompt')
               }} />
           {:else if $SettingsMenuIndex === 19}
-            <ContextAgentSettings />
+            <AgentPresetSettings />
           {:else if $SettingsMenuIndex === 77}
             <ThanksPage />
           {/if}
