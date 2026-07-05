@@ -318,6 +318,50 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'modelProfile.runtimeDefaults.updated',
     resource: 'modelProfile',
   },
+  agentPresetCreated: {
+    type: 'agentPreset.created',
+    resource: 'agentPreset',
+  },
+  agentPresetUpdated: {
+    type: 'agentPreset.updated',
+    resource: 'agentPreset',
+  },
+  agentPresetDuplicated: {
+    type: 'agentPreset.duplicated',
+    resource: 'agentPreset',
+  },
+  agentPresetDeleted: {
+    type: 'agentPreset.deleted',
+    resource: 'agentPresetDeleted',
+  },
+  agentPresetReordered: {
+    type: 'agentPreset.reordered',
+    resource: 'agentPreset',
+  },
+  agentPresetDefaultUpdated: {
+    type: 'agentPreset.default.updated',
+    resource: 'agentPreset',
+  },
+  agentPresetStepCreated: {
+    type: 'agentPreset.step.created',
+    resource: 'agentPreset',
+  },
+  agentPresetStepUpdated: {
+    type: 'agentPreset.step.updated',
+    resource: 'agentPreset',
+  },
+  agentPresetStepDuplicated: {
+    type: 'agentPreset.step.duplicated',
+    resource: 'agentPreset',
+  },
+  agentPresetStepDeleted: {
+    type: 'agentPreset.step.deleted',
+    resource: 'agentPreset',
+  },
+  agentPresetStepReordered: {
+    type: 'agentPreset.step.reordered',
+    resource: 'agentPreset',
+  },
   modelProfilesLegacyConverted: {
     type: 'modelProfile.legacyConverted',
     resource: 'modelProfile',

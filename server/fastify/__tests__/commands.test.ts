@@ -3152,6 +3152,386 @@ describe('Phase 9-2b bot preset commands', () => {
   })
 })
 
+describe('Agent Preset command surface', () => {
+  it('creates, updates, defaults, reorders, and projects Agent Presets without Context Agent conversion', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentContextEnabled: true,
+      agentContextPrompt: 'legacy context prompt',
+      agentContextMaxOutput: 999,
+      agentContextMaxToolRounds: 2,
+      agentPresets: [],
+    })
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        preset: { name: 'Research Agent' },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    const createdBody = created.json() as { revision: number; presetId: string; event: Record<string, unknown> }
+    expect(createdBody.presetId).toMatch(/^ap_/)
+    expect(createdBody.event).toMatchObject({
+      type: 'agentPreset.created',
+      resource: 'agentPreset',
+      id: createdBody.presetId,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: `/api/v1/commands/agent-presets/${createdBody.presetId}`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: createdBody.revision,
+        patch: {
+          name: 'Research Agent Renamed',
+          description: 'before-main helper',
+          maxConcurrency: 2,
+          enabled: false,
+        },
+      },
+    })
+    expect(updated.statusCode).toBe(200)
+
+    const defaulted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/default',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        agentPresetId: createdBody.presetId,
+      },
+    })
+    expect(defaulted.statusCode).toBe(200)
+    expect(defaulted.json()).toMatchObject({
+      event: {
+        type: 'agentPreset.default.updated',
+        resource: 'agentPreset',
+        id: createdBody.presetId,
+      },
+      agentPresetDefaultId: createdBody.presetId,
+    })
+
+    const second = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: defaulted.json().revision,
+        preset: { name: 'After Agent' },
+      },
+    })
+    expect(second.statusCode).toBe(200)
+    const secondId = second.json().presetId as string
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: second.json().revision,
+        presetIds: [secondId, createdBody.presetId],
+      },
+    })
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json().event).toMatchObject({
+      type: 'agentPreset.reordered',
+      resource: 'agentPreset',
+    })
+
+    const projection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/agentPreset',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projection.statusCode).toBe(200)
+    expect(projection.json()).toMatchObject({
+      resource: 'agentPreset',
+      mode: 'fields',
+      fields: {
+        agentPresetDefaultId: createdBody.presetId,
+      },
+    })
+    expect(projection.json().fields.agentPresets.map((preset: { id: string }) => preset.id)).toEqual([
+      secondId,
+      createdBody.presetId,
+    ])
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.agentPresets).toHaveLength(2)
+    expect(bootstrap.json().database.agentPresets[1]).toMatchObject({
+      id: createdBody.presetId,
+      name: 'Research Agent Renamed',
+      description: 'before-main helper',
+      maxConcurrency: 2,
+      enabled: false,
+      steps: [],
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      agentContextEnabled: true,
+      agentContextPrompt: 'legacy context prompt',
+      agentContextMaxOutput: 999,
+      agentContextMaxToolRounds: 2,
+    })
+  })
+
+  it('validates step mutations and duplicates presets with fresh preset and step ids', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [{ id: 'ap_source', name: 'Source', enabled: true, version: 1, steps: [] }],
+    })
+
+    const step = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_source/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        step: {
+          name: 'Facts',
+          phase: 'beforeMain',
+          instruction: 'Find relevant facts.',
+          outputKey: 'facts',
+          inputScopes: ['currentUserMessage'],
+        },
+      },
+    })
+    expect(step.statusCode).toBe(200)
+    const stepId = step.json().stepId as string
+    expect(stepId).toMatch(/^aps_/)
+
+    const duplicateKey = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_source/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: step.json().revision,
+        step: {
+          name: 'Duplicate Facts',
+          phase: 'beforeMain',
+          instruction: '',
+          outputKey: 'facts',
+        },
+      },
+    })
+    expect(duplicateKey.statusCode).toBe(400)
+    expect(duplicateKey.json().error).toContain('Duplicate enabled Agent Preset output key')
+
+    const afterMain = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_source/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: step.json().revision,
+        step: {
+          name: 'Final polish',
+          phase: 'afterMain',
+          instruction: 'Polish the answer.',
+          outputKey: 'polished',
+          destination: 'finalOutput',
+        },
+      },
+    })
+    expect(afterMain.statusCode).toBe(200)
+
+    const invalidAfterMainOrdering = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_source/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: afterMain.json().revision,
+        step: {
+          name: 'Advisory after',
+          phase: 'afterMain',
+          instruction: '',
+          outputKey: 'advice',
+        },
+      },
+    })
+    expect(invalidAfterMainOrdering.statusCode).toBe(400)
+    expect(invalidAfterMainOrdering.json().error).toContain('final-output modifier must be the last')
+
+    const duplicatedStep = await harness.app.inject({
+      method: 'POST',
+      url: `/api/v1/commands/agent-presets/ap_source/steps/${stepId}/duplicate`,
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: afterMain.json().revision,
+        name: 'Facts Copy',
+      },
+    })
+    expect(duplicatedStep.statusCode).toBe(200)
+    const duplicatedStepId = duplicatedStep.json().stepId as string
+    expect(duplicatedStepId).not.toBe(stepId)
+
+    const duplicatedPreset = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_source/duplicate',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: duplicatedStep.json().revision,
+        name: 'Source Copy',
+      },
+    })
+    expect(duplicatedPreset.statusCode).toBe(200)
+    const duplicatedPresetId = duplicatedPreset.json().presetId as string
+    expect(duplicatedPresetId).not.toBe('ap_source')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const presets = bootstrap.json().database.agentPresets as Array<{ id: string; steps: Array<{ id: string }> }>
+    const source = presets.find((preset) => preset.id === 'ap_source')!
+    const copy = presets.find((preset) => preset.id === duplicatedPresetId)!
+    expect(source.steps.map((candidate) => candidate.id)).toContain(stepId)
+    expect(source.steps.map((candidate) => candidate.id)).toContain(duplicatedStepId)
+    expect(copy.steps.map((candidate) => candidate.id)).not.toContain(stepId)
+    expect(copy.steps).toHaveLength(source.steps.length)
+  })
+
+  it('deletes Agent Presets and clears default, chat, and loadout references atomically', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentContextEnabled: true,
+      agentPresets: [
+        { id: 'ap_delete', name: 'Delete Me', enabled: true, version: 1, steps: [] },
+        { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, steps: [] },
+      ],
+      agentPresetDefaultId: 'ap_delete',
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          agentPresetId: 'ap_delete',
+          agentPresetName: 'Delete Me',
+          personaId: '',
+        },
+        {
+          id: 'loadout-b',
+          name: 'B',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: [],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          agentPresetId: 'ap_keep',
+          agentPresetName: 'Keep Me',
+          personaId: '',
+        },
+      ],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-delete',
+              name: 'Delete chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings: {
+                configured: true,
+                jailbreakToggle: false,
+                agentPresetId: 'ap_delete',
+              },
+            },
+            {
+              id: 'chat-keep',
+              name: 'Keep chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings: {
+                configured: true,
+                jailbreakToggle: false,
+                agentPresetId: 'ap_keep',
+              },
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/commands/agent-presets/ap_delete',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.json()).toMatchObject({
+      revision: 2,
+      event: {
+        type: 'agentPreset.deleted',
+        resource: 'agentPresetDeleted',
+        id: 'ap_delete',
+      },
+      presetId: 'ap_delete',
+      clearedDefault: true,
+      clearedChatCount: 1,
+      clearedLoadoutCount: 1,
+    })
+
+    const projection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/agentPresetDeleted',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projection.statusCode).toBe(200)
+    expect(projection.json().fields.agentPresets).toEqual([
+      { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, steps: [] },
+    ])
+    expect(projection.json().fields.agentPresetDefaultId).toBeUndefined()
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.agentPresets.map((preset: { id: string }) => preset.id)).toEqual(['ap_keep'])
+    expect(bootstrap.json().database.agentPresetDefaultId).toBeUndefined()
+    const chats = bootstrap.json().database.characters[0].chats as Array<{
+      id: string
+      generationSettings?: { agentPresetId?: string }
+    }>
+    expect(chats.find((chat) => chat.id === 'chat-delete')?.generationSettings).not.toHaveProperty('agentPresetId')
+    expect(chats.find((chat) => chat.id === 'chat-keep')?.generationSettings?.agentPresetId).toBe('ap_keep')
+    const loadouts = bootstrap.json().database.loadouts as Array<{
+      id: string
+      agentPresetId?: string
+      agentPresetName?: string
+    }>
+    expect(loadouts.find((loadout) => loadout.id === 'loadout-a')).not.toHaveProperty('agentPresetId')
+    expect(loadouts.find((loadout) => loadout.id === 'loadout-a')).not.toHaveProperty('agentPresetName')
+    expect(loadouts.find((loadout) => loadout.id === 'loadout-b')).toMatchObject({
+      agentPresetId: 'ap_keep',
+      agentPresetName: 'Keep Me',
+    })
+    expect(bootstrap.json().database.agentContextEnabled).toBe(true)
+  })
+})
+
 describe('Phase 9-2c prompt template and item commands', () => {
   it('patches prompt settings and emits the prompt settings event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

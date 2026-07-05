@@ -1,5 +1,6 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import type { AgentPresetRecord, AgentPresetStepRecord } from '../agentPresetRecords'
 import type { MessageTranslation } from '../storage/database.svelte'
 import type { ModelRole } from '../model/modelRoles'
 import type {
@@ -600,6 +601,8 @@ export interface ReorderPresetsCommandInput extends PresetCommandInput {
 
 export type ModelPresetSnapshot = Record<string, unknown>
 export type PromptPresetSnapshot = Record<string, unknown>
+export type AgentPresetSnapshot = Partial<AgentPresetRecord> & Record<string, unknown>
+export type AgentPresetStepSnapshot = Partial<AgentPresetStepRecord> & Record<string, unknown>
 
 export interface ModelPresetCommandInput {
   baseRevision: number
@@ -659,6 +662,63 @@ export interface ImportPromptPresetCommandInput extends PromptPresetCommandInput
 
 export interface ReorderPromptPresetsCommandInput extends PromptPresetCommandInput {
   promptPresetIds: string[]
+}
+
+export interface AgentPresetCommandInput {
+  baseRevision: number
+}
+
+export interface CreateAgentPresetCommandInput extends AgentPresetCommandInput {
+  preset: AgentPresetSnapshot
+}
+
+export interface UpdateAgentPresetCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  patch: AgentPresetSnapshot
+}
+
+export interface DuplicateAgentPresetCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  name?: string
+}
+
+export interface DeleteAgentPresetCommandInput extends AgentPresetCommandInput {
+  presetId: string
+}
+
+export interface ReorderAgentPresetsCommandInput extends AgentPresetCommandInput {
+  presetIds: string[]
+}
+
+export interface SetAgentPresetDefaultCommandInput extends AgentPresetCommandInput {
+  agentPresetId: string | null
+}
+
+export interface CreateAgentPresetStepCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  step: AgentPresetStepSnapshot
+}
+
+export interface UpdateAgentPresetStepCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  stepId: string
+  patch: AgentPresetStepSnapshot
+}
+
+export interface DuplicateAgentPresetStepCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  stepId: string
+  name?: string
+}
+
+export interface DeleteAgentPresetStepCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  stepId: string
+}
+
+export interface ReorderAgentPresetStepsCommandInput extends AgentPresetCommandInput {
+  presetId: string
+  stepIds: string[]
 }
 
 export type ModelProfileSnapshot = Omit<ModelProfileRecord, 'id'> & {
@@ -1606,6 +1666,174 @@ export async function reorderPromptPresetsCommand(
     body: {
       baseRevision: input.baseRevision,
       promptPresetIds: input.promptPresetIds,
+    },
+    signal,
+  })
+}
+
+export async function createAgentPresetCommand(
+  input: CreateAgentPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson('/agent-presets', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      preset: input.preset,
+    },
+    signal,
+  })
+}
+
+export async function updateAgentPresetCommand(
+  input: UpdateAgentPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.patch,
+    },
+    signal,
+  })
+}
+
+export async function duplicateAgentPresetCommand(
+  input: DuplicateAgentPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; sourcePresetId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/duplicate`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      name: input.name,
+    },
+    signal,
+  })
+}
+
+export async function deleteAgentPresetCommand(
+  input: DeleteAgentPresetCommandInput,
+  signal?: AbortSignal | null,
+): Promise<
+  ServerCommandResult<{
+    presetId: string
+    clearedDefault: boolean
+    clearedChatCount: number
+    clearedLoadoutCount: number
+  }>
+> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}`, {
+    method: 'DELETE',
+    body: {
+      baseRevision: input.baseRevision,
+    },
+    signal,
+  })
+}
+
+export async function reorderAgentPresetsCommand(
+  input: ReorderAgentPresetsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentPresetDefaultId: string | null }>> {
+  return requestCommandJson('/agent-presets/reorder', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      presetIds: input.presetIds,
+    },
+    signal,
+  })
+}
+
+export async function setAgentPresetDefaultCommand(
+  input: SetAgentPresetDefaultCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ agentPresetDefaultId: string | null }>> {
+  return requestCommandJson('/agent-presets/default', {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      agentPresetId: input.agentPresetId,
+    },
+    signal,
+  })
+}
+
+export async function createAgentPresetStepCommand(
+  input: CreateAgentPresetStepCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; stepId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/steps`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      step: input.step,
+    },
+    signal,
+  })
+}
+
+export async function updateAgentPresetStepCommand(
+  input: UpdateAgentPresetStepCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; stepId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/steps/${encodeURIComponent(input.stepId)}`,
+    {
+      method: 'PATCH',
+      body: {
+        baseRevision: input.baseRevision,
+        patch: input.patch,
+      },
+      signal,
+    },
+  )
+}
+
+export async function duplicateAgentPresetStepCommand(
+  input: DuplicateAgentPresetStepCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; stepId: string; sourceStepId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/steps/${encodeURIComponent(input.stepId)}/duplicate`,
+    {
+      method: 'POST',
+      body: {
+        baseRevision: input.baseRevision,
+        name: input.name,
+      },
+      signal,
+    },
+  )
+}
+
+export async function deleteAgentPresetStepCommand(
+  input: DeleteAgentPresetStepCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string; stepId: string }>> {
+  return requestCommandJson(
+    `/agent-presets/${encodeURIComponent(input.presetId)}/steps/${encodeURIComponent(input.stepId)}`,
+    {
+      method: 'DELETE',
+      body: {
+        baseRevision: input.baseRevision,
+      },
+      signal,
+    },
+  )
+}
+
+export async function reorderAgentPresetStepsCommand(
+  input: ReorderAgentPresetStepsCommandInput,
+  signal?: AbortSignal | null,
+): Promise<ServerCommandResult<{ presetId: string }>> {
+  return requestCommandJson(`/agent-presets/${encodeURIComponent(input.presetId)}/steps/reorder`, {
+    method: 'POST',
+    body: {
+      baseRevision: input.baseRevision,
+      stepIds: input.stepIds,
     },
     signal,
   })

@@ -10,6 +10,8 @@ import {
   canUseServerCommands,
   appendMessageCommand,
   bulkPluginStorageCommand,
+  createAgentPresetCommand,
+  createAgentPresetStepCommand,
   createChatCommand,
   createChatFolderCommand,
   createAndSelectCharacterCommand,
@@ -27,6 +29,8 @@ import {
   createGlobalLorebookCommand,
   convertLegacyModelProfilesCommand,
   copyPresetCommand,
+  deleteAgentPresetCommand,
+  deleteAgentPresetStepCommand,
   deleteCharacterLorebookEntryCommand,
   deleteChatCommand,
   deleteChatFolderCommand,
@@ -57,6 +61,8 @@ import {
   patchSettingsGroup,
   importPresetCommand,
   persistGenerationResultCommand,
+  duplicateAgentPresetCommand,
+  duplicateAgentPresetStepCommand,
   duplicateModelProfileCommand,
   putPluginStorageCommand,
   saveChatGenerationSettingsCommand,
@@ -73,6 +79,8 @@ import {
   reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
   reorderPromptItemsCommand,
+  reorderAgentPresetsCommand,
+  reorderAgentPresetStepsCommand,
   reorderPresetsCommand,
   runServerCommand,
   runServerPresetCommand,
@@ -88,6 +96,7 @@ import {
   replaceModuleTriggersCommand,
   selectCharacterCommand,
   selectGlobalLorebookCommand,
+  setAgentPresetDefaultCommand,
   settingsGroupForKey,
   selectPersonaCommand,
   selectPluginProviderCommand,
@@ -98,6 +107,8 @@ import {
   updateCharacterCommand,
   updateChatCommand,
   updateChatFolderCommand,
+  updateAgentPresetCommand,
+  updateAgentPresetStepCommand,
   updateGlobalLorebookCommand,
   updateLoadoutCommand,
   updateMessageCommand,
@@ -872,6 +883,194 @@ describe('server command API adapter', () => {
         method: 'POST',
         body: {
           baseRevision: 8,
+        },
+      },
+    ])
+  })
+
+  it('dispatches Agent Preset commands through typed helpers', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      const event = { type: 'agentPreset.test', revision: 99, resource: 'agentPreset' }
+      if (url.endsWith('/agent-presets/ap_a/steps/aps_a/duplicate')) {
+        return { revision: 99, event, presetId: 'ap_a', stepId: 'aps_copy', sourceStepId: 'aps_a' }
+      }
+      if (url.endsWith('/agent-presets/ap_a/steps/aps_b')) {
+        return { revision: 99, event, presetId: 'ap_a', stepId: 'aps_b' }
+      }
+      if (url.endsWith('/agent-presets/ap_a/steps/aps_a')) {
+        return { revision: 99, event, presetId: 'ap_a', stepId: 'aps_a' }
+      }
+      if (url.endsWith('/agent-presets/ap_a/steps/reorder')) {
+        return { revision: 99, event, presetId: 'ap_a' }
+      }
+      if (url.endsWith('/agent-presets/ap_a/steps')) {
+        return { revision: 99, event, presetId: 'ap_a', stepId: 'aps_a' }
+      }
+      if (url.endsWith('/agent-presets/default')) {
+        return { revision: 99, event, agentPresetDefaultId: 'ap_b' }
+      }
+      if (url.endsWith('/agent-presets/reorder')) {
+        return { revision: 99, event, agentPresetDefaultId: 'ap_a' }
+      }
+      if (url.endsWith('/agent-presets/ap_a/duplicate')) {
+        return { revision: 99, event, presetId: 'ap_copy', sourcePresetId: 'ap_a' }
+      }
+      if (url.endsWith('/agent-presets/ap_b')) {
+        return {
+          revision: 99,
+          event: { type: 'agentPreset.deleted', revision: 99, resource: 'agentPresetDeleted', id: 'ap_b' },
+          presetId: 'ap_b',
+          clearedDefault: true,
+          clearedChatCount: 2,
+          clearedLoadoutCount: 1,
+        }
+      }
+      if (url.endsWith('/agent-presets/ap_a')) {
+        return { revision: 99, event, presetId: 'ap_a' }
+      }
+      return { revision: 99, event, presetId: 'ap_a' }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createAgentPresetCommand({
+      baseRevision: 1,
+      preset: { name: 'Created' },
+    })
+    await updateAgentPresetCommand({
+      baseRevision: 2,
+      presetId: 'ap_a',
+      patch: { name: 'Updated', enabled: false },
+    })
+    await duplicateAgentPresetCommand({
+      baseRevision: 3,
+      presetId: 'ap_a',
+      name: 'Copy',
+    })
+    await deleteAgentPresetCommand({
+      baseRevision: 4,
+      presetId: 'ap_b',
+    })
+    await reorderAgentPresetsCommand({
+      baseRevision: 5,
+      presetIds: ['ap_b', 'ap_a'],
+    })
+    await setAgentPresetDefaultCommand({
+      baseRevision: 6,
+      agentPresetId: 'ap_b',
+    })
+    await createAgentPresetStepCommand({
+      baseRevision: 7,
+      presetId: 'ap_a',
+      step: { name: 'Step' },
+    })
+    await updateAgentPresetStepCommand({
+      baseRevision: 8,
+      presetId: 'ap_a',
+      stepId: 'aps_a',
+      patch: { outputKey: 'facts' },
+    })
+    await duplicateAgentPresetStepCommand({
+      baseRevision: 9,
+      presetId: 'ap_a',
+      stepId: 'aps_a',
+      name: 'Step Copy',
+    })
+    await deleteAgentPresetStepCommand({
+      baseRevision: 10,
+      presetId: 'ap_a',
+      stepId: 'aps_b',
+    })
+    await reorderAgentPresetStepsCommand({
+      baseRevision: 11,
+      presetId: 'ap_a',
+      stepIds: ['aps_b', 'aps_a'],
+    })
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/agent-presets',
+        method: 'POST',
+        body: {
+          baseRevision: 1,
+          preset: { name: 'Created' },
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a',
+        method: 'PATCH',
+        body: {
+          baseRevision: 2,
+          patch: { name: 'Updated', enabled: false },
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/duplicate',
+        method: 'POST',
+        body: {
+          baseRevision: 3,
+          name: 'Copy',
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_b',
+        method: 'DELETE',
+        body: {
+          baseRevision: 4,
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 5,
+          presetIds: ['ap_b', 'ap_a'],
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/default',
+        method: 'POST',
+        body: {
+          baseRevision: 6,
+          agentPresetId: 'ap_b',
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/steps',
+        method: 'POST',
+        body: {
+          baseRevision: 7,
+          step: { name: 'Step' },
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/steps/aps_a',
+        method: 'PATCH',
+        body: {
+          baseRevision: 8,
+          patch: { outputKey: 'facts' },
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/steps/aps_a/duplicate',
+        method: 'POST',
+        body: {
+          baseRevision: 9,
+          name: 'Step Copy',
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/steps/aps_b',
+        method: 'DELETE',
+        body: {
+          baseRevision: 10,
+        },
+      },
+      {
+        url: '/api/v1/commands/agent-presets/ap_a/steps/reorder',
+        method: 'POST',
+        body: {
+          baseRevision: 11,
+          stepIds: ['aps_b', 'aps_a'],
         },
       },
     ])

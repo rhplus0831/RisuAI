@@ -648,6 +648,13 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'modelRoleProfiles',
       'modelRuntimeDefaults',
     ])
+    expect(resourceProjectionFields('agentPreset')).toEqual(['agentPresets', 'agentPresetDefaultId'])
+    expect(resourceProjectionFields('agentPresetDeleted')).toEqual([
+      'agentPresets',
+      'agentPresetDefaultId',
+      'characters',
+      'loadouts',
+    ])
     expect(resourceProjectionFields('persona')).toEqual([
       'personas',
       'selectedPersona',

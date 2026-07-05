@@ -109,6 +109,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   promptPreset: PROMPT_PRESET_PROJECTION_FIELDS,
   legacyBotPreset: ['botPresets', 'botPresetsId', 'modelPresets', 'modelPresetsId', 'promptPresets', 'promptPresetsId'],
   modelProfile: ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'],
+  agentPreset: ['agentPresets', 'agentPresetDefaultId'],
+  // Preset deletion can atomically clear chat-scoped selections and loadout
+  // references in addition to the settings-backed preset collection.
+  agentPresetDeleted: ['agentPresets', 'agentPresetDefaultId', 'characters', 'loadouts'],
   // `prompt` writes scattered settings scalars, so it full-bootstraps via
   // SPRAWLING_FULL_PROJECTION_RESOURCES. Prompt-item commands edit the
   // `promptTemplate` collection, so foreign refreshes reship that field.

@@ -230,6 +230,19 @@ import {
   updateModelRuntimeDefaultsCommand,
 } from '../commands/modelProfiles.js'
 import {
+  createAgentPresetCommand,
+  createAgentPresetStepCommand,
+  deleteAgentPresetCommand,
+  deleteAgentPresetStepCommand,
+  duplicateAgentPresetCommand,
+  duplicateAgentPresetStepCommand,
+  reorderAgentPresetsCommand,
+  reorderAgentPresetStepsCommand,
+  setAgentPresetDefaultCommand,
+  updateAgentPresetCommand,
+  updateAgentPresetStepCommand,
+} from '../commands/agentPresets.js'
+import {
   createPluginRecord,
   ensurePluginCommandDatabase,
   ensurePluginRecords,
@@ -1648,6 +1661,273 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = createAgentPresetCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/agent-presets/:presetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = updateAgentPresetCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/agent-presets/:presetId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = deleteAgentPresetCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/:presetId/duplicate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = duplicateAgentPresetCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = reorderAgentPresetsCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/default', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = setAgentPresetDefaultCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/:presetId/steps', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = createAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/agent-presets/:presetId/steps/:stepId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const params = req.params as { presetId?: unknown; stepId?: unknown }
+      const result = updateAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: params.presetId as string,
+        stepId: params.stepId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.delete('/api/v1/commands/agent-presets/:presetId/steps/:stepId', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const params = req.params as { presetId?: unknown; stepId?: unknown }
+      const result = deleteAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: params.presetId as string,
+        stepId: params.stepId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/:presetId/steps/:stepId/duplicate', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const params = req.params as { presetId?: unknown; stepId?: unknown }
+      const result = duplicateAgentPresetStepCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: params.presetId as string,
+        stepId: params.stepId as string,
+      })
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.post('/api/v1/commands/agent-presets/:presetId/steps/reorder', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = req.body ?? {}
+      const baseRevision = readBaseRevision(body)
+      const result = reorderAgentPresetStepsCommand({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        body,
+        presetId: (req.params as { presetId?: unknown }).presetId as string,
       })
       return {
         revision: result.revision,
