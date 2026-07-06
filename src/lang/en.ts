@@ -262,6 +262,8 @@ export const languageEnglish = {
       'If enabled with Auto Translation option on, it will automatically translate only the messages that the user has translated previously.',
     presetChain:
       'If it is not blank, the preset will be changed and applied randomly every time when user sends a message in the preset list in this input. Preset list should be seperated by comma, for example, `preset1,preset2`.',
+    agentPresetPreparedInputs:
+      'Prepared inputs are the context sections collected for this agent step before it runs. Selected sources are inserted into the step prompt, limited by Max input chars, and the shown CBS names identify each input scope. Main draft is only available for after-main steps.',
     legacyMediaFindings:
       'If enabled, it will use the old method to find media assets, without using the additional search algorithm.',
     comfyWorkflow:

@@ -6,6 +6,7 @@
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import Help from 'src/lib/Others/Help.svelte'
   import {
     createAgentPresetStep,
     deleteAgentPresetStep,
@@ -837,7 +838,12 @@
                 {/if}
               </div>
               <div class="rounded-md border border-darkborderc p-3">
-                <h6 class="text-sm font-semibold">{language.agentPresets.preparedInputScopesLabel}</h6>
+                <h6
+                  class="inline-flex items-center gap-1 text-sm font-semibold"
+                  data-risu-agent-preset-prepared-inputs-heading>
+                  {language.agentPresets.preparedInputScopesLabel}
+                  <Help key="agentPresetPreparedInputs" name={language.agentPresets.preparedInputScopesLabel} />
+                </h6>
                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                   {#each AGENT_PRESET_STEP_INPUT_SCOPES as scope (scope)}
                     <div class="flex flex-col gap-1">

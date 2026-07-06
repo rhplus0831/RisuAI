@@ -259,6 +259,11 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain(language.agentPresets.maxOutputCharsLabel)
     expect(target.textContent).toContain(language.agentPresets.temperatureLabel)
     expect(target.textContent).toContain(language.agentPresets.preparedInputScopesLabel)
+    expect(
+      target.querySelector(
+        `[data-risu-agent-preset-prepared-inputs-heading] button[title="${language.agentPresets.preparedInputScopesLabel} ${language.showHelp}"]`,
+      ),
+    ).toBeTruthy()
     expect(target.textContent).toContain(language.agentPresets.preparedInputCbsNameLabel)
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.currentUserMessage)
     expect(target.textContent).toContain('currentUserMessage')
