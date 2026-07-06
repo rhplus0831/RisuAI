@@ -840,10 +840,18 @@
                 <h6 class="text-sm font-semibold">{language.agentPresets.preparedInputScopesLabel}</h6>
                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
                   {#each AGENT_PRESET_STEP_INPUT_SCOPES as scope (scope)}
-                    <CheckInput
-                      check={draftStepInputScopes.includes(scope)}
-                      name={language.agentPresets.inputScopeLabels[scope]}
-                      onChange={(value) => toggleInputScope(scope, value)} />
+                    <div class="flex flex-col gap-1">
+                      <CheckInput
+                        check={draftStepInputScopes.includes(scope)}
+                        name={language.agentPresets.inputScopeLabels[scope]}
+                        onChange={(value) => toggleInputScope(scope, value)} />
+                      <span class="pl-7 text-xs text-textcolor2" data-risu-agent-preset-input-scope-cbs>
+                        {language.agentPresets.preparedInputCbsNameLabel}:
+                        <code class="rounded-sm bg-darkbg px-1 py-0.5 font-mono text-[0.7rem] text-textcolor">
+                          {scope}
+                        </code>
+                      </span>
+                    </div>
                   {/each}
                 </div>
               </div>

@@ -259,8 +259,11 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain(language.agentPresets.maxOutputCharsLabel)
     expect(target.textContent).toContain(language.agentPresets.temperatureLabel)
     expect(target.textContent).toContain(language.agentPresets.preparedInputScopesLabel)
+    expect(target.textContent).toContain(language.agentPresets.preparedInputCbsNameLabel)
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.currentUserMessage)
+    expect(target.textContent).toContain('currentUserMessage')
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.mainDraft)
+    expect(target.textContent).toContain('mainDraft')
   })
 
   it('refreshes the open editor step list when projection replaces the preset record', async () => {

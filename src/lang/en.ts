@@ -2160,6 +2160,7 @@ export const languageEnglish = {
     maxOutputCharsLabel: 'Max output chars',
     temperatureLabel: 'Temperature',
     preparedInputScopesLabel: 'Prepared inputs',
+    preparedInputCbsNameLabel: 'CBS name',
     inputScopeLabels: {
       recentChatTail: 'Recent chat tail',
       chatSearchSnippets: 'Chat search snippets',
