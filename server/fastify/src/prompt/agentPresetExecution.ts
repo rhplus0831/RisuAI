@@ -14,6 +14,7 @@ import {
 } from '../../../../src/ts/model/modelProfileResolver.js'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { Chat, Database, Message, character } from '../../../../src/ts/storage/database.svelte'
+import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import { dispatchChatProvider } from './chatDispatch.js'
 import { activateLorebook } from './lorebook.js'
@@ -41,6 +42,7 @@ export interface AgentPresetPreparedInputContext {
   currentChat: Chat
   currentUserMessage?: string
   previousAgentOutputs?: readonly AgentPresetPreviousOutput[]
+  agentOutputs?: Readonly<Record<string, string>>
   mainDraft?: string
 }
 
@@ -70,6 +72,7 @@ export interface AgentPresetPreparedInputCollection {
 export interface BuildAgentPresetStepMessagesInput {
   step: AgentPresetStepRecord
   preparedInputs: AgentPresetPreparedInputCollection
+  agentOutputs?: Readonly<Record<string, string>>
 }
 
 export interface AgentPresetProviderDispatchArgs {
@@ -297,7 +300,7 @@ export function collectAgentPresetPreparedInputs(
 }
 
 export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessagesInput): OpenAIChat[] {
-  const { step, preparedInputs } = input
+  const { step, preparedInputs, agentOutputs } = input
   const system = [
     'You are executing one RisuAI Agent Preset helper step.',
     `Step name: ${step.name}`,
@@ -311,7 +314,10 @@ export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessages
     'Use only the context embedded in the author instruction. Do not include tool calls.',
   ].join('\n')
 
-  const authorInstruction = expandPreparedInputCbs(step.instruction, preparedInputs).trim()
+  const authorInstruction = expandAgentPresetOutputCbs(
+    expandPreparedInputCbs(step.instruction, preparedInputs),
+    (key) => (agentOutputs && Object.prototype.hasOwnProperty.call(agentOutputs, key) ? agentOutputs[key] : ''),
+  ).trim()
 
   return [
     { role: 'system', content: system },
@@ -376,7 +382,11 @@ export async function executeAgentPresetStep(
 
   const preparedInputStep = stepWithReferencedPreparedInputScopes(input.step)
   const preparedInputs = collectAgentPresetPreparedInputs(preparedInputStep, input)
-  const messages = buildAgentPresetStepMessages({ step: input.step, preparedInputs })
+  const messages = buildAgentPresetStepMessages({
+    step: input.step,
+    preparedInputs,
+    agentOutputs: input.agentOutputs,
+  })
   const profile = resolveAgentPresetStepProfile(input)
   if (!profile) {
     return failureResult({
@@ -500,9 +510,10 @@ export async function executeAgentPresetPhase(
   const maxConcurrency = normalizeMaxConcurrency(input.maxConcurrency)
   const executeStep = input.executeStep ?? executeAgentPresetStep
   const resultByStepId = new Map<string, AgentPresetStepExecutionResult>()
-  const previousOutputs: AgentPresetPreviousOutput[] = [...(input.initialPreviousAgentOutputs ?? [])]
+  const initialPreviousOutputs = input.initialPreviousAgentOutputs ?? input.previousAgentOutputs ?? []
+  const previousOutputs: AgentPresetPreviousOutput[] = [...initialPreviousOutputs]
   const successfulOutputs: AgentPresetPreviousOutput[] = []
-  const outputTextByKey: Record<string, string> = {}
+  const outputTextByKey: Record<string, string> = previousOutputsToOutputTextByKey(previousOutputs)
 
   for (const level of input.plan.dependencyLevels) {
     const levelSteps = level.stepIds
@@ -517,6 +528,7 @@ export async function executeAgentPresetPhase(
         currentChat: input.currentChat,
         currentUserMessage: input.currentUserMessage,
         previousAgentOutputs: previousOutputs,
+        agentOutputs: { ...outputTextByKey },
         mainDraft: input.mainDraft,
         step,
         resolvedMainProfile: input.resolvedMainProfile,
@@ -565,6 +577,12 @@ export async function executeAgentPresetPhase(
   }
 
   return phaseResult(input.plan.phase, input.plan, resultByStepId, successfulOutputs, previousOutputs, outputTextByKey)
+}
+
+function previousOutputsToOutputTextByKey(outputs: readonly AgentPresetPreviousOutput[]): Record<string, string> {
+  const byKey: Record<string, string> = {}
+  for (const output of outputs) byKey[output.outputKey] = output.text
+  return byKey
 }
 
 export function agentPresetStepResultErrorMessage(result: AgentPresetStepExecutionResult): string | undefined {

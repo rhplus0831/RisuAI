@@ -2119,6 +2119,7 @@ export const languageEnglish = {
     statusReady: 'Ready',
     statusDisabled: 'Disabled',
     statusInvalid: 'Invalid',
+    statusIncomplete: 'Incomplete',
     statusModelNotReady: 'Model not ready',
     missingSelectedShort: 'Missing Agent Preset',
     missingSelected: (id: string) => `Missing Agent Preset: ${id}`,

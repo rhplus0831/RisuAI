@@ -342,6 +342,104 @@ describe('agent preset resolver', () => {
     })
   })
 
+  it('marks unavailable agent CBS references as incomplete during planning', () => {
+    const forwardReference = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            steps: [
+              step({ id: 'aps_a', name: 'A', outputKey: 'a', instruction: 'Use {{agent::b}}.' }),
+              step({ id: 'aps_b', name: 'B', outputKey: 'b', dependencies: ['aps_a'] }),
+            ],
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(forwardReference.status).toBe('incomplete')
+    if (forwardReference.status !== 'incomplete') throw new Error('expected incomplete forward reference')
+    expect(forwardReference.issues).toContainEqual(
+      expect.objectContaining({
+        code: 'unavailable_agent_output',
+        message: expect.stringContaining('{{agent::b}}'),
+      }),
+    )
+
+    const sameLevelReference = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            steps: [
+              step({ id: 'aps_a', name: 'A', outputKey: 'a' }),
+              step({ id: 'aps_b', name: 'B', outputKey: 'b', instruction: 'Use {{agent::a}}.' }),
+            ],
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(sameLevelReference.status).toBe('incomplete')
+    if (sameLevelReference.status !== 'incomplete') throw new Error('expected incomplete same-level reference')
+    expect(sameLevelReference.issues[0]?.message).toContain('same-level step')
+
+    const missingReference = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [preset({ steps: [step({ instruction: 'Use {{agent::missing}}.' })] })],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(missingReference.status).toBe('incomplete')
+    if (missingReference.status !== 'incomplete') throw new Error('expected incomplete missing reference')
+    expect(missingReference.issues[0]?.message).toContain('no enabled Agent Preset output key')
+  })
+
+  it('allows agent CBS references when the output is already completed by phase order', () => {
+    const result = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            steps: [
+              step({ id: 'aps_a', name: 'A', outputKey: 'a' }),
+              step({ id: 'aps_b', name: 'B', outputKey: 'b', dependencies: ['aps_a'], instruction: '{{agent::a}}' }),
+              step({
+                id: 'aps_after',
+                name: 'After',
+                phase: 'afterMain',
+                outputKey: 'after',
+                instruction: '{{agent::a}}',
+              }),
+            ],
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('expected ready references')
+
+    const beforeMainFuture = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            steps: [
+              step({ id: 'aps_before', outputKey: 'before', instruction: '{{agent::after}}' }),
+              step({ id: 'aps_after', phase: 'afterMain', outputKey: 'after' }),
+            ],
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(beforeMainFuture.status).toBe('incomplete')
+    if (beforeMainFuture.status !== 'incomplete') throw new Error('expected incomplete cross-phase reference')
+    expect(beforeMainFuture.issues[0]?.message).toContain('after the main response')
+  })
+
   it('summarizes missing and invalid output keys for UI status surfaces', () => {
     const result = resolveAgentPresetForChat({
       database: db({

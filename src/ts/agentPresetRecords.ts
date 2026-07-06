@@ -113,6 +113,7 @@ export type AgentPresetValidationIssueCode =
   | 'invalid_destination'
   | 'invalid_failure_policy'
   | 'invalid_after_main_modifier'
+  | 'unavailable_agent_output'
 
 export interface AgentPresetValidationIssue {
   code: AgentPresetValidationIssueCode

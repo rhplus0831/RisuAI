@@ -205,6 +205,23 @@ describe('Agent Preset prepared inputs', () => {
     expect(messages[1].content).not.toContain('Lantern promise?')
     expect(messages[1].content).not.toContain('Remember the lighthouse promise.')
   })
+
+  it('expands agent output CBS in step instructions from the provided output map', () => {
+    const preparedInputs = collectAgentPresetPreparedInputs(step(), {
+      database: db(),
+      currentChar: char(),
+      currentChat: chat(),
+    })
+
+    const messages = buildAgentPresetStepMessages({
+      step: step({ instruction: 'Prior result:\n{{agent::context}}' }),
+      preparedInputs,
+      agentOutputs: { context: 'already-generated context' },
+    })
+
+    expect(messages[1].content).toContain('Prior result:\nalready-generated context')
+    expect(messages[1].content).not.toContain('{{agent::context}}')
+  })
 })
 
 describe('Agent Preset phase execution', () => {
@@ -308,6 +325,70 @@ describe('Agent Preset phase execution', () => {
     expect(result.blockingFailure).toBeUndefined()
     expect(result.successfulOutputs.map((output) => output.outputKey)).toEqual(['first', 'second'])
     expect(result.previousAgentOutputs.map((output) => output.text)).toEqual(['first-output', 'second-output'])
+  })
+
+  it('exposes completed output keys only after their dependency level has finished', async () => {
+    const database = db()
+    const first = step({ id: 'aps_first', outputKey: 'first', name: 'First' })
+    const second = step({
+      id: 'aps_second',
+      outputKey: 'second',
+      name: 'Second',
+      dependencies: ['aps_first'],
+    })
+    const sibling = step({ id: 'aps_sibling', outputKey: 'sibling', name: 'Sibling' })
+    const seen: Record<string, Record<string, string>> = {}
+    const executeStep: AgentPresetStepExecutor = async (input) => {
+      seen[input.step.id] = { ...(input.agentOutputs ?? {}) }
+      return successResult(input.step, `${input.step.outputKey}-output`)
+    }
+
+    const result = await executeAgentPresetPhase({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      plan: beforeMainPlan(database, [first, second, sibling]),
+      maxConcurrency: 1,
+      executeStep,
+    })
+
+    expect(seen.aps_first).toEqual({})
+    expect(seen.aps_sibling).toEqual({})
+    expect(seen.aps_second).toEqual({ first: 'first-output', sibling: 'sibling-output' })
+    expect(result.outputTextByKey).toEqual({
+      first: 'first-output',
+      sibling: 'sibling-output',
+      second: 'second-output',
+    })
+  })
+
+  it('carries before-main output keys into later phases', async () => {
+    const database = db()
+    const after = step({ id: 'aps_after', phase: 'afterMain', outputKey: 'after', name: 'After' })
+    let seen: Record<string, string> | undefined
+    const executeStep: AgentPresetStepExecutor = async (input) => {
+      seen = { ...(input.agentOutputs ?? {}) }
+      return successResult(input.step, 'after-output')
+    }
+
+    await executeAgentPresetPhase({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      previousAgentOutputs: [
+        {
+          stepId: 'aps_before',
+          stepName: 'Before',
+          phase: 'beforeMain',
+          outputKey: 'before',
+          text: 'before-output',
+        },
+      ],
+      plan: planAgentPreset({ database, preset: preset([after]) }).plan!.afterMain,
+      executeStep,
+    })
+
+    expect(seen).toEqual({ before: 'before-output' })
   })
 
   it('continues after optional failures but blocks required dependency propagation', async () => {

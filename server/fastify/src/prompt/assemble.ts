@@ -1184,11 +1184,15 @@ export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: 
 function createAgentPresetRuntimeState(resolution: AgentPresetResolution): AgentPresetRuntimeState {
   return {
     resolution,
-    plan: resolution.status === 'ready' || resolution.status === 'model_not_ready' ? resolution.plan : undefined,
+    plan:
+      resolution.status === 'ready' || resolution.status === 'model_not_ready' || resolution.status === 'incomplete'
+        ? resolution.plan
+        : undefined,
     preset:
       resolution.status === 'ready' ||
       resolution.status === 'disabled' ||
       resolution.status === 'invalid' ||
+      resolution.status === 'incomplete' ||
       resolution.status === 'model_not_ready'
         ? resolution.preset
         : undefined,
@@ -1251,6 +1255,12 @@ function agentPresetResolutionError(
       })
     case 'invalid':
       return new AgentPresetGenerationError(`Selected Agent Preset is invalid: ${resolution.preset.name}`, {
+        presetId: resolution.preset.id,
+        presetName: resolution.preset.name,
+        diagnostics: { status: resolution.status, issues: resolution.issues, summary: resolution.summary },
+      })
+    case 'incomplete':
+      return new AgentPresetGenerationError(`Selected Agent Preset is incomplete: ${resolution.preset.name}`, {
         presetId: resolution.preset.id,
         presetName: resolution.preset.name,
         diagnostics: { status: resolution.status, issues: resolution.issues, summary: resolution.summary },

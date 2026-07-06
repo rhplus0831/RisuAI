@@ -5,6 +5,7 @@ import type { LuaExecBudget } from './luaRuntime.js'
 import { risuChatParser } from '../../../../src/ts/parser/risuChatParser'
 import { clearActivePromptScope, isActivePromptScopeDirty, setActivePromptScope } from './promptScope.js'
 import { AgentPresetGenerationError } from './agentPresetExecution.js'
+import { expandAgentPresetOutputCbs } from '../../../../src/ts/agentPresetReferences'
 
 /**
  * Server-side `risuChatParser` entry point.
@@ -43,7 +44,7 @@ export interface ExpandContext {
   runVar?: boolean
   /** Per-call slot map; consumed by `{{slot::X}}`. */
   slot?: Record<string, string>
-  /** Named before-main Agent Preset outputs consumed by `{{agent::name}}`. */
+  /** Named before-main Agent Preset outputs consumed by `{{agent::key}}`. */
   agentOutputs?: Record<string, string>
   /** Whether a named Agent Preset output is allowed to disappear. */
   agentOutputRequired?: Record<string, boolean>
@@ -110,10 +111,8 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
   }
 }
 
-const AGENT_PRESET_OUTPUT_RE = /\{\{\s*agent::([A-Za-z_][A-Za-z0-9_]{0,63})\s*\}\}/g
-
 function expandAgentPresetOutputs(input: string, ctx: ExpandContext): string {
-  return input.replace(AGENT_PRESET_OUTPUT_RE, (_token, key: string) => {
+  return expandAgentPresetOutputCbs(input, (key) => {
     const value = ctx.agentOutputs?.[key]
     if (typeof value === 'string') return value
     if (ctx.agentOutputRequired?.[key]) {

@@ -10,6 +10,7 @@ import {
   isValidAgentPresetOutputKey,
   validateAgentPresetRecord,
 } from './agentPresetRecords'
+import { agentPresetOutputReferences } from './agentPresetReferences'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
   modelProfileGenerationBlockReason,
@@ -35,7 +36,14 @@ const INPUT_SCOPE_ORDER = new Map(
   AGENT_PRESET_STEP_INPUT_SCOPES.map((scope, index): [AgentPresetStepInputScope, number] => [scope, index]),
 )
 
-export type AgentPresetResolutionStatus = 'none' | 'ready' | 'disabled' | 'missing' | 'invalid' | 'model_not_ready'
+export type AgentPresetResolutionStatus =
+  | 'none'
+  | 'ready'
+  | 'disabled'
+  | 'missing'
+  | 'invalid'
+  | 'incomplete'
+  | 'model_not_ready'
 
 export type AgentPresetDirectModifierStatus = 'none' | 'valid' | 'multiple' | 'not_last'
 
@@ -179,6 +187,7 @@ export interface AgentPresetStatusSummary {
 export interface AgentPresetPlanningResult {
   ready: boolean
   issues: readonly AgentPresetValidationIssue[]
+  incompleteIssues: readonly AgentPresetValidationIssue[]
   modelReadiness: readonly AgentPresetStepModelReadiness[]
   plan?: AgentPresetExecutionPlan
 }
@@ -232,6 +241,15 @@ export type AgentPresetResolution =
       preset: AgentPresetRecord
       plan: AgentPresetExecutionPlan
       modelReadiness: readonly AgentPresetStepModelReadiness[]
+      summary: AgentPresetStatusSummary
+    }
+  | {
+      status: 'incomplete'
+      ready: false
+      selectedPresetId: string
+      preset: AgentPresetRecord
+      plan: AgentPresetExecutionPlan
+      issues: readonly AgentPresetValidationIssue[]
       summary: AgentPresetStatusSummary
     }
   | {
@@ -300,6 +318,23 @@ export function resolveAgentPresetForChat(input: ResolveAgentPresetForChatInput)
     }
   }
 
+  if (planning.incompleteIssues.length > 0) {
+    return {
+      status: 'incomplete',
+      ready: false,
+      selectedPresetId,
+      preset,
+      plan: planning.plan,
+      issues: planning.incompleteIssues,
+      summary: createAgentPresetStatusSummary({
+        status: 'incomplete',
+        preset,
+        issues: [...planning.issues, ...planning.incompleteIssues],
+        modelReadiness: planning.modelReadiness,
+      }),
+    }
+  }
+
   if (!planning.ready) {
     return {
       status: 'model_not_ready',
@@ -340,6 +375,7 @@ export function planAgentPreset(input: PlanAgentPresetInput): AgentPresetPlannin
     return {
       ready: false,
       issues,
+      incompleteIssues: [],
       modelReadiness: [],
     }
   }
@@ -350,10 +386,12 @@ export function planAgentPreset(input: PlanAgentPresetInput): AgentPresetPlannin
   )
   const modelReadinessByStepId = new Map(modelReadiness.map((readiness) => [readiness.stepId, readiness]))
   const plan = buildExecutionPlan(input.preset, enabledSteps, modelReadinessByStepId)
+  const incompleteIssues = validateAgentOutputReferenceAvailability(input.preset, plan)
 
   return {
-    ready: modelReadiness.every((readiness) => readiness.ready),
+    ready: modelReadiness.every((readiness) => readiness.ready) && incompleteIssues.length === 0,
     issues,
+    incompleteIssues,
     modelReadiness,
     plan,
   }
@@ -449,6 +487,79 @@ function buildExecutionPlan(
     })),
     ...(finalOutputModifier ? { finalOutputModifierStepId: finalOutputModifier.id } : {}),
   }
+}
+
+function validateAgentOutputReferenceAvailability(
+  preset: AgentPresetRecord,
+  plan: AgentPresetExecutionPlan,
+): AgentPresetValidationIssue[] {
+  const issues: AgentPresetValidationIssue[] = []
+  const stepIndexById = new Map(preset.steps.map((step, index) => [step.id, index]))
+  const producersByKey = new Map<string, AgentPresetPlannedStep[]>()
+
+  for (const planned of plan.stableSteps) {
+    const producers = producersByKey.get(planned.step.outputKey) ?? []
+    producers.push(planned)
+    producersByKey.set(planned.step.outputKey, producers)
+  }
+
+  for (const consumer of plan.stableSteps) {
+    const references = agentPresetOutputReferences(consumer.step.instruction)
+    if (references.length === 0) continue
+    const path = `agentPreset.steps[${stepIndexById.get(consumer.step.id) ?? consumer.stableIndex}].instruction`
+
+    for (const reference of references) {
+      const producers = producersByKey.get(reference.key) ?? []
+      if (producers.length === 0) {
+        issues.push({
+          code: 'unavailable_agent_output',
+          path,
+          message: `Agent CBS reference ${reference.token} has no enabled Agent Preset output key "${reference.key}".`,
+        })
+        continue
+      }
+
+      if (producers.some((producer) => isAgentOutputAvailableToStep(producer, consumer))) continue
+
+      issues.push({
+        code: 'unavailable_agent_output',
+        path,
+        message: unavailableAgentOutputMessage(reference.token, reference.key, consumer, producers),
+      })
+    }
+  }
+
+  return issues
+}
+
+function isAgentOutputAvailableToStep(producer: AgentPresetPlannedStep, consumer: AgentPresetPlannedStep): boolean {
+  if (producer.step.id === consumer.step.id) return false
+  if (consumer.step.phase === 'beforeMain') {
+    return producer.step.phase === 'beforeMain' && producer.dependencyLevel < consumer.dependencyLevel
+  }
+  if (producer.step.phase === 'beforeMain') return true
+  return producer.step.phase === 'afterMain' && producer.dependencyLevel < consumer.dependencyLevel
+}
+
+function unavailableAgentOutputMessage(
+  token: string,
+  key: string,
+  consumer: AgentPresetPlannedStep,
+  producers: readonly AgentPresetPlannedStep[],
+): string {
+  const producerSummary = producers
+    .map((producer) => `${producer.step.name} (${producer.step.phase}, level ${producer.dependencyLevel})`)
+    .join(', ')
+
+  if (consumer.step.phase === 'beforeMain' && producers.some((producer) => producer.step.phase === 'afterMain')) {
+    return `Agent CBS reference ${token} is unavailable in before-main step "${consumer.step.name}" because output key "${key}" is produced after the main response.`
+  }
+
+  if (producers.some((producer) => producer.dependencyLevel === consumer.dependencyLevel)) {
+    return `Agent CBS reference ${token} is unavailable in step "${consumer.step.name}" because output key "${key}" is produced by a same-level step. Add a dependency so the producer runs earlier.`
+  }
+
+  return `Agent CBS reference ${token} is unavailable in step "${consumer.step.name}" at ${consumer.step.phase} level ${consumer.dependencyLevel}; producers: ${producerSummary}.`
 }
 
 function dependencyLevelsForPhase(steps: readonly AgentPresetStepRecord[]): Map<string, number> {

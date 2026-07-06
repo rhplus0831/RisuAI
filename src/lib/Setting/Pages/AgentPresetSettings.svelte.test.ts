@@ -220,7 +220,7 @@ describe('AgentPresetSettings', () => {
     expect(agentPresetSpies.deleteAgentPreset).toHaveBeenCalledWith('ap_a')
   })
 
-  it('renders disabled and invalid statuses from resolver helpers', async () => {
+  it('renders disabled, invalid, and incomplete statuses from resolver helpers', async () => {
     seedDb([
       preset({ id: 'ap_disabled', name: 'Disabled Agent', enabled: false }),
       preset({
@@ -228,12 +228,21 @@ describe('AgentPresetSettings', () => {
         name: 'Invalid Agent',
         steps: [baseStep({ outputKey: '' })],
       }),
+      preset({
+        id: 'ap_incomplete',
+        name: 'Incomplete Agent',
+        steps: [
+          baseStep({ id: 'aps_a', outputKey: 'a', instruction: 'Use {{agent::b}}.' }),
+          baseStep({ id: 'aps_b', outputKey: 'b', dependencies: ['aps_a'] }),
+        ],
+      }),
     ])
     mountPage()
     await tick()
 
     expect(row('ap_disabled').textContent).toContain(language.agentPresets.statusDisabled)
     expect(row('ap_invalid').textContent).toContain(language.agentPresets.statusInvalid)
+    expect(row('ap_incomplete').textContent).toContain(language.agentPresets.statusIncomplete)
   })
 
   it('renders the full step editor fields', async () => {

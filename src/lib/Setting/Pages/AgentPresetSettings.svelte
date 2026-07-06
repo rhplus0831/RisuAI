@@ -147,6 +147,7 @@
     if (!preset.enabled) return { label: language.agentPresets.statusDisabled, tone: 'muted' }
     const planning = planAgentPreset({ database: DBState.db, preset })
     if (!planning.plan) return { label: language.agentPresets.statusInvalid, tone: 'error' }
+    if (planning.incompleteIssues.length > 0) return { label: language.agentPresets.statusIncomplete, tone: 'warning' }
     if (!planning.ready) return { label: language.agentPresets.statusModelNotReady, tone: 'warning' }
     return { label: language.agentPresets.statusReady, tone: 'ready' }
   }
@@ -162,9 +163,9 @@
     const planning = planAgentPreset({ database: DBState.db, preset })
     const summary = planning.plan
       ? createAgentPresetStatusSummary({
-          status: planning.ready ? 'ready' : 'model_not_ready',
+          status: planning.ready ? 'ready' : planning.incompleteIssues.length > 0 ? 'incomplete' : 'model_not_ready',
           preset,
-          issues: planning.issues,
+          issues: [...planning.issues, ...planning.incompleteIssues],
           modelReadiness: planning.modelReadiness,
         })
       : createAgentPresetStatusSummary({
