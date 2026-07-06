@@ -407,6 +407,50 @@ function stubMessagePersistenceFetch(): CapturedFetch[] {
           replacedCount: Array.isArray(body?.messages) ? body.messages.length : 0,
         })
       }
+      if (url === '/api/v1/commands/chats/chat-a/messages/truncate' && init.method === 'POST') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.truncated',
+            revision: 11,
+            resource: 'message',
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          afterMessageId: body?.afterMessageId ?? null,
+          removedCount: 1,
+        })
+      }
+      if (url.startsWith('/api/v1/commands/messages/') && init.method === 'PATCH') {
+        const messageId = decodeURIComponent(url.split('/').at(-1) ?? '')
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.updated',
+            revision: 11,
+            resource: 'message',
+            id: messageId,
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          messageId,
+        })
+      }
+      if (url.startsWith('/api/v1/commands/messages/') && init.method === 'DELETE') {
+        const messageId = decodeURIComponent(url.split('/').at(-1) ?? '')
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.deleted',
+            revision: 11,
+            resource: 'message',
+            id: messageId,
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          messageId,
+        })
+      }
       if (url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT') {
         return jsonResponse({
           revision: 11,
@@ -2980,6 +3024,195 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
   })
 
+  it('persists a fully hydrated user append with appendMessageCommand', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [{ role: 'user', data: 'before', chatId: 'm-before' }],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = jsonClone(previousChat)
+    nextChat.message.push({ role: 'char', data: 'new reply', time: 123 })
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        message: {
+          role: 'char',
+          data: 'new reply',
+          time: 123,
+          chatId: expect.any(String),
+        },
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('persists a fully hydrated single message edit with updateMessageCommand', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        { role: 'user', data: 'before', chatId: 'm-before', time: 1 },
+        { role: 'char', data: 'unchanged', chatId: 'm-unchanged', time: 2 },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = jsonClone(previousChat)
+    nextChat.message[0].data = 'after'
+    nextChat.message[0].translation = { display: 'translated' } as any
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/messages/m-before',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          data: 'after',
+          translation: { display: 'translated' },
+        },
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('persists a fully hydrated middle delete with deleteMessageCommand', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        { role: 'user', data: 'one', chatId: 'm-1' },
+        { role: 'char', data: 'two', chatId: 'm-2' },
+        { role: 'user', data: 'three', chatId: 'm-3' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = {
+      ...jsonClone(previousChat),
+      message: [jsonClone(previousChat.message[0]), jsonClone(previousChat.message[2])],
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/messages/m-2',
+      method: 'DELETE',
+      body: {
+        baseRevision: 10,
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('persists a fully hydrated suffix delete with truncateMessagesCommand', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        { role: 'user', data: 'one', chatId: 'm-1' },
+        { role: 'char', data: 'two', chatId: 'm-2' },
+        { role: 'user', data: 'three', chatId: 'm-3' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat = {
+      ...jsonClone(previousChat),
+      message: [jsonClone(previousChat.message[0])],
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages/truncate',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        afterMessageId: 'm-1',
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
+  it('persists a fully hydrated tail rewrite with replaceTailMessagesCommand', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousChat: Chat = {
+      ...jsonClone(DBState.db.characters[0].chats[0]),
+      message: [
+        { role: 'user', data: 'anchor', chatId: 'm-anchor' },
+        { role: 'char', data: 'old one', chatId: 'm-old-1' },
+        { role: 'user', data: 'old two', chatId: 'm-old-2' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    const previous = currentChatScopedSnapshot()
+    const nextChat: Chat = {
+      ...jsonClone(previousChat),
+      message: [
+        { role: 'user', data: 'anchor', chatId: 'm-anchor' },
+        { role: 'char', data: 'replacement' },
+      ],
+    }
+    DBState.db.characters[0].chats[0] = nextChat
+
+    const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
+    expect(prepared.factories).toHaveLength(1)
+    runOptimisticCommandSequence(prepared.factories, prepared.rollback)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/messages/tail',
+      method: 'POST',
+      body: {
+        baseRevision: 10,
+        afterMessageId: 'm-anchor',
+        messages: [
+          {
+            role: 'char',
+            data: 'replacement',
+            chatId: expect.any(String),
+          },
+        ],
+      },
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-a/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+  })
+
   it('persists a placeholder-prefix AOS-style user append with appendMessageCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
@@ -3150,9 +3383,9 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     DBState.db.characters[0].chats[0].message = jsonClone(messages)
   }
 
-  it('failed empty char append replace-all rolls back a newly appended no-id message', async () => {
+  it('failed empty char append command rolls back the appended message by id', async () => {
     const calls = stubFailingCommandFetch({
-      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'POST',
     })
     const previousMessages: Message[] = [{ role: 'user', data: 'before', chatId: 'm-1' }]
     seedActiveMessages(previousMessages)
@@ -3162,13 +3395,10 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
 
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/messages',
-      method: 'PUT',
+      method: 'POST',
       body: {
         baseRevision: 10,
-        messages: [
-          { role: 'user', data: 'before', chatId: 'm-1' },
-          { role: 'char', data: '', chatId: expect.any(String) },
-        ],
+        message: { role: 'char', data: '', chatId: expect.any(String) },
       },
     })
     expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)

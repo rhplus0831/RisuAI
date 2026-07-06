@@ -11,7 +11,7 @@ import { resolveActiveChatGenerationSettings } from '../activeChatGenerationSett
 import type { ChatGenerationRequiredSidebarToggle } from '../chatGenerationSettings'
 import {
   canUseServerCommands,
-  replaceMessagesCommand,
+  replaceTailMessagesCommand,
   updateCharacterCommand,
   type MessageSnapshot,
   type ServerCommandResult,
@@ -92,6 +92,19 @@ function locateSendSnapshotChatIndex(character: character, snapshot: SendRollbac
   return index >= 0 && index < (character.chats?.length ?? 0) ? index : -1
 }
 
+function messageIdBackfillTail(messages: Message[]): { startIndex: number; afterMessageId: string } | null {
+  if (messages.some(isServerChatMessagePlaceholder)) return null
+
+  const firstMissingIndex = messages.findIndex((message) => message.chatId == null)
+  if (firstMissingIndex <= 0) return null
+  if (messages.slice(firstMissingIndex).some((message) => message.chatId != null)) return null
+
+  const afterMessageId = messages[firstMissingIndex - 1]?.chatId
+  return typeof afterMessageId === 'string' && afterMessageId.length > 0
+    ? { startIndex: firstMissingIndex, afterMessageId }
+    : null
+}
+
 /**
  * Run the sendChat entry-context setup: legacy preset-chain switch on
  * non-server-backed fresh calls, stats counter, character + chat lookup,
@@ -146,6 +159,8 @@ export function setupSendChatContext(args: {
       const selectedChatRecord = nowChatroom.chats[selectedChat]
       const hasUnloadedMessages = selectedChatRecord.message.some(isServerChatMessagePlaceholder)
       const needsMessageIdBackfill = !hasUnloadedMessages && selectedChatRecord.message.some((v) => v.chatId == null)
+      const backfillTail =
+        needsMessageIdBackfill && selectedChatRecord.id ? messageIdBackfillTail(selectedChatRecord.message) : null
 
       if (characterId || needsMessageIdBackfill) {
         rollbackSnapshot = currentSendRollbackSnapshot({
@@ -172,13 +187,14 @@ export function setupSendChatContext(args: {
           v.chatId = v.chatId ?? v4()
           return v
         })
-        if (selectedChatRecord.id) {
+        if (selectedChatRecord.id && backfillTail) {
           const chatId = selectedChatRecord.id
-          const messages = selectedChatRecord.message.map(toMessageSnapshot)
+          const messages = selectedChatRecord.message.slice(backfillTail.startIndex).map(toMessageSnapshot)
           factories.push((baseRevision) =>
-            replaceMessagesCommand({
+            replaceTailMessagesCommand({
               baseRevision,
               chatId,
+              afterMessageId: backfillTail.afterMessageId,
               messages,
             }),
           )

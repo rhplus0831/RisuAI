@@ -12,13 +12,7 @@ import {
 } from './botSettingsParamsData'
 import { chatFormatSettingsItems } from './chatFormatSettingsData'
 import { displaySettingsItems } from './displaySettingsData.svelte'
-import {
-  canUseServerCommands,
-  getServerCommandBaseRevision,
-  patchSettingsGroup,
-  settingsGroupForKey,
-  type SettingsGroup,
-} from '../server/commands'
+import { canUseServerCommands, patchServerBackedSettings, settingsGroupForKey } from '../server/commands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 import {
@@ -154,9 +148,7 @@ function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingCont
   }
 }
 
-function buildServerSettingsPatch(
-  item: SettingItem,
-): { group: SettingsGroup; key: string; valueFromDb: () => unknown } | null {
+function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb: () => unknown } | null {
   if (!canUseServerCommands()) return null
 
   if (item.bindPath) {
@@ -164,7 +156,6 @@ function buildServerSettingsPatch(
     const group = settingsGroupForKey(rootKey)
     if (!group) return null
     return {
-      group,
       key: rootKey,
       valueFromDb: () => cloneJsonValue((DBState.db as any)[rootKey]),
     }
@@ -176,7 +167,6 @@ function buildServerSettingsPatch(
   if (!group) return null
 
   return {
-    group,
     key: String(key),
     valueFromDb: () => cloneJsonValue((DBState.db as any)[key]),
   }
@@ -184,32 +174,21 @@ function buildServerSettingsPatch(
 
 async function patchServerBackedSetting(
   item: SettingItem,
-  commandPatch: { group: SettingsGroup; key: string; valueFromDb: () => unknown },
+  commandPatch: { key: string; valueFromDb: () => unknown },
   newValue: unknown,
   previousValue: unknown,
   ctx: SettingContext,
 ): Promise<void> {
-  const baseRevision = await getServerCommandBaseRevision()
-  if (baseRevision === null) {
-    rollbackLocalSetting(item, newValue, previousValue, ctx)
-    return
-  }
-
   const patch = { [commandPatch.key]: commandPatch.valueFromDb() }
   if (patch[commandPatch.key] === undefined) {
     rollbackLocalSetting(item, newValue, previousValue, ctx)
     return
   }
 
-  const result = await patchSettingsGroup({
-    group: commandPatch.group,
-    baseRevision,
+  await patchServerBackedSettings({
     patch,
+    rollback: () => rollbackLocalSetting(item, newValue, previousValue, ctx),
   })
-
-  if (result.status !== 'ok') {
-    rollbackLocalSetting(item, newValue, previousValue, ctx)
-  }
 }
 
 function rollbackLocalSetting(

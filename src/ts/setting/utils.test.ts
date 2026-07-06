@@ -14,6 +14,7 @@ vi.mock('../storage/fastifyStorage', () => ({
 
 import { clearCachedServerCommandRevision, settingsGroupForKey } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { DBState } from '../stores.svelte'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
@@ -72,6 +73,17 @@ function stubSettingsFetch(): CapturedFetch[] {
     }) as unknown as typeof fetch,
   )
   return calls
+}
+
+function deferredResponse(): {
+  promise: Promise<Response>
+  resolve: (response: Response) => void
+} {
+  let resolve!: (response: Response) => void
+  const promise = new Promise<Response>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
 }
 
 function collectSettingItems(items: SettingItem[]): SettingItem[] {
@@ -169,6 +181,41 @@ describe('server-backed data-driven settings', () => {
       expect(DBState.db.maxResponse).toBe(100)
     })
 
-    expect(calls).toEqual([{ url: '/api/v1/bootstrap', method: 'GET', body: null }])
+    expect(calls).toEqual([])
+  })
+
+  it('skips rollback when a destructive refresh lands before a setting patch failure', async () => {
+    const patchResponse = deferredResponse()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 4 })
+        if (url === '/api/v1/commands/settings/display') return patchResponse.promise
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    const item: SettingItem = {
+      id: 'notification',
+      type: 'check',
+      bindKey: 'notification' as keyof typeof DBState.db,
+    }
+    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setSettingValue(item, true, ctx)
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/display')).toBe(true)
+    })
+    expect(DBState.db.notification).toBe(true)
+
+    createDestructiveRefreshToken('setting-renderer-test-refresh')
+    patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(DBState.db.notification).toBe(true)
   })
 })

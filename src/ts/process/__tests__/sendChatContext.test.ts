@@ -275,7 +275,7 @@ describe('setupSendChatContext - DB side effects', () => {
     expect(messages[1].chatId).toBeTruthy()
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/cha-1')).toBe(true)
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages')).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages/tail')).toBe(true)
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/characters/cha-1')).toMatchObject({
       method: 'PATCH',
@@ -285,17 +285,21 @@ describe('setupSendChatContext - DB side effects', () => {
         },
       },
     })
-    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages')).toMatchObject({
-      method: 'PUT',
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages/tail')).toMatchObject({
+      method: 'POST',
       body: {
-        messages,
+        afterMessageId: 'kept-1',
+        messages: [messages[1]],
       },
     })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
   })
 
   it('serializes the character + message backfill commands against one revision baseline', async () => {
     // A4EC2 / B1: the message-id backfill path dispatches lastInteraction
-    // then replaceMessages back-to-back. Pre-fix both ran with the same
+    // then message-tail replacement back-to-back. Pre-fix both ran with the same
     // cached baseRevision and the second 409d; the sequencer must replay
     // the revision returned by the first into the second.
     let nextRevision = 21
@@ -332,7 +336,10 @@ describe('setupSendChatContext - DB side effects', () => {
               localLore: [],
               scriptstate: {},
               fmIndex: -1,
-              message: [{ role: 'char', data: 'b', chatId: undefined as unknown as string, time: 0 }],
+              message: [
+                { role: 'user', data: 'a', chatId: 'kept-1', time: 0 },
+                { role: 'char', data: 'b', chatId: undefined as unknown as string, time: 0 },
+              ],
             } as character['chats'][number],
           ],
         }),
@@ -346,9 +353,46 @@ describe('setupSendChatContext - DB side effects', () => {
     })
     expect(captured[0].url).toBe('/api/v1/commands/characters/cha-1')
     expect(captured[0].body?.baseRevision).toBe(21)
-    expect(captured[1].url).toBe('/api/v1/commands/chats/chat-1/messages')
+    expect(captured[1].url).toBe('/api/v1/commands/chats/chat-1/messages/tail')
     // The second command reads the revision from the first command's response.
     expect(captured[1].body?.baseRevision).toBe(22)
+  })
+
+  it('keeps early legacy message-id backfills local instead of replacing the full transcript', async () => {
+    const calls = stubCommandFetch()
+    seedDb({
+      characters: [
+        makeChar({
+          chats: [
+            {
+              id: 'chat-1',
+              name: 'main',
+              note: '',
+              localLore: [],
+              scriptstate: {},
+              fmIndex: -1,
+              message: [
+                { role: 'char', data: 'missing early', chatId: undefined as unknown as string, time: 0 },
+                { role: 'user', data: 'kept later', chatId: 'kept-2', time: 1 },
+              ],
+            } as character['chats'][number],
+          ],
+        }),
+      ],
+    })
+
+    setupSendChatContext({ chatProcessIndex: -1 })
+
+    const messages = DBState.db.characters[0].chats[0].message
+    expect(messages[0].chatId).toBeTruthy()
+    expect(messages[1].chatId).toBe('kept-2')
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/cha-1')).toBe(true)
+    })
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')).toBe(
+      false,
+    )
+    expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-1/messages/tail')).toBe(false)
   })
 })
 
@@ -611,7 +655,7 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
             event: { type: 'character.updated', revision: 22, resource: 'character' },
           })
         }
-        if (url === '/api/v1/commands/chats/chat-active/messages') {
+        if (url === '/api/v1/commands/chats/chat-active/messages/tail') {
           return replaceResponse.promise
         }
         return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -631,13 +675,13 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
               scriptstate: {},
               fmIndex: -1,
               message: [
+                { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
                 {
                   role: 'char',
                   data: 'missing id',
                   chatId: undefined as unknown as string,
                   time: 1,
                 },
-                { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
               ],
             } as character['chats'][number],
             {
@@ -657,9 +701,9 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     const originalMessages = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message))
 
     setupSendChatContext({ chatProcessIndex: -1 })
-    expect(DBState.db.characters[0].chats[0].message[0].chatId).toBeTruthy()
+    expect(DBState.db.characters[0].chats[0].message[1].chatId).toBeTruthy()
     await vi.waitFor(() => {
-      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-active/messages')).toBe(true)
+      expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-active/messages/tail')).toBe(true)
     })
 
     DBState.db.characters[0].name = 'Concurrent character edit'
@@ -678,13 +722,11 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
     expect(DBState.db.characters[0].chats[0].note).toBe('Concurrent active note')
     expect(DBState.db.characters[0].chats[1].message.at(-1)?.chatId).toBe('sibling-concurrent')
-    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages')).toMatchObject({
-      method: 'PUT',
+    expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages/tail')).toMatchObject({
+      method: 'POST',
       body: {
-        messages: [
-          { role: 'char', data: 'missing id', chatId: expect.any(String), time: 1 },
-          { role: 'user', data: 'kept id', chatId: 'kept-message', time: 2 },
-        ],
+        afterMessageId: 'kept-message',
+        messages: [{ role: 'char', data: 'missing id', chatId: expect.any(String), time: 1 }],
       },
     })
   })
