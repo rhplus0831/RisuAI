@@ -14,6 +14,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import {
   clearCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
   type ChatFolderSnapshot,
   type ChatSnapshot,
   type ServerCommandResult,
@@ -29,7 +30,13 @@ import { DBState, selectedCharID } from './stores.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
 // mid-init.
-import { setCurrentChat, type Chat, type ChatFolder, type Message } from './storage/database.svelte'
+import {
+  mergeServerProjectionCharacterRow,
+  setCurrentChat,
+  type Chat,
+  type ChatFolder,
+  type Message,
+} from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   applyOptimisticCreatedChat,
@@ -521,6 +528,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setServerCommandSuccessReconciler(null)
   setServerProjectionWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
@@ -1613,6 +1621,72 @@ describe('chat command projection helpers', () => {
       },
     ])
     expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
+  })
+
+  it('keeps newer generation settings through an older successful character-row projection', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    const generationSettingsA = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        notes: 'a',
+      },
+    }
+    const generationSettingsB = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        notes: 'ab',
+      },
+    }
+    setServerCommandSuccessReconciler((event) => {
+      const projectedGenerationSettings = event.revision === 11 ? generationSettingsA : generationSettingsB
+      mergeServerProjectionCharacterRow({
+        chaId: 'char-a',
+        name: 'Character',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            folderId: null,
+            message: [],
+            generationSettings: projectedGenerationSettings,
+          },
+          { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+        ],
+        chatFolders: [{ id: 'folder-a', name: 'Folder', folded: false }],
+      })
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsA)).toBe(true)
+    await waitForCallCount(calls, 2)
+    expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+
+    firstResponse.resolve(successfulChatGenerationSettingsResponse(11))
+    await waitForCallCount(calls, 3)
+
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      method: 'PUT',
+      body: {
+        baseRevision: 11,
+        generationSettings: generationSettingsB,
+      },
+    })
+
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(12))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
   })
 
   it('preserves a newer generation settings save when an older save fails from no initial settings', async () => {

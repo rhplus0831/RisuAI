@@ -89,6 +89,7 @@ import {
   type ChatGenerationTogglePreset,
 } from '../chatGenerationTogglePresetRecords'
 import { canUseServerProjection, fetchServerPresetProjection } from '../server/projection'
+import { shouldPreserveLiveChatGenerationSettingsForProjection } from '../server/chatGenerationSettingsProjectionGuard'
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
@@ -1585,7 +1586,8 @@ export function mergeServerProjectionCharacterRow(character: { chaId?: string } 
     if (Array.isArray(incomingChats) && Array.isArray(existingChats)) {
       const existingById = new Map(existingChats.map((chat) => [chat?.id, chat]))
       for (const chat of incomingChats) {
-        const prior = existingById.get((chat as { id?: unknown }).id)
+        const chatId = (chat as { id?: unknown }).id
+        const prior = existingById.get(chatId)
         if (!prior) continue
         const priorMessage = (prior as { message?: unknown }).message
         if (Array.isArray(priorMessage) && priorMessage.length > 0) {
@@ -1593,6 +1595,21 @@ export function mergeServerProjectionCharacterRow(character: { chaId?: string } 
         }
         const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
         if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
+        if (
+          typeof chatId === 'string' &&
+          shouldPreserveLiveChatGenerationSettingsForProjection(
+            chatId,
+            (chat as { generationSettings?: unknown }).generationSettings,
+          )
+        ) {
+          const priorRecord = prior as { generationSettings?: unknown }
+          const chatRecord = chat as { generationSettings?: unknown }
+          if (Object.prototype.hasOwnProperty.call(priorRecord, 'generationSettings')) {
+            chatRecord.generationSettings = priorRecord.generationSettings
+          } else {
+            delete chatRecord.generationSettings
+          }
+        }
       }
     }
     // Preserve resident globalLore if the shipped row stubbed it (stubs on).

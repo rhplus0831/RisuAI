@@ -35,6 +35,10 @@ import {
   captureDestructiveRefreshEpoch,
   runRollbackUnlessDestructiveRefreshChanged,
 } from './server/staleStateGuards'
+import {
+  clearPendingChatGenerationSettingsSave,
+  registerPendingChatGenerationSettingsSave,
+} from './server/chatGenerationSettingsProjectionGuard'
 import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
@@ -1484,6 +1488,7 @@ export function dispatchSaveChatGenerationSettings(
   if (!applied) return false
 
   if (canUseServerCommands()) {
+    const pendingSave = registerPendingChatGenerationSettingsSave(chatId, commandSettings)
     const savePromise = enqueueChatGenerationSettingsSave(chatId, () =>
       runServerCommand({
         command: (baseRevision) =>
@@ -1499,7 +1504,9 @@ export function dispatchSaveChatGenerationSettings(
         rollback: () => restoreChatGenerationSettings(rollback),
         ...options,
       }),
-    )
+    ).finally(() => {
+      clearPendingChatGenerationSettingsSave(pendingSave)
+    })
     void savePromise
   }
   return true
