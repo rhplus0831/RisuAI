@@ -38,6 +38,7 @@ let lastRequestsCount = 0
 
 export const DEFAULT_CLIENT_LUA_EXEC_TIMEOUT_MS = 3_000
 export const CLIENT_LUA_ENGINE_CACHE_PER_MODE = 4
+const CLIENT_LUA_CODE_HASH_MEMO_LIMIT = 128
 
 interface BasicScriptingEngineState {
   code?: string
@@ -65,6 +66,7 @@ type ScriptingEngineState = LuaScriptingEngineState | PythonScriptingEngineState
 
 let ScriptingEngines = new Map<string, ScriptingEngineState>()
 let ScriptingEngineLru = new Map<string, string[]>()
+let ScriptingCodeHashMemo = new Map<string, string>()
 let luaFactoryPromise: Promise<void> | null = null
 let pendingEngineCreations = new Map<string, Promise<ScriptingEngineState>>()
 
@@ -1245,20 +1247,36 @@ async function ensureLuaFactory() {
 }
 
 async function hashScriptingCode(code: string): Promise<string> {
+  const cached = ScriptingCodeHashMemo.get(code)
+  if (cached !== undefined) {
+    ScriptingCodeHashMemo.delete(code)
+    ScriptingCodeHashMemo.set(code, cached)
+    return cached
+  }
+
+  let hash: string
   const data = new TextEncoder().encode(code)
   const digest = await globalThis.crypto?.subtle?.digest?.('SHA-256', data)
   if (digest) {
-    return Array.from(new Uint8Array(digest))
+    hash = Array.from(new Uint8Array(digest))
       .map((byte) => byte.toString(16).padStart(2, '0'))
       .join('')
+  } else {
+    let fallbackHash = 2166136261
+    for (let i = 0; i < code.length; i++) {
+      fallbackHash ^= code.charCodeAt(i)
+      fallbackHash = Math.imul(fallbackHash, 16777619)
+    }
+    hash = `fnv1a-${(fallbackHash >>> 0).toString(16)}-${code.length}`
   }
 
-  let hash = 2166136261
-  for (let i = 0; i < code.length; i++) {
-    hash ^= code.charCodeAt(i)
-    hash = Math.imul(hash, 16777619)
+  ScriptingCodeHashMemo.set(code, hash)
+  while (ScriptingCodeHashMemo.size > CLIENT_LUA_CODE_HASH_MEMO_LIMIT) {
+    const oldest = ScriptingCodeHashMemo.keys().next().value
+    if (oldest === undefined) break
+    ScriptingCodeHashMemo.delete(oldest)
   }
-  return `fnv1a-${(hash >>> 0).toString(16)}-${code.length}`
+  return hash
 }
 
 function getScriptingEngineBucket(mode: string, type: 'lua' | 'py'): string {
@@ -1383,6 +1401,7 @@ export function resetScriptingEngineCacheForTests(): void {
   }
   ScriptingEngines.clear()
   ScriptingEngineLru.clear()
+  ScriptingCodeHashMemo.clear()
   pendingEngineCreations.clear()
   ScriptingSafeIds.clear()
   ScriptingEditDisplayIds.clear()

@@ -500,6 +500,70 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(changedVariableKey).not.toBe(emptyChatKey)
   })
 
+  it('compacts heavy Lua source in parser signatures without losing invalidation', async () => {
+    const char = seedDb()
+    const makeHeavyLua = (marker: string) =>
+      `function editDisplay(data)\n-- ${marker}\n${'local seed = 123456789\n'.repeat(12_000)}return data\nend`
+    const makeHeavyReplacement = (marker: string) => `${marker}:${'replacement body\n'.repeat(4_000)}`
+    char.triggerscript = [
+      {
+        id: 'heavy-lua-trigger',
+        comment: 'heavy lua trigger',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'triggerlua', code: makeHeavyLua('HEAVY_LUA_SOURCE_A') }],
+      },
+    ] as any
+    char.customscript = [
+      {
+        id: 'heavy-display-regex',
+        comment: 'heavy regex',
+        in: 'visible',
+        out: makeHeavyReplacement('HEAVY_REGEX_SOURCE_A'),
+        type: 'editdisplay',
+        flag: '',
+        ableFlag: false,
+      },
+    ] as any
+
+    const memoModule = await import('./ChatBodyParseMemo')
+    memoModule.clearChatBodyParseMemo()
+    const input = {
+      data: 'heavy lua memo body',
+      charArg: char.chaId,
+      mode: 'notrim' as const,
+      chatID: 0,
+      cbsConditions: { firstmsg: false, chatRole: 'char' },
+    }
+
+    const keyA = memoModule.getChatBodyParseMemoKey(input)
+    expect(keyA).not.toContain('HEAVY_LUA_SOURCE_A')
+    expect(keyA).not.toContain('HEAVY_REGEX_SOURCE_A')
+    expect(keyA.length).toBeLessThan(8_000)
+
+    DBState.db.characters[0].triggerscript = [
+      {
+        ...(DBState.db.characters[0].triggerscript[0] as any),
+        effect: [{ type: 'triggerlua', code: makeHeavyLua('HEAVY_LUA_SOURCE_B') }],
+      },
+    ] as any
+    const keyB = memoModule.getChatBodyParseMemoKey(input)
+    expect(keyB).not.toBe(keyA)
+    expect(keyB).not.toContain('HEAVY_LUA_SOURCE_B')
+    expect(keyB.length).toBeLessThan(8_000)
+
+    DBState.db.characters[0].customscript = [
+      {
+        ...(DBState.db.characters[0].customscript[0] as any),
+        out: makeHeavyReplacement('HEAVY_REGEX_SOURCE_B'),
+      },
+    ] as any
+    const keyC = memoModule.getChatBodyParseMemoKey(input)
+    expect(keyC).not.toBe(keyB)
+    expect(keyC).not.toContain('HEAVY_REGEX_SOURCE_B')
+    expect(keyC.length).toBeLessThan(8_000)
+  })
+
   it('L30: cached-only LLM detection reuses a prebuilt parse key without rebuilding it', async () => {
     const char = seedDb({
       autoTranslate: true,

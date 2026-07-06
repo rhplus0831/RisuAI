@@ -355,6 +355,19 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     expect(luaMock.closedEngineIds.length).toBeGreaterThan(0)
   })
 
+  it('memoizes Lua code hashes before looking up cached engines', async () => {
+    const chat = makeChat()
+    const char = makeCharacter(chat)
+    const digestSpy = vi.spyOn(globalThis.crypto.subtle, 'digest')
+    const code = `return "${'same lua source '.repeat(1_000)}"`
+
+    await runScripted(code, { char, chat, mode: 'editDisplay', data: 'first' })
+    await runScripted(code, { char, chat, mode: 'editDisplay', data: 'second' })
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(digestSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('L41: editDisplay access key is removed after Lua success and rejection', async () => {
     const chat = makeChat()
     const char = makeCharacter(chat)

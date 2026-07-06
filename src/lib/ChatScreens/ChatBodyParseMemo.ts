@@ -37,6 +37,8 @@ interface ChatBodyCachedOnlyInput {
 const PARSE_MEMO_LIMIT = 180
 const LLM_DETECTION_MEMO_LIMIT = 180
 const SIGNATURE_MEMO_LIMIT = 48
+const LARGE_SIGNATURE_STRING_LIMIT = 512
+const SIGNATURE_STRING_HASH_MEMO_LIMIT = 256
 
 const parseMemo = new Map<string, Promise<string>>()
 const llmDetectionMemo = new Map<string, Promise<boolean>>()
@@ -44,6 +46,7 @@ const characterSignatureMemo = new Map<string, string>()
 const activeChatSignatureMemo = new Map<string, string>()
 const moduleSignatureMemo = new Map<string, string>()
 const settingsSignatureMemo = new Map<string, string>()
+const signatureStringHashMemo = new Map<string, string>()
 
 const debugStats = {
   parseKeyBuilds: 0,
@@ -95,6 +98,48 @@ function stableFragment(value: unknown): string {
   return stableStringify(value) ?? 'null'
 }
 
+function signatureStringFragment(value: string): string {
+  if (value.length <= LARGE_SIGNATURE_STRING_LIMIT) return value
+  const cached = signatureStringHashMemo.get(value)
+  if (cached !== undefined) {
+    return refresh(signatureStringHashMemo, value, cached)
+  }
+
+  let hash = 0x811c9dc5
+  let check = 0x1505
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i)
+    hash ^= code
+    hash = Math.imul(hash, 0x01000193)
+    check = Math.imul(check, 33) ^ code
+  }
+  const hashed = `${value.length}:${(hash >>> 0).toString(36)}:${(check >>> 0).toString(36)}`
+  remember(signatureStringHashMemo, value, hashed, SIGNATURE_STRING_HASH_MEMO_LIMIT)
+  return hashed
+}
+
+function compactForSignature(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return signatureStringFragment(value)
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => compactForSignature(item))
+  }
+  if (!value || typeof value !== 'object') {
+    return value
+  }
+
+  const normalized: Record<string, unknown> = {}
+  for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+    const next = (value as Record<string, unknown>)[key]
+    if (next === undefined || typeof next === 'function') {
+      continue
+    }
+    normalized[key] = compactForSignature(next)
+  }
+  return normalized
+}
+
 function scalarListSignature(value: unknown) {
   return Array.isArray(value) ? value.map((item) => normalizeForSignature(item)) : []
 }
@@ -120,19 +165,19 @@ function cachedSerializedSignature(
 function scriptSignature(script?: customscript | null) {
   if (!script) return null
   return {
-    id: script.id,
-    comment: script.comment,
-    in: script.in,
-    out: script.out,
-    type: script.type,
-    flag: script.flag,
+    id: compactForSignature(script.id),
+    comment: compactForSignature(script.comment),
+    in: compactForSignature(script.in),
+    out: compactForSignature(script.out),
+    type: compactForSignature(script.type),
+    flag: compactForSignature(script.flag),
     ableFlag: script.ableFlag,
   }
 }
 
 function triggerSignature(trigger?: triggerscript | null) {
   if (!trigger) return null
-  return normalizeForSignature(trigger)
+  return compactForSignature(trigger)
 }
 
 function scriptListSignature(scripts?: readonly customscript[] | null) {
@@ -145,7 +190,7 @@ function triggerListSignature(triggers?: readonly triggerscript[] | null) {
 
 function tupleListSignature(tuples?: readonly unknown[] | null) {
   return (tuples ?? []).map((tuple) =>
-    Array.isArray(tuple) ? tuple.map((value) => normalizeForSignature(value)) : normalizeForSignature(tuple),
+    Array.isArray(tuple) ? tuple.map((value) => compactForSignature(value)) : compactForSignature(tuple),
   )
 }
 
@@ -508,6 +553,7 @@ export function clearChatBodyParseMemo() {
   activeChatSignatureMemo.clear()
   moduleSignatureMemo.clear()
   settingsSignatureMemo.clear()
+  signatureStringHashMemo.clear()
   resetChatBodyParseMemoDebugStats()
 }
 
