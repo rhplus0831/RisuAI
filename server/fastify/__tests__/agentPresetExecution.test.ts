@@ -173,10 +173,15 @@ describe('Agent Preset prepared inputs', () => {
       currentUserMessage: 'Lantern promise?',
     })
 
-    const textMessages = buildAgentPresetStepMessages({ step: step(), preparedInputs })
+    const textMessages = buildAgentPresetStepMessages({
+      step: step({ instruction: 'Question:\n{{currentUserMessage}}\n\nSummarize the useful context.' }),
+      preparedInputs,
+    })
     expect(textMessages).toHaveLength(2)
     expect(textMessages[0]).toMatchObject({ role: 'system' })
     expect(textMessages[0].content).toContain('Return free text only')
+    expect(textMessages[1].content).toContain('Question:\nLantern promise?')
+    expect(textMessages[1].content).not.toContain('Prepared input -')
     expect(JSON.stringify(textMessages)).not.toContain('"tools"')
 
     const jsonMessages = buildAgentPresetStepMessages({
@@ -184,6 +189,21 @@ describe('Agent Preset prepared inputs', () => {
       preparedInputs,
     })
     expect(jsonMessages[0].content).toContain('Return exactly one JSON object')
+    expect(jsonMessages[1].content).not.toContain('Lantern promise?')
+  })
+
+  it('does not auto-insert selected prepared inputs without matching CBS placeholders', () => {
+    const preparedInputs = collectAgentPresetPreparedInputs(step(), {
+      database: db(),
+      currentChar: char(),
+      currentChat: chat(),
+      currentUserMessage: 'Lantern promise?',
+    })
+
+    const messages = buildAgentPresetStepMessages({ step: step(), preparedInputs })
+    expect(messages[1].content).toBe('Author instruction:\nSummarize the useful context.')
+    expect(messages[1].content).not.toContain('Lantern promise?')
+    expect(messages[1].content).not.toContain('Remember the lighthouse promise.')
   })
 })
 
@@ -376,6 +396,8 @@ describe('Agent Preset step execution', () => {
       expect(args.outputTokens).toBe(12)
       expect(args.profile.source.profileId).toBe('ready-echo')
       expect(JSON.stringify(args.messages)).not.toContain('"tools"')
+      expect(JSON.stringify(args.messages)).toContain('Question:\\nLantern promise?')
+      expect(JSON.stringify(args.messages)).not.toContain('Remember the lighthouse promise.')
       return frames('abcdefghijklmnop')
     })
 
@@ -384,9 +406,11 @@ describe('Agent Preset step execution', () => {
       currentChar: database.characters[0],
       currentChat: database.characters[0].chats[0],
       step: step({
+        instruction: 'Question:\n{{currentUserMessage}}',
         model: { mode: 'modelProfile', profileId: 'ready-echo' },
         runtime: { maxOutputChars: 12, timeoutMs: 1_000 },
       }),
+      currentUserMessage: 'Lantern promise?',
       dispatchProvider: dispatch,
     })
 
@@ -400,6 +424,7 @@ describe('Agent Preset step execution', () => {
         requestModel: 'debug-wire',
       },
     })
+    expect(result.diagnostics.preparedInputSections.map((section) => section.scope)).toEqual(['currentUserMessage'])
   })
 
   it('parses JSON object output and fails invalid JSON according to policy', async () => {

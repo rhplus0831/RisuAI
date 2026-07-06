@@ -24,6 +24,8 @@ const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_TEMPERATURE = 100
 const RECENT_CHAT_TAIL_COUNT = 12
 const CHAT_SEARCH_LIMIT = 6
+const PREPARED_INPUT_CBS_RE = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g
+const PREPARED_INPUT_SCOPE_NAMES: ReadonlySet<string> = new Set(AGENT_PRESET_STEP_INPUT_SCOPES)
 
 export interface AgentPresetPreviousOutput {
   stepId: string
@@ -305,20 +307,15 @@ export function buildAgentPresetStepMessages(input: BuildAgentPresetStepMessages
     step.outputFormat === 'jsonObject'
       ? 'Return exactly one JSON object. Do not wrap it in Markdown or explanatory prose.'
       : 'Return free text only. Do not include tool calls.',
-    'Follow the author instruction and use only the prepared inputs supplied in the user message.',
+    'Prepared input CBS placeholders in the author instruction are already expanded.',
+    'Use only the context embedded in the author instruction. Do not include tool calls.',
   ].join('\n')
 
-  const userSections = [`Author instruction:\n${step.instruction.trim()}`]
-  for (const section of preparedInputs.sections) {
-    userSections.push(`Prepared input - ${section.label} (${section.sourceLabel}):\n${section.content}`)
-  }
-  if (preparedInputs.sections.length === 0) {
-    userSections.push('Prepared inputs:\n(none)')
-  }
+  const authorInstruction = expandPreparedInputCbs(step.instruction, preparedInputs).trim()
 
   return [
     { role: 'system', content: system },
-    { role: 'user', content: userSections.join('\n\n') },
+    { role: 'user', content: `Author instruction:\n${authorInstruction}` },
   ]
 }
 
@@ -337,6 +334,35 @@ export function resolveAgentPresetStepProfile(input: {
   return input.resolvedMainProfile ?? resolveModelProfile({ database: input.database })
 }
 
+function expandPreparedInputCbs(instruction: string, preparedInputs: AgentPresetPreparedInputCollection): string {
+  const contentByScope = new Map(preparedInputs.sections.map((section) => [section.scope, section.content]))
+  return instruction.replace(PREPARED_INPUT_CBS_RE, (match, name: string) => {
+    if (!isPreparedInputScopeName(name)) return match
+    return contentByScope.get(name) ?? ''
+  })
+}
+
+function stepWithReferencedPreparedInputScopes(step: AgentPresetStepRecord): AgentPresetStepRecord {
+  const inputScopes = referencedPreparedInputScopes(step)
+  return inputScopes.length === step.inputScopes.length ? step : { ...step, inputScopes }
+}
+
+function referencedPreparedInputScopes(step: AgentPresetStepRecord): AgentPresetStepInputScope[] {
+  const selectedScopes = new Set(step.inputScopes)
+  const referencedScopes = new Set<AgentPresetStepInputScope>()
+  for (const match of step.instruction.matchAll(PREPARED_INPUT_CBS_RE)) {
+    const name = match[1]
+    if (isPreparedInputScopeName(name) && selectedScopes.has(name)) {
+      referencedScopes.add(name)
+    }
+  }
+  return orderedScopes([...referencedScopes])
+}
+
+function isPreparedInputScopeName(value: string): value is AgentPresetStepInputScope {
+  return PREPARED_INPUT_SCOPE_NAMES.has(value)
+}
+
 export async function executeAgentPresetStep(
   input: ExecuteAgentPresetStepInput,
 ): Promise<AgentPresetStepExecutionResult> {
@@ -348,7 +374,8 @@ export async function executeAgentPresetStep(
     return skippedResult(input.step, 'dependency_skipped', startedAt, emptyCollection(input.step))
   }
 
-  const preparedInputs = collectAgentPresetPreparedInputs(input.step, input)
+  const preparedInputStep = stepWithReferencedPreparedInputScopes(input.step)
+  const preparedInputs = collectAgentPresetPreparedInputs(preparedInputStep, input)
   const messages = buildAgentPresetStepMessages({ step: input.step, preparedInputs })
   const profile = resolveAgentPresetStepProfile(input)
   if (!profile) {

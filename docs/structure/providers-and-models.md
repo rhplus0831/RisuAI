@@ -144,10 +144,12 @@ normal provider boundary with streaming disabled and provider tools omitted.
 The first Agent Preset release is prepared-input only. Steps can read bounded
 server-selected sections such as recent chat tail, chat search snippets,
 lorebook context, memory context, persona/character summaries, previous agent
-outputs, current user message, and after-main main draft. Runtime execution runs
-dependency levels up to preset `maxConcurrency`, applies per-step timeout/input/
-output limits, validates JSON-object outputs when requested, follows optional/
-required/fallback/stop failure policies, and writes step outputs to
+outputs, current user message, and after-main main draft, but selected sections
+are inserted only where the step instruction uses the matching CBS placeholder
+such as `{{currentUserMessage}}`. Runtime execution runs dependency levels up to
+preset `maxConcurrency`, applies per-step timeout/input/output limits, validates
+JSON-object outputs when requested, follows optional/required/fallback/stop
+failure policies, and writes step outputs to
 `promptOutput`, `intermediate`, or `finalOutput` destinations. After-main final
 outputs can modify the final text before the generation result is persisted.
 Provider tool-calling is intentionally not part of this path yet.

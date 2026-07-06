@@ -854,7 +854,7 @@
                       <span class="pl-7 text-xs text-textcolor2" data-risu-agent-preset-input-scope-cbs>
                         {language.agentPresets.preparedInputCbsNameLabel}:
                         <code class="rounded-sm bg-darkbg px-1 py-0.5 font-mono text-[0.7rem] text-textcolor">
-                          {scope}
+                          {`{{${scope}}}`}
                         </code>
                       </span>
                     </div>
