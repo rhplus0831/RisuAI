@@ -804,6 +804,11 @@ function stringArraysEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+function normalizeKeepSessionAlive(value: unknown): 'off' | 'sound' {
+  if (value === 'pip') return 'sound'
+  return value === 'sound' ? 'sound' : 'off'
+}
+
 export function setDatabase(data: Database) {
   if (checkNullish(data.characters)) {
     data.characters = []
@@ -1497,7 +1502,7 @@ export function setDatabase(data: Database) {
   // If the user uses plugins, its probably better to enable RisuAI Pro Tools by default
   // Because its likely they are power users who would benefit from the features
   data.enableRisuaiProTools ??= data.plugins.length > 0
-  data.keepSessionAlive ??= 'off'
+  data.keepSessionAlive = normalizeKeepSessionAlive(data.keepSessionAlive)
   data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
   data.loadouts ??= []
   data.longPressToPopupEditor ??= false
@@ -2286,7 +2291,7 @@ export interface Database {
   seperateParametersByModel?: boolean
   disableSeperateParameterChangeOnPresetChange?: boolean
   saveSignatures?: boolean
-  keepSessionAlive: 'off' | 'pip' | 'sound'
+  keepSessionAlive: 'off' | 'sound'
   longPressToPopupEditor?: boolean
   chatGenerationTogglePresets: ChatGenerationTogglePreset[]
   loadouts: Loadout[]

@@ -479,7 +479,7 @@ export function normalizeDatabaseDefaults(
   setDefault(database, 'dynamicModelRegistry', true)
   setDefault(database, 'saveSignatures', false)
   setDefault(database, 'enableRisuaiProTools', Array.isArray(database.plugins) && database.plugins.length > 0)
-  setDefault(database, 'keepSessionAlive', 'off')
+  database.keepSessionAlive = normalizeKeepSessionAlive(database.keepSessionAlive)
   setDefault(database, 'chatGenerationTogglePresets', [])
   setDefault(database, 'loadouts', [])
   setDefault(database, 'longPressToPopupEditor', false)
@@ -908,6 +908,11 @@ function normalizeNumber(database: JsonRecord, key: string, fallback: number): v
 
 function setDefault(target: JsonRecord, key: string, value: unknown): void {
   if (isNullish(target[key])) target[key] = cloneJson(value)
+}
+
+function normalizeKeepSessionAlive(value: unknown): 'off' | 'sound' {
+  if (value === 'pip') return 'sound'
+  return value === 'sound' ? 'sound' : 'off'
 }
 
 function isNullish(value: unknown): boolean {

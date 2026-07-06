@@ -814,6 +814,7 @@ describe('Phase 9-2a scalar settings groups', () => {
           auxModelUnderModelSettings: true,
           pluginCompatibilityMode: true,
           strictScriptCheck: true,
+          keepSessionAlive: 'pip',
         },
       },
     })
@@ -871,6 +872,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       auxModelUnderModelSettings: true,
       globalChatVariables: { toggle_mood: '1' },
       jailbreakToggle: true,
+      keepSessionAlive: 'sound',
       chatGenerationTogglePresets: [
         {
           id: 'toggle-preset-a',

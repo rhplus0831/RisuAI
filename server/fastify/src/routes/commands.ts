@@ -6999,7 +6999,16 @@ function sanitizeSettingValue(key: string, value: unknown): unknown {
   if (key === 'chatGenerationTogglePresets') {
     return normalizeChatGenerationTogglePresets(value)
   }
+  if (key === 'keepSessionAlive') {
+    return readKeepSessionAlive(value)
+  }
   return value
+}
+
+function readKeepSessionAlive(value: unknown): 'off' | 'sound' {
+  if (value === 'pip') return 'sound'
+  if (value === 'off' || value === 'sound') return value
+  throw new ValidationError('keepSessionAlive must be off or sound')
 }
 
 function readSettingsModelProfiles(value: unknown): unknown {

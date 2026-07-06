@@ -246,6 +246,19 @@ describe('promptTemplateIdsNeedNormalization', () => {
   })
 })
 
+describe('settings database normalization', () => {
+  it('falls back retired PIP session keepalive to sound through setDatabase', () => {
+    seedPresetDatabase({
+      keepSessionAlive: 'pip' as any,
+    })
+    const data = clonePlain(DBState.db)
+
+    setDatabase(data)
+
+    expect(DBState.db.keepSessionAlive).toBe('sound')
+  })
+})
+
 describe('model profile database normalization', () => {
   it('normalizes durable profile scaffold fields through setDatabase', () => {
     seedPresetDatabase({

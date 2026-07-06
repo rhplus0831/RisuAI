@@ -147,9 +147,6 @@
 
     const aliveMode = DBState?.db?.keepSessionAlive
     switch (aliveMode) {
-      case 'pip': {
-        break
-      }
       case 'sound': {
         console.log('Starting silent audio to keep session alive')
         const silentAudio = new Audio(sendSound)

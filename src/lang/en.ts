@@ -1751,7 +1751,6 @@ export const languageEnglish = {
   seperateParametersByModel: 'Separate Parameters by Model',
   disableSeperateParameterChangeOnPresetChange: 'Disable Separate Parameter Change on Preset Change',
   keepSessionAlive: 'Keep Session Alive',
-  keepSessionAlivePip: 'Via PIP',
   keepSessionAliveSound: 'Via Sound',
   // NanoGPT Dashboard
   nanoGPTLoadingAccountInfo: 'Loading account info…',

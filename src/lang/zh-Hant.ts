@@ -1506,7 +1506,6 @@ export const languageChineseTraditional = {
   seperateParametersByModel: '依模型分離參數',
   disableSeperateParameterChangeOnPresetChange: '套用預設時不更改分離參數',
   keepSessionAlive: '保持工作階段活躍',
-  keepSessionAlivePip: '透過子母畫面（PIP）',
   keepSessionAliveSound: '透過音效',
   loadouts: '配置組包',
   loadout: '配置組包',

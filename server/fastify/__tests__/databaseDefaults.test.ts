@@ -188,4 +188,15 @@ describe('database defaults', () => {
     ])
     expect(database.agentPresetDefaultId).toBeUndefined()
   })
+
+  it('falls back retired PIP session keepalive to sound', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        keepSessionAlive: 'pip',
+      },
+      { providerDefaults: false },
+    )
+
+    expect(database.keepSessionAlive).toBe('sound')
+  })
 })
