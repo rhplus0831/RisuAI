@@ -259,7 +259,9 @@ describe('server-backed terminal stable chat target (R-02)', () => {
       generationInfo,
     })
 
-    expect(result.status).toBe('failed')
+    if (result.status !== 'failed') {
+      throw new Error(`Expected failed terminal result, got ${result.status}`)
+    }
     expect(result.error).toContain('Agent Preset step failed')
     expect(result.currentChat.id).toBe('chat-target')
     expect(target.message[0].data).toBe('preserved main output')

@@ -1301,13 +1301,32 @@ function triggerBudgetRemainingMs(budget: TriggerExecutionBudget): number {
   return Math.max(0, budget.wallClockMs - (budget.now() - budget.startedAtMs))
 }
 
+function markTriggerAfterSleep(
+  budget: TriggerExecutionBudget | undefined,
+  signal: AbortSignal | undefined,
+  sleptToBudgetBoundary: boolean,
+): void {
+  if (!budget) {
+    return
+  }
+  if (shouldStopTriggerExecution(budget, signal, 'after wait')) {
+    return
+  }
+  if (sleptToBudgetBoundary) {
+    markTriggerStopped(budget, 'wallClock', 'after wait')
+  }
+}
+
 function sleepWithAbort(ms: number, signal: AbortSignal | undefined, budget?: TriggerExecutionBudget): Promise<void> {
   const budgetRemainingMs = budget ? triggerBudgetRemainingMs(budget) : Number.POSITIVE_INFINITY
   const sleepMs = Math.max(0, Math.min(ms, budgetRemainingMs))
+  const sleptToBudgetBoundary = Number.isFinite(budgetRemainingMs) && sleepMs >= budgetRemainingMs
   if (!signal) {
-    return sleep(sleepMs).then(() => {})
+    return sleep(sleepMs).then(() => {
+      markTriggerAfterSleep(budget, signal, sleptToBudgetBoundary)
+    })
   }
-  return new Promise((resolve) => {
+  return new Promise<void>((resolve) => {
     if (signal.aborted) {
       resolve()
       return
@@ -1321,6 +1340,8 @@ function sleepWithAbort(ms: number, signal: AbortSignal | undefined, budget?: Tr
       resolve()
     }
     signal.addEventListener('abort', onAbort, { once: true })
+  }).then(() => {
+    markTriggerAfterSleep(budget, signal, sleptToBudgetBoundary)
   })
 }
 

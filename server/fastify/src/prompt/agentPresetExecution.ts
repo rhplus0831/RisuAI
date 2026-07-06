@@ -418,7 +418,7 @@ export async function executeAgentPresetStep(
 
     if (input.step.outputFormat === 'jsonObject') {
       const parsed = parseJsonObject(bounded.text)
-      if (!parsed.ok) {
+      if (parsed.status === 'error') {
         return failureResult({
           step: input.step,
           kind: 'invalid_json_output',
@@ -754,7 +754,7 @@ function failureResult(input: {
     }
     if (input.step.outputFormat === 'jsonObject') {
       const parsed = parseJsonObject(fallbackText)
-      if (!parsed.ok) {
+      if (parsed.status === 'error') {
         return failedResult(
           {
             ...input,
@@ -1122,15 +1122,17 @@ function boundText(text: string, maxChars: number): { text: string; truncated: b
   return { text: text.slice(0, maxChars - 3).trimEnd() + '...', truncated: true }
 }
 
-function parseJsonObject(text: string): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+type ParseJsonObjectResult = { status: 'ok'; value: Record<string, unknown> } | { status: 'error'; error: string }
+
+function parseJsonObject(text: string): ParseJsonObjectResult {
   try {
     const parsed = JSON.parse(text)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { ok: false, error: 'Agent Preset JSON output must be one object.' }
+      return { status: 'error', error: 'Agent Preset JSON output must be one object.' }
     }
-    return { ok: true, value: parsed as Record<string, unknown> }
+    return { status: 'ok', value: parsed as Record<string, unknown> }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    return { status: 'error', error: err instanceof Error ? err.message : String(err) }
   }
 }
 
