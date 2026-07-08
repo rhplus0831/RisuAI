@@ -119,6 +119,7 @@
       (draftStepModelMode === 'inheritMain' || draftStepModelProfileId.trim().length > 0),
   )
   let validDependencyOptions = $derived(dependencyOptions())
+  let visibleInputScopes = $derived(inputScopesForPhase(draftStepPhase))
   let stepFormTitle = $derived(
     stepEditorMode === 'new' ? language.agentPresets.createStep : language.agentPresets.editStep,
   )
@@ -221,7 +222,7 @@
       instruction: draftStepInstruction,
       model,
       runtime,
-      inputScopes: [...draftStepInputScopes],
+      inputScopes: draftStepInputScopes.filter((scope) => inputScopesForPhase(draftStepPhase).includes(scope)),
       outputKey: draftStepOutputKey.trim(),
       outputFormat: draftStepOutputFormat,
       destination:
@@ -327,6 +328,7 @@
     draftStepDependencies = draftStepDependencies.filter((dependencyId) =>
       dependencyOptions().some((option) => option.id === dependencyId),
     )
+    draftStepInputScopes = draftStepInputScopes.filter((scope) => inputScopesForPhase(draftStepPhase).includes(scope))
   }
 
   function setDraftDestination(destination: AgentPresetStepDestination): void {
@@ -353,6 +355,10 @@
   }
 
   function toggleInputScope(scope: AgentPresetStepInputScope, enabled: boolean): void {
+    if (!inputScopesForPhase(draftStepPhase).includes(scope)) {
+      draftStepInputScopes = draftStepInputScopes.filter((candidate) => candidate !== scope)
+      return
+    }
     if (enabled) {
       if (!draftStepInputScopes.includes(scope)) draftStepInputScopes = [...draftStepInputScopes, scope]
     } else {
@@ -366,6 +372,10 @@
     return presetSteps.filter(
       (step, index) => step.enabled && step.phase === draftStepPhase && step.id !== editingStepId && index < maxIndex,
     )
+  }
+
+  function inputScopesForPhase(phase: AgentPresetStepPhase): AgentPresetStepInputScope[] {
+    return AGENT_PRESET_STEP_INPUT_SCOPES.filter((scope) => phase === 'afterMain' || scope !== 'mainDraft')
   }
 
   async function savePreset(): Promise<void> {
@@ -845,7 +855,7 @@
                   <Help key="agentPresetPreparedInputs" name={language.agentPresets.preparedInputScopesLabel} />
                 </h6>
                 <div class="mt-2 grid gap-2 sm:grid-cols-2">
-                  {#each AGENT_PRESET_STEP_INPUT_SCOPES as scope (scope)}
+                  {#each visibleInputScopes as scope (scope)}
                     <div class="flex flex-col gap-1">
                       <CheckInput
                         check={draftStepInputScopes.includes(scope)}

@@ -112,6 +112,17 @@ function stepEditButton(): HTMLButtonElement {
   return element!
 }
 
+function stepPhaseSelect(): HTMLSelectElement {
+  const element = [...target.querySelectorAll<HTMLSelectElement>('[data-risu-agent-preset-step-form] select')].find(
+    (select) => {
+      const optionValues = [...select.options].map((option) => option.value)
+      return optionValues.includes('beforeMain') && optionValues.includes('afterMain')
+    },
+  )
+  expect(element).toBeTruthy()
+  return element!
+}
+
 async function flushAsyncWork(): Promise<void> {
   await Promise.resolve()
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -276,8 +287,56 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain(language.agentPresets.preparedInputCbsNameLabel)
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.currentUserMessage)
     expect(target.textContent).toContain('{{currentUserMessage}}')
+    expect(target.textContent).not.toContain(language.agentPresets.inputScopeLabels.mainDraft)
+    expect(target.textContent).not.toContain('{{mainDraft}}')
+  })
+
+  it('shows main draft prepared input only for after-main steps', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep({
+            id: 'aps_after',
+            name: 'Review Draft',
+            phase: 'afterMain',
+            inputScopes: ['mainDraft'],
+            destination: 'intermediate',
+          }),
+        ],
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.mainDraft)
     expect(target.textContent).toContain('{{mainDraft}}')
+
+    const select = stepPhaseSelect()
+    select.value = 'beforeMain'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(target.textContent).not.toContain(language.agentPresets.inputScopeLabels.mainDraft)
+    expect(target.textContent).not.toContain('{{mainDraft}}')
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith(
+      'ap_a',
+      'aps_after',
+      expect.objectContaining({
+        phase: 'beforeMain',
+        inputScopes: [],
+      }),
+    )
   })
 
   it('refreshes the open editor step list when projection replaces the preset record', async () => {
