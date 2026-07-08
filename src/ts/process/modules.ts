@@ -17,6 +17,7 @@ import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
 import { DBState, HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
+import { SERVER_ASSET_CONTENT_TYPES } from '../server/assets'
 import {
   currentLorebookCollectionScopedSnapshot,
   dispatchReplaceCharacterLorebooks,
@@ -124,6 +125,64 @@ function normalizeRisuModuleMetadata(module: unknown): RisuModule | null {
 
 function hasMcpModuleMetadata(module: RisuModule): boolean {
   return Object.prototype.hasOwnProperty.call(module, 'mcp')
+}
+
+function moduleAssetExtensionFromFileName(fileName: string): string {
+  const normalized = fileName.trim().toLowerCase()
+  if (!normalized) {
+    return ''
+  }
+  return normalized.split('.').pop() ?? ''
+}
+
+function isSupportedModuleAssetExtension(extension: string): boolean {
+  return Object.prototype.hasOwnProperty.call(SERVER_ASSET_CONTENT_TYPES, extension)
+}
+
+function asciiSlice(data: Uint8Array, start: number, end: number): string {
+  return String.fromCharCode(...data.subarray(start, end))
+}
+
+function inferModuleAssetExtension(data: Uint8Array): string | undefined {
+  if (data.length >= 8 && data[0] === 0x89 && asciiSlice(data, 1, 4) === 'PNG') {
+    return 'png'
+  }
+  if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+    return 'jpg'
+  }
+  if (data.length >= 12 && asciiSlice(data, 0, 4) === 'RIFF' && asciiSlice(data, 8, 12) === 'WEBP') {
+    return 'webp'
+  }
+  if (data.length >= 6) {
+    const gifHeader = asciiSlice(data, 0, 6)
+    if (gifHeader === 'GIF87a' || gifHeader === 'GIF89a') {
+      return 'gif'
+    }
+  }
+  if (data.length >= 12 && asciiSlice(data, 4, 8) === 'ftyp') {
+    const majorBrand = asciiSlice(data, 8, 12)
+    if (majorBrand === 'avif' || majorBrand === 'avis') {
+      return 'avif'
+    }
+    for (let offset = 16; offset + 4 <= Math.min(data.length, 64); offset += 4) {
+      const compatibleBrand = asciiSlice(data, offset, offset + 4)
+      if (compatibleBrand === 'avif' || compatibleBrand === 'avis') {
+        return 'avif'
+      }
+    }
+  }
+  return undefined
+}
+
+function uploadFileNameForModuleAsset(fileName: string, data: Uint8Array): string {
+  const extension = moduleAssetExtensionFromFileName(fileName)
+  if (!extension) {
+    return fileName
+  }
+  if (isSupportedModuleAssetExtension(extension)) {
+    return fileName
+  }
+  return `asset.${inferModuleAssetExtension(data) ?? 'png'}`
 }
 
 async function guardImportableRisuModule(module: RisuModule): Promise<boolean> {
@@ -301,7 +360,7 @@ export async function readModule(
           decodedTasks.push({
             task,
             decoded,
-            fileName: module.assets[task.index][2] ?? '',
+            fileName: uploadFileNameForModuleAsset(module.assets[task.index][2] ?? '', decoded),
           })
         } catch (error) {
           failed.push(task)

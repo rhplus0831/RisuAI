@@ -344,6 +344,34 @@ describe('module imports', () => {
     )
   })
 
+  it('infers upload extension for legacy .risum asset filename tokens', async () => {
+    const avifData = new Uint8Array([
+      0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66, 0x00, 0x00, 0x00, 0x00,
+    ])
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Imported module',
+          description: 'Imported',
+          assets: [['portrait', '', '1']],
+        },
+        [avifData],
+      ),
+    }
+
+    await importModule()
+
+    expect(saveAssets).toHaveBeenCalledWith([{ data: Buffer.from(avifData), fileName: 'asset.avif' }])
+    expect(createGlobalModule).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Imported module',
+        assets: [['portrait', 'asset-0', '1']],
+      }),
+    )
+  })
+
   it('cancels low-level .risum import before asset upload or module creation', async () => {
     alertConfirm.mockResolvedValue(false)
     selectedFileState.file = {
