@@ -665,9 +665,11 @@
                   <span class="text-xs text-textcolor2">{activeStep.id}</span>
                 {/if}
               </div>
-              <Button size="sm" styled="outlined" disabled={stepBusy} onclick={cancelStepEdit}>
-                {language.agentPresets.cancelStep}
-              </Button>
+              <span data-risu-agent-preset-step-cancel>
+                <Button size="sm" styled="outlined" disabled={stepBusy} onclick={cancelStepEdit}>
+                  {language.agentPresets.cancelStep}
+                </Button>
+              </span>
             </div>
 
             <div class="grid gap-3 md:grid-cols-2">
@@ -914,11 +916,13 @@
 
     <div class="flex justify-end gap-2 border-t border-darkborderc p-4">
       <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>{language.agentPresets.cancel}</Button>
-      <span data-risu-agent-preset-save>
-        <Button size="sm" disabled={!canSave} onclick={savePreset}>
-          <span class="inline-flex items-center gap-2"><SaveIcon size={16} />{language.agentPresets.save}</span>
-        </Button>
-      </span>
+      {#if !stepEditorMode}
+        <span data-risu-agent-preset-save>
+          <Button size="sm" disabled={!canSave} onclick={savePreset}>
+            <span class="inline-flex items-center gap-2"><SaveIcon size={16} />{language.agentPresets.save}</span>
+          </Button>
+        </span>
+      {/if}
     </div>
   </div>
 </div>

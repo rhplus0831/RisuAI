@@ -305,6 +305,29 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).not.toContain('{{mainDraft}}')
   })
 
+  it('hides the preset save button while the step editor is open', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-preset-save]')).toBeTruthy()
+
+    stepEditButton().click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-preset-step-save]')).toBeTruthy()
+    expect(target.querySelector('[data-risu-agent-preset-save]')).toBeNull()
+
+    button('[data-risu-agent-preset-step-cancel]').click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-preset-step-form]')).toBeNull()
+    expect(target.querySelector('[data-risu-agent-preset-save]')).toBeTruthy()
+  })
+
   it('does not treat Space or Enter in the step instruction as backdrop activation', async () => {
     seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
     mountPage()
