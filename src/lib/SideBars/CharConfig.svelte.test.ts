@@ -30,6 +30,10 @@ const transformerMocks = vi.hoisted(() => ({
   registerOnnxModelFromFileQueue: [] as Array<Promise<unknown> | unknown>,
 }))
 
+const assetMocks = vi.hoisted(() => ({
+  saveAsset: vi.fn(),
+}))
+
 vi.mock('src/ts/server/commands', () => {
   const command =
     (kind: string) =>
@@ -158,7 +162,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
   downloadFile: vi.fn(),
   getFileSrc: vi.fn(async () => ''),
   globalFetch: vi.fn(async () => new Response('{}')),
-  saveAsset: vi.fn(async () => 'asset-id'),
+  saveAsset: assetMocks.saveAsset,
 }))
 
 vi.mock('src/ts/process/inlayScreen', () => ({
@@ -349,6 +353,20 @@ function selectedFile(name: string, data = new Uint8Array([1, 2, 3])): MockSelec
   return { name, data }
 }
 
+function notificationImageAddButton(): HTMLButtonElement {
+  const tile = target.querySelector('div.h-20.w-20.border-dashed')
+  const button = tile?.closest('button')
+  expect(button).toBeTruthy()
+  return button as HTMLButtonElement
+}
+
+function notificationImageClearButton(): HTMLButtonElement {
+  const card = notificationImageAddButton().closest('div.p-2.border-darkborderc')
+  const button = card?.querySelector('button.text-textcolor2')
+  expect(button).toBeTruthy()
+  return button as HTMLButtonElement
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (error?: unknown) => void
@@ -366,6 +384,7 @@ beforeEach(() => {
   selectedFileState.multipleQueue.length = 0
   transformerMocks.registerOnnxModelFromFileCalls.length = 0
   transformerMocks.registerOnnxModelFromFileQueue.length = 0
+  assetMocks.saveAsset.mockReset().mockResolvedValue('asset-id')
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
@@ -389,7 +408,7 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-describe('CharConfig character TTS media callback freshness contracts', () => {
+describe('CharConfig character media callback freshness contracts', () => {
   it('routes VITS and GPT-SoVITS media buttons through guarded helper functions', () => {
     const source = charConfigSource()
 
@@ -418,6 +437,27 @@ describe('CharConfig character TTS media callback freshness contracts', () => {
       body.indexOf('if (!files || files.length === 0 || !operation) return'),
     )
     expect(body).toContain('clearCharacterAdditionalAssetUpload(operation)')
+  })
+
+  it('issues notification-image tokens from the picker callback and guards the target fields', () => {
+    const source = charConfigSource()
+    const body = sourceBetween(
+      source,
+      'function currentEditorNotificationImageUploadTarget()',
+      'function currentEditorTtsAssetUploadTarget(',
+    )
+
+    expect(body).toContain('rowNotificationImage: target.character.notificationImage')
+    expect(body).toContain('draftNotificationImage: characterDraft.value.notificationImage')
+    expect(body).toContain('const selected = (await selectSingleFile(NOTIFICATION_IMAGE_EXTENSIONS, {')
+    expect(body).toContain('onFileSelected: () => {')
+    expect(body).toContain('operation = beginCharacterNotificationImageUpload(target)')
+    expect(body.indexOf('operation = beginCharacterNotificationImageUpload(target)')).toBeLessThan(
+      body.indexOf('if (!selected || !operation) return'),
+    )
+    expect(body).toContain('if (!isCurrentEditorNotificationImageUpload(activeOperation)) return')
+    expect(body).toContain('applyFreshCharacterNotificationImageUpload({')
+    expect(body).toContain('clearCharacterNotificationImageUpload(operation)')
   })
 
   it('issues VITS tokens from the single-file picker callback and guards registration before final apply', () => {
@@ -503,6 +543,56 @@ describe('CharConfig character TTS media callback freshness contracts', () => {
       id: 'newer-model-id',
       name: 'newer-model',
     })
+  })
+
+  it('keeps an older delayed notification-image read from superseding a newer selection', async () => {
+    const olderFile = selectedFile('older.png', new Uint8Array([1]))
+    const newerFile = selectedFile('newer.png', new Uint8Array([2]))
+    const olderRead = deferred<MockSelectedFile | null>()
+    selectedFileState.singleQueue.push({ selected: olderFile, result: olderRead.promise }, newerFile)
+    assetMocks.saveAsset.mockResolvedValueOnce('newer-notification-asset')
+
+    await mountCharConfig(1, { notificationImage: 'original-notification-asset' })
+
+    notificationImageAddButton().click()
+    await settleComponent()
+    expect(assetMocks.saveAsset).not.toHaveBeenCalled()
+
+    notificationImageAddButton().click()
+    await settleComponent()
+
+    expect(assetMocks.saveAsset).toHaveBeenCalledTimes(1)
+    expect(assetMocks.saveAsset).toHaveBeenCalledWith(newerFile.data, '', newerFile.name)
+    expect(DBState.db.characters[0].notificationImage).toBe('newer-notification-asset')
+
+    olderRead.resolve(olderFile)
+    await settleComponent()
+
+    expect(assetMocks.saveAsset).toHaveBeenCalledTimes(1)
+    expect(DBState.db.characters[0].notificationImage).toBe('newer-notification-asset')
+  })
+
+  it('keeps a clear made while an older notification-image upload is pending', async () => {
+    const olderFile = selectedFile('older.png', new Uint8Array([3]))
+    const olderUpload = deferred<string>()
+    selectedFileState.singleQueue.push(olderFile)
+    assetMocks.saveAsset.mockReturnValueOnce(olderUpload.promise)
+
+    await mountCharConfig(1, { notificationImage: 'original-notification-asset' })
+
+    notificationImageAddButton().click()
+    await settleComponent()
+
+    expect(assetMocks.saveAsset).toHaveBeenCalledWith(olderFile.data, '', olderFile.name)
+
+    notificationImageClearButton().click()
+    await settleComponent()
+    expect(DBState.db.characters[0].notificationImage).toBe('')
+
+    olderUpload.resolve('older-notification-asset')
+    await settleComponent()
+
+    expect(DBState.db.characters[0].notificationImage).toBe('')
   })
 })
 

@@ -90,6 +90,15 @@
     type CharacterTtsAssetUploadKind,
     type CharacterTtsAssetUploadOperation,
   } from 'src/ts/server/characterTtsAssetUpload'
+  import {
+    applyFreshCharacterNotificationImageUpload,
+    beginCharacterNotificationImageUpload,
+    captureCharacterNotificationImageUploadTarget,
+    clearCharacterNotificationImageUpload,
+    invalidateCharacterNotificationImageUpload,
+    isFreshCharacterNotificationImageUpload,
+    type CharacterNotificationImageUploadOperation,
+  } from 'src/ts/server/characterNotificationImageUpload'
   import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import {
     applyCharacterScriptDefinitionDraft,
@@ -491,16 +500,6 @@
     return target
   }
 
-  function isCurrentEditableCharacterTarget(characterId: string, selectedIndex: number): boolean {
-    const target = currentEditableCharacterTarget()
-    return target?.selectedIndex === selectedIndex && target.character.chaId === characterId
-  }
-
-  function isCurrentRealCharacterDraftTarget(characterId: string, selectedIndex: number): boolean {
-    const target = currentRealCharacterDraftTarget()
-    return target?.selectedIndex === selectedIndex && target.character.chaId === characterId
-  }
-
   function moveAlternateGreetingUp(index: number) {
     if (index === 0) return
     if (!currentRealCharacterDraftTarget()) return
@@ -663,28 +662,82 @@
     }
   }
 
-  async function uploadNotificationImageFromEditor(): Promise<void> {
+  function currentEditorNotificationImageUploadTarget() {
     const target = currentEditableCharacterTarget()
+    if (!target) return null
+
+    return captureCharacterNotificationImageUploadTarget({
+      characterId: target.character.chaId,
+      characterIndex: target.selectedIndex,
+      draftCharacterId: characterDraft.characterId,
+      rowNotificationImage: target.character.notificationImage,
+      draftNotificationImage: characterDraft.value.notificationImage,
+    })
+  }
+
+  function editorNotificationImageUploadFreshness(operation: CharacterNotificationImageUploadOperation) {
+    const editableTarget = currentEditableCharacterTarget()
+    const targetRow =
+      operation.characterIndex === undefined ? undefined : DBState.db.characters?.[operation.characterIndex]
+
+    return {
+      currentCharacterId: editableTarget?.character.chaId,
+      rowCharacterId: operation.characterIndex === undefined ? undefined : (targetRow?.chaId ?? null),
+      draftCharacterId: characterDraft.characterId,
+      rowNotificationImage: targetRow?.notificationImage,
+      draftNotificationImage: characterDraft.value.notificationImage,
+    }
+  }
+
+  function isCurrentEditorNotificationImageUpload(operation: CharacterNotificationImageUploadOperation): boolean {
+    return isFreshCharacterNotificationImageUpload(operation, editorNotificationImageUploadFreshness(operation))
+  }
+
+  async function uploadNotificationImageFromEditor(): Promise<void> {
+    const target = currentEditorNotificationImageUploadTarget()
     if (!target) return
 
-    const characterId = target.character.chaId
-    const selectedIndex = target.selectedIndex
-    const selected = (await selectSingleFile(NOTIFICATION_IMAGE_EXTENSIONS)) as SelectedSingleFile | null
-    if (!selected || !isCurrentEditableCharacterTarget(characterId, selectedIndex)) return
+    let operation: CharacterNotificationImageUploadOperation | null = null
+    try {
+      const selected = (await selectSingleFile(NOTIFICATION_IMAGE_EXTENSIONS, {
+        onFileSelected: () => {
+          operation = beginCharacterNotificationImageUpload(target)
+        },
+      })) as SelectedSingleFile | null
+      if (!selected || !operation) return
 
-    const image = await saveAsset(selected.data, '', selected.name)
-    if (!isCurrentEditableCharacterTarget(characterId, selectedIndex)) return
+      const activeOperation = operation
+      if (!isCurrentEditorNotificationImageUpload(activeOperation)) return
 
-    if (isCurrentRealCharacterDraftTarget(characterId, selectedIndex)) {
-      updateCharacterDraft((character) => {
-        character.notificationImage = image
+      const image = await saveAsset(selected.data, '', selected.name)
+      const nextImage = applyFreshCharacterNotificationImageUpload({
+        operation: activeOperation,
+        freshness: editorNotificationImageUploadFreshness(activeOperation),
+        image,
       })
-      return
-    }
+      if (nextImage === null) return
 
-    applyCharacterRowMutationScoped(selectedIndex, characterId, (character) => {
-      character.notificationImage = image
-    })
+      const realDraftTarget = currentRealCharacterDraftTarget()
+      if (
+        activeOperation.draftCharacterId === activeOperation.characterId &&
+        realDraftTarget?.selectedIndex === activeOperation.characterIndex &&
+        realDraftTarget.character.chaId === activeOperation.characterId
+      ) {
+        updateCharacterDraft((character) => {
+          character.notificationImage = nextImage
+        })
+        return
+      }
+
+      if (activeOperation.characterIndex === undefined) return
+      applyCharacterRowMutationScoped(activeOperation.characterIndex, activeOperation.characterId, (character) => {
+        character.notificationImage = nextImage
+      })
+    } finally {
+      if (operation) {
+        clearCharacterNotificationImageUpload(operation)
+      }
+    }
   }
 
   function currentEditorTtsAssetUploadTarget(kind: CharacterTtsAssetUploadKind) {
@@ -814,6 +867,10 @@
   }
 
   function clearNotificationImage(): void {
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return
+
+    invalidateCharacterNotificationImageUpload(target.character.chaId)
     updateCharacterDraft((character) => {
       character.notificationImage = ''
     })
