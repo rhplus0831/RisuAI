@@ -14,6 +14,7 @@ import {
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { COMMAND_EVENT_CATALOG } from '../src/commands/events.js'
+import { PROMPT_SETTINGS_KEYS } from '../src/commands/prompts.js'
 import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
 import { SETTINGS_GROUP_KEYS } from '../src/routes/commands.js'
 import type { FastifyInstance } from 'fastify'
@@ -633,25 +634,56 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('language')
   })
 
-  it('falls back to full for a prompt-settings refresh (not botPresets)', async () => {
-    // Projection field-bug fix: prompt-settings writes ~21 scattered settings
-    // scalars, so a foreign refresh must full-bootstrap. The prior
-    // `prompt → ['botPresets']` mapping pointed at an unrelated field, so a
-    // foreign refresh never reflected the changed prompt settings.
+  it('returns only the authoritative prompt-settings surface', async () => {
     const revision = await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
       botPresets: [{ id: 'p1', name: 'P1' }],
+      mainPrompt: 'authoritative main',
+      jailbreak: 'authoritative jailbreak',
+      templateDefaultVariables: 'authoritative variables',
       language: 'en',
     })
 
     const res = await getProjection('prompt')
     const body = res.json()
     expect(body.revision).toBe(revision)
-    expect(body.mode).toBe('full')
-    expect(body.fields).toBeUndefined()
-    // Must not point at the unrelated botPresets field any more.
-    expect(resourceProjectionFields('prompt')).toBeNull()
-    expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).every((key) => PROMPT_SETTINGS_KEYS.some((promptKey) => promptKey === key))).toBe(
+      true,
+    )
+    expect(body.fields).toMatchObject({
+      mainPrompt: 'authoritative main',
+      jailbreak: 'authoritative jailbreak',
+      templateDefaultVariables: 'authoritative variables',
+    })
+    expect(body.fields).not.toHaveProperty('characters')
+    expect(body.fields).not.toHaveProperty('botPresets')
+    expect(body.fields).not.toHaveProperty('language')
+  })
+
+  it('returns the complete plugin storage map, including an authoritative empty map', async () => {
+    await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      pluginCustomStorage: {
+        alpha: { value: 1 },
+        beta: ['two'],
+      },
+      language: 'en',
+    })
+
+    const populated = (await getProjection('pluginStorage')).json()
+    expect(populated.mode).toBe('fields')
+    expect(populated.fields).toEqual({
+      pluginCustomStorage: {
+        alpha: { value: 1 },
+        beta: ['two'],
+      },
+    })
+
+    await importDatabase({ characters: [], pluginCustomStorage: {}, language: 'ko' })
+    const empty = (await getProjection('pluginStorage')).json()
+    expect(empty.mode).toBe('fields')
+    expect(empty.fields).toEqual({ pluginCustomStorage: {} })
   })
 
   it('returns only the requested settings group and masks provider secrets', async () => {
@@ -715,7 +747,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
 
   it('maps every command-event resource to either fields or full', () => {
     // The structural resources the decision tree narrows; everything else
-    // (settings/state/pluginStorage/unknown) intentionally falls back to full.
+    // (ungrouped settings/state/unknown) intentionally falls back to full.
     expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder', 'currentChar'])
     expect(resourceProjectionFields('characterOrder')).toEqual(['characterOrder'])
     expect(resourceProjectionFields('characterSelection')).toEqual([])
@@ -767,6 +799,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'userNote',
     ])
     expect(resourceProjectionFields('loadout')).toEqual(['loadouts', 'lastLoadedLoadoutName'])
+    expect(resourceProjectionFields('prompt')).toEqual(PROMPT_SETTINGS_KEYS)
+    expect(resourceProjectionFields('pluginStorage')).toEqual(['pluginCustomStorage'])
     expect(resourceProjectionFields('settings', 'display')).toBe(SETTINGS_GROUP_KEYS.display)
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('settings', 'not-a-settings-group')).toBeNull()
@@ -805,8 +839,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(fullBootstrapFallbackClass('settings')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('settings', 'not-a-settings-group')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('state')).toBe('sprawling')
-    expect(fullBootstrapFallbackClass('pluginStorage')).toBe('sprawling')
-    expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
+    expect(fullBootstrapFallbackClass('pluginStorage')).toBeNull()
+    expect(fullBootstrapFallbackClass('prompt')).toBeNull()
     expect(fullBootstrapFallbackClass('chatTranscript')).toBeNull()
     // Anything else is an unknown/foreign resource fallback.
     expect(fullBootstrapFallbackClass('does-not-exist')).toBe('unknown')
@@ -1860,10 +1894,10 @@ describe('sprawling-resource full-bootstrap measurement', () => {
     return metric as ProjectionMetric
   }
 
-  it('records mode and a sprawling fallback class for settings/state/pluginStorage', async () => {
+  it('records mode and a sprawling fallback class for ungrouped settings/state', async () => {
     await importDatabase({ characters: [], language: 'en' })
 
-    for (const resource of ['settings', 'state', 'pluginStorage']) {
+    for (const resource of ['settings', 'state']) {
       capturedMetrics.length = 0
       const res = await getProjection(resource)
       const body = res.json()
@@ -1917,7 +1951,7 @@ describe('sprawling-resource full-bootstrap measurement', () => {
     await importDatabase({ characters: [], language: 'en' })
     capturedMetrics.length = 0
 
-    const resources = ['settings', 'state', 'pluginStorage', 'does-not-exist']
+    const resources = ['settings', 'state', 'does-not-exist']
     for (const resource of resources) {
       await getProjection(resource)
     }

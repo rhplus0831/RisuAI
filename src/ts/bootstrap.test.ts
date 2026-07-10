@@ -988,6 +988,78 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
   })
 
+  it('merges prompt and plugin-storage events without replacing hydrated characters', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'resident history' }] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+          mainPrompt: 'old prompt',
+          pluginCustomStorage: { old: true },
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    hydrationSpies.resetChatHydration.mockClear()
+    serverProjectionState.fetchResource.mockImplementation(async (resource: string) => {
+      if (resource === 'prompt') {
+        return {
+          status: 'ok' as const,
+          revision: 6,
+          mode: 'fields' as const,
+          fields: { mainPrompt: 'new prompt' },
+        }
+      }
+      return {
+        status: 'ok' as const,
+        revision: 7,
+        mode: 'fields' as const,
+        fields: { pluginCustomStorage: { replacement: { value: 2 } } },
+      }
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'prompt.settings.updated',
+      revision: 6,
+      resource: 'prompt',
+    })
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'pluginStorage.updated',
+      revision: 7,
+      resource: 'pluginStorage',
+      id: 'replacement',
+    })
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(7))
+
+    expect(serverProjectionState.fetchResource).toHaveBeenNthCalledWith(1, 'prompt', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenNthCalledWith(2, 'pluginStorage', {
+      id: 'replacement',
+      parentId: undefined,
+    })
+    expect(DBState.db.mainPrompt).toBe('new prompt')
+    expect(DBState.db.pluginCustomStorage).toEqual({ replacement: { value: 2 } })
+    expect(DBState.db.characters).toHaveLength(1)
+    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'resident history' }])
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
   it('applies a promptItem projection and marks promptTemplate hydrated', async () => {
     await loadWebInitialDatabase()
     serverProjectionState.fetchResource.mockImplementation(async () => ({

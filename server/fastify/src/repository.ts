@@ -1155,7 +1155,13 @@ function loadDatabaseFieldsFromSqlite(
   fieldKeys: readonly string[],
 ): { fields: Record<string, unknown>; settings: Record<string, unknown> | null } {
   const settings = loadSettingsFromSqlite(db)
-  if (settings === null) return { fields: {}, settings: null }
+  if (settings === null) {
+    const fields: Record<string, unknown> = {}
+    if (fieldKeys.includes('pluginCustomStorage')) {
+      fields.pluginCustomStorage = loadPluginCustomStorageFieldFromSqlite(db) ?? {}
+    }
+    return { fields, settings: null }
+  }
 
   const fields: Record<string, unknown> = {}
   for (const key of fieldKeys) {

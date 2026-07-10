@@ -38,7 +38,7 @@ interface ProtocolDiagnostics {
   fullBootstrapResync: Record<string, number>
   unexpectedFullBootstrapResync: Record<string, number>
   // Counts which command-event `resource` triggered a full-bootstrap fallback,
-  // so the cost of sprawling-resource (`settings`, `state`, `pluginStorage`) and
+  // so the cost of sprawling-resource (`settings`, `state`) and
   // unknown-resource fallbacks can be attributed per resource. Only populated
   // for resyncs with a known triggering resource (event-driven ones); restore
   // and replay-unavailable resyncs have no single resource and are omitted.

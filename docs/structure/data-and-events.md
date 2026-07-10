@@ -80,8 +80,10 @@ Examples include `characterSelection`, `characterOrder`, `characterRow`, `charac
 `settings.updated` events carry their
 settings group in `id`, allowing projection to read and return only the keys in
 that authoritative group. Historical settings events with no recognized group
-still fall back to a full bootstrap. Known sprawling resources such as `state`,
-`pluginStorage`, and `prompt` intentionally fall back to a full bootstrap.
+still fall back to a full bootstrap. Known sprawling resources such as `state`
+intentionally fall back to a full bootstrap. Prompt settings project their
+explicit 21-key command surface, and plugin storage projects the complete
+`pluginCustomStorage` map so deletion and clear operations remain authoritative.
 `asset` is a no-op targeted projection that advances the cached revision because
 asset metadata lives outside the projected `Database`.
 Character script/trigger replacements and chat/chat-folder metadata mutations

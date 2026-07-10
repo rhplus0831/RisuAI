@@ -96,8 +96,10 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   put the group in `event.id`; `settings?id=<group>` projects only the keys from
   the command route's authoritative group map. Historical settings events with
   no recognized group still full-bootstrap safely. Other known sprawling
-  resources such as `state`, `pluginStorage`, and `prompt` intentionally return
-  full-bootstrap mode. `modelPreset` includes the complete applied model-setting
+  resources such as `state` intentionally return full-bootstrap mode. Prompt
+  settings use their explicit command-key surface, while `pluginStorage`
+  returns the complete storage map for delete/clear correctness. `modelPreset`
+  includes the complete applied model-setting
   surface because selected-preset mutations also reapply the selected prompt
   preset's model overrides to root settings.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows,

@@ -49,10 +49,11 @@ is separate from browser plugins.
   compatibility/cache storage rather than app database or backup persistence.
 
 Plugin storage persists in the SQLite `plugin_custom_storage` table. Plugin
-records can narrow targeted projection through the `plugin` resource, but
-`pluginStorage` is a known full-bootstrap projection resource. Heavy
-plugin/module bodies may be stubbed in bootstrap and filled from the
-bootstrap-body-cache path.
+records narrow targeted projection through the `plugin` resource, while
+`pluginStorage` projects the complete `pluginCustomStorage` map so key deletion,
+clear, and bulk replacement remove absent values without refreshing unrelated
+app state. Heavy plugin/module bodies may be stubbed in bootstrap and filled
+from the bootstrap-body-cache path.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay

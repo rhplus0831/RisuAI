@@ -31,6 +31,7 @@ import {
 import { maskProviderSecrets, maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 import { SETTINGS_GROUP_KEYS, type SettingsGroup } from './commands.js'
+import { PROMPT_SETTINGS_KEYS } from '../commands/prompts.js'
 
 function promptPresetProjectionField(field: PromptPresetField): string {
   if (field === 'regex' || field === 'presetRegex') return 'presetRegex'
@@ -135,9 +136,9 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // Preset deletion can atomically clear chat-scoped selections and loadout
   // references in addition to the settings-backed preset collection.
   agentPresetDeleted: ['agentPresets', 'agentPresetDefaultId', 'characters', 'loadouts'],
-  // `prompt` writes scattered settings scalars, so it full-bootstraps via
-  // SPRAWLING_FULL_PROJECTION_RESOURCES. Prompt-item commands edit the
-  // `promptTemplate` collection, so foreign refreshes reship that field.
+  // Prompt settings write this explicit settings-owned surface; prompt-item
+  // commands separately edit the promptTemplate collection.
+  prompt: [...PROMPT_SETTINGS_KEYS],
   promptItem: ['promptTemplate'],
   // persona select/delete also mirror the legacy profile scalars into settings
   // (when mirrorLegacyProfile is on), so a foreign refresh must reship them too.
@@ -151,6 +152,9 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   moduleReordered: ['modules'],
   moduleEnabled: ['enabledModules'],
   plugin: ['plugins', 'currentPluginProvider'],
+  // Key-level plugin-storage commands all own one SQLite table. Project the
+  // complete map so deletes and bulk replacement clear absent keys.
+  pluginStorage: ['pluginCustomStorage'],
   // loadout touch/delete also write the `lastLoadedLoadoutName` settings scalar,
   // so a foreign refresh must reship it alongside the loadouts collection.
   loadout: ['loadouts', 'lastLoadedLoadoutName'],
@@ -171,11 +175,13 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'modelPreset',
   'promptPreset',
   'legacyBotPreset',
+  'prompt',
   'promptItem',
   'persona',
   'translatorPreset',
   'loadout',
   'plugin',
+  'pluginStorage',
 ])
 
 // Resources whose projected state intentionally sprawls across many top-level
@@ -187,14 +193,7 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
 // resource rather than a known sprawling one. The measurement distinguishes the
 // two so targeted-resource metrics can tell an expected sprawling
 // fallback from an unexpected unknown-resource fallback.
-const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set([
-  'settings',
-  'state',
-  'pluginStorage',
-  // `prompt` (prompt-settings) writes ~21 scattered settings scalars; a foreign
-  // refresh must full-bootstrap rather than enumerate them.
-  'prompt',
-])
+const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set(['settings', 'state'])
 
 export type FullBootstrapFallbackClass = 'sprawling' | 'unknown'
 
@@ -669,7 +668,7 @@ export function registerProjectionRoutes(
     if (fieldKeys === null) {
       // Unknown or sprawling resource: tell the client to full-bootstrap. The
       // opt-in metric records whether this is an expected sprawling resource
-      // (`settings`, `state`, `pluginStorage`) or an unknown one so the cost
+      // (`settings`, `state`) or an unknown one so the cost
       // of these fallbacks can be attributed per resource.
       const response = { revision, resource, mode: 'full' as const }
       emitProjectionMetric(req.log, resource, revision, response, {
