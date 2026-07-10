@@ -637,7 +637,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
       selectedChatId: 'h2-load-created-chat',
       event: {
         type: 'chat.created',
-        resource: 'chat',
+        resource: 'chatTranscript',
         id: 'h2-load-created-chat',
         parentId: fixture.hot.characterId,
       },

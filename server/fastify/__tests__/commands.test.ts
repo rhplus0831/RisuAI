@@ -5383,7 +5383,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 5,
       event: {
         type: 'chat.reordered',
-        resource: 'chat',
+        resource: 'characterRow',
         parentId: 'char-a',
       },
       selectedChatId: 'chat-c',
@@ -5401,7 +5401,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     expect(folderCreated.statusCode).toBe(200)
     expect(folderCreated.json().event).toMatchObject({
       type: 'chatFolder.created',
-      resource: 'chatFolder',
+      resource: 'characterRow',
       id: 'folder-b',
       parentId: 'char-a',
     })
@@ -5415,6 +5415,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(folderUpdated.statusCode).toBe(200)
+    expect(folderUpdated.json().event).toMatchObject({
+      type: 'chatFolder.updated',
+      resource: 'characterRow',
+      id: 'folder-b',
+      parentId: 'char-a',
+    })
 
     const foldersReordered = await harness.app.inject({
       method: 'POST',
@@ -5427,6 +5433,11 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(foldersReordered.statusCode).toBe(200)
+    expect(foldersReordered.json().event).toMatchObject({
+      type: 'chatFolder.reordered',
+      resource: 'characterRow',
+      parentId: 'char-a',
+    })
 
     const folderDeleted = await harness.app.inject({
       method: 'DELETE',
@@ -5435,6 +5446,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
       payload: { baseRevision: foldersReordered.json().revision },
     })
     expect(folderDeleted.statusCode).toBe(200)
+    expect(folderDeleted.json().event).toMatchObject({
+      type: 'chatFolder.deleted',
+      resource: 'characterRow',
+      id: 'folder-a',
+      parentId: 'char-a',
+    })
 
     const deleted = await harness.app.inject({
       method: 'DELETE',
@@ -5447,7 +5464,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 10,
       event: {
         type: 'chat.deleted',
-        resource: 'chat',
+        resource: 'characterRow',
         id: 'chat-b',
         parentId: 'char-a',
       },
@@ -5679,6 +5696,12 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(omitted.statusCode).toBe(200)
+    expect(omitted.json().event).toMatchObject({
+      type: 'chat.created',
+      resource: 'characterRow',
+      id: 'chat-omitted',
+      parentId: 'char-a',
+    })
 
     const explicitSettings = {
       configured: true,
@@ -8358,7 +8381,7 @@ describe('Phase 9-3e chat scriptstate command', () => {
       event: {
         type: 'chat.scriptstate.updated',
         revision: 2,
-        resource: 'chat',
+        resource: 'characterRow',
         id: 'chat-a',
         parentId: 'char-a',
       },
@@ -8680,8 +8703,8 @@ describe('Phase 9-4a lorebook commands', () => {
       payload: { baseRevision: 3, entries: [entry('entry-chat', 'Chat')] },
     })
     expect(chat.statusCode).toBe(200)
-    // localLore lives in the chat row, so a foreign refresh uses the `chat` resource.
-    expect(chat.json().event).toMatchObject({ resource: 'chat', id: 'chat-a', parentId: 'char-a' })
+    // localLore lives in the chat row, so a foreign refresh ships its parent character only.
+    expect(chat.json().event).toMatchObject({ resource: 'characterRow', id: 'chat-a', parentId: 'char-a' })
 
     const module = await harness.app.inject({
       method: 'PUT',
@@ -8778,7 +8801,7 @@ describe('Phase 9-4a lorebook commands', () => {
       payload: { baseRevision: revision + 2, entry: entry('chat-b', 'Chat B Updated') },
     })
     expect(chat.statusCode).toBe(200)
-    expect(chat.json().event).toMatchObject({ resource: 'chat', id: 'chat-a', parentId: 'char-a' })
+    expect(chat.json().event).toMatchObject({ resource: 'characterRow', id: 'chat-a', parentId: 'char-a' })
 
     const module = await harness.app.inject({
       method: 'PUT',

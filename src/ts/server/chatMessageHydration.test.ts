@@ -30,6 +30,7 @@ import {
   hydrateActiveChatFully,
   hydrateChatMessages,
   applyServerChatMessagesProjection,
+  invalidateChatHydration,
   isChatMessageHydrationPending,
   resetChatHydration,
 } from './chatMessageHydration.svelte'
@@ -201,6 +202,44 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChat({ force: true })
     expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'b', chatId: 'm1' }])
+  })
+
+  it('invalidates only one cached chat so it can hydrate again', async () => {
+    projectionState.fetchChat.mockImplementation(async (chatId: string) =>
+      okResult(chatId, [{ role: 'user', data: `load ${chatId}`, chatId: `m-${chatId}` }]),
+    )
+
+    await hydrateChatMessages('chat-1')
+    await hydrateChatMessages('chat-2')
+    await hydrateChatMessages('chat-1')
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
+
+    invalidateChatHydration('chat-1')
+    await hydrateChatMessages('chat-1')
+    await hydrateChatMessages('chat-2')
+
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(3)
+    expect(projectionState.fetchChat).toHaveBeenLastCalledWith('chat-1', {})
+  })
+
+  it('drops an invalidated in-flight response while allowing an immediate replacement request', async () => {
+    const stale = deferred<ReturnType<typeof okResult>>()
+    const fresh = deferred<ReturnType<typeof okResult>>()
+    projectionState.fetchChat.mockReturnValueOnce(stale.promise).mockReturnValueOnce(fresh.promise)
+
+    const staleRequest = hydrateChatMessages('chat-1')
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(1)
+    invalidateChatHydration('chat-1')
+    const freshRequest = hydrateChatMessages('chat-1')
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
+
+    stale.resolve(okResult('chat-1', [{ role: 'user', data: 'stale', chatId: 'm-stale' }]))
+    await staleRequest
+    expect(db().characters[0].chats[0].message).toEqual([])
+
+    fresh.resolve(okResult('chat-1', [{ role: 'user', data: 'fresh', chatId: 'm-fresh' }]))
+    await freshRequest
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'fresh', chatId: 'm-fresh' }])
   })
 
   it('preserves a fully loaded prefix when a ranged generation projection appends', async () => {

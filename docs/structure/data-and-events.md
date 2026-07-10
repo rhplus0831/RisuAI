@@ -70,8 +70,8 @@ command transaction.
 
 Command-event resources should be as narrow as practical and are defined by
 `COMMAND_EVENT_CATALOG` plus the projection route's `RESOURCE_PROJECTION_FIELDS`.
-Examples include `characterSelection`, `characterOrder`, `characterRow`, `character`, `chat`,
-`chatFolder`, `message`, `globalLorebook`, `characterLorebook`, legacy
+Examples include `characterSelection`, `characterOrder`, `characterRow`, `character`,
+`message`, `globalLorebook`, `characterLorebook`, legacy `chat`/`chatFolder` and
 `lorebook`, `module`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
 `moduleScriptDefinition`, `moduleTriggerDefinition`, collection slices such as `preset`/`promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
@@ -84,13 +84,17 @@ still fall back to a full bootstrap. Known sprawling resources such as `state`,
 `pluginStorage`, and `prompt` intentionally fall back to a full bootstrap.
 `asset` is a no-op targeted projection that advances the cached revision because
 asset metadata lives outside the projected `Database`.
-Character script/trigger replacements emit `characterRow` with the character id,
-so reconciliation ships one row. The older `scriptDefinition` and
-`triggerDefinition` resource names remain replay aliases: ID-bearing events use
-the same single-row response, while events without an id retain the broad safe
+Character script/trigger replacements and chat/chat-folder metadata mutations
+emit `characterRow` with the owning character id, so reconciliation ships one
+row. The older `scriptDefinition`, `triggerDefinition`, `chat`, and `chatFolder`
+resource names remain replay aliases: qualified events use the same single-row
+response, while events without enough owner metadata retain the broad safe
 fallback.
 Character reorder events use `characterOrder`, which projects only the
 settings-level presentation structure and never re-stubs character rows.
+When a character-row projection structurally changes chats, the browser keeps
+resident histories for surviving ids, invalidates hydration only for added or
+removed ids, and refreshes generation attachment if the active chat changed.
 `modelPreset` projections include both the preset collection/pointer and every
 root model setting the selected model and prompt-preset overrides can apply.
 Ordinary `message` events project the complete affected transcript so deletes,

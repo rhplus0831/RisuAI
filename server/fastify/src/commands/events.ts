@@ -458,7 +458,7 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatCreated: {
     type: 'chat.created',
-    resource: 'chat',
+    resource: 'characterRow',
   },
   chatCreatedWithTranscript: {
     type: 'chat.created',
@@ -473,11 +473,11 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatDeleted: {
     type: 'chat.deleted',
-    resource: 'chat',
+    resource: 'characterRow',
   },
   chatForked: {
     type: 'chat.forked',
-    resource: 'chat',
+    resource: 'characterRow',
   },
   chatForkedWithTranscript: {
     type: 'chat.forked',
@@ -485,11 +485,11 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatReordered: {
     type: 'chat.reordered',
-    resource: 'chat',
+    resource: 'characterRow',
   },
   chatFolderCreated: {
     type: 'chatFolder.created',
-    resource: 'chatFolder',
+    resource: 'characterRow',
   },
   chatFolderUpdated: {
     type: 'chatFolder.updated',
@@ -499,15 +499,15 @@ export const COMMAND_EVENT_CATALOG = {
   },
   chatFolderDeleted: {
     type: 'chatFolder.deleted',
-    resource: 'chatFolder',
+    resource: 'characterRow',
   },
   chatFolderReordered: {
     type: 'chatFolder.reordered',
-    resource: 'chatFolder',
+    resource: 'characterRow',
   },
   chatScriptstateUpdated: {
     type: 'chat.scriptstate.updated',
-    resource: 'chat',
+    resource: 'characterRow',
   },
   messageAppended: {
     type: 'message.appended',

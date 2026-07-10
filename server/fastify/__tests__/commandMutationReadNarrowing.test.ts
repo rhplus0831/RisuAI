@@ -222,7 +222,7 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       selectedChatId: fixture.hot.chatId,
       event: {
         type: 'chat.created',
-        resource: 'chat',
+        resource: 'chatTranscript',
         id: 'h2-created-chat',
         parentId: targetCharacterId,
       },

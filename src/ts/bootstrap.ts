@@ -50,6 +50,7 @@ import {
   applyServerChatMessagesProjection,
   hydrateActiveCharacterLorebook,
   hydrateActiveChat,
+  invalidateChatHydration,
   resetChatHydration,
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
@@ -439,8 +440,10 @@ async function processServerCommandEvent(
       // A foreign per-character edit (character field / module-link / chat or
       // folder metadata): surgically replace just that character row, preserving
       // already-hydrated chat messages, instead of re-stubbing every character.
+      const chatSnapshot = captureCharacterRowChatSnapshot(result.characterId)
       const applied = mergeServerProjectionCharacterRow(result.character)
       if (applied) {
+        reconcileCharacterRowChatHydration(result.characterId, chatSnapshot)
         markAppliedCommandProjectionEvent(event, options)
         return
       }
@@ -542,6 +545,59 @@ async function processServerCommandEvent(
 interface SelectedCharacterBeforeBroadProjection {
   active: boolean
   characterId?: string
+}
+
+interface CharacterRowChatSnapshot {
+  chatIds: Set<string>
+  activeChatId?: string
+}
+
+function currentActiveChatId(): string | undefined {
+  const selectedCharacterIndex = get(selectedCharID)
+  if (selectedCharacterIndex < 0) return undefined
+  const character = DBState.db.characters?.[selectedCharacterIndex]
+  if (!character || !Array.isArray(character.chats)) return undefined
+  const chatPage = Number.isInteger(character.chatPage) ? character.chatPage : 0
+  const chat = character.chats[chatPage]
+  return typeof chat?.id === 'string' && chat.id ? chat.id : undefined
+}
+
+function characterChatIds(characterId: string): Set<string> {
+  const character = DBState.db.characters?.find((candidate) => candidate?.chaId === characterId)
+  return new Set(
+    (character?.chats ?? [])
+      .map((chat) => chat?.id)
+      .filter((chatId): chatId is string => typeof chatId === 'string' && chatId.length > 0),
+  )
+}
+
+function captureCharacterRowChatSnapshot(characterId: string): CharacterRowChatSnapshot {
+  return {
+    chatIds: characterChatIds(characterId),
+    activeChatId: currentActiveChatId(),
+  }
+}
+
+function reconcileCharacterRowChatHydration(characterId: string, previous: CharacterRowChatSnapshot): void {
+  const nextChatIds = characterChatIds(characterId)
+  const invalidatedChatIds = new Set<string>()
+  const invalidate = (chatId: string) => {
+    if (invalidatedChatIds.has(chatId)) return
+    invalidatedChatIds.add(chatId)
+    invalidateChatHydration(chatId)
+  }
+  for (const chatId of previous.chatIds) {
+    if (!nextChatIds.has(chatId)) invalidate(chatId)
+  }
+  for (const chatId of nextChatIds) {
+    if (!previous.chatIds.has(chatId)) invalidate(chatId)
+  }
+
+  const activeChatId = currentActiveChatId()
+  if (activeChatId === previous.activeChatId) return
+  if (activeChatId) invalidate(activeChatId)
+  void hydrateActiveChat({ force: true })
+  triggerOpenChatGenerationReattach()
 }
 
 function captureSelectedCharacterBeforeBroadProjection(

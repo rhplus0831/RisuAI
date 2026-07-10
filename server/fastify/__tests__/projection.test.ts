@@ -776,6 +776,14 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       type: 'chat.created',
       resource: 'chatTranscript',
     })
+    expect(COMMAND_EVENT_CATALOG.chatCreated.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatDeleted.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatForked.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatReordered.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatFolderCreated.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatFolderDeleted.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatFolderReordered.resource).toBe('characterRow')
+    expect(COMMAND_EVENT_CATALOG.chatScriptstateUpdated.resource).toBe('characterRow')
     expect(COMMAND_EVENT_CATALOG.chatForkedWithTranscript).toEqual({
       type: 'chat.forked',
       resource: 'chatTranscript',
@@ -1224,6 +1232,16 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const viaParent = (await getProjection('characterRow', '?parentId=char-a')).json()
     expect(viaParent.mode).toBe('character-row')
     expect(viaParent.characterId).toBe('char-a')
+
+    // Retained pre-change chat/folder events use their broad resource names,
+    // but parentId still lets the server narrow them to this same row.
+    for (const legacyResource of ['chat', 'chatFolder']) {
+      const legacyRow = (await getProjection(legacyResource, '?id=child-id&parentId=char-a')).json()
+      expect(legacyRow.mode).toBe('character-row')
+      expect(legacyRow.characterId).toBe('char-a')
+      expect(legacyRow.character.chats[0].message).toEqual([])
+      expect(JSON.stringify(legacyRow)).not.toContain('Babbage')
+    }
   })
 
   it('projects chat generation settings on stubbed character rows', async () => {

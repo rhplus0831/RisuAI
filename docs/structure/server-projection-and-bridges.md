@@ -75,9 +75,10 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
 - Narrow resources are defined by `RESOURCE_PROJECTION_FIELDS` plus route
   special cases in `server/fastify/src/routes/projection.ts`. Notable special
   cases: `characterSelection` and `characterOrder` are narrow fields refreshes, `characterRow`
-  hydrates one character shell and reconciles character script/trigger edits;
-  ID-bearing legacy `scriptDefinition`/`triggerDefinition` replay events use the
-  same single-row response. `message` events return the complete affected chat
+  hydrates one character shell and reconciles character script/trigger and
+  chat/chat-folder metadata edits; qualified legacy
+  `scriptDefinition`/`triggerDefinition`/`chat`/`chatFolder` replay events use
+  the same single-row response. `message` events return the complete affected chat
   in `chat-messages` mode (destructive/replacement events cannot safely use a
   tail window), `preset?id=...` hydrates one bot preset body,
   `asset` advances revision without projected fields, message-only
@@ -105,7 +106,10 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   relevant hydration state to reset. During a targeted `characterRow`
   merge, a chat whose generation-settings save is still queued preserves its
   latest optimistic `generationSettings` while the incoming row differs from
-  that queued value; the pending token is cleared when the save settles. A
+  that queued value; the pending token is cleared when the save settles.
+  Character-row reconciliation also preserves resident messages on surviving
+  chats, invalidates hydration only for added/removed chat ids, and force-hydrates
+  plus reattaches generation when the row changes the active chat. A
   ranged message-only generation append retains an already-loaded transcript
   prefix while extending the array, so the new total does not turn resident
   history into placeholders.

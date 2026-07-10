@@ -93,15 +93,18 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   character: ['characters', 'characterOrder', 'currentChar'],
   characterOrder: ['characterOrder'],
   characterSelection: [],
+  // Legacy/recovery aliases for events retained before per-character chat and
+  // folder mutations moved to `characterRow`. Parent-bearing events are
+  // narrowed by the special case below; metadata-free events stay broad.
   chat: ['characters'],
   chatFolder: ['characters'],
   // Ordinary message events are handled by a per-chat branch below; this empty
   // field mapping marks them as narrowable for fallback classification.
   message: [],
   generation: ['characters'],
-  // Legacy/recovery aliases: new character script/trigger events use the
-  // single-row `characterRow` resource. Keep these broad mappings for replayed
-  // historical or malformed events without a character id; id-bearing legacy
+  // Legacy/recovery aliases: new per-character events use the single-row
+  // `characterRow` resource. Keep these broad mappings for replayed historical
+  // or malformed events without enough parent metadata; qualified legacy
   // events are narrowed by the character-row special case below.
   scriptDefinition: ['characters'],
   triggerDefinition: ['characters'],
@@ -442,15 +445,19 @@ export function registerProjectionRoutes(
 
     // Per-character row: character field edits, script/trigger replacements,
     // module-link reorders, and chat/chat-folder metadata edits each write one
-    // character row. ID-bearing legacy scriptDefinition/triggerDefinition
-    // events use this path too, so retained replay history cannot re-stub the
-    // whole character corpus. The character id is `parentId` for chat/folder
-    // events (which key by chatId/folderId) and `id` for character events.
+    // character row. Qualified legacy resource names use this path too, so
+    // retained replay history cannot re-stub the whole character corpus. The
+    // character id is `parentId` for chat/folder events (which key by
+    // chatId/folderId) and `id` for character events.
     const isIdBearingLegacyCharacterDefinition =
       (resource === 'scriptDefinition' || resource === 'triggerDefinition') &&
       typeof req.query.id === 'string' &&
       req.query.id.trim() !== ''
-    if (resource === 'characterRow' || isIdBearingLegacyCharacterDefinition) {
+    const isParentBearingLegacyCharacterChild =
+      (resource === 'chat' || resource === 'chatFolder') &&
+      typeof req.query.parentId === 'string' &&
+      req.query.parentId.trim() !== ''
+    if (resource === 'characterRow' || isIdBearingLegacyCharacterDefinition || isParentBearingLegacyCharacterChild) {
       const characterId =
         typeof req.query.parentId === 'string' && req.query.parentId.trim() !== '' ? req.query.parentId : req.query.id
       if (typeof characterId !== 'string' || characterId.trim() === '') {

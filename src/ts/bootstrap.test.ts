@@ -190,6 +190,7 @@ const hydrationSpies = vi.hoisted(() => ({
   startChatMessageHydration: vi.fn(),
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateActiveCharacterLorebook: vi.fn(async () => undefined),
+  invalidateChatHydration: vi.fn(),
   resetChatHydration: vi.fn(),
   ensureAllChatsHydrated: vi.fn(async () => undefined),
   ensureAllCharacterLorebooksHydrated: vi.fn(async () => undefined),
@@ -367,6 +368,7 @@ beforeEach(() => {
   hydrationSpies.startChatMessageHydration.mockClear()
   hydrationSpies.hydrateActiveChat.mockClear()
   hydrationSpies.hydrateActiveCharacterLorebook.mockClear()
+  hydrationSpies.invalidateChatHydration.mockClear()
   hydrationSpies.resetChatHydration.mockClear()
   hydrationSpies.ensureAllChatsHydrated.mockClear()
   hydrationSpies.hydrateChatMessages.mockClear()
@@ -1083,6 +1085,7 @@ describe('web bootstrap startup source', () => {
     await loadWebInitialDatabase()
     hydrationSpies.resetChatHydration.mockClear()
     hydrationSpies.hydrateActiveChat.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
 
     serverProjectionState.fetchResource.mockImplementation(async () => ({
       status: 'ok' as const,
@@ -1113,6 +1116,8 @@ describe('web bootstrap startup source', () => {
     // No broad characters merge, so no chat re-stub / re-hydration.
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(hydrationSpies.invalidateChatHydration).not.toHaveBeenCalled()
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
@@ -1220,6 +1225,7 @@ describe('web bootstrap startup source', () => {
     await loadWebInitialDatabase()
     hydrationSpies.resetChatHydration.mockClear()
     hydrationSpies.hydrateActiveChat.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
 
     serverProjectionState.fetchResource.mockImplementation(async () => ({
       status: 'ok' as const,
@@ -1264,6 +1270,80 @@ describe('web bootstrap startup source', () => {
     // No broad characters merge → no chat re-stub / re-hydration / full bootstrap.
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
     expect(hydrationSpies.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(hydrationSpies.invalidateChatHydration).not.toHaveBeenCalled()
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('removes one chat through a character-row event without re-stubbing sibling history', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada',
+              chats: [
+                { id: 'chat-a', message: [{ role: 'user', data: 'resident history' }] },
+                { id: 'chat-b', message: [{ role: 'char', data: 'delete me' }] },
+              ],
+              chatPage: 1,
+            },
+            {
+              chaId: 'char-b',
+              name: 'Babbage',
+              chats: [{ id: 'chat-c', message: [{ role: 'user', data: 'other character' }] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.resetChatHydration.mockClear()
+    hydrationSpies.hydrateActiveChat.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+    serverProjectionState.fetchResource.mockResolvedValueOnce({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'character-row' as const,
+      characterId: 'char-a',
+      character: {
+        chaId: 'char-a',
+        name: 'Ada',
+        chats: [{ id: 'chat-a', message: [] }],
+        chatPage: 0,
+      },
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'chat.deleted',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'chat-b',
+      parentId: 'char-a',
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('characterRow', {
+      id: 'chat-b',
+      parentId: 'char-a',
+    })
+    expect(DBState.db.characters[0].chats).toEqual([
+      { id: 'chat-a', message: [{ role: 'user', data: 'resident history' }] },
+    ])
+    expect(DBState.db.characters[1].chats[0].message).toEqual([{ role: 'user', data: 'other character' }])
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+    expect(hydrationSpies.invalidateChatHydration).toHaveBeenNthCalledWith(1, 'chat-b')
+    expect(hydrationSpies.invalidateChatHydration).toHaveBeenNthCalledWith(2, 'chat-a')
+    expect(hydrationSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 

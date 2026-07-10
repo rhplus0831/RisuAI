@@ -180,6 +180,30 @@ function advanceChatProjectionEpoch(chatId: string): void {
   chatProjectionEpochs.set(chatId, (chatProjectionEpochs.get(chatId) ?? 0) + 1)
 }
 
+/**
+ * Invalidates hydration state for one structurally changed chat without
+ * re-stubbing or refetching every other chat. Removing matching in-flight map
+ * entries allows an immediate replacement request; the epoch makes any older
+ * response stale, and the old request's identity check prevents its `finally`
+ * block from deleting that replacement.
+ */
+export function invalidateChatHydration(chatId: string): void {
+  if (!chatId) return
+  hydratedChatIds.delete(chatId)
+  attemptedChatIds.delete(chatId)
+  advanceChatProjectionEpoch(chatId)
+  pendingChatHydrationFreshness.delete(chatId)
+  for (const requestKey of inFlight.keys()) {
+    if (
+      requestKey === `full:${chatId}` ||
+      requestKey.startsWith(`tail:${chatId}:`) ||
+      requestKey.startsWith(`range:${chatId}:`)
+    ) {
+      inFlight.delete(requestKey)
+    }
+  }
+}
+
 type ChatHydrationRangeRequest =
   | { tail: number; start?: never; limit?: never }
   | { start: number; limit: number; tail?: never }

@@ -5862,14 +5862,13 @@ export function registerCommandRoutes(
           chat.localLore = entries
           writeSingleChatRow(innerDb, chatId, chat)
           return {
-            // `localLore` lives in the chat row, so a foreign refresh uses the
-            // `chat` resource (chat metadata) instead of the broad global
-            // `lorebook` re-ship of characters + modules + loreBook.
+            // `localLore` lives in one chat row, so refresh only its parent
+            // character instead of the broad global lorebook projection.
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: chatId,
               parentId,
-              resource: 'chat',
+              resource: 'characterRow',
             },
             extra: { chatId },
           }
@@ -5917,7 +5916,7 @@ export function registerCommandRoutes(
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: chatId,
               parentId,
-              resource: 'chat',
+              resource: 'characterRow',
             },
             extra: { chatId, entryId, entryIndex: upserted.index, created: upserted.created },
           }
@@ -5963,7 +5962,7 @@ export function registerCommandRoutes(
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: chatId,
               parentId,
-              resource: 'chat',
+              resource: 'characterRow',
             },
             extra: { chatId, entryId, entryIndex: deleted.index },
           }
@@ -6004,7 +6003,7 @@ export function registerCommandRoutes(
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
               id: chatId,
               parentId,
-              resource: 'chat',
+              resource: 'characterRow',
             },
             extra: { chatId },
           }
