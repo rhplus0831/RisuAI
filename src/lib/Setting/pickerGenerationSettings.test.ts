@@ -478,12 +478,13 @@ describe('generation settings picker mode', () => {
 
     pickerRow('prompt', 'preset-c').click()
     await tick()
-    await waitForFetchCount(calls, 3)
+    // The revisioned command lane keeps C queued until B settles, while the
+    // optimistic selection paints C immediately.
+    expect(calls).toHaveLength(2)
     expect(DBState.db.promptPresetsId).toBe(2)
 
     resolvePresetBConflict(jsonResponse({ error: 'revision_conflict', currentRevision: 201 }, 409))
-    await Promise.resolve()
-    await Promise.resolve()
+    await waitForFetchCount(calls, 3)
     await tick()
 
     const selectCalls = calls.filter((call) => call.url.endsWith('/prompt-presets/select'))

@@ -717,7 +717,7 @@ describe('module command projection helpers', () => {
     expect(DBState.db.loadouts[1].modules).toEqual(['newer-loadout-ref'])
   })
 
-  it('out-of-order overlapping update failures unwind correctly', async () => {
+  it('serialized overlapping update failures unwind correctly', async () => {
     const firstUpdate = createDeferred<Response>()
     const secondUpdate = createDeferred<Response>()
     const updateResponses = [firstUpdate, secondUpdate]
@@ -748,10 +748,13 @@ describe('module command projection helpers', () => {
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted One', description: '' })
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted Two', description: '' })
 
-    await waitForCallCount(calls, 4)
+    // One bootstrap + the first command. The global revisioned-mutation lane
+    // deliberately holds the second request until the first settles.
+    await waitForCallCount(calls, 2)
     expect(DBState.db.modules[0].name).toBe('Attempted Two')
 
     firstUpdate.resolve(jsonResponse({ error: 'first failed' }, 500))
+    await waitForCallCount(calls, 3)
     await flushCommandEffects()
     expect(DBState.db.modules[0].name).toBe('Attempted Two')
 

@@ -59,11 +59,13 @@ describe('render-count harness', () => {
     expect(result.editDisplayRunsAfterBump).toBe(0)
     expect(result.cacheWarmBeforeBump).toBe(true)
     expect(result.cacheWiped).toBe(false)
+    // The variable epoch changes the editdisplay output-cache scope without
+    // performing the broad compiled-regex reset used by definition changes.
     expect(result.cacheProof).toMatchObject({
       regexCacheWarmBeforeBump: true,
       regexCacheWipedAfterBump: false,
       scriptCacheWarmBeforeBump: true,
-      scriptCacheWipedAfterBump: false,
+      scriptCacheWipedAfterBump: true,
     })
   }, 60000)
 

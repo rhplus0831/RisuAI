@@ -1507,11 +1507,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-        testName: 'K1: chat-variable generation finalization keeps the broad write path',
+        testName: 'K1: chat-variable generation finalization avoids whole-corpus reads',
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName: 'K1: chat-variable generation finalization keeps broad writes and reports truthful metrics',
+        testName: 'K1: chat-variable generation finalization emits a composite projection',
       },
     ],
   ),

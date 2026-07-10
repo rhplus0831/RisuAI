@@ -138,7 +138,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     2,
     'Wire `chatScopedRead: hasVarWrite ? undefined : { chatId }` into `persistAssemblyMutations` (K1 shape; assert event parentId = character id).',
     'server/fastify/__tests__/generation.chat.test.ts',
-    'M1: no-var editinput transcript persistence emits messages.replaced parented to the character',
+    'M1: no-var editinput transcript persistence emits a composite assembly event',
     [
       {
         testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',

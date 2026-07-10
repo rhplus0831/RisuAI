@@ -327,7 +327,7 @@ describe('Phase 9-3f compatibility adapters', () => {
   })
 
   it('routes character asset helper writes through character commands', async () => {
-    const calls = stubCommandFetch()
+    const calls = stubRevisionCheckedCommandFetch()
 
     changeCharImage(0, 0)
     rmCharEmotion(0, 0)
@@ -335,7 +335,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     await vi.waitFor(() => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')).toHaveLength(2)
     })
-    expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(2)
+    expect(calls.filter((call) => call.url === '/api/v1/bootstrap')).toHaveLength(1)
     const characterUpdates = calls.filter((call) => call.url === '/api/v1/commands/characters/char-a')
     expect(characterUpdates[0]).toMatchObject({
       method: 'PATCH',
@@ -350,7 +350,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     expect(characterUpdates[1]).toMatchObject({
       method: 'PATCH',
       body: {
-        baseRevision: 10,
+        baseRevision: 11,
         patch: {
           emotionImages: [],
         },

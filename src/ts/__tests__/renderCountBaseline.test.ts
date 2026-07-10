@@ -71,11 +71,14 @@ describe('H3 var-only GUI reload narrowing', () => {
 
     expect(result.cacheWarmBeforeBump).toBe(true)
     expect(result.cacheWiped).toBe(false)
+    // Variable epochs intentionally invalidate editdisplay output memo keys so
+    // variable-dependent scripts can recompute. The compiled regex cache stays
+    // warm, proving this was not the broad reset used for definition changes.
     expect(result.cacheProof).toMatchObject({
       regexCacheWarmBeforeBump: true,
       regexCacheWipedAfterBump: false,
       scriptCacheWarmBeforeBump: true,
-      scriptCacheWipedAfterBump: false,
+      scriptCacheWipedAfterBump: true,
     })
   }, 60000)
 })
