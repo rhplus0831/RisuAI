@@ -415,6 +415,31 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields.promptTemplate).toBeNull()
   })
 
+  it('projects an explicit clear after disabling the last root prompt item', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      promptTemplate: [{ id: 'root-item', type: 'plain', text: 'remove me' }],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'default-prompt-preset', name: 'Default Prompt' }],
+      language: 'en',
+    })
+
+    const disabled = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-items/enable',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, enabled: false },
+    })
+    expect(disabled.statusCode).toBe(200)
+
+    const body = (await getProjection('promptItem')).json()
+    expect(body).toMatchObject({
+      mode: 'fields',
+      fields: { promptTemplate: null },
+    })
+    expect(Object.keys(body.fields)).toEqual(['promptTemplate'])
+  })
+
   it('reships effective root settings for a selected modelPreset refresh', async () => {
     const revision = await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
@@ -1090,7 +1115,10 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
         revision,
         resource: 'preset',
         mode: 'fields',
-        fields: maskProviderSecrets(selectFields(database, presetFields!)),
+        fields: {
+          ...maskProviderSecrets(selectFields(database, presetFields!)),
+          agentPresetDefaultId: null,
+        },
       }
       const presetRes = await getProjection('preset')
       expect(presetRes.statusCode).toBe(200)

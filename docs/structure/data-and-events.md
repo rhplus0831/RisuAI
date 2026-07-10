@@ -85,6 +85,10 @@ still fall back to a full bootstrap. Known sprawling resources such as `state`
 intentionally fall back to a full bootstrap. Prompt settings project their
 explicit 21-key command surface, and plugin storage projects the complete
 `pluginCustomStorage` map so deletion and clear operations remain authoritative.
+Optional projection-owned fields that disappear from SQLite use explicit null
+deletion sentinels; currently this covers `promptTemplate` and
+`agentPresetDefaultId`, preventing an empty table or cleared default from
+silently leaving an older client value resident.
 `asset` is a no-op targeted projection that advances the cached revision because
 asset metadata lives outside the projected `Database`.
 Character script/trigger replacements and chat/chat-folder metadata mutations

@@ -696,6 +696,18 @@ describe('mergeServerProjectionCharacterRow', () => {
     expect(activeLanguage.showHelp).toBe('도움말 보기')
   })
 
+  it('applies null deletion sentinels without clearing unrelated projected fields', () => {
+    seedPresetDatabase({
+      agentPresetDefaultId: 'agent-old',
+      promptTemplate: [{ id: 'prompt-live', type: 'plain', text: 'keep me' }] as any,
+    })
+
+    mergeServerProjectionFields({ agentPresetDefaultId: null } as unknown as Partial<Database>)
+
+    expect(DBState.db.agentPresetDefaultId).toBeUndefined()
+    expect(DBState.db.promptTemplate).toEqual([{ id: 'prompt-live', type: 'plain', text: 'keep me' }])
+  })
+
   it('L35: preserves hydrated hypaV3Data on message-empty chat stubs', () => {
     const hypaV3Data = {
       memories: [{ id: 'memory-1', text: 'remember this' }],

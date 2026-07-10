@@ -536,6 +536,10 @@ async function processServerCommandEvent(
           return
         }
       } else if (event.resource === 'promptItem') {
+        if (!Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) {
+          await reconcileCommandEventWithFullResync('projection-error', event, options)
+          return
+        }
         const ownerId = event.parentId ?? null
         if (!applyPromptTemplateProjectionFields(fields, ownerId)) {
           await reconcileCommandEventWithFullResync('projection-error', event, options)

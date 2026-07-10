@@ -1197,6 +1197,78 @@ describe('web bootstrap startup source', () => {
     expect(peekCachedServerCommandRevision()).toBe(6)
   })
 
+  it('clears a resident root promptTemplate from an explicit promptItem sentinel', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          ...serverDefaultDatabase(),
+          promptTemplate: [{ id: 'stale-prompt', type: 'plain', text: 'stale', role: 'system' }],
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverProjectionState.fetchResource.mockResolvedValue({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: { promptTemplate: null },
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'promptItem.enabled',
+      revision: 6,
+      resource: 'promptItem',
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(promptTemplateHydrationSpies.markPromptTemplateProjectionApplied).toHaveBeenCalledWith(null)
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('repairs instead of advancing when a promptItem projection omits its owned field', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          ...serverDefaultDatabase(),
+          promptTemplate: [{ id: 'stale-prompt', type: 'plain', text: 'stale', role: 'system' }],
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    serverProjectionState.fetchResource.mockResolvedValue({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: {},
+    })
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: { ...serverDefaultDatabase(), language: 'ko' },
+      },
+    }
+
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'promptItem.enabled',
+      revision: 6,
+      resource: 'promptItem',
+    })
+
+    await vi.waitFor(() => expect(DBState.db.language).toBe('ko'))
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(peekAppliedServerProjectionRevision()).toBe(6)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'promptItem')
+  })
+
   it('applies a promptItem event to its preset owner without replacing the selected preset mirror', async () => {
     const visibleTemplate = [{ id: 'visible', type: 'plain', text: 'selected body', role: 'system' }]
     serverBootstrapState.response = {

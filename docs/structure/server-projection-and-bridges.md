@@ -107,6 +107,10 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   includes the complete applied model-setting
   surface because selected-preset mutations also reapply the selected prompt
   preset's model overrides to root settings.
+  `promptItem` always returns a `promptTemplate` field, using `null` to clear an
+  absent/disabled collection; the browser rejects a malformed response that
+  omits the owned field. Cleared `agentPresetDefaultId` values use the same null
+  deletion-sentinel contract.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows,
   remaps the live selected-character identity across array replacement (falling
   back to projected `currentChar` if that character was removed), and forces

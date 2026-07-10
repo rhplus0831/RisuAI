@@ -1540,8 +1540,8 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   return withServerProjectionApply(() => {
     const db = DBState.db as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(fields)) {
-      if (key === 'promptTemplate' && value === null) {
-        delete db.promptTemplate
+      if ((key === 'promptTemplate' || key === 'agentPresetDefaultId') && value === null) {
+        delete db[key]
         continue
       }
       db[key] =

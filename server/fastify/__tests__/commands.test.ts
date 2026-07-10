@@ -3562,7 +3562,7 @@ describe('Agent Preset command surface', () => {
     expect(projection.json().fields.agentPresets).toEqual([
       { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, steps: [] },
     ])
-    expect(projection.json().fields.agentPresetDefaultId).toBeUndefined()
+    expect(projection.json().fields.agentPresetDefaultId).toBeNull()
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -3853,7 +3853,7 @@ describe('Phase 9-2c prompt template and item commands', () => {
 
     const projected = await projectedPromptItems(harness.app, assertion)
     expect(projected.revision).toBe(disabled.json().revision)
-    expect(projected.promptTemplate).toBeUndefined()
+    expect(projected.promptTemplate).toBeNull()
   })
 
   it('returns 404 and 409 for missing prompt items and stale revisions', async () => {

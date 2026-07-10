@@ -1428,7 +1428,10 @@ describe('server load-count harness on the large-corpus fixture', () => {
         revision,
         resource: 'preset',
         mode: 'fields',
-        fields: maskProviderSecrets(selectFields(broadDatabase, presetFields!)),
+        fields: {
+          ...maskProviderSecrets(selectFields(broadDatabase, presetFields!)),
+          agentPresetDefaultId: null,
+        },
       }
       const observedPreset = await withServerLoadInstrumentation(() =>
         harness.app.inject({

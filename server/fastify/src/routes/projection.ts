@@ -212,6 +212,11 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
 // fallback from an unexpected unknown-resource fallback.
 const SPRAWLING_FULL_PROJECTION_RESOURCES = new Set(['settings', 'state'])
 
+// These optional settings fields use `null` on the wire as an explicit delete
+// sentinel. SQLite field reads omit absent keys, which would otherwise let a
+// client keep a stale value while still advancing its applied revision.
+const NULL_DELETION_SENTINEL_FIELDS = ['agentPresetDefaultId'] as const
+
 export type FullBootstrapFallbackClass = 'sprawling' | 'unknown'
 
 /**
@@ -635,6 +640,7 @@ export function registerProjectionRoutes(
     if (resource === 'presetCollection' || resource === 'presetApplied') {
       const fieldKeys = resourceProjectionFields(resource)!
       const fields = maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
+      projectAbsentFieldDeletionSentinels(fields, fieldKeys)
       const requestedIds = new Set(
         [req.query.id, req.query.parentId].filter(
           (value): value is string => typeof value === 'string' && value.trim() !== '',
@@ -688,7 +694,7 @@ export function registerProjectionRoutes(
         return
       }
 
-      const promptItemFields: Record<string, unknown> = {}
+      const promptItemFields: Record<string, unknown> = { promptTemplate: null }
       if (isRecord(targetPreset)) {
         if (
           ownerId === null &&
@@ -740,6 +746,7 @@ export function registerProjectionRoutes(
     const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
       ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
       : maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
+    projectAbsentFieldDeletionSentinels(fields, fieldKeys)
     if (resource === 'promptPreset') {
       projectEmptyAppliedPromptTemplate(fields)
     }
@@ -751,6 +758,14 @@ export function registerProjectionRoutes(
     })
     return response
   })
+}
+
+function projectAbsentFieldDeletionSentinels(fields: Record<string, unknown>, fieldKeys: readonly string[]): void {
+  for (const key of NULL_DELETION_SENTINEL_FIELDS) {
+    if (fieldKeys.includes(key) && !Object.prototype.hasOwnProperty.call(fields, key)) {
+      fields[key] = null
+    }
+  }
 }
 
 function invalidBulkChatIdsReply(reply: FastifyReply): void {
