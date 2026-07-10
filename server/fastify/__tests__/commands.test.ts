@@ -310,6 +310,28 @@ async function waitForPersistedTranslation(
   throw new Error(`Timed out waiting for persisted translation. Last message: ${JSON.stringify(lastMessage)}`)
 }
 
+async function waitForActiveMessageTranslation(
+  app: FastifyInstance,
+  assertion: string,
+  expected: { chatId: string; messageId: string },
+  timeoutMs = 2_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const bootstrap = await app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    const active = bootstrap.json().activeMessageTranslations as Array<{ chatId: string; messageId: string }>
+    if (active.some((entry) => entry.chatId === expected.chatId && entry.messageId === expected.messageId)) {
+      return
+    }
+    await sleep(10)
+  }
+  throw new Error(`Timed out waiting for active message translation: ${JSON.stringify(expected)}`)
+}
+
 async function postAndDisconnect(url: string, assertion: string, payload: Record<string, unknown>): Promise<void> {
   const body = JSON.stringify(payload)
   await new Promise<void>((resolve, reject) => {
@@ -7445,6 +7467,70 @@ describe('Phase 9-3c message history commands', () => {
         translation: null,
       },
     ])
+  })
+
+  it('allows unrelated edits while raw translation is waiting on its provider', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translator: 'ko',
+      translatorInputLanguage: 'en',
+      translatorType: 'llm',
+      aiModel: 'echo_model',
+      echoMessage: 'translated after concurrent edit',
+      echoDelay: 0.2,
+      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+      translatorMaxResponse: 128,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [{ role: 'user', data: 'hello raw', chatId: 'msg-a' }],
+              localLore: [],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/messages/msg-a/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+
+    await waitForActiveMessageTranslation(harness.app, assertion, {
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+    })
+
+    const settings = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { font: 'concurrent-font' },
+      },
+    })
+    expect(settings.statusCode).toBe(200)
+
+    const translated = await translating
+    expect(translated.statusCode).toBe(200)
+    expect(translated.json()).toMatchObject({
+      revision: settings.json().revision + 1,
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+      translation: { text: 'translated after concurrent edit' },
+    })
   })
 
   it('continues server raw translation after the requesting client disconnects', async () => {

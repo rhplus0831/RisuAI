@@ -95,6 +95,7 @@
   } from 'src/ts/chatCommands'
   import {
     canUseServerCommands,
+    getServerCommandBaseRevision,
     runServerCommand,
     translateMessageCommand,
     updateMessageCommand,
@@ -460,9 +461,17 @@
     editTranslationMode = false
     editTranslationTarget = null
     try {
-      const result = await runServerCommand({
-        command: (baseRevision) => translateMessageCommand({ baseRevision, messageId: target.messageId }),
-      })
+      // Raw translation may wait on an external provider. Its server endpoint
+      // uses the captured message text as the commit precondition, so keep it
+      // outside the global revisioned-mutation queue and let unrelated edits
+      // continue while the provider is running.
+      const baseRevision = await getServerCommandBaseRevision()
+      if (baseRevision === null) {
+        if (isRenderingTranslationMessageTarget(target)) translated = false
+        setStatusMessage('Unable to read server command revision.', 3000)
+        return
+      }
+      const result = await translateMessageCommand({ baseRevision, messageId: target.messageId })
       if (result.status === 'ok') {
         const resultTarget = resultTranslationMessageTarget(target, result)
         if (resultTarget) {

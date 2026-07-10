@@ -21,6 +21,7 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
+    getServerCommandBaseRevision: vi.fn(async () => 1),
     runServerCommand: vi.fn(
       async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
         try {
@@ -218,6 +219,7 @@ vi.mock('src/ts/chatCommands', () => ({
 
 vi.mock('src/ts/server/commands', () => ({
   canUseServerCommands: customHtmlMocks.canUseServerCommands,
+  getServerCommandBaseRevision: customHtmlMocks.getServerCommandBaseRevision,
   runServerCommand: customHtmlMocks.runServerCommand,
   translateMessageCommand: customHtmlMocks.translateMessageCommand,
   updateMessageCommand: customHtmlMocks.updateMessageCommand,
@@ -859,6 +861,7 @@ describe('server raw translation controls', () => {
       baseRevision: 1,
       messageId: 'message-0',
     })
+    expect(customHtmlMocks.runServerCommand).not.toHaveBeenCalled()
     expect(translateButton?.disabled).toBe(true)
     expect(translateButton?.getAttribute('aria-busy')).toBe('true')
     expect(editButton?.disabled).toBe(true)

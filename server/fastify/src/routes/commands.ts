@@ -322,18 +322,13 @@ function emitCommandEventForRequest(req: FastifyRequest, eventSink: CommandEvent
   eventSink.emit(origin ? { ...event, origin } : event)
 }
 
-function readRevisionMatchedMessageSource(
+function readLiveMessageSource(
   db: DatabaseSync,
   messageId: string,
-  baseRevision: number,
 ): {
   chatId: string
   data: string
 } {
-  const { revision: currentRevision } = getSchemaState(db)
-  if (baseRevision !== currentRevision) {
-    throw new RevisionMismatchError(currentRevision)
-  }
   const resolved = resolveActiveMessageLocationById(db, messageId)
   if (resolved.ok === false) {
     if (resolved.reason === 'ambiguous') {
@@ -4913,8 +4908,12 @@ export function registerCommandRoutes(
     try {
       const messageId = readMessageId((req.params as { messageId?: unknown }).messageId)
       const body = (req.body ?? {}) as MessageCommandBody
-      const baseRevision = readBaseRevision(body)
-      const source = readRevisionMatchedMessageSource(db, messageId, baseRevision)
+      // Keep validating the command envelope, but translation uses the message
+      // text itself as its concurrency precondition. Holding the global
+      // revision across a provider request would block or conflict with every
+      // unrelated edit made while translation is running.
+      readBaseRevision(body)
+      const source = readLiveMessageSource(db, messageId)
       clearActiveTranslation = messageTranslationJobs?.register({ chatId: source.chatId, messageId })
       const settings = loadSettingsFromSqlite(db)
       if (settings === null) {
@@ -4938,7 +4937,10 @@ export function registerCommandRoutes(
       }>({
         db,
         dataDir,
-        baseRevision,
+        // No await occurs between this read and the synchronous transaction.
+        // Rebase onto the current domain revision, then reject only if the
+        // target message disappeared or its source text changed below.
+        baseRevision: getSchemaState(db).revision,
         ...commandMutationContext(req, eventSink),
         mutationPath: 'targeted-message',
         chatScopedRead: { messageId },
