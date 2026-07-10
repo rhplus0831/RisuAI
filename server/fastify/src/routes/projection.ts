@@ -91,6 +91,7 @@ const MODEL_PRESET_PROJECTION_FIELDS = uniqueProjectionFields([
 // gap/reconnect recovery path.
 const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   character: ['characters', 'characterOrder', 'currentChar'],
+  characterOrder: ['characterOrder'],
   characterSelection: [],
   chat: ['characters'],
   chatFolder: ['characters'],

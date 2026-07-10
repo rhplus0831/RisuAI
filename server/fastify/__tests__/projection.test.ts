@@ -169,6 +169,23 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields).not.toHaveProperty('botPresets')
   })
 
+  it('returns only the presentation order for character reorder events', async () => {
+    await importDatabase({
+      characters: [
+        { chaId: 'char-a', chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }] },
+        { chaId: 'char-b', chats: [{ id: 'chat-b', message: [{ role: 'char', data: 'hi' }] }] },
+      ],
+      characterOrder: ['char-b', 'char-a'],
+      currentChar: 1,
+    })
+
+    const body = (await getProjection('characterOrder')).json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields).toEqual({ characterOrder: ['char-b', 'char-a'] })
+    expect(body.fields).not.toHaveProperty('characters')
+    expect(body.fields).not.toHaveProperty('currentChar')
+  })
+
   it('returns only the selected character pointer data for character selection', async () => {
     const revision = await importDatabase({
       characters: [
@@ -700,6 +717,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     // The structural resources the decision tree narrows; everything else
     // (settings/state/pluginStorage/unknown) intentionally falls back to full.
     expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder', 'currentChar'])
+    expect(resourceProjectionFields('characterOrder')).toEqual(['characterOrder'])
     expect(resourceProjectionFields('characterSelection')).toEqual([])
     expect(resourceProjectionFields('message')).toEqual([])
     expect(resourceProjectionFields('chatTranscript')).toEqual([])

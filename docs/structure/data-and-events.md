@@ -70,7 +70,7 @@ command transaction.
 
 Command-event resources should be as narrow as practical and are defined by
 `COMMAND_EVENT_CATALOG` plus the projection route's `RESOURCE_PROJECTION_FIELDS`.
-Examples include `characterSelection`, `characterRow`, `character`, `chat`,
+Examples include `characterSelection`, `characterOrder`, `characterRow`, `character`, `chat`,
 `chatFolder`, `message`, `globalLorebook`, `characterLorebook`, legacy
 `lorebook`, `module`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
 `moduleScriptDefinition`, `moduleTriggerDefinition`, collection slices such as `preset`/`promptItem`/
@@ -89,6 +89,8 @@ so reconciliation ships one row. The older `scriptDefinition` and
 `triggerDefinition` resource names remain replay aliases: ID-bearing events use
 the same single-row response, while events without an id retain the broad safe
 fallback.
+Character reorder events use `characterOrder`, which projects only the
+settings-level presentation structure and never re-stubs character rows.
 `modelPreset` projections include both the preset collection/pointer and every
 root model setting the selected model and prompt-preset overrides can apply.
 Ordinary `message` events project the complete affected transcript so deletes,

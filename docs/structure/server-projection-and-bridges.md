@@ -74,7 +74,7 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
 - Contiguous foreign events fetch `GET /api/v1/projection/:resource`.
 - Narrow resources are defined by `RESOURCE_PROJECTION_FIELDS` plus route
   special cases in `server/fastify/src/routes/projection.ts`. Notable special
-  cases: `characterSelection` is a narrow fields refresh, `characterRow`
+  cases: `characterSelection` and `characterOrder` are narrow fields refreshes, `characterRow`
   hydrates one character shell and reconciles character script/trigger edits;
   ID-bearing legacy `scriptDefinition`/`triggerDefinition` replay events use the
   same single-row response. `message` events return the complete affected chat

@@ -4986,7 +4986,7 @@ describe('Phase 9-3a character commands', () => {
       event: {
         type: 'character.reordered',
         revision: 6,
-        resource: 'character',
+        resource: 'characterOrder',
       },
       selectedCharacterId: 'char-b',
     })

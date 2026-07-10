@@ -452,7 +452,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   characterReordered: {
     type: 'character.reordered',
-    resource: 'character',
+    // Reorder writes only the settings-level presentation structure; character
+    // row order and selection are unchanged.
+    resource: 'characterOrder',
   },
   chatCreated: {
     type: 'chat.created',
