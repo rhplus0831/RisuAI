@@ -519,6 +519,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'messages.replaced',
     resource: 'message',
   },
+  generationAssemblyPersisted: {
+    type: 'generation.assemblyPersisted',
+    resource: 'generationAssembly',
+  },
   generationPersisted: {
     type: 'generation.persisted',
     resource: 'generation',

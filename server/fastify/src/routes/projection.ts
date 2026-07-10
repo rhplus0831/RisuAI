@@ -133,6 +133,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // so a foreign refresh must reship it alongside the loadouts collection.
   loadout: ['loadouts', 'lastLoadedLoadoutName'],
   translatorPreset: ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
+  // Generation assembly projections have a dedicated composite response below;
+  // listing the resource here keeps fallback metrics from misclassifying it as
+  // an unknown full-bootstrap resource.
+  generationAssembly: [],
   // `asset.created` bumps the global revision but does not change the projected
   // `database` (asset metadata lives outside it), so its targeted refresh is a
   // no-op that only advances the client's revision cursor.
@@ -436,6 +440,51 @@ export function registerProjectionRoutes(
         character,
       }
       emitProjectionMetric(req.log, resource, revision, response, { id: characterId })
+      return response
+    }
+
+    // Assembly-time input transforms can persist a rewritten transcript and
+    // chat scriptstate in the same revision. Reconcile both pieces together;
+    // neither the row-only nor message-only projection is sufficient.
+    if (resource === 'generationAssembly') {
+      const chatId = req.query.id
+      const characterId = req.query.parentId
+      if (
+        typeof chatId !== 'string' ||
+        chatId.trim() === '' ||
+        typeof characterId !== 'string' ||
+        characterId.trim() === ''
+      ) {
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response)
+        return response
+      }
+      const character = loadSingleCharacterRow(db, dataDir, characterId)
+      const chats = (character as { chats?: Array<{ id?: unknown }> } | null)?.chats
+      if (!character || !Array.isArray(chats) || !chats.some((chat) => chat?.id === chatId)) {
+        reply.code(404).send({
+          error: 'generation_assembly_target_not_found',
+          reason: `Chat ${chatId} was not found under character ${characterId}.`,
+        })
+        return
+      }
+      const hydration = loadChatHydration(db, dataDir, chatId)
+      const response = {
+        revision,
+        resource,
+        mode: 'generation-assembly' as const,
+        characterId,
+        character,
+        chatId,
+        message: hydration.message,
+        hypaV3Data: hydration.hypaV3Data,
+        alternates: hydration.alternates,
+      }
+      emitProjectionMetric(req.log, resource, revision, response, {
+        id: chatId,
+        characterId,
+        returnedCount: hydration.message.length,
+      })
       return response
     }
 

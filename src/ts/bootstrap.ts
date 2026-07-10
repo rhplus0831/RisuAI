@@ -449,6 +449,24 @@ async function processServerCommandEvent(
       if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
       return
     }
+    if (result.status === 'ok' && result.mode === 'generation-assembly') {
+      // Input triggers can rewrite both the transcript and chat scriptstate in
+      // one server revision. Apply the row metadata first (while preserving any
+      // hydrated messages), then replace the full transcript from the same
+      // projection response so neither half can be left at an older revision.
+      const characterApplied = mergeServerProjectionCharacterRow(result.character)
+      const messagesApplied =
+        characterApplied &&
+        applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates)
+      if (!messagesApplied) {
+        const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
+        if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+        return
+      }
+      triggerOpenChatGenerationReattach()
+      markAppliedCommandProjectionEvent(event, options)
+      return
+    }
     if (result.status === 'ok' && (result.mode === 'generation-chat' || result.mode === 'chat-messages')) {
       // Server-owned generation and ordinary message commands both change one
       // chat's messages. Apply just that message window and re-arm the open

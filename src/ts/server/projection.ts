@@ -37,6 +37,17 @@ export type ServerProjectionResourceResult =
   | {
       status: 'ok'
       revision: number
+      mode: 'generation-assembly'
+      characterId: string
+      character: Record<string, unknown>
+      chatId: string
+      message: unknown[]
+      hypaV3Data?: unknown
+      alternates: unknown[]
+    }
+  | {
+      status: 'ok'
+      revision: number
       mode: 'generation-chat' | 'chat-messages'
       chatId: string
       message: unknown[]
@@ -190,6 +201,32 @@ export async function fetchServerProjectionResource(
       mode: 'preset',
       presetId: record.presetId,
       preset: record.preset as Record<string, unknown>,
+    }
+  }
+
+  if (record.mode === 'generation-assembly') {
+    if (
+      typeof record.characterId !== 'string' ||
+      record.characterId.trim() === '' ||
+      !record.character ||
+      typeof record.character !== 'object' ||
+      Array.isArray(record.character) ||
+      typeof record.chatId !== 'string' ||
+      record.chatId.trim() === '' ||
+      !Array.isArray(record.message)
+    ) {
+      return { status: 'error', error: 'Invalid generation-assembly response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'generation-assembly',
+      characterId: record.characterId,
+      character: record.character as Record<string, unknown>,
+      chatId: record.chatId,
+      message: record.message as unknown[],
+      hypaV3Data: record.hypaV3Data,
+      alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
     }
   }
 

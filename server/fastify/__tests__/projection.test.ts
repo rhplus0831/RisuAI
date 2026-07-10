@@ -629,6 +629,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder', 'currentChar'])
     expect(resourceProjectionFields('characterSelection')).toEqual([])
     expect(resourceProjectionFields('message')).toEqual([])
+    expect(resourceProjectionFields('generationAssembly')).toEqual([])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
     expect(resourceProjectionFields('module')).toEqual(['modules', 'enabledModules', 'loadouts', 'characters'])
     // Narrowed module-family resources (Phase 5 collection-projection slice).
@@ -678,6 +679,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(fullBootstrapFallbackClass('state')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('pluginStorage')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
+    expect(fullBootstrapFallbackClass('generationAssembly')).toBeNull()
     // Anything else is an unknown/foreign resource fallback.
     expect(fullBootstrapFallbackClass('does-not-exist')).toBe('unknown')
   })
@@ -1201,6 +1203,49 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const fallback = (await getProjection('generation')).json()
     expect(fallback.mode).toBe('fields')
     expect(Object.keys(fallback.fields)).toEqual(['characters'])
+  })
+
+  it('projects assembly transcript and chat metadata together', async () => {
+    const revision = await importDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Ada',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'Chat A',
+              scriptstate: { inputseen: 1 },
+              message: [
+                { role: 'user', data: 'rewritten input', chatId: 'msg-a' },
+                { role: 'char', data: 'older reply', chatId: 'msg-b' },
+              ],
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const body = (await getProjection('generationAssembly', '?id=chat-a&parentId=char-a')).json()
+    expect(body).toMatchObject({
+      revision,
+      resource: 'generationAssembly',
+      mode: 'generation-assembly',
+      characterId: 'char-a',
+      chatId: 'chat-a',
+    })
+    expect(body.character.chats[0]).toMatchObject({
+      id: 'chat-a',
+      scriptstate: { inputseen: 1 },
+      message: [],
+    })
+    expect(body.message).toEqual([
+      { role: 'user', data: 'rewritten input', chatId: 'msg-a' },
+      { role: 'char', data: 'older reply', chatId: 'msg-b' },
+    ])
   })
 
   it('narrows ordinary message refreshes to the changed chat messages', async () => {

@@ -967,7 +967,7 @@ function canAppendAssemblyReplacement(
  * The transcript is persisted only when `submitTranscriptChanged` is set; plain
  * sends leave user-message persistence to the browser.
  * When both the transcript and chat vars change, they ride one command (one
- * revision); the event is `messages.replaced` (the transcript write dominates).
+ * revision); a composite generation-assembly event reconciles both writes.
  * Returns the bumped revision, or `undefined` when there is nothing to write.
  */
 function persistAssemblyMutations(args: {
@@ -1049,7 +1049,7 @@ function persistAssemblyMutations(args: {
           }
         }
         const eventTemplate = persistMessages
-          ? COMMAND_EVENT_CATALOG.messagesReplaced
+          ? COMMAND_EVENT_CATALOG.generationAssemblyPersisted
           : COMMAND_EVENT_CATALOG.chatScriptstateUpdated
         eventType = eventTemplate.type
         return {

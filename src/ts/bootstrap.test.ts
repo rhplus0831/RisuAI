@@ -1047,6 +1047,154 @@ describe('web bootstrap startup source', () => {
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
+  it('applies generation assembly chat metadata and messages from one projection', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              name: 'Ada',
+              chats: [
+                {
+                  id: 'chat-a',
+                  scriptstate: { inputseen: 0 },
+                  message: [{ role: 'user', data: 'original', chatId: 'm1' }],
+                },
+              ],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.applyServerChatMessagesProjection.mockClear()
+    activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
+
+    const rewrittenMessages = [
+      { role: 'user', data: 'rewritten input', chatId: 'm1' },
+      { role: 'char', data: 'older reply', chatId: 'm2' },
+    ]
+    serverProjectionState.fetchResource.mockResolvedValue({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'generation-assembly' as const,
+      characterId: 'char-a',
+      character: {
+        chaId: 'char-a',
+        name: 'Ada',
+        chats: [{ id: 'chat-a', scriptstate: { inputseen: 1 }, message: [] }],
+        chatPage: 0,
+      },
+      chatId: 'chat-a',
+      message: rewrittenMessages,
+      hypaV3Data: { assembly: true },
+      alternates: [],
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'generation.assemblyPersisted',
+      revision: 6,
+      resource: 'generationAssembly',
+      id: 'chat-a',
+      parentId: 'char-a',
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('generationAssembly', {
+      id: 'chat-a',
+      parentId: 'char-a',
+    })
+    expect(DBState.db.characters?.[0].chats?.[0].scriptstate).toEqual({ inputseen: 1 })
+    expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith(
+      'chat-a',
+      rewrittenMessages,
+      { assembly: true },
+      [],
+    )
+    expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('full-bootstraps generation assembly when either local projection half cannot apply', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              chats: [{ id: 'chat-a', scriptstate: { inputseen: 0 }, message: [] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    hydrationSpies.applyServerChatMessagesProjection.mockReturnValueOnce(false)
+    serverBootstrapState.fetchReadOnly.mockClear()
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 6,
+        database: {
+          characters: [
+            {
+              chaId: 'char-a',
+              chats: [{ id: 'chat-a', scriptstate: { inputseen: 1 }, message: [] }],
+              chatPage: 0,
+            },
+          ],
+          currentChar: 0,
+          modules: [],
+          personas: [],
+          language: 'ko',
+        },
+      },
+    }
+    serverProjectionState.fetchResource.mockResolvedValue({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'generation-assembly' as const,
+      characterId: 'char-a',
+      character: {
+        chaId: 'char-a',
+        chats: [{ id: 'chat-a', scriptstate: { inputseen: 1 }, message: [] }],
+        chatPage: 0,
+      },
+      chatId: 'chat-a',
+      message: [{ role: 'user', data: 'rewritten input', chatId: 'm1' }],
+      alternates: [],
+    })
+
+    const diagnosticsBefore = getProtocolDiagnosticsSnapshot()
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'generation.assemblyPersisted',
+      revision: 6,
+      resource: 'generationAssembly',
+      id: 'chat-a',
+      parentId: 'char-a',
+    })
+
+    await vi.waitFor(() => expect(DBState.db.language).toBe('ko'))
+    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(peekAppliedServerProjectionRevision()).toBe(6)
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'generationAssembly')
+  })
+
   it('applies a generation-chat projection to the changed chat and re-arms reattach', async () => {
     serverBootstrapState.response = {
       status: 'ok',

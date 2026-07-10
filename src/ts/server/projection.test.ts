@@ -130,6 +130,16 @@ describe('server projection API adapter', () => {
       },
       {
         revision: 5,
+        mode: 'generation-assembly',
+        characterId: 'char-d',
+        character: { chaId: 'char-d', chats: [{ id: 'chat-d', message: [] }] },
+        chatId: 'chat-d',
+        message: [{ role: 'user', data: 'rewritten' }],
+        hypaV3Data: { assembly: true },
+        alternates: [],
+      },
+      {
+        revision: 6,
         mode: 'generation-chat',
         chatId: 'chat-a',
         message: [{ role: 'user', data: 'hi' }],
@@ -169,9 +179,20 @@ describe('server projection API adapter', () => {
       characterId: 'char-c',
       character: { chaId: 'char-c', name: 'C' },
     })
-    await expect(fetchServerProjectionResource('generation.persisted')).resolves.toEqual({
+    await expect(fetchServerProjectionResource('generationAssembly')).resolves.toEqual({
       status: 'ok',
       revision: 5,
+      mode: 'generation-assembly',
+      characterId: 'char-d',
+      character: { chaId: 'char-d', chats: [{ id: 'chat-d', message: [] }] },
+      chatId: 'chat-d',
+      message: [{ role: 'user', data: 'rewritten' }],
+      hypaV3Data: { assembly: true },
+      alternates: [],
+    })
+    await expect(fetchServerProjectionResource('generation.persisted')).resolves.toEqual({
+      status: 'ok',
+      revision: 6,
       mode: 'generation-chat',
       chatId: 'chat-a',
       message: [{ role: 'user', data: 'hi' }],

@@ -83,7 +83,10 @@ are still command-event resources but intentionally fall back to a full
 bootstrap. `asset` is a no-op targeted projection that advances the cached
 revision because asset metadata lives outside the projected `Database`.
 `generation.persisted` events are keyed by `parentId` = chat id and may return
-projection mode `generation-chat`.
+projection mode `generation-chat`. Assembly-time input transforms that persist
+both a rewritten transcript and chat metadata emit
+`generation.assemblyPersisted`; its `generation-assembly` projection carries a
+single character row and the complete changed transcript together.
 
 ## Server-Owned Exceptions
 

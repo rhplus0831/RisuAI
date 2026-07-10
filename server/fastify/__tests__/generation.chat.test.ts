@@ -1455,12 +1455,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(transcriptRewrite.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'ok',
         mode: 'send',
-        eventType: 'messages.replaced',
+        eventType: 'generation.assemblyPersisted',
         persistMessages: true,
         hasVarWrite: false,
       })
       expect(transcriptRewrite.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
-        type: 'messages.replaced',
+        type: 'generation.assemblyPersisted',
         mutationPath: 'targeted-assembly',
         writtenTables: ['messages'],
       })
@@ -1487,12 +1487,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(combinedSideEffects.find((entry) => entry.metric === 'generation_assembly_persistence')).toMatchObject({
         status: 'ok',
         mode: 'send',
-        eventType: 'messages.replaced',
+        eventType: 'generation.assemblyPersisted',
         persistMessages: true,
         hasVarWrite: true,
       })
       expect(combinedSideEffects.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
-        type: 'messages.replaced',
+        type: 'generation.assemblyPersisted',
         mutationPath: 'targeted-assembly',
       })
       assertCommandMetricGate(
@@ -1991,7 +1991,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     ])
   })
 
-  it('M1: no-var editinput transcript persistence emits messages.replaced parented to the character', async () => {
+  it('M1: no-var editinput transcript persistence emits a composite assembly event', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -2010,10 +2010,12 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     const db = openDatabase(harness.dataDir)
     try {
-      const event = listPersistedCommandEventHistory(db).find((candidate) => candidate.type === 'messages.replaced')
+      const event = listPersistedCommandEventHistory(db).find(
+        (candidate) => candidate.type === 'generation.assemblyPersisted',
+      )
       expect(event).toMatchObject({
-        type: 'messages.replaced',
-        resource: 'message',
+        type: 'generation.assemblyPersisted',
+        resource: 'generationAssembly',
         id: 'chat-1',
         parentId: 'char-1',
       })
