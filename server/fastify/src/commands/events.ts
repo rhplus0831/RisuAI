@@ -433,9 +433,14 @@ export const COMMAND_EVENT_CATALOG = {
   characterUpdated: {
     type: 'character.updated',
     // Ordinary field edits write one character row, so a foreign refresh ships
-    // just that character. `trashTime` patches also update settings-level
-    // characterOrder.
+    // just that character.
     resource: 'characterRow',
+  },
+  characterTrashUpdated: {
+    type: 'character.updated',
+    // Trashing/restoring also rewrites settings-level characterOrder, so the
+    // event must project both the collection and its order.
+    resource: 'character',
   },
   characterDeleted: {
     type: 'character.deleted',

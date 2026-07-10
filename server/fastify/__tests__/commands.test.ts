@@ -4897,8 +4897,8 @@ describe('Phase 9-3a character commands', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json().event).toMatchObject({
       type: 'character.updated',
-      // A single-character edit ships only that character (per-character branch).
-      resource: 'characterRow',
+      // trashTime also rewrites characterOrder, so it uses the broad character projection.
+      resource: 'character',
       id: 'char-b',
     })
     expect(
@@ -4926,6 +4926,11 @@ describe('Phase 9-3a character commands', () => {
       },
     })
     expect(restored.statusCode).toBe(200)
+    expect(restored.json().event).toMatchObject({
+      type: 'character.updated',
+      resource: 'character',
+      id: 'char-b',
+    })
 
     const selected = await harness.app.inject({
       method: 'POST',

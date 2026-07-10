@@ -3995,12 +3995,18 @@ export function registerCommandRoutes(
           const patched = buildPatchedCharacterCollectionRow(characters[index], patch, characterId, index)
           characters[index] = patched
           writeSingleCharacterRow(innerDb, characterId, patched)
-          if (Object.prototype.hasOwnProperty.call(patch, 'trashTime')) {
+          const updatesTrashState = Object.prototype.hasOwnProperty.call(patch, 'trashTime')
+          if (updatesTrashState) {
             updateCharacterOrderForPatchedRow(target, characterId, patched)
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.characterUpdated, id: characterId },
+            event: {
+              ...(updatesTrashState
+                ? COMMAND_EVENT_CATALOG.characterTrashUpdated
+                : COMMAND_EVENT_CATALOG.characterUpdated),
+              id: characterId,
+            },
             extra: { characterId },
           }
         },
