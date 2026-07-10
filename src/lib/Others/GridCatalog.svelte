@@ -63,10 +63,9 @@
   import Button from '../UI/GUI/Button.svelte'
   import { language } from 'src/lang'
   import { parseMultilangString } from 'src/ts/util'
-  import { checkCharOrder } from 'src/ts/globalApi.svelte'
   import MobileCharacters from '../Mobile/MobileCharacters.svelte'
-  import { currentCharacterStateSnapshot, dispatchUpdateCharacter } from 'src/ts/characterCommands'
-  import { canUseServerCommands } from 'src/ts/server/commands'
+  import { currentCharacterRowSnapshot, dispatchUpdateCharacterScoped } from 'src/ts/characterCommands'
+  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
   interface Props {
     endGrid?: any
@@ -88,6 +87,29 @@
       return
     }
     navigate(characterRoutePath(character.chaId, character.chats?.[character.chatPage]?.id))
+  }
+
+  function restoreTrashedCharacter(index: number): void {
+    const character = DBState.db.characters?.[index]
+    if (!character) return
+
+    const characterId = character.chaId
+    const previous = currentCharacterRowSnapshot(index)
+    let applied = false
+    withTrustedServerProjectionWrite(() => {
+      const liveIndex = characterId
+        ? DBState.db.characters.findIndex((candidate) => candidate.chaId === characterId)
+        : index
+      const liveCharacter = DBState.db.characters?.[liveIndex] as
+        | (typeof character & { trashTime?: number | null })
+        | undefined
+      if (!liveCharacter) return
+      liveCharacter.trashTime = null
+      applied = true
+    })
+    if (applied && characterId) {
+      dispatchUpdateCharacterScoped(characterId, { trashTime: null }, previous)
+    }
   }
 </script>
 
@@ -269,15 +291,7 @@
                   data-risu-grid-action="restore"
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
-                    const previous = currentCharacterStateSnapshot()
-                    const characterId = DBState.db.characters[char.index].chaId
-                    if (!canUseServerCommands()) {
-                      DBState.db.characters[char.index].trashTime = undefined
-                      checkCharOrder()
-                    }
-                    if (characterId) {
-                      dispatchUpdateCharacter(characterId, { trashTime: null }, previous)
-                    }
+                    restoreTrashedCharacter(char.index)
                   }}>
                   <Undo2Icon />
                 </button>

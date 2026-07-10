@@ -8,12 +8,8 @@ const characterSpies = vi.hoisted(() => ({
 }))
 
 const characterCommandSpies = vi.hoisted(() => ({
-  currentCharacterStateSnapshot: vi.fn(() => ({ snapshot: 'before-trash-restore' })),
-  dispatchUpdateCharacter: vi.fn(),
-}))
-
-const commandSpies = vi.hoisted(() => ({
-  canUseServerCommands: vi.fn(() => false),
+  currentCharacterRowSnapshot: vi.fn(() => ({ snapshot: 'before-trash-restore' })),
+  dispatchUpdateCharacterScoped: vi.fn(),
 }))
 
 const globalApiSpies = vi.hoisted(() => ({
@@ -25,7 +21,6 @@ const globalApiSpies = vi.hoisted(() => ({
 vi.mock('../../ts/characters', () => characterSpies)
 vi.mock('src/ts/characters', () => characterSpies)
 vi.mock('src/ts/characterCommands', () => characterCommandSpies)
-vi.mock('src/ts/server/commands', () => commandSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
 
 import GridCatalog, { formatGridCatalogCharacterLists, normalizeGridCatalogSearch } from './GridCatalog.svelte'
@@ -269,14 +264,16 @@ describe('GridCatalog derived lists', () => {
     gridAction('trash', 'trash-beta', 'restore').click()
     await tick()
 
-    expect(globalApiSpies.checkCharOrder).toHaveBeenCalledOnce()
-    expect(DBState.db.characters[1].trashTime).toBeUndefined()
-    expect(characterCommandSpies.dispatchUpdateCharacter).toHaveBeenCalledWith(
+    expect(DBState.db.characters[1].trashTime).toBeNull()
+    expect(gridRows('trash').map((row) => row.dataset.risuRowId)).toEqual(['trash-alpha'])
+    expect(characterCommandSpies.dispatchUpdateCharacterScoped).toHaveBeenCalledWith(
       'trash-beta',
       { trashTime: null },
       { snapshot: 'before-trash-restore' },
     )
 
+    await clickCatalogTab('list')
+    expect(gridRows('list').map((row) => row.dataset.risuRowId)).toContain('trash-beta')
     await clickCatalogTab('trash')
     gridAction('trash', 'trash-alpha', 'delete-permanent').click()
     await tick()

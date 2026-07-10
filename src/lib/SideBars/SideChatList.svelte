@@ -158,22 +158,28 @@
     )
   }
 
-  function applyOptimisticChatName(chatId: string, name: string): void {
+  function applyOptimisticChatMetadata(chatId: string, mutate: (chat: Chat) => void): boolean {
+    let applied = false
     withTrustedServerProjectionWrite(() => {
       const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
       if (liveChat) {
-        liveChat.name = name
+        mutate(liveChat)
+        applied = true
       }
     })
+    return applied
   }
 
-  function applyOptimisticFolderName(folderId: string, name: string): void {
+  function applyOptimisticFolderMetadata(folderId: string, mutate: (folder: ChatFolder) => void): boolean {
+    let applied = false
     withTrustedServerProjectionWrite(() => {
       const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
       if (liveFolder) {
-        liveFolder.name = name
+        mutate(liveFolder)
+        applied = true
       }
     })
+    return applied
   }
 
   function updateChatName(chat: Chat, name: string): void {
@@ -181,7 +187,7 @@
       const chatId = chat.id
       if (!chatId) return
       const previous = currentChatStateSnapshot()
-      applyOptimisticChatName(chatId, name)
+      if (!applyOptimisticChatMetadata(chatId, (liveChat) => (liveChat.name = name))) return
       dispatchUpdateChat(chatId, { name }, previous)
       return
     }
@@ -193,11 +199,51 @@
       const folderId = folder.id
       if (!folderId) return
       const previous = currentChatStateSnapshot()
-      applyOptimisticFolderName(folderId, name)
+      if (!applyOptimisticFolderMetadata(folderId, (liveFolder) => (liveFolder.name = name))) return
       dispatchUpdateChatFolder(folderId, { name }, previous)
       return
     }
     folder.name = name
+  }
+
+  async function togglePersonaBinding(chatId: string | undefined): Promise<void> {
+    if (!chatId) return
+    const chat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+    if (!chat) return
+
+    const previousBinding = chat.bindedPersona ?? ''
+    const confirmed = await alertConfirm(
+      previousBinding ? language.doYouWantToUnbindCurrentPersona : language.doYouWantToBindCurrentPersona,
+    )
+    if (!confirmed) return
+
+    const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+    if (!liveChat || (liveChat.bindedPersona ?? '') !== previousBinding) return
+
+    const previous = currentChatStateSnapshot()
+    if (previousBinding) {
+      if (!applyOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = ''))) return
+      dispatchUpdateChat(chatId, { bindedPersona: '' }, previous)
+      alertNormal(language.personaUnbindedSuccess)
+      return
+    }
+
+    const selectedPersona = DBState.db.selectedPersona
+    const persona = DBState.db.personas?.[selectedPersona]
+    if (!persona) return
+    const bindedPersona = persona.id || v4()
+    if (!persona.id) {
+      withTrustedServerProjectionWrite(() => {
+        if (DBState.db.selectedPersona !== selectedPersona) return
+        const livePersona = DBState.db.personas?.[selectedPersona]
+        if (livePersona && !livePersona.id) {
+          livePersona.id = bindedPersona
+        }
+      })
+    }
+    if (!applyOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
+    dispatchUpdateChat(chatId, { bindedPersona }, previous)
+    alertNormal(language.personaBindedSuccess)
   }
 
   async function deleteChat(chat: Chat, index: number): Promise<void> {
@@ -513,9 +559,7 @@
                   if (!editMode) {
                     const previous = currentChatStateSnapshot()
                     const folded = !folder.folded
-                    if (!canUseServerCommands()) {
-                      chara.chatFolders[i].folded = folded
-                    }
+                    if (!applyOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded))) return
                     dispatchUpdateChatFolder(folder.id, { folded }, previous)
                     reloadGuiDisplay()
                   }
@@ -556,9 +600,8 @@
                           const sel = parseInt(await alertSelect(colors))
                           const previous = currentChatStateSnapshot()
                           const color = colors[sel]
-                          if (!canUseServerCommands()) {
-                            folder.color = color
-                          }
+                          if (!color) break
+                          if (!applyOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color))) break
                           dispatchUpdateChatFolder(folder.id, { color }, previous)
                           break
                       }
@@ -666,32 +709,7 @@
                                 break
                               }
                               case 1: {
-                                const previous = currentChatStateSnapshot()
-                                if (chat.bindedPersona) {
-                                  const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
-                                  if (confirm) {
-                                    if (!canUseServerCommands()) {
-                                      chat.bindedPersona = ''
-                                    }
-                                    dispatchUpdateChat(chat.id, { bindedPersona: '' }, previous)
-                                    alertNormal(language.personaUnbindedSuccess)
-                                  }
-                                } else {
-                                  const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
-                                  if (confirm) {
-                                    const persona = DBState.db.personas[DBState.db.selectedPersona]
-                                    const bindedPersona = persona.id || v4()
-                                    if (!canUseServerCommands() && !persona.id) {
-                                      persona.id = bindedPersona
-                                    }
-                                    if (!canUseServerCommands()) {
-                                      chat.bindedPersona = bindedPersona
-                                    }
-                                    dispatchUpdateChat(chat.id, { bindedPersona }, previous)
-                                    console.log(DBState.db.personas[DBState.db.selectedPersona])
-                                    alertNormal(language.personaBindedSuccess)
-                                  }
-                                }
+                                await togglePersonaBinding(chat.id)
                                 break
                               }
                             }
@@ -798,33 +816,7 @@
                           break
                         }
                         case 1: {
-                          const previous = currentChatStateSnapshot()
-                          const chat = chara.chats[i]
-                          if (chat.bindedPersona) {
-                            const confirm = await alertConfirm(language.doYouWantToUnbindCurrentPersona)
-                            if (confirm) {
-                              if (!canUseServerCommands()) {
-                                chat.bindedPersona = ''
-                              }
-                              dispatchUpdateChat(chat.id, { bindedPersona: '' }, previous)
-                              alertNormal(language.personaUnbindedSuccess)
-                            }
-                          } else {
-                            const confirm = await alertConfirm(language.doYouWantToBindCurrentPersona)
-                            if (confirm) {
-                              const persona = DBState.db.personas[DBState.db.selectedPersona]
-                              const bindedPersona = persona.id || v4()
-                              if (!canUseServerCommands() && !persona.id) {
-                                persona.id = bindedPersona
-                              }
-                              if (!canUseServerCommands()) {
-                                chat.bindedPersona = bindedPersona
-                              }
-                              dispatchUpdateChat(chat.id, { bindedPersona }, previous)
-                              console.log(DBState.db.personas[DBState.db.selectedPersona])
-                              alertNormal(language.personaBindedSuccess)
-                            }
-                          }
+                          await togglePersonaBinding(chat.id)
                           break
                         }
                       }

@@ -876,9 +876,13 @@ describe('SideChatList DOM contract harness', () => {
     })
   })
 
-  it('dispatches folder folded toggles with the folder stable id', async () => {
-    const chara = seedSidebarDatabase()
+  it('paints folder folded toggles before dispatching with the folder stable id', async () => {
+    seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
+    sidebarMocks.dispatchUpdateChatFolder.mockImplementationOnce(() => {
+      expect(selectedCharacter().chatFolders[0].folded).toBe(true)
+    })
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -887,7 +891,81 @@ describe('SideChatList DOM contract harness', () => {
     await tick()
 
     expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith('folder-a', { folded: true }, expect.any(Object))
-    expect(chara.chatFolders[0].folded).toBe(false)
+    expect(selectedCharacter().chatFolders[0].folded).toBe(true)
+    expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('true')
+    expect(folderPanelById('folder-a').hidden).toBe(true)
+  })
+
+  it('paints a selected folder color before dispatch', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
+    sidebarMocks.alertSelect.mockResolvedValueOnce('0').mockResolvedValueOnce('0')
+    sidebarMocks.dispatchUpdateChatFolder.mockImplementationOnce(() => {
+      expect(selectedCharacter().chatFolders[0].color).toBe('red')
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(folderElementById('folder-a'), 'folder-options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith('folder-a', { color: 'red' }, expect.any(Object))
+    expect(selectedCharacter().chatFolders[0].color).toBe('red')
+    expect(folderHeader(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
+  })
+
+  it('optimistically unbinds a foldered chat persona before dispatch', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats[1].bindedPersona = 'persona-a'
+    sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
+    sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
+    sidebarMocks.dispatchUpdateChat.mockImplementationOnce(() => {
+      expect(selectedCharacter().chats[1].bindedPersona).toBe('')
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(rowByChatId('chat-foldered'), 'options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
+      'chat-foldered',
+      { bindedPersona: '' },
+      expect.any(Object),
+    )
+    expect(selectedCharacter().chats[1].bindedPersona).toBe('')
+    expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona unbound')
+  })
+
+  it('optimistically binds a root chat persona before dispatch', async () => {
+    seedSidebarDatabase()
+    DBState.db.personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
+    sidebarMocks.setServerCommandsEnabled(true)
+    setServerProjectionWriteGuardEnabled(true)
+    sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
+    sidebarMocks.dispatchUpdateChat.mockImplementationOnce(() => {
+      expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(rowByChatId('chat-root-a'), 'options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
+      'chat-root-a',
+      { bindedPersona: 'persona-selected' },
+      expect.any(Object),
+    )
+    expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
+    expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona bound')
   })
 
   it('navigates when selecting a sidebar row and reflects the route-applied selection', async () => {
