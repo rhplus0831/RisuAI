@@ -32,7 +32,9 @@ import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
   canUseServerCommands,
   initializeServerDatabase,
+  peekAppliedServerProjectionRevision,
   peekCachedServerCommandRevision,
+  setAppliedServerProjectionRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
@@ -167,10 +169,11 @@ export async function loadWebInitialDatabase() {
   // Seed the surgical-sync baseline: subsequent command events are decided
   // against the revision this client has applied.
   setCachedServerCommandRevision(projection.revision)
+  setAppliedServerProjectionRevision(projection.revision)
   setServerCommandSuccessReconciler((event) =>
     enqueueServerProjectionSync(() =>
       processServerCommandEvent(event, {
-        allowAlreadyKnownRevision: true,
+        allowAlreadyAppliedRevision: true,
         markReconciledRevision: true,
       }),
     ),
@@ -267,7 +270,7 @@ async function startServerProjectionEvents() {
   teardownServerProjectionSubscription()
   serverProjectionEventsDesired = true
   const subscription = await subscribeServerCommandEvents({
-    sinceRevision: peekCachedServerCommandRevision(),
+    sinceRevision: peekAppliedServerProjectionRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
     onError: (error) => {
@@ -344,11 +347,11 @@ function applyServerMemoryEvent(event: ServerMemoryEvent) {
 /**
  * Surgical inbound sync for server projection command events. Each event is
  * decided against the last revision this client applied:
- *   - `event.revision <= cached` → own echo / already applied → skip.
- *   - `event.revision === cached + 1` → contiguous foreign event → targeted
+ *   - `event.revision <= appliedRevision` → own echo / already applied → skip.
+ *   - `event.revision === appliedRevision + 1` → contiguous foreign event → targeted
  *     fetch of just that resource (or full bootstrap if the server cannot
  *     narrow it).
- *   - `event.revision > cached + 1` (gap) or no baseline → full bootstrap.
+ *   - `event.revision > appliedRevision + 1` (gap) or no baseline → full bootstrap.
  * Events are processed strictly in arrival order via a serial chain so gap
  * detection is per-event rather than batched.
  */
@@ -364,7 +367,7 @@ function enqueueServerProjectionSync(task: () => Promise<void>): Promise<void> {
 }
 
 interface ProcessServerCommandEventOptions {
-  allowAlreadyKnownRevision?: boolean
+  allowAlreadyAppliedRevision?: boolean
   markReconciledRevision?: boolean
 }
 
@@ -374,11 +377,12 @@ async function processServerCommandEvent(
 ): Promise<void> {
   const ownEvent = isOwnCommandEvent(event)
   if ((ownEvent || options.markReconciledRevision) && reconciledCommandProjectionRevisionSet.has(event.revision)) {
-    advanceCachedServerCommandRevision(event.revision)
+    advanceKnownServerCommandRevision(event.revision)
+    setAppliedServerProjectionRevision(event.revision)
     return
   }
-  const cached = peekCachedServerCommandRevision()
-  if (cached === null) {
+  const appliedRevision = peekAppliedServerProjectionRevision()
+  if (appliedRevision === null) {
     // No baseline yet: reconcile from scratch.
     const resync = await forceServerProjectionResync('no-baseline', { resource: event.resource })
     if (resync.status === 'ok' && (ownEvent || options.markReconciledRevision)) {
@@ -386,18 +390,18 @@ async function processServerCommandEvent(
     }
     return
   }
-  if (event.revision <= cached && !ownEvent && !options.allowAlreadyKnownRevision) {
+  if (event.revision <= appliedRevision && !ownEvent && !options.allowAlreadyAppliedRevision) {
     // Own echo or an event already covered by a prior apply → nothing to do.
     return
   }
-  if (event.revision <= cached || event.revision === cached + 1) {
+  if (event.revision <= appliedRevision || event.revision === appliedRevision + 1) {
     const result = await fetchServerProjectionResource(event.resource, {
       id: event.resource === 'preset' ? undefined : event.id,
       parentId: event.parentId,
     })
     if (result.status === 'ok' && result.mode === 'character-selection') {
       await hydrateCharacterShell(result.characterId)
-      if (isCommandEventOlderThanCachedRevision(event)) {
+      if (isCommandEventOlderThanAppliedRevision(event)) {
         markReconciledCommandProjectionEvent(event, options)
         return
       }
@@ -503,7 +507,7 @@ async function processServerCommandEvent(
     if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
     return
   }
-  // Gap detected (event.revision > cached + 1) → self-healing full bootstrap.
+  // Gap detected (event.revision > appliedRevision + 1) → self-healing full bootstrap.
   const resync = await forceServerProjectionResync('revision-gap', { resource: event.resource })
   if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
 }
@@ -513,16 +517,16 @@ function isOwnCommandEvent(event: CommandEvent): boolean {
   return !!writerSessionId && event.origin?.writerSessionId === writerSessionId
 }
 
-function advanceCachedServerCommandRevision(revision: number): void {
+function advanceKnownServerCommandRevision(revision: number): void {
   const cached = peekCachedServerCommandRevision()
   if (cached === null || revision > cached) {
     setCachedServerCommandRevision(revision)
   }
 }
 
-function isCommandEventOlderThanCachedRevision(event: CommandEvent): boolean {
-  const cached = peekCachedServerCommandRevision()
-  return cached !== null && event.revision < cached
+function isCommandEventOlderThanAppliedRevision(event: CommandEvent): boolean {
+  const appliedRevision = peekAppliedServerProjectionRevision()
+  return appliedRevision !== null && event.revision < appliedRevision
 }
 
 function markReconciledCommandProjectionEvent(
@@ -535,7 +539,8 @@ function markReconciledCommandProjectionEvent(
 }
 
 function markAppliedCommandProjectionEvent(event: CommandEvent, options: ProcessServerCommandEventOptions = {}): void {
-  advanceCachedServerCommandRevision(event.revision)
+  advanceKnownServerCommandRevision(event.revision)
+  setAppliedServerProjectionRevision(event.revision)
   markReconciledCommandProjectionEvent(event, options)
 }
 

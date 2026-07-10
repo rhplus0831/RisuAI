@@ -1248,6 +1248,12 @@ export interface ServerCommandTransportOptions {
 }
 
 let cachedServerCommandRevision: number | null = null
+// The command/base-revision cursor may move ahead of the browser projection:
+// conflicts and server-owned mutations tell us the latest server revision
+// without proving that its projected state was applied locally. SSE replay,
+// gap detection, and already-applied skips must therefore use this separate
+// projection cursor instead of `cachedServerCommandRevision`.
+let appliedServerProjectionRevision: number | null = null
 let serverCommandSuccessReconciler: ((event: CommandEvent) => Promise<void> | void) | null = null
 // Every command domain shares one server revision. Keep high-level mutations in
 // one client queue so two unrelated optimistic edits cannot both dispatch with
@@ -1285,6 +1291,24 @@ export function clearCachedServerCommandRevision(): void {
   cachedServerCommandRevision = null
 }
 
+export function setAppliedServerProjectionRevision(revision: number): void {
+  if (
+    Number.isInteger(revision) &&
+    revision >= 0 &&
+    (appliedServerProjectionRevision === null || revision > appliedServerProjectionRevision)
+  ) {
+    appliedServerProjectionRevision = revision
+  }
+}
+
+export function clearAppliedServerProjectionRevision(): void {
+  appliedServerProjectionRevision = null
+}
+
+export function peekAppliedServerProjectionRevision(): number | null {
+  return appliedServerProjectionRevision
+}
+
 export function setServerCommandSuccessReconciler(
   reconciler: ((event: CommandEvent) => Promise<void> | void) | null,
 ): void {
@@ -1292,10 +1316,9 @@ export function setServerCommandSuccessReconciler(
 }
 
 /**
- * Returns the cached revision without ever issuing a fetch. Surgical sync needs
- * to compare an inbound event's revision against the last revision this client
- * applied, with no network round trip in the hot path; `null` means we have no
- * baseline yet and must full-bootstrap.
+ * Returns the latest server revision known to this client without issuing a
+ * fetch. Commands use it as their base revision, and hydration uses it to reject
+ * stale responses. It does not prove that the matching projection was applied.
  */
 export function peekCachedServerCommandRevision(): number | null {
   return cachedServerCommandRevision

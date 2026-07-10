@@ -6,7 +6,7 @@ import { get } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
 import { fetchServerBootstrapProjectionReadOnly } from './bootstrap'
 import { hydrateSelectedCharacterShell } from './characterShellHydration.svelte'
-import { setCachedServerCommandRevision } from './commands'
+import { setAppliedServerProjectionRevision, setCachedServerCommandRevision } from './commands'
 import { hydrateActiveCharacterLorebook, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './lorebookBridge.svelte'
 import { resetPromptTemplateHydration, startPromptTemplateHydration } from './promptTemplateHydration'
@@ -82,6 +82,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
       resetPromptTemplateHydration()
       syncSelectedCharacterAfterResync(bootstrap.projection.database)
       setCachedServerCommandRevision(bootstrap.projection.revision)
+      setAppliedServerProjectionRevision(bootstrap.projection.revision)
       setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
       setActiveMessageTranslations(bootstrap.projection.activeMessageTranslations ?? [])
       triggerOpenChatGenerationReattach()

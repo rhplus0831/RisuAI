@@ -20,6 +20,7 @@ import {
   createModuleCommand,
   createPersonaCommand,
   createPluginCommand,
+  clearAppliedServerProjectionRevision,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
@@ -59,6 +60,7 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  peekAppliedServerProjectionRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
   persistGenerationResultCommand,
@@ -125,6 +127,7 @@ import {
   upsertModuleLorebookEntryCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
+  setAppliedServerProjectionRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   updatePromptItemCommand,
@@ -187,6 +190,7 @@ function makeCommandFetch(bodyForUrl: (url: string, init: RequestInit) => unknow
 }
 
 beforeEach(() => {
+  clearAppliedServerProjectionRevision()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
 })
@@ -470,6 +474,14 @@ describe('server command API adapter', () => {
     expect(peekCachedServerCommandRevision()).toBe(12)
   })
 
+  it('tracks the known command revision independently from the applied projection revision', () => {
+    setAppliedServerProjectionRevision(7)
+    setCachedServerCommandRevision(9)
+
+    expect(peekCachedServerCommandRevision()).toBe(9)
+    expect(peekAppliedServerProjectionRevision()).toBe(7)
+  })
+
   it('maps revision conflicts to a typed conflict result', async () => {
     const commandFetch = makeCommandFetch(() => jsonResponse({ error: 'revision_conflict', currentRevision: 7 }, 409))
     vi.stubGlobal('fetch', commandFetch.fetch)
@@ -480,6 +492,8 @@ describe('server command API adapter', () => {
     })
 
     expect(result).toEqual({ status: 'conflict', currentRevision: 7 })
+    expect(peekCachedServerCommandRevision()).toBe(7)
+    expect(peekAppliedServerProjectionRevision()).toBeNull()
   })
 
   it('maps command errors to status:error', async () => {

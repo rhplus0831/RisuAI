@@ -191,9 +191,12 @@ Browser reconcile rules: process events serially, skip already-reconciled
 own-origin revisions through a 256-entry cache, skip already-applied foreign
 revisions, fetch a targeted projection for contiguous foreign events, and fall
 back to full bootstrap for gaps, unknown resources, replay misses, or projection
-errors. An own-origin event that arrives before the command response advances the
-cached revision may still reconcile so local state does not wait for another
-event. Memory events update Hypa V3 job/progress UI directly.
+errors. The browser keeps separate known-server and applied-projection revision
+cursors: mutation base revisions and hydration freshness use the known cursor,
+while SSE replay, gap detection, and already-applied skips use only the applied
+cursor. An own-origin event that arrives before the command response advances the
+known revision may still reconcile so local state does not wait for another event.
+Memory events update Hypa V3 job/progress UI directly.
 
 Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
 `message_patch`, `token`, `side_effect`, `agent_preset_progress`,

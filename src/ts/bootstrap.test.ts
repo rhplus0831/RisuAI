@@ -247,8 +247,11 @@ import {
   withTrustedServerProjectionWrite,
 } from './storage/database.svelte'
 import {
+  clearAppliedServerProjectionRevision,
   clearCachedServerCommandRevision,
+  peekAppliedServerProjectionRevision,
   peekCachedServerCommandRevision,
+  setAppliedServerProjectionRevision,
   setCachedServerCommandRevision,
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
@@ -327,6 +330,7 @@ beforeEach(() => {
   memoryJobEventSpies.publishServerMemoryJobEvent.mockClear()
   pushNotificationSpies.enableChatCompletionPushNotifications.mockClear()
   clearMemoryJobTerminalUpdateFence()
+  clearAppliedServerProjectionRevision()
   clearCachedServerCommandRevision()
   forageSpies.Init.mockClear()
   forageSpies.getItem.mockClear()
@@ -510,6 +514,7 @@ describe('web bootstrap startup source', () => {
     expect(forageSpies.setItem).not.toHaveBeenCalled()
     expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
     expect(serverEventsState.subscriptions[0].sinceRevision).toBe(5)
+    expect(peekAppliedServerProjectionRevision()).toBe(5)
     expect(promptTemplateHydrationSpies.resetPromptTemplateHydration).toHaveBeenCalledTimes(1)
     expect(promptTemplateHydrationSpies.startPromptTemplateHydration).toHaveBeenCalledTimes(1)
   })
@@ -579,6 +584,7 @@ describe('web bootstrap startup source', () => {
 
     // The revision is already covered by a prior projection apply.
     setCachedServerCommandRevision(6)
+    setAppliedServerProjectionRevision(6)
 
     const subscription = serverEventsState.subscriptions[0]
     subscription.onCommandEvent({ type: 'settings.updated', revision: 6, resource: 'settings' })
@@ -587,6 +593,36 @@ describe('web bootstrap startup source', () => {
     expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
     expect(peekCachedServerCommandRevision()).toBe(6)
+    expect(peekAppliedServerProjectionRevision()).toBe(6)
+  })
+
+  it('applies an event that is only known from a conflict or out-of-band completion', async () => {
+    await loadWebInitialDatabase()
+    expect(peekAppliedServerProjectionRevision()).toBe(5)
+
+    // A 409 or an out-of-band mutation can reveal the server's latest revision
+    // without applying that revision's projection to this browser.
+    setCachedServerCommandRevision(6)
+    serverProjectionState.fetchResource.mockResolvedValueOnce({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: { language: 'ko' },
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'chat.updated',
+      revision: 6,
+      resource: 'chat',
+    })
+
+    await vi.waitFor(() => expect(DBState.db.language).toBe('ko'))
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('chat', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(peekCachedServerCommandRevision()).toBe(6)
+    expect(peekAppliedServerProjectionRevision()).toBe(6)
   })
 
   it('reconciles own command events by writer origin before the command response advances revision', async () => {
@@ -1394,6 +1430,7 @@ describe('web bootstrap startup source', () => {
     })
     selectedCharID.set(2)
     setCachedServerCommandRevision(7)
+    setAppliedServerProjectionRevision(7)
     rowResponse.resolve({
       status: 'ok',
       revision: 6,
@@ -1644,8 +1681,9 @@ describe('web bootstrap startup source', () => {
     expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error')
   })
 
-  it('full-bootstraps when an event arrives without a cached baseline', async () => {
+  it('full-bootstraps when an event arrives without an applied baseline', async () => {
     await loadWebInitialDatabase()
+    clearAppliedServerProjectionRevision()
     clearCachedServerCommandRevision()
     serverBootstrapState.response = {
       status: 'ok',
@@ -1781,6 +1819,10 @@ describe('web bootstrap startup source', () => {
       await loadWebInitialDatabase()
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(1)
 
+      // Knowing a newer server revision does not mean its projection was
+      // applied, so reconnect replay must still start from revision 5.
+      setCachedServerCommandRevision(6)
+
       const subscription = serverEventsState.subscriptions[0]
       subscription.onError?.('stream dropped')
 
@@ -1790,7 +1832,8 @@ describe('web bootstrap startup source', () => {
       expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
       expect(serverEventsState.subscriptions[1].sinceRevision).toBe(5)
       expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
-      expect(peekCachedServerCommandRevision()).toBe(5)
+      expect(peekCachedServerCommandRevision()).toBe(6)
+      expect(peekAppliedServerProjectionRevision()).toBe(5)
     } finally {
       stopServerProjectionEvents()
       randomSpy.mockRestore()

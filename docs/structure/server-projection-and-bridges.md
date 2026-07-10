@@ -18,9 +18,10 @@ through command helpers or explicit server-owned mutation routes.
 - Empty bootstrap (`database: null`) triggers
   `POST /api/v1/commands/state/initialize`, then a read-only bootstrap refetch.
 - The projection is merged with any bootstrap body-cache entries, applied through
-  trusted write scopes, revision cache is seeded, projection write guard is
-  enabled, active generation jobs are handed to reattach logic, active message
-  translations are recorded for row-level busy state and refresh polling,
+  trusted write scopes, the known-server and applied-projection revision cursors
+  are seeded, the projection write guard is enabled, active generation jobs are
+  handed to reattach logic, and active message translations are recorded for
+  row-level busy state and refresh polling,
   selected-character shell hydration starts and awaits the selected shell, chat
   message hydration starts and hydrates the active chat, prompt-template
   hydration starts, and `/api/v1/events` subscribes.
@@ -31,8 +32,8 @@ through command helpers or explicit server-owned mutation routes.
   SSE own echoes or already-reconciled revisions are skipped.
 
 `projectionResync.ts` coalesces concurrent full-resync requests, reads bootstrap
-with `cacheRevision: false`, applies the fresh database, caches the new
-revision before stale hydration checks, syncs selected character state, seeds
+with `cacheRevision: false`, applies the fresh database, advances both revision
+cursors before stale hydration checks, syncs selected character state, seeds
 active generation reattach state, refreshes active message translations, resets
 chat/lorebook hydration, records already-hydrated lorebooks, awaits the selected
 character shell, force-hydrates the active chat/lorebook, then restarts
@@ -53,11 +54,13 @@ another pass after the first settles.
 
 ## Event Reconcile
 
-`src/ts/server/events.ts` subscribes to `/api/v1/events` with the cached
-revision as `sinceRevision` / `Last-Event-ID`. Clean closes and stream errors
-schedule reconnects with exponential backoff and jitter capped at 30s; malformed
-command frames force a read-only full resync before reconnect. `src/ts/bootstrap.ts`
-processes command events serially:
+`src/ts/server/events.ts` subscribes to `/api/v1/events` with the applied
+projection revision as `sinceRevision` / `Last-Event-ID`. The separate known
+server revision can advance from a command conflict, asset upload, generation,
+or Realm completion without causing an unapplied event to be skipped. Clean
+closes and stream errors schedule reconnects with exponential backoff and jitter
+capped at 30s; malformed command frames force a read-only full resync before
+reconnect. `src/ts/bootstrap.ts` processes command events serially:
 
 - Own echoes are skipped once their revision is already reconciled or applied;
   an own-origin event that arrives before the command response can still

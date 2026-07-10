@@ -60,7 +60,12 @@ vi.mock('./protocolDiagnostics', () => ({
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'
-import { clearCachedServerCommandRevision, peekCachedServerCommandRevision } from './commands'
+import {
+  clearAppliedServerProjectionRevision,
+  clearCachedServerCommandRevision,
+  peekAppliedServerProjectionRevision,
+  peekCachedServerCommandRevision,
+} from './commands'
 import { forceServerProjectionResync } from './projectionResync'
 import { setServerProjectionWriteGuardEnabled } from './projectionWriteGuard.svelte'
 
@@ -115,6 +120,7 @@ async function waitForBootstrapFetchCount(count: number): Promise<void> {
 
 function expectNoApplySideEffects(): void {
   expect(peekCachedServerCommandRevision()).toBeNull()
+  expect(peekAppliedServerProjectionRevision()).toBeNull()
   expect(projectionResyncSpies.resetPromptTemplateHydration).not.toHaveBeenCalled()
   expect(projectionResyncSpies.setActiveGenerationJobs).not.toHaveBeenCalled()
   expect(projectionResyncSpies.triggerOpenChatGenerationReattach).not.toHaveBeenCalled()
@@ -133,6 +139,7 @@ beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
   setServerProjectionWriteGuardEnabled(false)
+  clearAppliedServerProjectionRevision()
   clearCachedServerCommandRevision()
   DBState.db = { characters: [], language: 'initial' } as Database
   selectedCharID.set(-1)
@@ -186,6 +193,7 @@ describe('forceServerProjectionResync', () => {
       characters: [{ chaId: 'char-11', name: 'newer' }],
     })
     expect(peekCachedServerCommandRevision()).toBe(11)
+    expect(peekAppliedServerProjectionRevision()).toBe(11)
     expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledTimes(1)
     expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith([
       { chatId: 'new-chat', jobId: 'new-job' },
@@ -256,6 +264,7 @@ describe('forceServerProjectionResync', () => {
     })
     expect(get(selectedCharID)).toBe(1)
     expect(peekCachedServerCommandRevision()).toBe(30)
+    expect(peekAppliedServerProjectionRevision()).toBe(30)
     expect(projectionResyncSpies.resetPromptTemplateHydration).toHaveBeenCalledTimes(1)
     expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith(activeGenerationJobs)
     expect(projectionResyncSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
