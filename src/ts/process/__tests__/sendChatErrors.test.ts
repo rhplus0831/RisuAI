@@ -58,10 +58,10 @@ function stubCommandFetch(): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url.startsWith('/api/v1/commands/chats/') && url.endsWith('/messages')) {
+      if (url === '/api/v1/commands/chats/chat-1/messages' && init.method === 'POST') {
         return jsonResponse({
           revision: 11,
-          event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
+          event: { type: 'message.appended', revision: 11, resource: 'message', parentId: 'chat-1' },
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -72,7 +72,7 @@ function stubCommandFetch(): CapturedFetch[] {
 
 async function waitForMessageCommand(calls: CapturedFetch[]): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const match = calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT')
+    const match = calls.find((call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST')
     if (match) return match
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
@@ -264,11 +264,13 @@ describe('reportSendChatError', () => {
     })
 
     const command = await waitForMessageCommand(calls)
-    expect(command.body.messages.at(-1)).toMatchObject({
+    expect(command.body.message).toMatchObject({
       role: 'char',
       data: '```risuerror\nboom\n```',
       saying: 'test-cha-id',
+      chatId: expect.any(String),
     })
+    const projectedMessages = [{ role: 'user', data: 'hi', time: 0, chatId: 'm-user' }, command.body.message]
 
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[0].chats[0].message = [{ role: 'user', data: 'stale' }]
@@ -280,7 +282,7 @@ describe('reportSendChatError', () => {
           chats: [
             {
               ...makeChar().chats[0],
-              message: command.body.messages,
+              message: projectedMessages,
             },
           ],
         },

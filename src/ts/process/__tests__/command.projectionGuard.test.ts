@@ -84,10 +84,40 @@ function stubCommandFetch(): CapturedFetch[] {
           event: { type: 'chat.scriptstate.updated', revision: 11, resource: 'chat' },
         })
       }
-      if (url.endsWith('/messages')) {
+      if (url === '/api/v1/commands/chats/chat-1/messages' && init.method === 'POST') {
         return jsonResponse({
           revision: 11,
-          event: { type: 'messages.replaced', revision: 11, resource: 'chat' },
+          event: { type: 'message.appended', revision: 11, resource: 'message', parentId: 'chat-1' },
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-1/messages' && init.method === 'PUT') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'messages.replaced', revision: 11, resource: 'message', parentId: 'chat-1' },
+        })
+      }
+      if (url.startsWith('/api/v1/commands/messages/') && init.method === 'PATCH') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'message.updated', revision: 11, resource: 'message', id: url.split('/').at(-1) },
+        })
+      }
+      if (url.startsWith('/api/v1/commands/messages/') && init.method === 'DELETE') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'message.deleted', revision: 11, resource: 'message', id: url.split('/').at(-1) },
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-1/messages/truncate' && init.method === 'POST') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'message.truncated', revision: 11, resource: 'message', parentId: 'chat-1' },
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-1/messages/tail' && init.method === 'POST') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'messages.replaced', revision: 11, resource: 'message', parentId: 'chat-1' },
         })
       }
       if (url.startsWith('/api/v1/commands/chats/')) {
@@ -132,18 +162,32 @@ function commandMessages(call: CapturedFetch): Array<Record<string, unknown>> {
   return body?.messages ?? []
 }
 
-async function runMessageCommand(command: string, messages: unknown[]): Promise<Array<Record<string, unknown>>> {
+interface ExpectedMessageCommand {
+  url: string
+  method: string
+}
+
+interface MessageCommandRun {
+  command: CapturedFetch
+  messages: Array<Record<string, unknown>>
+}
+
+async function runMessageCommand(
+  command: string,
+  messages: unknown[],
+  expected: ExpectedMessageCommand,
+): Promise<MessageCommandRun> {
   seedDatabase(messages)
   const calls = stubCommandFetch()
   setServerProjectionWriteGuardEnabled(true)
 
   await expect(processMultiCommand(command)).resolves.not.toBe(false)
 
-  const cmd = await waitForCommand(
-    calls,
-    (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
-  )
-  return commandMessages(cmd)
+  const dispatched = await waitForCommand(calls, (call) => call.url === expected.url && call.method === expected.method)
+  return {
+    command: dispatched,
+    messages: DBState.db.characters[0].chats[0].message as unknown as Array<Record<string, unknown>>,
+  }
 }
 
 async function withAsyncCloneInstrumentation<T>(fn: () => Promise<T>) {
@@ -317,10 +361,9 @@ describe('slash-command durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
     )
-    const lastMessage = commandMessages(cmd).at(-1)
-    expect(lastMessage).toMatchObject({ role: 'user', data: 'hello world' })
+    expect(cmd.body.message).toMatchObject({ role: 'user', data: 'hello world', chatId: expect.any(String) })
   })
 
   it('L32: /send preserves pipe return behavior while appending the piped text', async () => {
@@ -331,19 +374,22 @@ describe('slash-command durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
     )
-    expect(commandMessages(cmd).at(-1)).toMatchObject({ role: 'user', data: 'piped text' })
+    expect(cmd.body.message).toMatchObject({ role: 'user', data: 'piped text', chatId: expect.any(String) })
     expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('L32: /sendas appends a character message without setDatabase', async () => {
-    const messages = await runMessageCommand('/sendas character line', [
-      { role: 'user', data: 'seed', chatId: 'm-seed' },
-    ])
+    const { command, messages } = await runMessageCommand(
+      '/sendas character line',
+      [{ role: 'user', data: 'seed', chatId: 'm-seed' }],
+      { url: '/api/v1/commands/chats/chat-1/messages', method: 'POST' },
+    )
 
     expect(messages).toHaveLength(2)
     expect(messages.at(-1)).toMatchObject({ role: 'char', data: 'character line' })
+    expect(command.body.message).toMatchObject({ role: 'char', data: 'character line', chatId: expect.any(String) })
     expect(DBState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
       role: 'char',
       data: 'character line',
@@ -352,7 +398,11 @@ describe('slash-command durable writes under the projection guard', () => {
   })
 
   it('L32: /comment appends the legacy comment block to the last message', async () => {
-    const messages = await runMessageCommand('/comment side note', [{ role: 'char', data: 'base', chatId: 'm-base' }])
+    const { command, messages } = await runMessageCommand(
+      '/comment side note',
+      [{ role: 'char', data: 'base', chatId: 'm-base' }],
+      { url: '/api/v1/commands/messages/m-base', method: 'PATCH' },
+    )
 
     expect(messages).toEqual([
       {
@@ -361,52 +411,73 @@ describe('slash-command durable writes under the projection guard', () => {
         chatId: 'm-base',
       },
     ])
+    expect(command.body.patch).toEqual({ data: 'base<Comment>\nside note\n</Comment>' })
     expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('L32: /cut range keeps the legacy sliced transcript bytes', async () => {
-    const messages = await runMessageCommand('/cut 1-3', [
-      { role: 'user', data: 'zero', chatId: 'm0' },
-      { role: 'char', data: 'one', chatId: 'm1' },
-      { role: 'user', data: 'two', chatId: 'm2' },
-      { role: 'char', data: 'three', chatId: 'm3' },
-    ])
+    const { command, messages } = await runMessageCommand(
+      '/cut 1-3',
+      [
+        { role: 'user', data: 'zero', chatId: 'm0' },
+        { role: 'char', data: 'one', chatId: 'm1' },
+        { role: 'user', data: 'two', chatId: 'm2' },
+        { role: 'char', data: 'three', chatId: 'm3' },
+      ],
+      { url: '/api/v1/commands/chats/chat-1/messages', method: 'PUT' },
+    )
 
     expect(messages.map((message) => message.chatId)).toEqual(['m1', 'm2'])
+    expect(commandMessages(command).map((message) => message.chatId)).toEqual(['m1', 'm2'])
     expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('L32: /cut index keeps the legacy spliced row bytes', async () => {
-    const messages = await runMessageCommand('/cut 1', [
-      { role: 'user', data: 'zero', chatId: 'm0' },
-      { role: 'char', data: 'one', chatId: 'm1' },
-      { role: 'user', data: 'two', chatId: 'm2' },
-    ])
+    const { command, messages } = await runMessageCommand(
+      '/cut 1',
+      [
+        { role: 'user', data: 'zero', chatId: 'm0' },
+        { role: 'char', data: 'one', chatId: 'm1' },
+        { role: 'user', data: 'two', chatId: 'm2' },
+      ],
+      { url: '/api/v1/commands/chats/chat-1/messages', method: 'PUT' },
+    )
 
     expect(messages).toEqual([{ role: 'char', data: 'one', chatId: 'm1' }])
+    expect(commandMessages(command)).toEqual([{ role: 'char', data: 'one', chatId: 'm1' }])
     expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('L32: /cut id removes the matching chatId without setDatabase', async () => {
-    const messages = await runMessageCommand('/cut m2', [
-      { role: 'user', data: 'zero', chatId: 'm0' },
-      { role: 'char', data: 'one', chatId: 'm1' },
-      { role: 'user', data: 'two', chatId: 'm2' },
-    ])
+    const { command, messages } = await runMessageCommand(
+      '/cut m2',
+      [
+        { role: 'user', data: 'zero', chatId: 'm0' },
+        { role: 'char', data: 'one', chatId: 'm1' },
+        { role: 'user', data: 'two', chatId: 'm2' },
+      ],
+      { url: '/api/v1/commands/chats/chat-1/messages/truncate', method: 'POST' },
+    )
 
     expect(messages.map((message) => message.chatId)).toEqual(['m0', 'm1'])
+    expect(command.body.afterMessageId).toBe('m1')
     expect(setDatabaseSpy.count).toBe(0)
   })
 
   it('L32: /del keeps the legacy last-N truncation without setDatabase', async () => {
-    const messages = await runMessageCommand('/del 2', [
-      { role: 'user', data: 'zero', chatId: 'm0' },
-      { role: 'char', data: 'one', chatId: 'm1' },
-      { role: 'user', data: 'two', chatId: 'm2' },
-      { role: 'char', data: 'three', chatId: 'm3' },
-    ])
+    const { command, messages } = await runMessageCommand(
+      '/del 2',
+      [
+        { role: 'user', data: 'zero', chatId: 'm0' },
+        { role: 'char', data: 'one', chatId: 'm1' },
+        { role: 'user', data: 'two', chatId: 'm2' },
+        { role: 'char', data: 'three', chatId: 'm3' },
+      ],
+      { url: '/api/v1/commands/chats/chat-1/messages', method: 'PUT' },
+    )
 
     expect(messages.map((message) => message.chatId)).toEqual(['m2', 'm3'])
+    expect(commandMessages(command).map((message) => message.chatId)).toEqual(['m2', 'm3'])
     expect(setDatabaseSpy.count).toBe(0)
   })
 
@@ -419,13 +490,10 @@ describe('slash-command durable writes under the projection guard', () => {
 
     const messageCommands = await waitForMatchingCalls(
       calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
       2,
     )
-    expect(messageCommands.map((call) => commandMessages(call).map((message) => message.data))).toEqual([
-      ['base', 'first'],
-      ['base', 'first', 'second'],
-    ])
+    expect(messageCommands.map((call) => call.body.message.data)).toEqual(['first', 'second'])
     expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
       'base',
       'first',
@@ -452,15 +520,15 @@ describe('slash-command durable writes under the projection guard', () => {
 
     await waitForMatchingCalls(
       calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
       1,
     )
     await new Promise((resolve) => setTimeout(resolve, 0))
     const messageCommands = calls.filter(
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
     )
     expect(messageCommands).toHaveLength(1)
-    expect(commandMessages(messageCommands[0]).map((message) => message.data)).toEqual(['base', 'first'])
+    expect(messageCommands[0].body.message).toMatchObject({ data: 'first', chatId: expect.any(String) })
     expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['base', 'first'])
     expect(DBState.db.characters[0].chats[1].message.map((message: any) => message.data)).toEqual(['active sibling'])
     expect(sendChatMock).toHaveBeenCalledTimes(1)
@@ -504,7 +572,7 @@ describe('slash-command durable writes under the projection guard', () => {
           body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
         })
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-        if (url === '/api/v1/commands/chats/chat-1/messages') {
+        if (url === '/api/v1/commands/chats/chat-1/messages' && init.method === 'POST') {
           return new Promise<Response>((resolve) => {
             resolveMessageResponse = resolve
           })
@@ -518,7 +586,7 @@ describe('slash-command durable writes under the projection guard', () => {
     await expect(processMultiCommand('/send optimistic')).resolves.toBe('')
     await waitForCommand(
       calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
     )
     expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
       'base',
@@ -615,9 +683,10 @@ describe('slash-command durable writes under the projection guard', () => {
 
     const cmd = await waitForCommand(
       calls,
-      (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'PUT',
+      (call) => call.url === '/api/v1/commands/messages/m1' && call.method === 'DELETE',
     )
-    expect(cmd.body.messages.length).toBe(1)
+    expect(cmd.body).toEqual({ baseRevision: 10 })
+    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'two', chatId: 'm2' }])
     expect(setDatabaseSpy.count).toBe(0)
   })
 
