@@ -23,7 +23,8 @@ export class GenerationJobRegistry {
   private readonly runners = new Set<Promise<void>>()
 
   /**
-   * Track a detached runner promise so shutdown can wait for it    * `onClose` aborts every job and then settles the runners *before* closing
+   * Track a detached runner so shutdown can wait for it.
+   * `onClose` aborts every job and then settles the runners *before* closing
    * the SQLite handle, so an in-flight cancel-persist still writes to an open
    * database instead of racing `db.close()`.
    */

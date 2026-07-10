@@ -2145,7 +2145,7 @@
         pasteTrigger()
         e.preventDefault()
       }
-      //Delete is forrbidden due to the fact that misclicks can cause huge data loss
+      // Deliberately omit a Delete-key shortcut; a mispress could remove a large trigger tree.
     }
   }
 

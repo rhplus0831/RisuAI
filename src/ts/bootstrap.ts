@@ -1011,7 +1011,7 @@ async function checkNewFormat(): Promise<void> {
     db.formatversion = 3
   }
   if (db.formatversion < 4) {
-    // Skip removed formatversion 4 transform.
+    // Version 4 has no remaining data transform; advance only the format marker.
     db.formatversion = 4
   }
   if (db.formatversion < 5) {

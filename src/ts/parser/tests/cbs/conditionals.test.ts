@@ -267,7 +267,8 @@ describe('#when', () => {
     })
 
     test.skip('Lower precedence than other operators', () => {
-      // TODO: Define operator precedence for nested condition operands.
+      // Skipped: the right-to-left reducer does not group comparison operands
+      // before applying logical operators.
       expect(quickParse('#when::3::tis::3::or::7::tis::7', 'CBS')).toBe(`0 CBS 9`)
     })
   })

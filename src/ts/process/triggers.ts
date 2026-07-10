@@ -1548,12 +1548,12 @@ export async function runTrigger(
 
   // Optimistically reflect the pass's accumulated scriptstate on the live active
   // chat. The write MUST run inside the projection guard and re-read the chat
-  // there: in Fastify web mode the live projection rows are read-only, so a direct
-  // `currentChat.scriptstate = …` throws. Off-Fastify the guard is a pass-through,
-  // so this is the same single live write the former three (identical, same-object)
-  // assignments produced. `getCurrentChat()` is the canonical active chat, so this
-  // also stays correct after a data effect (e.g. v2 lorebook/desc) re-installs the
-  // character mid-pass.
+  // there: in the live Fastify runtime the projection rows are read-only, so a
+  // direct `currentChat.scriptstate = …` throws. Before the guard is enabled, the
+  // wrapper is a pass-through. This remains the same single live write the former
+  // three (identical, same-object) assignments produced. `getCurrentChat()` is the
+  // canonical active chat, so this also stays correct after a data effect (e.g. v2
+  // lorebook/desc) re-installs the character mid-pass.
   function syncActiveChatScriptstate(): void {
     if (!shouldApplyLiveChatSideEffects()) {
       return

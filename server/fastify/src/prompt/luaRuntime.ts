@@ -84,10 +84,10 @@ import type { PostGenerationLuaProgressTracker, ServerLuaRuntimeProgressSink } f
 
 /** Default per-run Lua execution deadline. Bounds runaway scripts. */
 const DEFAULT_EXEC_TIMEOUT_MS = 3000
-/** Max URL length accepted by `request()` (mirrors `scriptings.ts:330`). */
+/** Max URL length accepted by `request()` (mirrors `scriptings.ts`). */
 const MAX_URL_LENGTH = 120
 /** `request()` calls allowed per rolling window. The browser allowed ~5-6/min
- * (`scriptings.ts:319-322`); the operator loosened this to 30/min for self-host. */
+ * (`scriptings.ts`); the operator loosened this to 30/min for self-host. */
 const MAX_REQUESTS_PER_WINDOW = 30
 const REQUEST_WINDOW_MS = 60_000
 /** Egress fetch wall-clock + response-size caps (the browser fetch has neither). */
@@ -120,7 +120,7 @@ export function createLuaExecBudget(totalMs: number = DEFAULT_LUA_AGGREGATE_BUDG
   return { totalMs, usedMs: 0 }
 }
 
-// Banned egress targets carried over from the browser (`scriptings.ts:344`).
+// Banned egress targets carried over from the browser (`scriptings.ts`).
 const BANNED_URL_PREFIXES = ['https://realm.risuai.net', 'https://risuai.net', 'https://risuai.xyz']
 
 // json.lua + factory singleton.
@@ -138,7 +138,7 @@ function resolveJsonLuaPath(): string {
 }
 
 /** Build (once) a `LuaFactory` with `json.lua` mounted, mirroring the browser's
- * `makeLuaFactory` (`scriptings.ts:1191-1208`) but reading from disk. */
+ * `makeLuaFactory` (`scriptings.ts`) but reading from disk. */
 async function getLuaFactory(): Promise<LuaFactory> {
   if (!luaFactoryPromise) {
     luaFactoryPromise = (async () => {
@@ -420,7 +420,7 @@ function pinnedHttpsFetch(
 /**
  * The `request()` host-fn body: rate-limit → validate (SSRF guard) → pinned fetch.
  * Returns the same `{status, data}` JSON-string shape the browser returns
- * (`scriptings.ts:309-369`) so Lua callers are unchanged.
+ * (`scriptings.ts`) so Lua callers are unchanged.
  */
 export async function serverLuaRequest(
   url: string,
@@ -469,10 +469,10 @@ export async function serverLuaRequest(
   }
 }
 
-// ── The Lua prelude (ported verbatim from `scriptings.ts:1262`) ──────────────
+// ── The Lua prelude (ported verbatim from `scriptings.ts`) ──────────────
 
 /**
- * The browser's `luaCodeWrapper` body (`scriptings.ts:1262-1413`), copied
+ * The browser's `luaCodeWrapper` body (`scriptings.ts`), copied
  * byte-for-byte minus the trailing `${code}` interpolation. It is pure Lua —
  * `require 'json'`, the `getChat`/`LLM`/`log` JSON wrappers, `listenEdit`,
  * `getState`/`setState`, `async`, and `callListenMain` — and is the contract
@@ -697,7 +697,7 @@ export interface RunServerLuaOptions {
   data?: string | OpenAIChat[]
   meta?: object
   /** Grants the low-level host fns (`request`/`LLM`/`similarity`/…). Edit hooks run
-   * with this `false` (browser parity, `scriptings.ts:1443`). */
+   * with this `false` (browser parity, `scriptings.ts`). */
   lowLevelAccess?: boolean
   /** Per-run execution deadline (ms). Defaults to {@link DEFAULT_EXEC_TIMEOUT_MS}. */
   execTimeoutMs?: number
@@ -1808,7 +1808,7 @@ async function runStringWithTimeout(
 // ── runScripted equivalent ──────────────────────────────────────────────────
 
 /**
- * Server port of `runScripted` (`scriptings.ts:62`), Lua only. Acquires an
+ * Server port of `runScripted` (`scriptings.ts`), Lua only. Acquires an
  * engine of its own (pre-warmed when possible), binds
  * the per-call state into the host-fn surface, runs the user code under the
  * exec limit, mints an access key, dispatches by `mode`, and returns a
@@ -1990,7 +1990,7 @@ export async function runServerLua(opts: RunServerLuaOptions, ctx: ServerLuaRunt
       if (res === false) state.stopSending = true
       result.res = res
     } catch (error) {
-      // Browser parity: the dispatch switch swallows errors (`scriptings.ts:1139`).
+      // Browser parity: the dispatch switch swallows errors (`scriptings.ts`).
       // We additionally record the cause so a timeout / interactive abort is visible.
       result.error = error instanceof Error ? error.message : String(error)
       result.timedOut = isTimeoutError(error) && !signal?.aborted
@@ -2085,10 +2085,11 @@ function summarizeLuaEditContent(value: unknown): LuaEditContentSummary {
 }
 
 /**
- * Server port of `runLuaEditTrigger` (`scriptings.ts:1415`). Remaps the edit-mode
+ * Server port of `runLuaEditTrigger` (`scriptings.ts`). Remaps the edit-mode
  * casing, early-returns for `editprocess` (a browser no-op), then runs each
  * `triggerlua` effect on the character + active modules with `lowLevelAccess:
- * false` (browser parity, `:1452`), threading the transformed `data` forward.
+ * false`, matching the browser's `runLuaEditTrigger`, and threads the transformed
+ * `data` forward.
  * Lua failures throw with context instead of returning the original `content`;
  * otherwise callers cannot distinguish a no-op hook from a broken hook.
  */

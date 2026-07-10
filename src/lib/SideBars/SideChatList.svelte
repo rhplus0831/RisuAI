@@ -71,11 +71,7 @@
   let opened = 0
   let previousChatRouteOpen = $state(false)
 
-  // Group the chats by folder id in a single pass, keeping each chat's index in
-  // `chara.chats`. The folder template previously ran `chara.chats.filter(...)`
-  // twice per folder plus an `indexOf` per rendered chat — O(folders*chats) +
-  // O(chats^2) on every render. The map lookup keeps the same ordering while
-  // removing both rescans. See `chatFolderGrouping.ts` for the pure helper.
+  // Preserve source order and each chat's original array index within folder buckets.
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats))
 
   let chatRouteOpen = $derived(

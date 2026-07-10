@@ -64,7 +64,7 @@ import {
  * `lowLevelAccess`-gated `showAlert` / `runLLM` / `checkSimilarity` /
  * `extractRegex` / `runImgGen` arms, plus browser plugin trigger code
  * (`triggercode`). These bypass the mode filter in the SPA
- * (`triggers.ts:1343`) so they are still *selected* here for parity, but
+ * (`triggers.ts`) so they are still *selected* here for parity, but
  * no code runs for them. The `sendAIprompt` / `v2SendAIprompt` effects are
  * supported by setting the result flag; the client/browser owns the resend.
  *
@@ -75,13 +75,13 @@ import {
  * every run mode but only executes when a runner is injected.
  */
 
-/** SPA `triggerMode` (`src/ts/process/triggers.ts:222`, unexported). */
+/** SPA `triggerMode` (`src/ts/process/triggers.ts`, unexported). */
 export type TriggerMode = 'start' | 'manual' | 'output' | 'input' | 'display' | 'request'
 
 /**
  * Arguments handed to the {@link TriggerRunContext.runLua} VM seam for a
  * `triggerlua` effect, mirroring the SPA's `runScripted(effect.code, {...})`
- * call (`src/ts/process/triggers.ts:1696-1703`): the user Lua `code`, the run
+ * call (`src/ts/process/triggers.ts`): the user Lua `code`, the run
  * `mode` (`'manual'` resolves to the manual name), the trigger's
  * `lowLevelAccess`, and the working `chat` + variable engine the host fns bind
  * to so var/message writes thread through the same state.
@@ -135,7 +135,7 @@ export interface TriggerRunContext {
 
 /**
  * Mirrors the SPA `runTrigger` `arg` object
- * (`src/ts/process/triggers.ts:1173-1183`). `recursiveCount` and
+ * (`src/ts/process/triggers.ts`). `recursiveCount` and
  * `triggerId` are threaded explicitly here instead of through
  * `CurrentTriggerIdStore`.
  */
@@ -154,7 +154,7 @@ export interface TriggerRunArg {
 }
 
 /**
- * SPA `runTrigger` return shape (`triggers.ts:3341-3349`), plus
+ * SPA `runTrigger` return shape (`triggers.ts`), plus
  * `varChanged`. The SPA signals a chat-var write by bumping
  * `ReloadGUIPointer` (browser-only); the server instead returns
  * `varChanged` so the route can decide whether to persist the
@@ -174,7 +174,7 @@ export interface TriggerRunResult {
 
 /**
  * Effect-type allowlists for the `display` / `request` run modes, ported
- * verbatim from `src/ts/process/triggers.ts:1099-1146`. In those modes
+ * verbatim from `src/ts/process/triggers.ts`. In those modes
  * only allowlisted effects run; everything else is skipped.
  *
  * `safeSubset` deliberately omits `v2Loop` (only `v2LoopNTimes` is
@@ -459,7 +459,7 @@ function emptySysPrompt(): additonalSysPrompt {
   return { start: '', historyend: '', promptend: '' }
 }
 
-/** Yield to the event loop; mirrors the SPA loop lag guard (`triggers.ts:1911`). */
+/** Yield to the event loop; mirrors the SPA loop lag guard (`triggers.ts`). */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (!signal) {
@@ -530,13 +530,12 @@ function chargeTriggerLoopBack(ctx: TriggerRunContext, budget: TriggerExecutionB
 
 /**
  * Aggregates the character's own trigger scripts with the active
- * modules' triggers. Mirrors `triggers.ts:1197-1202`.
+ * modules' triggers. Mirrors `triggers.ts`.
  *
- * Divergence from the SPA: the SPA mutates `v.lowLevelAccess` on the
- * character's trigger objects in place. The server clones each entry
- * (`{ ...v, lowLevelAccess }`) so the source `char.triggerscript`
- * objects are never mutated across requests. `getModuleTriggers`
- * already clones the module side.
+ * Like the SPA's current `runTrigger`, the server clones each character entry
+ * (`{ ...v, lowLevelAccess }`) so the source `char.triggerscript` objects are
+ * never mutated across runs. `getModuleTriggers` does the same for module
+ * triggers; both server paths also attach source metadata for diagnostics.
  */
 export function collectTriggers(char: character, modules: RisuModule[]): triggerscript[] {
   const characterLowLevelAccess = char.lowLevelAccess ?? false
@@ -654,7 +653,7 @@ function emitTriggerSkippedMetric(mode: TriggerMode, arg: TriggerRunArg, trigger
 }
 
 /**
- * Trigger selection filter, ported from `triggers.ts:1343-1351`:
+ * Trigger selection filter, ported from `triggers.ts`:
  *   - `triggercode` / `triggerlua` first effects bypass the filter (so they
  *     run in every mode). `triggercode` execution stays browser-side (selected
  *     for parity, no-op here); `triggerlua` runs via the VM seam when injected
@@ -674,7 +673,7 @@ export function matchesTrigger(trigger: triggerscript, mode: TriggerMode, manual
 }
 
 /**
- * Evaluates a trigger's `conditions` (`triggers.ts:1353-1440`). All
+ * Evaluates a trigger's `conditions` (`triggers.ts`). All
  * conditions must pass; evaluation short-circuits on the first failure.
  *
  * `var` reads through the variable engine, `value` compares a literal,
@@ -883,7 +882,7 @@ async function evaluateConditionsAsync(
  * shape.
  *
  * Returns `null` when there are no triggers at all (SPA
- * `triggers.ts:1215-1220`). When triggers exist but none match the
+ * `triggers.ts`). When triggers exist but none match the
  * mode, a result is still returned (mode mismatch is *ignored*, not a
  * no-op return).
  *
@@ -952,7 +951,7 @@ export async function runTrigger(
 
   const buildResult = (): TriggerRunResult => {
     // Terminal additional-system-prompt token accounting
-    // (`triggers.ts:3321-3330`). Populated by `systemprompt` effects.
+    // (`triggers.ts`). Populated by `systemprompt` effects.
     let tokens = 0
     const encoding = encodingForModel(ctx.model)
     if (additonalSysPrompt.start) tokens += tokenize(additonalSysPrompt.start, encoding)
@@ -987,7 +986,7 @@ export async function runTrigger(
     const resolve = (raw: string, isValue: boolean): string => (isValue ? expand(raw) : engine.getVar(expand(raw)))
 
     // Per-trigger loop counters for `v2LoopNTimes` + the lag guard
-    // (the SPA's inner numeric `tempVars`, `triggers.ts:1341`).
+    // (the SPA's inner numeric `tempVars`, `triggers.ts`).
     const loopCounts: Record<string, number> = {}
 
     // Index-based walk: V2 control flow advances/rewinds `index`.
@@ -1000,7 +999,7 @@ export async function runTrigger(
       if (chargeTriggerEffectStep(ctx, budget, effect.type)) {
         return buildResult()
       }
-      // Display/request effect allowlist guards (`triggers.ts:1444-1449`).
+      // Display/request effect allowlist guards (`triggers.ts`).
       // Skipped effects never touch indent; control flow stays intact
       // because every control-flow op lives in `safeSubset`.
       if (mode === 'display' && !displayAllowList.includes(effect.type)) {
@@ -1295,7 +1294,7 @@ export async function runTrigger(
               }
             }
 
-            // Lag guard (`triggers.ts:1908-1913`).
+            // Lag guard (`triggers.ts`).
             loopCounts['loopTimes'] = (loopCounts['loopTimes'] ?? 0) + 1
             if (loopCounts['loopTimes'] > 100) {
               await sleep(1, ctx.signal)
@@ -1387,7 +1386,7 @@ export async function runTrigger(
         case 'triggerlua': {
           // Run user Lua under the server VM via the injected seam, mirroring
           // the SPA's `runScripted(effect.code, {...})`
-          // (`src/ts/process/triggers.ts:1695-1710`). The runner binds the host
+          // (`src/ts/process/triggers.ts`). The runner binds the host
           // fns to `chat` + `engine`, so message/var writes thread through this
           // run's state; it returns the (in-place mutated) chat + stopSending.
           // Callers/tests that omit a runner get a no-op, preserving the

@@ -465,7 +465,7 @@ export interface AssemblyState {
   triggerResult?: TriggerRunResult | null
   /**
    * The start trigger asked to abort the send. Mirrors the SPA's
-   * `history.stopSending` early return (`index.svelte.ts:236-238`).
+   * `history.stopSending` early return in `assembleLocalSendChatPrompt`.
    */
   stopSending?: boolean
   /**
@@ -922,10 +922,10 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
 /**
  * Submit-time **`editinput`** transform of the just-appended user message,
  * ported from the browser's `processScript(char, messageInput, 'editinput')`
- * (`DefaultChatScreen.svelte:240` → `scripts.ts::processScriptFull`). Mirrors
+ * (`DefaultChatScreen.svelte` → `scripts.ts`'s `processScriptFull`). Mirrors
  * `processScriptFull`'s order for the user text: the Lua `editInput` hook
  * (`runLuaEditTrigger(char,'editinput',…)`) → CBS expansion (the
- * `risuChatParser` at `scripts.ts:160`) → the regex `editinput` scripts
+ * `risuChatParser` at `scripts.ts`) → the regex `editinput` scripts
  * ({@link processScript}). `chatID` is `-1` (submit-time; the SPA default).
  *
  * The transform applies in place to the last (user) row that
@@ -1112,7 +1112,7 @@ function submitTranscriptChanged(state: AssemblyState): boolean {
 
 /**
  * Fill the static/plain slots on the `AssemblyState`, mutating
- * `state.unformated` in place. Mirrors `index.svelte.ts:192-204`:
+ * `state.unformated` in place. Mirrors `assembleLocalSendChatPrompt`:
  *   - plain sections (`main` / `jailbreak` / `globalNote`) only on the
  *     non-utility, non-template path,
  *   - `authorNote`, the chain-of-thought into `postEverything`,
@@ -1120,7 +1120,7 @@ function submitTranscriptChanged(state: AssemblyState): boolean {
  *     instruction into `postEverything` always.
  *
  * Sync — every leaf is sync. `buildInlayViewInstruction` mirrors the SPA's
- * push at `sendChatPromptAssembly.ts:114` (after the chain-of-thought row, so
+ * push at `sendChatPromptAssembly.ts` (after the chain-of-thought row, so
  * `postEverything` stays ordered `[cot, inlayView, …promptend]`).
  */
 export function fillStaticSlots(state: AssemblyState): void {
@@ -1311,7 +1311,7 @@ function agentPresetPhaseError(
 /**
  * Activate the lorebook, distribute the activated entries into the slots, build
  * the `positionParser` + `depthPrompts`, and run the
- * template-wide token preflight. Mirrors `index.svelte.ts:206-225`.
+ * template-wide token preflight. Mirrors `assembleLocalSendChatPrompt`.
  *
  * Runs after `fillStaticSlots` so the `before_desc` / `after_desc`
  * placement sees the static description row and the preflight tokenizes
@@ -1332,8 +1332,8 @@ function applyLorebookReport(
 
   const { positionParser, depthPrompts } = buildLorebookContext(ctx, currentChar, report, unformated)
 
-  // SPA `:210-213`: seed with the max response budget plus a small
-  // headroom for unexpected error overhead.
+  // Match the SPA prompt assembly: seed with the max response budget plus a
+  // small headroom for unexpected error overhead.
   let currentTokens = (db.maxResponse ?? 0) + 50
   const preflight = preflightTemplateTokens({
     ctx,
@@ -1405,7 +1405,7 @@ export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void
 
 /**
  * Run the async history window,
- * mutating `state` in place. Mirrors `index.svelte.ts:227-241` (history)
+ * mutating `state` in place. Mirrors `assembleLocalSendChatPrompt`'s history
  * and related history-side effects. Runs after `fillLorebookSlots` so `state.report`
  * feeds the depth-prompt token preflight inside `buildHistoryWindow`.
  *
@@ -1413,12 +1413,12 @@ export async function fillLorebookSlotsAsync(state: AssemblyState): Promise<void
  * its results (`currentChat` / `triggerResult` / `varChanged`) are
  * threaded back regardless of outcome — the route persists when
  * `varChanged` is true. On `stopSending` the function short-circuits
- * (matching the SPA's `return false` at `:236-238`): the history rows are
- * incomplete, so they are not captured.
+ * (matching the SPA's `sendChatPromptAssembly` early return): the history rows
+ * are incomplete, so they are not captured.
  *
  * Boundary: the history rows are only captured on `state.historyMessages` here.
  * The memory window pushes them into `unformated.chats`
- * (`buildMemoryWindow`, `index.svelte.ts:243-263`). Inlay/asset bytes resolve
+ * (`buildMemoryWindow`, coordinated by `assembleLocalSendChatPrompt`). Inlay/asset bytes resolve
  * through `state.assetLookup`, falling back to `NO_ASSETS` only when no resolver
  * is bound.
  */
@@ -1491,15 +1491,15 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
 /**
  * Bridge the captured history into `unformated.chats` through the
  * non-Hypa memory window, then apply the post-history slot mutations.
- * Mirrors `index.svelte.ts:243-304`:
+ * Mirrors `assembleLocalSendChatPrompt`:
  *   - `buildMemoryWindow` (memory.ts) trims the oldest rows under
  *     `db.maxContext`, promotes the trailing chat to `lastChat` (no
  *     template), splits memory cards into `state.memories`, and marks the
  *     rest `removable`; `stopSending` short-circuits the rest;
  *   - `applyDepthPrompts` splices the lorebook depth prompts into
- *     `unformated.chats` (`:275-283`);
+ *     `unformated.chats`;
  *   - the start trigger's `additonalSysPrompt` is placed into
- *     `postEverything` / `lastChat` (`:285-304`).
+ *     `postEverything` / `lastChat`.
  *
  * Sync — the non-Hypa window and every post-history mutation are sync. Runs
  * after `fillHistoryAndBias`, so a prior `stopSending` short-circuits.
@@ -1536,7 +1536,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
   // the honest value for `info` telemetry, so keep it on the state.
   state.currentTokens = mem.currentTokens
 
-  // Lorebook depth-prompt splice (SPA `:275-283`). `applyDepthPrompts`
+  // SPA lorebook depth-prompt splice. `applyDepthPrompts`
   // already resolves `{{position::}}` + expands + applies the
   // depth/reverse_depth index math (excluding `depth === 0`, which the
   // template/postEverything path owns).
@@ -1544,7 +1544,7 @@ export function fillMemoryAndPostHistory(state: AssemblyState): void {
     applyDepthPrompts(unformated.chats, ctx, currentChar, state.report, state.preparedDepthPrompts)
   }
 
-  // Start-trigger `additonalSysPrompt` placement (SPA `:285-304`).
+  // SPA start-trigger `additonalSysPrompt` placement.
   const triggerResult = state.triggerResult
   if (triggerResult) {
     const sys = triggerResult.additonalSysPrompt
@@ -1844,7 +1844,7 @@ function buildLuaEditRequest(state: AssemblyState): {
 /**
  * Render the now-complete slots into the flat prompt and run the budget recheck,
  * mutating `state` in place. Mirrors
- * `index.svelte.ts:306-345`:
+ * `assembleLocalSendChatPrompt`:
  *   - `renderFinalPrompt` over `state.formatOrder` (which already has
  *     `postEverything` appended by `buildFormatOrder`, so it is **not**
  *     re-pushed here), `state.memories`, and `state.positionParser`,
@@ -2077,14 +2077,14 @@ export interface ServerPostGenerationResult {
   changed: boolean
 }
 
-/** `reformatContent` (`index.svelte.ts:91`) is `.trim()`; mirror it server-side. */
+/** Browser `sendChat`'s `reformatContent` is `.trim()`; mirror it server-side. */
 function reformatCompletion(text: string): string {
   return text.trim()
 }
 
 /**
  * The `editoutput` transform of the completion text, mirroring
- * `processScriptFull(…, 'editoutput', msgIndex)` (`scripts.ts:121-160`): the Lua
+ * `processScriptFull(…, 'editoutput', msgIndex)` (`scripts.ts`): the Lua
  * `editOutput` hook → CBS expansion → the regex `editoutput` scripts. Identical in
  * shape to `applyEditInput`. pluginV2 stays permanent-unsupported, so its arm is
  * intentionally absent. Lua var writes fold into the chat-var delta.
@@ -2144,7 +2144,7 @@ function appendAssistantRow(
 
 /**
  * The `'output'` trigger over the post-generation transcript, mirroring
- * `applyOutputTrigger` (`postGeneration/outputTrigger.ts:29`) and reusing the
+ * `applyOutputTrigger` (`postGeneration/outputTrigger.ts`) and reusing the
  * input-trigger wiring (the Lua VM seam, the var-engine writethrough).
  * `setvar`/`v2SetVar` arms fold into the chat-var delta; a transcript rewrite is
  * captured as an `output_trigger` message mutation (surfaced for the projection,

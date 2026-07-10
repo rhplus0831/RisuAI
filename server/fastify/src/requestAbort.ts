@@ -3,10 +3,10 @@ import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, normalizeStreamTimeoutMs } from './str
 /**
  * Per-request abort plumbing for the non-durable generation paths.
  *
- * The returned signal fires on client disconnect (`req.raw` close) — the
- * pre-existing behavior — and now also at a generous sliding deadline mirroring
- * the durable path's bounded timeout window, so buffered and streaming provider
- * work is bounded even when the client never goes away. The deadline lives here,
+ * The returned signal fires on client disconnect (`req.raw` close) and at a
+ * generous sliding deadline mirroring the durable path's bounded timeout window,
+ * so buffered and streaming provider work is bounded even when the client never
+ * goes away. The deadline lives here,
  * at the signal source, so every adapter inherits it instead of each of the ~10
  * adapters carrying its own timer.
  */

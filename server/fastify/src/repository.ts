@@ -1293,7 +1293,7 @@ function selectDatabaseFields(
 
 // `loadPersistedWithMessages` is the message-aware read boundary used by
 // full-corpus readers that need every chat hydrated (migration/backfill,
-// export/save, and explicit broad fallbacks). Prompt assembly now uses the
+// export/save, and explicit broad fallbacks). Prompt assembly uses the
 // scoped `loadPersistedForAssembly` path below. Messages live in the SQLite
 // `messages` table; `loadPersisted` returns message-free chats.
 

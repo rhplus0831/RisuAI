@@ -23,7 +23,7 @@ const COT_INSTRUCTION =
 
 /**
  * Walks the effective prompt template for an `authornote` card and returns its
- * `defaultText`. Mirrors `src/ts/util.ts:335 getAuthorNoteDefaultText`.
+ * `defaultText`. Mirrors `src/ts/util.ts getAuthorNoteDefaultText`.
  */
 function authorNoteDefaultText(db: Database, currentChat: Chat): string {
   const template = resolveEffectivePromptTemplate(db, {

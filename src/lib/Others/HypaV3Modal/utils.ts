@@ -53,10 +53,10 @@ export function handleDualAction(element: HTMLElement, params: DualActionParams 
   }
 
   if ('ontouchend' in window) {
-    // Mobile environment
+    // Touch input: double tap invokes the alternative action.
     element.addEventListener('touchend', handleTouch)
   } else {
-    // Desktop environment
+    // Mouse input: Shift-click invokes the alternative action.
     element.addEventListener('click', handleClick)
   }
 

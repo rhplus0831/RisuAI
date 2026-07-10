@@ -190,7 +190,7 @@ function refineOpenAI(input: ProviderCapabilityInput): string | null {
  * The reverse_proxy + xcustom + hardcoded-endpoint shape shared by the
  * Anthropic / Mistral / Cohere arms: reverse_proxy needs URL + key; xcustom
  * rides only when its entry format matches the coarse format; a hardcoded
- * endpoint keeps local dispatch.
+ * endpoint stays unroutable because its server-auth path is undefined.
  */
 function isVanillaProxyShaped(input: ProviderCapabilityInput, xcustomFormat: LLMFormat): boolean {
   const { aiModel, config } = input

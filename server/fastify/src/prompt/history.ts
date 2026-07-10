@@ -26,7 +26,7 @@ type MaybePromise<T> = T | Promise<T>
  *     `processScript(ctx, char, data, 'editprocess', cbsConditions)`
  *     after a pre-pass through `expandVariables` (mirrors the SPA's
  *     `processScriptFull(char, risuChatParser(data, {chara, role}), 'editprocess', ...)`
- *     call at `formatHistoryMessage.ts:44-52`).
+ *     call at `formatHistoryMessage.ts`).
  *   - First message and per-message `sendName` wrapper (gated by
  *     `usingPromptTemplate && db.promptSettings.sendName`). The first
  *     message gets a `${char.name}: ` prefix and `attr: ['nameAdded']`.
@@ -34,8 +34,8 @@ type MaybePromise<T> = T | Promise<T>
  *     `<{{char}}'s Message>\n{{slot}}\n</{{char}}'s Message>` with
  *     `{{char}}` resolved against the active `currentChar` (matches the
  *     SPA's effective behavior — the `chara: msg.saying` override at
- *     formatHistoryMessage.ts:140 is shadowed by the cbs `char` callback
- *     reading currentChar from scope first; see cbs.ts:184).
+ *     formatHistoryMessage.ts is shadowed by the cbs `char` callback
+ *     reading currentChar from scope first; see cbs.ts).
  *   - `<Thoughts>...</Thoughts>` extraction with the
  *     `maxThoughtTagDepth` clamp: always stripped from `content`,
  *     captured into `chat.thoughts: string[]` when
@@ -50,7 +50,7 @@ type MaybePromise<T> = T | Promise<T>
  * Defaults to a no-op lookup so prompt-leaf
  * tests can assert tag stripping without standing up the storage path.
  *
- * Inlay tag handling mirrors `formatHistoryMessage.ts:73-132`:
+ * Inlay tag handling mirrors `formatHistoryMessage.ts`:
  *   - `char` role: strip ALL three tag types from content; only
  *     `{{inlayeddata::id}}` ids reach the lookup. (The SPA quirk —
  *     `inlay::` / `inlayed::` get stripped from text but their assets
@@ -58,11 +58,11 @@ type MaybePromise<T> = T | Promise<T>
  *   - non-`char` role: collect all three tag types, look each one up,
  *     then strip from content.
  *   - `video` / `audio` cap at one entry in `multimodals` total (SPA
- *     `formatHistoryMessage.ts:116-122`).
+ *     `formatHistoryMessage.ts`).
  *   - The SPA's `runImageEmbedding` caption fallback for non-vision
  *     models is browser-only and skipped on the server.
  *
- * `{{asset_prompt::name}}` handling mirrors `formatHistoryMessage.ts:153-181`:
+ * `{{asset_prompt::name}}` handling mirrors `formatHistoryMessage.ts`:
  *   - match against `currentChar.additionalAssets ∪ moduleAssets`.
  *   - on a match, resolve via `assetLookup.getAsset(name)`.
  *   - on `name === 'icon'` with no asset match, resolve via
@@ -77,9 +77,9 @@ type MaybePromise<T> = T | Promise<T>
  * a `LorebookActivationReport`. Splicing depth prompts into history is
  * still `applyDepthPrompts`' job; this preflight only tallies counts so
  * the assemble root can read a single number for the history block
- * (mirrors `buildHistoryWindow.ts:155-161` in the SPA). Tokenizer
+ * (mirrors `buildHistoryWindow.ts` in the SPA). Tokenizer
  * config (encoding, per-message overhead, name accounting) is derived
- * from `db.aiModel` the same way `sendChatContext.ts:92-103` does:
+ * from `db.aiModel` the same way `sendChatContext.ts` does:
  * `gpt*` → overhead 5, `useName: 'noName'`; everything else → overhead
  * 3, `useName: 'name'`. `encodingForModel` then picks `o200k_base` vs
  * `cl100k_base`.
@@ -118,7 +118,7 @@ export const NO_ASSETS: AssetLookup = {}
  * per-message body between the `expandVariables` pre-pass and the regex
  * `processScript`, mirroring the leading
  * `runLuaEditTrigger(char, 'editprocess', data, { index })` inside the SPA's
- * `processScriptFull` (`scripts.ts:130`). `index` is the per-row index the SPA
+ * `processScriptFull` (`scripts.ts`). `index` is the per-row index the SPA
  * threads as `{ index: chatID }` meta (`-1` for the first message). Lua
  * `editprocess` is currently a browser no-op, so the default is identity.
  */
@@ -132,7 +132,7 @@ const ASSET_PROMPT_RE = /\{\{asset_?prompt::(.+?)\}\}/gimsu
 
 /**
  * `video` and `audio` inlays cap at one entry total
- * (`formatHistoryMessage.ts:116-122`). Other types append freely.
+ * (`formatHistoryMessage.ts`). Other types append freely.
  */
 function pushMultimodal(arr: MultiModal[], m: MultiModal): void {
   if (m.type === 'video' || m.type === 'audio') {
@@ -343,27 +343,27 @@ export interface HistoryWindowResult {
    * Sum of `tokenizeChat` over every emitted row plus the depth-prompt
    * preflight when `report` is provided and the start trigger's
    * `triggerResult.tokens`. Mirrors the SPA's
-   * `buildHistoryWindow.addedTokens` (`buildHistoryWindow.ts:69`).
+   * `buildHistoryWindow.addedTokens` (`buildHistoryWindow.ts`).
    */
   addedTokens: number
   /**
    * The start trigger asked to abort the send (`stop` /
    * `v2StopPromptSending`). The assemble root aborts when true, matching
    * the SPA's `{ stopSending: true }` early return
-   * (`buildHistoryWindow.ts:135-137`). `messages` is then incomplete and
+   * (`buildHistoryWindow.ts`). `messages` is then incomplete and
    * should be ignored.
    */
   stopSending: boolean
   /**
    * The working chat, possibly mutated by the start trigger
    * (impersonate / cutchat / modifychat). The assemble root threads this
-   * forward (`index.svelte.ts:240`).
+   * forward (`assembleLocalSendChatPrompt` in `sendChatPromptAssembly.ts`).
    */
   currentChat: Chat
   /**
    * The raw start-trigger result, or `null` when no triggers ran. The
    * assemble root applies `triggerResult.additonalSysPrompt` to the
-   * prompt slots (`index.svelte.ts:285-304`).
+   * prompt slots (`assembleLocalSendChatPrompt` in `sendChatPromptAssembly.ts`).
    */
   triggerResult: TriggerRunResult | null
   /**
@@ -443,7 +443,7 @@ export async function buildHistoryWindow(
     addedTokens += tokenizeChat(marker, encoding, options)
   }
 
-  // `makeMs` mirrors the SPA closure (`buildHistoryWindow.ts:87-102`):
+  // `makeMs` mirrors the SPA closure (`buildHistoryWindow.ts`):
   // walk newest-to-oldest, drop `disabled === true`, stop at the first
   // `'allBefore'` reset, and set the outer `msReseted`. It runs again
   // after the start trigger so the per-message loop sees the mutated
@@ -486,7 +486,7 @@ export async function buildHistoryWindow(
     addedTokens += tokenizeChat(firstMessage, encoding, options)
   }
 
-  // Start-trigger handoff (SPA `buildHistoryWindow.ts:129-138`). The
+  // Start-trigger handoff (SPA `buildHistoryWindow.ts`). The
   // trigger may mutate the chat, so re-run `makeMs` and add its token
   // contribution; on `stopSending` the assemble root aborts the send.
   const triggerResult = await runStartTrigger(ctx, currentChar, currentChat)
@@ -527,9 +527,9 @@ export async function buildHistoryWindow(
     addedTokens += tokenizeChat(formatted, encoding, options)
   }
 
-  // Depth-prompt preflight (SPA `buildHistoryWindow.ts:155-161`).
+  // Depth-prompt preflight (SPA `buildHistoryWindow.ts`).
   // The actual splice still happens in `applyDepthPrompts` to match
-  // the SPA's `index.svelte.ts:275-283` call order; here we only
+  // the SPA's `assembleLocalSendChatPrompt` call order; here we only
   // tokenize so the assemble root sees a single `addedTokens` total.
   if (report) {
     preparedDepthPrompts = prepareDepthPrompts(ctx, currentChar, report)

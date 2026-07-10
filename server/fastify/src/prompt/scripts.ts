@@ -33,15 +33,15 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  * Action equivalence: `@@inject` / `@@move_top` / `@@move_bottom` /
  * `@@repeat_back` prefixes and the `inject` / `move_top` /
  * `move_bottom` / `repeat_back` actions resolve to the same code path
- * (`scripts.ts:240-326`). `@@emo` is prefix-only (no `'emo'` action in
+ * (`scripts.ts`). `@@emo` is prefix-only (no `'emo'` action in
  * the SPA either).
  *
- * Outscript prep (`scripts.ts:180-196`):
+ * Outscript prep (`scripts.ts`):
  *   - `$n` literal → `\n`
  *   - `{{data}}` → `$&` (full-match substitution)
  *   - `endsWith('>')` && !`no_end_nl` action: append `\n`
  *
- * Flag handling (`scripts.ts:182-208`):
+ * Flag handling (`scripts.ts`):
  *   - Default `'g'`. `script.flag` is honored ONLY when
  *     `script.ableFlag === true` (SPA quirk; without `ableFlag` the
  *     declared flag is silently ignored).
@@ -49,7 +49,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *     actions force the `'g'` flag off to avoid double-counting move matches.
  *   - Sanitize to `[dgimsuvy]`, dedupe, fall back to `'u'` when empty.
  *
- * `cbs` action (`scripts.ts:211-213`): pre-expand `script.in` through
+ * `cbs` action (`scripts.ts`): pre-expand `script.in` through
  * `expandVariables` before compiling the RegExp.
  *
  * Two documented divergences from the SPA:
@@ -57,7 +57,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *     `@@move_top g` finds all matches (SPA loses the first one via
  *     lastIndex leak; the move dispatch later defangs `g` anyway).
  *   - `@@repeat_back` adds an r-null guard the SPA elides
- *     (`scripts.ts:306` accesses `r[0]` blindly).
+ *     (`scripts.ts` accesses `r[0]` blindly).
  *
  * Per-assembly prepared-script memo: the history walk runs
  * `processScript` once per window message with identical script inputs, so
@@ -81,7 +81,7 @@ import { getActiveModules, getModuleRegexScripts } from './modules.js'
  *   - `pluginV2[mode]` browser plugin V2 hooks
  *
  * Errors from a single bad regex are swallowed (mirrors the SPA's
- * try/catch at scripts.ts:372-376); the rest of the script list still
+ * try/catch at scripts.ts); the rest of the script list still
  * runs. Bounded-regex rejections are intentionally not swallowed: one JS
  * RegExp operation is synchronous and non-interruptible after it begins, so
  * unsafe imported patterns/haystacks must fail before provider dispatch.
@@ -167,7 +167,7 @@ function parseScripts(rawScripts: customscript[]): {
 }
 
 /**
- * Match-template substitution mirroring scripts.ts:262-276:
+ * Match-template substitution mirroring scripts.ts:
  *  - `$N`  (N digit string) → matched[N] when defined, else literal
  *  - `$&`  → matched[0]
  *  - `$<x>` → SPA does `parseInt(x)` then `matched.groups[parseInt]`,
@@ -212,7 +212,7 @@ function applyInject(currentChat: Chat | undefined, chatID: number, data: string
   const target = currentChat.message?.[chatID]
   if (!target) return data
   // SPA mutates message[chatID].data with the FULL pre-strip data (yes,
-  // that is intentional in scripts.ts:244-245). The assembled chat is
+  // that is intentional in scripts.ts). The assembled chat is
   // persisted after prompt assembly.
   target.data = data
   return data.replace(reg, '')
@@ -274,8 +274,8 @@ function prepareOne(parsed: ParsedScript, options?: BoundedRegexCompatibilityOpt
   const script = parsed.script
   const actions = parsed.actions
 
-  // Flag default: 'g' (SPA scripts.ts:182). script.flag is honored only
-  // when ableFlag === true (scripts.ts:183-185).
+  // Flag default: 'g' (SPA scripts.ts). script.flag is honored only
+  // when ableFlag === true (scripts.ts).
   let flag = 'g'
   if (script.ableFlag) {
     flag = script.flag || 'g'
@@ -342,7 +342,7 @@ function applyOne(
 
   let reg: RegExp
   if (prepared.isCbs) {
-    // `cbs` action: pre-expand the input regex source (scripts.ts:211-213).
+    // `cbs` action: pre-expand the input regex source (scripts.ts).
     // Per-message by design — the expansion depends on cbsConditions.
     const regexIn = expandVariables(script.in, { ...ctx, cbsConditions }).text
     reg = compileBoundedRegex(regexIn, flag, 'customscript cbs script.in pattern')
@@ -364,7 +364,7 @@ function applyOne(
     const matched = testBoundedRegex(reg, data, 'customscript action source')
     // reg.test() advances `lastIndex` when the regex is global; both
     // matchAll() and a sticky-style match would then start past the
-    // first hit. The SPA shares this bug (scripts.ts:216 then 254).
+    // first hit. The SPA shares this bug (scripts.ts).
     // Reset before any downstream use of the same regex object.
     reg.lastIndex = 0
     if (matched) {

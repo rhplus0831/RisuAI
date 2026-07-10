@@ -436,7 +436,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   console.log(arg.modelInfo)
 
   const isVertexGlobalOnlyModel = (modelId: string) => {
-    // As of 2025-12, Gemini 3 preview models are only available on the global endpoint.
+    // Route Gemini 3 preview model ids through the global Vertex endpoint.
     return /^gemini-3-.*-preview$/.test(modelId)
   }
 
@@ -576,7 +576,7 @@ export async function requestGoogleCloudVertex(arg: RequestDataArgumentExtended)
   } else if (arg.modelInfo.format === LLMFormat.VertexAIGemini) {
     const endpoint = arg.useStreaming ? 'streamGenerateContent?alt=sse' : 'generateContent'
 
-    // Some models (e.g. Gemini 3 preview) are only available via the global endpoint.
+    // Apply the global-endpoint rule encoded by `isVertexGlobalOnlyModel`.
     const effectiveRegion = isVertexGlobalOnlyModel(requestModel) ? 'global' : vertexRegion
 
     url =

@@ -1142,13 +1142,13 @@ export const getV2PluginAPIs = () => {
     loadPlugins: loadPlugins,
     readImage: (path: string) => {
       if (path.startsWith('assets/')) {
-        //trim assets/ prefix temporarily
+        // Normalize the supported `assets/` prefix before validating the asset id.
         path = path.slice(7)
       }
       if (path.includes('/') || path.includes('\\')) {
         throw new Error("readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.")
       }
-      //re-add assets/ prefix
+      // Re-add the canonical prefix expected by `readImage`.
       return readImage('assets/' + path)
     },
     saveAsset: (data: Uint8Array) => {

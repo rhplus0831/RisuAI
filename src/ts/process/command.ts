@@ -90,7 +90,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return pipe
     }
     case 'setinput': {
-      //NOT IMPLEMENTED
+      // The STScript `setinput` compatibility command is unsupported.
       return false
     }
     case 'speak': {
@@ -109,7 +109,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       return pipe
     }
     case 'sendas': {
-      //name not implemented
+      // `/sendas` uses the active character; it does not accept a speaker name.
       mutateCurrentChatMessages((chat) => {
         chat.message.push({
           role: 'char',

@@ -11,7 +11,7 @@
         ] as [string, string],
     )
 
-    //find duplicates and remove them
+    // Show each user-facing risk reason once, even if several checks reported it.
     v = v.filter((item) => {
       const key = item[0]
       const index = v.findIndex((i) => i[0] === key)

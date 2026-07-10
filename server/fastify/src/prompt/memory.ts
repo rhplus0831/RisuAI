@@ -45,7 +45,8 @@ export type MemoryWindowResult =
  * then split memory cards out of the surviving history and write the
  * result into `unformated.chats` (+ `unformated.lastChat` when no prompt
  * template is in use). Returns `{ stopSending: true }` when the budget
- * cannot be met without losing the only remaining row (SPA `:124-129`).
+ * cannot be met without losing the only remaining row, matching the SPA's
+ * `buildMemoryWindow` fallback.
  */
 export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult {
   const { maxContextTokens, memoryCardUsed, promptTemplate, unformated, db } = input
@@ -54,7 +55,7 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
   let currentTokens = input.currentTokens
   const currentChat = input.currentChat
 
-  // Non-Hypa budget trim (SPA `buildMemoryWindow.ts:122-135`).
+  // Non-Hypa budget trim (SPA `buildMemoryWindow.ts`).
   while (currentTokens > maxContextTokens) {
     if (chats.length <= 1) {
       return { stopSending: true }
@@ -68,14 +69,14 @@ export function buildMemoryWindow(input: MemoryWindowInput): MemoryWindowResult 
 
   const memories: OpenAIChat[] = []
 
-  // Promote the trailing chat to `lastChat` only on the non-template path
-  // (SPA `:139-142`).
+  // Match the SPA's `buildMemoryWindow`: promote the trailing chat to
+  // `lastChat` only on the non-template path.
   if (!promptTemplate) {
     unformated.lastChat.push(chats[chats.length - 1])
     chats.splice(chats.length - 1, 1)
   }
 
-  // Memory split (SPA `:144-161`): supaMemory/hypaMemory rows are either
+  // SPA `buildMemoryWindow` memory split: supaMemory/hypaMemory rows are either
   // captured into `memories` (when a memory card consumes them) or wrapped
   // inline; everything else is marked `removable`. Empty rows drop out.
   unformated.chats = chats

@@ -258,7 +258,7 @@
   }
 
   onMount(() => {
-    //get dialogue from localforage if exists
+    // Restore this device's saved dialogue, falling back to the localized intro.
     forageInstance
       .getItem<DialogueLine[]>('current_dialogue')
       .then((saved) => {
@@ -310,7 +310,6 @@
   class="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
   transition:fade={{ duration: 300 }}
   role="presentation">
-  <!-- Close button (mobile only) -->
   <button
     onclick={hide}
     class="absolute right-4 top-4 flex items-center gap-1 rounded-md bg-black/40 px-2 py-1 text-xs text-white/50 transition hover:bg-black/60 hover:text-white/80"

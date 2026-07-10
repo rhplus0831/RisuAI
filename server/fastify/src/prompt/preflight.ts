@@ -80,8 +80,8 @@ export function preflightTemplateTokens(input: PreflightInput): PreflightResult 
     }
   }
 
-  // Null-template fallback (SPA `:48-56`): tokenize every slot once
-  // and return.
+  // Match the SPA's `preflightTemplateTokens` null-template fallback:
+  // tokenize every slot once and return.
   if (!promptTemplate) {
     for (const key of Object.keys(unformated) as Array<keyof PromptUnformatedSlots>) {
       tokenizeAll(unformated[key])

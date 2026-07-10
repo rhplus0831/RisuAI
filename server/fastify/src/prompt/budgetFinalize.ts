@@ -15,7 +15,7 @@ import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
  * re-check the SPA runs right before dispatch.
  *
  * The `removable` flag is set upstream (the SPA marks non-memory
- * history rows `removable: true` in `buildMemoryWindow.ts:147`). Non-removable
+ * history rows `removable: true` in `buildMemoryWindow.ts`). Non-removable
  * rows are pinned and can force an `overflow` result.
  *
  * Divergence from the SPA: the server's `tokenizeChat` is text-only

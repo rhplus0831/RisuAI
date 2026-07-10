@@ -390,7 +390,7 @@ export const SafeDocument = {
     }) as HTMLAnchorElement
   },
 
-  // TODO: Add safe methods as plugin API use cases require them.
+  // The Plugin V2 document shim exposes this explicit subset of Document methods.
   createRange: (): Range => {
     return document.createRange()
   },

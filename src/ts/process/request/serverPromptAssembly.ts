@@ -11,10 +11,10 @@ import {
 } from '../../model/modelProfileResolver'
 
 /**
- * Three-arm verdict for the `sendChat` prompt-assembly gate, mirroring
- * `ServerCompletionRoute` (`serverCompletion.ts:13`). `local` is bare — assembly
- * does not pick a provider; dispatch does. `server` is likewise bare. `unsupported`
- * carries the user-facing failure message surfaced by the gate.
+ * Route shape shared with `ServerCompletionRoute` in `serverCompletion.ts`.
+ * The `local` arm remains for compatibility callers, while the live Fastify
+ * resolver below returns only `server` or `unsupported`. `unsupported` carries
+ * the user-facing failure message surfaced by the gate.
  */
 export type ServerPromptAssemblyRoute = { type: 'local' } | { type: 'server' } | { type: 'unsupported'; reason: string }
 
@@ -289,9 +289,8 @@ export function resolveServerPromptAssembly(input: ServerPromptAssemblyInput): S
     }
   }
 
-  // Group chat is legacy (filtered at load in `database.svelte.ts`, and
-  // `isGroupChat` is hardcoded false) but the flag's JSDoc still lists it as a
-  // non-parity item — surface it explicitly instead of trusting the filter.
+  // Group rows are filtered during database normalization, but keep an explicit
+  // guard for imported or directly constructed inputs that bypass that filter.
   if ((input.currentChar as { type?: string }).type === 'group') {
     return {
       type: 'unsupported',

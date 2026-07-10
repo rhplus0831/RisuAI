@@ -152,7 +152,7 @@
       </div>
 
       {#if $PlaygroundStore === 2}
-        <!-- Reserved for Playground chat. -->
+        <!-- The synthetic Playground character renders through the normal chat shell. -->
       {/if}
       {#if $PlaygroundStore === 3}
         <PlaygroundEmbedding />

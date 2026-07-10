@@ -1197,7 +1197,7 @@ interface RisuaiPluginAPI {
 
   /**
    * Shows the plugin's iframe container
-   * @param mode - Display mode (currently only 'fullscreen')
+   * @param mode - Display mode; only 'fullscreen' is accepted
    * @returns Promise that resolves when container is shown
    *
    * @example

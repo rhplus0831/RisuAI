@@ -383,7 +383,7 @@ function assetIdFromReference(reference: string): string | null {
  * Read an `{{asset_prompt::}}` / char-icon reference from the on-disk assets
  * store and re-wrap it as a `data:image/png;base64,` URI. Hardcoding the
  * png mime keeps byte-parity with the browser's `readImage(asset[1])` path
- * (`formatHistoryMessage.ts:161-176`), which does the same regardless of the
+ * (`formatHistoryMessage.ts`), which does the same regardless of the
  * stored content-type. Returns `undefined` for an unresolvable reference so the
  * marker is stripped without bytes when assets are missing.
  */

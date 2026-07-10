@@ -106,9 +106,9 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
 }
 
 /**
- * Run the sendChat entry-context setup: legacy preset-chain switch on
- * non-server-backed fresh calls, stats counter, character + chat lookup,
- * lastInteraction stamp, chatId backfill, promptInfo seed (gated on
+ * Run the sendChat entry-context setup: retained compatibility-only preset-chain
+ * and statistics handling (skipped by the live Fastify runtime), character + chat
+ * lookup, lastInteraction stamp, chatId backfill, promptInfo seed (gated on
  * `promptInfoInsideChat`), and tokenizer creation. Mutates DBState
  * (`statics.messages`, character `lastInteraction`, message `chatId`).
  *

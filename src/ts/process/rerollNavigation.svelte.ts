@@ -124,12 +124,12 @@ export function markRerollChar(): void {
 }
 
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────
-// In Fastify web mode `DBState.db` is a deep read-only projection proxy; a direct
+// In the live Fastify runtime `DBState.db` is a deep read-only projection proxy; a direct
 // `message.data = …` / `record.message = …` throws. The optimistic local edit must
 // run inside `withTrustedServerProjectionWrite` and RE-READ the record there (the
 // wrapper swaps `DBState.db` for a mutable snapshot for the duration), then persist
-// via the dispatch command. Off Fastify the wrapper is a pass-through, so behaviour
-// is identical.
+// via the dispatch command. Before the guard is enabled (startup and focused tests),
+// the wrapper is a pass-through.
 
 /** Swap just the active tail message's `data` (prefetch reroll), then persist. */
 function applyTailDataSwap(data: string, operation: RerollOperation): boolean {

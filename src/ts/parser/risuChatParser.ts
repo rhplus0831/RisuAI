@@ -632,7 +632,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
         break
       }
       case '#': {
-        //legacy if statement, deprecated
+        // Parse the deprecated `{#...#}` conditional-block syntax.
         if (da[pointer + 1] !== '}' || nested.length === 1 || stackType[nested.length] !== 1) {
           nested[0] += da[pointer]
           break

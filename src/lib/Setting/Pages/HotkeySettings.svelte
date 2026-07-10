@@ -4,7 +4,7 @@
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import type { Hotkey } from 'src/ts/defaulthotkeys'
 
-  // Use a fresh array because Fastify mode exposes hotkeys as a read-only projection.
+  // Replace the projected array instead of mutating a hotkey row in place.
   function patchHotkey(index: number, patch: Partial<Hotkey>): void {
     const next = DBState.db.hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
     applyServerBackedSetting('hotkeys', next)

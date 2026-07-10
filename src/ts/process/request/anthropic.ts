@@ -467,7 +467,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
 
     const AMZ_HOST = 'bedrock-runtime.%REGION%.amazonaws.com'
     const host = AMZ_HOST.replace('%REGION%', region)
-    const stream = false // todo?
+    const stream = false // This path signs and parses the non-streaming InvokeModel response.
 
     // https://docs.claude.com/en/api/claude-on-amazon-bedrock#global-vs-regional-endpoints
     let useGlobal = false

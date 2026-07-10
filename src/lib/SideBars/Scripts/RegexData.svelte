@@ -55,14 +55,14 @@
   }
 
   const flags = [
-    //Vanila JS flags
+    // JavaScript RegExp flags
     ['Global (g)', 'g'],
     ['Case Insensitive (i)', 'i'],
     ['Multi Line (m)', 'm'],
     ['Unicode (u)', 'u'],
     ['Dot All (s)', 's'],
 
-    //Custom flags
+    // Risu script flags
     ['Move Top', '<move_top>'],
     ['Move Bottom', '<move_bottom>'],
     ['Repeat Back', '<repeat_back>'],

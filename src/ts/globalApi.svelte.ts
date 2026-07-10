@@ -1791,7 +1791,7 @@ export function aiLawApplies(): boolean {
 }
 
 export function aiWatermarkingLawApplies(): boolean {
-  // Watermarking is opt-in until jurisdiction detection supports it.
+  // Watermark metadata is disabled; this function does not inspect jurisdiction.
   return false
 }
 

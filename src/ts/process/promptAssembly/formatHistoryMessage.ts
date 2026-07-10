@@ -48,9 +48,8 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
     )
   ).data
 
-  // Name resolution: assigned but unused downstream. The call survives because
-  // findCharacterbyIdwithCache populates the per-sendChat cache for later use
-  // by the sendName wrapper (which reads the same id).
+  // Retained parity lookup: `_name` is not read after this block. The `sendName`
+  // wrapper below resolves its character name independently when enabled.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   let _name = ''
   if (msg.role === 'char') {

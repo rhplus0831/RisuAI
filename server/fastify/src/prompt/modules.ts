@@ -9,7 +9,7 @@ import { attachTriggerSource } from './triggerSource.js'
  * `processScript`.
  *
  * Ports the SPA's `lastModules` / `lastModuleData` memoization
- * (`modules.ts:400-426`) with server-safe keying an assembly
+ * (`modules.ts`) with server-safe keying an assembly
  * resolves active modules ~8× across its stages (slots, lorebook, history,
  * scripts, asset lookup, triggers) with identical inputs, so the scan +
  * dedupe is cached per loaded `Database` object. Keying the cache on the
@@ -108,7 +108,7 @@ export function getModuleLorebooks(modules: RisuModule[]): loreBook[] {
 
 /**
  * Returns the active modules' `[name, id, type]` asset triples. Mirrors
- * `src/ts/process/modules.ts:421-433` `getModuleAssets()` for the prompt
+ * `src/ts/process/modules.ts` `getModuleAssets()` for the prompt
  * leaf's `{{asset_prompt::…}}` resolution.
  */
 export function getModuleAssets(modules: RisuModule[]): [string, string, string][] {
@@ -123,14 +123,12 @@ export function getModuleAssets(modules: RisuModule[]): [string, string, string]
 /**
  * Returns the active modules' trigger scripts with `lowLevelAccess`
  * inherited from the owning module. Mirrors
- * `src/ts/process/modules.ts:435-452` `getModuleTriggers()` for the
+ * `src/ts/process/modules.ts` `getModuleTriggers()` for the
  * trigger runner.
  *
- * Divergence from the SPA: the SPA mutates each trigger object in
- * place (`t.lowLevelAccess = module.lowLevelAccess`). The server runs
- * the chain once per assembly across requests, so we return shallow
- * clones (`{ ...t, lowLevelAccess }`) and never mutate the module's
- * own trigger objects.
+ * Like the SPA's current `getModuleTriggers`, this returns shallow clones
+ * (`{ ...t, lowLevelAccess }`) and never mutates the module's own trigger
+ * objects. The server also attaches source metadata for diagnostics.
  */
 export function getModuleTriggers(modules: RisuModule[]): triggerscript[] {
   const out: triggerscript[] = []

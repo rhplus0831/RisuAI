@@ -79,7 +79,7 @@ export function expandVariables(input: string, ctx: ExpandContext): ExpandResult
   const chat = char?.chats?.[chatPage]
 
   if (chat && !chat.scriptstate) {
-    // Lazy-init mirrors `chatVar.svelte.ts:11` (browser behavior).
+    // Lazy-init mirrors `chatVar.svelte.ts` (browser behavior).
     chat.scriptstate = {}
   }
 

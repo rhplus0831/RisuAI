@@ -4,7 +4,7 @@ import { encodingForModel, type TokenEncoding, type TokenizeChatOptions } from '
 /**
  * Shared tokenizer config derived from `db.aiModel`, used by
  * `history.ts` and `preflight.ts`. Matches the SPA
- * call site at `src/ts/process/sendChatContext.ts:92-103`:
+ * call site at `src/ts/process/sendChatContext.ts`:
  *   - `gpt*` models: per-message overhead 5, `useName: 'noName'`.
  *   - everything else: per-message overhead 3, `useName: 'name'`.
  * The encoding falls out of `encodingForModel(db.aiModel)`; non-gpt

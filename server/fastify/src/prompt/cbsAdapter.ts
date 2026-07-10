@@ -26,7 +26,7 @@ import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
  * metadata.
  */
 
-// In-process pseudo-random generator, ported from src/ts/util.ts:604.
+// In-process pseudo-random generator, ported from src/ts/util/loreHash.ts.
 function sfc32(a: number, b: number, c: number, d: number): () => number {
   return () => {
     a |= 0
@@ -43,7 +43,7 @@ function sfc32(a: number, b: number, c: number, d: number): () => number {
   }
 }
 
-// Deterministic hash-seeded RNG, ported from src/ts/util.ts:1140.
+// Deterministic hash-seeded RNG, ported from src/ts/util/loreHash.ts.
 function pickHashRand(cid: number, word: string): number {
   let hashAddress = 5515
   const rand = (w: string) => {

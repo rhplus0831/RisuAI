@@ -55,7 +55,8 @@ import { expandVariables, type ExpandContext } from './variables.js'
  * Note on recursion: after an entry activates, its
  * decorator-stripped body is pushed into `recursivePrompt` (subject
  * to the per-entry `recursive`/`unrecursive` decorator or the global
- * `char.loreSettings.recursiveScanning`, default true per SPA `:85`).
+ * `char.loreSettings.recursiveScanning`, default true in the SPA's
+ * `loadLoreBookV3Prompt`).
  * The outer `while (matching)` loop re-walks the entries against the
  * growing recursive layer; `activatedIndexes` keeps each entry firing
  * at most once, which bounds the loop at O(N) outer passes.
@@ -91,7 +92,7 @@ export interface LoreEntryActive {
    * Token count of the decorator-stripped `prompt` under the
    * encoding resolved by `encodingForModel(input.model)`. Populated
    * so the priority-desc budget filter has something to
-   * drop. Like the SPA (`lorebook.svelte.ts:584`), this is computed
+   * drop. Like the SPA (`lorebook.svelte.ts`), this is computed
    * once at activation time and not refreshed after `inject_lore`
    * mutates `prompt`.
    */
@@ -125,7 +126,7 @@ export interface ActivateLorebookInput {
    * Optional model id used to pick the tiktoken encoding for the
    * per-entry `tokens` count. Resolved through `encodingForModel`;
    * leaving it `undefined` falls back to `cl100k_base`, matching the
-   * SPA's `tikJS` default (`tokenizer.ts:244`).
+   * SPA's `tikJS` default (`tokenizer.ts`).
    */
   model?: string
   /**
@@ -364,7 +365,7 @@ function visitSearchEntries(
  * must fail before `test()` receives card/chat text.
  * Malformed keys (no leading `/`, no closing `/`, bad pattern) cache `null`
  * — the caller returns false for the whole query, matching the SPA
- * (`lorebook.svelte.ts:155`). Bounded like the SPA's `getCompiledRegex`
+ * (`lorebook.svelte.ts`). Bounded like the SPA's `getCompiledRegex`
  * (drop the oldest entry past 1000).
  */
 const compiledLoreKeyRegexCache = new Map<string, RegExp | null>()
@@ -425,16 +426,16 @@ function getCompiledLoreKeyRegexWithCompatibility(
 
 /**
  * Ports `searchMatch` from
- * `src/ts/process/lorebook.svelte.ts:97-239`. Walks the last
+ * `src/ts/process/lorebook.svelte.ts`. Walks the last
  * `searchDepth` messages, builds SPA-shaped `\x01{{name}}:body\x01`
  * log prompts, and matches keys against the lowercased message data
  * with the SPA's exact full-word / partial-word and `all`-mode
- * semantics. Concatenates the accumulated `recursivePrompt` layer
- * (SPA `:141-150`) unless the current query opted out via
+ * semantics. Concatenates the accumulated `recursivePrompt` layer from the
+ * SPA's `searchMatch` unless the current query opted out via
  * `@@no_recursive_search`.
  *
- * The regex path requires `/pattern/flags`; on malformed input it
- * returns false (SPA `:155`). Matched entries push into `matchLog`
+ * The regex path requires `/pattern/flags`; on malformed input it returns
+ * false, matching the SPA's `searchMatch`. Matched entries push into `matchLog`
  * so the caller can surface them on the `prompt` SSE event later.
  */
 function searchMatch(corpus: SearchableMessageCorpus, arg: SearchArg, matchLog: LoreMatchLogEntry[]): boolean {
@@ -579,20 +580,20 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
   const activatedIndexes = new Set<number>()
   const searchCorpus = buildSearchableCorpus(currentChat.message ?? [], database, currentChar)
 
-  // Includes the (implicit) first message, matching SPA `:84`.
+  // Includes the implicit first message, matching `loadLoreBookV3Prompt`.
   const chatLength = (currentChat.message?.length ?? 0) + 1
   const defaultScanDepth = currentChar.loreSettings?.scanDepth ?? database.loreBookDepth ?? 5
   const defaultFullWord = currentChar.loreSettings?.fullWordMatching ?? false
   const recursiveScanning = currentChar.loreSettings?.recursiveScanning ?? true
 
-  // SPA `:82`: `loreSettings.tokenBudget ?? db.loreBookToken`. The SPA
-  // migrator (`database.svelte.ts:87`) defaults `loreBookToken` to
+  // Match `loadLoreBookV3Prompt`: `loreSettings.tokenBudget ?? db.loreBookToken`. The SPA
+  // migrator (`database.svelte.ts`) defaults `loreBookToken` to
   // 800, so we fall back to the same value here when neither override
   // is present.
   const loreBudget = currentChar.loreSettings?.tokenBudget ?? database.loreBookToken ?? 800
   const encoding: TokenEncoding = encodingForModel(input.model)
 
-  // SPA `:263`: walk every unfired entry; if any new entry
+  // As in `loadLoreBookV3Prompt`, walk every unfired entry; if any new entry
   // activates with recursion enabled, flip `matching = true` for
   // another pass against the grown `recursivePrompt` layer.
   // `activatedIndexes.has(i)` bounds the outer loop at O(entries.length)
@@ -606,7 +607,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
       if (!entry) continue
       if (activatedIndexes.has(i)) continue
       if (entry.mode === 'folder') continue
-      // SPA `:269`: skip entries that have neither always-on nor a key.
+      // Match `loadLoreBookV3Prompt`: skip entries with neither always-on nor a key.
       if (!entry.alwaysActive && !entry.key) continue
 
       let activated = true
@@ -625,7 +626,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
       let dontSearchWhenRecursive = false
       const searchQueries: { keys: string[]; negative: boolean; all?: boolean }[] = []
 
-      // SPA `:294-307` child mirror: take over parent's content+comment
+      // SPA child-entry mirror: take over the parent's content and comment,
       // and force-activate iff the parent at index j hasn't fired yet.
       if (entry.mode === 'child') {
         activated = false
@@ -781,7 +782,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
             } else {
               keepAfterMatch = true
             }
-            // `return false` matches SPA `:346`. The decorator line is
+            // `return false` matches the SPA decorator callback. The line is
             // stripped from the body by ccardlib regardless; the return
             // value only enables a following `@@@` conditional, which is
             // ignored by this parser.
@@ -871,7 +872,7 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
         writeStickyChatVar(input, '__internal_da_' + loreId(entry), 'true')
       }
 
-      // SPA `:606-618`: seed the recursive layer with the
+      // Match `loadLoreBookV3Prompt`: seed the recursive layer with the
       // decorator-stripped body. Per-entry `@@recursive` / `@@unrecursive`
       // overrides the global `loreSettings.recursiveScanning` default.
       const recurse = itemRecursive === 'global' ? recursiveScanning : itemRecursive
@@ -886,17 +887,17 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
     }
   } // end while(matching)
 
-  // Priority desc (SPA :623).
+  // Match `loadLoreBookV3Prompt`: highest priority first.
   actives.sort((a, b) => b.priority - a.priority)
 
-  // Budget-aware truncation (SPA :627-635). Strictly sequential
+  // Match `loadLoreBookV3Prompt`'s budget-aware truncation. It is sequential
   // through the priority-desc list: an entry that doesn't fit is
   // skipped, but later (lower-priority) entries that *do* fit still
   // slip in. `@@ignore_on_max_context` was already demoted to
   // `priority = -1000` by the decorator, so those entries sit
   // at the tail of this list and get dropped first. Token counts
-  // are not refreshed after the `inject_lore` mutations below; this
-  // matches the SPA comment at `:649` ("performance over accuracy").
+  // are not refreshed after the `inject_lore` mutations below, preserving the
+  // SPA's deliberate performance-over-accuracy tradeoff.
   let usedTokens = 0
   const budgeted = actives.filter((a) => {
     if (usedTokens + a.tokens <= loreBudget) {
@@ -906,11 +907,12 @@ export function activateLorebook(input: ActivateLorebookInput): LorebookActivati
     return false
   })
 
-  // Order desc (SPA :637).
+  // Match `loadLoreBookV3Prompt`: highest insertion order first.
   budgeted.sort((a, b) => b.order - a.order)
 
   // Apply lore-targeting injections, then drop the injectors from the
-  // active list. Mirrors SPA :641-673; cheap and self-contained, so
+  // active list. This mirrors `loadLoreBookV3Prompt`; it is cheap and
+  // self-contained, so
   // this keeps placement self-contained.
   const injectors = budgeted.filter((a) => a.inject?.lore)
   const survivors = budgeted.filter((a) => !a.inject?.lore)
@@ -1293,7 +1295,7 @@ const POSITION_REGEX = /\{\{position::(.+?)\}\}/g
 /**
  * Substitutes `{{position::<name>}}` markers in `text` with the
  * concatenated prompts of every active entry whose `pos` is
- * `pt_<name>`. Mirrors `src/ts/process/promptAssembly/buildLorebookContext.ts:36-63`:
+ * `pt_<name>`. Mirrors `src/ts/process/promptAssembly/buildLorebookContext.ts`:
  * iterates up to `maxDepth` times so a `pt_X` slot whose body
  * references another `{{position::Y}}` can resolve transitively;
  * any markers still present after the cap are stripped. Default
@@ -1340,7 +1342,7 @@ export interface LorebookContext {
 
 /**
  * Distribute an activation report into the prompt slots, ported from
- * `src/ts/process/promptAssembly/buildLorebookContext.ts:65-145`:
+ * `src/ts/process/promptAssembly/buildLorebookContext.ts`:
  *
  *   - `pos === '' && inject === null` → `lorebook`,
  *   - `after_desc` / `personality` / `scenario` → `description` (push);
@@ -1381,7 +1383,7 @@ export function buildLorebookContext(
   }
 
   // Assistant-prefill depth-0 lore lands after the user/system depth-0
-  // lore so the prefill stays at the very end (`buildLorebookContext.ts:113-122`).
+  // lore so the prefill stays at the very end (`buildLorebookContext.ts`).
   for (const lore of report.actives) {
     if (lore.pos === 'depth' && lore.depth === 0 && lore.role === 'assistant') {
       unformated.postEverything.push(toRow(lore))

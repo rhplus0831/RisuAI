@@ -498,7 +498,7 @@
       textarea.setSelectionRange(result.start, result.end)
       scrollToSelection(textarea)
 
-      // Highlight query on desktop environment
+      // Mouse/keyboard users can focus the match without opening a touch keyboard.
       if (!('ontouchend' in window)) {
         // Make readonly temporarily
         textarea.readOnly = true

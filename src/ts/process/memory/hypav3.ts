@@ -365,10 +365,8 @@ async function hypaMemoryV3MainExp(
       subMsg: '',
     })
 
-    // Note:
-    // We can't save some successful summaries to the DB temporarily
-    // because don't know the actual summarization model name.
-    // It is possible that the user can change the summarization model.
+    // Apply results in input order and stop at the first failure. The returned
+    // memory keeps the consecutive successful prefix accumulated before it.
     for (let i = 0; i < batchResult.results.length; i++) {
       const result = batchResult.results[i]
 

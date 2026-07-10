@@ -175,7 +175,8 @@ test('capitalize, lower, upper', () => {
   )
 })
 
-// TODO: Define and implement the intended argument parsing for reverse.
+// Skipped: `reverse` currently reverses the raw matcher text, including the
+// `reverse::` prefix, instead of its first parsed argument.
 test.skip('reverse', () => {
   const splitByPoints = (str: string) => [...str].reverse().join('')
 

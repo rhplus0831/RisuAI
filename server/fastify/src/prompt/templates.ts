@@ -45,7 +45,7 @@ import { expandVariables, type ExpandContext } from './variables.js'
 
 /**
  * Aggregated slot arrays the assembly root passes into the renderer.
- * Matches the SPA `renderFinalPrompt.ts:11-22` (`UnformatedPromptSlots`)
+ * Matches the SPA `renderFinalPrompt.ts` (`UnformatedPromptSlots`)
  * exactly. `preflight.ts` re-exports this as `PromptUnformatedSlots`.
  */
 export interface UnformatedPromptSlots {
@@ -70,7 +70,7 @@ export interface NormalizedTemplate {
 
 /**
  * Resolve the effective prompt template, ported from
- * `normalizeTemplate.ts:10-40`:
+ * `normalizeTemplate.ts`:
  *   - clone `db.promptTemplate` (never mutate the stored template),
  *   - `usingPromptTemplate` reflects whether one is set,
  *   - append an implicit `{ type: 'postEverything' }` when absent,
@@ -108,7 +108,7 @@ export function normalizeTemplate(
 }
 
 /**
- * The null-template `formatingOrder` fallback (`index.svelte.ts:308-311`):
+ * The null-template `formatingOrder` fallback in `assembleLocalSendChatPrompt`:
  * a clone of `db.formatingOrder` with `postEverything` always appended.
  * Used only on the non-template render path.
  */
@@ -118,7 +118,7 @@ export function buildFormatOrder(db: Database): FormatOrderKey[] {
   return order
 }
 
-/** Models whose system rows are coalesced (`renderFinalPrompt.ts:96-101`). */
+/** Models whose system rows are coalesced (`renderFinalPrompt.ts`). */
 function coalescesSystemRows(aiModel: string): boolean {
   return (
     aiModel.startsWith('gpt') || aiModel.startsWith('claude') || aiModel === 'openrouter' || aiModel === 'reverse_proxy'
@@ -127,7 +127,7 @@ function coalescesSystemRows(aiModel: string): boolean {
 
 /**
  * The shared row-filter + system-coalescing helper (`pushPrompts`,
- * `renderFinalPrompt.ts:90-118`), mutating `formated` in place:
+ * `renderFinalPrompt.ts`), mutating `formated` in place:
  *   - skip rows with empty `content` and no multimodals,
  *   - on non-coalescing models, push every row verbatim,
  *   - otherwise merge a `system` row into the previous one when both are
@@ -158,7 +158,7 @@ export function coalesceRows(formated: OpenAIChat[], rows: OpenAIChat[], aiModel
 }
 
 /**
- * The branch-free non-template render path (`renderFinalPrompt.ts:352-357`):
+ * The branch-free non-template render path (`renderFinalPrompt.ts`):
  * walk `formatOrder`, pushing each slot through `coalesceRows`, then
  * trim row contents. This path has no prompt-info capture; final render
  * handles `depth_prompt` splicing and request editing.
@@ -172,13 +172,13 @@ export function renderByFormatOrder(
   for (const key of formatOrder) {
     coalesceRows(formated, unformated[key], aiModel)
   }
-  // SPA trailing trim (`renderFinalPrompt.ts:359-362`); this path has no
+  // SPA trailing trim (`renderFinalPrompt.ts`); this path has no
   // prompt-info capture. Final render handles `depth_prompt` + `editRequest`.
   trimContentsInPlace(formated)
   return formated
 }
 
-/** SPA `convertRole` (`renderFinalPrompt.ts:217-221`). */
+/** SPA `convertRole` (`renderFinalPrompt.ts`). */
 const CONVERT_ROLE = {
   system: 'system',
   user: 'user',
@@ -187,7 +187,7 @@ const CONVERT_ROLE = {
 
 /**
  * The global-note prebuilt image instruction, copied verbatim from
- * `src/ts/util.ts:1198` (`util.ts` pulls in Svelte imports the
+ * `src/ts/util.ts` (`util.ts` pulls in Svelte imports the
  * server can't load). Appended to a `globalNote` card when the
  * character opts in. The `{{join}}` / `{{ele}}` CBS is expanded later.
  */
@@ -261,7 +261,7 @@ export function parseChatML(text: string, ctx: ExpandContext, onVarDirty?: () =>
 
 /**
  * Inlined `systemizeChat` from
- * `src/ts/process/promptAssembly/systemizeChat.ts:9-23`. Mutates rows
+ * `src/ts/process/promptAssembly/systemizeChat.ts`. Mutates rows
  * in place: `user` / `assistant` rows become `system` with the role
  * (or the `example_*` name) folded into the content, dropping
  * `memo` / `name`. Callers clone first when the source must be
@@ -286,7 +286,7 @@ export function systemizeChat(chats: OpenAIChat[]): OpenAIChat[] {
 }
 
 /**
- * SPA `pushPromptInfoBody` (`renderFinalPrompt.ts:121-133`): append a
+ * SPA `pushPromptInfoBody` (`renderFinalPrompt.ts`): append a
  * prompt-info row to the prompt-info-inside-chat capture array. Skips
  * an empty `fmt`. `fmt` is expanded with the bare `ctx` (no `chara`),
  * matching the SPA's `risuChatParser(fmt)`.
@@ -296,7 +296,7 @@ function pushPromptInfoBody(store: OpenAIChat[], role: OpenAIChat['role'], fmt: 
   store.push({ role, content: expandVariables(fmt, ctx).text })
 }
 
-/** SPA trailing content trim (`renderFinalPrompt.ts:359-369`). */
+/** SPA trailing content trim (`renderFinalPrompt.ts`). */
 function trimContentsInPlace(rows: OpenAIChat[]): void {
   for (const row of rows) {
     row.content = row.content.trim()
@@ -434,7 +434,7 @@ export function renderContentCardWithStableCache(
 
 /**
  * Build the OpenAIChat rows for a single content card
- * (`renderFinalPrompt.ts:140-266`). Returns `null` only for `memory` /
+ * (`renderFinalPrompt.ts`). Returns `null` only for `memory` /
  * `cache`, which `renderByTemplate` handles directly because
  * they mutate injected/accumulated state rather than producing rows. A
  * gated-off `jailbreak` / `cot` card returns `[]`.
@@ -471,7 +471,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       for (const row of rows) {
         row.content = wrap.replace('{{slot}}', fallback ? fallback(row) : row.content)
         // Prompt-info capture uses the RAW `innerFormat` (no positionParser,
-        // no chara), once per row — `renderFinalPrompt.ts:148-150`.
+        // no chara), once per row — `renderFinalPrompt.ts`.
         if (deps.promptInfo) {
           pushPromptInfoBody(deps.promptInfo, row.role, innerFormat, ctx)
         }
@@ -531,7 +531,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
 
       const promptRow: OpenAIChat = { role: CONVERT_ROLE[card.role], content }
       // Prompt-info capture re-expands the parsed content with the bare
-      // ctx, excluding globalNote — `renderFinalPrompt.ts:251-257`.
+      // ctx, excluding globalNote — `renderFinalPrompt.ts`.
       if (deps.promptInfo && card.type2 !== 'globalNote') {
         pushPromptInfoBody(deps.promptInfo, promptRow.role, promptRow.content, ctx)
       }
@@ -562,7 +562,7 @@ export function renderContentCard(card: PromptItem, deps: ContentCardDeps): Open
       if (usingPromptTemplate && db.promptSettings?.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
         // Clone before systemizing so the shared `unformated.chats` is
         // not mutated between the preflight pass and the render pass.
-        // The SPA mutates in place (`renderFinalPrompt.ts:297`); the
+        // The SPA mutates in place (`renderFinalPrompt.ts`); the
         // output rows are identical either way.
         return systemizeChat(structuredClone(slice))
       }
@@ -596,7 +596,7 @@ export function renderByTemplate(
   const db = ctx.database
   const aiModel = db.aiModel ?? ''
 
-  // Prompt-info-inside-chat capture (`renderFinalPrompt.ts:120-133`):
+  // Prompt-info-inside-chat capture (`renderFinalPrompt.ts`):
   // collect a parallel info array, gated on both db flags.
   const capture = !!(db.promptInfoInsideChat && db.promptTextInfoInsideChat)
   const promptInfo: OpenAIChat[] | undefined = capture ? [] : undefined
@@ -623,7 +623,7 @@ export function renderByTemplate(
     // mutates the accumulated `formated` array, so both live here rather
     // than in the pure `renderContentCard` row-builder.
     if (card.type === 'memory') {
-      // `renderFinalPrompt.ts:317-333`. Memory deliberately does **not**
+      // `renderFinalPrompt.ts`. Memory deliberately does **not**
       // run `positionParser` (unlike persona / description); it only
       // wraps each row via `innerFormat` + `{{slot}}`.
       const rows = structuredClone(memories)
@@ -634,7 +634,7 @@ export function renderByTemplate(
         }).text
         for (const row of rows) {
           row.content = wrap.replace('{{slot}}', row.content)
-          // Capture the raw `innerFormat` per row (`renderFinalPrompt.ts:326-328`).
+          // Capture the raw `innerFormat` per row (`renderFinalPrompt.ts`).
           if (promptInfo) {
             pushPromptInfoBody(promptInfo, row.role, card.innerFormat, ctx)
           }
@@ -645,7 +645,7 @@ export function renderByTemplate(
     }
 
     if (card.type === 'cache') {
-      // `renderFinalPrompt.ts:335-348`: walk `formated` from the end,
+      // `renderFinalPrompt.ts`: walk `formated` from the end,
       // marking up to `depth` rows whose role matches (`all` matches any).
       let pointer = formated.length - 1
       let depthRemaining = card.depth
@@ -665,7 +665,7 @@ export function renderByTemplate(
     }
 
     // Automatic cache point at the tail of a `chat` card
-    // (`renderFinalPrompt.ts:301-314`): when enabled and no explicit
+    // (`renderFinalPrompt.ts`): when enabled and no explicit
     // `cache` card suppresses it, mark the last 3 `user` rows.
     if (card.type === 'chat' && db.automaticCachePoint && !hasCachePoint) {
       let pointer = formated.length - 1
@@ -680,7 +680,7 @@ export function renderByTemplate(
     }
   }
 
-  // SPA trailing trim (`renderFinalPrompt.ts:359-369`). The `depth_prompt`
+  // SPA trailing trim (`renderFinalPrompt.ts`). The `depth_prompt`
   // splice + `editRequest` seam run after this, in the top-level
   // `renderFinalPrompt`.
   trimContentsInPlace(formated)
@@ -705,7 +705,7 @@ export interface RenderFinalPromptArgs {
   /** Pushes a `[Continue the last response]` system entry under gpt/claude/openrouter/reverse_proxy. */
   isContinue?: boolean
   /**
-   * The `editRequest` request-edit seam (`renderFinalPrompt.ts:384`).
+   * The `editRequest` request-edit seam (`renderFinalPrompt.ts`).
    * Defaults to an identity transform; dispatch may supply the request-edit
    * transform.
    */
@@ -731,16 +731,15 @@ function takesContinueMarker(aiModel: string): boolean {
 }
 
 /**
- * The top-level render entry (`renderFinalPrompt.ts:60-396`), unifying
+ * The top-level render entry (`renderFinalPrompt.ts`), unifying
  * the template (`renderByTemplate`) and non-template
  * (`renderByFormatOrder`) paths with the SPA's pre/post-walk steps:
  *
- *   1. `isContinue` pre-push onto `unformated.postEverything` (`:77-88`),
+ *   1. `isContinue` pre-push onto `unformated.postEverything`,
  *   2. dispatch to the path renderer (each already trims its rows),
- *   3. the `depth_prompt` splice (`:372-382`) — after the trim, so the
+ *   3. the `depth_prompt` splice — after the trim, so the
  *      spliced row is left untrimmed, matching the SPA,
- *   4. the `editRequest` request-edit seam over `formated` and
- *      `promptInfo` (`:384`, `:387-393`).
+ *   4. the `editRequest` request-edit seam over `formated` and `promptInfo`.
  *
  * Returns `{ formated, promptText }`; `promptText` is the
  * (editRequest'd) prompt-info array, defined only when the template
@@ -762,7 +761,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
   } = args
   const aiModel = ctx.database.aiModel ?? ''
 
-  // 1. `[Continue the last response]` pre-push (`renderFinalPrompt.ts:77-88`).
+  // 1. `[Continue the last response]` pre-push (`renderFinalPrompt.ts`).
   if (isContinue && takesContinueMarker(aiModel)) {
     unformated.postEverything.push({
       role: 'system',
@@ -790,7 +789,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     promptInfo = undefined
   }
 
-  // 3. Character `depth_prompt` splice (`renderFinalPrompt.ts:372-382`).
+  // 3. Character `depth_prompt` splice (`renderFinalPrompt.ts`).
   //    Runs after the trim, so the inserted row is intentionally not
   //    trimmed.
   const depthPrompt = currentChar.depth_prompt
@@ -801,7 +800,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     })
   }
 
-  // 4. `editRequest` request-edit seam (`renderFinalPrompt.ts:384,387-393`).
+  // 4. `editRequest` request-edit seam (`renderFinalPrompt.ts`).
   formated = await editRequest(formated)
   let promptText: OpenAIChat[] | undefined
   if (promptInfo) {

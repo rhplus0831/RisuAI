@@ -3,7 +3,7 @@ import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte'
 import wasm from 'vite-plugin-wasm'
 import strip from '@rollup/plugin-strip'
 import tailwindcss from '@tailwindcss/vite'
-// https://vitejs.dev/config/
+// https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   return {
     plugins: [

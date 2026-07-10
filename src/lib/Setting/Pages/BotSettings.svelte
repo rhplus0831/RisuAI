@@ -807,7 +807,7 @@
       })
       if (updateIndex === null) return
 
-      updatePromptPreset(updateIndex, { image: data }) // Since its small (max 2304 pixels), it is okay to store it directly.
+      updatePromptPreset(updateIndex, { image: data }) // The 48×48 JPEG data URL is small enough to keep inline.
     } finally {
       clearPromptPresetIconUpload(operation)
     }

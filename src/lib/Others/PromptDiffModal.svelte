@@ -164,7 +164,7 @@
   let diffStyle = $state<DiffStyle>(prefs?.diffStyle ?? DEFAULT_PROMPT_DIFF_PREFS.diffStyle)
   let formatStyle = $state<FormatStyle>(prefs?.formatStyle ?? DEFAULT_PROMPT_DIFF_PREFS.formatStyle)
   let viewStyle = $state<ViewStyle>(prefs?.viewStyle ?? DEFAULT_PROMPT_DIFF_PREFS.viewStyle)
-  let isFlatText = $state(false) // legacy: not persisted on purpose
+  let isFlatText = $state(false) // Legacy flat-text comparison is deliberately session-only.
   let isGrouped = $state(prefs?.isGrouped ?? DEFAULT_PROMPT_DIFF_PREFS.isGrouped)
   let showOnlyChanges = $state(prefs?.showOnlyChanges ?? DEFAULT_PROMPT_DIFF_PREFS.showOnlyChanges)
   let contextRadius = $state(prefs?.contextRadius ?? DEFAULT_PROMPT_DIFF_PREFS.contextRadius)

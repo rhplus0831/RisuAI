@@ -15,7 +15,7 @@ import { buildPromptAssetTable, type PromptAssetTable } from './promptAssets.js'
  *    resolve a char/module asset reference (or `currentChar.image`) to image
  *    bytes through the route-supplied {@link ResolveStoredAsset}, which
  *    reads the store. Like the browser's `readImage(asset[1])` path
- *    (`formatHistoryMessage.ts:154-180`) the bytes are always re-wrapped as a
+ *    (`formatHistoryMessage.ts`) the bytes are always re-wrapped as a
  *    `data:image/png;base64,` URI regardless of the stored content-type.
  */
 
