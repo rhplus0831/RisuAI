@@ -19,7 +19,7 @@ import {
 } from './commands'
 import { DBState, selectedCharID } from '../stores.svelte'
 import type { Chat, ChatFolder } from '../storage/database.svelte'
-import { getServerProjectionApplyEpoch } from './projectionWriteGuard.svelte'
+import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 
 interface PendingChatPatch {
   chatId: string
@@ -35,8 +35,25 @@ interface PendingFolderPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
+interface InFlightChatPatch {
+  sequence: number
+  characterId: string | undefined
+  selectedCharID: number
+  patch: ChatSnapshot
+}
+
+interface InFlightFolderPatch {
+  sequence: number
+  characterId: string | undefined
+  selectedCharID: number
+  patch: ChatFolderSnapshot
+}
+
 const pendingChatPatches = new Map<string, PendingChatPatch>()
 const pendingFolderPatches = new Map<string, PendingFolderPatch>()
+const inFlightChatPatches = new Map<string, InFlightChatPatch[]>()
+const inFlightFolderPatches = new Map<string, InFlightFolderPatch[]>()
+let nextInFlightPatchSequence = 0
 let suppressRollbackDispatch = false
 let activeStop: (() => void) | null = null
 let resetActiveChatMetadataBaselines: (() => void) | null = null
@@ -89,6 +106,10 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
   activeStop = $effect.root(() => {
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+      if (projectionApplyChanged) {
+        untrack(reassertPendingChatMetadataPatches)
+      }
       const current = currentChatMetadataBaselines({
         selectedChar: previousSelectedChar,
         characterId: previousCharacterId,
@@ -96,7 +117,7 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
         folders: previousFolders,
       })
 
-      if (suppressRollbackDispatch || !initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
+      if (suppressRollbackDispatch || !initialized || projectionApplyChanged) {
         initialized = true
         previousProjectionApplyEpoch = projectionApplyEpoch
         previousChats = current.chats
@@ -165,6 +186,15 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
   }
 }
 
+/**
+ * A caller that persists a metadata mutation directly can advance the watcher
+ * baseline synchronously so the compatibility bridge does not enqueue the same
+ * optimistic write a second time.
+ */
+export function syncServerBackedChatMetadataBaselines(): void {
+  resetActiveChatMetadataBaselines?.()
+}
+
 function queueChatPatch(chatId: string, patch: ChatSnapshot, rollback: ChatRowMetadataSnapshot, delay: number): void {
   const pendingChatPatch = pendingChatPatches.get(chatId)
   if (pendingChatPatch?.timer) clearTimeout(pendingChatPatch.timer)
@@ -228,12 +258,21 @@ function runPendingChatPatch(chatId: string, options: ServerCommandTransportOpti
   if (!commandPatch) return
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingChatPatches.delete(chatId)
-  dispatchUpdateChatRow(
+  const inFlight = registerInFlightChatPatch(commandPatch)
+  const result = dispatchUpdateChatRow(
     commandPatch.chatId,
     commandPatch.patch,
     commandPatch.rollback,
     options,
     rollbackServerBackedChatRowMetadata,
+  )
+  if (!result) {
+    clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence)
+    return
+  }
+  void result.then(
+    () => clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence),
+    () => clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence),
   )
 }
 
@@ -242,7 +281,134 @@ function runPendingFolderPatch(folderId: string, options: ServerCommandTransport
   if (!commandPatch) return
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingFolderPatches.delete(folderId)
-  dispatchUpdateChatFolderRow(commandPatch.folderId, commandPatch.patch, commandPatch.rollback, options)
+  const inFlight = registerInFlightFolderPatch(commandPatch)
+  const result = dispatchUpdateChatFolderRow(commandPatch.folderId, commandPatch.patch, commandPatch.rollback, options)
+  if (!result) {
+    clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence)
+    return
+  }
+  void result.then(
+    () => clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence),
+    () => clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence),
+  )
+}
+
+function registerInFlightChatPatch(pending: PendingChatPatch): InFlightChatPatch {
+  const patch: InFlightChatPatch = {
+    sequence: ++nextInFlightPatchSequence,
+    characterId: pending.rollback.characterId,
+    selectedCharID: pending.rollback.selectedCharID,
+    patch: cloneJsonValue(pending.patch),
+  }
+  const inFlight = inFlightChatPatches.get(pending.chatId) ?? []
+  inFlight.push(patch)
+  inFlightChatPatches.set(pending.chatId, inFlight)
+  return patch
+}
+
+function registerInFlightFolderPatch(pending: PendingFolderPatch): InFlightFolderPatch {
+  const patch: InFlightFolderPatch = {
+    sequence: ++nextInFlightPatchSequence,
+    characterId: pending.rollback.characterId,
+    selectedCharID: pending.rollback.selectedCharID,
+    patch: cloneJsonValue(pending.patch),
+  }
+  const inFlight = inFlightFolderPatches.get(pending.folderId) ?? []
+  inFlight.push(patch)
+  inFlightFolderPatches.set(pending.folderId, inFlight)
+  return patch
+}
+
+function clearInFlightChatPatch(chatId: string, sequence: number): void {
+  clearInFlightPatch(inFlightChatPatches, chatId, sequence)
+}
+
+function clearInFlightFolderPatch(folderId: string, sequence: number): void {
+  clearInFlightPatch(inFlightFolderPatches, folderId, sequence)
+}
+
+function clearInFlightPatch<T extends { sequence: number }>(
+  patches: Map<string, T[]>,
+  id: string,
+  sequence: number,
+): void {
+  const current = patches.get(id)
+  if (!current) return
+  const next = current.filter((patch) => patch.sequence !== sequence)
+  if (next.length === 0) {
+    patches.delete(id)
+  } else {
+    patches.set(id, next)
+  }
+}
+
+function reassertPendingChatMetadataPatches(): void {
+  if (
+    pendingChatPatches.size === 0 &&
+    pendingFolderPatches.size === 0 &&
+    inFlightChatPatches.size === 0 &&
+    inFlightFolderPatches.size === 0
+  ) {
+    return
+  }
+
+  withTrustedServerProjectionWrite(() => {
+    for (const [chatId, patches] of inFlightChatPatches) {
+      for (const pending of patches) {
+        applyChatMetadataPatch(chatId, pending.characterId, pending.selectedCharID, pending.patch)
+      }
+    }
+    for (const [chatId, pending] of pendingChatPatches) {
+      applyChatMetadataPatch(chatId, pending.rollback.characterId, pending.rollback.selectedCharID, pending.patch)
+    }
+    for (const [folderId, patches] of inFlightFolderPatches) {
+      for (const pending of patches) {
+        applyFolderMetadataPatch(folderId, pending.characterId, pending.selectedCharID, pending.patch)
+      }
+    }
+    for (const [folderId, pending] of pendingFolderPatches) {
+      applyFolderMetadataPatch(folderId, pending.rollback.characterId, pending.rollback.selectedCharID, pending.patch)
+    }
+  })
+}
+
+function applyChatMetadataPatch(
+  chatId: string,
+  characterId: string | undefined,
+  selectedChar: number,
+  patch: ChatSnapshot,
+): void {
+  const character = resolveMetadataCharacter(characterId, selectedChar)
+  const chat = character?.chats?.find((candidate) => candidate.id === chatId)
+  if (chat) applyMetadataPatch(chat as unknown as Record<string, unknown>, patch)
+}
+
+function applyFolderMetadataPatch(
+  folderId: string,
+  characterId: string | undefined,
+  selectedChar: number,
+  patch: ChatFolderSnapshot,
+): void {
+  const character = resolveMetadataCharacter(characterId, selectedChar)
+  const folder = character?.chatFolders?.find((candidate) => candidate.id === folderId)
+  if (folder) applyMetadataPatch(folder as unknown as Record<string, unknown>, patch)
+}
+
+function resolveMetadataCharacter(characterId: string | undefined, selectedChar: number) {
+  return (
+    DBState.db.characters?.find((candidate) => Boolean(characterId) && candidate.chaId === characterId) ??
+    DBState.db.characters?.[selectedChar]
+  )
+}
+
+function applyMetadataPatch(target: Record<string, unknown>, patch: Record<string, unknown>): void {
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) {
+      delete target[key]
+    } else {
+      target[key] = cloneJsonValue(value)
+    }
+  }
 }
 
 // Build the scalar metadata snapshot for one chat without ever serializing its

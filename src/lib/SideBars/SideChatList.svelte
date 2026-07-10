@@ -50,7 +50,7 @@
     dispatchUpdateChatFolder,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
@@ -182,13 +182,23 @@
     return applied
   }
 
+  function applyDirectOptimisticChatMetadata(chatId: string, mutate: (chat: Chat) => void): boolean {
+    const applied = applyOptimisticChatMetadata(chatId, mutate)
+    if (applied) syncServerBackedChatMetadataBaselines()
+    return applied
+  }
+
+  function applyDirectOptimisticFolderMetadata(folderId: string, mutate: (folder: ChatFolder) => void): boolean {
+    const applied = applyOptimisticFolderMetadata(folderId, mutate)
+    if (applied) syncServerBackedChatMetadataBaselines()
+    return applied
+  }
+
   function updateChatName(chat: Chat, name: string): void {
     if (canUseServerCommands()) {
       const chatId = chat.id
       if (!chatId) return
-      const previous = currentChatStateSnapshot()
-      if (!applyOptimisticChatMetadata(chatId, (liveChat) => (liveChat.name = name))) return
-      dispatchUpdateChat(chatId, { name }, previous)
+      applyOptimisticChatMetadata(chatId, (liveChat) => (liveChat.name = name))
       return
     }
     chat.name = name
@@ -198,9 +208,7 @@
     if (canUseServerCommands()) {
       const folderId = folder.id
       if (!folderId) return
-      const previous = currentChatStateSnapshot()
-      if (!applyOptimisticFolderMetadata(folderId, (liveFolder) => (liveFolder.name = name))) return
-      dispatchUpdateChatFolder(folderId, { name }, previous)
+      applyOptimisticFolderMetadata(folderId, (liveFolder) => (liveFolder.name = name))
       return
     }
     folder.name = name
@@ -222,7 +230,7 @@
 
     const previous = currentChatStateSnapshot()
     if (previousBinding) {
-      if (!applyOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = ''))) return
+      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = ''))) return
       dispatchUpdateChat(chatId, { bindedPersona: '' }, previous)
       alertNormal(language.personaUnbindedSuccess)
       return
@@ -241,7 +249,7 @@
         }
       })
     }
-    if (!applyOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
+    if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
     dispatchUpdateChat(chatId, { bindedPersona }, previous)
     alertNormal(language.personaBindedSuccess)
   }
@@ -559,7 +567,8 @@
                   if (!editMode) {
                     const previous = currentChatStateSnapshot()
                     const folded = !folder.folded
-                    if (!applyOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded))) return
+                    if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded)))
+                      return
                     dispatchUpdateChatFolder(folder.id, { folded }, previous)
                     reloadGuiDisplay()
                   }
@@ -601,7 +610,8 @@
                           const previous = currentChatStateSnapshot()
                           const color = colors[sel]
                           if (!color) break
-                          if (!applyOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color))) break
+                          if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color)))
+                            break
                           dispatchUpdateChatFolder(folder.id, { color }, previous)
                           break
                       }

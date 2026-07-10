@@ -1210,13 +1210,21 @@ function restoreChatFolderOrderAttempt(
   })
 }
 
+function runChatCommandAsync<T extends Record<string, unknown>>(
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  rollback: () => void,
+  options: ServerCommandTransportOptions = {},
+): Promise<ServerCommandResult<T>> | null {
+  if (!canUseServerCommands()) return null
+  return runServerCommand({ command, rollback, ...options })
+}
+
 export function runChatCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
   options: ServerCommandTransportOptions = {},
 ): void {
-  if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback, ...options })
+  void runChatCommandAsync(command, rollback, options)
 }
 
 export function runMessageCommand<T extends Record<string, unknown>>(
@@ -1393,14 +1401,14 @@ export function dispatchUpdateChatRow(
   rollback: ChatRowMetadataSnapshot,
   options: ServerCommandTransportOptions = {},
   rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
-): void {
+): Promise<ServerCommandResult> | null {
   const commandPatch = sanitizeFrozenChatPatch(patch)
-  if (Object.keys(commandPatch).length === 0) return
+  if (Object.keys(commandPatch).length === 0) return null
   const rollbackSnapshot: ChatRowMetadataSnapshot = {
     ...rollback,
     attempted: commandPatch,
   }
-  runChatCommand(
+  return runChatCommandAsync(
     (baseRevision) =>
       updateChatCommand(
         {
@@ -2237,7 +2245,7 @@ export function dispatchUpdateChatFolderRow(
   patch: ChatFolderSnapshot,
   rollback: ChatFolderRowMetadataSnapshot,
   options: ServerCommandTransportOptions = {},
-): void {
+): Promise<ServerCommandResult> | null {
   const attemptedPatch = cloneJsonValue(patch)
   const attemptedRollback =
     Object.keys(attemptedPatch).length > 0 || rollback.attempted
@@ -2246,7 +2254,7 @@ export function dispatchUpdateChatFolderRow(
           attempted: { ...(rollback.attempted ?? {}), ...attemptedPatch },
         }
       : rollback
-  runChatCommand(
+  return runChatCommandAsync(
     (baseRevision) =>
       updateChatFolderCommand(
         {

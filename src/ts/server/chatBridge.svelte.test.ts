@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
 const recorded = vi.hoisted(() => ({
+  chatResult: null as Promise<{ status: 'ok' }> | null,
   chatUpdates: [] as Array<{
     chatId: string
     patch: Record<string, unknown>
@@ -13,6 +14,7 @@ const recorded = vi.hoisted(() => ({
     patch: Record<string, unknown>
     keepalive?: boolean
   }>,
+  folderResult: null as Promise<{ status: 'ok' }> | null,
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const chatCommandState = vi.hoisted(() => ({
@@ -27,6 +29,7 @@ vi.mock('./commands', () => ({
 
 vi.mock('./projectionWriteGuard.svelte', () => ({
   getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
+  withTrustedServerProjectionWrite: (callback: () => unknown) => callback(),
 }))
 
 vi.mock('../chatCommands', () => {
@@ -67,6 +70,7 @@ vi.mock('../chatCommands', () => {
       recorded.chatRollbacks.push(() => {
         rollbackRowMetadata?.(rollback)
       })
+      return recorded.chatResult ?? Promise.resolve({ status: 'ok' as const })
     },
     dispatchUpdateChatFolderRow: (
       folderId: string,
@@ -79,6 +83,7 @@ vi.mock('../chatCommands', () => {
         patch: cloneJsonValue(patch),
         ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
       })
+      return recorded.folderResult ?? Promise.resolve({ status: 'ok' as const })
     },
     restoreChatState: (snapshot: { characters: unknown[]; selectedCharID: number }) => {
       const db = chatCommandState.getDb?.()
@@ -136,10 +141,19 @@ import {
   currentChatMetadataBaselines,
   flushPendingServerBackedChatPatches,
   rollbackServerBackedChatMetadata,
+  syncServerBackedChatMetadataBaselines,
   watchServerBackedChatMetadata,
 } from './chatBridge.svelte'
 
 const DELAY = 50
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
 
 function setupChat(name = 'Initial'): void {
   ;(DBState as { db: unknown }).db = {
@@ -169,7 +183,9 @@ beforeEach(() => {
   chatCommandState.setSelectedCharId = (value) => selectedCharID.set(value)
   recorded.chatUpdates.length = 0
   recorded.chatRollbacks.length = 0
+  recorded.chatResult = null
   recorded.folderUpdates.length = 0
+  recorded.folderResult = null
 })
 
 afterEach(() => {
@@ -212,6 +228,64 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { folded: true } }])
+    stop()
+  })
+
+  it('coalesces rapid names and overlays them through pending and in-flight projections', async () => {
+    setupChat()
+    const chatSave = deferred<{ status: 'ok' }>()
+    const folderSave = deferred<{ status: 'ok' }>()
+    recorded.chatResult = chatSave.promise
+    recorded.folderResult = folderSave.promise
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].chats[0].name = 'h'
+    flushSync()
+    DBState.db.characters[0].chats[0].name = 'he'
+    flushSync()
+    DBState.db.characters[0].chats[0].name = 'hello'
+    DBState.db.characters[0].chatFolders[0].name = 'folder'
+    flushSync()
+
+    projectionGuardState.epoch += 1
+    DBState.db.characters[0].chats[0].name = 'Server Old Chat'
+    DBState.db.characters[0].chatFolders[0].name = 'Server Old Folder'
+    flushSync()
+
+    expect(DBState.db.characters[0].chats[0].name).toBe('hello')
+    expect(DBState.db.characters[0].chatFolders[0].name).toBe('folder')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { name: 'hello' } }])
+    expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { name: 'folder' } }])
+
+    projectionGuardState.epoch += 1
+    DBState.db.characters[0].chats[0].name = 'Older In-Flight Chat'
+    DBState.db.characters[0].chatFolders[0].name = 'Older In-Flight Folder'
+    flushSync()
+
+    expect(DBState.db.characters[0].chats[0].name).toBe('hello')
+    expect(DBState.db.characters[0].chatFolders[0].name).toBe('folder')
+
+    chatSave.resolve({ status: 'ok' })
+    folderSave.resolve({ status: 'ok' })
+    await Promise.resolve()
+    await Promise.resolve()
+    stop()
+  })
+
+  it('accepts direct optimistic metadata without echoing it through the bridge', async () => {
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    DBState.db.characters[0].chatFolders[0].folded = true
+    syncServerBackedChatMetadataBaselines()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.folderUpdates).toEqual([])
     stop()
   })
 

@@ -191,6 +191,7 @@ const sidebarMocks = vi.hoisted(() => {
     setServerCommandsEnabled: (enabled: boolean) => {
       serverCommandsEnabled = enabled
     },
+    syncServerBackedChatMetadataBaselines: vi.fn(),
     setCurrentRoute,
     truncateMessagesCommand: unusedCommand,
     updateChatCommand: vi.fn((input: unknown) => {
@@ -290,6 +291,7 @@ vi.mock('src/ts/router', () => ({
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  syncServerBackedChatMetadataBaselines: sidebarMocks.syncServerBackedChatMetadataBaselines,
   watchServerBackedChatMetadata: sidebarMocks.watchServerBackedChatMetadata,
 }))
 
@@ -823,7 +825,7 @@ describe('SideChatList DOM contract harness', () => {
     expectRowSelected('chat-root-b', false)
   })
 
-  it('optimistically updates server-backed chat and folder names before dispatching edit commands', async () => {
+  it('keeps rapid chat and folder name input in the debounced bridge pipeline', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
     setServerProjectionWriteGuardEnabled(true)
@@ -837,43 +839,20 @@ describe('SideChatList DOM contract harness', () => {
     const chatNameInput = inputIn(rowByChatId('chat-foldered'), 'chat name input')
     const folderNameInput = inputIn(folderElementById('folder-a'), 'folder name input')
 
-    await setTextInputValue(chatNameInput, 'Renamed Foldered Chat')
-    await setTextInputValue(folderNameInput, 'Renamed Folder')
+    await setTextInputValue(chatNameInput, 'h')
+    await setTextInputValue(chatNameInput, 'he')
+    await setTextInputValue(chatNameInput, 'hello')
+    await setTextInputValue(folderNameInput, 'f')
+    await setTextInputValue(folderNameInput, 'fo')
+    await setTextInputValue(folderNameInput, 'folder')
 
-    expect(selectedCharacter().chats[1].name).toBe('Renamed Foldered Chat')
-    expect(selectedCharacter().chatFolders[0].name).toBe('Renamed Folder')
-    expect(chatNameInput.value).toBe('Renamed Foldered Chat')
-    expect(folderNameInput.value).toBe('Renamed Folder')
-    expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
-      'chat-foldered',
-      { name: 'Renamed Foldered Chat' },
-      expect.any(Object),
-    )
-    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
-      'folder-a',
-      { name: 'Renamed Folder' },
-      expect.any(Object),
-    )
-    expect(sidebarMocks.dispatchUpdateChat.mock.calls[0][2]).toMatchObject({
-      selectedCharID: 0,
-      characters: [
-        {
-          chaId: 'char-a',
-          chats: [{ name: 'Root Chat A' }, { name: 'Foldered Chat' }, { name: 'Root Chat B' }],
-          chatFolders: [{ name: 'Pinned Folder' }],
-        },
-      ],
-    })
-    expect(sidebarMocks.dispatchUpdateChatFolder.mock.calls[0][2]).toMatchObject({
-      selectedCharID: 0,
-      characters: [
-        {
-          chaId: 'char-a',
-          chats: [{ name: 'Root Chat A' }, { name: 'Renamed Foldered Chat' }, { name: 'Root Chat B' }],
-          chatFolders: [{ name: 'Pinned Folder' }],
-        },
-      ],
-    })
+    expect(selectedCharacter().chats[1].name).toBe('hello')
+    expect(selectedCharacter().chatFolders[0].name).toBe('folder')
+    expect(chatNameInput.value).toBe('hello')
+    expect(folderNameInput.value).toBe('folder')
+    expect(sidebarMocks.dispatchUpdateChat).not.toHaveBeenCalled()
+    expect(sidebarMocks.dispatchUpdateChatFolder).not.toHaveBeenCalled()
+    expect(sidebarMocks.syncServerBackedChatMetadataBaselines).not.toHaveBeenCalled()
   })
 
   it('paints folder folded toggles before dispatching with the folder stable id', async () => {
