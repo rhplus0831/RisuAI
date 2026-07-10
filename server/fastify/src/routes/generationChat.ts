@@ -15,6 +15,7 @@ import {
   assetPath,
   isValidAssetId,
   loadPersistedForAssembly,
+  writeSingleChatRow,
 } from '../repository.js'
 import {
   assemblePrompt,
@@ -1019,8 +1020,7 @@ function persistAssemblyMutations(args: {
       baseRevision,
       eventSink: args.eventSink,
       mutationPath: 'targeted-assembly',
-      writeDatabase: hasVarWrite,
-      chatScopedRead: hasVarWrite ? undefined : { chatId: args.input.chatId },
+      chatScopedRead: { chatId: args.input.chatId },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.input.chatId)
@@ -1047,6 +1047,9 @@ function persistAssemblyMutations(args: {
           if (!appended) {
             replaceActiveChatMessages(targetDb, args.input.chatId, replacement)
           }
+        }
+        if (hasVarWrite) {
+          writeSingleChatRow(targetDb, args.input.chatId, chat)
         }
         const eventTemplate = persistMessages
           ? COMMAND_EVENT_CATALOG.generationAssemblyPersisted
@@ -2066,8 +2069,7 @@ function persistServerGenerationResult(args: {
       baseRevision,
       eventSink: args.eventSink,
       mutationPath: 'targeted-generation',
-      writeDatabase: hasScriptstateWrite,
-      chatScopedRead: hasScriptstateWrite ? undefined : { chatId: args.chatId },
+      chatScopedRead: { chatId: args.chatId },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
         const { character, chat } = requireChatLocation(characters, args.chatId)
@@ -2124,6 +2126,9 @@ function persistServerGenerationResult(args: {
           addAlternateMessage(targetDb, args.chatId, record)
         } else {
           clearAlternateMessages(targetDb, args.chatId)
+        }
+        if (hasScriptstateWrite) {
+          writeSingleChatRow(targetDb, args.chatId, chat)
         }
         const event = hasScriptstateWrite
           ? {

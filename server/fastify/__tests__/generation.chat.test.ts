@@ -19,11 +19,7 @@ import {
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
 import { saveSelectedPersonaSnapshot } from '../src/commands/personas.js'
 import { LLMFlags, LLMFormat } from '../../../src/ts/model/types'
-import {
-  BROAD_WRITE_TABLES,
-  assertCommandMetricGate,
-  type CommandMutationMetric,
-} from './helpers/commandMetricGates.js'
+import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { expectNoSuccessDoneAfterAbort, parseEvents, type PromptChatFrame } from './helpers/terminalFrameAssertions.js'
 import { getChatMessageDiffInstrumentation, resetChatMessageDiffInstrumentation } from '../src/messageStore.js'
 import { emitProviderChunks } from '../src/prompt/providerTransport.js'
@@ -1432,7 +1428,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(chatVar.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'chat.scriptstate.updated',
         mutationPath: 'targeted-assembly',
-        writtenTables: [...BROAD_WRITE_TABLES],
+        writtenTables: ['chats'],
       })
       assertCommandMetricGate(chatVar.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric)
 
@@ -1494,6 +1490,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(combinedSideEffects.find((entry) => entry.metric === 'command_mutation')).toMatchObject({
         type: 'generation.assemblyPersisted',
         mutationPath: 'targeted-assembly',
+        writtenTables: ['chats', 'messages'],
       })
       assertCommandMetricGate(
         combinedSideEffects.find((entry) => entry.metric === 'command_mutation') as CommandMutationMetric,
@@ -3270,8 +3267,9 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(commandMetric).toMatchObject({
         mutationPath: 'targeted-generation',
         dbJsonWriteMs: 0,
-        writtenTables: [...BROAD_WRITE_TABLES, 'messages'].sort(),
+        writtenTables: ['chats', 'messages'],
       })
+      assertCommandMetricGate(commandMetric as CommandMutationMetric)
       expect(commandMetric?.loadMs).toBeGreaterThanOrEqual(0)
       expect(commandMetric?.totalMs).toBeGreaterThanOrEqual(0)
     })

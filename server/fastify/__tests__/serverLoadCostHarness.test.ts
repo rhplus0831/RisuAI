@@ -1693,7 +1693,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
   })
 
-  it('K1: chat-variable generation finalization keeps the broad write path', async () => {
+  it('K1: chat-variable generation finalization avoids whole-corpus reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = structuredClone(fixture.database)
     const characters = database.characters as Array<Record<string, unknown>>
@@ -1708,7 +1708,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
         },
       ],
     }
-    const paused = createPausedProvider('K1 broad finalization reply')
+    const paused = createPausedProvider('K1 scoped finalization reply')
     await restartHarness(paused.generationChat)
     await importDatabase(database)
 
@@ -1736,10 +1736,10 @@ describe('server load-count harness on the large-corpus fixture', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.body).toContain('K1 broad finalization reply')
-    expect(corpusLoadCount).toBeGreaterThan(0)
-    expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
-    expect(loadCountByTable.chats ?? 0).toBeGreaterThanOrEqual(1)
+    expect(res.body).toContain('K1 scoped finalization reply')
+    expect(corpusLoadCount).toBe(0)
+    expect(loadCountByTable.characters ?? 0).toBe(0)
+    expect(loadCountByTable.chats ?? 0).toBe(0)
     expect(loadCountByTable.messages ?? 0).toBe(0)
 
     const bootstrap = await harness.app.inject({

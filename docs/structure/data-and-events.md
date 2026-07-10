@@ -127,7 +127,9 @@ not ordinary browser `/commands/*` resource endpoints:
   repository/server-owned paths.
 - Server generation can persist assembly-time scriptstate/input-trigger changes
   before provider dispatch. Final generation writes through targeted command
-  mutation and emits `generation.persisted`; durable finalization attempts are
+  mutation and emits `generation.persisted`. Assembly and finalization
+  scriptstate changes write only the target `chats` row alongside any affected
+  `messages`, rather than rewriting unrelated database tables. Durable finalization attempts are
   queued in SQLite for retry with target snapshots, pending/terminal status, and
   retained terminal errors that the app prunes on later sweeps. Active durable
   jobs themselves are process-local reattach state. Cancel can persist

@@ -72,17 +72,17 @@ export const COMMAND_METRIC_REVIEW_GATES = {
     maxTables: MESSAGE_STORE_TABLES,
   },
   'targeted-generation': {
-    reviewGate: 'targeted generation persistence should not rewrite db.json',
+    reviewGate: 'targeted generation persistence writes only the active chat row and message store',
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    maxTables: MESSAGE_STORE_TABLES,
+    maxTables: ['chats', ...MESSAGE_STORE_TABLES].sort(),
   },
   'targeted-assembly': {
     reviewGate:
-      'prompt-assembly persistence (the /generate/chat scriptstate + transcript writer) never rewrites db.json; it writes the message store on a transcript rewrite and falls back to the broad table set only when a chat-var write rides along',
+      'prompt-assembly persistence writes only the active chat row and message store, including when a chat-var write rides along',
     sections: COMMAND_METRIC_SECTIONS,
     dbJsonWriteMs: 0,
-    maxTables: [...BROAD_WRITE_TABLES, ...MESSAGE_STORE_TABLES].sort(),
+    maxTables: ['chats', ...MESSAGE_STORE_TABLES].sort(),
   },
   'targeted-character-selection': {
     reviewGate: 'character selection should update only the selected character row and settings',
