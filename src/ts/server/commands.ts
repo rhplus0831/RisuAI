@@ -1249,6 +1249,19 @@ export interface ServerCommandTransportOptions {
 
 let cachedServerCommandRevision: number | null = null
 let serverCommandSuccessReconciler: ((event: CommandEvent) => Promise<void> | void) | null = null
+// Every command domain shares one server revision. Keep high-level mutations in
+// one client queue so two unrelated optimistic edits cannot both dispatch with
+// the same base revision and make the later edit roll back with a self-conflict.
+let serverCommandExecutionTail: Promise<void> = Promise.resolve()
+
+function enqueueServerCommandExecution<T>(task: () => Promise<T>): Promise<T> {
+  const execution = serverCommandExecutionTail.then(task)
+  serverCommandExecutionTail = execution.then(
+    () => undefined,
+    () => undefined,
+  )
+  return execution
+}
 
 export function canUseServerCommands(): boolean {
   return true
@@ -1375,6 +1388,14 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
   if (grouped.length === 0) return { status: 'unavailable' }
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
+  return enqueueServerCommandExecution(() => executeServerBackedSettingsPatch(input, grouped, rollbackEpoch))
+}
+
+async function executeServerBackedSettingsPatch(
+  input: PatchServerBackedSettingsInput,
+  grouped: Array<[SettingsGroup, SettingsPatch]>,
+  rollbackEpoch: number,
+): Promise<ServerCommandResult> {
   let lastResult: ServerCommandResult = { status: 'unavailable' }
   for (const [group, patch] of grouped) {
     const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
@@ -3268,6 +3289,13 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
+  return enqueueServerCommandExecution(() => executeServerCommand(input, rollbackEpoch))
+}
+
+async function executeServerCommand<T extends Record<string, unknown>>(
+  input: RunServerPresetCommandInput<T>,
+  rollbackEpoch: number,
+): Promise<ServerCommandResult<T>> {
   let result: ServerCommandResult<T>
   try {
     const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)

@@ -138,6 +138,22 @@ interface CapturedFetch {
   body: unknown
 }
 
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+  reject: (reason?: unknown) => void
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve']
+  let reject!: Deferred<T>['reject']
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -272,6 +288,57 @@ describe('server command API adapter', () => {
 
     expect(result).toEqual({ status: 'ok', revision: 8, event })
     expect(observed).toEqual([event])
+  })
+
+  it('serializes independent high-level mutations so each request uses the previously accepted revision', async () => {
+    const firstResponse = createDeferred<Response>()
+    const calls: Array<{ body: unknown }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        calls.push({
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (calls.length === 1) return firstResponse.promise
+        return jsonResponse({
+          revision: 12,
+          event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+        })
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(10)
+
+    const first = runServerCommand({
+      command: (baseRevision) =>
+        patchRuntimeSettings({
+          baseRevision,
+          patch: { maxContext: 8_000 },
+        }),
+    })
+    const second = patchServerBackedSettings({
+      patch: { maxResponse: 1_000 },
+    })
+
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    expect(calls[0]?.body).toEqual({
+      baseRevision: 10,
+      patch: { maxContext: 8_000 },
+    })
+
+    firstResponse.resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'settings.updated', revision: 11, resource: 'settings' },
+      }),
+    )
+
+    await expect(first).resolves.toMatchObject({ status: 'ok', revision: 11 })
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]?.body).toEqual({
+      baseRevision: 11,
+      patch: { maxResponse: 1_000 },
+    })
+    await expect(second).resolves.toMatchObject({ status: 'ok', revision: 12 })
   })
 
   it('maps projection-sweep toggles to server-backed settings groups', () => {
