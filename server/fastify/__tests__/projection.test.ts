@@ -755,6 +755,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('chatTranscript')).toEqual([])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
     expect(resourceProjectionFields('module')).toEqual(['modules', 'enabledModules', 'loadouts', 'characters'])
+    expect(resourceProjectionFields('moduleCreated')).toEqual(['modules'])
     // Narrowed module-family resources (Phase 5 collection-projection slice).
     expect(resourceProjectionFields('moduleUpdated')).toEqual(['modules'])
     expect(resourceProjectionFields('moduleReordered')).toEqual(['modules'])
@@ -893,8 +894,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields.characters[0].chats[0]).not.toHaveProperty('hypaV3Data')
   })
 
-  it('narrows module enable/update/reorder refreshes to their own fields', async () => {
-    // Phase 5 collection-projection slice: an enable/update/reorder edit no
+  it('narrows module create/enable/update/reorder refreshes to their own fields', async () => {
+    // Phase 5 collection-projection slice: a create/enable/update/reorder edit no
     // longer re-ships every character + loadout via the broad `module` resource.
     const seed = () =>
       importDatabase({
@@ -911,6 +912,20 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
           },
         ],
       })
+
+    const createRevision = await seed()
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: createRevision, module: { id: 'mod-c', name: 'Module C' } },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json().event.resource).toBe('moduleCreated')
+    const createdBody = (await getProjection('moduleCreated')).json()
+    expect(createdBody.mode).toBe('fields')
+    expect(Object.keys(createdBody.fields)).toEqual(['modules'])
+    expect(createdBody.fields.modules.map((module: { id: string }) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
 
     const enableRevision = await seed()
     const enabled = await harness.app.inject({

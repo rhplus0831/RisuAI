@@ -143,11 +143,11 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // persona select/delete also mirror the legacy profile scalars into settings
   // (when mirrorLegacyProfile is on), so a foreign refresh must reship them too.
   persona: ['personas', 'selectedPersona', 'username', 'userIcon', 'personaPrompt', 'userNote'],
-  // `module` (create/delete) stays broad: create can normalize sibling arrays
-  // and delete cross-writes characters/chats/loadouts via removeModuleReferences.
-  // Update/enable/reorder commands emit module-scoped resources below, so
-  // one-row edits stay narrow.
+  // `module` stays broad for deletion, which cross-writes characters, chats,
+  // and loadouts via removeModuleReferences. Create/update/enable/reorder use
+  // module-scoped resources below.
   module: ['modules', 'enabledModules', 'loadouts', 'characters'],
+  moduleCreated: ['modules'],
   moduleUpdated: ['modules'],
   moduleReordered: ['modules'],
   moduleEnabled: ['enabledModules'],

@@ -583,7 +583,9 @@ export const COMMAND_EVENT_CATALOG = {
   },
   moduleCreated: {
     type: 'module.created',
-    resource: 'module',
+    // Creation appends only the modules collection. Keep broad `module` for
+    // deletion, which removes references across several domains.
+    resource: 'moduleCreated',
   },
   moduleUpdated: {
     type: 'module.updated',

@@ -72,7 +72,7 @@ Command-event resources should be as narrow as practical and are defined by
 `COMMAND_EVENT_CATALOG` plus the projection route's `RESOURCE_PROJECTION_FIELDS`.
 Examples include `characterSelection`, `characterOrder`, `characterRow`, `character`,
 `message`, `globalLorebook`, `characterLorebook`, legacy `chat`/`chatFolder` and
-`lorebook`, `module`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
+`lorebook`, `module`, `moduleCreated`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
 `moduleScriptDefinition`, `moduleTriggerDefinition`, collection slices such as `preset`/`promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
 `agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,

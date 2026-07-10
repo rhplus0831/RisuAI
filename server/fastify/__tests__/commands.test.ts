@@ -9641,7 +9641,7 @@ describe('Phase 9-4c module record and enablement commands', () => {
       event: {
         type: 'module.created',
         revision: 2,
-        resource: 'module',
+        resource: 'moduleCreated',
         id: 'mod-c',
       },
       moduleId: 'mod-c',

@@ -30,9 +30,9 @@ import {
 //     duplicate-message-id validation is handled by the indexed
 //     `activeMessageIdExists` lookup, so the route keeps corpus-wide uniqueness
 //     without hydrating every chat message.
-//   * POST characters, POST characters/create-and-select, POST modules stay
-//     `message-free` (their dropped id-repair side effects are the recorded
-//     unblock conditions, not done here).
+//   * POST characters and POST characters/create-and-select stay `message-free`
+//     (their dropped id-repair side effects are the recorded unblock
+//     conditions, not done here). POST modules graduated to targeted-collection.
 //   * PUT characters/:id/scripts and PUT characters/:id/triggers GRADUATED to
 //     `targeted-character-row` (Phase 8a): the normalization is validate-only via
 //     discard, so only the target character row is written.
@@ -404,21 +404,6 @@ describe('Phase 6 message-free create + normalization floors', () => {
     assertCommandMetricGate(metric)
     expect(readCharacterIds()).toEqual(['char-a', 'char-b', 'char-d'])
     expect(readSettings().currentChar).toBe(2)
-  })
-
-  it('POST modules appends one module at the message-free floor', async () => {
-    const revision = await importDatabase(seedDatabase())
-
-    const { metric } = await runCommand({
-      method: 'POST',
-      url: '/api/v1/commands/modules',
-      payload: { baseRevision: revision, module: { id: 'mod-z', name: 'Module Z' } },
-    })
-
-    expect(metric.mutationPath).toBe('message-free')
-    expect(metric.writtenTables).toEqual([...BROAD_WRITE_TABLES])
-    assertCommandMetricGate(metric)
-    expect((readCollection('modules') as Array<{ id: string }>).map((m) => m.id)).toEqual(['mod-x', 'mod-y', 'mod-z'])
   })
 
   it('PUT characters/:id/scripts replaces customscript at the targeted-character-row range (Phase 8a)', async () => {

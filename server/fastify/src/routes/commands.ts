@@ -6027,18 +6027,20 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as ModuleCommandBody
       const baseRevision = readBaseRevision(body)
       const module = createModuleRecord(body.module, 'module', {}, { assetDb: db })
-      const result = applyMessageFreeJsonCommandMutation<{ moduleId: string }>({
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
         db,
         dataDir,
         baseRevision,
         ...commandMutationContext(req, eventSink),
-        mutate(database) {
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        mutate(database, innerDb) {
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
           if (modules.some((candidate) => candidate.id === module.id)) {
             throw new ValidationError(`Module already exists: ${module.id}`)
           }
           modules.push(module)
+          writeSingleCollectionTable(innerDb, 'modules', modules)
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleCreated, id: module.id },
             extra: { moduleId: module.id },

@@ -92,7 +92,7 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   also include examples such as `globalLorebook`, `modelPreset`,
   `promptPreset`, `modelProfile`, `agentPreset`, `agentPresetDeleted`,
   `translatorPreset`, `loadout`, `persona`, `plugin`, `moduleUpdated`,
-  `moduleEnabled`, and `moduleReordered`. Ordinary grouped settings commands
+  `moduleCreated`, `moduleEnabled`, and `moduleReordered`. Ordinary grouped settings commands
   put the group in `event.id`; `settings?id=<group>` projects only the keys from
   the command route's authoritative group map. Historical settings events with
   no recognized group still full-bootstrap safely. Other known sprawling

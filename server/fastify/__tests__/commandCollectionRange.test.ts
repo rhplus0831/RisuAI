@@ -1403,6 +1403,32 @@ describe('Phase 4 modules collection range', () => {
   }
   const TRIGGER = { id: 'trigger-a', comment: 'Start', type: 'start', conditions: [], effect: [] }
 
+  it('POST modules appends through only the modules table', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const settingsBefore = readSettings()
+    const pluginsBefore = readCollection('plugins')
+
+    const { metric, body } = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/modules',
+      payload: { baseRevision: revision, module: { id: 'mod-c', name: 'Module C' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expect(body.event).toMatchObject({ type: 'module.created', resource: 'moduleCreated', id: 'mod-c' })
+    expectNoCharacterOrChatChurn(before)
+    expect(readSettings()).toEqual(settingsBefore)
+    expect(readCollection('plugins')).toEqual(pluginsBefore)
+    expect((readCollection('modules') as Array<{ id: string }>).map((module) => module.id)).toEqual([
+      'mod-a',
+      'mod-b',
+      'mod-c',
+    ])
+  })
+
   it('PATCH modules/:id updates one row in place', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
