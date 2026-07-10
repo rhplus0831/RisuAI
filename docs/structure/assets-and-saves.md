@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -159,5 +159,8 @@ through the browser codec in `src/ts/process/modules.ts`: the client decodes the
 module envelope, rejects MCP module metadata, asks for low-level-access
 confirmation before asset writes, uploads embedded assets through the server
 asset adapter, and creates the global module through command-backed module
-helpers. Embedded asset filenames are preserved during upload so server content
-type detection can use the source extension.
+helpers. The module asset tuple retains its declared filename. For upload
+classification, supported source extensions are reused; non-empty unsupported
+legacy filename tokens are normalized by sniffing PNG/JPEG/WebP/GIF/AVIF bytes
+and fall back to PNG. A blank filename passes through and defaults to PNG in the
+asset saver.

@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -14,7 +14,7 @@ on demand.
 
 | Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: bootstrap, commands, projection resources, hydration, events, active writer, assets, backups, Realm import, memory job events, message translation refresh, bridge watchers, push notifications, stale-operation guards, protocol diagnostics, smoke hooks. |
+| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: bootstrap, commands, projection resources, hydration, events, active writer, assets, backups, Realm import, memory job events, message translation refresh, bridge watchers, push notifications, projection/stale-operation guards, protocol diagnostics, smoke hooks. |
 | `src/ts/storage/`                                                                                                                                                              | Browser projection database, server-backed auth/storage compatibility, `.risu` helpers, backup helpers, and auto-storage selection.                                                                          |
 | `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                  |
 | `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                            |
@@ -86,6 +86,9 @@ Important files:
   and transcript windows.
 - `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
   character shell rows.
+- `src/ts/server/chatGenerationSettingsProjectionGuard.ts` preserves a queued
+  optimistic chat generation-settings value when a targeted character-row
+  projection differs before that save settles.
 - `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
   and preset prompt bodies with owner-keyed state for selected/requested prompt
   presets.
@@ -107,6 +110,22 @@ If a component shows stale or missing data, confirm whether the data is:
 Detailed bootstrap, targeted projection, hydration, SSE reconcile, projection
 write guard, and bridge watcher rules live in
 `docs/structure/server-projection-and-bridges.md`.
+
+Chat/message compatibility writes in `src/ts/chatCommands.ts` classify a list
+change into the narrowest safe command: append, single-message update, prefix
+truncate, single delete, or tail replacement after a known persisted anchor.
+Fully hydrated incompatible edits can fall back to full replacement, but a
+placeholder-bearing transcript is not broadly replaced. At send time,
+`src/ts/process/sendChatContext.ts` assigns ids locally to missing rows in a
+fully loaded transcript, but persists those backfilled ids only when they form a
+contiguous suffix following a persisted anchor. Other shapes remain local for
+that send.
+
+Chat generation-settings saves are serialized per chat and optimistically
+applied. While a save is queued,
+`chatGenerationSettingsProjectionGuard.ts` prevents a differing targeted
+`characterRow` merge from rolling the visible value back; this protection ends
+when the save settles and does not replace full-bootstrap resync semantics.
 
 Prompt template projection notes:
 
@@ -202,6 +221,15 @@ over `finalText`, request `resendChat`, or surface an Agent Preset error as a
 failed terminal result. Generation results are persisted server-side, so the
 browser suppresses the old generation-result command in server-backed paths.
 
+Agent Preset step instructions can place selected prepared inputs through
+matching placeholders such as `{{currentUserMessage}}` and can consume an
+eligible completed step output through `{{agent::outputKey}}`. Before-main
+steps can reference earlier before-main dependency levels; after-main steps can
+also reference completed before-main outputs. Missing, same-level, disabled, or
+otherwise unavailable output references make the preset `incomplete`. The
+settings UI surfaces that status, and server prompt assembly blocks it before
+provider dispatch.
+
 Generation profile resolution happens before provider dispatch. Durable profile
 records can own selected model ids, request/wire model ids, provider
 options/endpoints, profile-local API keys, runtime options, and fallback profile
@@ -281,9 +309,14 @@ Plugins:
   stores in `src/ts/stores.svelte.ts`.
 - Ordinary non-MCP module `.risum` import is supported in Fastify-backed browser
   mode: the browser decodes the module envelope, uploads embedded assets through
-  server asset helpers, and creates the module through command helpers. `.risum`
-  files containing MCP metadata are rejected; MCP module import/update remains
-  blocked until it has a dedicated command-backed route.
+  server asset helpers, and creates the module through command helpers.
+  Supported source filename extensions are retained for upload. Non-empty
+  unsupported legacy filename tokens are classified from
+  PNG/JPEG/WebP/GIF/AVIF signatures, with PNG as the fallback upload type, while
+  the original tuple filename stays in module metadata. A blank filename is
+  passed through and defaults to PNG in the asset saver. `.risum` files
+  containing MCP metadata are rejected; MCP module import/update remains blocked
+  until it has a dedicated command-backed route.
 
 MCP:
 

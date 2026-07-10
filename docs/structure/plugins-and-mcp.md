@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -143,11 +143,15 @@ MCP module import is currently blocked in Fastify server-backed mode, and
 command-based stdio MCPs are not supported in the browser runtime. This does not
 block ordinary `.risum` module import: non-MCP `.risum` files are decoded in the
 browser, have embedded assets uploaded through server asset helpers, and are
-created through command-backed module helpers. The `.risum` path rejects module
-metadata containing `mcp` before asset upload or optimistic module creation, and
-server validators still intentionally disallow `mcp` records in generic module
-commands. Adding MCP import/update back needs a dedicated command-backed module
-route rather than a direct browser mutation.
+created through command-backed module helpers. Supported source filename
+extensions are retained for upload; non-empty unsupported legacy filename
+tokens are normalized by sniffing PNG/JPEG/WebP/GIF/AVIF signatures, with PNG
+as fallback, while the original module asset tuple filename remains unchanged.
+Blank filenames pass through and default to PNG in the asset saver. The
+`.risum` path rejects module metadata containing `mcp` before asset upload or
+optimistic module creation, and server validators still intentionally disallow
+`mcp` records in generic module commands. Adding MCP import/update back needs a
+dedicated command-backed module route rather than a direct browser mutation.
 
 OAuth refresh token persistence for remote MCP servers writes
 `Database.authRefreshes` through optimistic patches to the `providers` settings

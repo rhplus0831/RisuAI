@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -21,12 +21,12 @@ generation, assets, storage, Realm import, plugins, or MCP.
 | URL, back/forward, settings section, playground tool, or character route is wrong    | `src/ts/router.ts`, `src/App.svelte` route effects                                                              | `src/ts/router.test.ts`, `src/App.routeEffect*.test.ts`                                                                                  |
 | Theme, spacing, clipping, colors, font, UI scale, or custom CSS is wrong             | `src/styles.css`, `src/ts/gui/colorscheme.ts`, `src/ts/gui/guisize.ts`                                          | `src/lib/Setting/Pages/DisplaySettings.svelte`, `src/ts/setting/displaySettingsData.svelte.ts`                                           |
 | A settings page or left-nav item is wrong                                            | `src/lib/Setting/Settings.svelte`, `src/ts/router.ts` setting slug maps                                         | The concrete `src/lib/Setting/Pages/*.svelte` page                                                                                       |
-| Agent Preset authoring, status, or chat selection is wrong                           | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
+| Agent Preset authoring, status, or chat selection is wrong                           | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetReferences.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts`, `server/fastify/src/commands/agentPresets.ts` |
 | A model role/profile summary, inherited role, or provider panel visibility is wrong  | `src/lib/Setting/Pages/Model/ModelSettingsShell.svelte`, `ModelProfileRoleList.svelte`, `ModelProfileList.svelte`, `ModelProviderPanel.svelte`, `src/ts/model/modelProfileUiState.ts` | `src/ts/model/modelProfileResolver.ts`, legacy `ModelRoleList.svelte` inside Advanced Legacy Settings, `docs/structure/providers-and-models.md` |
 | A data-driven setting row is missing, hidden, stale, or not saving                   | `src/lib/Setting/SettingRenderer.svelte`, `src/ts/setting/*SettingsData*`, `src/ts/setting/utils.ts`            | `src/lib/Setting/Wrappers/*`, `src/ts/server/settingsBridge.svelte.ts`                                                                   |
 | A shared input/control is visually or behaviorally wrong                             | The primitive in `src/lib/UI/GUI/`                                                                              | The wrapper in `src/lib/Setting/Wrappers/` if it only breaks in settings                                                                 |
 | Chat transcript, composer, send buttons, scroll, or hydration state is wrong         | `src/lib/ChatScreens/DefaultChatScreen.svelte`, `src/lib/ChatScreens/Chats.svelte`                              | `src/ts/server/chatMessageHydration.svelte.ts`, `src/ts/chatCommands.ts`                                                                 |
-| Message HTML, translation, parser, inlays, or partial edit is wrong                  | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`                                        | `src/ts/parser/`, `src/ts/process/files/`, `src/ts/globalApi.svelte.ts`                                                                  |
+| Message HTML, translation, parser, inlays, or partial edit is wrong                  | `src/lib/ChatScreens/Chat.svelte`, `src/lib/ChatScreens/ChatBody.svelte`, `src/lib/ChatScreens/ChatBodyParseMemo.ts` | `src/ts/parser/`, `src/ts/process/files/`, `src/ts/globalApi.svelte.ts`                                                               |
 | Sidebar, character list, chat list, folders, reorder, or character config is wrong   | `src/lib/SideBars/Sidebar.svelte`, `src/lib/SideBars/SideChatList.svelte`, `src/lib/SideBars/CharConfig.svelte` | `src/lib/SideBars/sidebarCharList.ts`, `src/lib/SideBars/chatFolderGrouping.ts`, `src/ts/characterCommands.ts`, `src/ts/chatCommands.ts` |
 | Alert, popup, bookmark, Hypa V3, loadout, Iris, or plugin warning hides or blocks UI | `src/App.svelte`, `src/lib/Others/AlertComp.svelte`, `src/ts/alert.ts`                                          | The specific modal under `src/lib/Others/`                                                                                               |
 | Grid/mobile character picker is wrong                                                | `src/lib/Others/GridCatalog.svelte`, `src/lib/Mobile/MobileCharacters.svelte`                                   | `src/ts/stores.svelte.ts` mobile stores                                                                                                  |
@@ -161,6 +161,9 @@ High-risk chat areas:
   folded-message state all affect scroll behavior.
 - Message HTML crosses parser, translation, custom HTML templates, inlays,
   additional assets, module assets, and optional partial edit.
+- `ChatBodyParseMemo.ts` owns parser/LLM-detection memoization and dependency
+  signatures for the active chat, character, modules, settings, CBS state, and
+  reload epochs; stale HTML or expensive rerenders can originate there.
 - UI mutations should route through `src/ts/chatCommands.ts` and command/bridge
   helpers in Fastify mode.
 - Generation-visible state starts in `DefaultChatScreen.svelte` but durable send
@@ -194,6 +197,10 @@ list. Chat-scoped generation controls live in
 `ChatGenerationSettingsControls.svelte`, `Toggles.svelte`, and
 `src/ts/activeChatGenerationSettings.ts`; server send/preview/continue/
 regenerate reads the effective overlay in `server/fastify/src/prompt/`.
+Queued generation-settings saves are optimistic and serialized per chat.
+`src/ts/server/chatGenerationSettingsProjectionGuard.ts` prevents a differing
+targeted character-row projection from rolling that visible value back before
+the save settles.
 
 Risk areas:
 
@@ -265,8 +272,13 @@ Agent Presets are not data-driven settings rows. The live UI is
 row-oriented command helpers from `src/ts/agentPresets.ts`. The page creates,
 edits, duplicates, deletes, reorders, and selects the global default preset;
 the sidebar chat generation controls save the chat-scoped
-`agentPresetId`. The removed Context Agent page and `/settings/context-agent`
-route are not compatibility aliases.
+`agentPresetId`. Prepared-input checkboxes expose their matching `{{scope}}`
+placeholder, and `mainDraft` is shown only for after-main steps. Changing phase
+removes scopes and dependencies that are no longer valid. Step instructions can
+chain an eligible earlier output through `{{agent::outputKey}}`; missing,
+same-level, disabled, or future references appear as `Incomplete` and block
+generation. The removed Context Agent page and `/settings/context-agent` route
+are not compatibility aliases.
 
 The settings shell currently separates model and prompt work: settings index
 `17` is model settings, `18` is prompt settings, `13` is prompt templates, and

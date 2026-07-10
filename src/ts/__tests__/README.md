@@ -21,8 +21,9 @@ pnpm test:frontend:all
 
 | Files | Purpose |
 | --- | --- |
-| `fixCompletenessGate*.test.ts` | Static proof that scheduled audit fixes still have regression coverage. |
+| `fixCompletenessGate*.test.ts` | Static proof that scheduled audit fixes still have regression coverage; these parse the v1-v3 archived stability/performance audit and risk Markdown as live fixtures. |
 | `cloneCostGateCompleteness.test.ts` | Static proof that clone-cost gates remain registered for narrowed hot paths. |
+| `cloneCostHarness.ts` | Shared snapshot-shape, rollback, and clone-instrumentation helpers used by registered gates across `src/`. |
 | `renderCostHarness*.ts`, `renderCountBaseline.test.ts` | DOM/render-cost regression probes for GUI reload behavior. |
 | `sendCloneCountProbe*.ts` | Send-path clone-count regression probe. |
 | `largeCorpusFixture*.ts` | Shared large-corpus fixture and sanity coverage used by cost gates. |

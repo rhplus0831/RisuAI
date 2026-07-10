@@ -1,6 +1,6 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
@@ -26,9 +26,15 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `src/ts/process/__fixtures__/upstream/`         | Upstream fixture corpus for request/provider tests.                                                                                                    |
 | `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                           |
 
-`.archived-docs/` files are source documentation, but they are historical. They
-may contain present-tense statements that were true at closeout and are now
-stale. Prefer `STRUCTURE.md`, `docs/structure/`, and code for current behavior.
+`.archived-docs/` files are historical documentation. They may contain
+present-tense statements that were true at closeout and are now stale. Prefer
+`STRUCTURE.md`, `docs/structure/`, and code for current behavior. One narrow
+exception is live test ownership: the v1-v3
+`audit-stability-and-performance/`, `audit-stability-and-performance-v2/`, and
+`audit-stability-and-performance-v3/` audit and risk Markdown files are parsed
+by `fixCompletenessGate*.test.ts`. Treat those archive files as
+completeness-gate fixtures; do not rename them or edit their status tables
+without updating and running the gates.
 
 `docs/structure/frontend.md` is source documentation only as a compatibility
 pointer for older links. Add current frontend guidance to
@@ -127,6 +133,8 @@ Fastify auth state actually lives under `data/__password`,
   unmounted legacy mobile shell.
 - `src/lib/UI/3DLoader.svelte` and `src/ts/3d/threeload.ts` are legacy and not
   imported by the current app shell.
+- Picture-in-picture session keepalive is retired. Current settings support
+  only `off` and `sound`; imported legacy `pip` values normalize to `sound`.
 - Old worktrees may contain `src/lib/UI/NewGUI/` or `src/ts/sync/`; both are
   absent from the current tree and should not be reintroduced as active UI/sync
   surfaces without a new plan.

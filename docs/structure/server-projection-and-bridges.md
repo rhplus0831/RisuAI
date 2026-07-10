@@ -1,6 +1,6 @@
 # Server Projection And Bridges
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 The browser is a projected client. Fastify owns durable state; Svelte receives a
 lean projection, hydrates heavy fields on demand, and routes persistent edits
@@ -46,6 +46,7 @@ another pass after the first settles.
 | `src/ts/server/projection.ts`                    | Targeted projection, chat/lorebook hydration, character-selection and collection projections.              |
 | `src/ts/server/projectionResync.ts`              | Full-bootstrap recovery for event replay misses, projection gaps, backup restore, partial-success repairs. |
 | `src/ts/server/characterShellHydration.svelte.ts` | Hydrates inactive/selected character shell rows through `characterRow`.                                    |
+| `src/ts/server/chatGenerationSettingsProjectionGuard.ts` | Preserves the latest optimistic chat generation settings while a targeted character-row projection races a queued save. |
 | `src/ts/server/promptTemplateHydration.ts`       | Hydrates stripped prompt-template bodies for selected/requested prompt-preset owners and the compatibility projection. |
 | `src/ts/server/messageTranslationJobs.ts`        | Tracks active detached raw-message translation rows from bootstrap and refresh polling.                    |
 | `src/ts/process/reattach.ts`                     | Reattaches active durable generation jobs from bootstrap.                                                  |
@@ -77,7 +78,10 @@ processes command events serially:
   sprawling resources such as `settings`, `state`, `pluginStorage`, and
   `prompt` intentionally return full-bootstrap mode.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
-  forces relevant hydration state to reset.
+  forces relevant hydration state to reset. During a targeted `characterRow`
+  merge, a chat whose generation-settings save is still queued preserves its
+  latest optimistic `generationSettings` while the incoming row differs from
+  that queued value; the pending token is cleared when the save settles.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
   server-requested full mode fall back to read-only full bootstrap.
 - Memory events bypass projection refresh and update Hypa V3 job/progress UI
@@ -149,6 +153,20 @@ lorebook, and script-definition bridge watchers use that epoch to refresh
 baselines after passive projection updates without echoing them back as
 commands. Prompt-template drafts instead combine hydration state with cached
 command-revision reconciliation.
+
+Compatibility chat mutations in `src/ts/chatCommands.ts` choose the narrowest
+safe message command: append, single-message update, prefix truncate, single
+delete, or tail replacement after a known persisted anchor. Fully hydrated
+shapes that cannot use a narrow form may still replace the transcript. A list
+containing server message placeholders is never broadly replaced by this
+compatibility path. Send-time setup assigns missing ids locally across a fully
+loaded transcript, but persists them only for a contiguous suffix after a known
+persisted message; other backfilled shapes remain local for that send.
+
+`src/ts/server/chatGenerationSettingsProjectionGuard.ts` is a narrower race
+guard, not a replacement for full resync. `dispatchSaveChatGenerationSettings()`
+registers the optimistic value while its serialized save is pending, and
+targeted character-row merge preserves that value until the save settles.
 
 Tests for guard, hydration, event reconcile, or watcher changes that affect
 rendered state should follow the visible-state policy in

@@ -1,6 +1,6 @@
 # Frontend Map
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 Moved: current frontend documentation lives under `src/docs/`.
 

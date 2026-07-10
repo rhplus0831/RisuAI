@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -173,6 +173,10 @@ live in `server/fastify/__fixtures__/risuSave/`. Explicit frontend gates live in
 `src/ts/__tests__/` and `src/lib/_audit/`; keep audit/perf/completeness gates in
 those places instead of mixing them into ordinary feature folders. The
 architecture audit can be scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`.
+`fixCompletenessGate*.test.ts` also parses the v1-v3 archived
+stability/performance audit and risk Markdown, so those specific
+`.archived-docs/` files remain live test fixtures even though they are not
+current behavioral guidance.
 
 ## Visible State Test Contract
 

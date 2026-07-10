@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -42,10 +42,10 @@ past decisions; they are not the source of current behavior.
 | `public/`, `resources/`                                                                                 | Vite-copied static assets and packaging icon/splash source images.                                   |
 | `util/`                                                                                                 | Tracked helper tools: full-stack dev runner, API flag runner, audits, database analyzer, tsserver wrapper, userscript bridge. |
 | `docs/structure/`                                                                                       | Current structure notes for agents; `frontend.md` is a compatibility pointer to `src/docs/`.         |
-| `.archived-docs/`                                                                                       | Closed workstreams and dated reports, including Agent Preset rollout and older user-input/stale-state audits. Expect stale present tense; prefer code and `docs/structure/`. |
+| `.archived-docs/`                                                                                       | Closed workstreams and dated reports. Prefer code and current structure docs for behavior; the v1-v3 stability/performance audit and risk Markdown files remain fixtures for explicit completeness gates. |
 | `tsconfig*.json`, `vitest*.ts`, `playwright*.ts`                                                        | TypeScript, Vitest, and Playwright config.                                                           |
 | `Dockerfile`, `docker-compose.yml`, `.dockerignore`                                                     | Container build/run path.                                                                            |
-| `.github/`, `.vscode/extensions.json`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore`, `.prettierrc.json`, `.prettierignore` | Automation, tracked editor recommendation, install, merge, search ignore, and formatting policy.     |
+| `.github/`, `.vscode/extensions.json`, `.npmrc`, `.gitattributes`, `.gitignore`, `.ignore`, `.prettierrc.json`, `.prettierignore` | CI/image publishing/moderation, PR metadata, current editor recommendations, install, merge, search ignore, and formatting policy. |
 | `README.md`, `version.json`, `LICENSE`                                                                  | Project docs, version metadata, license.                                                            |
 | `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md` when present                                                    | Agent workflow and handoff context; use this file for structure before workflow-specific notes.      |
 | `dist/`, `data/`, `node_modules/`, `server/fastify/node_modules/`, `coverage/`, `test-results/`, `blobs-for-test/`, `scripts/` when present, `.idea/`, `.claude/`, `.codex-note/` | Generated, runtime, ignored scratch, or local editor/agent state. Do not edit as source. |
@@ -64,16 +64,17 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
 | `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`                                                 | Web Push VAPID key/subscription storage and push subscription routes.                                                       |
 | `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts`, `server/fastify/src/translation/` | Provider adapters, prompt assembly/effective generation config, Agent Preset execution, Lua hooks/progress, SSE transport, durable chat jobs, finalization retries, detached message translation state and provider dispatch. |
-| `server/fastify/src/commands/agentPresets.ts`, `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts` | Agent Preset storage contract, validation, planner/status helpers, revisioned commands, and browser command helpers. |
+| `server/fastify/src/commands/agentPresets.ts`, `src/ts/agentPresetRecords.ts`, `src/ts/agentPresetReferences.ts`, `src/ts/agentPresetResolver.ts`, `src/ts/agentPresets.ts` | Agent Preset storage contract, output-reference parsing, validation/planning/status, revisioned commands, and browser command helpers. |
 | `server/fastify/src/memory*.ts`                                                                                                             | Maintained Hypa V3 memory tables, planning, selection, jobs, worker, events.                                                |
 | `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/`                                                                           | `.risu` codecs, bounded inflate, bundles/local-backup import/export, asset reports, and Realm/charx conversion helpers.     |
 | `server/fastify/src/streamJobs.ts`, `server/fastify/src/streamBackpressure.ts`                                                              | Process-local proxy stream jobs and shared bounded stream writers.                                                          |
 | `src/main.ts`, `src/App.svelte`, `src/ts/bootstrap.ts`                                                                                      | Browser bootstrap, app shell, Fastify projection startup.                                                                   |
 | `src/lib/`                                                                                                                                  | Svelte UI components by feature area.                                                                                       |
 | `src/ts/server/`                                                                                                                            | Browser Fastify adapters: bootstrap/body cache, commands, projection/hydration/resync, character/prompt hydration, events, memory job events, message translation refresh, bridges, assets, backups, Realm import, push notifications, stale-operation guards, protocol diagnostics, browser smoke hooks. |
+| `src/ts/chatCommands.ts`, `src/ts/server/chatGenerationSettingsProjectionGuard.ts`                                                          | Narrow optimistic chat/message commands and pending chat-generation-settings protection during targeted character-row projection. |
 | `src/ts/process/`, `src/ts/process/request/`                                                                                                | `sendChat`, server-backed generation bridge, request routing, SSE parsing, retained parity helpers.                         |
 | `src/ts/storage/`                                                                                                                           | Browser projection state, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
-| `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/mcp/`                                                                        | Browser plugin runtime, Plugin V3 API host, command-backed plugin state helpers, MCP clients/tools.                         |
+| `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/modules.ts`, `src/ts/moduleCommands.ts`, `src/ts/process/mcp/`               | Browser plugin/module runtime, Plugin V3 API host, command-backed plugin/module state, `.risum` import, and MCP clients/tools. |
 | `src/ts/model/`, `src/ts/horde/`                                                                                                            | Browser model registry and provider catalog helpers.                                                                        |
 | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | Agent Preset authoring UI and chat-scoped Agent Preset selection.                                                           |
 | `src/lang/`, `src/styles.css`, `src/ts/gui/`, `src/ts/setting/`                                                                             | Language packs, global styling/theme variables, GUI size/animation helpers, and data-driven setting definitions.            |
@@ -113,8 +114,15 @@ past decisions; they are not the source of current behavior.
 - Agent Presets are the supported auxiliary-agent orchestration layer. Durable
   `agentPresets` and optional `agentPresetDefaultId` live on `Database`, chats
   select presets through `Chat.generationSettings.agentPresetId`, and loadouts
-  can save/restore that selection. Before-main steps run after submit
-  transforms and feed prompt templates through `{{agent::name}}`; after-main
+  can save/restore that selection. Selected prepared inputs are inserted only
+  at matching instruction placeholders such as `{{currentUserMessage}}`;
+  `mainDraft` is after-main-only. Before-main steps run after submit transforms,
+  and their `promptOutput` values feed prompt templates through
+  `{{agent::outputKey}}`; any successful step output can feed an eligible later
+  step through the same output-key syntax. Before-main consumers can use earlier
+  before-main dependency levels; after-main consumers can also use completed
+  before-main outputs. Missing, disabled, self, same-level, or future output
+  references make the preset `incomplete` and block generation. After-main
   steps run after `editOutput` and before `onOutput`. Steps run by dependency
   level up to preset `maxConcurrency`, can target prompt/intermediate/final
   outputs, and store hidden diagnostics under generation metadata. The legacy

@@ -5,8 +5,8 @@
   - [ ] Have you tested your changes?
   - [ ] Have you checked that it won't break any existing features?
 - [ ] If your PR uses models[^1], check the following:
-  - [ ] Have you checked if it works normally in all models?
-  - [ ] Have you checked if it works normally in all web, local, and node-hosted versions? If it doesn't, have you blocked it in those versions?
+  - [ ] Have you tested the affected models/providers in the Fastify-served web runtime?
+  - [ ] Are unsupported provider, profile, or request shapes explicitly rejected or gated?
 - [ ] If your PR is highly AI generated[^2], check the following:
   - [ ] Have you understood what the code does?
   - [ ] Have you cleaned up any unnecessary or redundant code?

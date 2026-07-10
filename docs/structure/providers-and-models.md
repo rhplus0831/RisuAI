@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, and the shared capability table that decides whether a
@@ -140,18 +140,33 @@ Each step stores a model selection in `AgentPresetStepRecord.model`: either
 as chat preflight, and server execution in
 `server/fastify/src/prompt/agentPresetExecution.ts` dispatches through the
 normal provider boundary with streaming disabled and provider tools omitted.
+`src/ts/agentPresetReferences.ts` owns recognition and expansion of named
+output references.
 
-The first Agent Preset release is prepared-input only. Steps can read bounded
-server-selected sections such as recent chat tail, chat search snippets,
-lorebook context, memory context, persona/character summaries, previous agent
-outputs, current user message, and after-main main draft, but selected sections
-are inserted only where the step instruction uses the matching CBS placeholder
-such as `{{currentUserMessage}}`. Runtime execution runs dependency levels up to
-preset `maxConcurrency`, applies per-step timeout/input/output limits, validates
-JSON-object outputs when requested, follows optional/required/fallback/stop
-failure policies, and writes step outputs to
-`promptOutput`, `intermediate`, or `finalOutput` destinations. After-main final
-outputs can modify the final text before the generation result is persisted.
+Agent Preset steps use bounded prepared-input scopes and named-output CBS
+chaining. Steps can select server-provided sections such as recent chat tail,
+chat search snippets, lorebook context, memory context, persona/character
+summaries, previous agent outputs, current user message, and after-main main
+draft. A selected section is collected and inserted only when the instruction
+contains its matching placeholder, such as `{{currentUserMessage}}`.
+
+A step can also consume an already-completed named output directly through
+`{{agent::outputKey}}`, independently of the aggregate
+`previousAgentOutputs` scope. Before-main consumers can use outputs from earlier
+before-main dependency levels. After-main consumers can use all completed
+before-main outputs plus earlier after-main levels. A missing or disabled
+producer, self-reference, same-level reference, or forward/future-phase
+reference classifies the preset as `incomplete` and blocks generation until the
+output key or dependencies are corrected. Successful step outputs remain
+available to eligible later steps regardless of destination; before-main
+`promptOutput` values additionally expand in the main prompt template.
+
+Runtime execution runs dependency levels up to preset `maxConcurrency`, applies
+per-step timeout/input/output limits, validates JSON-object outputs when
+requested, follows optional/required/fallback/stop failure policies, and writes
+step outputs to `promptOutput`, `intermediate`, or `finalOutput` destinations.
+At most one enabled after-main `finalOutput` modifier is allowed, it must be the
+last enabled after-main step, and it can modify final text before persistence.
 Provider tool-calling is intentionally not part of this path yet.
 
 ## Compatibility Caveats

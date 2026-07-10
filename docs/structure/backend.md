@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
 auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
@@ -31,7 +31,7 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/requestAbort.ts`, `server/fastify/src/requestTimeouts.ts` | Generation abort propagation and proxy/stream-job timeout constants.                                      |
 | `server/fastify/src/risuSave/`                                                | `.risu`, bundle, local-backup, bounded-inflate, and asset-report codecs wired by save routes.            |
 | `server/fastify/src/realmImport/`                                             | Realm dynamic-card/`charx` conversion helpers used by Realm import routes.                               |
-| `server/fastify/src/prompt/agentPresetExecution.ts`                           | Prepared-input Agent Preset step prompting, provider dispatch, phase execution, failure handling, and diagnostics. |
+| `server/fastify/src/prompt/agentPresetExecution.ts`, `src/ts/agentPresetReferences.ts` | Prepared-input and named-output-CBS Agent Preset prompting, shared reference expansion, provider dispatch, phase execution, failure handling, and diagnostics. |
 | `server/fastify/src/commands/agentPresets.ts`                                 | Revisioned Agent Preset create/update/duplicate/delete/reorder/default/step commands and delete cleanup. |
 | `server/fastify/src/prompt/luaPostGenerationProgress.ts`                      | Live post-generation Lua progress frames for long `editOutput` / `onOutput` runs.                        |
 
@@ -114,8 +114,8 @@ hand-written browser adapters under `src/ts/server/` and
 
 Handlers call `requireAuth()` unless intentionally public. Public exceptions are
 health, auth status/setup/login, `/api/v1/auth/crypto`, immutable asset reads,
-asset existence probes, and hub `GET`/`HEAD`/`OPTIONS` when no upstream override
-header is used.
+asset existence probes, `GET /api/v1/push/vapid-public-key`, and hub
+`GET`/`HEAD`/`OPTIONS` when no upstream override header is used.
 
 ## Mutations And Events
 
@@ -142,9 +142,17 @@ The live chat path is server-owned. Browser `sendChat` preflights with
 then posts raw inputs to `/api/v1/generate/chat`. Server prompt assembly runs
 supported non-interactive Lua hooks, resolves the chat-scoped Agent Preset when
 one is selected, runs before-main Agent Preset steps after submit transforms,
-expands named outputs with `{{agent::name}}`, plans and selects memory,
-dispatches through `generation/`, and maps provider frames to chat SSE frames
-through `prompt/providerTransport.ts`. Successful streams run server
+then plans and selects memory, dispatches through `generation/`, and maps
+provider frames to chat SSE frames through `prompt/providerTransport.ts`.
+Selected prepared-input scopes are collected only when a step instruction uses
+the matching placeholder, such as `{{currentUserMessage}}`; `mainDraft` is
+after-main-only. Successful outputs can feed eligible later step instructions
+through `{{agent::outputKey}}`, while before-main `promptOutput` destinations
+also expand in the main prompt template. A before-main consumer can use only an
+earlier before-main dependency level; an after-main consumer can use completed
+before-main outputs and earlier after-main levels. Missing, disabled, self,
+same-level, or future output references classify the preset as `incomplete` and
+block generation. Successful streams run server
 post-generation before terminal `done`; after-main Agent Preset steps run after
 `editOutput` and before assistant-row persistence/run-vars/`onOutput`. Hidden
 Agent Preset diagnostics are stored under `generationInfo.agentPreset`, and

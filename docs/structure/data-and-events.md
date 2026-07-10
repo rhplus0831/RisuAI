@@ -1,6 +1,6 @@
 # Data And Events
 
-Last audited: 2026-07-06.
+Last audited: 2026-07-10.
 
 Fastify owns durable state. The browser receives a projected copy and sends
 revision-checked commands or explicit server-owned mutation requests.
@@ -129,7 +129,9 @@ Browser auth assertions are sent in `risu-auth`; setup/login also issue a
 `session.*` fallback token. Public-key hashes and fallback session-token hashes
 are both LRU-capped on disk. `routes/auth.ts` owns status/setup/login, while
 `/api/v1/auth/crypto` is registered with legacy storage routes as a public
-compatibility hashing helper.
+compatibility hashing helper. `GET /api/v1/push/vapid-public-key` is also public
+so the browser can decide whether Web Push registration is available;
+subscription create/delete routes remain authenticated.
 `RISU_AGENT_DEV_AUTH_BYPASS` is an agent/dev escape hatch used by the full-stack
 dev runner; `pnpm dev:agent` enables it by default, while `pnpm dev:human`
 leaves password auth enabled by default.
