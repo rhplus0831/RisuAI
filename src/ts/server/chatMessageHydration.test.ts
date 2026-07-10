@@ -203,6 +203,25 @@ describe('chat message hydration bridge', () => {
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'b', chatId: 'm1' }])
   })
 
+  it('preserves a fully loaded prefix when a ranged generation projection appends', async () => {
+    const existingMessages = [
+      { role: 'user', data: 'first', chatId: 'm1' },
+      { role: 'char', data: 'second', chatId: 'm2' },
+    ]
+    projectionState.fetchChat.mockResolvedValue(okResult('chat-1', existingMessages))
+    await hydrateActiveChatFully()
+
+    const appended = { role: 'char', data: 'generated', chatId: 'm3' }
+    expect(applyServerChatMessagesProjection('chat-1', [appended], undefined, [], { start: 2, total: 3 })).toBe(true)
+
+    expect(db().characters[0].chats[0].message).toEqual([...existingMessages, appended])
+    expect((db().characters[0].chats[0].message as Message[]).some(isServerChatMessagePlaceholder)).toBe(false)
+
+    projectionState.fetchChat.mockClear()
+    await hydrateActiveChatWindow(3)
+    expect(projectionState.fetchChat).not.toHaveBeenCalled()
+  })
+
   it('hydrates only the active chat tail window and keeps absolute indexes stable', async () => {
     projectionState.fetchChat.mockResolvedValue(
       okWindowResult(

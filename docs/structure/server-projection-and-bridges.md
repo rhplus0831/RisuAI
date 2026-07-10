@@ -101,7 +101,10 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   forces relevant hydration state to reset. During a targeted `characterRow`
   merge, a chat whose generation-settings save is still queued preserves its
   latest optimistic `generationSettings` while the incoming row differs from
-  that queued value; the pending token is cleared when the save settles.
+  that queued value; the pending token is cleared when the save settles. A
+  ranged message-only generation append retains an already-loaded transcript
+  prefix while extending the array, so the new total does not turn resident
+  history into placeholders.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
   server-requested full mode fall back to read-only full bootstrap.
 - Memory events bypass projection refresh and update Hypa V3 job/progress UI

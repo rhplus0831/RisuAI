@@ -1693,6 +1693,8 @@ export function applyServerCharacterSelectionProjection(input: {
 export interface ServerChatMessagesHydrationRange {
   start: number
   total: number
+  /** A targeted generation append may retain the already-loaded prefix. */
+  preserveExistingOnGrowth?: boolean
 }
 
 export { isServerChatMessagePlaceholder }
@@ -1724,10 +1726,18 @@ export function hydrateServerChatMessages(
         if (range) {
           const total = Math.max(0, Math.floor(range.total))
           const start = Math.min(Math.max(0, Math.floor(range.start)), total)
+          const existingMessages = Array.isArray(chat.message) ? chat.message : []
+          const canPreserveExisting =
+            existingMessages.length === total ||
+            (range.preserveExistingOnGrowth === true &&
+              total > existingMessages.length &&
+              start >= existingMessages.length)
           const next =
-            Array.isArray(chat.message) && chat.message.length === total
-              ? chat.message.slice()
-              : createServerChatMessagePlaceholderArray(total)
+            canPreserveExisting && existingMessages.length === total
+              ? existingMessages.slice()
+              : canPreserveExisting
+                ? [...existingMessages, ...createServerChatMessagePlaceholderArray(total - existingMessages.length)]
+                : createServerChatMessagePlaceholderArray(total)
           for (let index = 0; index < message.length && start + index < total; index += 1) {
             next[start + index] = message[index] as Message
           }

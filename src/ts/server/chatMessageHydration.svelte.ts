@@ -450,7 +450,12 @@ export function applyServerChatMessagesProjection(
   range?: { start: number; total: number },
 ): boolean {
   if (!chatId) return false
-  const applied = hydrateServerChatMessages(chatId, message, hypaV3Data, range)
+  const applied = hydrateServerChatMessages(
+    chatId,
+    message,
+    hypaV3Data,
+    range ? { ...range, preserveExistingOnGrowth: true } : undefined,
+  )
   if (!applied) return false
   advanceChatProjectionEpoch(chatId)
   if (!range || isFullRange(range.start, range.total, message.length)) {
