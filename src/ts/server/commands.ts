@@ -1272,7 +1272,11 @@ export function settingsGroupForKey(key: string): SettingsGroup | null {
 }
 
 export function setCachedServerCommandRevision(revision: number): void {
-  if (Number.isInteger(revision) && revision >= 0) {
+  if (
+    Number.isInteger(revision) &&
+    revision >= 0 &&
+    (cachedServerCommandRevision === null || revision > cachedServerCommandRevision)
+  ) {
     cachedServerCommandRevision = revision
   }
 }

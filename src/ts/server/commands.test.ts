@@ -59,6 +59,7 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  peekCachedServerCommandRevision,
   importPresetCommand,
   persistGenerationResultCommand,
   duplicateAgentPresetCommand,
@@ -460,6 +461,13 @@ describe('server command API adapter', () => {
         body: null,
       },
     ])
+  })
+
+  it('does not let an older asynchronous response move the cached revision backward', () => {
+    setCachedServerCommandRevision(12)
+    setCachedServerCommandRevision(9)
+
+    expect(peekCachedServerCommandRevision()).toBe(12)
   })
 
   it('maps revision conflicts to a typed conflict result', async () => {
