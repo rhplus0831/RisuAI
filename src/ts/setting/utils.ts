@@ -12,12 +12,28 @@ import {
 } from './botSettingsParamsData'
 import { chatFormatSettingsItems } from './chatFormatSettingsData'
 import { displaySettingsItems } from './displaySettingsData.svelte'
-import { canUseServerCommands, patchServerBackedSettings, settingsGroupForKey } from '../server/commands'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
-import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 import {
+  canUseServerCommands,
+  patchServerBackedSettings,
+  settingsGroupForKey,
+  type ServerCommandTransportOptions,
+} from '../server/commands'
+import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
+import {
+  currentTopLevelPresetFieldMirrorValue,
+  mirrorTopLevelPresetField,
+  mirrorTopLevelPresetFieldToTarget,
+  resolveTopLevelPresetFieldMirrorTarget,
+  type TopLevelPresetFieldMirrorTarget,
+} from '../presetFieldMirror'
+import {
+  currentPromptPresetModelOverrideMirrorValue,
   currentPromptPresetModelOverrideValue,
   mirrorPromptPresetModelOverrideField,
+  mirrorPromptPresetModelOverrideFieldToTarget,
+  resolvePromptPresetModelOverrideMirrorTarget,
+  type PromptPresetModelOverrideMirrorTarget,
 } from '../promptPresetModelOverrides.svelte'
 import { promptPresetModelOverrideFieldForDatabaseKey } from '../presetSplit'
 
@@ -27,6 +43,54 @@ import { promptPresetModelOverrideFieldForDatabaseKey } from '../presetSplit'
  * can still be written back without being silently ignored.
  */
 export const UNINITIALIZED = Symbol('uninitialized')
+
+export const DEFERRED_SETTING_INPUT_DELAY_MS = 250
+
+export interface DeferredSettingWriteResult {
+  ownerKey: string
+  queued: boolean
+}
+
+interface DeferredServerSettingTarget {
+  kind: 'server'
+  ownerKey: string
+  rootKey: string
+}
+
+interface DeferredPresetSettingTarget {
+  kind: 'preset'
+  ownerKey: string
+  rootKey: string
+  target: TopLevelPresetFieldMirrorTarget
+}
+
+interface DeferredPromptOverrideSettingTarget {
+  kind: 'promptOverride'
+  ownerKey: string
+  rootKey: string
+  target: PromptPresetModelOverrideMirrorTarget
+}
+
+type DeferredSettingTarget =
+  | DeferredServerSettingTarget
+  | DeferredPresetSettingTarget
+  | DeferredPromptOverrideSettingTarget
+
+interface DeferredSettingEdit {
+  path: string[]
+  value: unknown
+}
+
+interface PendingDeferredSettingWrite {
+  desiredRoot: unknown
+  edits: Map<string, DeferredSettingEdit>
+  previousRoot: unknown
+  target: DeferredSettingTarget
+  timer: ReturnType<typeof setTimeout>
+}
+
+const pendingDeferredSettingWrites = new Map<string, PendingDeferredSettingWrite>()
+registerPendingBridgePatchFlusher('setting-renderer-inputs', flushDeferredSettingWrites)
 
 export function getLabel(item: SettingItem): string {
   if (item.labelKey && (language as any)[item.labelKey]) {
@@ -60,19 +124,252 @@ export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingCo
   const previousValue = getSettingValue(item, ctx)
   const commandPatch = buildServerSettingsPatch(item)
 
-  withTrustedServerProjectionWrite(() => {
-    setLocalSettingValue(item, newValue, ctx)
-  })
-
-  if (item.onChange) {
-    item.onChange(newValue, ctx)
-  }
+  writeLocalSettingValue(item, newValue, ctx)
 
   const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue, ctx)
 
   if (commandPatch && !mirroredToPreset) {
     void patchServerBackedSetting(item, commandPatch, newValue, previousValue, ctx)
   }
+}
+
+/**
+ * Optimistically update a continuous input while delaying its durable command.
+ * Writes sharing the same server-owned root and preset owner share one timer,
+ * so nested controls cannot race independent whole-root patches.
+ */
+export function setDeferredSettingValue(
+  item: SettingItem,
+  newValue: any,
+  ctx: SettingContext,
+  options: { delayMs?: number } = {},
+): DeferredSettingWriteResult {
+  const target = resolveDeferredSettingTarget(item, ctx)
+  const previousRoot = target ? currentDeferredSettingTargetValue(target) : undefined
+
+  writeLocalSettingValue(item, newValue, ctx)
+
+  if (!target) {
+    return { ownerKey: localSettingOwnerKey(item), queued: false }
+  }
+
+  return {
+    ownerKey: target.ownerKey,
+    queued: queueDeferredSettingWrite(
+      target,
+      previousRoot,
+      deferredSettingPath(item),
+      newValue,
+      options.delayMs ?? DEFERRED_SETTING_INPUT_DELAY_MS,
+    ),
+  }
+}
+
+/** Reapply a dirty control after a projection without scheduling another command. */
+export function reassertSettingValue(item: SettingItem, value: any, ctx: SettingContext): void {
+  if (snapshotJson(getSettingValue(item, ctx)) === snapshotJson(value)) return
+  writeLocalSettingValue(item, cloneJsonValue(value), ctx)
+}
+
+export function getSettingWriteOwnerKey(item: SettingItem, ctx: SettingContext): string {
+  return resolveDeferredSettingTarget(item, ctx)?.ownerKey ?? localSettingOwnerKey(item)
+}
+
+export function flushDeferredSettingWrites(options: ServerCommandTransportOptions = {}): void {
+  for (const ownerKey of [...pendingDeferredSettingWrites.keys()]) {
+    dispatchDeferredSettingWrite(ownerKey, options)
+  }
+}
+
+export function clearDeferredSettingWrites(): void {
+  for (const pending of pendingDeferredSettingWrites.values()) {
+    clearTimeout(pending.timer)
+  }
+  pendingDeferredSettingWrites.clear()
+}
+
+function writeLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
+  withTrustedServerProjectionWrite(() => {
+    setLocalSettingValue(item, newValue, ctx)
+  })
+
+  item.onChange?.(newValue, ctx)
+}
+
+function resolveDeferredSettingTarget(item: SettingItem, ctx: SettingContext): DeferredSettingTarget | null {
+  const rootKey = settingRootKey(item)
+  if (!rootKey) return null
+
+  if (ctx.presetMirrorTarget === 'promptModelOverrides' && promptPresetModelOverrideFieldForDatabaseKey(rootKey)) {
+    const target = resolvePromptPresetModelOverrideMirrorTarget(rootKey)
+    if (target) {
+      return {
+        kind: 'promptOverride',
+        ownerKey: `promptPreset:${target.presetId}:${target.presetField}`,
+        rootKey,
+        target,
+      }
+    }
+    return resolveDeferredServerSettingTarget(rootKey)
+  }
+
+  const presetTarget = resolveTopLevelPresetFieldMirrorTarget(rootKey)
+  if (presetTarget) {
+    return {
+      kind: 'preset',
+      ownerKey: `${presetTarget.kind}Preset:${presetTarget.presetId}:${presetTarget.presetKey}`,
+      rootKey,
+      target: presetTarget,
+    }
+  }
+
+  return resolveDeferredServerSettingTarget(rootKey)
+}
+
+function resolveDeferredServerSettingTarget(rootKey: string): DeferredServerSettingTarget | null {
+  if (!canUseServerCommands() || !settingsGroupForKey(rootKey)) return null
+  return { kind: 'server', ownerKey: `settings:${rootKey}`, rootKey }
+}
+
+function currentDeferredSettingTargetValue(target: DeferredSettingTarget): unknown {
+  if (target.kind === 'server') {
+    return cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.rootKey])
+  }
+  if (target.kind === 'promptOverride') {
+    return currentPromptPresetModelOverrideMirrorValue(target.target)
+  }
+  const value = currentTopLevelPresetFieldMirrorValue(target.target)
+  return value === undefined
+    ? cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.rootKey])
+    : value
+}
+
+function queueDeferredSettingWrite(
+  target: DeferredSettingTarget,
+  previousRoot: unknown,
+  path: string[],
+  value: unknown,
+  delayMs: number,
+): boolean {
+  const existing = pendingDeferredSettingWrites.get(target.ownerKey)
+  if (existing) clearTimeout(existing.timer)
+
+  const edits = existing?.edits ?? new Map<string, DeferredSettingEdit>()
+  const editKey = path.join('\u0000')
+  if (path.length === 0) edits.clear()
+  edits.set(editKey, { path, value: cloneJsonValue(value) })
+
+  let desiredRoot = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.rootKey])
+  for (const edit of edits.values()) {
+    desiredRoot = applyDeferredSettingEdit(desiredRoot, edit)
+  }
+
+  const baseline = existing?.previousRoot ?? cloneJsonValue(previousRoot)
+  if (snapshotJson(desiredRoot) === snapshotJson(baseline)) {
+    pendingDeferredSettingWrites.delete(target.ownerKey)
+    return false
+  }
+
+  const pending: PendingDeferredSettingWrite = {
+    desiredRoot: cloneJsonValue(desiredRoot),
+    edits,
+    previousRoot: baseline,
+    target,
+    timer: setTimeout(() => dispatchDeferredSettingWrite(target.ownerKey), delayMs),
+  }
+  pendingDeferredSettingWrites.set(target.ownerKey, pending)
+  return true
+}
+
+function applyDeferredSettingEdit(root: unknown, edit: DeferredSettingEdit): unknown {
+  if (edit.path.length === 0) return cloneJsonValue(edit.value)
+
+  const nextRoot = root && typeof root === 'object' ? cloneJsonValue(root) : {}
+  let target = nextRoot as Record<string, unknown>
+  for (const part of edit.path.slice(0, -1)) {
+    const child = target[part]
+    target[part] = child && typeof child === 'object' ? child : {}
+    target = target[part] as Record<string, unknown>
+  }
+  target[edit.path[edit.path.length - 1]] = cloneJsonValue(edit.value)
+  return nextRoot
+}
+
+function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTransportOptions = {}): void {
+  const pending = pendingDeferredSettingWrites.get(ownerKey)
+  if (!pending) return
+  clearTimeout(pending.timer)
+  pendingDeferredSettingWrites.delete(ownerKey)
+
+  const attemptedRoot = cloneJsonValue(pending.desiredRoot)
+  if (pending.target.kind === 'preset') {
+    mirrorTopLevelPresetFieldToTarget(pending.target.target, attemptedRoot)
+    return
+  }
+  if (pending.target.kind === 'promptOverride') {
+    mirrorPromptPresetModelOverrideFieldToTarget(pending.target.target, attemptedRoot)
+    return
+  }
+  const serverTarget = pending.target
+  if (attemptedRoot === undefined) {
+    rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits)
+    return
+  }
+
+  void patchServerBackedSettings({
+    patch: { [serverTarget.rootKey]: attemptedRoot },
+    keepalive: options.keepalive,
+    signal: options.signal,
+    rollback: () => rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits),
+  })
+}
+
+function rollbackDeferredServerSetting(
+  target: DeferredServerSettingTarget,
+  attemptedRoot: unknown,
+  previousRoot: unknown,
+  edits: Map<string, DeferredSettingEdit>,
+): void {
+  const currentRoot = (DBState.db as unknown as Record<string, unknown>)[target.rootKey]
+  let restoredRoot = cloneJsonValue(currentRoot)
+  let changed = false
+
+  for (const edit of edits.values()) {
+    const currentValue = valueAtDeferredSettingPath(currentRoot, edit.path)
+    const attemptedValue = valueAtDeferredSettingPath(attemptedRoot, edit.path)
+    if (snapshotJson(currentValue) !== snapshotJson(attemptedValue)) continue
+    const previousValue = valueAtDeferredSettingPath(previousRoot, edit.path)
+    restoredRoot = applyDeferredSettingEdit(restoredRoot, { path: edit.path, value: previousValue })
+    changed = true
+  }
+
+  if (!changed) return
+  withTrustedServerProjectionWrite(() => {
+    ;(DBState.db as unknown as Record<string, unknown>)[target.rootKey] = restoredRoot
+  })
+}
+
+function valueAtDeferredSettingPath(root: unknown, path: string[]): unknown {
+  let value = root
+  for (const part of path) {
+    if (!value || typeof value !== 'object') return undefined
+    value = (value as Record<string, unknown>)[part]
+  }
+  return value
+}
+
+function settingRootKey(item: SettingItem): string | null {
+  if (item.bindPath) return item.bindPath.split('.')[0] ?? null
+  const key = item.bindKey ?? serverPatchKeyForItem(item)
+  return key ? String(key) : null
+}
+
+function deferredSettingPath(item: SettingItem): string[] {
+  return item.bindPath ? item.bindPath.split('.').slice(1) : []
+}
+
+function localSettingOwnerKey(item: SettingItem): string {
+  return `local:${item.id}`
 }
 
 function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown, ctx: SettingContext): boolean {
@@ -211,6 +508,11 @@ function serverPatchKeyForItem(item: SettingItem): string | null {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
 /**

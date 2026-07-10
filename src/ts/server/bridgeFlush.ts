@@ -5,8 +5,10 @@ import { flushPendingServerBackedChatPatches } from './chatBridge.svelte'
 import { flushPendingServerBackedLorebookPatches } from './lorebookBridge.svelte'
 import { flushPendingPromptTemplatePatches } from './promptTemplateBridge.svelte'
 import { flushPendingServerBackedScriptDefinitionPatches } from './scriptDefinitionBridge.svelte'
+import { flushRegisteredPendingBridgePatches } from './pendingBridgeFlushRegistry'
 
 export function flushAllPendingBridgePatches(options: ServerCommandTransportOptions = {}): void {
+  flushRegisteredPendingBridgePatches(options)
   flushPendingServerBackedSettingsPatch(options)
   flushPendingServerBackedCharacterPatches(options)
   flushPendingServerBackedChatPatches(options)

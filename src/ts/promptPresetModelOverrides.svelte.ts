@@ -23,6 +23,12 @@ export interface PromptPresetModelOverrideDraft<T> {
   value: T
 }
 
+export interface PromptPresetModelOverrideMirrorTarget {
+  databaseKey: string
+  presetField: string
+  presetId: string
+}
+
 export function promptPresetModelOverrideEnabled(group: OverrideGroup): boolean {
   const preset = selectedPromptPreset()
   const enabledByGroup: Record<OverrideGroup, boolean> = {
@@ -124,9 +130,45 @@ export function currentPromptPresetModelOverrideValue<T>(databaseKey: string, fa
 }
 
 export function mirrorPromptPresetModelOverrideField(databaseKey: string, value: unknown): boolean {
+  const target = resolvePromptPresetModelOverrideMirrorTarget(databaseKey)
+  return target ? mirrorPromptPresetModelOverrideFieldToTarget(target, value) : false
+}
+
+/** Capture the prompt-preset identity for a delayed renderer write. */
+export function resolvePromptPresetModelOverrideMirrorTarget(
+  databaseKey: string,
+): PromptPresetModelOverrideMirrorTarget | null {
   const presetField = promptPresetModelOverrideFieldForDatabaseKey(databaseKey)
-  if (!presetField || value === undefined) return false
-  return updateSelectedPromptPresetField(presetField, value)
+  if (!presetField) return null
+  const selectedIndex = DBState.db.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return null
+  const presetId = DBState.db.promptPresets?.[selectedIndex]?.id
+  if (!presetId) return null
+  return { databaseKey, presetField, presetId }
+}
+
+export function currentPromptPresetModelOverrideMirrorValue(target: PromptPresetModelOverrideMirrorTarget): unknown {
+  const preset = DBState.db.promptPresets?.find((candidate) => candidate?.id === target.presetId) as
+    | Record<string, unknown>
+    | undefined
+  if (!preset) return undefined
+  if (Object.prototype.hasOwnProperty.call(preset, target.presetField)) {
+    return cloneJsonValue(preset[target.presetField])
+  }
+  return cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.databaseKey])
+}
+
+export function mirrorPromptPresetModelOverrideFieldToTarget(
+  target: PromptPresetModelOverrideMirrorTarget,
+  value: unknown,
+): boolean {
+  if (value === undefined) return false
+  const index = DBState.db.promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+  if (index < 0) return false
+  const preset = DBState.db.promptPresets[index] as Record<string, unknown>
+  if (snapshotJson(preset[target.presetField]) === snapshotJson(value)) return false
+  updatePromptPreset(index, { [target.presetField]: cloneJsonValue(value) } as Partial<PromptPreset>)
+  return true
 }
 
 export function updateSelectedPromptPresetField(presetField: string, value: unknown): boolean {

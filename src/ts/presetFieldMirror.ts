@@ -14,17 +14,71 @@ const PROMPT_DATABASE_KEY_TO_PRESET_KEY: Record<string, string> = {
 const MODEL_PRESET_FIELD_SET = new Set<string>(MODEL_PRESET_FIELDS)
 const PROMPT_PRESET_FIELD_SET = new Set<string>(PROMPT_PRESET_FIELDS)
 
+export type TopLevelPresetFieldMirrorTarget =
+  | {
+      kind: 'model'
+      databaseKey: string
+      presetKey: string
+      presetId: string
+    }
+  | {
+      kind: 'prompt'
+      databaseKey: string
+      presetKey: string
+      presetId: string
+    }
+
 export function mirrorTopLevelPresetField(key: string, value: unknown): boolean {
+  const target = resolveTopLevelPresetFieldMirrorTarget(key)
+  return target ? mirrorTopLevelPresetFieldToTarget(target, value) : false
+}
+
+/**
+ * Resolve the selected preset once so delayed settings writes keep targeting
+ * the preset the user actually edited, even if selection changes meanwhile.
+ */
+export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPresetFieldMirrorTarget | null {
   const modelPresetKey = modelPresetKeyForDatabaseKey(key)
   if (modelPresetKey) {
-    return mirrorSelectedModelPresetField(modelPresetKey, value)
+    const index = DBState.db.modelPresetsId
+    const presetId = Number.isInteger(index) && index >= 0 ? DBState.db.modelPresets?.[index]?.id : undefined
+    if (!presetId) return null
+    return { kind: 'model', databaseKey: key, presetKey: modelPresetKey, presetId }
   }
 
   const promptPresetKey = promptPresetKeyForDatabaseKey(key)
   if (promptPresetKey) {
-    return mirrorSelectedPromptPresetField(promptPresetKey, value)
+    const index = DBState.db.promptPresetsId
+    const presetId = Number.isInteger(index) && index >= 0 ? DBState.db.promptPresets?.[index]?.id : undefined
+    if (!presetId) return null
+    return { kind: 'prompt', databaseKey: key, presetKey: promptPresetKey, presetId }
   }
-  return false
+  return null
+}
+
+export function currentTopLevelPresetFieldMirrorValue(target: TopLevelPresetFieldMirrorTarget): unknown {
+  const presets = target.kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets
+  const preset = presets?.find((candidate) => candidate?.id === target.presetId) as Record<string, unknown> | undefined
+  if (!preset) return undefined
+  return cloneJsonValue(preset[target.presetKey])
+}
+
+export function mirrorTopLevelPresetFieldToTarget(target: TopLevelPresetFieldMirrorTarget, value: unknown): boolean {
+  if (target.kind === 'model') {
+    const index = DBState.db.modelPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+    if (index < 0) return false
+    const preset = DBState.db.modelPresets[index] as Record<string, unknown>
+    if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return false
+    updateModelPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<ModelPreset>)
+    return true
+  }
+
+  const index = DBState.db.promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+  if (index < 0) return false
+  const preset = DBState.db.promptPresets[index] as Record<string, unknown>
+  if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return false
+  updatePromptPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<PromptPreset>)
+  return true
 }
 
 function modelPresetKeyForDatabaseKey(key: string): string | null {
@@ -36,26 +90,6 @@ function promptPresetKeyForDatabaseKey(key: string): string | null {
   if (key === 'promptTemplate') return null
   if (key in PROMPT_DATABASE_KEY_TO_PRESET_KEY) return PROMPT_DATABASE_KEY_TO_PRESET_KEY[key]
   return PROMPT_PRESET_FIELD_SET.has(key) ? key : null
-}
-
-function mirrorSelectedModelPresetField(key: string, value: unknown): boolean {
-  const index = DBState.db.modelPresetsId
-  if (!Number.isInteger(index) || index < 0) return false
-  const preset = DBState.db.modelPresets?.[index] as Record<string, unknown> | undefined
-  if (!preset) return false
-  if (snapshotJson(preset[key]) === snapshotJson(value)) return false
-  updateModelPreset(index, { [key]: cloneJsonValue(value) } as Partial<ModelPreset>)
-  return true
-}
-
-function mirrorSelectedPromptPresetField(key: string, value: unknown): boolean {
-  const index = DBState.db.promptPresetsId
-  if (!Number.isInteger(index) || index < 0) return false
-  const preset = DBState.db.promptPresets?.[index] as Record<string, unknown> | undefined
-  if (!preset) return false
-  if (snapshotJson(preset[key]) === snapshotJson(value)) return false
-  updatePromptPreset(index, { [key]: cloneJsonValue(value) } as Partial<PromptPreset>)
-  return true
 }
 
 function snapshotJson(value: unknown): string {

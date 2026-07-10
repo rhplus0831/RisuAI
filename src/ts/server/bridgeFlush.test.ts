@@ -1,12 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const calls = vi.hoisted(() => ({
+  settingInputs: [] as unknown[],
   settings: [] as unknown[],
   character: [] as unknown[],
   chat: [] as unknown[],
   lorebook: [] as unknown[],
   promptTemplate: [] as unknown[],
   scriptDefinition: [] as unknown[],
+}))
+
+vi.mock('./pendingBridgeFlushRegistry', () => ({
+  flushRegisteredPendingBridgePatches: vi.fn((options: unknown) => {
+    calls.settingInputs.push(options)
+  }),
 }))
 
 vi.mock('./settingsBridge.svelte', () => ({
@@ -48,7 +55,15 @@ vi.mock('./scriptDefinitionBridge.svelte', () => ({
 import { flushAllPendingBridgePatches, startBridgePatchLifecycleFlush } from './bridgeFlush'
 
 function allCallBuckets(): unknown[][] {
-  return [calls.settings, calls.character, calls.chat, calls.lorebook, calls.promptTemplate, calls.scriptDefinition]
+  return [
+    calls.settingInputs,
+    calls.settings,
+    calls.character,
+    calls.chat,
+    calls.lorebook,
+    calls.promptTemplate,
+    calls.scriptDefinition,
+  ]
 }
 
 beforeEach(() => {

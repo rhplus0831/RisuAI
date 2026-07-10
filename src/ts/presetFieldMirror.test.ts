@@ -18,7 +18,11 @@ vi.mock('./stores.svelte', () => ({
   DBState: dbState,
 }))
 
-import { mirrorTopLevelPresetField } from './presetFieldMirror'
+import {
+  mirrorTopLevelPresetField,
+  mirrorTopLevelPresetFieldToTarget,
+  resolveTopLevelPresetFieldMirrorTarget,
+} from './presetFieldMirror'
 import { DBState } from './stores.svelte'
 
 describe('mirrorTopLevelPresetField', () => {
@@ -54,5 +58,16 @@ describe('mirrorTopLevelPresetField', () => {
 
     expect(presetUpdateState.updatePromptPreset).toHaveBeenCalledWith(0, { mainPrompt: 'new prompt' })
     expect(presetUpdateState.updateModelPreset).not.toHaveBeenCalled()
+  })
+
+  it('keeps a delayed mirror bound to the preset id captured before selection changes', () => {
+    ;(DBState.db as any).modelPresets.push({ id: 'model-b', name: 'Model B', temperature: 0.2 })
+    const target = resolveTopLevelPresetFieldMirrorTarget('temperature')
+
+    ;(DBState.db as any).modelPresetsId = 1
+    expect(target).toMatchObject({ kind: 'model', presetId: 'model-a', presetKey: 'temperature' })
+    expect(mirrorTopLevelPresetFieldToTarget(target!, 0.95)).toBe(true)
+
+    expect(presetUpdateState.updateModelPreset).toHaveBeenCalledWith(0, { temperature: 0.95 })
   })
 })

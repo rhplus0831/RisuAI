@@ -11,6 +11,14 @@ import { updateTextThemeAndCSS } from '../gui/colorscheme'
 import { CustomGUISettingMenuStore } from '../stores.svelte'
 import { MAX_CHAT_DISPLAY_TAIL_COUNT, MIN_CHAT_DISPLAY_TAIL_COUNT } from '../chatDisplayTailCount'
 
+/** Display fields edited by custom controls rather than SettingRenderer wrappers. */
+export const displayNonRendererServerSettingKeys = [
+  'colorScheme',
+  'colorSchemeName',
+  'customBackground',
+  'customTextTheme',
+] as const
+
 export const displayThemeSettingsItems: SettingItem[] = [
   {
     id: 'display.theme',

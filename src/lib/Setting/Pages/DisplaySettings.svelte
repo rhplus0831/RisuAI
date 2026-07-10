@@ -3,6 +3,7 @@
   import { DBState } from 'src/ts/stores.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import {
+    displayNonRendererServerSettingKeys,
     displayOtherSettingsItems,
     displaySizeSettingsItems,
     displayThemeSettingsItems,
@@ -12,21 +13,7 @@
 
   let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
 
-  const displaySettingKeys = [
-    ...displayThemeSettingsItems,
-    ...displaySizeSettingsItems,
-    ...displayOtherSettingsItems,
-  ].flatMap((item) => ('bindKey' in item && typeof item.bindKey === 'string' ? [item.bindKey] : []))
-
-  const stopServerSettingsWatch = watchServerBackedSettings([
-    ...displaySettingKeys,
-    'colorScheme',
-    'colorSchemeName',
-    'customBackground',
-    'customTextTheme',
-    'textTheme',
-    'useLegacyGUI',
-  ])
+  const stopServerSettingsWatch = watchServerBackedSettings(displayNonRendererServerSettingKeys)
   onDestroy(stopServerSettingsWatch)
 </script>
 

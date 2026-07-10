@@ -1,3 +1,4 @@
+import { flushSync, mount, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../platform', async (importActual) => {
@@ -13,7 +14,7 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision, settingsGroupForKey } from '../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setServerProjectionWriteGuardEnabled, withServerProjectionApply } from '../server/projectionWriteGuard.svelte'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { DBState } from '../stores.svelte'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
@@ -26,15 +27,27 @@ import {
   seedSetting,
 } from './botSettingsParamsData'
 import { chatFormatSettingsItems } from './chatFormatSettingsData'
-import { displayOtherSettingsItems, displaySettingsItems } from './displaySettingsData.svelte'
+import {
+  displayNonRendererServerSettingKeys,
+  displayOtherSettingsItems,
+  displaySettingsItems,
+} from './displaySettingsData.svelte'
 import { languageSettingsItems } from './languageSettingsData.svelte'
 import type { SettingContext, SettingItem } from './types'
-import { setSettingValue } from './utils'
+import {
+  clearDeferredSettingWrites,
+  DEFERRED_SETTING_INPUT_DELAY_MS,
+  flushDeferredSettingWrites,
+  setDeferredSettingValue,
+  setSettingValue,
+} from './utils'
+import SettingInputDraftHarness from 'src/lib/Setting/testHarness/SettingInputDraftHarness.svelte'
 
 interface CapturedFetch {
   url: string
   method: string
   body: unknown
+  keepalive?: boolean
 }
 
 const settingRendererItemSets: SettingItem[][] = [
@@ -64,12 +77,37 @@ function stubSettingsFetch(): CapturedFetch[] {
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
-      calls.push({ url, method: init.method ?? 'GET', body })
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body,
+        ...(init.keepalive ? { keepalive: true } : {}),
+      })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 4 })
       if (url === '/api/v1/commands/settings/display') {
         return jsonResponse({ error: 'revision_conflict', currentRevision: 8 }, 409)
       }
       return jsonResponse({ revision: 9, event: { type: 'settings.updated' } })
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function stubSuccessfulSettingsFetch(): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body,
+        ...(init.keepalive ? { keepalive: true } : {}),
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 4 })
+      return jsonResponse({ revision: 5, event: { type: 'settings.updated' } })
     }) as unknown as typeof fetch,
   )
   return calls
@@ -111,7 +149,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearDeferredSettingWrites()
   vi.unstubAllGlobals()
+  vi.useRealTimers()
   setServerProjectionWriteGuardEnabled(false)
 })
 
@@ -131,6 +171,16 @@ describe('server-backed data-driven settings', () => {
 
     expect(displayItems.some((item) => item.id === 'display.hideApiKey')).toBe(false)
     expect(displayItems.some((item) => item.bindKey === 'hideApiKey')).toBe(false)
+  })
+
+  it('keeps Display custom-control watchers disjoint from renderer-owned bindings', () => {
+    const rendererKeys = new Set(
+      collectSettingItems(displaySettingsItems).flatMap((item) =>
+        item.bindPath ? [item.bindPath.split('.')[0]] : item.bindKey ? [String(item.bindKey)] : [],
+      ),
+    )
+
+    expect(displayNonRendererServerSettingKeys.filter((key) => rendererKeys.has(key))).toEqual([])
   })
 
   it('renders data-driven translator secrets as hidden text fields', () => {
@@ -217,5 +267,158 @@ describe('server-backed data-driven settings', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(DBState.db.notification).toBe(true)
+  })
+
+  it('keeps the latest rapid text draft through an intermediate projection and sends only the final value', async () => {
+    vi.useFakeTimers()
+    const calls = stubSuccessfulSettingsFetch()
+    DBState.db = {
+      guiHTML: 'server initial',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof typeof DBState.db,
+    }
+    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const target = document.createElement('div')
+    const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'text' } })
+    flushSync()
+    const input = target.querySelector<HTMLInputElement>('[data-setting-input-draft]')!
+
+    for (const value of ['l', 'lo', 'local final']) {
+      input.value = value
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      flushSync()
+    }
+
+    expect(DBState.db.guiHTML).toBe('local final')
+    expect(calls).toEqual([])
+
+    withServerProjectionApply(() => {
+      DBState.db.guiHTML = 'server intermediate'
+    })
+    flushSync()
+
+    expect(input.value).toBe('local final')
+    expect(DBState.db.guiHTML).toBe('local final')
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await Promise.resolve()
+
+    const patches = calls.filter((call) => call.url === '/api/v1/commands/settings/display')
+    expect(patches).toHaveLength(1)
+    expect(patches[0].body).toMatchObject({ patch: { guiHTML: 'local final' } })
+    unmount(component)
+  })
+
+  it('bounds rapid slider persistence to one dispatch with the final value', async () => {
+    vi.useFakeTimers()
+    const calls = stubSuccessfulSettingsFetch()
+    DBState.db = {
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+      zoomsize: 50,
+    } as any
+    const item: SettingItem = {
+      id: 'display.zoomsize',
+      type: 'slider',
+      bindKey: 'zoomsize' as keyof typeof DBState.db,
+    }
+    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const target = document.createElement('div')
+    const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'slider' } })
+    flushSync()
+    const input = target.querySelector<HTMLInputElement>('[data-setting-input-draft]')!
+
+    for (let value = 51; value <= 150; value += 1) {
+      input.value = String(value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      flushSync()
+    }
+
+    expect(DBState.db.zoomsize).toBe(150)
+    expect(calls).toEqual([])
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await Promise.resolve()
+
+    const patches = calls.filter((call) => call.url === '/api/v1/commands/settings/display')
+    expect(patches).toHaveLength(1)
+    expect(patches[0].body).toMatchObject({ patch: { zoomsize: 150 } })
+    unmount(component)
+  })
+
+  it('coalesces sibling bind paths into one effective-root patch', async () => {
+    vi.useFakeTimers()
+    const calls = stubSuccessfulSettingsFetch()
+    DBState.db = {
+      deeplOptions: { key: 'old key', proxy: 'old proxy' },
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any
+    const keyItem: SettingItem = {
+      id: 'language.deepl.key',
+      type: 'text',
+      bindPath: 'deeplOptions.key',
+    }
+    const proxyItem: SettingItem = {
+      id: 'language.deepl.proxy',
+      type: 'text',
+      bindPath: 'deeplOptions.proxy',
+    }
+    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(keyItem, 'final key', ctx)
+    setDeferredSettingValue(proxyItem, 'final proxy', ctx)
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await Promise.resolve()
+
+    const patches = calls.filter((call) => call.url.startsWith('/api/v1/commands/settings/'))
+    expect(patches).toHaveLength(1)
+    expect(patches[0].body).toMatchObject({
+      patch: { deeplOptions: { key: 'final key', proxy: 'final proxy' } },
+    })
+  })
+
+  it('flushes the final deferred input with keepalive before its timer fires', async () => {
+    vi.useFakeTimers()
+    const calls = stubSuccessfulSettingsFetch()
+    DBState.db = {
+      guiHTML: 'before',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof typeof DBState.db,
+    }
+    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 'last keystroke', ctx)
+    flushDeferredSettingWrites({ keepalive: true })
+    await vi.advanceTimersByTimeAsync(0)
+
+    const patches = calls.filter((call) => call.url === '/api/v1/commands/settings/display')
+    expect(patches).toHaveLength(1)
+    expect(patches[0]).toMatchObject({
+      body: { patch: { guiHTML: 'last keystroke' } },
+      keepalive: true,
+    })
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    expect(calls.filter((call) => call.url === '/api/v1/commands/settings/display')).toHaveLength(1)
   })
 })
