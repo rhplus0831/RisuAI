@@ -80,6 +80,7 @@ import {
   startPromptTemplateHydration,
 } from './server/promptTemplateHydration'
 import { enableChatCompletionPushNotifications } from './server/pushNotifications'
+import { mergePendingPluginStorageProjection } from './pluginCommands'
 
 const SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS = 30_000
@@ -494,17 +495,18 @@ async function processServerCommandEvent(
       return
     }
     if (result.status === 'ok' && result.mode === 'fields') {
-      const selectedCharacterBeforeMerge = captureSelectedCharacterBeforeBroadProjection(result.fields)
+      const fields = preservePendingFieldEdits(result.fields)
+      const selectedCharacterBeforeMerge = captureSelectedCharacterBeforeBroadProjection(fields)
       if (event.resource === 'promptItem') {
         const ownerId = event.parentId ?? null
-        if (!applyPromptTemplateProjectionFields(result.fields, ownerId)) {
+        if (!applyPromptTemplateProjectionFields(fields, ownerId)) {
           await reconcileCommandEventWithFullResync('projection-error', event, options)
           return
         }
         markPromptTemplateProjectionApplied(ownerId)
       } else {
-        mergeServerProjectionFields(result.fields)
-        if (Object.prototype.hasOwnProperty.call(result.fields, 'promptTemplate')) {
+        mergeServerProjectionFields(fields)
+        if (Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) {
           markPromptTemplateProjectionApplied()
         }
       }
@@ -512,15 +514,15 @@ async function processServerCommandEvent(
       // the whole array, so it re-stubs EVERY chat, not just the open one.
       // Forget cached hydration so re-open or bulk reads refetch stale chats,
       // then re-hydrate the open chat eagerly.
-      if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
-        reconcileSelectedCharacterAfterBroadProjection(result.fields, selectedCharacterBeforeMerge)
+      if (Object.prototype.hasOwnProperty.call(fields, 'characters')) {
+        reconcileSelectedCharacterAfterBroadProjection(fields, selectedCharacterBeforeMerge)
         resetChatHydration()
         void hydrateActiveChat({ force: true })
         // The merge re-stubs every character's globalLore too: forget hydrated
         // marks, re-record from the freshly merged raw characters, then re-hydrate
         // the open character's globalLore (no-op unless stubs are on).
         resetLorebookHydration()
-        recordHydratedCharacterLorebooks(result.fields.characters)
+        recordHydratedCharacterLorebooks(fields.characters)
         void hydrateActiveCharacterLorebook({ force: true })
         triggerOpenChatGenerationReattach()
       }
@@ -545,6 +547,22 @@ async function processServerCommandEvent(
 interface SelectedCharacterBeforeBroadProjection {
   active: boolean
   characterId?: string
+}
+
+function preservePendingFieldEdits(fields: Partial<Database>): Partial<Database> {
+  const pluginCustomStorage = (fields as { pluginCustomStorage?: unknown }).pluginCustomStorage
+  if (
+    !Object.prototype.hasOwnProperty.call(fields, 'pluginCustomStorage') ||
+    !pluginCustomStorage ||
+    typeof pluginCustomStorage !== 'object' ||
+    Array.isArray(pluginCustomStorage)
+  ) {
+    return fields
+  }
+  return {
+    ...fields,
+    pluginCustomStorage: mergePendingPluginStorageProjection(pluginCustomStorage as Record<string, unknown>),
+  }
 }
 
 interface CharacterRowChatSnapshot {

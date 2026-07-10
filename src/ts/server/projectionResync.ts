@@ -11,6 +11,7 @@ import { hydrateActiveCharacterLorebook, hydrateActiveChat, resetChatHydration }
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './lorebookBridge.svelte'
 import { resetPromptTemplateHydration, startPromptTemplateHydration } from './promptTemplateHydration'
 import { recordFullBootstrapResync } from './protocolDiagnostics'
+import { preservePendingPluginStorageInDatabase } from '../pluginCommands'
 
 export type ServerProjectionResyncResult =
   | { status: 'ok'; revision: number }
@@ -78,9 +79,10 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
         latestResult = { status: 'error', error }
         continue
       }
-      applyServerProjectionDatabase(bootstrap.projection.database)
+      const database = preservePendingPluginStorageInDatabase(bootstrap.projection.database)
+      applyServerProjectionDatabase(database)
       resetPromptTemplateHydration()
-      syncSelectedCharacterAfterResync(bootstrap.projection.database)
+      syncSelectedCharacterAfterResync(database)
       setCachedServerCommandRevision(bootstrap.projection.revision)
       setAppliedServerProjectionRevision(bootstrap.projection.revision)
       setActiveGenerationJobs(bootstrap.projection.activeGenerationJobs ?? [])
@@ -93,7 +95,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
       // marks from the fresh raw projection, then re-hydrate the open character
       // globalLore (no-op unless stubs are on).
       resetLorebookHydration()
-      recordHydratedCharacterLorebooks(rawProjectionCharacters(bootstrap.projection.database))
+      recordHydratedCharacterLorebooks(rawProjectionCharacters(database))
       await hydrateSelectedCharacterShell()
       void hydrateActiveChat({ force: true })
       void hydrateActiveCharacterLorebook({ force: true })

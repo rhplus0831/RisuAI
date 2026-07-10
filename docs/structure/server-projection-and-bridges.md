@@ -185,6 +185,10 @@ restore snapshots after failure. The guard swaps server-owned projection state
 into a writable working proxy for trusted writes, then refreezes it as a fresh
 read-only proxy.
 
+Plugin storage keeps pending operations keyed until their public command
+promises finish reconciliation. Targeted field merges and full resyncs replay
+the latest pending value/deletion over the incoming complete storage map.
+
 The guard also advances a projection-apply epoch. Settings, character, chat,
 lorebook, and script-definition bridge watchers use that epoch to refresh
 baselines after passive projection updates without echoing them back as

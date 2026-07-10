@@ -24,6 +24,8 @@ import {
   dispatchPluginSettingsPatch,
   dispatchPutPluginStorage,
   dispatchUpdatePlugin,
+  mergePendingPluginStorageProjection,
+  preservePendingPluginStorageInDatabase,
   setPluginArgument,
   togglePluginEnabled,
 } from './pluginCommands'
@@ -280,7 +282,7 @@ describe('plugin projection command helpers', () => {
     })
   })
 
-  it('failed same-argument writes roll back to the prior value when failures resolve out of order', async () => {
+  it('serialized same-argument failures preserve the newer queued edit before rolling back', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
@@ -288,7 +290,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 2)
 
     expect(setPluginArgument('plugin-a', 'mode', 'second')).toBe(true)
-    await waitForCallCount(calls, 3)
+    expect(calls).toHaveLength(2)
 
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/plugins/plugin-a',
@@ -300,6 +302,11 @@ describe('plugin projection command helpers', () => {
         },
       },
     })
+    commandResponses[0].resolve(jsonResponse({ error: 'forced older failure' }, 500))
+    await waitForCallCount(calls, 3)
+    await flushCommandEffects()
+
+    expect(DBState.db.plugins[0].realArg).toEqual({ mode: 'second', token: 'abc' })
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/plugins/plugin-a',
       method: 'PATCH',
@@ -310,11 +317,6 @@ describe('plugin projection command helpers', () => {
         },
       },
     })
-
-    commandResponses[0].resolve(jsonResponse({ error: 'forced older failure' }, 500))
-    await flushCommandEffects()
-
-    expect(DBState.db.plugins[0].realArg).toEqual({ mode: 'second', token: 'abc' })
 
     commandResponses[1].resolve(jsonResponse({ error: 'forced newer failure' }, 500))
     await flushCommandEffects()
@@ -604,7 +606,7 @@ describe('plugin projection command helpers', () => {
     })
   })
 
-  it('failed create followed by failed same-plugin update removes the never-persisted plugin after out-of-order responses', async () => {
+  it('failed create followed by queued failed update removes the never-persisted plugin', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
     const createPrevious = currentPluginStateSnapshot()
@@ -636,9 +638,10 @@ describe('plugin projection command helpers', () => {
       },
       updatePrevious,
     )
-    await waitForCallCount(calls, 3)
+    expect(calls).toHaveLength(2)
 
     commandResponses[0].resolve(jsonResponse({ error: 'forced create failure' }, 500))
+    await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
     expect(DBState.db.plugins.find((plugin) => plugin.name === 'plugin-created')).toEqual(
@@ -757,7 +760,7 @@ describe('plugin projection command helpers', () => {
     })
   })
 
-  it('failed delete followed by failed same-name create restores the original plugin after out-of-order responses', async () => {
+  it('failed delete followed by queued failed same-name create restores the original plugin', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
     const originalPlugins = cloneJsonValue(DBState.db.plugins)
@@ -779,9 +782,10 @@ describe('plugin projection command helpers', () => {
       DBState.db.plugins.push(newPlugin)
     })
     dispatchCreatePlugin(newPlugin, createPrevious)
-    await waitForCallCount(calls, 3)
+    expect(calls).toHaveLength(2)
 
     commandResponses[0].resolve(jsonResponse({ error: 'forced delete failure' }, 500))
+    await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
     expect(DBState.db.plugins.find((plugin) => plugin.name === 'plugin-a')).toEqual(newPlugin)
@@ -1099,6 +1103,68 @@ describe('plugin projection command helpers', () => {
     })
   })
 
+  it('overlays pending storage intent until successful command reconciliation settles', async () => {
+    const { calls, commandResponses } = stubDeferredCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    writePluginStorage({ attempted: { value: 'old' }, localSibling: true })
+    const previous = currentPluginStorageSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.pluginCustomStorage.attempted = { value: 'newer local' }
+    })
+    dispatchPutPluginStorage('attempted', { value: 'newer local' }, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(
+      mergePendingPluginStorageProjection({
+        attempted: { value: 'older projection' },
+        serverSibling: true,
+      }),
+    ).toEqual({
+      attempted: { value: 'newer local' },
+      serverSibling: true,
+    })
+    const projectedDatabase = {
+      pluginCustomStorage: { attempted: { value: 'older full projection' } },
+      language: 'en',
+    }
+    expect(preservePendingPluginStorageInDatabase(projectedDatabase)).toBe(projectedDatabase)
+    expect(projectedDatabase.pluginCustomStorage).toEqual({ attempted: { value: 'newer local' } })
+
+    commandResponses[0].resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'pluginStorage.updated', revision: 11, resource: 'pluginStorage', id: 'attempted' },
+      }),
+    )
+    await flushCommandEffects()
+
+    expect(mergePendingPluginStorageProjection({ attempted: { value: 'server final' } })).toEqual({
+      attempted: { value: 'server final' },
+    })
+  })
+
+  it('keeps a pending delete absent from an older whole-map projection', async () => {
+    const { calls, commandResponses } = stubDeferredCommandFetch()
+    setServerProjectionWriteGuardEnabled(true)
+    writePluginStorage({ deleted: { value: 'old' }, sibling: true })
+    const previous = currentPluginStorageSnapshot()
+
+    withTrustedServerProjectionWrite(() => {
+      delete DBState.db.pluginCustomStorage.deleted
+    })
+    dispatchDeletePluginStorage('deleted', previous)
+    await waitForCallCount(calls, 2)
+
+    expect(mergePendingPluginStorageProjection({ deleted: { value: 'stale' }, sibling: true })).toEqual({
+      sibling: true,
+    })
+
+    commandResponses[0].resolve(jsonResponse({ error: 'forced failure' }, 500))
+    await flushCommandEffects()
+    expect(DBState.db.pluginCustomStorage.deleted).toEqual({ value: 'old' })
+  })
+
   it('failed PUT skips rollback if the same key changed again', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     setServerProjectionWriteGuardEnabled(true)
@@ -1125,7 +1191,7 @@ describe('plugin projection command helpers', () => {
     })
   })
 
-  it('failed same-key PUTs roll back to the original value when the newer PUT fails first', async () => {
+  it('serialized failed same-key PUTs preserve the queued value before rolling back to the original', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
     writePluginStorage({
@@ -1147,7 +1213,7 @@ describe('plugin projection command helpers', () => {
     })
     dispatchPutPluginStorage('attempted', { value: 'B' }, secondPrevious)
 
-    await waitForCallCount(calls, 3)
+    expect(calls).toHaveLength(2)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/plugin-storage/attempted',
       method: 'PUT',
@@ -1155,6 +1221,14 @@ describe('plugin projection command helpers', () => {
         baseRevision: 10,
         value: { value: 'A' },
       },
+    })
+    commandResponses[0].resolve(jsonResponse({ error: 'forced older failure' }, 500))
+    await waitForCallCount(calls, 3)
+    await flushCommandEffects()
+
+    expect(DBState.db.pluginCustomStorage).toEqual({
+      attempted: { value: 'B' },
+      sibling: { value: 'kept' },
     })
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/plugin-storage/attempted',
@@ -1169,20 +1243,12 @@ describe('plugin projection command helpers', () => {
     await flushCommandEffects()
 
     expect(DBState.db.pluginCustomStorage).toEqual({
-      attempted: { value: 'A' },
-      sibling: { value: 'kept' },
-    })
-
-    commandResponses[0].resolve(jsonResponse({ error: 'forced older failure' }, 500))
-    await flushCommandEffects()
-
-    expect(DBState.db.pluginCustomStorage).toEqual({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
     })
   })
 
-  it('failed same-key PUTs roll back to the original value when the older PUT fails first', async () => {
+  it('a failed queued PUT rolls back to the value accepted by the preceding PUT', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
     writePluginStorage({
@@ -1204,9 +1270,15 @@ describe('plugin projection command helpers', () => {
     })
     dispatchPutPluginStorage('attempted', { value: 'B' }, secondPrevious)
 
-    await waitForCallCount(calls, 3)
+    expect(calls).toHaveLength(2)
 
-    commandResponses[0].resolve(jsonResponse({ error: 'forced older failure' }, 500))
+    commandResponses[0].resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'pluginStorage.updated', revision: 11, resource: 'pluginStorage', id: 'attempted' },
+      }),
+    )
+    await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
     expect(DBState.db.pluginCustomStorage).toEqual({
@@ -1214,11 +1286,18 @@ describe('plugin projection command helpers', () => {
       sibling: { value: 'kept' },
     })
 
+    expect(calls[2]).toMatchObject({
+      body: {
+        baseRevision: 11,
+        value: { value: 'B' },
+      },
+    })
+
     commandResponses[1].resolve(jsonResponse({ error: 'forced newer failure' }, 500))
     await flushCommandEffects()
 
     expect(DBState.db.pluginCustomStorage).toEqual({
-      attempted: { value: 'old' },
+      attempted: { value: 'A' },
       sibling: { value: 'kept' },
     })
   })

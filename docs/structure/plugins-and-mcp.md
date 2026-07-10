@@ -52,7 +52,9 @@ Plugin storage persists in the SQLite `plugin_custom_storage` table. Plugin
 records narrow targeted projection through the `plugin` resource, while
 `pluginStorage` projects the complete `pluginCustomStorage` map so key deletion,
 clear, and bulk replacement remove absent values without refreshing unrelated
-app state. Heavy plugin/module bodies may be stubbed in bootstrap and filled
+app state. Pending per-key put/delete/bulk intents stay registered through
+projection reconciliation and overlay both targeted and full refreshes, so an
+older response cannot erase a newer optimistic storage edit. Heavy plugin/module bodies may be stubbed in bootstrap and filled
 from the bootstrap-body-cache path.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or

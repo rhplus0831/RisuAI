@@ -8,6 +8,7 @@ const projectionResyncSpies = vi.hoisted(() => ({
   hydrateActiveCharacterLorebook: vi.fn(async () => undefined),
   hydrateActiveChat: vi.fn(async () => undefined),
   hydrateSelectedCharacterShell: vi.fn(async () => undefined),
+  preservePendingPluginStorageInDatabase: vi.fn((database: unknown) => database),
   recordFullBootstrapResync: vi.fn(),
   recordHydratedCharacterLorebooks: vi.fn(),
   resetChatHydration: vi.fn(),
@@ -57,6 +58,10 @@ vi.mock('../process/modules', () => ({
 
 vi.mock('./protocolDiagnostics', () => ({
   recordFullBootstrapResync: projectionResyncSpies.recordFullBootstrapResync,
+}))
+
+vi.mock('../pluginCommands', () => ({
+  preservePendingPluginStorageInDatabase: projectionResyncSpies.preservePendingPluginStorageInDatabase,
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'
@@ -147,6 +152,7 @@ beforeEach(() => {
   projectionResyncSpies.hydrateActiveCharacterLorebook.mockClear()
   projectionResyncSpies.hydrateActiveChat.mockClear()
   projectionResyncSpies.hydrateSelectedCharacterShell.mockClear()
+  projectionResyncSpies.preservePendingPluginStorageInDatabase.mockClear()
   projectionResyncSpies.recordFullBootstrapResync.mockClear()
   projectionResyncSpies.recordHydratedCharacterLorebooks.mockClear()
   projectionResyncSpies.resetChatHydration.mockClear()
@@ -265,6 +271,7 @@ describe('forceServerProjectionResync', () => {
     expect(get(selectedCharID)).toBe(1)
     expect(peekCachedServerCommandRevision()).toBe(30)
     expect(peekAppliedServerProjectionRevision()).toBe(30)
+    expect(projectionResyncSpies.preservePendingPluginStorageInDatabase).toHaveBeenCalledTimes(1)
     expect(projectionResyncSpies.resetPromptTemplateHydration).toHaveBeenCalledTimes(1)
     expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith(activeGenerationJobs)
     expect(projectionResyncSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)

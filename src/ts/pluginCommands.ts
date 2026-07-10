@@ -821,38 +821,34 @@ export function dispatchPutPluginStorage(key: string, value: unknown, previous: 
   const attemptedValue = cloneJsonValue(value)
   const rollbackEntry = pluginStorageRollbackEntryForKey(previous, key, true, attemptedValue)
   const operation = issuePluginStorageOperation([rollbackEntry])
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await putPluginStorageCommand({
+  const pending = runPluginCommand(
+    (baseRevision) =>
+      putPluginStorageCommand({
         baseRevision,
         key,
         value: attemptedValue,
-      })
-      if (result.status === 'ok') {
-        clearPluginStorageOperation(operation)
-      }
-      return result
-    },
+      }),
     () => rollbackPluginStorageEntries([rollbackEntry], operation),
   )
+  void pending?.then((result) => {
+    if (result.status === 'ok') clearPluginStorageOperation(operation)
+  })
 }
 
 export function dispatchDeletePluginStorage(key: string, previous: PluginStorageSnapshot): void {
   const rollbackEntry = pluginStorageRollbackEntryForKey(previous, key, false, undefined)
   const operation = issuePluginStorageOperation([rollbackEntry])
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await deletePluginStorageCommand({
+  const pending = runPluginCommand(
+    (baseRevision) =>
+      deletePluginStorageCommand({
         baseRevision,
         key,
-      })
-      if (result.status === 'ok') {
-        clearPluginStorageOperation(operation)
-      }
-      return result
-    },
+      }),
     () => rollbackPluginStorageEntries([rollbackEntry], operation),
   )
+  void pending?.then((result) => {
+    if (result.status === 'ok') clearPluginStorageOperation(operation)
+  })
 }
 
 export function dispatchBulkPluginStorage(
@@ -875,21 +871,53 @@ export function dispatchBulkPluginStorage(
     previous,
   )
   const operation = issuePluginStorageOperation(rollbackEntries)
-  runPluginCommand(
-    async (baseRevision) => {
-      const result = await bulkPluginStorageCommand({
+  const pending = runPluginCommand(
+    (baseRevision) =>
+      bulkPluginStorageCommand({
         baseRevision,
         values,
         deleteKeys,
         clear: input.clear,
-      })
-      if (result.status === 'ok') {
-        clearPluginStorageOperation(operation)
-      }
-      return result
-    },
+      }),
     () => rollbackPluginStorageEntries(rollbackEntries, operation),
   )
+  void pending?.then((result) => {
+    if (result.status === 'ok') clearPluginStorageOperation(operation)
+  })
+}
+
+/**
+ * Replays the latest optimistic per-key storage intent over an authoritative
+ * projection. Operation records remain pending until the command's public
+ * promise finishes projection reconciliation, so a response that started
+ * earlier cannot erase a newer put/delete/bulk edit.
+ */
+export function mergePendingPluginStorageProjection(
+  projection: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const merged = cloneJsonValue(projection ?? {})
+  for (const [key, operations] of pendingPluginStorageOperationsByKey) {
+    const latest = operations.at(-1)
+    if (!latest) continue
+    if (latest.entry.attemptedExists) {
+      merged[key] = cloneJsonValue(latest.entry.attemptedValue)
+    } else {
+      delete merged[key]
+    }
+  }
+  return merged
+}
+
+export function preservePendingPluginStorageInDatabase<T extends { pluginCustomStorage?: unknown }>(database: T): T {
+  if (pendingPluginStorageOperationsByKey.size === 0) return database
+  const projected =
+    database.pluginCustomStorage &&
+    typeof database.pluginCustomStorage === 'object' &&
+    !Array.isArray(database.pluginCustomStorage)
+      ? (database.pluginCustomStorage as Record<string, unknown>)
+      : {}
+  database.pluginCustomStorage = mergePendingPluginStorageProjection(projected)
+  return database
 }
 
 function pluginStorageRollbackEntryForKey(
