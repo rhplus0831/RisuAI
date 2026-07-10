@@ -139,6 +139,8 @@ Prompt template projection notes:
 - `promptTemplateHydration.ts` can hydrate the selected/global owner or an
   explicitly requested prompt preset, such as a chat-scoped
   `generationSettings.promptPresetId`.
+- Prompt-item events apply to the `parentId` preset row. Only an event for the
+  currently selected owner may update the top-level compatibility mirror.
 - `DBState.db.promptTemplate` is retained as a compatibility projection/mirror
   for legacy callers and bridge reconciliation. It should not be treated as the
   normal editing or generation owner when a modern prompt preset resolves.

@@ -123,7 +123,9 @@ preset or an explicitly requested prompt-preset owner, and the browser keeps the
 top-level `DBState.db.promptTemplate` aligned only as a compatibility
 projection/mirror for legacy callers and bridge reconciliation. A selected
 modern prompt preset with no `promptTemplate` owns that disabled/missing state;
-it should not fall through to stale top-level data.
+it should not fall through to stale top-level data. Prompt-item command events
+carry their preset owner in `parentId`; background-owner projections update only
+that preset row and never replace the selected preset's compatibility mirror.
 
 Agent Preset projection is narrow for normal preset/default edits through
 `agentPreset`, returning `agentPresets` and `agentPresetDefaultId`. Deletes use

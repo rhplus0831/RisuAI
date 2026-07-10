@@ -76,13 +76,7 @@ export async function ensurePromptTemplateHydrated(
     }
 
     const fields = result.fields as Partial<Database>
-    const hasPromptTemplate = Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')
-    if (ownerId !== null && hasPromptTemplate) {
-      applyPromptPresetHydratedTemplate(ownerId, (fields as Record<string, unknown>).promptTemplate)
-    }
-    if (ownerIsCurrent || ownerId === null) {
-      mergeServerProjectionFields(fields)
-    }
+    if (!applyPromptTemplateProjectionFields(fields, ownerId)) return false
     markPromptTemplateProjectionApplied(ownerId)
     return true
   })().finally(() => {
@@ -99,19 +93,46 @@ function isOlderThanRevision(revision: number, comparisonRevision: number | null
   return comparisonRevision !== null && revision < comparisonRevision
 }
 
-function applyPromptPresetHydratedTemplate(ownerId: string, promptTemplate: unknown): void {
-  withServerProjectionApply(() => {
+/**
+ * Apply a prompt-item projection to its explicit preset owner. A background
+ * preset event must update that preset row without replacing the selected
+ * preset's top-level compatibility mirror.
+ */
+export function applyPromptTemplateProjectionFields(
+  fields: Partial<Database>,
+  ownerId: string | null = currentPromptTemplateOwnerId(),
+): boolean {
+  if (ownerId === null) {
+    mergeServerProjectionFields(fields)
+    return true
+  }
+
+  const hasPromptTemplate = Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')
+  const promptTemplate = (fields as Record<string, unknown>).promptTemplate
+  if (hasPromptTemplate && promptTemplate !== null && !Array.isArray(promptTemplate)) return false
+
+  return withServerProjectionApply(() => {
     const presets = DBState.db?.promptPresets
-    if (!Array.isArray(presets)) return
+    if (!Array.isArray(presets)) return false
     const preset = presets.find((candidate): candidate is PromptPreset => candidate?.id === ownerId)
-    if (!preset) return
-    if (promptTemplate === null) {
-      delete preset.promptTemplate
-      return
+    if (!preset) return false
+
+    if (hasPromptTemplate) {
+      if (promptTemplate === null) {
+        delete preset.promptTemplate
+      } else {
+        preset.promptTemplate = promptTemplate as PromptPreset['promptTemplate']
+      }
     }
-    if (Array.isArray(promptTemplate)) {
-      preset.promptTemplate = promptTemplate as PromptPreset['promptTemplate']
+
+    if (ownerId === currentPromptTemplateOwnerId() && hasPromptTemplate) {
+      if (promptTemplate === null) {
+        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+      } else {
+        DBState.db.promptTemplate = promptTemplate as Database['promptTemplate']
+      }
     }
+    return true
   })
 }
 

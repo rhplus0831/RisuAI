@@ -148,7 +148,15 @@ vi.mock('./server/projection', () => ({
   fetchServerChatMessages: vi.fn(),
 }))
 
-vi.mock('./server/promptTemplateHydration', () => promptTemplateHydrationSpies)
+vi.mock('./server/promptTemplateHydration', async (importActual) => {
+  const actual = await importActual<typeof import('./server/promptTemplateHydration')>()
+  return {
+    ...actual,
+    resetPromptTemplateHydration: promptTemplateHydrationSpies.resetPromptTemplateHydration,
+    startPromptTemplateHydration: promptTemplateHydrationSpies.startPromptTemplateHydration,
+    markPromptTemplateProjectionApplied: promptTemplateHydrationSpies.markPromptTemplateProjectionApplied,
+  }
+})
 
 vi.mock('./server/messageTranslationJobs', async (importActual) => {
   const actual = await importActual<typeof import('./server/messageTranslationJobs')>()
@@ -882,6 +890,57 @@ describe('web bootstrap startup source', () => {
     })
     expect(promptTemplateHydrationSpies.markPromptTemplateProjectionApplied).toHaveBeenCalledTimes(1)
     expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('applies a promptItem event to its preset owner without replacing the selected preset mirror', async () => {
+    const visibleTemplate = [{ id: 'visible', type: 'plain', text: 'selected body', role: 'system' }]
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [],
+          modules: [],
+          personas: [],
+          language: 'en',
+          promptPresetsId: 0,
+          promptPresets: [
+            { id: 'preset-a', name: 'Selected', promptTemplate: visibleTemplate },
+            { id: 'preset-b', name: 'Background' },
+          ],
+          promptTemplate: visibleTemplate,
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverProjectionState.fetchResource.mockResolvedValue({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: {
+        promptTemplate: [{ id: 'background', type: 'plain', text: 'background body', role: 'system' }],
+      },
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'prompt.item.updated',
+      revision: 6,
+      resource: 'promptItem',
+      id: 'background',
+      parentId: 'preset-b',
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('promptItem', {
+      id: 'background',
+      parentId: 'preset-b',
+    })
+    expect(DBState.db.promptPresets.find((preset) => preset.id === 'preset-b')?.promptTemplate).toEqual([
+      { id: 'background', type: 'plain', text: 'background body', role: 'system' },
+    ])
+    expect(DBState.db.promptTemplate).toEqual(visibleTemplate)
+    expect(promptTemplateHydrationSpies.markPromptTemplateProjectionApplied).toHaveBeenCalledWith('preset-b')
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
   it('applies a character-lorebook projection to one character without rehydrating chats', async () => {

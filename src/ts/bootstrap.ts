@@ -71,6 +71,7 @@ import {
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import {
+  applyPromptTemplateProjectionFields,
   markPromptTemplateProjectionApplied,
   resetPromptTemplateHydration,
   startPromptTemplateHydration,
@@ -495,9 +496,19 @@ async function processServerCommandEvent(
       return
     }
     if (result.status === 'ok' && result.mode === 'fields') {
-      mergeServerProjectionFields(result.fields)
-      if (event.resource === 'promptItem' || Object.prototype.hasOwnProperty.call(result.fields, 'promptTemplate')) {
-        markPromptTemplateProjectionApplied()
+      if (event.resource === 'promptItem') {
+        const ownerId = event.parentId ?? null
+        if (!applyPromptTemplateProjectionFields(result.fields, ownerId)) {
+          const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
+          if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+          return
+        }
+        markPromptTemplateProjectionApplied(ownerId)
+      } else {
+        mergeServerProjectionFields(result.fields)
+        if (Object.prototype.hasOwnProperty.call(result.fields, 'promptTemplate')) {
+          markPromptTemplateProjectionApplied()
+        }
       }
       // The `characters` fields are message-free stubs and the merge replaces
       // the whole array, so it re-stubs EVERY chat, not just the open one.
