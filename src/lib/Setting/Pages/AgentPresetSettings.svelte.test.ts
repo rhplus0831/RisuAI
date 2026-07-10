@@ -287,7 +287,21 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain(language.agentPresets.preparedInputCbsNameLabel)
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.currentUserMessage)
     expect(target.textContent).toContain('{{currentUserMessage}}')
+    for (const scope of [
+      'recentChatTail',
+      'chatSearchSnippets',
+      'lorebookContext',
+      'memoryContext',
+      'characterSummary',
+      'personaSummary',
+      'currentUserMessage',
+      'previousAgentOutputs',
+    ] as const) {
+      const inputScope = target.querySelector(`[data-risu-agent-preset-input-scope="${scope}"]`)
+      expect(inputScope?.textContent).toContain(language.agentPresets.inputScopeDescriptions[scope])
+    }
     expect(target.textContent).not.toContain(language.agentPresets.inputScopeLabels.mainDraft)
+    expect(target.textContent).not.toContain(language.agentPresets.inputScopeDescriptions.mainDraft)
     expect(target.textContent).not.toContain('{{mainDraft}}')
   })
 
@@ -316,6 +330,7 @@ describe('AgentPresetSettings', () => {
     await tick()
 
     expect(target.textContent).toContain(language.agentPresets.inputScopeLabels.mainDraft)
+    expect(target.textContent).toContain(language.agentPresets.inputScopeDescriptions.mainDraft)
     expect(target.textContent).toContain('{{mainDraft}}')
 
     const select = stepPhaseSelect()

@@ -831,7 +831,7 @@
               </label>
             </div>
 
-            <div class="mt-3 grid gap-3 md:grid-cols-2">
+            <div class="mt-3 flex flex-col gap-3">
               <div class="rounded-md border border-darkborderc p-3">
                 <h6 class="text-sm font-semibold">{language.agentPresets.dependenciesLabel}</h6>
                 {#if validDependencyOptions.length === 0}
@@ -854,14 +854,23 @@
                   {language.agentPresets.preparedInputScopesLabel}
                   <Help key="agentPresetPreparedInputs" name={language.agentPresets.preparedInputScopesLabel} />
                 </h6>
-                <div class="mt-2 grid gap-2 sm:grid-cols-2">
+                <p class="mt-1 text-xs text-textcolor2">{language.agentPresets.preparedInputScopesDescription}</p>
+                <div class="mt-3 grid gap-2 sm:grid-cols-2">
                   {#each visibleInputScopes as scope (scope)}
-                    <div class="flex flex-col gap-1">
+                    <div
+                      class="flex flex-col gap-1 rounded-md border border-darkborderc p-2.5"
+                      class:bg-darkbutton={draftStepInputScopes.includes(scope)}
+                      data-risu-agent-preset-input-scope={scope}>
                       <CheckInput
                         check={draftStepInputScopes.includes(scope)}
                         name={language.agentPresets.inputScopeLabels[scope]}
                         onChange={(value) => toggleInputScope(scope, value)} />
-                      <span class="pl-7 text-xs text-textcolor2" data-risu-agent-preset-input-scope-cbs>
+                      <p
+                        class="pl-7 text-xs leading-relaxed text-textcolor2"
+                        data-risu-agent-preset-input-scope-description>
+                        {language.agentPresets.inputScopeDescriptions[scope]}
+                      </p>
+                      <span class="mt-1 pl-7 text-xs text-textcolor2" data-risu-agent-preset-input-scope-cbs>
                         {language.agentPresets.preparedInputCbsNameLabel}:
                         <code class="rounded-sm bg-darkbg px-1 py-0.5 font-mono text-[0.7rem] text-textcolor">
                           {`{{${scope}}}`}

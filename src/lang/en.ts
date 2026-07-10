@@ -2163,7 +2163,9 @@ export const languageEnglish = {
     maxOutputCharsLabel: 'Max output chars',
     temperatureLabel: 'Temperature',
     preparedInputScopesLabel: 'Prepared inputs',
-    preparedInputCbsNameLabel: 'CBS name',
+    preparedInputScopesDescription:
+      'Select the context this step can use. A selected input is included only where its instruction placeholder appears.',
+    preparedInputCbsNameLabel: 'Instruction placeholder',
     inputScopeLabels: {
       recentChatTail: 'Recent chat tail',
       chatSearchSnippets: 'Chat search snippets',
@@ -2174,6 +2176,21 @@ export const languageEnglish = {
       currentUserMessage: 'Current user message',
       previousAgentOutputs: 'Previous agent outputs',
       mainDraft: 'Main draft',
+    },
+    inputScopeDescriptions: {
+      recentChatTail: 'The 12 most recent messages in the current chat, with each message’s role and text.',
+      chatSearchSnippets:
+        'Up to 6 matching messages from all character chats, found by searching with the current user message.',
+      lorebookContext:
+        'Lorebook entries activated for the current character and chat, including applicable global entries.',
+      memoryContext:
+        'Saved context from the current chat, including its last memory, Hypa or Supa memory messages, and Hypa V3 data.',
+      characterSummary: 'The current character’s name, description, personality, scenario, prompts, and creator notes.',
+      personaSummary: 'The selected persona’s name and prompt, plus the current username.',
+      currentUserMessage: 'The latest user message submitted for this generation.',
+      previousAgentOutputs:
+        'Outputs completed by eligible earlier agent steps, labeled with their phase, output key, and step name.',
+      mainDraft: 'The main model’s draft after output edits. Available only to after-main steps.',
     },
     invalidOutputKey: 'Use letters, numbers, or underscores; start with a letter or underscore.',
     savePresetBeforeSteps: 'Save the preset before editing steps.',
