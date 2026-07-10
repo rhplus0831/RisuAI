@@ -346,6 +346,131 @@ describe('server command API adapter', () => {
     await expect(second).resolves.toMatchObject({ status: 'ok', revision: 12 })
   })
 
+  it('starts a queued transport before reconciling the older command and never restores its older optimistic value', async () => {
+    const firstResponse = createDeferred<Response>()
+    const secondResponse = createDeferred<Response>()
+    const reconcileRelease = createDeferred<void>()
+    const calls: Array<{ body: unknown }> = []
+    const reconciled: Array<{ revision: number; coalescedRevisions: number[] }> = []
+    let visibleValue = 'first optimistic value'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        calls.push({
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        return calls.length === 1 ? firstResponse.promise : secondResponse.promise
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(10)
+    setServerCommandSuccessReconciler(async (event, coalescedEvents) => {
+      reconciled.push({
+        revision: event.revision,
+        coalescedRevisions: coalescedEvents.map((coalescedEvent) => coalescedEvent.revision),
+      })
+      await reconcileRelease.promise
+      visibleValue = event.revision === 11 ? 'first server value' : 'second optimistic value'
+    })
+
+    const first = runServerCommand({
+      command: (baseRevision) =>
+        patchRuntimeSettings({
+          baseRevision,
+          patch: { maxContext: 8_000 },
+        }),
+    })
+    visibleValue = 'second optimistic value'
+    const second = patchServerBackedSettings({
+      patch: { maxResponse: 1_000 },
+    })
+    let commandsSettled = false
+    const commands = Promise.all([first, second]).then((results) => {
+      commandsSettled = true
+      return results
+    })
+
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+    firstResponse.resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'settings.updated', revision: 11, resource: 'settings' },
+      }),
+    )
+
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]?.body).toEqual({
+      baseRevision: 11,
+      patch: { maxResponse: 1_000 },
+    })
+    expect(reconciled).toEqual([])
+    expect(visibleValue).toBe('second optimistic value')
+
+    secondResponse.resolve(
+      jsonResponse({
+        revision: 12,
+        event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+      }),
+    )
+
+    await vi.waitFor(() => expect(reconciled).toEqual([{ revision: 12, coalescedRevisions: [11, 12] }]))
+    expect(commandsSettled).toBe(false)
+    expect(visibleValue).toBe('second optimistic value')
+    reconcileRelease.resolve()
+
+    await expect(commands).resolves.toEqual([
+      expect.objectContaining({ status: 'ok', revision: 11 }),
+      expect.objectContaining({ status: 'ok', revision: 12 }),
+    ])
+    expect(reconciled).toEqual([{ revision: 12, coalescedRevisions: [11, 12] }])
+    expect(visibleValue).toBe('second optimistic value')
+  })
+
+  it('keeps unqueued translation response reconciliation immediate during an unrelated queued mutation', async () => {
+    const queuedResponse = createDeferred<Response>()
+    const reconciledRevisions: number[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/messages/message-1/translate')) {
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'message.updated', revision: 11, resource: 'message', id: 'message-1' },
+            chatId: 'chat-1',
+            messageId: 'message-1',
+            translation: { source: 'raw', text: 'translated' },
+          })
+        }
+        return queuedResponse.promise
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(10)
+    setServerCommandSuccessReconciler(async (event) => {
+      reconciledRevisions.push(event.revision)
+    })
+
+    const queued = runServerCommand({
+      command: (baseRevision) =>
+        patchRuntimeSettings({
+          baseRevision,
+          patch: { maxContext: 8_000 },
+        }),
+    })
+    const translation = await translateMessageCommand({ baseRevision: 10, messageId: 'message-1' })
+
+    expect(translation).toMatchObject({ status: 'ok', revision: 11 })
+    expect(reconciledRevisions).toEqual([11])
+
+    queuedResponse.resolve(
+      jsonResponse({
+        revision: 12,
+        event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+      }),
+    )
+    await expect(queued).resolves.toMatchObject({ status: 'ok', revision: 12 })
+    expect(reconciledRevisions).toEqual([11, 12])
+  })
+
   it('maps projection-sweep toggles to server-backed settings groups', () => {
     expect(settingsGroupForKey('notification')).toBe('display')
     expect(settingsGroupForKey('useAutoSuggestions')).toBe('runtime')

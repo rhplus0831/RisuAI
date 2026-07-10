@@ -27,9 +27,15 @@ through command helpers or explicit server-owned mutation routes.
   hydration starts, and `/api/v1/events` subscribes.
 - Full recovery uses `fetchServerBootstrapProjectionReadOnly()` so passive
   resync does not steal writer ownership from another browser session.
-- Startup also installs `setServerCommandSuccessReconciler()`, so successful
-  local command responses can reconcile their command event immediately; later
-  SSE own echoes or already-reconciled revisions are skipped.
+- Startup also installs `setServerCommandSuccessReconciler()`. A lone command
+  reconciles before its public promise settles. When high-level mutations queue,
+  accepted responses advance the known revision without holding the serialized
+  transport lane through projection work; own response/SSE events are coalesced
+  until the lane drains, then the latest event triggers authoritative
+  reconciliation. Multiple accepted revisions intentionally form one gap and
+  one full resync, covering mixed resources in final server order. Every
+  coalesced revision is marked only after the projection succeeds, so later SSE
+  echoes are skipped, and all batched mutation promises await that reconcile.
 
 `projectionResync.ts` coalesces concurrent full-resync requests, reads bootstrap
 with `cacheRevision: false`, applies the fresh database, advances both revision

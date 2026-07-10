@@ -31,6 +31,7 @@ import { subscribeServerCommandEvents, type ServerMemoryEvent } from './server/e
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
   canUseServerCommands,
+  deferOwnServerCommandReconciliation,
   initializeServerDatabase,
   peekAppliedServerProjectionRevision,
   peekCachedServerCommandRevision,
@@ -170,10 +171,11 @@ export async function loadWebInitialDatabase() {
   // against the revision this client has applied.
   setCachedServerCommandRevision(projection.revision)
   setAppliedServerProjectionRevision(projection.revision)
-  setServerCommandSuccessReconciler((event) =>
+  setServerCommandSuccessReconciler((event, coalescedEvents) =>
     enqueueServerProjectionSync(() =>
       processServerCommandEvent(event, {
         allowAlreadyAppliedRevision: true,
+        coalescedRevisions: coalescedEvents.map((coalescedEvent) => coalescedEvent.revision),
         markReconciledRevision: true,
       }),
     ),
@@ -356,6 +358,7 @@ function applyServerMemoryEvent(event: ServerMemoryEvent) {
  * detection is per-event rather than batched.
  */
 function handleServerCommandEvent(event: CommandEvent) {
+  if (isOwnCommandEvent(event) && deferOwnServerCommandReconciliation(event)) return
   enqueueServerProjectionSync(() => processServerCommandEvent(event))
 }
 
@@ -368,6 +371,7 @@ function enqueueServerProjectionSync(task: () => Promise<void>): Promise<void> {
 
 interface ProcessServerCommandEventOptions {
   allowAlreadyAppliedRevision?: boolean
+  coalescedRevisions?: readonly number[]
   markReconciledRevision?: boolean
 }
 
@@ -379,15 +383,14 @@ async function processServerCommandEvent(
   if ((ownEvent || options.markReconciledRevision) && reconciledCommandProjectionRevisionSet.has(event.revision)) {
     advanceKnownServerCommandRevision(event.revision)
     setAppliedServerProjectionRevision(event.revision)
+    markReconciledCommandProjectionEvent(event, options)
     return
   }
   const appliedRevision = peekAppliedServerProjectionRevision()
   if (appliedRevision === null) {
     // No baseline yet: reconcile from scratch.
     const resync = await forceServerProjectionResync('no-baseline', { resource: event.resource })
-    if (resync.status === 'ok' && (ownEvent || options.markReconciledRevision)) {
-      markCommandProjectionRevisionReconciled(event.revision)
-    }
+    if (resync.status === 'ok') markReconciledCommandProjectionEvent(event, options)
     return
   }
   if (event.revision <= appliedRevision && !ownEvent && !options.allowAlreadyAppliedRevision) {
@@ -535,6 +538,9 @@ function markReconciledCommandProjectionEvent(
 ): void {
   if (isOwnCommandEvent(event) || options.markReconciledRevision) {
     markCommandProjectionRevisionReconciled(event.revision)
+    for (const revision of options.coalescedRevisions ?? []) {
+      markCommandProjectionRevisionReconciled(revision)
+    }
   }
 }
 

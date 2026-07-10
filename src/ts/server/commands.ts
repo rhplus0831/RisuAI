@@ -1254,19 +1254,149 @@ let cachedServerCommandRevision: number | null = null
 // gap detection, and already-applied skips must therefore use this separate
 // projection cursor instead of `cachedServerCommandRevision`.
 let appliedServerProjectionRevision: number | null = null
-let serverCommandSuccessReconciler: ((event: CommandEvent) => Promise<void> | void) | null = null
+type ServerCommandSuccessReconciler = (
+  event: CommandEvent,
+  coalescedEvents: readonly CommandEvent[],
+) => Promise<void> | void
+
+interface ServerCommandReconciliationBatch {
+  pendingEvents: Map<number, CommandEvent>
+  completion: Promise<void>
+  resolveCompletion: () => void
+  flushScheduled: boolean
+  flushing: boolean
+}
+
+let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
 // Every command domain shares one server revision. Keep high-level mutations in
 // one client queue so two unrelated optimistic edits cannot both dispatch with
 // the same base revision and make the later edit roll back with a self-conflict.
 let serverCommandExecutionTail: Promise<void> = Promise.resolve()
+let queuedServerCommandExecutionCount = 0
+let activeServerCommandReconciliationBatch: ServerCommandReconciliationBatch | null = null
 
 function enqueueServerCommandExecution<T>(task: () => Promise<T>): Promise<T> {
+  const batch = getOrCreateServerCommandReconciliationBatch()
+  queuedServerCommandExecutionCount += 1
+
   const execution = serverCommandExecutionTail.then(task)
-  serverCommandExecutionTail = execution.then(
+  const settledExecution = execution.then(
+    (value) => {
+      finishServerCommandExecution(batch)
+      return value
+    },
+    (error) => {
+      finishServerCommandExecution(batch)
+      throw error
+    },
+  )
+  serverCommandExecutionTail = settledExecution.then(
     () => undefined,
     () => undefined,
   )
-  return execution
+  return settledExecution.then(
+    async (value) => {
+      await batch.completion
+      return value
+    },
+    async (error) => {
+      await batch.completion
+      throw error
+    },
+  )
+}
+
+function getOrCreateServerCommandReconciliationBatch(): ServerCommandReconciliationBatch {
+  if (activeServerCommandReconciliationBatch) return activeServerCommandReconciliationBatch
+
+  let resolveCompletion!: () => void
+  const completion = new Promise<void>((resolve) => {
+    resolveCompletion = resolve
+  })
+  activeServerCommandReconciliationBatch = {
+    pendingEvents: new Map(),
+    completion,
+    resolveCompletion,
+    flushScheduled: false,
+    flushing: false,
+  }
+  return activeServerCommandReconciliationBatch
+}
+
+function finishServerCommandExecution(batch: ServerCommandReconciliationBatch): void {
+  queuedServerCommandExecutionCount = Math.max(0, queuedServerCommandExecutionCount - 1)
+  if (queuedServerCommandExecutionCount === 0) scheduleServerCommandReconciliationFlush(batch)
+}
+
+function scheduleServerCommandReconciliationFlush(batch: ServerCommandReconciliationBatch): void {
+  if (
+    activeServerCommandReconciliationBatch !== batch ||
+    batch.flushScheduled ||
+    batch.flushing ||
+    queuedServerCommandExecutionCount > 0
+  ) {
+    return
+  }
+  batch.flushScheduled = true
+  queueMicrotask(() => {
+    batch.flushScheduled = false
+    void flushServerCommandReconciliationBatch(batch)
+  })
+}
+
+async function flushServerCommandReconciliationBatch(batch: ServerCommandReconciliationBatch): Promise<void> {
+  if (activeServerCommandReconciliationBatch !== batch || batch.flushing || queuedServerCommandExecutionCount > 0) {
+    return
+  }
+
+  batch.flushing = true
+  try {
+    while (activeServerCommandReconciliationBatch === batch && queuedServerCommandExecutionCount === 0) {
+      const coalescedEvents = Array.from(batch.pendingEvents.values()).sort(
+        (left, right) => left.revision - right.revision,
+      )
+      const latestEvent = coalescedEvents.at(-1)
+      if (!latestEvent) {
+        completeServerCommandReconciliationBatch(batch)
+        return
+      }
+
+      // Response handling advances only the known cursor. With two or more
+      // accepted revisions, reconciling the latest event against the unchanged
+      // applied cursor intentionally forms a gap, so bootstrap performs one
+      // authoritative full resync covering every resource in server order.
+      await reconcileServerCommandSuccessEvents(latestEvent, coalescedEvents)
+      for (const revision of batch.pendingEvents.keys()) {
+        if (revision <= latestEvent.revision) batch.pendingEvents.delete(revision)
+      }
+    }
+  } finally {
+    batch.flushing = false
+    if (activeServerCommandReconciliationBatch === batch && queuedServerCommandExecutionCount === 0) {
+      if (batch.pendingEvents.size === 0) {
+        completeServerCommandReconciliationBatch(batch)
+      } else {
+        scheduleServerCommandReconciliationFlush(batch)
+      }
+    }
+  }
+}
+
+function completeServerCommandReconciliationBatch(batch: ServerCommandReconciliationBatch): void {
+  if (activeServerCommandReconciliationBatch !== batch) return
+  activeServerCommandReconciliationBatch = null
+  batch.resolveCompletion()
+}
+
+function recordDeferredServerCommandSuccessEvent(batch: ServerCommandReconciliationBatch, event: CommandEvent): void {
+  batch.pendingEvents.set(event.revision, event)
+}
+
+export function deferOwnServerCommandReconciliation(event: CommandEvent): boolean {
+  const batch = activeServerCommandReconciliationBatch
+  if (!batch) return false
+  recordDeferredServerCommandSuccessEvent(batch, event)
+  return true
 }
 
 export function canUseServerCommands(): boolean {
@@ -1309,9 +1439,7 @@ export function peekAppliedServerProjectionRevision(): number | null {
   return appliedServerProjectionRevision
 }
 
-export function setServerCommandSuccessReconciler(
-  reconciler: ((event: CommandEvent) => Promise<void> | void) | null,
-): void {
+export function setServerCommandSuccessReconciler(reconciler: ServerCommandSuccessReconciler | null): void {
   serverCommandSuccessReconciler = reconciler
 }
 
@@ -3228,6 +3356,9 @@ export async function translateMessageCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    // Raw translation deliberately runs outside the global mutation queue;
+    // reconcile its accepted response even if unrelated queued edits exist.
+    reconcileImmediately: true,
   })
 }
 
@@ -3365,7 +3496,13 @@ function groupSettingsPatch(patch: SettingsPatch): Array<[SettingsGroup, Setting
 
 async function requestCommandJson<T extends Record<string, unknown> = {}>(
   path: string,
-  init: { method: string; body: unknown; signal?: AbortSignal | null; keepalive?: boolean },
+  init: {
+    method: string
+    body: unknown
+    signal?: AbortSignal | null
+    keepalive?: boolean
+    reconcileImmediately?: boolean
+  },
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
@@ -3422,16 +3559,30 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     }
     const event = readCommandEvent(body)
     if (event) {
-      await notifyServerCommandSuccessReconciler(event)
+      await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately)
     }
   }
 
   return { status: 'ok', ...(body as { revision: number; event: CommandEvent } & T) }
 }
 
-async function notifyServerCommandSuccessReconciler(event: CommandEvent): Promise<void> {
+async function notifyServerCommandSuccessReconciler(
+  event: CommandEvent | null | undefined,
+  reconcileImmediately = false,
+): Promise<void> {
+  // Some compatibility command factories return a minimal `{ status: 'ok' }`
+  // result. They have no authoritative event to reconcile.
+  if (!event) return
+  if (!reconcileImmediately && deferOwnServerCommandReconciliation(event)) return
+  await reconcileServerCommandSuccessEvents(event, [event])
+}
+
+async function reconcileServerCommandSuccessEvents(
+  event: CommandEvent,
+  coalescedEvents: readonly CommandEvent[],
+): Promise<void> {
   try {
-    await serverCommandSuccessReconciler?.(event)
+    await serverCommandSuccessReconciler?.(event, coalescedEvents)
   } catch (error) {
     console.warn('Server command projection reconcile failed', error)
   }

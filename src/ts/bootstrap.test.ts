@@ -166,6 +166,14 @@ vi.mock('./server/commands', async (importActual) => {
   }
 })
 
+vi.mock('./storage/fastifyStorage', async (importActual) => {
+  const actual = await importActual<typeof import('./storage/fastifyStorage')>()
+  return {
+    ...actual,
+    getNodeServerProxyAuth: vi.fn(async () => 'bootstrap-test-auth'),
+  }
+})
+
 vi.mock('./process/reattach', () => activeGenerationReattachSpies)
 
 // Chat-message hydration is exercised in its own tests; stub it here so the
@@ -249,10 +257,13 @@ import {
 import {
   clearAppliedServerProjectionRevision,
   clearCachedServerCommandRevision,
+  patchServerBackedSettings,
   peekAppliedServerProjectionRevision,
   peekCachedServerCommandRevision,
+  runServerCommand,
   setAppliedServerProjectionRevision,
   setCachedServerCommandRevision,
+  updateCharacterCommand,
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { getProtocolDiagnosticsSnapshot, type FullBootstrapResyncReason } from './server/protocolDiagnostics'
@@ -623,6 +634,129 @@ describe('web bootstrap startup source', () => {
     })
     expect(peekCachedServerCommandRevision()).toBe(6)
     expect(peekAppliedServerProjectionRevision()).toBe(6)
+  })
+
+  it('coalesces a rapid mixed-resource settings burst into one authoritative full resync', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [{ chaId: 'char-a', name: 'Before', chats: [], chatPage: 0 }],
+          modules: [],
+          personas: [],
+          language: 'en',
+          maxContext: 4_000,
+          maxResponse: 500,
+          theme: 'dark',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 9,
+        database: {
+          characters: [{ chaId: 'char-a', name: 'After', chats: [], chatPage: 0 }],
+          modules: [],
+          personas: [],
+          language: 'en',
+          maxContext: 8_000,
+          maxResponse: 1_000,
+          theme: 'light',
+        },
+      },
+    }
+    const requestBodies: Array<Record<string, unknown>> = []
+    const resources = ['settings', 'character', 'settings', 'settings'] as const
+    const writerSessionId = getActiveWriterSessionId()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init = {}) => {
+      const requestIndex = requestBodies.length
+      requestBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+      const revision = 6 + requestIndex
+      const resource = resources[requestIndex]
+      return new Response(
+        JSON.stringify({
+          revision,
+          event: {
+            type: `${resource}.updated`,
+            revision,
+            resource,
+            origin: { writerSessionId },
+            ...(resource === 'character' ? { id: 'char-a' } : {}),
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
+    })
+
+    try {
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.maxContext = 8_000
+      })
+      const first = patchServerBackedSettings({ patch: { maxContext: 8_000 } })
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.characters[0].name = 'After'
+      })
+      const second = runServerCommand({
+        command: (baseRevision) =>
+          updateCharacterCommand({
+            baseRevision,
+            characterId: 'char-a',
+            patch: { name: 'After' },
+          }),
+      })
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.maxResponse = 1_000
+      })
+      const third = patchServerBackedSettings({ patch: { maxResponse: 1_000 } })
+      withTrustedServerProjectionWrite(() => {
+        DBState.db.theme = 'light'
+      })
+      const fourth = patchServerBackedSettings({ patch: { theme: 'light' } })
+
+      expect(DBState.db).toMatchObject({
+        maxContext: 8_000,
+        maxResponse: 1_000,
+        theme: 'light',
+        characters: [expect.objectContaining({ chaId: 'char-a', name: 'After' })],
+      })
+      await expect(Promise.all([first, second, third, fourth])).resolves.toEqual([
+        expect.objectContaining({ status: 'ok', revision: 6 }),
+        expect.objectContaining({ status: 'ok', revision: 7 }),
+        expect.objectContaining({ status: 'ok', revision: 8 }),
+        expect.objectContaining({ status: 'ok', revision: 9 }),
+      ])
+
+      expect(requestBodies.map((body) => body.baseRevision)).toEqual([5, 6, 7, 8])
+      expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+      expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+      expect(peekAppliedServerProjectionRevision()).toBe(9)
+      expect(DBState.db).toMatchObject({
+        maxContext: 8_000,
+        maxResponse: 1_000,
+        theme: 'light',
+        characters: [expect.objectContaining({ chaId: 'char-a', name: 'After' })],
+      })
+
+      for (let index = 0; index < resources.length; index += 1) {
+        const resource = resources[index]
+        serverEventsState.subscriptions[0].onCommandEvent({
+          type: `${resource}.updated`,
+          revision: 6 + index,
+          resource,
+          origin: { writerSessionId },
+          ...(resource === 'character' ? { id: 'char-a' } : {}),
+        })
+      }
+      await flushServerProjectionSync()
+      expect(serverProjectionState.fetchResource).not.toHaveBeenCalled()
+      expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+    } finally {
+      fetchSpy.mockRestore()
+    }
   })
 
   it('reconciles own command events by writer origin before the command response advances revision', async () => {

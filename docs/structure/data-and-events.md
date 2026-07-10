@@ -53,6 +53,16 @@ Normal command mutations use optimistic concurrency:
 Stale clients receive 409. Browser command helpers cache the latest revision
 from bootstrap, command responses, and event reconciliation.
 
+High-level browser mutations share one serialized transport lane so each request
+uses the revision accepted by the preceding request. Accepted responses advance
+the known-server cursor immediately, but their projection work is deferred while
+later mutations are queued. Once the lane drains, success events are coalesced to
+the latest revision and reconciled authoritatively; a multi-revision batch forms
+a gap from the pre-batch applied cursor and therefore performs one full resync.
+The mutation promises settle only after that shared reconciliation, while
+explicitly unqueued operations such as raw message translation retain immediate
+response reconciliation.
+
 Mutation lanes include targeted/scoped SQLite writers, message-free broad writes,
 character-selection writes, and hydrated message mutations. They still share the
 same invariant: one revision bump and one persisted command event per normal
