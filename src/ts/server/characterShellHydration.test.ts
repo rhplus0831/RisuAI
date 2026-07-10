@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const projectionState = vi.hoisted(() => ({
   fetchResource: vi.fn(),
@@ -16,7 +16,12 @@ vi.mock('./chatMessageHydration.svelte', () => ({
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'
-import { isServerCharacterShell, setServerProjectionWriteGuardEnabled } from '../storage/database.svelte'
+import {
+  isServerCharacterShell,
+  mergeServerProjectionCharacterRow,
+  mergeServerProjectionFields,
+  setServerProjectionWriteGuardEnabled,
+} from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
   peekCachedServerCommandRevision,
@@ -71,6 +76,12 @@ beforeEach(() => {
   projectionState.fetchResource.mockReset()
 })
 
+afterEach(() => {
+  const database = JSON.parse(JSON.stringify(DBState.db))
+  setServerProjectionWriteGuardEnabled(false)
+  DBState.db = database
+})
+
 describe('character shell hydration', () => {
   it('fetches a character row and replaces a selected bootstrap shell', async () => {
     setCachedServerCommandRevision(5)
@@ -90,8 +101,9 @@ describe('character shell hydration', () => {
     expect(peekCachedServerCommandRevision()).toBe(5)
   })
 
-  it('ignores a character row response older than the current cached command revision', async () => {
+  it('accepts a character row response after an unrelated projection advances the known revision', async () => {
     setCachedServerCommandRevision(5)
+    setServerProjectionWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -103,15 +115,63 @@ describe('character shell hydration', () => {
 
     const pending = hydrateCharacterShell('char-1')
     setCachedServerCommandRevision(6)
+    mergeServerProjectionFields({ language: 'ko' } as any)
     response.resolve({
       status: 'ok',
       revision: 5,
       mode: 'character-row',
       characterId: 'char-1',
-      character: hydratedCharacter('Old hydration'),
+      character: hydratedCharacter('Hydrated after settings'),
+    })
+
+    await expect(pending).resolves.toBe(true)
+
+    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(false)
+    expect(DBState.db.characters[0].name).toBe('Hydrated after settings')
+    expect(DBState.db.language).toBe('ko')
+    expect(peekCachedServerCommandRevision()).toBe(6)
+  })
+
+  it('rejects a response after the target character row changes during hydration', async () => {
+    setCachedServerCommandRevision(5)
+    setServerProjectionWriteGuardEnabled(true)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'character-row'
+      characterId: string
+      character: Record<string, unknown>
+    }>()
+    projectionState.fetchResource.mockReturnValue(response.promise)
+
+    const pending = hydrateCharacterShell('char-1')
+    setCachedServerCommandRevision(6)
+    mergeServerProjectionCharacterRow(hydratedCharacter('Newer projection'))
+    response.resolve({
+      status: 'ok',
+      revision: 5,
+      mode: 'character-row',
+      characterId: 'char-1',
+      character: hydratedCharacter('Stale hydration'),
     })
 
     await expect(pending).resolves.toBe(false)
+
+    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(false)
+    expect(DBState.db.characters[0].name).toBe('Newer projection')
+  })
+
+  it('rejects a character row response older than the request-start revision', async () => {
+    setCachedServerCommandRevision(6)
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 5,
+      mode: 'character-row',
+      characterId: 'char-1',
+      character: hydratedCharacter('Older than request'),
+    })
+
+    await expect(hydrateCharacterShell('char-1')).resolves.toBe(false)
 
     expect(isServerCharacterShell(DBState.db.characters[0])).toBe(true)
     expect(DBState.db.characters[0].name).toBe('Shell')

@@ -44,6 +44,7 @@ export async function hydrateCharacterShell(characterId: string): Promise<boolea
 
   const generation = shellHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
+  const targetSnapshot = snapshotJson(existing)
   const request = (async () => {
     const result = await fetchServerProjectionResource('characterRow', { id: characterId })
     if (generation !== shellHydrationGeneration) return false
@@ -59,10 +60,11 @@ export async function hydrateCharacterShell(characterId: string): Promise<boolea
       shellHydrationWarning(characterId, `response was for character ${result.characterId}`)
       return false
     }
-    if (
-      isOlderThanRevision(result.revision, baselineRevision) ||
-      isOlderThanRevision(result.revision, peekCachedServerCommandRevision())
-    ) {
+    if (isOlderThanRevision(result.revision, baselineRevision)) {
+      return false
+    }
+    const currentTarget = DBState.db.characters?.find((candidate) => candidate?.chaId === characterId)
+    if (!isServerCharacterShell(currentTarget) || snapshotJson(currentTarget) !== targetSnapshot) {
       return false
     }
 
@@ -83,6 +85,11 @@ export async function hydrateCharacterShell(characterId: string): Promise<boolea
 
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
   return comparisonRevision !== null && revision < comparisonRevision
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
 function shellHydrationWarning(characterId: string, message: string): void {

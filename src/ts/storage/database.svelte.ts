@@ -314,6 +314,7 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
   if (current) return current
 
   const baselineRevision = peekCachedServerCommandRevision()
+  const targetSnapshot = snapshotJson(preset)
   const request = (async () => {
     const result = await fetchServerPresetProjection(presetId)
     if (result.status !== 'ok') {
@@ -324,15 +325,13 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
       presetHydrationWarning(presetId, `response was for preset ${result.presetId}`)
       return false
     }
-    if (
-      isOlderThanRevision(result.revision, baselineRevision) ||
-      isOlderThanRevision(result.revision, peekCachedServerCommandRevision())
-    ) {
+    if (isOlderThanRevision(result.revision, baselineRevision)) {
       return false
     }
     return withTrustedServerProjectionWrite(() => {
       const currentIndex = DBState.db.botPresets.findIndex((candidate) => candidate?.id === presetId)
       if (currentIndex < 0) return false
+      if (snapshotJson(DBState.db.botPresets[currentIndex]) !== targetSnapshot) return false
       DBState.db.botPresets[currentIndex] = result.preset as unknown as botPreset
       return true
     })
@@ -348,6 +347,11 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
 
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
   return comparisonRevision !== null && revision < comparisonRevision
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
 function getHydratedPresetIfReady(index: number): botPreset | undefined {

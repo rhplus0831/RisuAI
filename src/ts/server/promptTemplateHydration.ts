@@ -55,6 +55,9 @@ export async function ensurePromptTemplateHydrated(
   const baselineRevision = peekCachedServerCommandRevision()
   if (baselineRevision === null && !options.force) return localPromptTemplateOwnerIsResolved(ownerId)
   const applyProjection = options.applyProjection ?? true
+  const includeCompatibilityProjection =
+    ownerId === null || (applyProjection && ownerId === currentPromptTemplateOwnerId())
+  const ownerSnapshot = promptTemplateOwnerSnapshot(ownerId, includeCompatibilityProjection)
   const request = (async () => {
     const result = await fetchServerProjectionResource('promptItem', ownerId ? { parentId: ownerId } : {})
     if (generation !== promptTemplateHydrationGeneration) return false
@@ -68,10 +71,10 @@ export async function ensurePromptTemplateHydrated(
       promptTemplateHydrationWarning(`response mode was ${result.mode}`)
       return false
     }
-    if (
-      isOlderThanRevision(result.revision, baselineRevision) ||
-      isOlderThanRevision(result.revision, peekCachedServerCommandRevision())
-    ) {
+    if (isOlderThanRevision(result.revision, baselineRevision)) {
+      return false
+    }
+    if (promptTemplateOwnerSnapshot(ownerId, includeCompatibilityProjection) !== ownerSnapshot) {
       return false
     }
 
@@ -91,6 +94,29 @@ export async function ensurePromptTemplateHydrated(
 
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
   return comparisonRevision !== null && revision < comparisonRevision
+}
+
+function promptTemplateOwnerSnapshot(ownerId: string | null, includeCompatibilityProjection: boolean): string {
+  const preset =
+    ownerId === null || !Array.isArray(DBState.db?.promptPresets)
+      ? undefined
+      : DBState.db.promptPresets.find((candidate) => candidate?.id === ownerId)
+  return snapshotJson({
+    ownerId,
+    ownerExists: ownerId === null || preset !== undefined,
+    owner: preset,
+    ...(includeCompatibilityProjection
+      ? {
+          compatibilityPresent: Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
+          compatibility: DBState.db?.promptTemplate,
+        }
+      : {}),
+  })
+}
+
+function snapshotJson(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
 /**

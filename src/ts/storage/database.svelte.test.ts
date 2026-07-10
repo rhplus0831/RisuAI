@@ -83,6 +83,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
 function stubFailedPresetCommand(onCommand?: (call: CapturedFetch) => void): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
@@ -955,6 +963,81 @@ describe('preset command rollback (L21)', () => {
       name: 'Hydrated',
       mainPrompt: 'Hydrated prompt',
       promptTemplate: [{ id: 'hydrated-prompt', type: 'plain', text: 'hydrated prompt' }],
+    })
+  })
+
+  it('hydrates a stubbed preset after an unrelated projection advances the known revision', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    setCachedServerCommandRevision(5)
+    const response = deferred<Response>()
+    const fetchSpy = vi.fn((input: RequestInfo | URL) => {
+      expect(String(input)).toBe('/api/v1/projection/preset?id=preset-stub')
+      return response.promise
+    })
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    const pending = ensureBotPresetHydrated(0)
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+    setCachedServerCommandRevision(6)
+    mergeServerProjectionFields({ language: 'ko' } as Partial<Database>)
+    response.resolve(
+      jsonResponse({
+        revision: 5,
+        resource: 'preset',
+        mode: 'preset',
+        presetId: 'preset-stub',
+        preset: makePreset('preset-stub', 'Hydrated after settings'),
+      }),
+    )
+
+    await expect(pending).resolves.toBe(true)
+
+    expect(DBState.db.botPresets[0]).toMatchObject({
+      id: 'preset-stub',
+      name: 'Hydrated after settings',
+      mainPrompt: 'Hydrated after settings prompt',
+    })
+    expect(DBState.db.language).toBe('ko')
+  })
+
+  it('rejects a preset hydration response after the target preset changes', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    setCachedServerCommandRevision(5)
+    const response = deferred<Response>()
+    const fetchSpy = vi.fn(() => response.promise)
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    const pending = ensureBotPresetHydrated(0)
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
+    setCachedServerCommandRevision(6)
+    mergeServerProjectionFields({
+      botPresets: [{ id: 'preset-stub', name: 'Newer projection', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    } as Partial<Database>)
+    response.resolve(
+      jsonResponse({
+        revision: 5,
+        resource: 'preset',
+        mode: 'preset',
+        presetId: 'preset-stub',
+        preset: makePreset('preset-stub', 'Stale hydration'),
+      }),
+    )
+
+    await expect(pending).resolves.toBe(false)
+
+    expect(DBState.db.botPresets[0]).toEqual({
+      id: 'preset-stub',
+      name: 'Newer projection',
+      image: 'img',
     })
   })
 

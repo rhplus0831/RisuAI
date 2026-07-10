@@ -1786,7 +1786,7 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.hydrateActiveCharacterLorebook).toHaveBeenCalled()
   })
 
-  it('does not apply an older character-selection event after delayed shell hydration loses freshness', async () => {
+  it('hydrates an unchanged shell without applying an older character-selection event', async () => {
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -1878,10 +1878,11 @@ describe('web bootstrap startup source', () => {
     expect(get(selectedCharID)).toBe(2)
     expect((DBState.db as unknown as { currentChar?: number }).currentChar).toBe(2)
     expect(DBState.db.characters[1]).toMatchObject({
-      __serverCharacterShell: true,
       chaId: 'char-b',
-      name: 'Babbage shell',
+      name: 'Babbage full',
+      desc: 'Old hydration',
     })
+    expect(DBState.db.characters[1]).not.toHaveProperty('__serverCharacterShell')
     expect(DBState.db.characters[2].lastInteraction).toBe(333)
     expect(peekCachedServerCommandRevision()).toBe(7)
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
