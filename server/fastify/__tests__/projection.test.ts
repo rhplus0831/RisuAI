@@ -330,6 +330,50 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(body.fields.promptTemplate).toBeNull()
   })
 
+  it('reships effective root settings for a selected modelPreset refresh', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      modelPresetsId: 0,
+      modelPresets: [
+        { id: 'model-a', name: 'Model A', aiModel: 'model-a-id', temperature: 0.1, maxResponse: 300 },
+        { id: 'model-b', name: 'Model B', aiModel: 'model-b-id', temperature: 0.2, maxResponse: 900 },
+      ],
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          overrideModelParameters: true,
+          temperature: 0.8,
+        },
+      ],
+      aiModel: 'model-a-id',
+      temperature: 0.8,
+      maxResponse: 300,
+      language: 'en',
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, modelPresetId: 'model-b' },
+    })
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json().event.resource).toBe('modelPreset')
+
+    const body = (await getProjection('modelPreset')).json()
+    expect(body.mode).toBe('fields')
+    expect(body.fields).toMatchObject({
+      modelPresetsId: 1,
+      aiModel: 'model-b-id',
+      temperature: 0.8,
+      maxResponse: 900,
+    })
+    expect(body.fields.modelPresets).toHaveLength(2)
+    expect(body.fields).not.toHaveProperty('characters')
+  })
+
   it('reships the applied prompt fields for a promptPreset refresh', async () => {
     const revision = await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
@@ -671,6 +715,17 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('lorebook')).toEqual(['characters', 'modules', 'loreBook', 'loreBookPage'])
     expect(resourceProjectionFields('asset')).toEqual([])
     expect(resourceProjectionFields('preset')).toEqual(['botPresets', 'botPresetsId'])
+    expect(resourceProjectionFields('modelPreset')).toEqual(
+      expect.arrayContaining([
+        'modelPresets',
+        'modelPresetsId',
+        'aiModel',
+        'temperature',
+        'maxResponse',
+        'NAIsettings',
+        'reasoningEffort',
+      ]),
+    )
     expect(resourceProjectionFields('promptItem')).toEqual(['promptTemplate'])
     expect(resourceProjectionFields('modelProfile')).toEqual([
       'modelProfiles',

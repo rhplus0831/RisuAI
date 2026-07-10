@@ -84,6 +84,8 @@ still fall back to a full bootstrap. Known sprawling resources such as `state`,
 `pluginStorage`, and `prompt` intentionally fall back to a full bootstrap.
 `asset` is a no-op targeted projection that advances the cached revision because
 asset metadata lives outside the projected `Database`.
+`modelPreset` projections include both the preset collection/pointer and every
+root model setting the selected model and prompt-preset overrides can apply.
 `generation.persisted` events are keyed by `parentId` = chat id and may return
 projection mode `generation-chat`. Assembly-time input transforms that persist
 both a rewritten transcript and chat metadata emit

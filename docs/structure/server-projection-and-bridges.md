@@ -90,7 +90,9 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   the command route's authoritative group map. Historical settings events with
   no recognized group still full-bootstrap safely. Other known sprawling
   resources such as `state`, `pluginStorage`, and `prompt` intentionally return
-  full-bootstrap mode.
+  full-bootstrap mode. `modelPreset` includes the complete applied model-setting
+  surface because selected-preset mutations also reapply the selected prompt
+  preset's model overrides to root settings.
   Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
   forces relevant hydration state to reset. During a targeted `characterRow`
   merge, a chat whose generation-settings save is still queued preserves its

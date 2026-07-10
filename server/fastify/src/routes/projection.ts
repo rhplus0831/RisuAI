@@ -4,10 +4,12 @@ import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
 import {
+  MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
   databaseKeyForModelPresetField,
+  type ModelPresetField,
   type PromptPresetField,
   type PromptPresetModelOverrideField,
   type PromptPresetModelParameterOverrideField,
@@ -35,6 +37,10 @@ function promptPresetProjectionField(field: PromptPresetField): string {
   return field
 }
 
+function modelPresetProjectionField(field: ModelPresetField): string {
+  return databaseKeyForModelPresetField(field)
+}
+
 function modelOverrideProjectionField(
   field:
     | PromptPresetModelOverrideField
@@ -58,6 +64,12 @@ const PROMPT_PRESET_PROJECTION_FIELDS = uniqueProjectionFields([
   ...PROMPT_PRESET_FIELDS.map(promptPresetProjectionField),
   ...PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS.map(modelOverrideProjectionField),
   ...PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS.map(modelOverrideProjectionField),
+])
+
+const MODEL_PRESET_PROJECTION_FIELDS = uniqueProjectionFields([
+  'modelPresets',
+  'modelPresetsId',
+  ...MODEL_PRESET_FIELDS.map(modelPresetProjectionField),
 ])
 
 // Targeted per-resource projection.
@@ -105,7 +117,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // replayed historical `lorebook` event from an older event log still applies.
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
   preset: ['botPresets', 'botPresetsId'],
-  modelPreset: ['modelPresets', 'modelPresetsId'],
+  // Selecting, deleting, or updating the selected model preset also applies
+  // its fields (then the selected prompt preset's model overrides) to root
+  // settings. Ship that effective surface with the collection and pointer.
+  modelPreset: MODEL_PRESET_PROJECTION_FIELDS,
   // Prompt-preset select/update commands apply the selected preset onto root
   // prompt/model-adjacent settings, and may also replace the promptTemplate
   // collection. Refresh the applied surface, not just the preset pointer.

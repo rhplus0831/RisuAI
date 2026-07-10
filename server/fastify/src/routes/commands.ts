@@ -522,7 +522,10 @@ function requireSelectedPromptPresetCommandTarget(
 }
 
 const COLLECTION_SCOPED_READS = {
-  modelPresets: ['modelPresets'],
+  // Selected model-preset mutations reapply the selected prompt preset's
+  // model overrides after the base model fields, so both collections must be
+  // resident in the targeted mutation snapshot.
+  modelPresets: ['modelPresets', 'promptPresets'],
   promptPresets: ['promptPresets'],
   legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
   presets: ['botPresets'],
