@@ -5,7 +5,6 @@ import { requireActiveWriter, type ActiveWriterState } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
-import { type CommandEventSink } from '../commands/events.js'
 import {
   ValidationError,
   addAsset,
@@ -76,13 +75,6 @@ function assetUploadResponse(result: AddAssetResult): {
     contentType: result.entry.contentType,
     revision: result.revision,
     created: result.created,
-  }
-}
-
-function emitCreatedAssetEvents(eventSink: CommandEventSink, results: readonly AddAssetResult[]): void {
-  const event = results.find((result) => result.event)?.event
-  if (event) {
-    eventSink.emit(event)
   }
 }
 
@@ -209,7 +201,6 @@ export function registerAssetsRoutes(
   db: DatabaseSync,
   authState: AuthState,
   dataDir: string,
-  eventSink: CommandEventSink,
   activeWriterState: ActiveWriterState,
 ): void {
   const requireUploadAccess = async (req: Parameters<typeof requireAuth>[1], reply: FastifyReply) => {
@@ -233,10 +224,6 @@ export function registerAssetsRoutes(
       }
       try {
         const result = addAsset(db, dataDir, { bytes: req.body, contentType })
-        // A new asset bumps the repository revision; emit so SSE subscribers
-        // refresh and the uploading client can advance its cached revision,
-        // avoiding a stale-revision 409 on the next command.
-        emitCreatedAssetEvents(eventSink, [result])
         reply.code(result.created ? 201 : 200)
         return {
           assetId: result.entry.id,
@@ -262,7 +249,6 @@ export function registerAssetsRoutes(
       try {
         const uploads = readBulkAssets(req.body)
         const results = addAssets(db, dataDir, uploads)
-        emitCreatedAssetEvents(eventSink, results)
         reply.code(results.some((result) => result.created) ? 201 : 200)
         const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
         return {

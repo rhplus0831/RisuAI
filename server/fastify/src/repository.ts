@@ -2470,13 +2470,13 @@ export function addAssets(db: DatabaseSync, dataDir: string, assets: readonly Ad
       db,
       createdResults.map((r) => r.entry),
     )
-    const event = persistRevisionedCommandEvent(db, {
-      ...COMMAND_EVENT_CATALOG.assetCreated,
-      ...(createdResults.length === 1 ? { id: createdResults[0].entry.id } : {}),
-    })
     db.exec('COMMIT')
     transactionOpen = false
-    return results.map((result) => ({ ...result, revision: event.revision, event }))
+    // Asset metadata is outside the projected Database domain. Registering an
+    // immutable blob must not advance the global command revision: otherwise a
+    // concurrent settings/chat command can conflict even though the two writes
+    // cannot overlap semantically.
+    return results
   } catch (err) {
     if (transactionOpen) {
       db.exec('ROLLBACK')

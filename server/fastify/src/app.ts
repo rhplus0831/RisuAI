@@ -263,7 +263,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   })
   registerCommandRoutes(app, db, authState, config.dataDir, commandEventSink, messageTranslationJobRegistry)
   registerEventsRoutes(app, db, authState, commandEventSink, memoryEventBus)
-  registerAssetsRoutes(app, db, authState, config.dataDir, commandEventSink, activeWriterState)
+  registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerPushNotificationRoutes(app, authState, pushNotifications)
   registerProxyRoutes(app, authState)

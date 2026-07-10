@@ -247,7 +247,7 @@ describe('Phase 2C assets', () => {
       assetId: PNG_SHA,
       size: PNG_BYTES.length,
       contentType: 'image/png',
-      revision: 1,
+      revision: 0,
     })
     const onDisk = path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`)
     expect(existsSync(onDisk)).toBe(true)
@@ -271,7 +271,7 @@ describe('Phase 2C assets', () => {
       assetId: sha,
       size: bytes.length,
       contentType: 'application/x-onnx',
-      revision: 1,
+      revision: 0,
     })
     const onDisk = path.join(harness.dataDir, 'assets', `${sha}.onnx`)
     expect(existsSync(onDisk)).toBe(true)
@@ -298,14 +298,14 @@ describe('Phase 2C assets', () => {
       assetId: sha,
       size: bytes.length,
       contentType: 'application/x-risu-inlay-signature+json',
-      revision: 1,
+      revision: 0,
     })
     const onDisk = path.join(harness.dataDir, 'assets', `${sha}.json`)
     expect(existsSync(onDisk)).toBe(true)
     expect(Buffer.from(readFileSync(onDisk))).toEqual(bytes)
   })
 
-  it('emits an asset.created event with the bumped revision only for new assets', async () => {
+  it('keeps asset-only writes outside the projected database revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 
     const first = await harness.app.inject({
@@ -315,11 +315,10 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
     expect(first.statusCode).toBe(201)
-    expect(harness.commandEvents.list()).toEqual([
-      { type: 'asset.created', resource: 'asset', revision: 1, id: PNG_SHA },
-    ])
+    expect(first.json().revision).toBe(0)
+    expect(harness.commandEvents.list()).toEqual([])
 
-    // Re-uploading identical bytes does not bump the revision, so no event.
+    // Re-uploading identical bytes remains idempotent and revision-neutral.
     const second = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/assets',
@@ -327,10 +326,44 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
     expect(second.statusCode).toBe(200)
-    expect(harness.commandEvents.list()).toHaveLength(1)
+    expect(second.json().revision).toBe(0)
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
-  it('rolls back asset metadata and revision when command event persistence fails', async () => {
+  it('does not invalidate a revisioned command captured before an asset upload', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const initialized = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/state/initialize',
+      headers: { 'risu-auth': assertion },
+      payload: {},
+    })
+    expect(initialized.statusCode).toBe(200)
+    const baseRevision = initialized.json().revision as number
+
+    const uploaded = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: { 'content-type': 'image/png', 'risu-auth': assertion },
+      payload: PNG_BYTES,
+    })
+    expect(uploaded.statusCode).toBe(201)
+    expect(uploaded.json().revision).toBe(baseRevision)
+
+    const settings = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision,
+        patch: { maxContext: 8_192 },
+      },
+    })
+    expect(settings.statusCode).toBe(200)
+    expect(settings.json().revision).toBe(baseRevision + 1)
+  })
+
+  it('does not depend on command-event persistence for asset metadata', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     failCommandEventPersistence(harness.dataDir)
 
@@ -341,7 +374,7 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
 
-    expect(res.statusCode).toBe(500)
+    expect(res.statusCode).toBe(201)
     expect(harness.commandEvents.list()).toEqual([])
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -351,14 +384,16 @@ describe('Phase 2C assets', () => {
     expect(bootstrap.json().revision).toBe(0)
     const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
-      expect(getAllAssetMetadata(seedDb)).toEqual([])
+      expect(getAllAssetMetadata(seedDb)).toEqual([
+        { id: PNG_SHA, ext: 'png', size: PNG_BYTES.length, contentType: 'image/png' },
+      ])
     } finally {
       seedDb.close()
     }
-    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
   })
 
-  it('removes staged asset bytes when command event persistence fails (bulk)', async () => {
+  it('does not depend on command-event persistence for bulk asset metadata', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     failCommandEventPersistence(harness.dataDir)
 
@@ -371,7 +406,7 @@ describe('Phase 2C assets', () => {
       },
     })
 
-    expect(res.statusCode).toBe(500)
+    expect(res.statusCode).toBe(201)
     expect(harness.commandEvents.list()).toEqual([])
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -381,11 +416,13 @@ describe('Phase 2C assets', () => {
     expect(bootstrap.json().revision).toBe(0)
     const seedDb = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
     try {
-      expect(getAllAssetMetadata(seedDb)).toEqual([])
+      expect(getAllAssetMetadata(seedDb)).toEqual([
+        { id: PNG_SHA, ext: 'png', size: PNG_BYTES.length, contentType: 'image/png' },
+      ])
     } finally {
       seedDb.close()
     }
-    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(false)
+    expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
   })
 
   it('removes previously staged bulk asset bytes when a later file write fails', async () => {
@@ -444,20 +481,20 @@ describe('Phase 2C assets', () => {
           assetId: PNG_SHA,
           size: PNG_BYTES.length,
           contentType: 'image/png',
-          revision: 1,
+          revision: 0,
           created: true,
         },
         {
           assetId: OTHER_PNG_SHA,
           size: OTHER_PNG_BYTES.length,
           contentType: 'image/png',
-          revision: 1,
+          revision: 0,
           created: true,
         },
       ],
-      revision: 1,
+      revision: 0,
     })
-    expect(harness.commandEvents.list()).toEqual([{ type: 'asset.created', resource: 'asset', revision: 1 }])
+    expect(harness.commandEvents.list()).toEqual([])
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
     expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)
   })
@@ -485,20 +522,20 @@ describe('Phase 2C assets', () => {
           assetId: PNG_SHA,
           size: PNG_BYTES.length,
           contentType: 'image/png',
-          revision: 1,
+          revision: 0,
           created: true,
         },
         {
           assetId: OTHER_PNG_SHA,
           size: OTHER_PNG_BYTES.length,
           contentType: 'image/png',
-          revision: 1,
+          revision: 0,
           created: true,
         },
       ],
-      revision: 1,
+      revision: 0,
     })
-    expect(harness.commandEvents.list()).toEqual([{ type: 'asset.created', resource: 'asset', revision: 1 }])
+    expect(harness.commandEvents.list()).toEqual([])
     expect(existsSync(path.join(harness.dataDir, 'assets', `${PNG_SHA}.png`))).toBe(true)
     expect(existsSync(path.join(harness.dataDir, 'assets', `${OTHER_PNG_SHA}.png`))).toBe(true)
   })
@@ -531,13 +568,13 @@ describe('Phase 2C assets', () => {
           assetId: PNG_SHA,
           size: PNG_BYTES.length,
           contentType: 'image/png',
-          revision: 1,
+          revision: 0,
           created: false,
         },
       ],
-      revision: 1,
+      revision: 0,
     })
-    expect(harness.commandEvents.list()).toHaveLength(1)
+    expect(harness.commandEvents.list()).toEqual([])
   })
 
   it('is idempotent on re-upload of the same bytes', async () => {
@@ -549,7 +586,7 @@ describe('Phase 2C assets', () => {
       payload: PNG_BYTES,
     })
     expect(first.statusCode).toBe(201)
-    expect(first.json().revision).toBe(1)
+    expect(first.json().revision).toBe(0)
 
     const second = await harness.app.inject({
       method: 'POST',
@@ -562,7 +599,7 @@ describe('Phase 2C assets', () => {
       assetId: PNG_SHA,
       size: PNG_BYTES.length,
       contentType: 'image/png',
-      revision: 1,
+      revision: 0,
     })
   })
 
@@ -593,7 +630,7 @@ describe('Phase 2C assets', () => {
       assetId: PNG_SHA,
       size: PNG_BYTES.length,
       contentType: 'image/png',
-      revision: 1,
+      revision: 0,
     })
     expect(existsSync(onDisk)).toBe(true)
 
