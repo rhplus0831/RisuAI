@@ -69,6 +69,7 @@ import {
   dispatchUpdateChat,
   dispatchUpdateChatFolder,
   dispatchUpdateChatNoteScoped,
+  dispatchUpdateChatScoped,
   dispatchUpdateMessageScoped,
   isActiveChatTargetFresh,
   prepareCompatibleChatUpdateScoped,
@@ -2550,9 +2551,73 @@ describe('H2 chat-selection snapshot', () => {
       expect(DBState.db.characters[0].chatPage).toBe(0)
     })
   })
+
+  it('dispatchSelectChat does not roll a newer chat selection back to an older page', async () => {
+    DBState.db.characters[0].chats.push({ id: 'chat-c', name: 'Chat C', message: [] } as any)
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-b' && init.method === 'PATCH',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          DBState.db.characters[0].chatPage = 2
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+
+    dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
+
+    expect(DBState.db.characters[0].chatPage).toBe(1)
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chatPage).toBe(2)
+    })
+  })
 })
 
 describe('Phase 5 chat metadata dispatch rollback', () => {
+  it('failed scoped metadata updates roll back only attempted fields that have not changed again', async () => {
+    DBState.db.characters[0].chats[0].bookmarks = ['msg-old']
+    DBState.db.characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
+    DBState.db.characters[0].chats[0].note = 'old note'
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+      onCommand: () => {
+        withTrustedServerProjectionWrite(() => {
+          const chat = DBState.db.characters[0].chats[0]
+          chat.bookmarkNames = { 'msg-newer': 'Newer bookmark' }
+          chat.note = 'newer note'
+          chat.message.push({ role: 'user', data: 'newer message', chatId: 'msg-newer' })
+          DBState.db.characters[0].chats[1].name = 'newer sibling name'
+        })
+      },
+    })
+    setServerProjectionWriteGuardEnabled(true)
+    const previous = currentChatScopedSnapshot()
+    const attemptedBookmarks = ['msg-attempted']
+    const attemptedBookmarkNames = { 'msg-attempted': 'Attempted bookmark' }
+    withTrustedServerProjectionWrite(() => {
+      DBState.db.characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
+      DBState.db.characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
+    })
+
+    dispatchUpdateChatScoped(
+      'chat-a',
+      { bookmarks: attemptedBookmarks, bookmarkNames: attemptedBookmarkNames },
+      previous,
+    )
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['msg-old'])
+    })
+    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
+    expect(DBState.db.characters[0].chats[0].note).toBe('newer note')
+    expect(DBState.db.characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'newer message', chatId: 'msg-newer' },
+    ])
+    expect(DBState.db.characters[0].chats[1].name).toBe('newer sibling name')
+  })
+
   it('failed chat rename restores only attempted name and preserves sibling edits, folders, and selection', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
@@ -3643,6 +3708,30 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     expect(DBState.db.characters[0].chats[0].message).toHaveLength(1)
   })
 
+  it('dispatchPatchChatScriptstateScoped preserves newer values for attempted patch and delete keys', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a/scriptstate' && init.method === 'PATCH',
+      onCommand: () => {
+        DBState.db.characters[0].chats[0].scriptstate = {
+          $score: 'newer score',
+          $old: 'newer recreated value',
+        }
+      },
+    })
+    const previous = currentChatScriptstateSnapshot()
+    DBState.db.characters[0].chats[0].scriptstate = { $score: 'optimistic score' }
+
+    dispatchPatchChatScriptstateScoped('chat-a', { $score: 'optimistic score' }, ['$old'], previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({
+        $score: 'newer score',
+        $old: 'newer recreated value',
+      })
+    })
+  })
+
   it('dispatchUpdateChatNoteScoped restores only the chat note on failure', async () => {
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -3672,8 +3761,28 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     await waitForCallCount(calls, 2)
 
     expect(DBState.db.characters[0].chats[0].note).toBe('original note')
-    // the snapshot also restored scriptstate to its captured value
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'keep', $old: 'gone' })
+  })
+
+  it('dispatchUpdateChatNoteScoped preserves a newer note and sibling scriptstate edit', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+      onCommand: () => {
+        DBState.db.characters[0].chats[0].note = 'newer note'
+        DBState.db.characters[0].chats[0].scriptstate!.$score = 'newer score'
+      },
+    })
+    DBState.db.characters[0].chats[0].note = 'original note'
+    const previous = currentChatScriptstateSnapshot(true)
+    DBState.db.characters[0].chats[0].note = 'optimistic note'
+
+    dispatchUpdateChatNoteScoped('chat-a', 'optimistic note', previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(DBState.db.characters[0].chats[0].note).toBe('newer note')
+    })
+    expect(DBState.db.characters[0].chats[0].scriptstate!.$score).toBe('newer score')
   })
 
   it('setChatNoteValue applies the author note under the projection guard and rolls back on failure', async () => {

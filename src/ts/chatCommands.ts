@@ -218,10 +218,11 @@ export function currentChatSelectionSnapshot(): ChatSelectionSnapshot {
   }
 }
 
-export function restoreChatSelection(snapshot: ChatSelectionSnapshot): void {
+export function restoreChatSelection(snapshot: ChatSelectionSnapshot, attemptedChatId?: string): void {
   withTrustedServerProjectionWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     if (!character) return
+    if (attemptedChatId !== undefined && selectedChatIdForCharacter(character) !== attemptedChatId) return
     character.chatPage = snapshot.chatPage
   })
 }
@@ -453,6 +454,21 @@ function restoreChatScriptstateAttempt(
     } else {
       chat.scriptstate = target as Chat['scriptstate']
     }
+  })
+}
+
+function restoreChatNoteAttempt(snapshot: ChatScriptstateSnapshot, attemptedNote: string): void {
+  if (snapshot.note === undefined) return
+  withTrustedServerProjectionWrite(() => {
+    const chat = locateScriptstateChat(snapshot)
+    if (!chat) return
+    applyAttemptedFieldRollback({
+      target: chat as unknown as Record<string, unknown>,
+      previous: { note: snapshot.note },
+      attempted: { note: attemptedNote },
+      keys: ['note'],
+      deleteMissingPrevious: true,
+    })
   })
 }
 
@@ -831,16 +847,14 @@ function restoreImportedCreatedChatAttempt(rollback: ChatImportedCreateRollback 
   })
 }
 
-function chatMetadataRollbackFromPatch(
+function chatRowMetadataRollbackFromPrevious(
   chatId: string,
-  patch: ChatSnapshot | undefined,
-  previous: ChatStateSnapshot,
+  patch: ChatSnapshot,
+  selectedCharID: number,
+  characterId: string | undefined,
+  previousChat: Chat,
 ): ChatRowMetadataSnapshot | null {
-  if (!patch || Object.keys(patch).length === 0) return null
-  const location = locateChatInState(previous, chatId)
-  if (!location) return null
-
-  const previousRow = location.chat as unknown as Record<string, unknown>
+  const previousRow = previousChat as unknown as Record<string, unknown>
   const metadata: ChatSnapshot = {}
   const attempted: ChatSnapshot = {}
   for (const key of CHAT_PATCH_ALLOWED_KEYS) {
@@ -853,12 +867,44 @@ function chatMetadataRollbackFromPatch(
   if (Object.keys(attempted).length === 0) return null
 
   return {
-    selectedCharID: previous.selectedCharID,
-    characterId: location.character.chaId,
+    selectedCharID,
+    characterId,
     chatId,
     metadata,
     attempted,
   }
+}
+
+function chatMetadataRollbackFromPatch(
+  chatId: string,
+  patch: ChatSnapshot | undefined,
+  previous: ChatStateSnapshot,
+): ChatRowMetadataSnapshot | null {
+  if (!patch || Object.keys(patch).length === 0) return null
+  const location = locateChatInState(previous, chatId)
+  if (!location) return null
+  return chatRowMetadataRollbackFromPrevious(
+    chatId,
+    patch,
+    previous.selectedCharID,
+    location.character.chaId,
+    location.chat,
+  )
+}
+
+function chatScopedMetadataRollbackFromPatch(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatScopedSnapshot,
+): ChatRowMetadataSnapshot | null {
+  if (!previous.chat || (previous.chatId && previous.chatId !== chatId)) return null
+  return chatRowMetadataRollbackFromPrevious(
+    chatId,
+    patch,
+    previous.selectedCharID,
+    previous.characterId,
+    previous.chat,
+  )
 }
 
 function chatFolderMetadataRollbackFromPatch(
@@ -1388,7 +1434,7 @@ export function dispatchSelectChat(chatId: string, previous: ChatSelectionSnapsh
         patch: {},
         select: true,
       }),
-    () => restoreChatSelection(previous),
+    () => restoreChatSelection(previous, chatId),
   )
 }
 
@@ -1429,8 +1475,9 @@ export function dispatchUpdateChatRow(
 // active chat row alongside its message history (e.g. bookmark toggles): a failed
 // command restores that one chat row, not the whole characters array.
 export function dispatchUpdateChatScoped(chatId: string, patch: ChatSnapshot, previous: ChatScopedSnapshot): void {
-  const commandPatch = sanitizeChatPatch(patch)
+  const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
+  const rollback = chatScopedMetadataRollbackFromPatch(chatId, commandPatch, previous)
   runChatCommand(
     (baseRevision) =>
       updateChatCommand({
@@ -1439,7 +1486,9 @@ export function dispatchUpdateChatScoped(chatId: string, patch: ChatSnapshot, pr
         patch: commandPatch,
         select: false,
       }),
-    () => restoreChatScopedState(previous),
+    () => {
+      if (rollback) restoreChatRowMetadata(rollback)
+    },
   )
 }
 
@@ -2818,7 +2867,11 @@ export function dispatchPatchChatScriptstateScoped(
   deleteKeys: string[],
   previous: ChatScriptstateSnapshot,
 ): void {
-  dispatchPatchChatScriptstateWith(chatId, patch, deleteKeys, () => restoreChatScriptstate(previous))
+  const commandPatch = sanitizeScriptstatePatch(patch)
+  const commandDeleteKeys = sanitizeScriptstateDeleteKeys(deleteKeys)
+  dispatchPatchChatScriptstateWith(chatId, commandPatch, commandDeleteKeys, () =>
+    restoreChatScriptstateAttempt(previous, commandPatch, commandDeleteKeys),
+  )
 }
 
 export function dispatchCurrentChatScriptstatePatch(
@@ -2878,7 +2931,7 @@ export function dispatchUpdateChatNoteScoped(chatId: string, note: string, previ
         patch: sanitizeChatPatch({ note }),
         select: false,
       }),
-    () => restoreChatScriptstate(previous),
+    () => restoreChatNoteAttempt(previous, note),
   )
 }
 
