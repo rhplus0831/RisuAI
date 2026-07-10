@@ -1336,6 +1336,11 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
   })
 
   it('narrows ordinary message refreshes to the changed chat messages', async () => {
+    const messages = Array.from({ length: 12 }, (_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `message ${index}`,
+      chatId: `msg-${index}`,
+    }))
     const revision = await importDatabase({
       characters: [
         {
@@ -1344,10 +1349,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
           chats: [
             {
               id: 'chat-a',
-              message: [
-                { role: 'user', data: 'hi', chatId: 'msg-a' },
-                { role: 'char', data: 'reply', chatId: 'msg-b' },
-              ],
+              message: messages,
             },
           ],
           chatPage: 0,
@@ -1356,17 +1358,17 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       characterOrder: ['char-a'],
     })
 
-    const body = (await getProjection('message', '?parentId=chat-a&id=msg-b')).json()
+    const body = (await getProjection('message', '?parentId=chat-a&id=msg-11')).json()
     expect(body).toMatchObject({
       revision,
       resource: 'message',
       mode: 'chat-messages',
       chatId: 'chat-a',
-      message: [{ role: 'char', data: 'reply', chatId: 'msg-b' }],
-      messageStart: 1,
-      messageTotal: 2,
       alternates: [],
     })
+    expect(body.message).toEqual(messages)
+    expect(body).not.toHaveProperty('messageStart')
+    expect(body).not.toHaveProperty('messageTotal')
     expect(body).not.toHaveProperty('fields')
     expect(body).not.toHaveProperty('characters')
   })

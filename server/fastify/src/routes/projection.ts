@@ -516,14 +516,14 @@ export function registerProjectionRoutes(
       return response
     }
 
-    // Ordinary message commands only change one chat's message rows. Events key
-    // the changed chat as `parentId`, so ship the affected chat's message
-    // window instead of the broad message-free `characters` projection.
+    // Ordinary message commands only change one chat's message rows. Delete,
+    // truncate, and replace events do not carry a surviving anchor/range, and a
+    // same-length replacement can change any row, so ship the complete affected
+    // transcript rather than an unsafe tail window.
     if (resource === 'message') {
       const chatId = req.query.parentId
       if (typeof chatId === 'string' && chatId.trim() !== '') {
-        const messageId = typeof req.query.id === 'string' && req.query.id.trim() !== '' ? req.query.id : undefined
-        const hydration = loadGenerationChatHydration(db, dataDir, chatId, messageId)
+        const hydration = loadChatHydration(db, dataDir, chatId)
         const response = {
           revision,
           resource,
@@ -531,14 +531,10 @@ export function registerProjectionRoutes(
           chatId,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
-          messageStart: hydration.messageStart,
-          messageTotal: hydration.messageTotal,
           alternates: hydration.alternates,
         }
         emitProjectionMetric(req.log, resource, revision, response, {
           id: chatId,
-          messageStart: hydration.messageStart,
-          messageTotal: hydration.messageTotal,
           returnedCount: hydration.message.length,
         })
         return response

@@ -1461,15 +1461,16 @@ describe('web bootstrap startup source', () => {
     hydrationSpies.applyServerChatMessagesProjection.mockClear()
     activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
 
-    const messageWindow = [{ role: 'char', data: 'edited', chatId: 'msg-2' }]
+    const messages = [
+      { role: 'user', data: 'first', chatId: 'msg-1' },
+      { role: 'char', data: 'edited', chatId: 'msg-2' },
+    ]
     serverProjectionState.fetchResource.mockImplementation(async () => ({
       status: 'ok' as const,
       revision: 6,
       mode: 'chat-messages' as const,
       chatId: 'chat-a',
-      message: messageWindow,
-      messageStart: 1,
-      messageTotal: 2,
+      message: messages,
       alternates: [],
     }))
 
@@ -1491,10 +1492,10 @@ describe('web bootstrap startup source', () => {
     })
     expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith(
       'chat-a',
-      messageWindow,
+      messages,
       undefined,
       [],
-      { start: 1, total: 2 },
+      undefined,
     )
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(messageTranslationJobSpies.clearActiveMessageTranslation).toHaveBeenCalledWith('msg-2')

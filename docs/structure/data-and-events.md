@@ -86,6 +86,9 @@ still fall back to a full bootstrap. Known sprawling resources such as `state`,
 asset metadata lives outside the projected `Database`.
 `modelPreset` projections include both the preset collection/pointer and every
 root model setting the selected model and prompt-preset overrides can apply.
+Ordinary `message` events project the complete affected transcript so deletes,
+truncations, and same-length replacements cannot leave stale or placeholder
+rows outside a short tail window.
 `generation.persisted` events are keyed by `parentId` = chat id and may return
 projection mode `generation-chat`. Assembly-time input transforms that persist
 both a rewritten transcript and chat metadata emit
