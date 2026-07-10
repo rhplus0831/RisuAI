@@ -1571,8 +1571,9 @@ export function isServerCharacterShell(character: unknown): boolean {
 /**
  * Surgically replace a single character row by `chaId` without touching the rest
  * of the `characters` array. Used for foreign per-character refreshes
- * (`characterRow` events: character field edits, module-link reorders, chat /
- * chat-folder metadata edits). The shipped row is message-free (stubbed chats),
+ * (`characterRow` events: character field edits, script/trigger replacements,
+ * module-link reorders, and chat/chat-folder metadata edits). The shipped row
+ * is message-free (stubbed chats),
  * so already-hydrated chat messages / globalLore are carried over to avoid
  * dropping loaded history. Returns false if the character is unknown so the
  * caller can fall back to a full bootstrap.

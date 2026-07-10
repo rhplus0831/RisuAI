@@ -73,8 +73,7 @@ Command-event resources should be as narrow as practical and are defined by
 Examples include `characterSelection`, `characterRow`, `character`, `chat`,
 `chatFolder`, `message`, `globalLorebook`, `characterLorebook`, legacy
 `lorebook`, `module`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
-`moduleScriptDefinition`, `moduleTriggerDefinition`, `scriptDefinition`,
-`triggerDefinition`, collection slices such as `preset`/`promptItem`/
+`moduleScriptDefinition`, `moduleTriggerDefinition`, collection slices such as `preset`/`promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
 `agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,
 `asset`, `generation`, and the composite `chatTranscript`. Grouped
@@ -85,6 +84,11 @@ still fall back to a full bootstrap. Known sprawling resources such as `state`,
 `pluginStorage`, and `prompt` intentionally fall back to a full bootstrap.
 `asset` is a no-op targeted projection that advances the cached revision because
 asset metadata lives outside the projected `Database`.
+Character script/trigger replacements emit `characterRow` with the character id,
+so reconciliation ships one row. The older `scriptDefinition` and
+`triggerDefinition` resource names remain replay aliases: ID-bearing events use
+the same single-row response, while events without an id retain the broad safe
+fallback.
 `modelPreset` projections include both the preset collection/pointer and every
 root model setting the selected model and prompt-preset overrides can apply.
 Ordinary `message` events project the complete affected transcript so deletes,

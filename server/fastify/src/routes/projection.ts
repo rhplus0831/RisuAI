@@ -98,10 +98,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // field mapping marks them as narrowable for fallback classification.
   message: [],
   generation: ['characters'],
-  // Character scripts/triggers write only a character row's
-  // customscript/triggerscript; the cross-module repair is validate-only, so a
-  // foreign refresh ships `characters` (not `modules`). The module
-  // scripts/triggers routes emit the module-scoped resources below.
+  // Legacy/recovery aliases: new character script/trigger events use the
+  // single-row `characterRow` resource. Keep these broad mappings for replayed
+  // historical or malformed events without a character id; id-bearing legacy
+  // events are narrowed by the character-row special case below.
   scriptDefinition: ['characters'],
   triggerDefinition: ['characters'],
   // Module scripts/triggers rewrite only the `modules` table (character repairs
@@ -439,12 +439,17 @@ export function registerProjectionRoutes(
       return response
     }
 
-    // Per-character row: character field edits, module-link reorders, and chat
-    // / chat-folder metadata edits each write a single character row. A foreign
-    // refresh ships just that character (message-free, masked) instead of the
-    // whole `characters` array. The character id is `parentId` for chat/folder
+    // Per-character row: character field edits, script/trigger replacements,
+    // module-link reorders, and chat/chat-folder metadata edits each write one
+    // character row. ID-bearing legacy scriptDefinition/triggerDefinition
+    // events use this path too, so retained replay history cannot re-stub the
+    // whole character corpus. The character id is `parentId` for chat/folder
     // events (which key by chatId/folderId) and `id` for character events.
-    if (resource === 'characterRow') {
+    const isIdBearingLegacyCharacterDefinition =
+      (resource === 'scriptDefinition' || resource === 'triggerDefinition') &&
+      typeof req.query.id === 'string' &&
+      req.query.id.trim() !== ''
+    if (resource === 'characterRow' || isIdBearingLegacyCharacterDefinition) {
       const characterId =
         typeof req.query.parentId === 'string' && req.query.parentId.trim() !== '' ? req.query.parentId : req.query.id
       if (typeof characterId !== 'string' || characterId.trim() === '') {

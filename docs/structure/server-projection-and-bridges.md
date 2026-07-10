@@ -75,9 +75,11 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
 - Narrow resources are defined by `RESOURCE_PROJECTION_FIELDS` plus route
   special cases in `server/fastify/src/routes/projection.ts`. Notable special
   cases: `characterSelection` is a narrow fields refresh, `characterRow`
-  hydrates one character shell, `message` events return the complete affected
-  chat in `chat-messages` mode (destructive/replacement events cannot safely use
-  a tail window), `preset?id=...` hydrates one bot preset body,
+  hydrates one character shell and reconciles character script/trigger edits;
+  ID-bearing legacy `scriptDefinition`/`triggerDefinition` replay events use the
+  same single-row response. `message` events return the complete affected chat
+  in `chat-messages` mode (destructive/replacement events cannot safely use a
+  tail window), `preset?id=...` hydrates one bot preset body,
   `asset` advances revision without projected fields, message-only
   `generation.persisted` events are keyed by chat id and return the ranged
   `generation-chat` mode, and `chatTranscript` returns a parent character row

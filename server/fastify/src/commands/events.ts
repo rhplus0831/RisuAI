@@ -570,11 +570,14 @@ export const COMMAND_EVENT_CATALOG = {
   },
   scriptDefinitionsReplaced: {
     type: 'scriptDefinitions.replaced',
-    resource: 'scriptDefinition',
+    // Character script replacement writes one character row. Module routes
+    // override this with their module-scoped resource below the catalog spread.
+    resource: 'characterRow',
   },
   triggerDefinitionsReplaced: {
     type: 'triggerDefinitions.replaced',
-    resource: 'triggerDefinition',
+    // Character trigger replacement has the same single-row ownership.
+    resource: 'characterRow',
   },
   moduleCreated: {
     type: 'module.created',

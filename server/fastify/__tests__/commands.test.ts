@@ -9248,7 +9248,7 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(characterScripts.statusCode).toBe(200)
     expect(characterScripts.json().event).toMatchObject({
       type: 'scriptDefinitions.replaced',
-      resource: 'scriptDefinition',
+      resource: 'characterRow',
       id: 'char-a',
     })
 
@@ -9259,7 +9259,15 @@ describe('Phase 9-4b script and trigger definition commands', () => {
       payload: { baseRevision: 2, triggers: [trigger] },
     })
     expect(characterTriggers.statusCode).toBe(200)
-    expect(characterTriggers.json()).toMatchObject({ revision: 3, characterId: 'char-a' })
+    expect(characterTriggers.json()).toMatchObject({
+      revision: 3,
+      characterId: 'char-a',
+      event: {
+        type: 'triggerDefinitions.replaced',
+        resource: 'characterRow',
+        id: 'char-a',
+      },
+    })
 
     const moduleScripts = await harness.app.inject({
       method: 'PUT',
@@ -9280,7 +9288,7 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(moduleTriggers.json().event).toMatchObject({
       type: 'triggerDefinitions.replaced',
       // Module scripts/triggers rewrite only the `modules` table, so they emit
-      // a module-scoped resource (distinct from the character `triggerDefinition`).
+      // a module-scoped resource (distinct from character `characterRow`).
       resource: 'moduleTriggerDefinition',
       id: 'mod-a',
     })

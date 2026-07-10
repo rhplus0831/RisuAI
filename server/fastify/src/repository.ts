@@ -1222,8 +1222,9 @@ function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string
 }
 
 /**
- * Single-character stub row for the `characterRow` projection. The
- * route ships exactly one character, so it must not pay
+ * Single-character stub row for the `characterRow` projection (including
+ * ID-bearing legacy script/trigger aliases). The route ships exactly one
+ * character, so it must not pay
  * `loadCharactersFromSqlite`'s whole characters+chats payload parse. Read the
  * one character row (`WHERE id = ?`, precedent: `loadCharacterSelectionRows`)
  * plus its chat rows (`WHERE character_id = ?`) and apply the same stub

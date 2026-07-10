@@ -955,9 +955,8 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     }
   })
 
-  it('narrows script/trigger refreshes to the affected character or module table', async () => {
-    // Phase 5 collection-projection slice: character scripts ship `characters`
-    // (no modules); module scripts ship `modules` (no characters).
+  it('narrows script/trigger refreshes to one character row or the module table', async () => {
+    // Character scripts ship one row; module scripts ship `modules`.
     const seed = () =>
       importDatabase({
         modules: [{ id: 'mod-a', name: 'Module A', description: '', regex: [], trigger: [] }],
@@ -968,8 +967,14 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
             triggerscript: [],
             chats: [{ id: 'chat-a', message: [{ role: 'user', data: 'hello' }] }],
           },
+          {
+            chaId: 'char-b',
+            customscript: [{ id: 'sibling-script', type: 'regex', in: 'x', out: 'y' }],
+            triggerscript: [],
+            chats: [{ id: 'chat-b', message: [{ role: 'user', data: 'sibling' }] }],
+          },
         ],
-        characterOrder: ['char-a'],
+        characterOrder: ['char-a', 'char-b'],
       })
 
     const charRevision = await seed()
@@ -983,13 +988,28 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       },
     })
     expect(charScripts.statusCode).toBe(200)
-    expect(charScripts.json().event.resource).toBe('scriptDefinition')
-    const charBody = (await getProjection('scriptDefinition')).json()
-    expect(charBody.mode).toBe('fields')
-    expect(Object.keys(charBody.fields)).toEqual(['characters'])
-    expect(charBody.fields.characters[0].customscript[0].id).toBe('s1')
-    // Messages stay stubbed and modules are not re-shipped.
-    expect(charBody.fields.characters[0].chats[0].message).toEqual([])
+    expect(charScripts.json().event.resource).toBe('characterRow')
+    const charBody = (await getProjection('characterRow', '?id=char-a')).json()
+    expect(charBody.mode).toBe('character-row')
+    expect(charBody.characterId).toBe('char-a')
+    expect(charBody.character.customscript[0].id).toBe('s1')
+    // Messages stay stubbed and no sibling character/module collection ships.
+    expect(charBody.character.chats[0].message).toEqual([])
+    expect(charBody).not.toHaveProperty('fields')
+
+    // Retained pre-change events carry these resource names. With an id they
+    // use the same single-row response; without one they retain the broad safe
+    // fallback for malformed/historical callers.
+    for (const legacyResource of ['scriptDefinition', 'triggerDefinition']) {
+      const legacyRow = (await getProjection(legacyResource, '?id=char-a')).json()
+      expect(legacyRow.mode).toBe('character-row')
+      expect(legacyRow.characterId).toBe('char-a')
+      expect(legacyRow.character.customscript[0].id).toBe('s1')
+    }
+    const legacyWithoutId = (await getProjection('scriptDefinition')).json()
+    expect(legacyWithoutId.mode).toBe('fields')
+    expect(Object.keys(legacyWithoutId.fields)).toEqual(['characters'])
+    expect(legacyWithoutId.fields.characters).toHaveLength(2)
 
     const moduleRevision = await seed()
     const moduleScripts = await harness.app.inject({
