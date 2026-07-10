@@ -107,6 +107,13 @@ const SNAPSHOT_KEYS: Array<[string, string]> = [
 
 const APPLY_KEYS = SNAPSHOT_KEYS.filter(([presetKey]) => presetKey !== 'name')
 
+// Root database fields a legacy bot preset can apply. Projection resources use
+// the same source of truth as `applyPreset` so a selected preset refresh cannot
+// under-apply new fields added to the legacy format later.
+export const LEGACY_BOT_PRESET_APPLY_DATABASE_FIELDS = Array.from(
+  new Set(APPLY_KEYS.map(([, databaseKey]) => databaseKey)),
+)
+
 export function readJsonObject(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new ValidationError(`${label} must be an object`)

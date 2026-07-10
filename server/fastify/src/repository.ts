@@ -1720,7 +1720,7 @@ function stripActivePresetPromptTemplate(database: JsonRecord): void {
   delete activePreset.promptTemplate
 }
 
-function stubBotPresets(database: unknown): void {
+export function stubBotPresets(database: unknown): void {
   if (!isRecord(database) || !Array.isArray(database.botPresets)) return
   database.botPresets = database.botPresets.map((preset) => {
     if (!isRecord(preset)) return preset

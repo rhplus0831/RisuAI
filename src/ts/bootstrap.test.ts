@@ -988,6 +988,122 @@ describe('web bootstrap startup source', () => {
     expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
   })
 
+  it('reconciles legacy preset rows and applied settings without dehydrating the collection', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          ...serverDefaultDatabase(),
+          botPresetsId: 0,
+          botPresets: [
+            { id: 'preset-a', name: 'A', mainPrompt: 'hydrated A', temperature: 10 },
+            { id: 'preset-b', name: 'B', mainPrompt: 'hydrated B', temperature: 20 },
+          ],
+          mainPrompt: 'live A',
+          temperature: 55,
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    serverProjectionState.fetchResource.mockImplementation(async (resource: string) => {
+      if (resource === 'presetRow') {
+        return {
+          status: 'ok' as const,
+          revision: 6,
+          mode: 'preset' as const,
+          presetId: 'preset-b',
+          preset: { id: 'preset-b', name: 'B updated', mainPrompt: 'updated B', temperature: 90 },
+        }
+      }
+      if (resource === 'presetApplied') {
+        return {
+          status: 'ok' as const,
+          revision: 7,
+          mode: 'preset-collection' as const,
+          fields: {
+            botPresetsId: 0,
+            botPresets: [
+              { id: 'preset-b', name: 'B updated' },
+              { id: 'preset-a', name: 'A' },
+            ],
+            mainPrompt: 'updated B',
+            temperature: 90,
+          },
+          presetRows: [
+            { id: 'preset-b', name: 'B updated', mainPrompt: 'updated B', temperature: 90 },
+            { id: 'preset-a', name: 'A', mainPrompt: 'snapshotted live A', temperature: 55 },
+          ],
+        }
+      }
+      return {
+        status: 'ok' as const,
+        revision: 8,
+        mode: 'fields' as const,
+        fields: {
+          botPresetsId: 1,
+          botPresets: [
+            { id: 'preset-a', name: 'A legacy', mainPrompt: 'full legacy A', temperature: 56 },
+            { id: 'preset-b', name: 'B legacy', mainPrompt: 'full legacy B', temperature: 91 },
+          ],
+          mainPrompt: 'full legacy A',
+          temperature: 56,
+        },
+      }
+    })
+
+    const subscription = serverEventsState.subscriptions[0]
+    subscription.onCommandEvent({
+      type: 'preset.updated',
+      revision: 6,
+      resource: 'presetRow',
+      id: 'preset-b',
+    })
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(DBState.db.botPresets[1]).toMatchObject({ name: 'B updated', mainPrompt: 'updated B' })
+
+    subscription.onCommandEvent({
+      type: 'preset.selected',
+      revision: 7,
+      resource: 'presetApplied',
+      id: 'preset-b',
+      parentId: 'preset-a',
+    })
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(7))
+
+    expect(serverProjectionState.fetchResource).toHaveBeenNthCalledWith(1, 'presetRow', {
+      id: 'preset-b',
+      parentId: undefined,
+    })
+    expect(serverProjectionState.fetchResource).toHaveBeenNthCalledWith(2, 'presetApplied', {
+      id: 'preset-b',
+      parentId: 'preset-a',
+    })
+    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a'])
+    expect(DBState.db.botPresets[0]).toMatchObject({ mainPrompt: 'updated B', temperature: 90 })
+    expect(DBState.db.botPresets[1]).toMatchObject({ mainPrompt: 'snapshotted live A', temperature: 55 })
+    expect(DBState.db.mainPrompt).toBe('updated B')
+    expect(DBState.db.temperature).toBe(90)
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+
+    subscription.onCommandEvent({
+      type: 'preset.reordered',
+      revision: 8,
+      resource: 'preset',
+    })
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(8))
+    expect(serverProjectionState.fetchResource).toHaveBeenNthCalledWith(3, 'preset', {
+      id: undefined,
+      parentId: undefined,
+    })
+    expect(DBState.db.botPresets).toEqual([
+      { id: 'preset-a', name: 'A legacy', mainPrompt: 'full legacy A', temperature: 56 },
+      { id: 'preset-b', name: 'B legacy', mainPrompt: 'full legacy B', temperature: 91 },
+    ])
+    expect(DBState.db.botPresetsId).toBe(1)
+  })
+
   it('merges prompt and plugin-storage events without replacing hydrated characters', async () => {
     serverBootstrapState.response = {
       status: 'ok',

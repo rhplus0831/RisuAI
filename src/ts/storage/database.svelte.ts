@@ -1557,6 +1557,117 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   })
 }
 
+export type ServerPresetProjectionBaseline = ReadonlyMap<string, Record<string, unknown>>
+
+/**
+ * Capture only the preset rows a targeted projection may replace. A response
+ * that arrives after another local edit overlays fields changed since this
+ * baseline, so server reconciliation cannot rewind a newer queued input.
+ */
+export function captureServerPresetProjectionBaseline(
+  presetIds: readonly (string | undefined)[],
+): ServerPresetProjectionBaseline {
+  const requestedIds = new Set(
+    presetIds.filter((presetId): presetId is string => typeof presetId === 'string' && presetId.length > 0),
+  )
+  const baseline = new Map<string, Record<string, unknown>>()
+  for (const preset of DBState.db.botPresets ?? []) {
+    if (!preset?.id || !requestedIds.has(preset.id)) continue
+    baseline.set(preset.id, safeStructuredClone(preset as unknown as Record<string, unknown>))
+  }
+  return baseline
+}
+
+/** Replace one hydrated legacy preset by stable id while retaining newer local fields. */
+export function mergeServerProjectionPresetRow(
+  presetId: string,
+  preset: Record<string, unknown>,
+  baseline: ServerPresetProjectionBaseline = new Map(),
+): boolean {
+  if (preset.id !== presetId) return false
+  const index = DBState.db.botPresets.findIndex((candidate) => candidate?.id === presetId)
+  if (index < 0) return false
+  const current = DBState.db.botPresets[index] as unknown as Record<string, unknown>
+  const next = overlayConcurrentPresetFields(preset, current, baseline.get(presetId))
+  withServerProjectionApply(() => {
+    DBState.db.botPresets[index] = next as unknown as botPreset
+  })
+  return true
+}
+
+/**
+ * Reconcile authoritative legacy-preset membership/order without re-stubbing
+ * every already-hydrated row. Full rows named by the event replace their
+ * matching entries; unchanged rows retain hydrated bodies while authoritative
+ * list metadata is overlaid.
+ */
+export function mergeServerProjectionPresetCollection(
+  fields: Partial<Database>,
+  presetRows: readonly Record<string, unknown>[],
+  baseline: ServerPresetProjectionBaseline = new Map(),
+): boolean {
+  if (!Array.isArray(fields.botPresets)) return false
+  const stubsById = uniquePresetRowsById(fields.botPresets)
+  const changedById = uniquePresetRowsById(presetRows)
+  const currentById = uniquePresetRowsById(DBState.db.botPresets)
+  if (!stubsById || !changedById || !currentById) return false
+  for (const presetId of changedById.keys()) {
+    if (!stubsById.has(presetId)) return false
+  }
+
+  const nextPresets = fields.botPresets.map((stub) => {
+    const presetId = stub.id!
+    const changed = changedById.get(presetId)
+    const current = currentById.get(presetId)
+    if (changed) {
+      return overlayConcurrentPresetFields(changed, current, baseline.get(presetId)) as unknown as botPreset
+    }
+    if (current) {
+      return {
+        ...current,
+        ...safeStructuredClone(stub as unknown as Record<string, unknown>),
+      } as unknown as botPreset
+    }
+    return safeStructuredClone(stub)
+  })
+
+  mergeServerProjectionFields({ ...fields, botPresets: nextPresets })
+  return true
+}
+
+function uniquePresetRowsById(rows: readonly unknown[]): Map<string, Record<string, unknown>> | null {
+  const byId = new Map<string, Record<string, unknown>>()
+  for (const row of rows) {
+    if (!isPlainRecord(row) || typeof row.id !== 'string' || row.id.trim() === '' || byId.has(row.id)) {
+      return null
+    }
+    byId.set(row.id, row)
+  }
+  return byId
+}
+
+function overlayConcurrentPresetFields(
+  authoritative: Record<string, unknown>,
+  current: Record<string, unknown> | undefined,
+  baseline: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const next = safeStructuredClone(authoritative)
+  if (!current || !baseline) return next
+
+  for (const key of new Set([...Object.keys(baseline), ...Object.keys(current)])) {
+    if (key === 'id') continue
+    const currentHasKey = Object.prototype.hasOwnProperty.call(current, key)
+    const baselineHasKey = Object.prototype.hasOwnProperty.call(baseline, key)
+    if (currentHasKey === baselineHasKey && snapshotJson(current[key]) === snapshotJson(baseline[key])) continue
+    if (currentHasKey) {
+      next[key] = safeStructuredClone(current[key])
+    } else {
+      delete next[key]
+    }
+  }
+  return next
+}
+
 export const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
 
 export function isServerCharacterShell(character: unknown): boolean {

@@ -80,7 +80,12 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   `scriptDefinition`/`triggerDefinition`/`chat`/`chatFolder` replay events use
   the same single-row response. `message` events return the complete affected chat
   in `chat-messages` mode (destructive/replacement events cannot safely use a
-  tail window), `preset?id=...` hydrates one bot preset body,
+  tail window), `preset?id=...` and `presetRow?id=...` hydrate one bot preset
+  body, `presetCollection` reconciles authoritative membership/order without
+  dehydrating unchanged rows, and `presetApplied` additionally refreshes every
+  root setting a legacy preset can apply. Composite preset collection responses
+  include full event-identified rows (including a `saveCurrent` row in
+  `parentId`) and preserve local fields changed after the request baseline.
   `asset` advances revision without projected fields, message-only
   `generation.persisted` events are keyed by chat id and return the ranged
   `generation-chat` mode, and `chatTranscript` returns a parent character row
@@ -165,6 +170,7 @@ selection UI do not mutate `DBState.db.agentPresets` directly.
 | Inactive/selected character shell         | `GET /api/v1/projection/characterRow?id=...`                    | `hydrateSelectedCharacterShell()`                         |
 | Prompt-template collection fields         | `GET /api/v1/projection/promptItem`, with `parentId` for explicit prompt-preset owner hydration | `promptTemplateHydration.ts`, owner-keyed by selected/requested prompt preset when present |
 | Active preset body                        | `GET /api/v1/projection/preset?id=...`                          | `ensureBotPresetHydrated()` / `fetchServerPresetProjection()` |
+| Legacy preset event reconciliation        | `GET /api/v1/projection/{presetRow,presetCollection,presetApplied}` | `processServerCommandEvent()` plus stable-id preset merge helpers |
 | Module/plugin heavy body cache            | `/api/v1/bootstrap` body-cache manifest                         | `bootstrapBodyCache.ts`                                   |
 
 Stale-response drops, hydration-generation resets, and reroll alternate seeding

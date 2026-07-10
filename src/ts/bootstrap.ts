@@ -8,6 +8,9 @@ import {
   mergeServerProjectionFields,
   mergeServerProjectionCharacterRow,
   mergeServerProjectionCharacterRowComposite,
+  mergeServerProjectionPresetCollection,
+  mergeServerProjectionPresetRow,
+  captureServerPresetProjectionBaseline,
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
@@ -402,8 +405,17 @@ async function processServerCommandEvent(
     return
   }
   if (event.revision <= appliedRevision || event.revision === appliedRevision + 1) {
+    const presetBaseline =
+      event.resource === 'preset' && event.type !== 'preset.updated'
+        ? captureServerPresetProjectionBaseline(DBState.db.botPresets.map((preset) => preset?.id))
+        : event.resource === 'preset' ||
+            event.resource === 'presetRow' ||
+            event.resource === 'presetCollection' ||
+            event.resource === 'presetApplied'
+          ? captureServerPresetProjectionBaseline([event.id, event.parentId])
+          : undefined
     const result = await fetchServerProjectionResource(event.resource, {
-      id: event.resource === 'preset' ? undefined : event.id,
+      id: event.resource === 'preset' && event.type !== 'preset.updated' ? undefined : event.id,
       parentId: event.parentId,
     })
     if (result.status === 'ok' && result.mode === 'character-selection') {
@@ -452,6 +464,24 @@ async function processServerCommandEvent(
       await reconcileCommandEventWithFullResync('projection-error', event, options)
       return
     }
+    if (result.status === 'ok' && result.mode === 'preset') {
+      const applied = mergeServerProjectionPresetRow(result.presetId, result.preset, presetBaseline)
+      if (applied) {
+        markAppliedCommandProjectionEvent(event, options)
+        return
+      }
+      await reconcileCommandEventWithFullResync('projection-error', event, options)
+      return
+    }
+    if (result.status === 'ok' && result.mode === 'preset-collection') {
+      const applied = mergeServerProjectionPresetCollection(result.fields, result.presetRows, presetBaseline)
+      if (applied) {
+        markAppliedCommandProjectionEvent(event, options)
+        return
+      }
+      await reconcileCommandEventWithFullResync('projection-error', event, options)
+      return
+    }
     if (result.status === 'ok' && result.mode === 'chat-transcript') {
       // Assembly rewrites, generation with scriptstate changes, and chat
       // create/fork can change row metadata and a transcript in one revision.
@@ -497,7 +527,15 @@ async function processServerCommandEvent(
     if (result.status === 'ok' && result.mode === 'fields') {
       const fields = preservePendingFieldEdits(result.fields)
       const selectedCharacterBeforeMerge = captureSelectedCharacterBeforeBroadProjection(fields)
-      if (event.resource === 'promptItem') {
+      if (event.resource === 'preset' && Array.isArray(fields.botPresets)) {
+        const presetRows = fields.botPresets.filter(
+          (preset) => !!preset && typeof preset === 'object' && !Array.isArray(preset),
+        ) as unknown as Record<string, unknown>[]
+        if (!mergeServerProjectionPresetCollection(fields, presetRows, presetBaseline)) {
+          await reconcileCommandEventWithFullResync('projection-error', event, options)
+          return
+        }
+      } else if (event.resource === 'promptItem') {
         const ownerId = event.parentId ?? null
         if (!applyPromptTemplateProjectionFields(fields, ownerId)) {
           await reconcileCommandEventWithFullResync('projection-error', event, options)

@@ -2701,7 +2701,7 @@ describe('Phase 9-2b bot preset commands', () => {
       event: {
         type: 'preset.created',
         revision: 2,
-        resource: 'preset',
+        resource: 'presetCollection',
         id: 'preset-b',
       },
       presetId: 'preset-b',
@@ -2723,7 +2723,7 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json().event).toMatchObject({
       type: 'preset.updated',
-      resource: 'preset',
+      resource: 'presetRow',
       id: 'preset-b',
     })
 
@@ -2965,8 +2965,9 @@ describe('Phase 9-2b bot preset commands', () => {
       event: {
         type: 'preset.selected',
         revision: 2,
-        resource: 'preset',
+        resource: 'presetApplied',
         id: 'preset-b',
+        parentId: 'preset-a',
       },
       presetId: 'preset-b',
     })
@@ -3036,7 +3037,7 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(copiedPresetId).toBe('preset-copy')
     expect(copied.json().event).toMatchObject({
       type: 'preset.copied',
-      resource: 'preset',
+      resource: 'presetCollection',
       id: copiedPresetId,
     })
 
@@ -3068,7 +3069,7 @@ describe('Phase 9-2b bot preset commands', () => {
       event: {
         type: 'preset.deleted',
         revision: 4,
-        resource: 'preset',
+        resource: 'presetCollection',
         id: copiedPresetId,
       },
       presetId: copiedPresetId,

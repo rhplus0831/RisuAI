@@ -27,11 +27,13 @@ import {
   loadPresetHydration,
   loadSingleCharacterStubRow,
   loadStubbedProjectionFields,
+  stubBotPresets,
 } from '../repository.js'
 import { maskProviderSecrets, maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 import { SETTINGS_GROUP_KEYS, type SettingsGroup } from './commands.js'
 import { PROMPT_SETTINGS_KEYS } from '../commands/prompts.js'
+import { LEGACY_BOT_PRESET_APPLY_DATABASE_FIELDS } from '../commands/presets.js'
 
 function promptPresetProjectionField(field: PromptPresetField): string {
   if (field === 'regex' || field === 'presetRegex') return 'presetRegex'
@@ -71,6 +73,13 @@ const MODEL_PRESET_PROJECTION_FIELDS = uniqueProjectionFields([
   'modelPresets',
   'modelPresetsId',
   ...MODEL_PRESET_FIELDS.map(modelPresetProjectionField),
+])
+
+const LEGACY_BOT_PRESET_COLLECTION_FIELDS = ['botPresets', 'botPresetsId'] as const
+
+const LEGACY_BOT_PRESET_APPLIED_PROJECTION_FIELDS = uniqueProjectionFields([
+  ...LEGACY_BOT_PRESET_COLLECTION_FIELDS,
+  ...LEGACY_BOT_PRESET_APPLY_DATABASE_FIELDS,
 ])
 
 // Targeted per-resource projection.
@@ -121,7 +130,13 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // commands moved to characterLorebook/chat/moduleUpdated). Kept broad so a
   // replayed historical `lorebook` event from an older event log still applies.
   lorebook: ['characters', 'modules', 'loreBook', 'loreBookPage'],
-  preset: ['botPresets', 'botPresetsId'],
+  // `preset` is the replay alias emitted before legacy preset events were split
+  // by mutation shape. It must cover the widest historical event (select or
+  // delete with apply=true). New events use one of the three narrow resources.
+  preset: LEGACY_BOT_PRESET_APPLIED_PROJECTION_FIELDS,
+  presetRow: [],
+  presetCollection: [...LEGACY_BOT_PRESET_COLLECTION_FIELDS],
+  presetApplied: LEGACY_BOT_PRESET_APPLIED_PROJECTION_FIELDS,
   // Selecting, deleting, or updating the selected model preset also applies
   // its fields (then the selected prompt preset's model overrides) to root
   // settings. Ship that effective surface with the collection and pointer.
@@ -172,6 +187,8 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
 const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
   'settings',
   'preset',
+  'presetCollection',
+  'presetApplied',
   'modelPreset',
   'promptPreset',
   'legacyBotPreset',
@@ -587,7 +604,7 @@ export function registerProjectionRoutes(
 
     // Per-preset hydration fills bootstrap/list stubs when a client needs
     // promptTemplate or the full generation settings for a preset switch/diff.
-    if (resource === 'preset') {
+    if (resource === 'preset' || resource === 'presetRow') {
       const presetId = req.query.id
       if (typeof presetId === 'string' && presetId.trim() !== '') {
         const hydration = loadPresetHydration(db, dataDir, presetId)
@@ -608,6 +625,40 @@ export function registerProjectionRoutes(
         emitProjectionMetric(req.log, resource, revision, response, { id: presetId })
         return response
       }
+      if (resource === 'presetRow') {
+        const response = { revision, resource, mode: 'full' as const }
+        emitProjectionMetric(req.log, resource, revision, response, { fallbackClass: 'unknown' })
+        return response
+      }
+    }
+
+    if (resource === 'presetCollection' || resource === 'presetApplied') {
+      const fieldKeys = resourceProjectionFields(resource)!
+      const fields = maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
+      const requestedIds = new Set(
+        [req.query.id, req.query.parentId].filter(
+          (value): value is string => typeof value === 'string' && value.trim() !== '',
+        ),
+      )
+      const fullPresets = Array.isArray(fields.botPresets) ? fields.botPresets : []
+      const presetRows = fullPresets.filter(
+        (preset) => isRecord(preset) && typeof preset.id === 'string' && requestedIds.has(preset.id),
+      )
+      stubBotPresets(fields)
+      const response = {
+        revision,
+        resource,
+        mode: 'preset-collection' as const,
+        fields,
+        presetRows,
+      }
+      emitProjectionMetric(req.log, resource, revision, response, {
+        fieldCount: Object.keys(fields).length,
+        fieldKeys,
+        requestedPresetCount: requestedIds.size,
+        returnedPresetCount: presetRows.length,
+      })
+      return response
     }
 
     if (resource === 'promptItem') {
@@ -689,10 +740,6 @@ export function registerProjectionRoutes(
     const fields = NARROW_FIELD_PROJECTION_RESOURCES.has(resource)
       ? maskProviderSecrets(loadPersistedDatabaseFields(db, dataDir, fieldKeys))
       : maskProviderSecrets(loadStubbedProjectionFields(db, dataDir, fieldKeys))
-    if (resource === 'preset') {
-      const projected = loadStubbedProjectionFields(db, dataDir, fieldKeys)
-      fields.botPresets = projected.botPresets
-    }
     if (resource === 'promptPreset') {
       projectEmptyAppliedPromptTemplate(fields)
     }

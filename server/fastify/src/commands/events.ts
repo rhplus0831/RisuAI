@@ -188,31 +188,31 @@ export const COMMAND_EVENT_CATALOG = {
   },
   presetCreated: {
     type: 'preset.created',
-    resource: 'preset',
+    resource: 'presetCollection',
   },
   presetUpdated: {
     type: 'preset.updated',
-    resource: 'preset',
+    resource: 'presetRow',
   },
   presetDeleted: {
     type: 'preset.deleted',
-    resource: 'preset',
+    resource: 'presetApplied',
   },
   presetCopied: {
     type: 'preset.copied',
-    resource: 'preset',
+    resource: 'presetCollection',
   },
   presetSelected: {
     type: 'preset.selected',
-    resource: 'preset',
+    resource: 'presetApplied',
   },
   presetImported: {
     type: 'preset.imported',
-    resource: 'preset',
+    resource: 'presetCollection',
   },
   presetReordered: {
     type: 'preset.reordered',
-    resource: 'preset',
+    resource: 'presetCollection',
   },
   modelPresetCreated: {
     type: 'modelPreset.created',

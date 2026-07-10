@@ -223,7 +223,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(JSON.stringify(body)).not.toContain('Babbage')
   })
 
-  it('returns preset stubs for preset field refreshes and masks secrets in full preset hydration', async () => {
+  it('returns a full safe legacy preset fallback and masks secrets in preset hydration', async () => {
     await importDatabase({
       characters: [{ chaId: 'char-a', name: 'Ada' }],
       botPresets: [
@@ -245,19 +245,18 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     const res = await getProjection('preset')
     const body = res.json()
     expect(body.mode).toBe('fields')
-    expect(Object.keys(body.fields).sort()).toEqual(['botPresets', 'botPresetsId'])
-    expect(body.fields.botPresets).toEqual([
-      {
-        id: 'p1',
-        name: 'Preset 1',
-        image: 'data:image/png;base64,stub',
-        metadata: { tag: 'kept' },
-        customPromptTemplateToggle: 'mode=Mode',
-        moduleIntergration: 'preset-space',
-      },
-    ])
-    expect(body.fields.botPresets[0]).not.toHaveProperty('promptTemplate')
-    expect(body.fields.botPresets[0]).not.toHaveProperty('openAIKey')
+    expect(Object.keys(body.fields)).toEqual(expect.arrayContaining(['botPresets', 'botPresetsId', 'mainPrompt']))
+    expect(body.fields.botPresets[0]).toMatchObject({
+      id: 'p1',
+      name: 'Preset 1',
+      image: 'data:image/png;base64,stub',
+      metadata: { tag: 'kept' },
+      customPromptTemplateToggle: 'mode=Mode',
+      moduleIntergration: 'preset-space',
+      openAIKey: MASKED_PROVIDER_SECRET,
+      proxyKey: MASKED_PROVIDER_SECRET,
+      promptTemplate: [{ id: 'prompt-a', type: 'plain', text: 'heavy prompt' }],
+    })
     expect(body.fields).not.toHaveProperty('characters')
     expect(body.fields).not.toHaveProperty('language')
 
@@ -268,6 +267,73 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(hydratedBody.preset.openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(hydratedBody.preset.proxyKey).toBe(MASKED_PROVIDER_SECRET)
     expect(hydratedBody.preset.promptTemplate).toEqual([{ id: 'prompt-a', type: 'plain', text: 'heavy prompt' }])
+  })
+
+  it('projects legacy preset rows, collection changes, and applied settings without dehydrating siblings', async () => {
+    const revision = await importDatabase({
+      characters: [{ chaId: 'char-a', name: 'Ada' }],
+      botPresetsId: 0,
+      botPresets: [
+        { id: 'preset-a', name: 'A', mainPrompt: 'stored A', temperature: 10 },
+        { id: 'preset-b', name: 'B', mainPrompt: 'target B', temperature: 90 },
+      ],
+      mainPrompt: 'live A',
+      temperature: 55,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-b',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { name: 'B updated', mainPrompt: 'updated B' } },
+    })
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json().event).toMatchObject({ resource: 'presetRow', id: 'preset-b' })
+
+    const row = (await getProjection('presetRow', '?id=preset-b')).json()
+    expect(row).toMatchObject({
+      mode: 'preset',
+      presetId: 'preset-b',
+      preset: { id: 'preset-b', name: 'B updated', mainPrompt: 'updated B' },
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: updated.json().revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: true,
+      },
+    })
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json().event).toMatchObject({
+      resource: 'presetApplied',
+      id: 'preset-b',
+      parentId: 'preset-a',
+    })
+
+    const applied = (await getProjection('presetApplied', '?id=preset-b&parentId=preset-a')).json()
+    expect(applied).toMatchObject({
+      mode: 'preset-collection',
+      fields: {
+        botPresetsId: 1,
+        mainPrompt: 'updated B',
+        temperature: 90,
+        botPresets: [
+          { id: 'preset-a', name: 'A' },
+          { id: 'preset-b', name: 'B updated' },
+        ],
+      },
+    })
+    expect(applied.presetRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'preset-a', mainPrompt: 'live A', temperature: 55 }),
+        expect.objectContaining({ id: 'preset-b', mainPrompt: 'updated B', temperature: 90 }),
+      ]),
+    )
   })
 
   it('reships promptTemplate (not botPresets) for a promptItem refresh', async () => {
@@ -766,7 +832,14 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('moduleTriggerDefinition')).toEqual(['modules'])
     expect(resourceProjectionFields('lorebook')).toEqual(['characters', 'modules', 'loreBook', 'loreBookPage'])
     expect(resourceProjectionFields('asset')).toEqual([])
-    expect(resourceProjectionFields('preset')).toEqual(['botPresets', 'botPresetsId'])
+    expect(resourceProjectionFields('preset')).toEqual(
+      expect.arrayContaining(['botPresets', 'botPresetsId', 'mainPrompt', 'temperature', 'agentPresetDefaultId']),
+    )
+    expect(resourceProjectionFields('presetRow')).toEqual([])
+    expect(resourceProjectionFields('presetCollection')).toEqual(['botPresets', 'botPresetsId'])
+    expect(resourceProjectionFields('presetApplied')).toEqual(
+      expect.arrayContaining(['botPresets', 'botPresetsId', 'mainPrompt', 'temperature', 'agentPresetDefaultId']),
+    )
     expect(resourceProjectionFields('modelPreset')).toEqual(
       expect.arrayContaining([
         'modelPresets',
@@ -1017,10 +1090,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
         revision,
         resource: 'preset',
         mode: 'fields',
-        fields: {
-          ...maskProviderSecrets(selectFields(database, presetFields!)),
-          botPresets: [{ id: 'preset-a', name: 'Preset A' }],
-        },
+        fields: maskProviderSecrets(selectFields(database, presetFields!)),
       }
       const presetRes = await getProjection('preset')
       expect(presetRes.statusCode).toBe(200)

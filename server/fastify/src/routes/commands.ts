@@ -2048,11 +2048,11 @@ export function registerCommandRoutes(
             throw new ValidationError('Cannot delete the only preset')
           }
           const beforeSelected = target.botPresetsId
+          const currentSelectedId = selectedPresetId(target, presets)
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
           }
           const deletedIndex = requirePresetIndex(presets, presetId)
-          const currentSelectedId = selectedPresetId(target, presets)
           const deletedWasSelected = currentSelectedId === presetId
           presets.splice(deletedIndex, 1)
 
@@ -2078,7 +2078,14 @@ export function registerCommandRoutes(
           }
 
           return {
-            event: { ...COMMAND_EVENT_CATALOG.presetDeleted, id: presetId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.presetDeleted,
+              ...(!applied ? { resource: 'presetCollection' } : {}),
+              id: presetId,
+              ...(saveCurrent && currentSelectedId && currentSelectedId !== presetId
+                ? { parentId: currentSelectedId }
+                : {}),
+            },
             extra: {
               presetId,
               selectedPresetId: selectedIndex >= 0 ? presets[selectedIndex].id : null,
@@ -2117,6 +2124,7 @@ export function registerCommandRoutes(
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
+          const savedPresetId = saveCurrent ? selectedPresetId(target, presets) : null
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
           }
@@ -2134,7 +2142,11 @@ export function registerCommandRoutes(
           // preset collection; the selected pointer is unchanged.
           writeSingleCollectionTable(innerDb, 'botPresets', presets)
           return {
-            event: { ...COMMAND_EVENT_CATALOG.presetCopied, id: copy.id },
+            event: {
+              ...COMMAND_EVENT_CATALOG.presetCopied,
+              id: copy.id,
+              ...(savedPresetId ? { parentId: savedPresetId } : {}),
+            },
             extra: { presetId: copy.id, sourcePresetId: presetId },
           }
         },
@@ -2170,6 +2182,7 @@ export function registerCommandRoutes(
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           const beforeSelected = target.botPresetsId
+          const previousSelectedId = selectedPresetId(target, presets)
           if (saveCurrent) {
             saveCurrentPresetSnapshot(target, presets)
           }
@@ -2189,7 +2202,12 @@ export function registerCommandRoutes(
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.presetSelected, id: presetId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.presetSelected,
+              ...(!applied ? { resource: 'presetCollection' } : {}),
+              id: presetId,
+              ...(saveCurrent && previousSelectedId ? { parentId: previousSelectedId } : {}),
+            },
             extra: { presetId },
           }
         },

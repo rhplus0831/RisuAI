@@ -17,6 +17,7 @@ import {
   applyPromptPresetFieldsToDatabase,
   applyServerProjectionDatabase,
   botPresetIdsNeedNormalization,
+  captureServerPresetProjectionBaseline,
   changeToPreset,
   copyPreset,
   createPreset,
@@ -27,6 +28,8 @@ import {
   extractLegacyBotPresetByIndex,
   mergeServerProjectionCharacterRow,
   mergeServerProjectionFields,
+  mergeServerProjectionPresetCollection,
+  mergeServerProjectionPresetRow,
   normalizePromptTemplateIds,
   presetTemplate,
   promptTemplateIdsNeedNormalization,
@@ -790,6 +793,88 @@ describe('mergeServerProjectionCharacterRow', () => {
 })
 
 describe('preset command rollback (L21)', () => {
+  it('merges a projected preset row by id without overwriting a newer local field', () => {
+    seedPresetDatabase({
+      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+    })
+    const siblingBefore = clonePlain(DBState.db.botPresets[1])
+    const baseline = captureServerPresetProjectionBaseline(['preset-a'])
+    DBState.db.botPresets[0].name = 'Alpha edited while fetching'
+
+    const applied = mergeServerProjectionPresetRow(
+      'preset-a',
+      makePreset('preset-a', 'Alpha from server', {
+        mainPrompt: 'authoritative prompt',
+        temperature: 44,
+      }) as unknown as Record<string, unknown>,
+      baseline,
+    )
+
+    expect(applied).toBe(true)
+    expect(DBState.db.botPresets[0]).toMatchObject({
+      id: 'preset-a',
+      name: 'Alpha edited while fetching',
+      mainPrompt: 'authoritative prompt',
+      temperature: 44,
+    })
+    expect(DBState.db.botPresets[1]).toEqual(siblingBefore)
+  })
+
+  it('merges preset membership by id while preserving hydrated and post-request fields', () => {
+    seedPresetDatabase({
+      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+      mainPrompt: 'old root prompt',
+    })
+    const baseline = captureServerPresetProjectionBaseline(['preset-a', 'preset-b', 'preset-c'])
+    DBState.db.botPresets[1].name = 'Beta edited while fetching'
+
+    const applied = mergeServerProjectionPresetCollection(
+      {
+        botPresets: [
+          { id: 'preset-b', name: 'Beta stub', image: 'beta.png' } as botPreset,
+          { id: 'preset-a', name: 'Alpha stub', image: 'alpha.png' } as botPreset,
+          { id: 'preset-c', name: 'Gamma stub', image: 'gamma.png' } as botPreset,
+        ],
+        botPresetsId: 0,
+        mainPrompt: 'applied root prompt',
+      },
+      [
+        makePreset('preset-a', 'Alpha snapshotted', { mainPrompt: 'saved live prompt' }) as unknown as Record<
+          string,
+          unknown
+        >,
+        makePreset('preset-b', 'Beta from server', { mainPrompt: 'selected prompt' }) as unknown as Record<
+          string,
+          unknown
+        >,
+        makePreset('preset-c', 'Gamma from server', { mainPrompt: 'gamma prompt' }) as unknown as Record<
+          string,
+          unknown
+        >,
+      ],
+      baseline,
+    )
+
+    expect(applied).toBe(true)
+    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a', 'preset-c'])
+    expect(DBState.db.botPresets[0]).toMatchObject({
+      name: 'Beta edited while fetching',
+      mainPrompt: 'selected prompt',
+    })
+    expect(DBState.db.botPresets[1]).toMatchObject({
+      name: 'Alpha snapshotted',
+      mainPrompt: 'saved live prompt',
+    })
+    expect(DBState.db.botPresets[2]).toMatchObject({
+      name: 'Gamma from server',
+      mainPrompt: 'gamma prompt',
+    })
+    expect(DBState.db.botPresetsId).toBe(0)
+    expect(DBState.db.mainPrompt).toBe('applied root prompt')
+  })
+
   it('applies a prompt preset legacy regex alias when presetRegex is empty', async () => {
     const liveRegex = [{ id: 'live-regex', in: 'hi', out: 'LIVE', type: 'editinput' }]
     const selectedRegex = [{ id: 'selected-regex', in: 'hi', out: 'SELECTED', type: 'editinput' }]

@@ -73,7 +73,8 @@ Command-event resources should be as narrow as practical and are defined by
 Examples include `characterSelection`, `characterOrder`, `characterRow`, `character`,
 `message`, `globalLorebook`, `characterLorebook`, legacy `chat`/`chatFolder` and
 `lorebook`, `module`, `moduleCreated`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
-`moduleScriptDefinition`, `moduleTriggerDefinition`, collection slices such as `preset`/`promptItem`/
+`moduleScriptDefinition`, `moduleTriggerDefinition`, legacy-preset slices
+`presetRow`/`presetCollection`/`presetApplied`, collection slices such as `promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
 `agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,
 `asset`, `generation`, and the composite `chatTranscript`. Grouped
@@ -99,6 +100,15 @@ resident histories for surviving ids, invalidates hydration only for added or
 removed ids, and refreshes generation attachment if the active chat changed.
 `modelPreset` projections include both the preset collection/pointer and every
 root model setting the selected model and prompt-preset overrides can apply.
+Legacy bot-preset updates use a keyed full `presetRow`; membership/order changes
+use `presetCollection`; and select/delete operations that apply a preset use
+`presetApplied`, which also ships the complete root setting surface owned by
+`applyPreset`. Collection responses carry authoritative stubs plus the full rows
+named by the event. The browser merges by stable id, preserves hydrated siblings
+and post-request local field edits, and adopts authoritative order/pointer state.
+Historical `preset` events remain a compatibility alias and return the full
+collection plus applied fields because old events did not record whether
+`saveCurrent` changed another row.
 Ordinary `message` events project the complete affected transcript so deletes,
 truncations, and same-length replacements cannot leave stale or placeholder
 rows outside a short tail window.

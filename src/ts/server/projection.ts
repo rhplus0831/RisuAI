@@ -37,6 +37,13 @@ export type ServerProjectionResourceResult =
   | {
       status: 'ok'
       revision: number
+      mode: 'preset-collection'
+      fields: Partial<Database>
+      presetRows: Record<string, unknown>[]
+    }
+  | {
+      status: 'ok'
+      revision: number
       mode: 'chat-transcript'
       characterId: string
       character: Record<string, unknown>
@@ -201,6 +208,23 @@ export async function fetchServerProjectionResource(
       mode: 'preset',
       presetId: record.presetId,
       preset: record.preset as Record<string, unknown>,
+    }
+  }
+
+  if (record.mode === 'preset-collection') {
+    const fields = record.fields
+    if (!fields || typeof fields !== 'object' || Array.isArray(fields) || !Array.isArray(record.presetRows)) {
+      return { status: 'error', error: 'Invalid preset-collection response' }
+    }
+    if (record.presetRows.some((preset) => !preset || typeof preset !== 'object' || Array.isArray(preset))) {
+      return { status: 'error', error: 'Invalid preset-collection response' }
+    }
+    return {
+      status: 'ok',
+      revision: revision as number,
+      mode: 'preset-collection',
+      fields: fields as Partial<Database>,
+      presetRows: record.presetRows as Record<string, unknown>[],
     }
   }
 

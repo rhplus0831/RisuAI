@@ -148,6 +148,16 @@ describe('server projection API adapter', () => {
         messageTotal: 5,
         alternates: [{ swipe: 1 }],
       },
+      {
+        revision: 7,
+        mode: 'preset-collection',
+        fields: {
+          botPresets: [{ id: 'preset-a', name: 'A' }],
+          botPresetsId: 0,
+          mainPrompt: 'applied prompt',
+        },
+        presetRows: [{ id: 'preset-a', name: 'A', mainPrompt: 'preset prompt' }],
+      },
     ]
     const projectionFetch = makeProjectionFetch(() => responses.shift())
     vi.stubGlobal('fetch', projectionFetch.fetch)
@@ -200,6 +210,17 @@ describe('server projection API adapter', () => {
       messageStart: 4,
       messageTotal: 5,
       alternates: [{ swipe: 1 }],
+    })
+    await expect(fetchServerProjectionResource('presetApplied')).resolves.toEqual({
+      status: 'ok',
+      revision: 7,
+      mode: 'preset-collection',
+      fields: {
+        botPresets: [{ id: 'preset-a', name: 'A' }],
+        botPresetsId: 0,
+        mainPrompt: 'applied prompt',
+      },
+      presetRows: [{ id: 'preset-a', name: 'A', mainPrompt: 'preset prompt' }],
     })
   })
 
