@@ -455,6 +455,7 @@
   }
 
   function handleBackdropKeydown(event: KeyboardEvent): void {
+    if (event.target !== event.currentTarget) return
     if (event.key !== 'Escape' && event.key !== 'Enter' && event.key !== ' ') return
     event.preventDefault()
     requestClose()

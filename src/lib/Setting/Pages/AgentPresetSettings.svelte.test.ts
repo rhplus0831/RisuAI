@@ -305,6 +305,30 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).not.toContain('{{mainDraft}}')
   })
 
+  it('does not treat Space or Enter in the step instruction as backdrop activation', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const instruction = target.querySelector<HTMLTextAreaElement>('[data-risu-agent-preset-step-form] textarea')
+    expect(instruction).toBeTruthy()
+    instruction!.value = 'Summarize context with details.'
+    instruction!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    instruction!.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))
+    instruction!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await tick()
+
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeTruthy()
+  })
+
   it('shows main draft prepared input only for after-main steps', async () => {
     seedDb([
       preset({
