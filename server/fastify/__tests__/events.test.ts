@@ -372,6 +372,7 @@ describe('Phase 9-5a command events stream', () => {
         type: 'settings.updated',
         revision: 2,
         resource: 'settings',
+        id: 'runtime',
       })
     } finally {
       abort.abort()
@@ -413,6 +414,7 @@ describe('Phase 9-5a command events stream', () => {
         type: 'settings.updated',
         revision: nextRevision,
         resource: 'settings',
+        id: 'runtime',
       })
     } finally {
       abort.abort()
@@ -467,6 +469,7 @@ describe('Phase 9-5a command events stream', () => {
         type: 'settings.updated',
         revision: nextRevision,
         resource: 'settings',
+        id: 'runtime',
         origin: { writerSessionId: 'writer-l29' },
       })
     } finally {
@@ -512,6 +515,7 @@ describe('Phase 9-5a command events stream', () => {
         type: 'settings.updated',
         revision: nextRevision,
         resource: 'settings',
+        id: 'runtime',
       })
     } finally {
       abort.abort()

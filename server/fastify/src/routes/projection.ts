@@ -28,6 +28,7 @@ import {
 } from '../repository.js'
 import { maskProviderSecrets, maskProviderSecretsInPlace } from '../providerSecrets.js'
 import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
+import { SETTINGS_GROUP_KEYS, type SettingsGroup } from './commands.js'
 
 function promptPresetProjectionField(field: PromptPresetField): string {
   if (field === 'regex' || field === 'presetRegex') return 'presetRegex'
@@ -66,9 +67,11 @@ const PROMPT_PRESET_PROJECTION_FIELDS = uniqueProjectionFields([
 // replacing the whole projection. The map is derived from what each resource's
 // server command handler writes; it is deliberately generous (a command that
 // cross-writes a sibling array lists both keys) so a targeted refresh never
-// under-applies. Resources whose state sprawls across the settings scalars
-// (`settings`, `state`) — or any resource not listed — fall back to a full
-// bootstrap (`mode: 'full'`), which is correct and self-healing.
+// under-applies. Group-keyed `settings` events use their authoritative command
+// group below; historical settings events without that id, resources whose
+// state still sprawls across server-owned state (`state`), and any resource not
+// listed fall back to a full bootstrap (`mode: 'full'`), which is correct and
+// self-healing.
 //
 // Under the single-writer invariant the only foreign command events that
 // actually occur are server-originated ones (`generation.persisted`,
@@ -144,6 +147,7 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
 }
 
 const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
+  'settings',
   'preset',
   'modelPreset',
   'promptPreset',
@@ -157,8 +161,10 @@ const NARROW_FIELD_PROJECTION_RESOURCES = new Set([
 
 // Resources whose projected state intentionally sprawls across many top-level
 // settings scalars or server-owned state, so the projection route cannot narrow
-// them and returns `mode: 'full'` on purpose. Any other unlisted resource also
-// falls back to full bootstrap, but as an *unknown* (typically foreign)
+// them and returns `mode: 'full'` on purpose. `settings` remains in this set for
+// historical or malformed events without a recognized command-group id; valid
+// grouped events are narrowed by resourceProjectionFields. Any other unlisted
+// resource also falls back to full bootstrap, but as an *unknown* (typically foreign)
 // resource rather than a known sprawling one. The measurement distinguishes the
 // two so targeted-resource metrics can tell an expected sprawling
 // fallback from an unexpected unknown-resource fallback.
@@ -177,8 +183,8 @@ export type FullBootstrapFallbackClass = 'sprawling' | 'unknown'
  * Classifies why a resource falls back to a full-bootstrap projection. Returns
  * `null` for resources the route can narrow (they never trigger the fallback).
  */
-export function fullBootstrapFallbackClass(resource: string): FullBootstrapFallbackClass | null {
-  if (resourceProjectionFields(resource) !== null) return null
+export function fullBootstrapFallbackClass(resource: string, id?: string): FullBootstrapFallbackClass | null {
+  if (resourceProjectionFields(resource, id) !== null) return null
   return SPRAWLING_FULL_PROJECTION_RESOURCES.has(resource) ? 'sprawling' : 'unknown'
 }
 
@@ -198,7 +204,14 @@ const bulkChatMessagesBodySchema = {
 
 const bulkCharacterLorebooksBodySchema = bulkChatMessagesBodySchema
 
-export function resourceProjectionFields(resource: string): string[] | null {
+export function resourceProjectionFields(resource: string, id?: string): readonly string[] | null {
+  if (
+    resource === 'settings' &&
+    typeof id === 'string' &&
+    Object.prototype.hasOwnProperty.call(SETTINGS_GROUP_KEYS, id)
+  ) {
+    return SETTINGS_GROUP_KEYS[id as SettingsGroup]
+  }
   return Object.prototype.hasOwnProperty.call(RESOURCE_PROJECTION_FIELDS, resource)
     ? RESOURCE_PROJECTION_FIELDS[resource]
     : null
@@ -626,7 +639,7 @@ export function registerProjectionRoutes(
       return response
     }
 
-    const fieldKeys = resourceProjectionFields(resource)
+    const fieldKeys = resourceProjectionFields(resource, req.query.id)
 
     if (fieldKeys === null) {
       // Unknown or sprawling resource: tell the client to full-bootstrap. The
@@ -635,7 +648,7 @@ export function registerProjectionRoutes(
       // of these fallbacks can be attributed per resource.
       const response = { revision, resource, mode: 'full' as const }
       emitProjectionMetric(req.log, resource, revision, response, {
-        fallbackClass: fullBootstrapFallbackClass(resource),
+        fallbackClass: fullBootstrapFallbackClass(resource, req.query.id),
       })
       return response
     }

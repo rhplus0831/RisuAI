@@ -479,6 +479,7 @@ describe('Phase 9-1 command foundation', () => {
         type: 'settings.updated',
         revision: 2,
         resource: 'settings',
+        id: 'runtime',
       },
     })
     expect(harness.commandEvents.list()).toEqual([res.json().event])
@@ -761,6 +762,7 @@ describe('Phase 9-2a scalar settings groups', () => {
         type: 'settings.updated',
         revision: 2,
         resource: 'settings',
+        id: 'display',
       },
     })
 

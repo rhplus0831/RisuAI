@@ -694,7 +694,7 @@ interface PluginStorageCommandBody {
   clear?: unknown
 }
 
-const SETTINGS_GROUPS = [
+export const SETTINGS_GROUPS = [
   'providers',
   'runtime',
   'display',
@@ -706,10 +706,10 @@ const SETTINGS_GROUPS = [
   'account',
 ] as const
 
-type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
+export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 type SettingValueKind = 'boolean' | 'number' | 'string' | 'stringOrNull' | 'object' | 'array' | 'arrayOrNull' | 'json'
 
-const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
+export const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
   providers: [
     'apiType',
     'openAIKey',
@@ -1458,7 +1458,10 @@ export function registerCommandRoutes(
             )
           }
           return {
-            event: COMMAND_EVENT_CATALOG.settingsUpdated,
+            event: {
+              ...COMMAND_EVENT_CATALOG.settingsUpdated,
+              id: group,
+            },
           }
         },
       })

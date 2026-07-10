@@ -1547,6 +1547,9 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
             ? normalizeChatGenerationTogglePresets(value)
             : value
     }
+    if (typeof fields.language === 'string') {
+      changeLanguage(fields.language)
+    }
   })
 }
 

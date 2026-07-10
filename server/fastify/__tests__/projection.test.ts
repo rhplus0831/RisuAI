@@ -14,6 +14,7 @@ import {
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
+import { SETTINGS_GROUP_KEYS } from '../src/routes/commands.js'
 import type { FastifyInstance } from 'fastify'
 import { setupAuthedClient } from './helpers/auth.js'
 
@@ -591,13 +592,40 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
   })
 
-  it('returns mode "full" for a sprawling resource (settings)', async () => {
+  it('returns only the requested settings group and masks provider secrets', async () => {
+    const database = {
+      characters: [],
+      openAIKey: 'secret-openai-key',
+      proxyKey: 'secret-proxy-key',
+      aiModel: 'gpt-test',
+      theme: 'dark',
+      language: 'en',
+    }
+    const revision = await importDatabase(database)
+    const res = await getProjection('settings', '?id=providers')
+    const body = res.json()
+
+    expect(body.revision).toBe(revision)
+    expect(body.mode).toBe('fields')
+    expect(Object.keys(body.fields).every((key) => SETTINGS_GROUP_KEYS.providers.includes(key))).toBe(true)
+    expect(body.fields.openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields.proxyKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.fields.aiModel).toBe('gpt-test')
+    expect(body.fields).not.toHaveProperty('theme')
+    expect(body.fields).not.toHaveProperty('language')
+    expect(body.fields).not.toHaveProperty('characters')
+  })
+
+  it('returns mode "full" for settings events without a known group', async () => {
     const revision = await importDatabase({ characters: [], language: 'en' })
     const res = await getProjection('settings')
     const body = res.json()
     expect(body.revision).toBe(revision)
     expect(body.mode).toBe('full')
     expect(body.fields).toBeUndefined()
+
+    const unknown = await getProjection('settings', '?id=not-a-settings-group')
+    expect(unknown.json()).toMatchObject({ revision, resource: 'settings', mode: 'full' })
   })
 
   it('returns mode "full" for an unknown resource', async () => {
@@ -665,7 +693,9 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       'userNote',
     ])
     expect(resourceProjectionFields('loadout')).toEqual(['loadouts', 'lastLoadedLoadoutName'])
+    expect(resourceProjectionFields('settings', 'display')).toBe(SETTINGS_GROUP_KEYS.display)
     expect(resourceProjectionFields('settings')).toBeNull()
+    expect(resourceProjectionFields('settings', 'not-a-settings-group')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
   })
 
@@ -675,7 +705,9 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(fullBootstrapFallbackClass('characterSelection')).toBeNull()
     expect(fullBootstrapFallbackClass('asset')).toBeNull()
     // Known sprawling resources fall back on purpose.
+    expect(fullBootstrapFallbackClass('settings', 'display')).toBeNull()
     expect(fullBootstrapFallbackClass('settings')).toBe('sprawling')
+    expect(fullBootstrapFallbackClass('settings', 'not-a-settings-group')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('state')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('pluginStorage')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
@@ -1734,6 +1766,23 @@ describe('sprawling-resource full-bootstrap measurement', () => {
     const metric = latestProjectionMetric('character')
     expect(metric.mode).toBe('fields')
     expect(metric.fallbackClass).toBeUndefined()
+  })
+
+  it('records a settings group projection as narrow while missing ids remain sprawling', async () => {
+    await importDatabase({ characters: [], theme: 'dark', language: 'en' })
+
+    const narrow = await getProjection('settings', '?id=display')
+    expect(narrow.json()).toMatchObject({ mode: 'fields', fields: { theme: 'dark' } })
+    const narrowMetric = latestProjectionMetric('settings')
+    expect(narrowMetric.mode).toBe('fields')
+    expect(narrowMetric.fallbackClass).toBeUndefined()
+
+    capturedMetrics.length = 0
+    const historical = await getProjection('settings')
+    expect(historical.json().mode).toBe('full')
+    const fallbackMetric = latestProjectionMetric('settings')
+    expect(fallbackMetric.mode).toBe('full')
+    expect(fallbackMetric.fallbackClass).toBe('sprawling')
   })
 
   it('summarizes sprawling fallback payload sizes when RISU_PROJECTION_FULL_SUMMARY=1', async () => {

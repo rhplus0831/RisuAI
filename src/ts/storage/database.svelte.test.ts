@@ -48,6 +48,7 @@ import {
 } from './database.svelte'
 import { MODEL_ROLES } from '../model/modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
+import { changeLanguage, language as activeLanguage } from '../../lang'
 
 interface CapturedFetch {
   url: string
@@ -671,6 +672,17 @@ describe('mergeServerProjectionCharacterRow', () => {
 
     expect(DBState.db.language).toBe('en')
     expect(captureDestructiveRefreshEpoch()).toBe(afterFullReplace)
+  })
+
+  it('applies the runtime language side effect when a targeted projection merges language', () => {
+    seedDatabase([])
+    changeLanguage('en')
+    expect(activeLanguage.showHelp).toBe('Show Help')
+
+    mergeServerProjectionFields({ language: 'ko' } as Partial<Database>)
+
+    expect(DBState.db.language).toBe('ko')
+    expect(activeLanguage.showHelp).toBe('도움말 보기')
   })
 
   it('L35: preserves hydrated hypaV3Data on message-empty chat stubs', () => {

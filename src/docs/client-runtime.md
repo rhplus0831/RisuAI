@@ -82,6 +82,10 @@ Important files:
 - `src/ts/server/events.ts` subscribes to `/api/v1/events`.
 - `src/ts/server/projectionResync.ts` handles full or targeted resync after
   revision gaps.
+- Grouped `settings.updated` events identify their group in `event.id`, so a
+  contiguous reconcile merges only that group's projected fields. Events from
+  older servers or retained history without a recognized group safely request
+  a full bootstrap instead.
 - `src/ts/server/chatMessageHydration.svelte.ts` hydrates active chat messages
   and transcript windows.
 - `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive

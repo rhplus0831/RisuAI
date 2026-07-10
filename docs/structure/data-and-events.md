@@ -77,11 +77,13 @@ Examples include `characterSelection`, `characterRow`, `character`, `chat`,
 `triggerDefinition`, collection slices such as `preset`/`promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
 `agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,
-`asset`, and `generation`. Known
-sprawling resources such as `settings`, `state`, `pluginStorage`, and `prompt`
-are still command-event resources but intentionally fall back to a full
-bootstrap. `asset` is a no-op targeted projection that advances the cached
-revision because asset metadata lives outside the projected `Database`.
+`asset`, and `generation`. Grouped `settings.updated` events carry their
+settings group in `id`, allowing projection to read and return only the keys in
+that authoritative group. Historical settings events with no recognized group
+still fall back to a full bootstrap. Known sprawling resources such as `state`,
+`pluginStorage`, and `prompt` intentionally fall back to a full bootstrap.
+`asset` is a no-op targeted projection that advances the cached revision because
+asset metadata lives outside the projected `Database`.
 `generation.persisted` events are keyed by `parentId` = chat id and may return
 projection mode `generation-chat`. Assembly-time input transforms that persist
 both a rewritten transcript and chat metadata emit

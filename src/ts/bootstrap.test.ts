@@ -817,6 +817,52 @@ describe('web bootstrap startup source', () => {
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
+  it('fetches and merges only one settings group for a contiguous settings event', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [],
+          modules: [],
+          personas: [],
+          language: 'en',
+          theme: 'dark',
+          maxContext: 4_000,
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    serverBootstrapState.fetchReadOnly.mockClear()
+    hydrationSpies.resetChatHydration.mockClear()
+    serverProjectionState.fetchResource.mockResolvedValueOnce({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: { theme: 'light' },
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'display',
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('settings', {
+      id: 'display',
+      parentId: undefined,
+    })
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+    expect(DBState.db).toMatchObject({
+      language: 'en',
+      theme: 'light',
+      maxContext: 4_000,
+    })
+    expect(hydrationSpies.resetChatHydration).not.toHaveBeenCalled()
+  })
+
   it('applies a promptItem projection and marks promptTemplate hydrated', async () => {
     await loadWebInitialDatabase()
     serverProjectionState.fetchResource.mockImplementation(async () => ({
