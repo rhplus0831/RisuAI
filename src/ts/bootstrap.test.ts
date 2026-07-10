@@ -194,7 +194,15 @@ const hydrationSpies = vi.hoisted(() => ({
   ensureAllChatsHydrated: vi.fn(async () => undefined),
   ensureAllCharacterLorebooksHydrated: vi.fn(async () => undefined),
   hydrateChatMessages: vi.fn(async () => undefined),
-  applyServerChatMessagesProjection: vi.fn(() => true),
+  applyServerChatMessagesProjection: vi.fn(
+    (
+      _chatId: string,
+      _messages: unknown[],
+      _hypaV3Data: unknown,
+      _alternates: unknown[],
+      _range?: { start: number; total: number },
+    ) => true,
+  ),
 }))
 vi.mock('./server/chatMessageHydration.svelte', () => hydrationSpies)
 
@@ -1152,7 +1160,7 @@ describe('web bootstrap startup source', () => {
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
-  it('applies generation assembly chat metadata and messages from one projection', async () => {
+  it('applies a created chat transcript atomically while preserving hydrated sibling chats', async () => {
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -1165,8 +1173,9 @@ describe('web bootstrap startup source', () => {
               chats: [
                 {
                   id: 'chat-a',
-                  scriptstate: { inputseen: 0 },
-                  message: [{ role: 'user', data: 'original', chatId: 'm1' }],
+                  name: 'Existing',
+                  message: [{ role: 'user', data: 'resident sibling', chatId: 'sibling-1' }],
+                  hypaV3Data: { resident: true },
                 },
               ],
               chatPage: 0,
@@ -1183,52 +1192,75 @@ describe('web bootstrap startup source', () => {
     hydrationSpies.applyServerChatMessagesProjection.mockClear()
     activeGenerationReattachSpies.triggerOpenChatGenerationReattach.mockClear()
 
-    const rewrittenMessages = [
-      { role: 'user', data: 'rewritten input', chatId: 'm1' },
-      { role: 'char', data: 'older reply', chatId: 'm2' },
-    ]
+    const createdMessages = Array.from({ length: 13 }, (_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `created ${index}`,
+      chatId: `created-${index}`,
+    }))
+    hydrationSpies.applyServerChatMessagesProjection.mockImplementationOnce((chatId, messages, hypaV3Data) =>
+      withTrustedServerProjectionWrite(() => {
+        const chat = DBState.db.characters?.[0]?.chats?.find((candidate) => candidate.id === chatId)
+        if (!chat) return false
+        chat.message = messages as any
+        chat.hypaV3Data = hypaV3Data as any
+        return true
+      }),
+    )
     serverProjectionState.fetchResource.mockResolvedValue({
       status: 'ok' as const,
       revision: 6,
-      mode: 'generation-assembly' as const,
+      mode: 'chat-transcript' as const,
       characterId: 'char-a',
       character: {
         chaId: 'char-a',
         name: 'Ada',
-        chats: [{ id: 'chat-a', scriptstate: { inputseen: 1 }, message: [] }],
+        chats: [
+          { id: 'chat-created', name: 'Created', note: 'server metadata', message: [] },
+          { id: 'chat-a', name: 'Existing', message: [] },
+        ],
         chatPage: 0,
       },
-      chatId: 'chat-a',
-      message: rewrittenMessages,
-      hypaV3Data: { assembly: true },
+      chatId: 'chat-created',
+      message: createdMessages,
+      hypaV3Data: { created: true },
       alternates: [],
     })
 
     serverEventsState.subscriptions[0].onCommandEvent({
-      type: 'generation.assemblyPersisted',
+      type: 'chat.created',
       revision: 6,
-      resource: 'generationAssembly',
-      id: 'chat-a',
+      resource: 'chatTranscript',
+      id: 'chat-created',
       parentId: 'char-a',
     })
 
     await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
-    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('generationAssembly', {
-      id: 'chat-a',
+    expect(serverProjectionState.fetchResource).toHaveBeenCalledWith('chatTranscript', {
+      id: 'chat-created',
       parentId: 'char-a',
     })
-    expect(DBState.db.characters?.[0].chats?.[0].scriptstate).toEqual({ inputseen: 1 })
+    expect(DBState.db.characters?.[0].chats?.[0]).toMatchObject({
+      id: 'chat-created',
+      note: 'server metadata',
+      message: createdMessages,
+      hypaV3Data: { created: true },
+    })
+    expect(DBState.db.characters?.[0].chats?.[1]).toMatchObject({
+      id: 'chat-a',
+      message: [{ role: 'user', data: 'resident sibling', chatId: 'sibling-1' }],
+      hypaV3Data: { resident: true },
+    })
     expect(hydrationSpies.applyServerChatMessagesProjection).toHaveBeenCalledWith(
-      'chat-a',
-      rewrittenMessages,
-      { assembly: true },
+      'chat-created',
+      createdMessages,
+      { created: true },
       [],
     )
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
     expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
   })
 
-  it('full-bootstraps generation assembly when either local projection half cannot apply', async () => {
+  it('full-bootstraps a chat transcript when either local projection half cannot apply', async () => {
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -1251,6 +1283,8 @@ describe('web bootstrap startup source', () => {
     await loadWebInitialDatabase()
     hydrationSpies.applyServerChatMessagesProjection.mockReturnValueOnce(false)
     serverBootstrapState.fetchReadOnly.mockClear()
+    const resyncResponse = deferred<ServerBootstrapMockResponse>()
+    serverBootstrapState.fetchReadOnly.mockImplementationOnce(() => resyncResponse.promise)
     serverBootstrapState.response = {
       status: 'ok',
       projection: {
@@ -1273,7 +1307,7 @@ describe('web bootstrap startup source', () => {
     serverProjectionState.fetchResource.mockResolvedValue({
       status: 'ok' as const,
       revision: 6,
-      mode: 'generation-assembly' as const,
+      mode: 'chat-transcript' as const,
       characterId: 'char-a',
       character: {
         chaId: 'char-a',
@@ -1289,15 +1323,20 @@ describe('web bootstrap startup source', () => {
     serverEventsState.subscriptions[0].onCommandEvent({
       type: 'generation.assemblyPersisted',
       revision: 6,
-      resource: 'generationAssembly',
+      resource: 'chatTranscript',
       id: 'chat-a',
       parentId: 'char-a',
     })
 
+    await vi.waitFor(() => expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1))
+    // The message half rejected the composite while the full repair is still
+    // pending. The projected scriptstate must already be rolled back: clients
+    // never observe half of revision 6.
+    expect(DBState.db.characters?.[0].chats?.[0].scriptstate).toEqual({ inputseen: 0 })
+    resyncResponse.resolve(serverBootstrapState.response)
     await vi.waitFor(() => expect(DBState.db.language).toBe('ko'))
-    expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
     expect(peekAppliedServerProjectionRevision()).toBe(6)
-    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'generationAssembly')
+    expectFullBootstrapResyncDelta(diagnosticsBefore, 'projection-error', 'chatTranscript')
   })
 
   it('applies a generation-chat projection to the changed chat and re-arms reattach', async () => {

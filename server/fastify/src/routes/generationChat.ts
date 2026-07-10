@@ -967,7 +967,7 @@ function canAppendAssemblyReplacement(
  * The transcript is persisted only when `submitTranscriptChanged` is set; plain
  * sends leave user-message persistence to the browser.
  * When both the transcript and chat vars change, they ride one command (one
- * revision); a composite generation-assembly event reconciles both writes.
+ * revision); a composite chat-transcript event reconciles both writes.
  * Returns the bumped revision, or `undefined` when there is nothing to write.
  */
 function persistAssemblyMutations(args: {
@@ -2070,7 +2070,7 @@ function persistServerGenerationResult(args: {
       chatScopedRead: hasScriptstateWrite ? undefined : { chatId: args.chatId },
       mutate(database, targetDb) {
         const characters = normalizeAllCharacterChats(database)
-        const { chat } = requireChatLocation(characters, args.chatId)
+        const { character, chat } = requireChatLocation(characters, args.chatId)
         if (args.targetSnapshot) {
           const freshness = validateGenerationFinalizationTargetFresh({
             chatId: args.chatId,
@@ -2125,12 +2125,19 @@ function persistServerGenerationResult(args: {
         } else {
           clearAlternateMessages(targetDb, args.chatId)
         }
+        const event = hasScriptstateWrite
+          ? {
+              ...COMMAND_EVENT_CATALOG.generationPersistedWithChatState,
+              id: args.chatId,
+              parentId: character.chaId as string,
+            }
+          : {
+              ...COMMAND_EVENT_CATALOG.generationPersisted,
+              id: write.messageId,
+              parentId: args.chatId,
+            }
         return {
-          event: {
-            ...COMMAND_EVENT_CATALOG.generationPersisted,
-            id: write.messageId,
-            parentId: args.chatId,
-          },
+          event,
           extra: { chatId: args.chatId, messageId: write.messageId },
         }
       },

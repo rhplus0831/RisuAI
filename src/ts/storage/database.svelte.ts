@@ -1573,59 +1573,90 @@ export function isServerCharacterShell(character: unknown): boolean {
  * dropping loaded history. Returns false if the character is unknown so the
  * caller can fall back to a full bootstrap.
  */
+function mergeServerProjectionCharacterRowMutable(character: { chaId?: string } & Record<string, unknown>): boolean {
+  delete character[SERVER_CHARACTER_SHELL_MARKER]
+  const characters = DBState.db.characters
+  if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
+  const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
+  if (index < 0) return false
+  const existing = characters[index] as unknown as Record<string, unknown> | undefined
+
+  // The shipped chats are stubs (empty message[]); carry over any messages
+  // this client already hydrated so a metadata refresh keeps loaded history.
+  const incomingChats = (character as { chats?: Array<Record<string, unknown>> }).chats
+  const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)?.chats
+  if (Array.isArray(incomingChats) && Array.isArray(existingChats)) {
+    const existingById = new Map(existingChats.map((chat) => [chat?.id, chat]))
+    for (const chat of incomingChats) {
+      const chatId = (chat as { id?: unknown }).id
+      const prior = existingById.get(chatId)
+      if (!prior) continue
+      const priorMessage = (prior as { message?: unknown }).message
+      if (Array.isArray(priorMessage) && priorMessage.length > 0) {
+        ;(chat as { message?: unknown }).message = priorMessage
+      }
+      const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
+      if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
+      if (
+        typeof chatId === 'string' &&
+        shouldPreserveLiveChatGenerationSettingsForProjection(
+          chatId,
+          (chat as { generationSettings?: unknown }).generationSettings,
+        )
+      ) {
+        const priorRecord = prior as { generationSettings?: unknown }
+        const chatRecord = chat as { generationSettings?: unknown }
+        if (Object.prototype.hasOwnProperty.call(priorRecord, 'generationSettings')) {
+          chatRecord.generationSettings = priorRecord.generationSettings
+        } else {
+          delete chatRecord.generationSettings
+        }
+      }
+    }
+  }
+  // Preserve resident globalLore if the shipped row stubbed it (stubs on).
+  if (
+    (character as { globalLore?: unknown }).globalLore === undefined &&
+    existing &&
+    (existing as { globalLore?: unknown }).globalLore !== undefined
+  ) {
+    ;(character as { globalLore?: unknown }).globalLore = (existing as { globalLore?: unknown }).globalLore
+  }
+
+  characters[index] = character as unknown as (typeof characters)[number]
+  return true
+}
+
 export function mergeServerProjectionCharacterRow(character: { chaId?: string } & Record<string, unknown>): boolean {
+  return withServerProjectionApply(() => mergeServerProjectionCharacterRowMutable(character))
+}
+
+/**
+ * Apply a character-row projection and a dependent projection as one visible
+ * change. The dependent callback runs while projection writes are trusted; if
+ * it cannot apply, restore the exact prior character before returning false so
+ * the caller can full-resync without exposing half of a composite revision.
+ */
+export function mergeServerProjectionCharacterRowComposite(
+  character: { chaId?: string } & Record<string, unknown>,
+  applyDependentProjection: () => boolean,
+): boolean {
   return withServerProjectionApply(() => {
-    delete character[SERVER_CHARACTER_SHELL_MARKER]
     const characters = DBState.db.characters
     if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
     const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
     if (index < 0) return false
-    const existing = characters[index] as unknown as Record<string, unknown> | undefined
-
-    // The shipped chats are stubs (empty message[]); carry over any messages
-    // this client already hydrated so a metadata refresh keeps loaded history.
-    const incomingChats = (character as { chats?: Array<Record<string, unknown>> }).chats
-    const existingChats = (existing as { chats?: Array<Record<string, unknown>> } | undefined)?.chats
-    if (Array.isArray(incomingChats) && Array.isArray(existingChats)) {
-      const existingById = new Map(existingChats.map((chat) => [chat?.id, chat]))
-      for (const chat of incomingChats) {
-        const chatId = (chat as { id?: unknown }).id
-        const prior = existingById.get(chatId)
-        if (!prior) continue
-        const priorMessage = (prior as { message?: unknown }).message
-        if (Array.isArray(priorMessage) && priorMessage.length > 0) {
-          ;(chat as { message?: unknown }).message = priorMessage
-        }
-        const priorHypa = (prior as { hypaV3Data?: unknown }).hypaV3Data
-        if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
-        if (
-          typeof chatId === 'string' &&
-          shouldPreserveLiveChatGenerationSettingsForProjection(
-            chatId,
-            (chat as { generationSettings?: unknown }).generationSettings,
-          )
-        ) {
-          const priorRecord = prior as { generationSettings?: unknown }
-          const chatRecord = chat as { generationSettings?: unknown }
-          if (Object.prototype.hasOwnProperty.call(priorRecord, 'generationSettings')) {
-            chatRecord.generationSettings = priorRecord.generationSettings
-          } else {
-            delete chatRecord.generationSettings
-          }
-        }
-      }
+    const previous = characters[index]
+    let committed = false
+    try {
+      if (!mergeServerProjectionCharacterRowMutable(character)) return false
+      committed = applyDependentProjection()
+      return committed
+    } catch {
+      return false
+    } finally {
+      if (!committed) characters[index] = previous
     }
-    // Preserve resident globalLore if the shipped row stubbed it (stubs on).
-    if (
-      (character as { globalLore?: unknown }).globalLore === undefined &&
-      existing &&
-      (existing as { globalLore?: unknown }).globalLore !== undefined
-    ) {
-      ;(character as { globalLore?: unknown }).globalLore = (existing as { globalLore?: unknown }).globalLore
-    }
-
-    characters[index] = character as unknown as (typeof characters)[number]
-    return true
   })
 }
 

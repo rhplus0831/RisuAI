@@ -78,11 +78,14 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   hydrates one character shell, `message` events return the complete affected
   chat in `chat-messages` mode (destructive/replacement events cannot safely use
   a tail window), `preset?id=...` hydrates one bot preset body,
-  `asset` advances revision without projected fields, `generation.persisted`
-  events are keyed by chat id and may return `generation-chat`, assembly-time
-  transcript plus scriptstate writes return the composite
-  `generation-assembly` mode, and `characterLorebook` uses the lorebook
-  hydration branch. Field-map resources
+  `asset` advances revision without projected fields, message-only
+  `generation.persisted` events are keyed by chat id and return the ranged
+  `generation-chat` mode, and `chatTranscript` returns a parent character row
+  plus the complete changed transcript in `chat-transcript` mode. The latter is
+  used for assembly transcript rewrites, generation plus scriptstate writes,
+  and chat create/fork with non-empty messages; the browser applies both halves
+  atomically, retaining hydrated sibling chats, or full-resyncs on failure.
+  `characterLorebook` uses the lorebook hydration branch. Field-map resources
   also include examples such as `globalLorebook`, `modelPreset`,
   `promptPreset`, `modelProfile`, `agentPreset`, `agentPresetDeleted`,
   `translatorPreset`, `loadout`, `persona`, `plugin`, `moduleUpdated`,

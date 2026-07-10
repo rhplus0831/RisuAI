@@ -7,6 +7,7 @@ import {
   applyServerProjectionDatabase,
   mergeServerProjectionFields,
   mergeServerProjectionCharacterRow,
+  mergeServerProjectionCharacterRowComposite,
   setDatabase,
   defaultSdDataFunc,
   getDatabase,
@@ -450,16 +451,15 @@ async function processServerCommandEvent(
       if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
       return
     }
-    if (result.status === 'ok' && result.mode === 'generation-assembly') {
-      // Input triggers can rewrite both the transcript and chat scriptstate in
-      // one server revision. Apply the row metadata first (while preserving any
-      // hydrated messages), then replace the full transcript from the same
-      // projection response so neither half can be left at an older revision.
-      const characterApplied = mergeServerProjectionCharacterRow(result.character)
-      const messagesApplied =
-        characterApplied &&
-        applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates)
-      if (!messagesApplied) {
+    if (result.status === 'ok' && result.mode === 'chat-transcript') {
+      // Assembly rewrites, generation with scriptstate changes, and chat
+      // create/fork can change row metadata and a transcript in one revision.
+      // Apply both as one visible projection; rollback the row if the message
+      // half cannot apply, then repair from a full bootstrap.
+      const applied = mergeServerProjectionCharacterRowComposite(result.character, () =>
+        applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates),
+      )
+      if (!applied) {
         const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
         if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
         return

@@ -151,10 +151,10 @@ const RESOURCE_PROJECTION_FIELDS: Record<string, string[]> = {
   // so a foreign refresh must reship it alongside the loadouts collection.
   loadout: ['loadouts', 'lastLoadedLoadoutName'],
   translatorPreset: ['translatorPresets', 'translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
-  // Generation assembly projections have a dedicated composite response below;
-  // listing the resource here keeps fallback metrics from misclassifying it as
-  // an unknown full-bootstrap resource.
-  generationAssembly: [],
+  // Chat row + transcript projections have a dedicated composite response
+  // below; listing the resource here keeps fallback metrics from
+  // misclassifying it as an unknown full-bootstrap resource.
+  chatTranscript: [],
   // `asset.created` bumps the global revision but does not change the projected
   // `database` (asset metadata lives outside it), so its targeted refresh is a
   // no-op that only advances the client's revision cursor.
@@ -471,10 +471,11 @@ export function registerProjectionRoutes(
       return response
     }
 
-    // Assembly-time input transforms can persist a rewritten transcript and
-    // chat scriptstate in the same revision. Reconcile both pieces together;
+    // A chat mutation can persist row metadata and a transcript in one
+    // revision: assembly rewrites, generated output plus scriptstate, and
+    // create/fork with initial messages. Reconcile both pieces together;
     // neither the row-only nor message-only projection is sufficient.
-    if (resource === 'generationAssembly') {
+    if (resource === 'chatTranscript') {
       const chatId = req.query.id
       const characterId = req.query.parentId
       if (
@@ -491,7 +492,7 @@ export function registerProjectionRoutes(
       const chats = (character as { chats?: Array<{ id?: unknown }> } | null)?.chats
       if (!character || !Array.isArray(chats) || !chats.some((chat) => chat?.id === chatId)) {
         reply.code(404).send({
-          error: 'generation_assembly_target_not_found',
+          error: 'chat_transcript_target_not_found',
           reason: `Chat ${chatId} was not found under character ${characterId}.`,
         })
         return
@@ -500,7 +501,7 @@ export function registerProjectionRoutes(
       const response = {
         revision,
         resource,
-        mode: 'generation-assembly' as const,
+        mode: 'chat-transcript' as const,
         characterId,
         character,
         chatId,

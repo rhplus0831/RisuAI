@@ -5282,7 +5282,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       event: {
         type: 'chat.created',
         revision: 2,
-        resource: 'chat',
+        resource: 'chatTranscript',
         id: 'chat-c',
         parentId: 'char-a',
       },
@@ -5353,7 +5353,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 4,
       event: {
         type: 'chat.forked',
-        resource: 'chat',
+        resource: 'chatTranscript',
         id: 'chat-fork',
         parentId: 'char-a',
       },
@@ -5524,7 +5524,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       selectedChatId: 'chat-b',
       event: {
         type: 'chat.created',
-        resource: 'chat',
+        resource: 'chatTranscript',
         id: 'chat-c',
         parentId: 'char-a',
       },
@@ -5544,6 +5544,105 @@ describe('Phase 9-3b chat record and folder commands', () => {
     ])
     await expect(persistedChatMessages(harness.app, assertion, 'chat-a')).resolves.toEqual([])
     await expect(persistedChatMessages(harness.app, assertion, 'chat-b')).resolves.toEqual([])
+  })
+
+  it('emits composite projections for created and forked chats with long transcripts', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [{ id: 'chat-a', name: 'Source', note: '', message: [], localLore: [] }],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const createdMessages = Array.from({ length: 13 }, (_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `created ${index}`,
+      chatId: `created-${index}`,
+    }))
+
+    const created = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chat: {
+          id: 'chat-created',
+          name: 'Created',
+          note: '',
+          message: createdMessages,
+          localLore: [],
+        },
+      },
+    })
+    expect(created.statusCode).toBe(200)
+    expect(created.json().event).toMatchObject({
+      type: 'chat.created',
+      resource: 'chatTranscript',
+      id: 'chat-created',
+      parentId: 'char-a',
+    })
+    const createdProjection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatTranscript?id=chat-created&parentId=char-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(createdProjection.statusCode).toBe(200)
+    expect(createdProjection.json()).toMatchObject({
+      revision: 2,
+      mode: 'chat-transcript',
+      characterId: 'char-a',
+      chatId: 'chat-created',
+      message: createdMessages,
+    })
+
+    const forkedMessages = Array.from({ length: 14 }, (_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'char',
+      data: `forked ${index}`,
+      chatId: `forked-${index}`,
+    }))
+    const forked = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a/fork',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: created.json().revision,
+        chat: {
+          id: 'chat-forked',
+          name: 'Forked',
+          note: '',
+          message: forkedMessages,
+          localLore: [],
+        },
+      },
+    })
+    expect(forked.statusCode).toBe(200)
+    expect(forked.json().event).toMatchObject({
+      type: 'chat.forked',
+      resource: 'chatTranscript',
+      id: 'chat-forked',
+      parentId: 'char-a',
+    })
+    const forkedProjection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatTranscript?id=chat-forked&parentId=char-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(forkedProjection.statusCode).toBe(200)
+    expect(forkedProjection.json()).toMatchObject({
+      revision: 3,
+      mode: 'chat-transcript',
+      characterId: 'char-a',
+      chatId: 'chat-forked',
+      message: forkedMessages,
+    })
   })
 
   it('keeps native create chats incomplete by default and persists explicit generation settings', async () => {

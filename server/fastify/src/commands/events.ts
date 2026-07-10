@@ -458,6 +458,10 @@ export const COMMAND_EVENT_CATALOG = {
     type: 'chat.created',
     resource: 'chat',
   },
+  chatCreatedWithTranscript: {
+    type: 'chat.created',
+    resource: 'chatTranscript',
+  },
   chatUpdated: {
     type: 'chat.updated',
     // Chat metadata is stored in chat rows; the `characterRow` projection
@@ -472,6 +476,10 @@ export const COMMAND_EVENT_CATALOG = {
   chatForked: {
     type: 'chat.forked',
     resource: 'chat',
+  },
+  chatForkedWithTranscript: {
+    type: 'chat.forked',
+    resource: 'chatTranscript',
   },
   chatReordered: {
     type: 'chat.reordered',
@@ -521,11 +529,15 @@ export const COMMAND_EVENT_CATALOG = {
   },
   generationAssemblyPersisted: {
     type: 'generation.assemblyPersisted',
-    resource: 'generationAssembly',
+    resource: 'chatTranscript',
   },
   generationPersisted: {
     type: 'generation.persisted',
     resource: 'generation',
+  },
+  generationPersistedWithChatState: {
+    type: 'generation.persisted',
+    resource: 'chatTranscript',
   },
   // The global-lorebook commands change only `loreBook`/`loreBookPage`, so they
   // carry the narrow `globalLorebook` resource (split out of the broad

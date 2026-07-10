@@ -2015,7 +2015,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       )
       expect(event).toMatchObject({
         type: 'generation.assemblyPersisted',
-        resource: 'generationAssembly',
+        resource: 'chatTranscript',
         id: 'chat-1',
         parentId: 'char-1',
       })
@@ -3190,7 +3190,49 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     }
   }, 8000)
 
-  it('K1: chat-variable generation finalization keeps broad writes and reports truthful metrics', async () => {
+  it('K0: message-only generation finalization keeps the ranged generation projection', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, dbWithServerDispatch({}))
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+    expect(res.statusCode).toBe(200)
+
+    const db = openDatabase(harness.dataDir)
+    let event: ReturnType<typeof listPersistedCommandEventHistory>[number] | undefined
+    try {
+      event = listPersistedCommandEventHistory(db)
+        .filter((candidate) => candidate.type === 'generation.persisted')
+        .at(-1)
+    } finally {
+      db.close()
+    }
+    expect(event).toMatchObject({
+      type: 'generation.persisted',
+      resource: 'generation',
+      parentId: 'chat-1',
+    })
+    expect(event?.id).toEqual(expect.any(String))
+
+    const projection = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/projection/generation?id=${encodeURIComponent(event?.id ?? '')}&parentId=chat-1`,
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projection.statusCode).toBe(200)
+    expect(projection.json()).toMatchObject({
+      mode: 'generation-chat',
+      chatId: 'chat-1',
+      messageStart: 0,
+      messageTotal: 1,
+    })
+  })
+
+  it('K1: chat-variable generation finalization emits a composite projection', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -3241,6 +3283,34 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(bootstrap.statusCode).toBe(200)
     expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const event = listPersistedCommandEventHistory(db)
+        .filter((candidate) => candidate.type === 'generation.persisted')
+        .at(-1)
+      expect(event).toMatchObject({
+        type: 'generation.persisted',
+        resource: 'chatTranscript',
+        id: 'chat-1',
+        parentId: 'char-1',
+      })
+    } finally {
+      db.close()
+    }
+    const projection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/projection/chatTranscript?id=chat-1&parentId=char-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(projection.statusCode).toBe(200)
+    expect(projection.json()).toMatchObject({
+      mode: 'chat-transcript',
+      characterId: 'char-1',
+      chatId: 'chat-1',
+    })
+    expect(projection.json().character.chats[0].scriptstate).toEqual({ $mood: 'happy' })
+    expect(projection.json().message).toHaveLength(1)
   })
 
   it('runs the pre-trigger run-var pass server-side over the completion text (A2)', async () => {

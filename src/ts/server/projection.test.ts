@@ -130,7 +130,7 @@ describe('server projection API adapter', () => {
       },
       {
         revision: 5,
-        mode: 'generation-assembly',
+        mode: 'chat-transcript',
         characterId: 'char-d',
         character: { chaId: 'char-d', chats: [{ id: 'chat-d', message: [] }] },
         chatId: 'chat-d',
@@ -179,10 +179,10 @@ describe('server projection API adapter', () => {
       characterId: 'char-c',
       character: { chaId: 'char-c', name: 'C' },
     })
-    await expect(fetchServerProjectionResource('generationAssembly')).resolves.toEqual({
+    await expect(fetchServerProjectionResource('chatTranscript')).resolves.toEqual({
       status: 'ok',
       revision: 5,
-      mode: 'generation-assembly',
+      mode: 'chat-transcript',
       characterId: 'char-d',
       character: { chaId: 'char-d', chats: [{ id: 'chat-d', message: [] }] },
       chatId: 'chat-d',

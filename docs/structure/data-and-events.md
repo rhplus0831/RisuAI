@@ -77,7 +77,8 @@ Examples include `characterSelection`, `characterRow`, `character`, `chat`,
 `triggerDefinition`, collection slices such as `preset`/`promptItem`/
 `modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
 `agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,
-`asset`, and `generation`. Grouped `settings.updated` events carry their
+`asset`, `generation`, and the composite `chatTranscript`. Grouped
+`settings.updated` events carry their
 settings group in `id`, allowing projection to read and return only the keys in
 that authoritative group. Historical settings events with no recognized group
 still fall back to a full bootstrap. Known sprawling resources such as `state`,
@@ -89,11 +90,13 @@ root model setting the selected model and prompt-preset overrides can apply.
 Ordinary `message` events project the complete affected transcript so deletes,
 truncations, and same-length replacements cannot leave stale or placeholder
 rows outside a short tail window.
-`generation.persisted` events are keyed by `parentId` = chat id and may return
-projection mode `generation-chat`. Assembly-time input transforms that persist
-both a rewritten transcript and chat metadata emit
-`generation.assemblyPersisted`; its `generation-assembly` projection carries a
-single character row and the complete changed transcript together.
+Message-only `generation.persisted` events are keyed by `parentId` = chat id and
+return the ranged `generation-chat` projection. Revisions that persist a chat
+row and transcript together use `chatTranscript` and projection mode
+`chat-transcript`: assembly-time input rewrites, generation finalization with a
+scriptstate write, and chat create/fork with non-empty initial messages. The
+payload carries the single parent character row plus the complete changed
+transcript so both halves reconcile before the command settles.
 
 ## Server-Owned Exceptions
 

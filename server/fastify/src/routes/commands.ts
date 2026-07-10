@@ -4215,7 +4215,13 @@ export function registerCommandRoutes(
           replaceActiveChatMessages(innerDb, chat.id, chatMessages)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
-            event: { ...COMMAND_EVENT_CATALOG.chatCreated, id: chat.id, parentId: characterId },
+            event: {
+              ...(chatMessages.length > 0
+                ? COMMAND_EVENT_CATALOG.chatCreatedWithTranscript
+                : COMMAND_EVENT_CATALOG.chatCreated),
+              id: chat.id,
+              parentId: characterId,
+            },
             extra: { chatId: chat.id, selectedChatId: selectedChatId(character) },
           }
         },
@@ -4485,7 +4491,9 @@ export function registerCommandRoutes(
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
-              ...COMMAND_EVENT_CATALOG.chatForked,
+              ...(forkedMessages.length > 0
+                ? COMMAND_EVENT_CATALOG.chatForkedWithTranscript
+                : COMMAND_EVENT_CATALOG.chatForked),
               id: nextChat.id,
               parentId: character.chaId,
             },

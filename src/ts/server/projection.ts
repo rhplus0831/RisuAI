@@ -37,7 +37,7 @@ export type ServerProjectionResourceResult =
   | {
       status: 'ok'
       revision: number
-      mode: 'generation-assembly'
+      mode: 'chat-transcript'
       characterId: string
       character: Record<string, unknown>
       chatId: string
@@ -204,7 +204,7 @@ export async function fetchServerProjectionResource(
     }
   }
 
-  if (record.mode === 'generation-assembly') {
+  if (record.mode === 'chat-transcript') {
     if (
       typeof record.characterId !== 'string' ||
       record.characterId.trim() === '' ||
@@ -215,12 +215,12 @@ export async function fetchServerProjectionResource(
       record.chatId.trim() === '' ||
       !Array.isArray(record.message)
     ) {
-      return { status: 'error', error: 'Invalid generation-assembly response' }
+      return { status: 'error', error: 'Invalid chat-transcript response' }
     }
     return {
       status: 'ok',
       revision: revision as number,
-      mode: 'generation-assembly',
+      mode: 'chat-transcript',
       characterId: record.characterId,
       character: record.character as Record<string, unknown>,
       chatId: record.chatId,

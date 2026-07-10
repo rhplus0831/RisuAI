@@ -13,6 +13,7 @@ import {
   writePersistedWithMessages,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
+import { COMMAND_EVENT_CATALOG } from '../src/commands/events.js'
 import { fullBootstrapFallbackClass, resourceProjectionFields } from '../src/routes/projection.js'
 import { SETTINGS_GROUP_KEYS } from '../src/routes/commands.js'
 import type { FastifyInstance } from 'fastify'
@@ -701,7 +702,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('character')).toEqual(['characters', 'characterOrder', 'currentChar'])
     expect(resourceProjectionFields('characterSelection')).toEqual([])
     expect(resourceProjectionFields('message')).toEqual([])
-    expect(resourceProjectionFields('generationAssembly')).toEqual([])
+    expect(resourceProjectionFields('chatTranscript')).toEqual([])
     expect(resourceProjectionFields('generation')).toEqual(['characters'])
     expect(resourceProjectionFields('module')).toEqual(['modules', 'enabledModules', 'loadouts', 'characters'])
     // Narrowed module-family resources (Phase 5 collection-projection slice).
@@ -752,6 +753,20 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(resourceProjectionFields('settings')).toBeNull()
     expect(resourceProjectionFields('settings', 'not-a-settings-group')).toBeNull()
     expect(resourceProjectionFields('state')).toBeNull()
+
+    expect(COMMAND_EVENT_CATALOG.chatCreatedWithTranscript).toEqual({
+      type: 'chat.created',
+      resource: 'chatTranscript',
+    })
+    expect(COMMAND_EVENT_CATALOG.chatForkedWithTranscript).toEqual({
+      type: 'chat.forked',
+      resource: 'chatTranscript',
+    })
+    expect(COMMAND_EVENT_CATALOG.generationAssemblyPersisted.resource).toBe('chatTranscript')
+    expect(COMMAND_EVENT_CATALOG.generationPersistedWithChatState).toEqual({
+      type: 'generation.persisted',
+      resource: 'chatTranscript',
+    })
   })
 
   it('classifies full-bootstrap fallbacks as sprawling, unknown, or narrowable', () => {
@@ -766,7 +781,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(fullBootstrapFallbackClass('state')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('pluginStorage')).toBe('sprawling')
     expect(fullBootstrapFallbackClass('prompt')).toBe('sprawling')
-    expect(fullBootstrapFallbackClass('generationAssembly')).toBeNull()
+    expect(fullBootstrapFallbackClass('chatTranscript')).toBeNull()
     // Anything else is an unknown/foreign resource fallback.
     expect(fullBootstrapFallbackClass('does-not-exist')).toBe('unknown')
   })
@@ -1292,7 +1307,7 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
     expect(Object.keys(fallback.fields)).toEqual(['characters'])
   })
 
-  it('projects assembly transcript and chat metadata together', async () => {
+  it('projects a chat row and its authoritative transcript together', async () => {
     const revision = await importDatabase({
       characters: [
         {
@@ -1316,11 +1331,11 @@ describe('targeted projection route (lazy-projection Phase 2)', () => {
       characterOrder: ['char-a'],
     })
 
-    const body = (await getProjection('generationAssembly', '?id=chat-a&parentId=char-a')).json()
+    const body = (await getProjection('chatTranscript', '?id=chat-a&parentId=char-a')).json()
     expect(body).toMatchObject({
       revision,
-      resource: 'generationAssembly',
-      mode: 'generation-assembly',
+      resource: 'chatTranscript',
+      mode: 'chat-transcript',
       characterId: 'char-a',
       chatId: 'chat-a',
     })
