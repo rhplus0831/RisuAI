@@ -12,6 +12,7 @@ import {
   defaultSdDataFunc,
   getDatabase,
   setServerProjectionWriteGuardEnabled,
+  withTrustedServerProjectionWrite,
   type Database,
 } from './storage/database.svelte'
 import { botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from './stores.svelte'
@@ -391,8 +392,7 @@ async function processServerCommandEvent(
   const appliedRevision = peekAppliedServerProjectionRevision()
   if (appliedRevision === null) {
     // No baseline yet: reconcile from scratch.
-    const resync = await forceServerProjectionResync('no-baseline', { resource: event.resource })
-    if (resync.status === 'ok') markReconciledCommandProjectionEvent(event, options)
+    await reconcileCommandEventWithFullResync('no-baseline', event, options, 'reconciled')
     return
   }
   if (event.revision <= appliedRevision && !ownEvent && !options.allowAlreadyAppliedRevision) {
@@ -419,8 +419,7 @@ async function processServerCommandEvent(
         markAppliedCommandProjectionEvent(event, options)
         return
       }
-      const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
-      if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+      await reconcileCommandEventWithFullResync('projection-error', event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'character-lorebook') {
@@ -433,8 +432,7 @@ async function processServerCommandEvent(
         return
       }
       // Unknown character locally → reconcile from scratch.
-      const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
-      if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+      await reconcileCommandEventWithFullResync('projection-error', event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'character-row') {
@@ -447,8 +445,7 @@ async function processServerCommandEvent(
         return
       }
       // Unknown character locally → reconcile from scratch.
-      const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
-      if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+      await reconcileCommandEventWithFullResync('projection-error', event, options)
       return
     }
     if (result.status === 'ok' && result.mode === 'chat-transcript') {
@@ -460,8 +457,7 @@ async function processServerCommandEvent(
         applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates),
       )
       if (!applied) {
-        const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
-        if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+        await reconcileCommandEventWithFullResync('projection-error', event, options)
         return
       }
       triggerOpenChatGenerationReattach()
@@ -484,8 +480,7 @@ async function processServerCommandEvent(
         range,
       )
       if (!applied) {
-        const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
-        if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+        await reconcileCommandEventWithFullResync('projection-error', event, options)
         return
       }
       triggerOpenChatGenerationReattach()
@@ -496,11 +491,11 @@ async function processServerCommandEvent(
       return
     }
     if (result.status === 'ok' && result.mode === 'fields') {
+      const selectedCharacterBeforeMerge = captureSelectedCharacterBeforeBroadProjection(result.fields)
       if (event.resource === 'promptItem') {
         const ownerId = event.parentId ?? null
         if (!applyPromptTemplateProjectionFields(result.fields, ownerId)) {
-          const resync = await forceServerProjectionResync('projection-error', { resource: event.resource })
-          if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+          await reconcileCommandEventWithFullResync('projection-error', event, options)
           return
         }
         markPromptTemplateProjectionApplied(ownerId)
@@ -515,6 +510,7 @@ async function processServerCommandEvent(
       // Forget cached hydration so re-open or bulk reads refetch stale chats,
       // then re-hydrate the open chat eagerly.
       if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
+        reconcileSelectedCharacterAfterBroadProjection(result.fields, selectedCharacterBeforeMerge)
         resetChatHydration()
         void hydrateActiveChat({ force: true })
         // The merge re-stubs every character's globalLore too: forget hydrated
@@ -532,16 +528,74 @@ async function processServerCommandEvent(
       return
     }
     // 'full' mode, error, or unavailable → fall back to a full reconcile.
-    const resync = await forceServerProjectionResync(
+    await reconcileCommandEventWithFullResync(
       result.status === 'ok' && result.mode === 'full' ? 'projection-full-mode' : 'projection-error',
-      { resource: event.resource },
+      event,
+      options,
     )
-    if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
     return
   }
   // Gap detected (event.revision > appliedRevision + 1) → self-healing full bootstrap.
-  const resync = await forceServerProjectionResync('revision-gap', { resource: event.resource })
-  if (resync.status === 'ok') markAppliedCommandProjectionEvent(event, options)
+  await reconcileCommandEventWithFullResync('revision-gap', event, options)
+}
+
+interface SelectedCharacterBeforeBroadProjection {
+  active: boolean
+  characterId?: string
+}
+
+function captureSelectedCharacterBeforeBroadProjection(
+  fields: Partial<Database>,
+): SelectedCharacterBeforeBroadProjection | null {
+  if (!Object.prototype.hasOwnProperty.call(fields, 'characters')) return null
+  const selectedIndex = get(selectedCharID)
+  return {
+    active: selectedIndex >= 0,
+    characterId: selectedIndex >= 0 ? DBState.db.characters?.[selectedIndex]?.chaId : undefined,
+  }
+}
+
+function reconcileSelectedCharacterAfterBroadProjection(
+  fields: Partial<Database>,
+  previous: SelectedCharacterBeforeBroadProjection | null,
+): void {
+  if (!previous?.active || !Object.prototype.hasOwnProperty.call(fields, 'currentChar')) return
+
+  // Array replacement can move the selected row, and the user can select a
+  // different character while the targeted fetch is in flight. Keep that live
+  // identity when it survived; only adopt projected currentChar when it was
+  // removed by the server mutation.
+  const preservedIndex = previous.characterId
+    ? DBState.db.characters.findIndex((character) => character?.chaId === previous.characterId)
+    : -1
+  const nextIndex = preservedIndex >= 0 ? preservedIndex : initialSelectedCharFromDatabase(DBState.db)
+  withTrustedServerProjectionWrite(() => {
+    ;(DBState.db as unknown as { currentChar?: number }).currentChar = nextIndex
+    selectedCharID.set(nextIndex)
+  })
+}
+
+async function reconcileCommandEventWithFullResync(
+  reason: string,
+  event: CommandEvent,
+  options: ProcessServerCommandEventOptions,
+  markMode: 'applied' | 'reconciled' = 'applied',
+): Promise<boolean> {
+  const resync = await forceServerProjectionResync(reason, { resource: event.resource })
+  if (resync.status === 'ok') {
+    if (markMode === 'reconciled') {
+      markReconciledCommandProjectionEvent(event, options)
+    } else {
+      markAppliedCommandProjectionEvent(event, options)
+    }
+    return true
+  }
+
+  // The event was already consumed from this stream, but its applied cursor did
+  // not advance. Reconnect from that old cursor so SQLite replay retries the
+  // event even if no later mutation arrives to expose the stale state.
+  scheduleServerProjectionReconnect()
+  return false
 }
 
 function isOwnCommandEvent(event: CommandEvent): boolean {

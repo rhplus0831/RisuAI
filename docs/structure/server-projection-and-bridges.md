@@ -97,8 +97,10 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   full-bootstrap mode. `modelPreset` includes the complete applied model-setting
   surface because selected-preset mutations also reapply the selected prompt
   preset's model overrides to root settings.
-  Applying `fields.characters` re-stubs chat/lorebook-heavy character rows and
-  forces relevant hydration state to reset. During a targeted `characterRow`
+  Applying `fields.characters` re-stubs chat/lorebook-heavy character rows,
+  remaps the live selected-character identity across array replacement (falling
+  back to projected `currentChar` if that character was removed), and forces
+  relevant hydration state to reset. During a targeted `characterRow`
   merge, a chat whose generation-settings save is still queued preserves its
   latest optimistic `generationSettings` while the incoming row differs from
   that queued value; the pending token is cleared when the save settles. A
@@ -106,7 +108,9 @@ reconnect. `src/ts/bootstrap.ts` processes command events serially:
   prefix while extending the array, so the new total does not turn resident
   history into placeholders.
 - Gaps, replay-unavailable responses, projection failures, unknown resources, or
-  server-requested full mode fall back to read-only full bootstrap.
+  server-requested full mode fall back to read-only full bootstrap. If both a
+  targeted reconcile and that fallback fail, the stream reconnects from the
+  unchanged applied cursor so SQLite replay retries the consumed event.
 - Memory events bypass projection refresh and update Hypa V3 job/progress UI
   through `memoryJobEvents.ts`; `memoryJobRefresh.ts` polls active jobs for the
   modal when needed.

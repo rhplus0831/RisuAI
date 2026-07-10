@@ -833,6 +833,113 @@ describe('web bootstrap startup source', () => {
     expect(activeGenerationReattachSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps the selected character aligned after a broad character projection', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            { chaId: 'char-b', name: 'Babbage', chats: [{ id: 'chat-b', message: [] }], chatPage: 0 },
+          ],
+          characterOrder: ['char-a', 'char-b'],
+          currentChar: 1,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    expect(get(selectedCharID)).toBe(1)
+    serverBootstrapState.fetchReadOnly.mockClear()
+
+    serverProjectionState.fetchResource.mockResolvedValueOnce({
+      status: 'ok' as const,
+      revision: 6,
+      mode: 'fields' as const,
+      fields: {
+        characters: [{ chaId: 'char-b', name: 'Babbage', chats: [{ id: 'chat-b', message: [] }], chatPage: 0 }],
+        characterOrder: ['char-b'],
+        currentChar: 0,
+      },
+    })
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'character.deleted',
+      revision: 6,
+      resource: 'character',
+      id: 'char-a',
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(get(selectedCharID)).toBe(0)
+    expect((DBState.db as unknown as { currentChar?: number }).currentChar).toBe(0)
+    expect(DBState.db.characters.map((character) => character.chaId)).toEqual(['char-b'])
+    expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('preserves a newer character selection across an in-flight broad projection', async () => {
+    serverBootstrapState.response = {
+      status: 'ok',
+      projection: {
+        revision: 5,
+        database: {
+          characters: [
+            { chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }], chatPage: 0 },
+            { chaId: 'char-b', name: 'Babbage', chats: [{ id: 'chat-b', message: [] }], chatPage: 0 },
+            { chaId: 'char-c', name: 'Curie', chats: [{ id: 'chat-c', message: [] }], chatPage: 0 },
+          ],
+          characterOrder: ['char-a', 'char-b', 'char-c'],
+          currentChar: 1,
+          modules: [],
+          personas: [],
+          language: 'en',
+        },
+      },
+    }
+    await loadWebInitialDatabase()
+    const projectionResponse = deferred<{
+      status: 'ok'
+      revision: number
+      mode: 'fields'
+      fields: Record<string, unknown>
+    }>()
+    serverProjectionState.fetchResource.mockImplementationOnce(() => projectionResponse.promise)
+
+    serverEventsState.subscriptions[0].onCommandEvent({
+      type: 'character.deleted',
+      revision: 6,
+      resource: 'character',
+      id: 'char-a',
+    })
+    await vi.waitFor(() => expect(serverProjectionState.fetchResource).toHaveBeenCalledTimes(1))
+
+    withTrustedServerProjectionWrite(() => {
+      ;(DBState.db as unknown as { currentChar?: number }).currentChar = 2
+      selectedCharID.set(2)
+    })
+    projectionResponse.resolve({
+      status: 'ok',
+      revision: 6,
+      mode: 'fields',
+      fields: {
+        characters: [
+          { chaId: 'char-b', name: 'Babbage', chats: [{ id: 'chat-b', message: [] }], chatPage: 0 },
+          { chaId: 'char-c', name: 'Curie', chats: [{ id: 'chat-c', message: [] }], chatPage: 0 },
+        ],
+        characterOrder: ['char-b', 'char-c'],
+        currentChar: 0,
+      },
+    })
+
+    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    expect(get(selectedCharID)).toBe(1)
+    expect(DBState.db.characters[get(selectedCharID)]?.chaId).toBe('char-c')
+    expect((DBState.db as unknown as { currentChar?: number }).currentChar).toBe(1)
+  })
+
   it('fetches and merges only one settings group for a contiguous settings event', async () => {
     serverBootstrapState.response = {
       status: 'ok',
@@ -2262,6 +2369,60 @@ describe('web bootstrap startup source', () => {
       expect(serverBootstrapState.fetchReadOnly).not.toHaveBeenCalled()
       expect(peekCachedServerCommandRevision()).toBe(6)
       expect(peekAppliedServerProjectionRevision()).toBe(5)
+    } finally {
+      stopServerProjectionEvents()
+      randomSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('replays a consumed event after targeted and full reconciliation both fail', async () => {
+    vi.useFakeTimers()
+    const randomSpy = vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    try {
+      await loadWebInitialDatabase()
+      serverProjectionState.fetchResource.mockResolvedValueOnce({
+        status: 'error' as const,
+        error: 'targeted refresh failed',
+      })
+      serverBootstrapState.response = {
+        status: 'error',
+        error: 'full refresh failed',
+      }
+
+      serverEventsState.subscriptions[0].onCommandEvent({
+        type: 'chat.updated',
+        revision: 6,
+        resource: 'chat',
+      })
+
+      await flushServerProjectionSync()
+      expect(serverProjectionState.fetchResource).toHaveBeenCalledTimes(1)
+      expect(serverBootstrapState.fetchReadOnly).toHaveBeenCalledTimes(1)
+      expect(peekAppliedServerProjectionRevision()).toBe(5)
+      expect(vi.getTimerCount()).toBe(1)
+
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(serverEventsState.subscribe).toHaveBeenCalledTimes(2)
+      expect(serverEventsState.subscriptions[1].sinceRevision).toBe(5)
+
+      serverProjectionState.fetchResource.mockResolvedValueOnce({
+        status: 'ok' as const,
+        revision: 6,
+        mode: 'fields' as const,
+        fields: { language: 'ko' },
+      })
+      serverEventsState.subscriptions[1].onCommandEvent({
+        type: 'chat.updated',
+        revision: 6,
+        resource: 'chat',
+      })
+      await flushServerProjectionSync()
+
+      expect(serverProjectionState.fetchResource).toHaveBeenCalledTimes(2)
+      expect(peekAppliedServerProjectionRevision()).toBe(6)
+      expect(DBState.db.language).toBe('ko')
     } finally {
       stopServerProjectionEvents()
       randomSpy.mockRestore()

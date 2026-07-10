@@ -219,6 +219,9 @@ cursors: mutation base revisions and hydration freshness use the known cursor,
 while SSE replay, gap detection, and already-applied skips use only the applied
 cursor. An own-origin event that arrives before the command response advances the
 known revision may still reconcile so local state does not wait for another event.
+When targeted reconciliation and its full-bootstrap fallback both fail, the
+browser leaves the applied cursor unchanged and reconnects from it so command
+event replay retries the event instead of waiting for a later mutation.
 Memory events update Hypa V3 job/progress UI directly.
 
 Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
