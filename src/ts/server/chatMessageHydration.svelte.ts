@@ -7,7 +7,7 @@ import {
   isServerChatMessagePlaceholder,
   type Message,
 } from '../storage/database.svelte'
-import { seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
+import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
@@ -41,6 +41,27 @@ const attemptedChatIds = new SvelteSet<string>()
 const inFlight = new Map<string, Promise<void>>()
 let chatHydrationGeneration = 0
 
+interface ChatHydrationFreshnessToken {
+  projectionEpoch: number
+  expectedChatState: string | null
+  expectedRerollState: string | null
+  trackRerollState: boolean
+}
+
+// Targeted message projections are authoritative writes and invalidate every
+// hydration request that started before them, even when the projected payload
+// happens to be byte-identical to the old local state.
+const chatProjectionEpochs = new Map<string, number>()
+
+// Local message edits are not routed through one single mutation primitive, so
+// each request also snapshots the chat content it is about to hydrate. Whenever
+// another hydration request writes a compatible range, all pending snapshots
+// are advanced to that known-safe state. A targeted projection deliberately
+// does not advance them; an optimistic/local write is not registered here at
+// all. Both therefore make the older response stale without treating ordinary
+// concurrent range hydration as a local edit.
+const pendingChatHydrationFreshness = new Map<string, Set<ChatHydrationFreshnessToken>>()
+
 // Character ids whose `globalLore` this client has hydrated this session (only
 // when the EXPERIMENTAL `enableLorebookStubs` setting is on).
 const hydratedCharLorebookIds = new Set<string>()
@@ -63,6 +84,100 @@ function activeChatMessageArray(): Message[] | undefined {
   if (!character) return undefined
   const chat = character.chats?.[character.chatPage ?? 0]
   return chat?.message
+}
+
+function snapshotJson(value: unknown): string | null {
+  try {
+    return JSON.stringify(value) ?? 'undefined'
+  } catch {
+    // Projection data should be JSON-like. If a plugin temporarily installs a
+    // non-serializable value, fail closed rather than let an old response erase
+    // it.
+    return null
+  }
+}
+
+function chatStateSnapshot(chatId: string): string | null {
+  for (const character of DBState.db?.characters ?? []) {
+    const chat = character.chats?.find((candidate) => candidate.id === chatId)
+    if (!chat) continue
+    return snapshotJson({
+      message: chat.message ?? [],
+      hasHypaV3Data: Object.prototype.hasOwnProperty.call(chat, 'hypaV3Data'),
+      hypaV3Data: chat.hypaV3Data,
+    })
+  }
+  return 'missing-chat'
+}
+
+function rerollStateSnapshot(): string | null {
+  return snapshotJson({ buffer: getRerollBuffer(), id: getRerollId() })
+}
+
+function beginChatHydrationFreshness(
+  chatId: string,
+  options: { trackRerollState: boolean },
+): ChatHydrationFreshnessToken {
+  const trackRerollState = options.trackRerollState && activeChatId() === chatId
+  const token: ChatHydrationFreshnessToken = {
+    projectionEpoch: chatProjectionEpochs.get(chatId) ?? 0,
+    expectedChatState: chatStateSnapshot(chatId),
+    expectedRerollState: trackRerollState ? rerollStateSnapshot() : null,
+    trackRerollState,
+  }
+  const pending = pendingChatHydrationFreshness.get(chatId) ?? new Set<ChatHydrationFreshnessToken>()
+  pending.add(token)
+  pendingChatHydrationFreshness.set(chatId, pending)
+  return token
+}
+
+function endChatHydrationFreshness(chatId: string, token: ChatHydrationFreshnessToken): void {
+  const pending = pendingChatHydrationFreshness.get(chatId)
+  if (!pending) return
+  pending.delete(token)
+  if (pending.size === 0) pendingChatHydrationFreshness.delete(chatId)
+}
+
+function chatHydrationStaleReason(chatId: string, token: ChatHydrationFreshnessToken): string | null {
+  if ((chatProjectionEpochs.get(chatId) ?? 0) !== token.projectionEpoch) {
+    return 'newer-targeted-chat-projection'
+  }
+  const currentChatState = chatStateSnapshot(chatId)
+  if (token.expectedChatState === null || currentChatState === null || currentChatState !== token.expectedChatState) {
+    return 'chat-state-changed'
+  }
+  // Reroll candidates are process-local rather than part of DBState. Protect
+  // them separately only while this response would actually seed the open chat.
+  if (token.trackRerollState && activeChatId() === chatId) {
+    const currentRerollState = rerollStateSnapshot()
+    if (
+      token.expectedRerollState === null ||
+      currentRerollState === null ||
+      currentRerollState !== token.expectedRerollState
+    ) {
+      return 'reroll-state-changed'
+    }
+  }
+  return null
+}
+
+function refreshPendingFreshnessAfterHydration(chatId: string, completedToken: ChatHydrationFreshnessToken): void {
+  const pending = pendingChatHydrationFreshness.get(chatId)
+  if (!pending || [...pending].every((token) => token === completedToken)) return
+  const expectedChatState = chatStateSnapshot(chatId)
+  const isActive = activeChatId() === chatId
+  const expectedRerollState = isActive ? rerollStateSnapshot() : null
+  for (const token of pending) {
+    if (token === completedToken) continue
+    token.expectedChatState = expectedChatState
+    if (token.trackRerollState && isActive) {
+      token.expectedRerollState = expectedRerollState
+    }
+  }
+}
+
+function advanceChatProjectionEpoch(chatId: string): void {
+  chatProjectionEpochs.set(chatId, (chatProjectionEpochs.get(chatId) ?? 0) + 1)
 }
 
 type ChatHydrationRangeRequest =
@@ -131,6 +246,10 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
 
   const generation = chatHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
+  const freshness = beginChatHydrationFreshness(chatId, {
+    trackRerollState: request.seedReroll !== false,
+  })
+  let shouldMarkAttempted = true
   let requestPromise: Promise<void>
   requestPromise = (async () => {
     try {
@@ -145,11 +264,19 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
         return
       }
       if (generation !== chatHydrationGeneration) {
+        shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'generation-reset')
         return
       }
       if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+        shouldMarkAttempted = false
         recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+        return
+      }
+      const staleReason = chatHydrationStaleReason(chatId, freshness)
+      if (staleReason) {
+        shouldMarkAttempted = false
+        recordHydrationStaleDrop('chat', staleReason)
         return
       }
       if (request.range && !force && hydratedChatIds.has(chatId)) {
@@ -170,13 +297,16 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
       if (request.seedReroll !== false && activeChatId() === chatId) {
         seedRerollBufferFromAlternates(result.message, result.alternates)
       }
+      refreshPendingFreshnessAfterHydration(chatId, freshness)
     } finally {
-      // Mark the attempt as settled (even on failure / stale-drop) so the
-      // loading state can clear and fall back to the greeting render.
-      attemptedChatIds.add(chatId)
+      // Failed requests settle the loading state, but stale responses do not:
+      // after an optimistic edit rolls back, the still-stubbed chat must remain
+      // eligible for a fresh hydration attempt.
+      if (shouldMarkAttempted) attemptedChatIds.add(chatId)
       if (inFlight.get(requestKey) === requestPromise) {
         inFlight.delete(requestKey)
       }
+      endChatHydrationFreshness(chatId, freshness)
     }
   })()
   inFlight.set(requestKey, requestPromise)
@@ -188,46 +318,63 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
 
   const generation = chatHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
-  const endRequest = beginHydrationRequest('chat')
-  const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
-  if (result.status !== 'ok') {
-    const message = resultError(result, 'server projection unavailable')
-    hydrationWarning('bulk chat', message)
-    if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
-    return
-  }
-  if (generation !== chatHydrationGeneration) {
-    recordHydrationStaleDrop('chat', 'generation-reset')
-    if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
-    return
-  }
-  if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
-    recordHydrationStaleDrop('chat', 'older-than-applied-revision')
-    if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
-    return
-  }
+  const freshnessByChat = new Map(
+    chatIds.map((chatId) => [chatId, beginChatHydrationFreshness(chatId, { trackRerollState: false })]),
+  )
+  try {
+    const endRequest = beginHydrationRequest('chat')
+    const result = await fetchServerBulkChatMessages(chatIds).finally(endRequest)
+    if (result.status !== 'ok') {
+      const message = resultError(result, 'server projection unavailable')
+      hydrationWarning('bulk chat', message)
+      if (options.strict) throw new Error(`Bulk chat hydration failed: ${message}`)
+      return
+    }
+    if (generation !== chatHydrationGeneration) {
+      recordHydrationStaleDrop('chat', 'generation-reset')
+      if (options.strict) throw new Error('Bulk chat hydration result was stale after a reset')
+      return
+    }
+    if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
+      recordHydrationStaleDrop('chat', 'older-than-applied-revision')
+      if (options.strict) throw new Error('Bulk chat hydration result was older than local state')
+      return
+    }
 
-  const missing = new Set(result.missing)
-  const missingIds: string[] = []
-  for (const chatId of chatIds) {
-    if (missing.has(chatId)) {
-      missingIds.push(chatId)
-      continue
+    const missing = new Set(result.missing)
+    const missingIds: string[] = []
+    for (const chatId of chatIds) {
+      if (missing.has(chatId)) {
+        missingIds.push(chatId)
+        continue
+      }
+      const hydration = result.chats.find((chat) => chat.chatId === chatId)
+      if (!hydration) {
+        missingIds.push(chatId)
+        continue
+      }
+      const freshness = freshnessByChat.get(chatId)
+      const staleReason = freshness ? chatHydrationStaleReason(chatId, freshness) : 'missing-freshness-token'
+      if (staleReason) {
+        recordHydrationStaleDrop('chat', staleReason)
+        missingIds.push(chatId)
+        continue
+      }
+      const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
+      if (!applied) {
+        missingIds.push(chatId)
+        continue
+      }
+      hydratedChatIds.add(chatId)
+      refreshPendingFreshnessAfterHydration(chatId, freshness)
     }
-    const hydration = result.chats.find((chat) => chat.chatId === chatId)
-    if (!hydration) {
-      missingIds.push(chatId)
-      continue
+    if (options.strict && missingIds.length > 0) {
+      throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
     }
-    const applied = hydrateServerChatMessages(chatId, hydration.message, hydration.hypaV3Data)
-    if (!applied) {
-      missingIds.push(chatId)
-      continue
+  } finally {
+    for (const [chatId, freshness] of freshnessByChat) {
+      endChatHydrationFreshness(chatId, freshness)
     }
-    hydratedChatIds.add(chatId)
-  }
-  if (options.strict && missingIds.length > 0) {
-    throw new Error(`Bulk chat hydration did not return messages for: ${missingIds.join(', ')}`)
   }
 }
 
@@ -305,6 +452,7 @@ export function applyServerChatMessagesProjection(
   if (!chatId) return false
   const applied = hydrateServerChatMessages(chatId, message, hypaV3Data, range)
   if (!applied) return false
+  advanceChatProjectionEpoch(chatId)
   if (!range || isFullRange(range.start, range.total, message.length)) {
     hydratedChatIds.add(chatId)
   }
@@ -499,6 +647,8 @@ export function resetChatHydration(): void {
   attemptedChatIds.clear()
   chatHydrationGeneration += 1
   inFlight.clear()
+  chatProjectionEpochs.clear()
+  pendingChatHydrationFreshness.clear()
   // A re-stub also re-stubs character globalLore; forget these marks so the open
   // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
   hydratedCharLorebookIds.clear()

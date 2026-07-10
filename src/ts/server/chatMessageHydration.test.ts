@@ -29,11 +29,27 @@ import {
   hydrateActiveChatWindow,
   hydrateActiveChatFully,
   hydrateChatMessages,
+  applyServerChatMessagesProjection,
   isChatMessageHydrationPending,
   resetChatHydration,
 } from './chatMessageHydration.svelte'
 import { isCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
 import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
+import {
+  getRerollBuffer,
+  resetRerollNavigation,
+  seedRerollBufferFromAlternates,
+} from '../process/rerollNavigation.svelte'
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
 
 function okResult(chatId: string, message: Array<Record<string, unknown>>) {
   return { status: 'ok' as const, revision: 1, chatId, message, alternates: [] }
@@ -140,6 +156,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   resetChatHydration()
   resetLorebookHydration()
+  resetRerollNavigation()
   seedTwoStubChats()
 })
 
@@ -454,6 +471,118 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChat()
 
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi', chatId: 'm1' }])
+  })
+
+  it('does not let an older hydration replace a newer targeted message projection', async () => {
+    const oldHydration = deferred<ReturnType<typeof okResult> & { hypaV3Data: unknown }>()
+    projectionState.fetchChat.mockReturnValueOnce(oldHydration.promise)
+
+    const pendingHydration = hydrateActiveChatFully()
+    expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', {})
+
+    const projectedMessages = [{ role: 'char', data: 'projected', chatId: 'm-projected' }]
+    const projectedAlternates = [
+      projectedMessages[0],
+      { role: 'char', data: 'projected alternate', chatId: 'm-projected-alt' },
+    ]
+    expect(
+      applyServerChatMessagesProjection('chat-1', projectedMessages, { source: 'new projection' }, projectedAlternates),
+    ).toBe(true)
+
+    oldHydration.resolve({
+      ...okResult('chat-1', [{ role: 'char', data: 'old hydration', chatId: 'm-old' }]),
+      hypaV3Data: { source: 'old hydration' },
+      alternates: [{ role: 'char', data: 'old alternate', chatId: 'm-old-alt' }],
+    })
+    await pendingHydration
+
+    expect(db().characters[0].chats[0].message).toEqual(projectedMessages)
+    expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({
+      source: 'new projection',
+    })
+    expect(
+      getRerollBuffer()
+        .flat()
+        .map((message) => message.data),
+    ).toEqual(['projected alternate', 'projected'])
+  })
+
+  it('does not let an older hydration erase an optimistic local message or settle its rolled-back stub', async () => {
+    const oldHydration = deferred<ReturnType<typeof okResult> & { hypaV3Data: unknown }>()
+    projectionState.fetchChat.mockReturnValueOnce(oldHydration.promise)
+    const pendingHydration = hydrateActiveChatFully()
+
+    const localMessage = { role: 'char', data: 'optimistic local', chatId: 'm-local' }
+    db().characters[0].chats[0].message.push(localMessage)
+    ;(db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data = { source: 'optimistic local' }
+    seedRerollBufferFromAlternates(
+      [localMessage],
+      [localMessage, { role: 'char', data: 'local alternate', chatId: 'm-local-alt' }],
+    )
+
+    oldHydration.resolve({
+      ...okResult('chat-1', [{ role: 'char', data: 'old hydration', chatId: 'm-old' }]),
+      hypaV3Data: { source: 'old hydration' },
+      alternates: [{ role: 'char', data: 'old alternate', chatId: 'm-old-alt' }],
+    })
+    await pendingHydration
+
+    expect(db().characters[0].chats[0].message).toEqual([localMessage])
+    expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({
+      source: 'optimistic local',
+    })
+    expect(
+      getRerollBuffer()
+        .flat()
+        .map((message) => message.data),
+    ).toEqual(['local alternate', 'optimistic local'])
+
+    // If the optimistic command then rolls back, the stale response must not
+    // have marked this empty stub as an attempted/settled hydration.
+    db().characters[0].chats[0].message = []
+    delete (db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(true)
+
+    projectionState.fetchChat.mockResolvedValueOnce(
+      okResult('chat-1', [{ role: 'user', data: 'fresh retry', chatId: 'm-fresh' }]),
+    )
+    await hydrateActiveChatFully()
+    expect(projectionState.fetchChat).toHaveBeenCalledTimes(2)
+    expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'fresh retry', chatId: 'm-fresh' }])
+  })
+
+  it('keeps a pending full hydration fresh across a compatible range hydration write', async () => {
+    const tailHydration = deferred<ReturnType<typeof okWindowResult> & { hypaV3Data: unknown }>()
+    const fullHydration = deferred<ReturnType<typeof okResult> & { hypaV3Data: unknown }>()
+    projectionState.fetchChat.mockImplementation((_chatId: string, range: { tail?: number }) =>
+      range.tail === 1 ? tailHydration.promise : fullHydration.promise,
+    )
+
+    const pendingTail = hydrateActiveChat({ loadPages: 1 })
+    const pendingFull = hydrateActiveChatFully()
+
+    tailHydration.resolve({
+      ...okWindowResult('chat-1', [{ role: 'char', data: 'tail', chatId: 'm-tail' }], 1, 2),
+      hypaV3Data: { source: 'tail hydration' },
+    })
+    await pendingTail
+
+    fullHydration.resolve({
+      ...okResult('chat-1', [
+        { role: 'user', data: 'full head', chatId: 'm-head' },
+        { role: 'char', data: 'full tail', chatId: 'm-tail' },
+      ]),
+      hypaV3Data: { source: 'full hydration' },
+    })
+    await pendingFull
+
+    expect(db().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'full head', chatId: 'm-head' },
+      { role: 'char', data: 'full tail', chatId: 'm-tail' },
+    ])
+    expect((db().characters[0].chats[0] as { hypaV3Data?: unknown }).hypaV3Data).toEqual({
+      source: 'full hydration',
+    })
   })
 
   it('still drops a response older than the revision already applied at request start', async () => {
