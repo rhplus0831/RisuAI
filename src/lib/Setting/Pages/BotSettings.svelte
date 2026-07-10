@@ -44,7 +44,10 @@
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import {
+    getServerProjectionApplyEpoch,
+    withTrustedServerProjectionWrite,
+  } from 'src/ts/server/projectionWriteGuard.svelte'
   import {
     canUseServerCommands,
     enablePromptItemsCommand,
@@ -428,22 +431,49 @@
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
     let previousDraftDispatchSnapshot = snapshotJson(initialValue)
+    let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+    let previousOwnerSignature = promptFieldOwnerSignature()
+    let dirty = false
 
     $effect(() => {
+      const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+      const ownerSignature = promptFieldOwnerSignature()
       const serverValue = currentPromptFieldValue(key, fallback)
       const serverSnapshot = snapshotJson(serverValue)
       const draftSnapshot = snapshotJson(draft.value)
 
-      if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
+      if (ownerSignature !== previousOwnerSignature) {
+        dirty = false
         suppressDraftDispatch = true
         previousDraftDispatchSnapshot = serverSnapshot
         draft.value = cloneJsonValue(serverValue)
         queueMicrotask(() => {
           suppressDraftDispatch = false
         })
+      } else {
+        if (projectionApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+          dirty = false
+        }
+
+        if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
+          suppressDraftDispatch = true
+          if (projectionApplyChanged && dirty) {
+            reassertDirtyPromptFieldDraftValue(key, draft.value)
+          } else {
+            dirty = false
+            previousDraftDispatchSnapshot = serverSnapshot
+            draft.value = cloneJsonValue(serverValue)
+          }
+          queueMicrotask(() => {
+            suppressDraftDispatch = false
+          })
+        }
       }
 
-      previousServerSnapshot = serverSnapshot
+      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousOwnerSignature = ownerSignature
+      previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
     })
 
     $effect(() => {
@@ -458,6 +488,7 @@
         return
       }
       if (snapshot === previousDraftDispatchSnapshot) return
+      dirty = true
       previousDraftDispatchSnapshot = snapshot
 
       untrack(() => {
@@ -477,6 +508,25 @@
     })
 
     return draft
+  }
+
+  function promptFieldOwnerSignature(): string {
+    const selectedIndex = DBState.db.promptPresetsId
+    const selectedId =
+      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? DBState.db.promptPresets?.[selectedIndex]?.id : undefined
+    return selectedId ? `preset:${selectedId}` : 'root'
+  }
+
+  function reassertDirtyPromptFieldDraftValue<T>(key: string, value: T): void {
+    withTrustedServerProjectionWrite(() => {
+      const target = DBState.db as unknown as Record<string, unknown>
+      target[key] = cloneJsonValue(value)
+      const selectedIndex = DBState.db.promptPresetsId
+      const preset = DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+      if (!preset) return
+      preset[key] = cloneJsonValue(value)
+      if (key === 'presetRegex') preset.regex = []
+    })
   }
 
   function queuePromptFieldPatch(patch: SettingsPatch, previous: SettingsPatch): void {

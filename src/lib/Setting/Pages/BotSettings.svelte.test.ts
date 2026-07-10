@@ -24,6 +24,17 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key]))')
   })
 
+  it('preserves dirty prompt-field drafts across stale projection applies', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain('let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()')
+    expect(source).toContain('let previousOwnerSignature = promptFieldOwnerSignature()')
+    expect(source).toContain('if (projectionApplyChanged && dirty)')
+    expect(source).toContain('reassertDirtyPromptFieldDraftValue(key, draft.value)')
+    expect(source).toContain("return selectedId ? `preset:${selectedId}` : 'root'")
+    expect(source).toContain('if (ownerSignature !== previousOwnerSignature)')
+  })
+
   it('gates prompt template UI on selected prompt preset ownership instead of stale top-level projection', () => {
     const source = botSettingsSource()
 
