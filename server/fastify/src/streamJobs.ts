@@ -82,6 +82,7 @@ const DURABLE_REPLAY_PROTECTED_EVENTS = new Set([
   'info',
   'message_patch',
   'side_effect',
+  'agent_preset_progress',
   'post_generation_progress',
   'warning',
   'error',
@@ -220,9 +221,9 @@ function removeReplayFrame(job: StreamJob, index: number): void {
 function appendDurableReplayFrame(job: StreamJob, text: string): void {
   if (!job.replayEvents || job.replayBytes === undefined) return
   const type = serializedSseEventType(text)
-  if (type === 'info') {
-    const existingInfoIndex = job.replayEvents.findIndex((event) => serializedSseEventType(event) === 'info')
-    if (existingInfoIndex !== -1) removeReplayFrame(job, existingInfoIndex)
+  if (type === 'info' || type === 'agent_preset_progress') {
+    const existingSnapshotIndex = job.replayEvents.findIndex((event) => serializedSseEventType(event) === type)
+    if (existingSnapshotIndex !== -1) removeReplayFrame(job, existingSnapshotIndex)
   }
   job.replayEvents.push(text)
   job.replayBytes += Buffer.byteLength(text)

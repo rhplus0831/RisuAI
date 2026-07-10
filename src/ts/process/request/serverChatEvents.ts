@@ -9,7 +9,7 @@
  *
  * Prompt assembly consumes `stage` / `prompt` / `message_patch` / `info` /
  * `error` / `done`; generation streams also use `token` / `side_effect` /
- * `post_generation_progress` / `warning`.
+ * `agent_preset_progress` / `post_generation_progress` / `warning`.
  */
 
 import type { Message } from '../../storage/database.svelte'
@@ -142,6 +142,27 @@ export interface SideEffectEvent {
   payload: unknown
 }
 
+export type AgentPresetProgressPhase = 'beforeMain' | 'afterMain'
+export type AgentPresetProgressStatus = 'started' | 'running' | 'finished' | 'error'
+
+export interface AgentPresetProgressStep {
+  stepId: string
+  stepName: string
+  outputKey: string
+}
+
+export interface AgentPresetProgressEvent {
+  type: 'agent_preset_progress'
+  chatId: string
+  presetId: string
+  presetName: string
+  phase: AgentPresetProgressPhase
+  status: AgentPresetProgressStatus
+  totalSteps: number
+  completedSteps: number
+  activeSteps: AgentPresetProgressStep[]
+}
+
 export type ServerChatSideEffect = Omit<SideEffectEvent, 'type'>
 
 export type PostGenerationProgressPhase = 'editOutput' | 'onOutput'
@@ -233,6 +254,7 @@ export type PromptChatEvent =
   | TokenEvent
   | MessagePatchEvent
   | SideEffectEvent
+  | AgentPresetProgressEvent
   | PostGenerationProgressEvent
   | WarningEvent
   | ErrorEvent
@@ -248,6 +270,7 @@ export const CLIENT_PROMPT_CHAT_EVENT_TYPES = [
   'token',
   'message_patch',
   'side_effect',
+  'agent_preset_progress',
   'post_generation_progress',
   'warning',
   'error',

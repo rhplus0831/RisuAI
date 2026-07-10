@@ -327,6 +327,58 @@ describe('Agent Preset phase execution', () => {
     expect(result.previousAgentOutputs.map((output) => output.text)).toEqual(['first-output', 'second-output'])
   })
 
+  it('reports aggregate progress while independent steps run concurrently', async () => {
+    const database = db()
+    const first = step({ id: 'aps_first', outputKey: 'first', name: 'First' })
+    const second = step({ id: 'aps_second', outputKey: 'second', name: 'Second' })
+    const snapshots: Array<{
+      status: string
+      completedSteps: number
+      activeSteps: Array<{ stepId: string }>
+    }> = []
+    let releaseSteps: () => void = () => {}
+    const stepGate = new Promise<void>((resolve) => {
+      releaseSteps = resolve
+    })
+
+    const execution = executeAgentPresetPhase({
+      database,
+      currentChar: database.characters[0],
+      currentChat: database.characters[0].chats[0],
+      plan: beforeMainPlan(database, [first, second]),
+      maxConcurrency: 2,
+      executeStep: async (input) => {
+        await stepGate
+        return successResult(input.step, `${input.step.outputKey}-output`)
+      },
+      onProgress: (progress) => snapshots.push(structuredClone(progress)),
+    })
+
+    expect(snapshots[0]).toMatchObject({ status: 'started', completedSteps: 0, activeSteps: [] })
+    expect(snapshots).toContainEqual(
+      expect.objectContaining({
+        status: 'running',
+        completedSteps: 0,
+        activeSteps: [
+          expect.objectContaining({ stepId: 'aps_first' }),
+          expect.objectContaining({ stepId: 'aps_second' }),
+        ],
+      }),
+    )
+
+    releaseSteps()
+    await execution
+
+    expect(snapshots).toContainEqual(
+      expect.objectContaining({
+        status: 'running',
+        completedSteps: 1,
+        activeSteps: [expect.objectContaining({ stepId: 'aps_second' })],
+      }),
+    )
+    expect(snapshots.at(-1)).toMatchObject({ status: 'finished', completedSteps: 2, activeSteps: [] })
+  })
+
   it('exposes completed output keys only after their dependency level has finished', async () => {
     const database = db()
     const first = step({ id: 'aps_first', outputKey: 'first', name: 'First' })
@@ -411,6 +463,7 @@ describe('Agent Preset phase execution', () => {
       expect(input.dependencySkippedReason).toContain('Optional')
       return skippedDependencyResult(input.step)
     })
+    const progressStatuses: string[] = []
 
     const result = await executeAgentPresetPhase({
       database,
@@ -418,6 +471,7 @@ describe('Agent Preset phase execution', () => {
       currentChat: database.characters[0].chats[0],
       plan: beforeMainPlan(database, [optional, dependent]),
       executeStep,
+      onProgress: (progress) => progressStatuses.push(progress.status),
     })
 
     expect(executeStep).toHaveBeenCalledTimes(2)
@@ -426,6 +480,7 @@ describe('Agent Preset phase execution', () => {
       outputKey: 'dependent',
     })
     expect(result.stepResults.map((entry) => entry.status)).toEqual(['failed', 'skipped'])
+    expect(progressStatuses.at(-1)).toBe('error')
   })
 })
 

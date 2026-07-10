@@ -251,6 +251,31 @@ describe('JobRegistry buffering and lifecycle', () => {
     expect(job.pendingEvents).toHaveLength(0)
   })
 
+  it('keeps only the latest Agent Preset progress snapshot for durable replay', () => {
+    const reg = new JobRegistry()
+    const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })
+    reg.enableReplay(job)
+    reg.pushRaw(job, 'event: stage\ndata: {"stage":"prompt","status":"start"}\n\n')
+    reg.pushRaw(
+      job,
+      'event: agent_preset_progress\ndata: {"chatId":"chat-1","phase":"beforeMain","completedSteps":0}\n\n',
+    )
+    reg.pushRaw(
+      job,
+      'event: agent_preset_progress\ndata: {"chatId":"chat-1","phase":"beforeMain","completedSteps":1}\n\n',
+    )
+
+    const progressFrames = job.replayEvents?.filter((frame) => frame.startsWith('event: agent_preset_progress'))
+    expect(progressFrames).toHaveLength(1)
+    expect(progressFrames?.[0]).toContain('"completedSteps":1')
+
+    const client = fakeClient()
+    reg.attach(job.id, client)
+    expect(client.messages.filter((frame) => String(frame).startsWith('event: agent_preset_progress'))).toEqual(
+      progressFrames,
+    )
+  })
+
   it('detaches attached clients that exceed the fanout buffer cap', () => {
     const reg = new JobRegistry()
     const job = reg.create({ timeoutMs: 60_000, heartbeatSec: 10 })

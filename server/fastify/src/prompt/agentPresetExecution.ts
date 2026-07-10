@@ -89,6 +89,32 @@ export type AgentPresetProviderDispatcher = (
 
 export type AgentPresetStepExecutor = (input: ExecuteAgentPresetStepInput) => Promise<AgentPresetStepExecutionResult>
 
+export type AgentPresetPhaseProgressStatus = 'started' | 'running' | 'finished' | 'error'
+
+export interface AgentPresetActiveStepProgress {
+  stepId: string
+  stepName: string
+  outputKey: string
+}
+
+export interface AgentPresetPhaseProgress {
+  phase: AgentPresetStepPhase
+  status: AgentPresetPhaseProgressStatus
+  totalSteps: number
+  completedSteps: number
+  activeSteps: AgentPresetActiveStepProgress[]
+}
+
+export type AgentPresetPhaseProgressReporter = (progress: AgentPresetPhaseProgress) => void
+
+export interface AgentPresetProgress extends AgentPresetPhaseProgress {
+  chatId: string
+  presetId: string
+  presetName: string
+}
+
+export type AgentPresetProgressReporter = (progress: AgentPresetProgress) => void
+
 export interface ExecuteAgentPresetStepInput extends AgentPresetPreparedInputContext {
   step: AgentPresetStepRecord
   resolvedMainProfile?: ResolvedModelProfile | null
@@ -188,6 +214,7 @@ export interface ExecuteAgentPresetPhaseInput extends AgentPresetPreparedInputCo
   signal?: AbortSignal
   dispatchProvider?: AgentPresetProviderDispatcher
   executeStep?: AgentPresetStepExecutor
+  onProgress?: AgentPresetPhaseProgressReporter
 }
 
 export interface AgentPresetGenerationErrorBody {
@@ -514,69 +541,114 @@ export async function executeAgentPresetPhase(
   const previousOutputs: AgentPresetPreviousOutput[] = [...initialPreviousOutputs]
   const successfulOutputs: AgentPresetPreviousOutput[] = []
   const outputTextByKey: Record<string, string> = previousOutputsToOutputTextByKey(previousOutputs)
+  const totalSteps = input.plan.steps.length
+  const activeSteps = new Map<string, AgentPresetActiveStepProgress>()
+  let completedSteps = 0
 
-  for (const level of input.plan.dependencyLevels) {
-    const levelSteps = level.stepIds
-      .map((stepId) => input.plan.steps.find((planned) => planned.step.id === stepId)?.step)
-      .filter((step): step is AgentPresetStepRecord => !!step)
-
-    const levelResults = await runWithConcurrency(levelSteps, maxConcurrency, async (step) => {
-      const dependencySkippedReason = dependencySkippedReasonFor(step, resultByStepId)
-      return executeStep({
-        database: input.database,
-        currentChar: input.currentChar,
-        currentChat: input.currentChat,
-        currentUserMessage: input.currentUserMessage,
-        previousAgentOutputs: previousOutputs,
-        agentOutputs: { ...outputTextByKey },
-        mainDraft: input.mainDraft,
-        step,
-        resolvedMainProfile: input.resolvedMainProfile,
-        dependencySkippedReason,
-        signal: input.signal,
-        dispatchProvider: input.dispatchProvider,
+  const reportProgress = (status: AgentPresetPhaseProgressStatus): void => {
+    try {
+      input.onProgress?.({
+        phase: input.plan.phase,
+        status,
+        totalSteps,
+        completedSteps,
+        activeSteps: [...activeSteps.values()],
       })
-    })
-
-    for (const [index, result] of levelResults.entries()) {
-      const step = levelSteps[index]
-      if (!step) continue
-      resultByStepId.set(step.id, result)
-    }
-
-    for (const planned of input.plan.steps) {
-      if (!level.stepIds.includes(planned.step.id)) continue
-      const result = resultByStepId.get(planned.step.id)
-      if (result?.status !== 'success') continue
-      const output: AgentPresetPreviousOutput = {
-        stepId: result.stepId,
-        stepName: result.stepName,
-        phase: planned.step.phase,
-        outputKey: result.outputKey,
-        text: result.outputText,
-      }
-      successfulOutputs.push(output)
-      previousOutputs.push(output)
-      outputTextByKey[result.outputKey] = result.outputText
-    }
-
-    const blockingFailure = firstBlockingFailure(levelSteps, resultByStepId)
-    if (blockingFailure) {
-      return phaseResult(
-        input.plan.phase,
-        input.plan,
-        resultByStepId,
-        successfulOutputs,
-        previousOutputs,
-        outputTextByKey,
-        {
-          blockingFailure,
-        },
-      )
+    } catch {
+      // Progress reporting is best-effort and must never interrupt generation.
     }
   }
 
-  return phaseResult(input.plan.phase, input.plan, resultByStepId, successfulOutputs, previousOutputs, outputTextByKey)
+  if (totalSteps > 0) reportProgress('started')
+
+  try {
+    for (const level of input.plan.dependencyLevels) {
+      const levelSteps = level.stepIds
+        .map((stepId) => input.plan.steps.find((planned) => planned.step.id === stepId)?.step)
+        .filter((step): step is AgentPresetStepRecord => !!step)
+
+      const levelResults = await runWithConcurrency(levelSteps, maxConcurrency, async (step) => {
+        activeSteps.set(step.id, {
+          stepId: step.id,
+          stepName: step.name,
+          outputKey: step.outputKey,
+        })
+        reportProgress('running')
+        const dependencySkippedReason = dependencySkippedReasonFor(step, resultByStepId)
+        try {
+          return await executeStep({
+            database: input.database,
+            currentChar: input.currentChar,
+            currentChat: input.currentChat,
+            currentUserMessage: input.currentUserMessage,
+            previousAgentOutputs: previousOutputs,
+            agentOutputs: { ...outputTextByKey },
+            mainDraft: input.mainDraft,
+            step,
+            resolvedMainProfile: input.resolvedMainProfile,
+            dependencySkippedReason,
+            signal: input.signal,
+            dispatchProvider: input.dispatchProvider,
+          })
+        } finally {
+          activeSteps.delete(step.id)
+          completedSteps += 1
+          reportProgress('running')
+        }
+      })
+
+      for (const [index, result] of levelResults.entries()) {
+        const step = levelSteps[index]
+        if (!step) continue
+        resultByStepId.set(step.id, result)
+      }
+
+      for (const planned of input.plan.steps) {
+        if (!level.stepIds.includes(planned.step.id)) continue
+        const result = resultByStepId.get(planned.step.id)
+        if (result?.status !== 'success') continue
+        const output: AgentPresetPreviousOutput = {
+          stepId: result.stepId,
+          stepName: result.stepName,
+          phase: planned.step.phase,
+          outputKey: result.outputKey,
+          text: result.outputText,
+        }
+        successfulOutputs.push(output)
+        previousOutputs.push(output)
+        outputTextByKey[result.outputKey] = result.outputText
+      }
+
+      const blockingFailure = firstBlockingFailure(levelSteps, resultByStepId)
+      if (blockingFailure) {
+        reportProgress('error')
+        return phaseResult(
+          input.plan.phase,
+          input.plan,
+          resultByStepId,
+          successfulOutputs,
+          previousOutputs,
+          outputTextByKey,
+          {
+            blockingFailure,
+          },
+        )
+      }
+    }
+
+    if (totalSteps > 0) reportProgress('finished')
+    return phaseResult(
+      input.plan.phase,
+      input.plan,
+      resultByStepId,
+      successfulOutputs,
+      previousOutputs,
+      outputTextByKey,
+    )
+  } catch (error) {
+    if (totalSteps > 0) reportProgress('error')
+    throw error
+  }
 }
 
 function previousOutputsToOutputTextByKey(outputs: readonly AgentPresetPreviousOutput[]): Record<string, string> {

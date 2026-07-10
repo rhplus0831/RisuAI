@@ -196,16 +196,16 @@ cached revision may still reconcile so local state does not wait for another
 event. Memory events update Hypa V3 job/progress UI directly.
 
 Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,
-`message_patch`, `token`, `side_effect`, `post_generation_progress`, `warning`,
-`error`, and `done`.
+`message_patch`, `token`, `side_effect`, `agent_preset_progress`,
+`post_generation_progress`, `warning`, `error`, and `done`.
 `info.revision` or `done.postGeneration.revision` can advance the browser
 revision cache after server-owned persistence. Durable jobs buffer protected
 replay events (`prompt`, de-duplicated `info`, `message_patch`, `side_effect`,
-`post_generation_progress`, `warning`, `error`, and `done`) with 512-event and
-2 MiB caps; trimming drops unprotected frames and stops once only protected
-frames remain. They emit viewer heartbeat comments and can persist
-streamed-so-far text through raw
-cancel/finalization retry paths. Bootstrap `activeGenerationJobs` exposes
+de-duplicated `agent_preset_progress`, `post_generation_progress`, `warning`,
+`error`, and `done`) with 512-event and 2 MiB caps; trimming drops unprotected
+frames and stops once only protected frames remain. They emit viewer heartbeat
+comments and can persist streamed-so-far text through raw cancel/finalization
+retry paths. Bootstrap `activeGenerationJobs` exposes
 running durable jobs, including mode and regenerate message id when relevant,
 while `activeMessageTranslations` exposes in-flight detached raw-message
 translation rows.

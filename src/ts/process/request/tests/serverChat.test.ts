@@ -34,6 +34,11 @@ import {
   postGenerationProgress,
   type ActivePostGenerationProgress,
 } from '../../postGenerationProgress'
+import {
+  agentPresetProgress,
+  clearAgentPresetProgress,
+  type ActiveAgentPresetProgress,
+} from '../../agentPresetProgress'
 
 const baseInput: ServerChatInput = {
   chatId: 'chat-1',
@@ -67,6 +72,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearAgentPresetProgress()
   clearPostGenerationProgress()
   vi.unstubAllGlobals()
 })
@@ -557,6 +563,66 @@ describe('requestServerChat', () => {
         ]),
       )
       expect(get(postGenerationProgress)).toBeNull()
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('updates and clears Agent Preset progress from generation streams', async () => {
+    const snapshots: Array<ActiveAgentPresetProgress | null> = []
+    const unsubscribe = agentPresetProgress.subscribe((value) => snapshots.push(value))
+    try {
+      vi.stubGlobal('fetch', async () => {
+        const enc = new TextEncoder()
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(
+              enc.encode(
+                'event: agent_preset_progress\ndata: {"chatId":"chat-1","presetId":"ap-1","presetName":"Research","phase":"beforeMain","status":"started","totalSteps":2,"completedSteps":0,"activeSteps":[]}\n\n',
+              ),
+            )
+            controller.enqueue(
+              enc.encode(
+                'event: agent_preset_progress\ndata: {"chatId":"chat-1","presetId":"ap-1","presetName":"Research","phase":"beforeMain","status":"running","totalSteps":2,"completedSteps":1,"activeSteps":[{"stepId":"step-2","stepName":"Critique","outputKey":"critique"}]}\n\n',
+              ),
+            )
+            controller.enqueue(enc.encode('event: prompt\ndata: {"messages":[{"role":"user","content":"hi"}]}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: info\ndata: {"generationId":"gen-agent-progress","generationInfo":{"generationId":"gen-agent-progress","model":"m"}}\n\n',
+              ),
+            )
+            controller.enqueue(enc.encode('event: token\ndata: {"content":"ok"}\n\n'))
+            controller.enqueue(
+              enc.encode(
+                'event: done\ndata: {"result":"ok","generationId":"gen-agent-progress","generationInfo":{"generationId":"gen-agent-progress"}}\n\n',
+              ),
+            )
+            controller.close()
+          },
+        })
+        return new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        })
+      })
+
+      const res = await requestServerChatGeneration(baseInput, null)
+      expect(res.status).toBe('ok')
+      if (res.status !== 'ok') return
+      await expect(res.terminal).resolves.toMatchObject({ status: 'done' })
+      expect(snapshots).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            chatId: 'chat-1',
+            presetName: 'Research',
+            phase: 'beforeMain',
+            completedSteps: 1,
+            activeSteps: [expect.objectContaining({ stepName: 'Critique' })],
+          }),
+        ]),
+      )
+      expect(get(agentPresetProgress)).toBeNull()
     } finally {
       unsubscribe()
     }

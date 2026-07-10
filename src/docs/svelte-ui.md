@@ -277,8 +277,10 @@ placeholder, and `mainDraft` is shown only for after-main steps. Changing phase
 removes scopes and dependencies that are no longer valid. Step instructions can
 chain an eligible earlier output through `{{agent::outputKey}}`; missing,
 same-level, disabled, or future references appear as `Incomplete` and block
-generation. The removed Context Agent page and `/settings/context-agent` route
-are not compatibility aliases.
+generation. During chat generation, `AgentPresetProgress.svelte` consumes
+chat-scoped `agent_preset_progress` snapshots and shows the current phase,
+active helper steps, and completed/total count above the transcript. The removed
+Context Agent page and `/settings/context-agent` route are not compatibility aliases.
 
 The settings shell currently separates model and prompt work: settings index
 `17` is model settings, `18` is prompt settings, `13` is prompt templates, and

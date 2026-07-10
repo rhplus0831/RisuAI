@@ -51,7 +51,7 @@ import {
 } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
 import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
-import { isAgentPresetGenerationError } from '../prompt/agentPresetExecution.js'
+import { isAgentPresetGenerationError, type AgentPresetProgressReporter } from '../prompt/agentPresetExecution.js'
 import { emitProviderChunks } from '../prompt/providerTransport.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
@@ -466,11 +466,13 @@ function loadDatabaseDeps(
   chatId: string,
   measurement?: PromptAssemblyMeasurement,
   signal?: AbortSignal,
+  agentPresetProgress?: AgentPresetProgressReporter,
 ): RouteAssembleDeps {
   let database: Database | null = null
   const resolveStoredAsset = createRequestScopedStoredAssetResolver(db, dataDir)
   return {
     signal,
+    agentPresetProgress,
     loadDatabase: () => {
       const startedAt = measurement ? protocolNowMs() : 0
       // Assembly reads only the target chat's transcript hydrate
@@ -498,13 +500,14 @@ async function assemblePromptWithMetrics(
   db: DatabaseSync,
   signal?: AbortSignal,
   context: PromptAssemblyMetricContext = {},
+  agentPresetProgress?: AgentPresetProgressReporter,
 ): Promise<{ result: AssembleResult; deps: RouteAssembleDeps; promptMs: number }> {
   const measurement: PromptAssemblyMeasurement | undefined = protocolMetricsEnabled()
     ? { databaseLoadCount: 0, databaseLoadMs: 0, stageTimingsMs: {} }
     : undefined
   const metricStartedAt = measurement ? protocolNowMs() : 0
   const startedAt = Date.now()
-  const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal)
+  const deps = loadDatabaseDeps(dataDir, db, input.chatId, measurement, signal, agentPresetProgress)
   try {
     const result = await assemblePrompt(input, deps)
     const promptMs = Date.now() - startedAt
@@ -1338,6 +1341,9 @@ async function resolvePostGenerationResult(args: {
       promptInfo: args.promptInfo,
       luaTrace,
       luaProgress,
+      agentPresetProgress: args.emit
+        ? (progress) => args.emit?.({ type: 'agent_preset_progress', ...progress })
+        : undefined,
     })
     await emitPostGenerationLuaTraceMetric({
       collector: luaTrace,
@@ -1571,7 +1577,10 @@ async function streamAssembly(
     try {
       if (deferredFailure) throw deferredFailure.error
       const { result, deps, promptMs } =
-        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext))
+        preparedAssembly ??
+        (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext, (progress) =>
+          emit({ type: 'agent_preset_progress', ...progress }),
+        ))
       const database = result.state?.database ?? deps.getDatabase()
       // The route owns assembly-time chat-var writes and post-`editinput`
       // submit-transcript writes for persisting modes. This runs for both success
@@ -2483,7 +2492,10 @@ async function runGenerationJob(args: {
       if (deferredFailure) throw deferredFailure.error
       if (preparedAssembly) retargetAssemblySignal(preparedAssembly, signal)
       const { result, deps, promptMs } =
-        preparedAssembly ?? (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext))
+        preparedAssembly ??
+        (await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext, (progress) =>
+          emit({ type: 'agent_preset_progress', ...progress }),
+        ))
       const database = result.state?.database ?? deps.getDatabase()
       const persistedRevision =
         isPersistingMode(input.mode) && result.mutations

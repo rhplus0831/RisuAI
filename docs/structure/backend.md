@@ -157,7 +157,10 @@ post-generation before terminal `done`; after-main Agent Preset steps run after
 `editOutput` and before assistant-row persistence/run-vars/`onOutput`. Hidden
 Agent Preset diagnostics are stored under `generationInfo.agentPreset`, and
 required after-main failures surface as structured
-`done.postGeneration.agentPresetError`. `done.postGeneration` carries the final text,
+`done.postGeneration.agentPresetError`. Live before-main and after-main helper
+status is streamed through `agent_preset_progress` snapshots with phase-local
+completed/total counts and active step names; durable replay keeps only the
+newest snapshot. `done.postGeneration` carries the final text,
 `messagePatch`, `resendChat`, and revision that the browser applies in
 `applyServerBackedTerminal()`. Post-generation `editOutput`/`onOutput` Lua
 progress emits `post_generation_progress` SSE frames through

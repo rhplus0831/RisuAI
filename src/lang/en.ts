@@ -2198,6 +2198,12 @@ export const languageEnglish = {
     diagnostics: 'Diagnostics',
     diagnosticsPending: 'No Agent Preset diagnostics are available yet.',
     openDiagnostics: 'Open Diagnostics',
+    progressBeforeMain: 'Before main response',
+    progressAfterMain: 'After main response',
+    progressLabel: (presetName: string, phase: string, completed: number, total: number) =>
+      `Agent Preset: ${presetName} · ${phase} · ${completed}/${total} steps`,
+    progressActiveSteps: (stepNames: string) => `Running: ${stepNames}`,
+    progressWaiting: 'Preparing the next step',
     editorNotice: 'Metadata and step authoring.',
     nameColumn: 'Name',
     statusColumn: 'Status',

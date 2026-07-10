@@ -2,6 +2,7 @@ import type { FastifyReply } from 'fastify'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
 import type { AssembleMutationPayload } from './assemble.js'
 import type { AgentPresetGenerationErrorBody } from './agentPresetExecution.js'
+import type { AgentPresetProgress } from './agentPresetExecution.js'
 import type { PostGenerationLuaProgressEvent } from './luaPostGenerationProgress.js'
 
 /**
@@ -85,6 +86,10 @@ export interface SideEffectEvent {
   payload: unknown
 }
 
+export interface AgentPresetProgressEvent extends AgentPresetProgress {
+  type: 'agent_preset_progress'
+}
+
 export interface WarningEvent {
   type: 'warning'
   message: string
@@ -150,6 +155,7 @@ export type PromptChatEvent =
   | TokenEvent
   | MessagePatchEvent
   | SideEffectEvent
+  | AgentPresetProgressEvent
   | PostGenerationLuaProgressEvent
   | WarningEvent
   | ErrorEvent
@@ -165,6 +171,7 @@ export const PROMPT_CHAT_EVENT_TYPES = [
   'token',
   'message_patch',
   'side_effect',
+  'agent_preset_progress',
   'post_generation_progress',
   'warning',
   'error',

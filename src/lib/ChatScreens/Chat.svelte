@@ -73,6 +73,7 @@
     getChatGenerationLoadingProgress,
     normalizeChatGenerationLoadingStage,
   } from './chatGenerationLoading'
+  import { agentPresetProgress } from 'src/ts/process/agentPresetProgress'
   import {
     shouldAutoPopupMessageEditor,
     shouldAutoPopupTranslationEditor,
@@ -756,6 +757,7 @@
     }
     return character.chats?.[chatPage]?.id ?? ''
   })
+  let hasActiveAgentPresetProgress = $derived($agentPresetProgress?.chatId === currentChatId)
   let serverTranslationInProgress = $derived.by(() => {
     if (!messageRowId) return false
     return $activeMessageTranslations.some((job) => job.messageId === messageRowId)
@@ -1221,18 +1223,20 @@
       {/if}
     </div>
   {:else if isGenerationLoading}
-    <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
-      <div class="chat-generation-loading-header">
-        <LoaderCircleIcon size={16} class="animate-spin shrink-0" />
-        <span>{generationLoadingText}</span>
-      </div>
-      <div class="chat-generation-loading-track">
-        <div
-          class={`chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
-          style:width={`${generationLoadingProgress}%`}>
+    {#if !hasActiveAgentPresetProgress}
+      <div class="chat-generation-loading" role="status" aria-live="polite" aria-busy="true">
+        <div class="chat-generation-loading-header">
+          <LoaderCircleIcon size={16} class="animate-spin shrink-0" />
+          <span>{generationLoadingText}</span>
+        </div>
+        <div class="chat-generation-loading-track">
+          <div
+            class={`chat-generation-loading-fill chat-generation-loading-stage-${normalizedGenerationStage}`}
+            style:width={`${generationLoadingProgress}%`}>
+          </div>
         </div>
       </div>
-    </div>
+    {/if}
   {:else if blankMessage}
     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
       {language.noMessage}

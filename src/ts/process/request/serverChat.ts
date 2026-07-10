@@ -17,8 +17,10 @@ import type { MessageGenerationInfo } from '../../storage/database.svelte'
 import { setCachedServerCommandRevision } from '../../server/commands'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from '../../server/activeWriterSession'
 import { clearPostGenerationProgress, updatePostGenerationProgress } from '../postGenerationProgress'
+import { clearAgentPresetProgress, updateAgentPresetProgress } from '../agentPresetProgress'
 import { iterateSseEvents } from './sseParse'
 import type {
+  AgentPresetProgressEvent,
   DoneEvent,
   InfoEvent,
   PostGenerationProgressEvent,
@@ -37,6 +39,11 @@ const REQUEST_UID_HEADER = 'X-Request-UID'
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
 } as const
+
+function clearLiveGenerationProgress(): void {
+  clearAgentPresetProgress()
+  clearPostGenerationProgress()
+}
 
 /** The request body the `/chat` route expects (mirrors server `AssembleInput`). */
 export interface ServerChatInput {
@@ -394,7 +401,7 @@ export async function requestServerChatGeneration(
   signal: AbortSignal | null,
   reattachJobId?: string,
 ): Promise<ServerChatGenerationResult> {
-  clearPostGenerationProgress()
+  clearLiveGenerationProgress()
   const opened = await openChatResponse(input, signal, reattachJobId)
   if (opened.status !== 'ok') return opened
 
@@ -512,6 +519,12 @@ export async function requestServerChatGeneration(
                   sideEffects.push(data as unknown as ServerChatSideEffect)
                 }
                 break
+              case 'agent_preset_progress':
+                updateAgentPresetProgress({
+                  type: 'agent_preset_progress',
+                  ...(data as unknown as Omit<AgentPresetProgressEvent, 'type'>),
+                })
+                break
               case 'post_generation_progress':
                 updatePostGenerationProgress({
                   type: 'post_generation_progress',
@@ -555,7 +568,7 @@ export async function requestServerChatGeneration(
                   sideEffects,
                   warnings,
                 })
-                clearPostGenerationProgress()
+                clearLiveGenerationProgress()
                 closeTokenStream()
                 return
               }
@@ -581,7 +594,7 @@ export async function requestServerChatGeneration(
                   })
                 }
                 resolveTerminalOnce({ status: 'done', done: donePayload, sideEffects, warnings })
-                clearPostGenerationProgress()
+                clearLiveGenerationProgress()
                 closeTokenStream()
                 return
               default:
@@ -592,7 +605,7 @@ export async function requestServerChatGeneration(
             cancelDurableOnAbort()
             resolveReadyOnce({ status: 'aborted' })
             resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
-            clearPostGenerationProgress()
+            clearLiveGenerationProgress()
           } else {
             resolveReadyOnce({ status: 'error', error: 'stream ended without a done event' })
             resolveTerminalOnce({
@@ -600,7 +613,7 @@ export async function requestServerChatGeneration(
               error: 'stream ended without a done event',
               warnings,
             })
-            clearPostGenerationProgress()
+            clearLiveGenerationProgress()
           }
           closeTokenStream()
         } catch (err) {
@@ -608,12 +621,12 @@ export async function requestServerChatGeneration(
             cancelDurableOnAbort()
             resolveReadyOnce({ status: 'aborted' })
             resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
-            clearPostGenerationProgress()
+            clearLiveGenerationProgress()
           } else {
             const error = err instanceof Error ? err.message : String(err)
             resolveReadyOnce({ status: 'error', error })
             resolveTerminalOnce({ status: 'error', error, warnings })
-            clearPostGenerationProgress()
+            clearLiveGenerationProgress()
           }
           closeTokenStream()
         }
@@ -622,7 +635,7 @@ export async function requestServerChatGeneration(
     cancel() {
       tokenStreamInactive = true
       resolveTerminalOnce({ status: 'error', error: 'Aborted', warnings })
-      clearPostGenerationProgress()
+      clearLiveGenerationProgress()
     },
   })
 

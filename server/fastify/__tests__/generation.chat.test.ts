@@ -3350,6 +3350,21 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
           version: 1,
           steps: [
             {
+              id: 'aps_before',
+              name: 'Before Research',
+              enabled: true,
+              phase: 'beforeMain',
+              dependencies: [],
+              instruction: 'Research context for the response.',
+              model: { mode: 'modelProfile', profileId: 'debug-after' },
+              runtime: { maxInputChars: 2_000, maxOutputChars: 500, timeoutMs: 5_000 },
+              inputScopes: [],
+              outputKey: 'research',
+              outputFormat: 'text',
+              destination: 'intermediate',
+              failurePolicy: { mode: 'required' },
+            },
+            {
               id: 'aps_after',
               name: 'After Rewrite',
               enabled: true,
@@ -3378,6 +3393,37 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(res.statusCode).toBe(200)
     const events = parseEvents(res.body)
     const done = doneFrame(events)
+    const agentProgress = events.filter((event) => event.type === 'agent_preset_progress')
+
+    for (const phase of ['beforeMain', 'afterMain']) {
+      const phaseProgress = agentProgress.filter((event) => event.data.phase === phase)
+      expect(phaseProgress[0]?.data).toMatchObject({
+        chatId: 'chat-1',
+        presetId: 'ap_after',
+        presetName: 'After Agent',
+        phase,
+        status: 'started',
+        completedSteps: 0,
+        totalSteps: 1,
+      })
+      expect(phaseProgress).toContainEqual(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            phase,
+            status: 'running',
+            completedSteps: 0,
+            activeSteps: [expect.objectContaining({ stepName: expect.any(String) })],
+          }),
+        }),
+      )
+      expect(phaseProgress.at(-1)?.data).toMatchObject({
+        phase,
+        status: 'finished',
+        completedSteps: 1,
+        totalSteps: 1,
+        activeSteps: [],
+      })
+    }
 
     expect(done.result).toBe('server echo reply')
     expect(done.postGeneration?.finalText).toContain('"requestModel": "agent-after-model"')

@@ -104,6 +104,7 @@ import {
   type AgentPresetPhaseExecutionResult,
   type AgentPresetPhaseFailure,
   type AgentPresetPreviousOutput,
+  type AgentPresetProgressReporter,
   type AgentPresetStepExecutionResult,
   type AgentPresetStepExecutor,
 } from './agentPresetExecution.js'
@@ -138,6 +139,8 @@ export interface AssembleDeps {
   loadPromptMemoryQueryVectors?(): MemorySelectionInput['queryVectors']
   enqueuePromptMemoryFollowUpJob?: (job: EnqueueMemoryJobInput) => MemoryJob
   executeAgentPresetStep?: AgentPresetStepExecutor
+  /** Optional live progress reporter for Agent Preset helper steps. */
+  agentPresetProgress?: AgentPresetProgressReporter
   recordAssemblyStageTiming?: (stage: PromptAssemblyStage, durationMs: number) => void
   /**
    * Resolve a stored-asset reference (sha256 id or `assets/<id>.<ext>` path) to
@@ -1169,6 +1172,13 @@ export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: 
     maxConcurrency: resolution.plan.maxConcurrency,
     signal: state.signal,
     executeStep: state.executeAgentPresetStep ?? deps.executeAgentPresetStep ?? executeAgentPresetStep,
+    onProgress: (progress) =>
+      deps.agentPresetProgress?.({
+        chatId: state.currentChat.id ?? state.input.chatId,
+        presetId: resolution.preset.id,
+        presetName: resolution.preset.name,
+        ...progress,
+      }),
   })
   runtime.beforeMain = beforeMain
   runtime.previousAgentOutputs = beforeMain.previousAgentOutputs
@@ -2047,6 +2057,8 @@ export interface ServerPostGenerationInput {
   luaTrace?: PostGenerationLuaTraceCollector
   /** Optional live progress tracker for post-generation Lua scripts. */
   luaProgress?: PostGenerationLuaProgressTracker
+  /** Optional live progress reporter for after-main Agent Preset steps. */
+  agentPresetProgress?: AgentPresetProgressReporter
 }
 
 /** Result of {@link runServerPostGeneration}. */
@@ -2237,7 +2249,11 @@ interface AgentPresetAfterMainRun {
   error?: AgentPresetGenerationErrorBody
 }
 
-async function runAgentPresetAfterMainStage(state: AssemblyState, mainDraft: string): Promise<AgentPresetAfterMainRun> {
+async function runAgentPresetAfterMainStage(
+  state: AssemblyState,
+  mainDraft: string,
+  progressReporter?: AgentPresetProgressReporter,
+): Promise<AgentPresetAfterMainRun> {
   const runtime = state.agentPreset
   const plan = runtime?.plan
   if (!runtime || runtime.resolution.status !== 'ready' || !plan) {
@@ -2262,6 +2278,13 @@ async function runAgentPresetAfterMainStage(state: AssemblyState, mainDraft: str
     maxConcurrency: plan.maxConcurrency,
     signal: state.signal,
     executeStep: state.executeAgentPresetStep ?? executeAgentPresetStep,
+    onProgress: (progress) =>
+      progressReporter?.({
+        chatId: state.currentChat.id ?? state.input.chatId,
+        presetId: runtime.preset?.id ?? '',
+        presetName: runtime.preset?.name ?? '',
+        ...progress,
+      }),
   })
   runtime.afterMain = afterMain
   runtime.previousAgentOutputs = afterMain.previousAgentOutputs
@@ -2404,7 +2427,7 @@ export async function runServerPostGeneration(
 
   const reformatted = reformatCompletion(continueBase + input.completionText)
   const editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
-  const agentPresetAfterMain = await runAgentPresetAfterMainStage(state, editedText)
+  const agentPresetAfterMain = await runAgentPresetAfterMainStage(state, editedText, input.agentPresetProgress)
   attachAgentPresetDiagnostics(input.generationInfo, state)
 
   appendAssistantRow(state, agentPresetAfterMain.finalText, input, isContinue, continueIndex)

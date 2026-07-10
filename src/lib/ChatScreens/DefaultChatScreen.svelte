@@ -104,6 +104,7 @@
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
   import { createLatestOperationGuard } from 'src/ts/server/staleStateGuards'
   import PostGenerationScriptProgress from './PostGenerationScriptProgress.svelte'
+  import AgentPresetProgress from './AgentPresetProgress.svelte'
 
   const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then((m) => m.default)
   const composerFileOperationGuard = createLatestOperationGuard<string>()
@@ -1435,6 +1436,7 @@
           </button>
         {/if}
 
+        <AgentPresetProgress />
         <PostGenerationScriptProgress />
 
         <Chats
