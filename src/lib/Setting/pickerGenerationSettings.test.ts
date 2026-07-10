@@ -310,6 +310,23 @@ afterEach(() => {
 })
 
 describe('generation settings picker mode', () => {
+  it('allows Space in the prompt preset rename input', async () => {
+    const close = mountPresetPicker('global')
+
+    elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button').click()
+    await tick()
+
+    const input = pickerRow('prompt', 'preset-a').querySelector<HTMLInputElement>('input')
+    expect(input).toBeTruthy()
+
+    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    input!.dispatchEvent(event)
+    await tick()
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(close).not.toHaveBeenCalled()
+  })
+
   it('saves preset rows to the active chat without calling global preset selection', async () => {
     const calls = stubCommandFetch()
     const close = mountPresetPicker('active-chat-generation-settings')

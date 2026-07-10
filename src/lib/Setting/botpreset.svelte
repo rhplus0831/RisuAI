@@ -313,6 +313,7 @@
             selectPreset(preset, i)
           }}
           onkeydown={(e) => {
+            if (e.target !== e.currentTarget) return
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
               selectPreset(preset, i)
@@ -414,7 +415,10 @@
             <HardDriveUploadIcon size={18} />
           </button>
         {/if}
-        <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={toggleEditMode}>
+        <button
+          class="text-textcolor2 hover:text-green-500 cursor-pointer"
+          data-risu-preset-edit
+          onclick={toggleEditMode}>
           <PencilIcon size={18} />
         </button>
       </div>
