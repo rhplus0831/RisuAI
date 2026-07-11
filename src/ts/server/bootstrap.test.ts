@@ -6,11 +6,7 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'bootstrap-auth-token',
 }))
 
-import {
-  canUseServerBootstrap,
-  fetchServerBootstrapProjection,
-  fetchServerBootstrapProjectionReadOnly,
-} from './bootstrap'
+import { fetchServerBootstrapProjection, fetchServerBootstrapProjectionReadOnly } from './bootstrap'
 import { ACTIVE_WRITER_SESSION_HEADER } from './activeWriterSession'
 import { BODY_CACHE_MANIFEST_HEADER } from './bootstrapBodyCache'
 import {
@@ -62,10 +58,6 @@ afterEach(() => {
 })
 
 describe('server bootstrap projection helper', () => {
-  it('reports availability unconditionally', () => {
-    expect(canUseServerBootstrap()).toBe(true)
-  })
-
   it('fetches the projection with auth and caches the command revision', async () => {
     const database = {
       characters: [{ chaId: 'char-a', name: 'Ada', chats: [] }],

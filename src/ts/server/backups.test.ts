@@ -46,7 +46,6 @@ vi.mock('../process/modules', () => ({
 }))
 
 import {
-  canUseServerBackups,
   createServerBackup,
   deleteServerBackup,
   exportServerBundle,
@@ -127,10 +126,6 @@ afterEach(() => {
 })
 
 describe('server backup helpers', () => {
-  it('reports availability unconditionally', () => {
-    expect(canUseServerBackups()).toBe(true)
-  })
-
   it('creates and lists backups with auth headers', async () => {
     const backupFetch = makeBackupFetch((url, init) => {
       if (url === '/api/v1/backups' && init.method === 'GET') return { backups: [backupManifest] }

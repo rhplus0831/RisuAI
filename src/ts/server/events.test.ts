@@ -6,7 +6,7 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'events-auth-token',
 }))
 
-import { canUseServerEvents, subscribeServerCommandEvents } from './events'
+import { subscribeServerCommandEvents } from './events'
 import type { CommandEvent } from './commands'
 import type { ServerMemoryEvent } from './events'
 
@@ -61,10 +61,6 @@ afterEach(() => {
 })
 
 describe('server command event subscription helper', () => {
-  it('reports availability unconditionally', () => {
-    expect(canUseServerEvents()).toBe(true)
-  })
-
   it('fetches the event stream with auth and emits command and memory events', async () => {
     const commandEvent: CommandEvent = {
       type: 'settings.updated',

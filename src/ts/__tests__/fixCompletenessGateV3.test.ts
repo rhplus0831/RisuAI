@@ -306,11 +306,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     4,
     "`process.once('SIGTERM'\\|'SIGINT')` -> `await app.close()` with a force-exit backstop.",
     'server/fastify/__tests__/index.test.ts',
-    'M9: SIGTERM reaches Fastify app.close and onClose',
+    'M9: %s reaches Fastify app.close and onClose',
     [
       {
         testPath: 'server/fastify/__tests__/index.test.ts',
-        testName: 'M9: SIGINT reaches Fastify app.close and onClose',
+        testName: "it.each(['SIGTERM', 'SIGINT'] as const)",
       },
       {
         testPath: 'server/fastify/__tests__/index.test.ts',

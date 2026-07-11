@@ -21,7 +21,6 @@ vi.mock('../../../server/activeWriterSession', () => ({
 import {
   applyServerHypaV3Progress,
   cancelServerMemoryJob,
-  canUseServerMemoryApi,
   listServerMemoryChunks,
   listServerMemoryJobs,
   listServerMemorySummaries,
@@ -115,10 +114,6 @@ afterEach(() => {
 })
 
 describe('server memory API adapter', () => {
-  it('reports availability from the Fastify platform gate', () => {
-    expect(canUseServerMemoryApi()).toBe(true)
-  })
-
   it('lists chunks with the auth header and encoded chat id', async () => {
     const memoryFetch = makeMemoryFetch(() => ({ chunks: [baseChunk] }))
     vi.stubGlobal('fetch', memoryFetch.fetch)

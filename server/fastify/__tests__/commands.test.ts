@@ -332,6 +332,41 @@ async function waitForActiveMessageTranslation(
   throw new Error(`Timed out waiting for active message translation: ${JSON.stringify(expected)}`)
 }
 
+async function importMessageTranslationFixture(
+  app: FastifyInstance,
+  assertion: string,
+  options: { echoMessage: string; echoDelay?: number; sourceText?: string },
+): Promise<number> {
+  return importDatabase(app, assertion, {
+    translator: 'ko',
+    translatorInputLanguage: 'en',
+    translatorType: 'llm',
+    aiModel: 'echo_model',
+    echoMessage: options.echoMessage,
+    ...(options.echoDelay === undefined ? {} : { echoDelay: options.echoDelay }),
+    translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
+    translatorMaxResponse: 128,
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'A',
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'A chat',
+            note: '',
+            message: [{ role: 'user', data: options.sourceText ?? 'hello raw', chatId: 'msg-a' }],
+            localLore: [],
+          },
+        ],
+        chatFolders: [],
+        chatPage: 0,
+      },
+    ],
+    characterOrder: ['char-a'],
+  })
+}
+
 async function postAndDisconnect(url: string, assertion: string, payload: Record<string, unknown>): Promise<void> {
   const body = JSON.stringify(payload)
   await new Promise<void>((resolve, reject) => {
@@ -7467,32 +7502,8 @@ describe('Phase 9-3c message history commands', () => {
 
   it('translates raw message data on the server and stores the result on the message', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    const revision = await importDatabase(harness.app, assertion, {
-      translator: 'ko',
-      translatorInputLanguage: 'en',
-      translatorType: 'llm',
-      aiModel: 'echo_model',
+    const revision = await importMessageTranslationFixture(harness.app, assertion, {
       echoMessage: 'translated raw text',
-      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
-      translatorMaxResponse: 128,
-      characters: [
-        {
-          chaId: 'char-a',
-          name: 'A',
-          chats: [
-            {
-              id: 'chat-a',
-              name: 'A chat',
-              note: '',
-              message: [{ role: 'user', data: 'hello raw', chatId: 'msg-a' }],
-              localLore: [],
-            },
-          ],
-          chatFolders: [],
-          chatPage: 0,
-        },
-      ],
-      characterOrder: ['char-a'],
     })
 
     const translated = await harness.app.inject({
@@ -7601,33 +7612,9 @@ describe('Phase 9-3c message history commands', () => {
 
   it('allows unrelated edits while raw translation is waiting on its provider', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    const revision = await importDatabase(harness.app, assertion, {
-      translator: 'ko',
-      translatorInputLanguage: 'en',
-      translatorType: 'llm',
-      aiModel: 'echo_model',
+    const revision = await importMessageTranslationFixture(harness.app, assertion, {
       echoMessage: 'translated after concurrent edit',
       echoDelay: 0.2,
-      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
-      translatorMaxResponse: 128,
-      characters: [
-        {
-          chaId: 'char-a',
-          name: 'A',
-          chats: [
-            {
-              id: 'chat-a',
-              name: 'A chat',
-              note: '',
-              message: [{ role: 'user', data: 'hello raw', chatId: 'msg-a' }],
-              localLore: [],
-            },
-          ],
-          chatFolders: [],
-          chatPage: 0,
-        },
-      ],
-      characterOrder: ['char-a'],
     })
 
     const translating = harness.app.inject({
@@ -7663,35 +7650,62 @@ describe('Phase 9-3c message history commands', () => {
     })
   })
 
+  it('rejects a stale translation when its source message changes during the provider request', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importMessageTranslationFixture(harness.app, assertion, {
+      echoMessage: 'stale translated text',
+      echoDelay: 0.2,
+      sourceText: 'original raw text',
+    })
+
+    const translating = harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/messages/msg-a/translate',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision },
+    })
+    await waitForActiveMessageTranslation(harness.app, assertion, {
+      chatId: 'chat-a',
+      messageId: 'msg-a',
+    })
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/messages/msg-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { data: 'edited while translating' },
+      },
+    })
+    expect(edited.statusCode).toBe(200)
+
+    const translated = await translating
+    expect(translated.statusCode).toBe(400)
+    expect(translated.json().error).toBe('Message changed before translation could be saved: msg-a')
+    expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
+      {
+        role: 'user',
+        data: 'edited while translating',
+        chatId: 'msg-a',
+      },
+    ])
+
+    const after = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(after.statusCode).toBe(200)
+    expect(after.json().revision).toBe(edited.json().revision)
+    expect(after.json().activeMessageTranslations).toEqual([])
+  })
+
   it('continues server raw translation after the requesting client disconnects', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    const revision = await importDatabase(harness.app, assertion, {
-      translator: 'ko',
-      translatorInputLanguage: 'en',
-      translatorType: 'llm',
-      aiModel: 'echo_model',
+    const revision = await importMessageTranslationFixture(harness.app, assertion, {
       echoMessage: 'translated after disconnect',
       echoDelay: 0.5,
-      translatorPrompt: 'Translate {{slot::content}} to {{slot}}',
-      translatorMaxResponse: 128,
-      characters: [
-        {
-          chaId: 'char-a',
-          name: 'A',
-          chats: [
-            {
-              id: 'chat-a',
-              name: 'A chat',
-              note: '',
-              message: [{ role: 'user', data: 'hello raw', chatId: 'msg-a' }],
-              localLore: [],
-            },
-          ],
-          chatFolders: [],
-          chatPage: 0,
-        },
-      ],
-      characterOrder: ['char-a'],
     })
 
     await harness.app.listen({ host: '127.0.0.1', port: 0 })

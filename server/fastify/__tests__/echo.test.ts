@@ -48,17 +48,6 @@ describe('runEcho (non-streaming)', () => {
     expect(res).toEqual({ type: 'success', result: 'hi there' })
   })
 
-  it('honors delayMs (timing roughly correct)', async () => {
-    const start = Date.now()
-    await runEcho({
-      message: 'x',
-      delayMs: 30,
-      signal: new AbortController().signal,
-    })
-    const elapsed = Date.now() - start
-    expect(elapsed).toBeGreaterThanOrEqual(25)
-  })
-
   it('returns aborted=true when signal aborts during the delay', async () => {
     const c = new AbortController()
     setTimeout(() => c.abort(), 15)

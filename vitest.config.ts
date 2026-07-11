@@ -17,6 +17,7 @@ export default defineConfig({
     conditions: ['browser'],
   },
   test: {
+    allowOnly: false,
     environment: 'happy-dom',
     setupFiles: ['vitest.setup.ts'],
     exclude: ['**/node_modules/**', 'server/**', ...(includeExplicitGates ? [] : explicitGateTests)],

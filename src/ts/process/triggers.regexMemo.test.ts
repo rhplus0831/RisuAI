@@ -3,15 +3,6 @@ import { get } from 'svelte/store'
 
 // Trigger regexes are memoized across repeated effect runs.
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return { ...actual, isFastifyServer: true }
-})
-
-vi.mock('../storage/fastifyStorage', () => ({
-  getNodeServerProxyAuth: async () => 'trigger-regexmemo-token',
-}))
-
 vi.mock('./modules', async (importActual) => {
   const actual = await importActual<typeof import('./modules')>()
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
@@ -21,34 +12,9 @@ import '../stores.svelte'
 import { getCompiledRegex, resetScriptCache } from './scripts'
 import { runTrigger } from './triggers'
 import { safeStructuredClone } from '../polyfill'
-import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { DBState, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-}
-
-function stubCommandFetch(): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url.startsWith('/api/v1/commands/chats/')) {
-        return jsonResponse({
-          revision: 11,
-          event: { type: 'chat.updated', revision: 11, resource: 'chat' },
-        })
-      }
-      return jsonResponse({ revision: 11, event: { type: 'noop', revision: 11 } })
-    }) as unknown as typeof fetch,
-  )
-}
 
 function seedDb(): void {
   selectedCharID.set(0)
@@ -100,17 +66,14 @@ async function countRegexCompiles<T>(
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
-  clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   resetScriptCache()
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
   seedDb()
-  stubCommandFetch()
 })
 
 afterEach(() => {
-  vi.unstubAllGlobals()
   selectedCharID.set(-1)
 })
 
@@ -136,6 +99,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     await runTrigger(char, 'manual', {
       chat: char.chats[char.chatPage],
       manualName: 'update-gui',
+      deferLiveChatSideEffects: true,
     })
 
     expect(get(ReloadGUIPointer)).toBe(broadBefore)
@@ -167,11 +131,13 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
       const first = await runTrigger(char, 'manual', {
         chat: char.chats[char.chatPage],
         manualName: 'regex-test',
+        deferLiveChatSideEffects: true,
       })
       const compilesAfterFirstPass = compiles.get('l40-w[a-z]+d')
       const second = await runTrigger(char, 'manual', {
         chat: first?.chat ?? char.chats[char.chatPage],
         manualName: 'regex-test',
+        deferLiveChatSideEffects: true,
       })
       return { first, second, compilesAfterFirstPass }
     })
@@ -217,6 +183,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
       const run = await runTrigger(char, 'manual', {
         chat: char.chats[char.chatPage],
         manualName: 'replace',
+        deferLiveChatSideEffects: true,
       })
       return { run, compilesAfterPass: compiles.get('l40-a(\\d)') }
     })
@@ -256,6 +223,7 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
       const run = await runTrigger(char, 'manual', {
         chat: char.chats[char.chatPage],
         manualName: 'extract',
+        deferLiveChatSideEffects: true,
       })
       return { run, compilesAfterPass: compiles.get('id=l40-(\\d+)') }
     })

@@ -132,6 +132,17 @@ async function waitForTraceEntries(
   return lastEntries
 }
 
+async function waitForDirectoryEntries(directory: string, expected: string[]): Promise<string[]> {
+  const deadline = Date.now() + 1000
+  let lastEntries: string[] = []
+  while (Date.now() < deadline) {
+    lastEntries = existsSync(directory) ? readdirSync(directory).sort() : []
+    if (JSON.stringify(lastEntries) === JSON.stringify(expected)) return lastEntries
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return lastEntries
+}
+
 function expectTiming(value: unknown): void {
   expect(typeof value).toBe('number')
   expect(value).toBeGreaterThanOrEqual(0)
@@ -420,12 +431,11 @@ describe('request trace', () => {
 
     const bodiesDir = path.join(harness.dataDir, 'trace', 'bodies', 'agent')
     const traceContents = readFileSync(tracePath(harness, 'agent'), 'utf8')
+    const expectedBodyFiles = Array.from(new Set(bodyPaths))
+      .map((bodyPath) => path.basename(bodyPath))
+      .sort()
     expect(traceContents).not.toContain('seq=1')
     expect(existsSync(bodiesDir)).toBe(true)
-    expect(readdirSync(bodiesDir).sort()).toEqual(
-      Array.from(new Set(bodyPaths))
-        .map((bodyPath) => path.basename(bodyPath))
-        .sort(),
-    )
+    expect(await waitForDirectoryEntries(bodiesDir, expectedBodyFiles)).toEqual(expectedBodyFiles)
   })
 })

@@ -15,6 +15,7 @@ const directRealmImportTestRun = process.argv.some((arg) => {
 
 export default defineConfig({
   test: {
+    allowOnly: false,
     root: here,
     environment: 'node',
     include: ['__tests__/**/*.test.ts'],

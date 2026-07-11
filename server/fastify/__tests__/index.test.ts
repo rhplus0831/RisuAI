@@ -118,12 +118,8 @@ afterEach(() => {
 })
 
 describe('Fastify API entrypoint lifecycle', () => {
-  it('M9: SIGTERM reaches Fastify app.close and onClose', async () => {
-    await expectSignalClosesApp('SIGTERM')
-  })
-
-  it('M9: SIGINT reaches Fastify app.close and onClose', async () => {
-    await expectSignalClosesApp('SIGINT')
+  it.each(['SIGTERM', 'SIGINT'] as const)('M9: %s reaches Fastify app.close and onClose', async (signal) => {
+    await expectSignalClosesApp(signal)
   })
 
   it('M9: duplicate shutdown signals reuse one app.close call', async () => {

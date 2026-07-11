@@ -5,7 +5,6 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import {
-  canUseServerProjection,
   fetchServerBulkCharacterLorebooks,
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
@@ -67,10 +66,6 @@ afterEach(() => {
 })
 
 describe('server projection API adapter', () => {
-  it('reports availability unconditionally', () => {
-    expect(canUseServerProjection()).toBe(true)
-  })
-
   it('fetches targeted projection resources with encoded query params, auth, and signal', async () => {
     const controller = new AbortController()
     const projectionFetch = makeProjectionFetch(() => ({

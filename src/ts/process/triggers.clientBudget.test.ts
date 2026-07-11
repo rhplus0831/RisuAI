@@ -1,15 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-vi.mock('../platform', async (importActual) => {
-  const actual = await importActual<typeof import('../platform')>()
-  return { ...actual, isFastifyServer: true }
-})
-
-vi.mock('../storage/fastifyStorage', () => ({
-  getNodeServerProxyAuth: async () => 'trigger-client-budget-token',
-}))
-
 vi.mock('./modules', async (importActual) => {
   const actual = await importActual<typeof import('./modules')>()
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
@@ -17,35 +8,10 @@ vi.mock('./modules', async (importActual) => {
 
 import '../stores.svelte'
 import { safeStructuredClone } from '../polyfill'
-import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { CurrentTriggerIdStore, DBState, selectedCharID } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 import { createTriggerExecutionBudget, runTrigger } from './triggers'
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json' },
-  })
-}
-
-function stubCommandFetch(): void {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url.startsWith('/api/v1/commands/chats/')) {
-        return jsonResponse({
-          revision: 11,
-          event: { type: 'chat.updated', revision: 11, resource: 'chat' },
-        })
-      }
-      return jsonResponse({ revision: 11, event: { type: 'noop', revision: 11 } })
-    }) as unknown as typeof fetch,
-  )
-}
 
 function seedDb(): void {
   selectedCharID.set(0)
@@ -74,15 +40,12 @@ function characterWithTriggers(triggerscript: unknown[]): character {
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
-  clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   CurrentTriggerIdStore.set(null)
   seedDb()
-  stubCommandFetch()
 })
 
 afterEach(() => {
-  vi.unstubAllGlobals()
   CurrentTriggerIdStore.set(null)
   selectedCharID.set(-1)
 })
@@ -118,6 +81,7 @@ describe('client trigger execution budget (L38)', () => {
       chat: char.chats[char.chatPage],
       manualName: 'spin',
       triggerBudget: budget,
+      deferLiveChatSideEffects: true,
     })
 
     expect(result?.triggerStoppedReason).toBe('loopBackEdges')
@@ -156,6 +120,7 @@ describe('client trigger execution budget (L38)', () => {
       manualName: 'wait',
       signal: controller.signal,
       triggerBudget: budget,
+      deferLiveChatSideEffects: true,
     })
     setTimeout(() => controller.abort(), 0)
 
@@ -195,6 +160,7 @@ describe('client trigger execution budget (L38)', () => {
       chat: char.chats[char.chatPage],
       manualName: 'wait-budget',
       triggerBudget: budget,
+      deferLiveChatSideEffects: true,
     })
 
     expect(result?.triggerStoppedReason).toBe('wallClock')
@@ -226,6 +192,7 @@ describe('client trigger execution budget (L38)', () => {
       chat: char.chats[char.chatPage],
       manualName: 'show-id',
       triggerId: 'button-42',
+      deferLiveChatSideEffects: true,
     })
 
     expect(result?.triggerStoppedReason).toBeUndefined()

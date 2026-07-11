@@ -7,7 +7,6 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import {
-  canUseServerCommands,
   appendMessageCommand,
   bulkPluginStorageCommand,
   createAgentPresetCommand,
@@ -200,10 +199,6 @@ afterEach(() => {
 })
 
 describe('server command API adapter', () => {
-  it('reports availability unconditionally', () => {
-    expect(canUseServerCommands()).toBe(true)
-  })
-
   it('patches runtime settings with the auth header and baseRevision', async () => {
     const event = { type: 'settings.updated', revision: 2, resource: 'settings' }
     const commandFetch = makeCommandFetch(() => ({ revision: 2, event }))

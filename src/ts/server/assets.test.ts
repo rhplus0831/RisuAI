@@ -1,6 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
-import { readServerAsset, readServerAssetBytes, serverAssetIdFromReference, serverAssetUrl } from './assets'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const assetAuthMocks = vi.hoisted(() => ({
+  getNodeServerProxyAuth: vi.fn(async () => 'asset-upload-auth'),
+}))
+
+vi.mock('../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: assetAuthMocks.getNodeServerProxyAuth,
+}))
+
+import {
+  readServerAsset,
+  readServerAssetBytes,
+  serverAssetIdFromReference,
+  serverAssetUrl,
+  uploadServerAsset,
+} from './assets'
+import { clearCachedServerCommandRevision, peekCachedServerCommandRevision } from './commands'
 import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
+
+beforeEach(() => {
+  clearCachedServerCommandRevision()
+  assetAuthMocks.getNodeServerProxyAuth.mockClear()
+})
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('Fastify server asset helpers', () => {
   it('resolves raw server asset ids and legacy asset paths', () => {
@@ -49,6 +74,63 @@ describe('Fastify server asset helpers', () => {
         fetchImpl,
       }),
     ).rejects.toThrow('Failed to read server asset: 404')
+  })
+
+  it('uploads only the visible byte range with mutation headers and advances the cached revision', async () => {
+    const assetId = 'e'.repeat(64)
+    let request: RequestInit | undefined
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+      request = init
+      return new Response(JSON.stringify({ assetId, revision: 37 }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const backingBytes = new Uint8Array([9, 1, 2, 8])
+
+    await expect(uploadServerAsset(backingBytes.subarray(1, 3), 'jpg')).resolves.toBe(assetId)
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/assets', expect.any(Object))
+    expect(request?.method).toBe('POST')
+    expect(request?.headers).toMatchObject({
+      'content-type': 'image/jpeg',
+      'risu-auth': 'asset-upload-auth',
+      'risu-writer-session': expect.any(String),
+    })
+    expect((request?.headers as Record<string, string>)['risu-writer-session']).not.toBe('')
+    expect(new Uint8Array(request?.body as ArrayBuffer)).toEqual(new Uint8Array([1, 2]))
+    expect(peekCachedServerCommandRevision()).toBe(37)
+  })
+
+  it('rejects unsupported upload extensions before resolving auth or fetching', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(uploadServerAsset(new Uint8Array([1]), 'bmp')).rejects.toThrow(
+      'Unsupported server asset extension: bmp',
+    )
+
+    expect(assetAuthMocks.getNodeServerProxyAuth).not.toHaveBeenCalled()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects successful upload responses that omit the asset id', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ revision: 38 }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }),
+      ),
+    )
+
+    await expect(uploadServerAsset(new Uint8Array([1]), 'png')).rejects.toThrow(
+      'Server asset upload response missing assetId',
+    )
+    expect(peekCachedServerCommandRevision()).toBeNull()
   })
 })
 

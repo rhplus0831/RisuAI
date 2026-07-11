@@ -153,8 +153,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'H3',
     1,
     'Decouple `ReloadGUIPointer` from whole-screen remount + cache wipe.',
-    'src/ts/__tests__/renderCountBaseline.test.ts',
-    'H3: var-only GUI refresh does not remount/reparse mounted chat messages or reset script caches',
+    'src/ts/__tests__/renderCostHarness.test.ts',
+    'drives a variable-only GUI refresh without reparsing mounted chat messages or resetting caches',
     [
       {
         testPath: 'src/ts/__tests__/renderCostHarness.test.ts',
