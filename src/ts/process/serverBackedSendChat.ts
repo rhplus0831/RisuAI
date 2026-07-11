@@ -1,5 +1,6 @@
 import { DBState } from '../stores.svelte'
 import type { character, Chat, Message, MessageGenerationInfo, MessagePresetInfo } from '../storage/database.svelte'
+import { safeStructuredClone } from '../polyfill'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
@@ -14,6 +15,7 @@ import {
 import type { ServerChatMessagePatch } from './request/serverChatEvents'
 import type { DispatchSuccessReq } from './dispatch/dispatchRequest'
 import type { OpenAIChat } from './index.svelte'
+import { seedRerollBufferFromAlternates } from './rerollNavigation.svelte'
 import { sayTTS } from './tts'
 
 export interface ServerBackedStageTimings {
@@ -74,6 +76,28 @@ export function findGeneratedAssistantMessage(chat: Chat, generationId: string):
     }
   }
   return undefined
+}
+
+/**
+ * Turn provider multi-generation text choices into live reroll candidates. The
+ * deterministic ids match the server's durable alternate records, so an
+ * immediate live swipe and the next hydration address the same candidates.
+ */
+export function buildServerBackedAlternateMessages(
+  assistant: Message,
+  alternates: readonly unknown[],
+  generationId: string,
+): Message[] {
+  const baseId = assistant.chatId || generationId || 'server-generation'
+  return alternates.flatMap((value, index) => {
+    if (typeof value !== 'string') return []
+    const candidate = safeStructuredClone(assistant)
+    candidate.data = value
+    candidate.chatId = `${baseId}:alternate:${index + 1}`
+    // A translation of the primary choice is stale for different source text.
+    delete candidate.translation
+    return [candidate]
+  })
 }
 
 function serverChatMode(args: {
@@ -304,7 +328,10 @@ export async function assembleServerBackedSendChat(args: {
   if (args.preview || args.previewPrompt) {
     if (args.previewPrompt) {
       const promptText = served.prompt.promptInfo?.promptText
-      return { status: 'preview', body: typeof promptText === 'string' ? promptText : '' }
+      return {
+        status: 'preview',
+        body: typeof promptText === 'string' ? promptText : JSON.stringify(Array.isArray(promptText) ? promptText : []),
+      }
     }
     return {
       status: 'preview',
@@ -573,6 +600,35 @@ export async function applyServerBackedTerminal(args: {
         : undefined
       if (assistant) {
         assistant.data = resolved
+      }
+    })
+  }
+
+  const providerAlternates = args.terminal.done?.alternates
+  if (Array.isArray(providerAlternates) && providerAlternates.length > 0) {
+    withTrustedServerProjectionWrite(() => {
+      const resolution = resolveServerBackedLiveChat({
+        selectedChar: args.selectedChar,
+        selectedChat: args.selectedChat,
+        characterId: terminalTarget.characterId,
+        chatId: terminalTarget.chatId,
+      })
+      const liveChat = resolution?.chat
+      if (!liveChat) return
+      const assistant =
+        findGeneratedAssistantMessage(liveChat, generationId) ??
+        (args.targetMessageId
+          ? liveChat.message.find((message) => message.chatId === args.targetMessageId && message.role === 'char')
+          : undefined)
+      if (assistant) {
+        const alternates = buildServerBackedAlternateMessages(assistant, providerAlternates, generationId)
+        if (alternates.length === 0) return
+        seedRerollBufferFromAlternates(
+          liveChat.message,
+          // Match persisted alternate-row ordering (newest-added first), including
+          // the active primary candidate so it remains swipe index zero.
+          [...alternates.reverse(), assistant],
+        )
       }
     })
   }

@@ -30,6 +30,43 @@ describe('emitProviderChunks', () => {
     expect(result).toEqual({ status: 'done', result: 'Hello', finishReason: 'stop' })
   })
 
+  it('carries multi-generation alternates through post-generation and the terminal done event', async () => {
+    const events: PromptChatEvent[] = []
+    const postGenerationCalls: Array<{ result: string; alternates: readonly string[] }> = []
+
+    const result = await emitProviderChunks(
+      frames([
+        { kind: 'token', content: 'primary' },
+        { kind: 'done', finishReason: 'stop', alternates: ['choice two', 'choice three'] },
+      ]),
+      (event) => events.push(event),
+      undefined,
+      {
+        postGeneration: async (completion, alternates) => {
+          postGenerationCalls.push({ result: completion, alternates })
+          return {
+            frame: { revision: 2 },
+            alternates: alternates.map((choice) => choice.toUpperCase()),
+          }
+        },
+      },
+    )
+
+    expect(postGenerationCalls).toEqual([{ result: 'primary', alternates: ['choice two', 'choice three'] }])
+    expect(events.at(-1)).toEqual({
+      type: 'done',
+      result: 'primary',
+      alternates: ['CHOICE TWO', 'CHOICE THREE'],
+      postGeneration: { revision: 2 },
+    })
+    expect(result).toEqual({
+      status: 'done',
+      result: 'primary',
+      finishReason: 'stop',
+      alternates: ['CHOICE TWO', 'CHOICE THREE'],
+    })
+  })
+
   it('emits a terminal done when a provider source ends without an explicit done frame', async () => {
     const events: PromptChatEvent[] = []
 

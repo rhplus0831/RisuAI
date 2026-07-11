@@ -13,6 +13,7 @@ import {
   listMemorySummaries,
 } from '../src/memoryRepository.js'
 import { writePersistedWithMessages } from '../src/repository.js'
+import { selectMemorySummaries } from '../src/memorySelectionService.js'
 import { setupAuthedClient } from './helpers/auth.js'
 
 process.env.LOG_LEVEL = 'silent'
@@ -122,6 +123,21 @@ describe('legacy Hypa V3 memory import', () => {
       })
       expect(listMemoryEmbeddings(db)).toEqual([])
       expect(listMemoryJobs(db)).toEqual([])
+
+      const selected = selectMemorySummaries({
+        db,
+        chatId: 'chat-1',
+        summaryModel: 'configured-summary-model',
+        embeddingModel: 'configured-embedding-model',
+        queryVectors: [],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+      })
+      expect(selected.selectedSummaries.map((summary) => summary.text).sort()).toEqual([
+        'The garden matters.',
+        'They greeted each other.',
+      ])
+      expect(selected.importantSummaries.map((summary) => summary.text)).toEqual(['They greeted each other.'])
     } finally {
       db.close()
     }
@@ -190,6 +206,9 @@ describe('legacy Hypa V3 memory import', () => {
         expect(listMemorySummaries(db)).toEqual([])
         expect(listMemoryEmbeddings(db)).toEqual([])
         expect(listMemoryJobs(db)).toEqual([])
+        expect(db.prepare('SELECT COUNT(*) AS count FROM memory_legacy_summary_tombstones').get()).toEqual({
+          count: 0,
+        })
       } finally {
         db.close()
       }
@@ -233,6 +252,69 @@ describe('legacy Hypa V3 memory import', () => {
       }
     } finally {
       await app.close()
+    }
+  })
+
+  it('does not resurrect an explicitly deleted imported summary after restart', async () => {
+    const dataDir = makeDataDir()
+    const config = {
+      host: '127.0.0.1',
+      port: 0,
+      dataDir,
+      bodyLimit: 1024 * 1024,
+      importMaxBytes: Infinity,
+      trustProxy: false,
+      hubUrl: 'https://sv.risuai.xyz',
+    }
+    const first = await buildApp({ config, memoryWorker: false, assetGc: false })
+    let deletedSummaryId = ''
+    try {
+      const { assertion } = await setupAuthedClient(first.app)
+      const imported = await first.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/risusave',
+        headers: { 'risu-auth': assertion },
+        payload: { database: legacyDatabase() },
+      })
+      expect(imported.statusCode).toBe(200)
+
+      const db = openDatabase(dataDir)
+      try {
+        deletedSummaryId =
+          listMemorySummaries(db, { chatId: 'chat-1' }).find((summary) => summary.text === 'They greeted each other.')
+            ?.id ?? ''
+      } finally {
+        db.close()
+      }
+      expect(deletedSummaryId).not.toBe('')
+
+      const deleted = await first.app.inject({
+        method: 'DELETE',
+        url: `/api/v1/memory/summaries/${encodeURIComponent(deletedSummaryId)}`,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(deleted.statusCode).toBe(200)
+    } finally {
+      await first.app.close()
+    }
+
+    const restarted = await buildApp({ config, memoryWorker: false, assetGc: false })
+    try {
+      const db = openDatabase(dataDir)
+      try {
+        expect(listMemorySummaries(db, { chatId: 'chat-1' }).map((summary) => summary.text)).toEqual([
+          'The garden matters.',
+        ])
+        expect(
+          db
+            .prepare('SELECT summary_id FROM memory_legacy_summary_tombstones WHERE summary_id = ?')
+            .get(deletedSummaryId),
+        ).toEqual({ summary_id: deletedSummaryId })
+      } finally {
+        db.close()
+      }
+    } finally {
+      await restarted.app.close()
     }
   })
 })

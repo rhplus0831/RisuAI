@@ -177,6 +177,21 @@ const MODEL_PRESET_FIELD_BY_DATABASE_KEY: Record<string, ModelPresetField> = MOD
 const PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
 const PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
 const PROMPT_PRESET_MODEL_OVERRIDE_FIELD_SET = new Set<string>(PROMPT_PRESET_MODEL_OVERRIDE_FIELDS)
+const MODEL_PRESET_ONLY_FIELDS = MODEL_PRESET_FIELDS.filter(
+  (field) => !PROMPT_PRESET_MODEL_OVERRIDE_FIELD_SET.has(field),
+)
+
+export function hasModelPresetOnlyFields(source: unknown): boolean {
+  if (!isRecord(source)) return false
+  return MODEL_PRESET_ONLY_FIELDS.some((field) => {
+    if (!Object.prototype.hasOwnProperty.call(source, field)) return false
+
+    const value = source[field]
+    if (value === null || value === undefined) return false
+    if (typeof value === 'string' && value.trim() === '') return false
+    return true
+  })
+}
 
 export function extractModelPresetFields(source: unknown): JsonRecord {
   return pickPresetFields(source, MODEL_PRESET_FIELDS)

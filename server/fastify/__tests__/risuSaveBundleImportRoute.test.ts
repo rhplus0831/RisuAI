@@ -13,6 +13,7 @@ import {
   assetsDir,
   insertAssetMetadataBatch,
   getAssetMetadataById,
+  loadPersistedWithMessages,
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
@@ -56,7 +57,7 @@ async function stopHarness(h: Harness): Promise<void> {
  * the matching asset file, so the exported bundle round-trips through the
  * import hash check (which a faithful export always satisfies).
  */
-function persistDatabaseWithAsset(dataDir: string): void {
+function persistDatabaseWithAsset(dataDir: string, imageReference = ASSET_ID): void {
   const db = openDatabase(dataDir)
   try {
     writePersistedWithMessages(db, dataDir, {
@@ -68,7 +69,7 @@ function persistDatabaseWithAsset(dataDir: string): void {
           {
             chaId: 'bundle-import-char',
             name: 'Bundle Import Character',
-            image: ASSET_ID,
+            image: imageReference,
             chats: [
               {
                 id: 'bundle-import-chat',
@@ -278,7 +279,7 @@ describe('repository .risu bundle import route', () => {
       { name: 'database.risudat', data: databaseRisudat },
       // Original LocalWriter records use the asset's basename `<sha256>.png`.
       { name: `${ASSET_ID}.png`, data: ASSET_BYTES },
-      // Cold-storage records have no server analogue and must be skipped.
+      // Unrelated JSON records have no server asset analogue and must be skipped.
       { name: 'somekey.json', data: Buffer.from('{"cold":true}') },
     ])
 
@@ -301,13 +302,169 @@ describe('repository .risu bundle import route', () => {
       })
       expect(body.importReport).not.toHaveProperty('unsupportedReferences')
       expect(body).not.toHaveProperty('format')
-      // Only the media record registered; the cold-storage `.json` was skipped.
+      // Only the content-addressed media record registered; the unrelated `.json` was skipped.
       expect(body.bundleReport).toEqual({ includedAssetCount: 1, assetsCreated: true })
       expect(body.assetReport).toMatchObject({ referencedCount: 1, missingCount: 0 })
 
       const asset = await fresh.app.inject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
       expect(asset.statusCode).toBe(200)
       expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
+    } finally {
+      await stopHarness(fresh)
+    }
+  })
+
+  it('canonicalizes original-backup media references with non-sha256 record names', async () => {
+    const legacyRecordName = '550e8400-e29b-41d4-a716-446655440000.png'
+    persistDatabaseWithAsset(harness.dataDir, `assets/${legacyRecordName}`)
+    const exported = await authedInject({
+      method: 'GET',
+      url: '/api/v1/export/risusave?envelope=legacy-compressed',
+    })
+    expect(exported.statusCode).toBe(200)
+
+    const bin = buildLegacyBin([
+      { name: legacyRecordName, data: ASSET_BYTES },
+      { name: 'database.risudat', data: exported.rawPayload },
+    ])
+    const fresh = await startHarness()
+    try {
+      const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const upload = multipartBundle(bin, 'original-custom-id.bin')
+      const imported = await fresh.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': freshAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+
+      expect(imported.statusCode).toBe(200)
+      expect(imported.json()).toMatchObject({
+        bundleReport: { includedAssetCount: 1, assetsCreated: true },
+        assetReport: { referencedCount: 1, missingCount: 0 },
+      })
+
+      const db = openDatabase(fresh.dataDir)
+      try {
+        const database = loadPersistedWithMessages(db, fresh.dataDir).database as {
+          characters: Array<{ image: string }>
+        }
+        expect(database.characters[0].image).toBe(ASSET_ID)
+      } finally {
+        db.close()
+      }
+
+      const asset = await fresh.app.inject({ method: 'GET', url: `/api/v1/assets/${ASSET_ID}` })
+      expect(asset.statusCode).toBe(200)
+      expect(Buffer.from(asset.rawPayload).equals(ASSET_BYTES)).toBe(true)
+    } finally {
+      await stopHarness(fresh)
+    }
+  })
+
+  it('round-trips supported non-media assets through a legacy .bin backup', async () => {
+    const assetCases = [
+      {
+        fileName: 'model.onnx',
+        ext: 'onnx',
+        contentType: 'application/x-onnx',
+        bytes: Buffer.from('local-backup-onnx-bytes'),
+      },
+      {
+        fileName: 'theme.css',
+        ext: 'css',
+        contentType: 'text/css',
+        bytes: Buffer.from('.local-backup { color: rebeccapurple; }'),
+      },
+      {
+        fileName: 'signature.json',
+        ext: 'json',
+        contentType: 'application/x-risu-inlay-signature+json',
+        bytes: Buffer.from('{"signature":"local-backup"}'),
+      },
+    ].map((asset) => ({
+      ...asset,
+      id: createHash('sha256').update(asset.bytes).digest('hex'),
+    }))
+
+    const sourceDb = openDatabase(harness.dataDir)
+    try {
+      writePersistedWithMessages(sourceDb, harness.dataDir, {
+        _version: 1,
+        database: {
+          version: 1,
+          selectedCharID: 0,
+          characters: [],
+          characterOrder: [],
+          botPresets: [],
+          modules: [
+            {
+              id: 'non-media-module',
+              name: 'Non-media module',
+              assets: assetCases.map((asset) => [asset.fileName, asset.id, asset.ext]),
+            },
+          ],
+          loadouts: [],
+          plugins: [],
+          pluginCustomStorage: {},
+        },
+        assets: [],
+      })
+      insertAssetMetadataBatch(
+        sourceDb,
+        assetCases.map((asset) => ({
+          id: asset.id,
+          ext: asset.ext,
+          size: asset.bytes.length,
+          contentType: asset.contentType,
+        })),
+      )
+    } finally {
+      sourceDb.close()
+    }
+
+    mkdirSync(assetsDir(harness.dataDir), { recursive: true })
+    for (const asset of assetCases) {
+      writeFileSync(path.join(assetsDir(harness.dataDir), `${asset.id}.${asset.ext}`), asset.bytes)
+    }
+
+    const exported = await authedInject({ method: 'GET', url: '/api/v1/export/local-backup' })
+    expect(exported.statusCode).toBe(200)
+
+    const fresh = await startHarness()
+    try {
+      const { assertion: freshAssertion } = await setupAuthedClient(fresh.app)
+      const upload = multipartBundle(exported.rawPayload, 'backup.bin')
+      const imported = await fresh.app.inject({
+        method: 'POST',
+        url: '/api/v1/import/bundle',
+        headers: { 'risu-auth': freshAssertion, 'content-type': upload.contentType },
+        payload: upload.payload,
+      })
+
+      expect(imported.statusCode).toBe(200)
+      const body = imported.json() as Record<string, unknown>
+      expect(body.bundleReport).toEqual({ includedAssetCount: assetCases.length, assetsCreated: true })
+      expect(body.assetReport).toMatchObject({
+        referencedCount: assetCases.length,
+        missingCount: 0,
+      })
+
+      for (const asset of assetCases) {
+        const restored = await fresh.app.inject({ method: 'GET', url: `/api/v1/assets/${asset.id}` })
+        expect(restored.statusCode).toBe(200)
+        expect(restored.headers['content-type']).toContain(asset.contentType)
+        expect(Buffer.from(restored.rawPayload).equals(asset.bytes)).toBe(true)
+      }
+
+      const restoredDb = openDatabase(fresh.dataDir)
+      try {
+        const database = loadPersistedWithMessages(restoredDb, fresh.dataDir).database as Record<string, unknown>
+        const modules = database.modules as Array<{ assets: Array<[string, string, string]> }>
+        expect(modules[0].assets.map((asset) => asset[1])).toEqual(assetCases.map((asset) => asset.id))
+      } finally {
+        restoredDb.close()
+      }
     } finally {
       await stopHarness(fresh)
     }

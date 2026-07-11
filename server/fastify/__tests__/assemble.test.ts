@@ -14,6 +14,7 @@ import {
   listMemoryJobs,
   listMemorySummaries,
 } from '../src/memoryRepository.js'
+import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.js'
 import { EntityNotFoundError } from '../src/repository.js'
 import {
   assemblePrompt,
@@ -819,6 +820,30 @@ describe('prompt summary hashes', () => {
       finalTextModified: false,
       mainOutputPreview: 'edited reply',
       failure: { stepId: 'aps_after' },
+    })
+  })
+
+  it('makes Remove Incomplete Response authoritative in server post-generation', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      removeIncompleteResponse: true,
+      characters: [makeCharacter({ chats: [makeChat({ id: 'chat-1' })] })],
+    })
+    const assembled = await assemblePrompt(baseInput({ userMessage: 'hello' }), depsFor(db))
+    expect(assembled.stopSending).toBe(false)
+    if (assembled.stopSending) return
+
+    const post = await runServerPostGeneration(assembled.state!, {
+      completionText: 'Complete sentence. unfinished fragment',
+      generationId: 'generation-trim',
+    })
+
+    expect(post.finalText).toBe('Complete sentence. ')
+    expect(assembled.state?.currentChat.message.at(-1)).toMatchObject({
+      role: 'char',
+      data: 'Complete sentence. ',
+      chatId: 'generation-trim',
     })
   })
 })
@@ -1995,7 +2020,7 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
     expect(state.currentChat.id).toBe('chat-1')
   })
 
-  it('does not emit unsupported logit-bias rows', async () => {
+  it('expands and emits global plus character logit-bias rows', async () => {
     const db = makeDatabase({
       bias: [['line1\\nline2', 10]],
       characters: [
@@ -2009,7 +2034,10 @@ describe('Phase 7-11d fillHistoryAndBias', () => {
     } as Partial<Database>)
 
     const state = await run(db)
-    expect('biases' in state).toBe(false)
+    expect(state.biases).toEqual([
+      ['line1\nline2', 10],
+      ['Tess-bias', 2],
+    ])
   })
 
   it('short-circuits on a stopSending start trigger', async () => {
@@ -2380,6 +2408,86 @@ describe('Phase 7-11e fillMemoryAndPostHistory', () => {
       })
       expect(listMemoryChunks(memoryDb, { chatId: 'chat-1' })).toHaveLength(1)
       expect(listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })).toHaveLength(1)
+    } finally {
+      memoryDb.close()
+    }
+  })
+
+  it('uses imported legacy summaries for planning and selection without scheduling duplicate summarization', () => {
+    const memoryDb = openDatabase(makeDataDir())
+    try {
+      createMemoryChunk(memoryDb, {
+        id: 'legacy-chunk',
+        chatId: 'chat-1',
+        messageId: 'memo-b',
+        rangeStartSeq: 0,
+        rangeEndSeq: 1,
+        text: 'imported legacy chunk',
+        status: 'summarized',
+      })
+      createMemorySummary(memoryDb, {
+        id: 'legacy-summary',
+        chatId: 'chat-1',
+        chunkId: 'legacy-chunk',
+        model: LEGACY_HYPA_V3_SUMMARY_MODEL,
+        text: 'Imported tagged memory.',
+        metadata: {
+          source: 'legacy-hypav3',
+          chatMemos: ['memo-a', 'memo-b'],
+          isImportant: true,
+          categoryId: 'story',
+          tags: ['imported'],
+        },
+        tokens: 0,
+      })
+      const db = memoryEnabledDatabase({
+        maxContext: 100,
+        maxResponse: 0,
+        hypaV3Presets: [
+          {
+            name: 'Test',
+            settings: {
+              summarizationModel: 'summary-model',
+              memoryTokensRatio: 0.2,
+              recentMemoryRatio: 1,
+              similarMemoryRatio: 0,
+              maxChatsPerSummary: 2,
+              queryChatCount: 1,
+            },
+          },
+        ] as never,
+      })
+      const state = beginAssembly(
+        baseInput(),
+        depsFor(db, {
+          loadMemoryDatabase: () => memoryDb,
+          loadPromptMemoryQueryVectors: () => [],
+        }),
+      )
+      state.historyMessages = chunkPlanningHistory()
+      state.currentTokens = 99
+
+      fillMemoryAndPostHistory(state)
+
+      expect(state.promptMemoryRows?.some((row) => row.content.includes('Imported tagged memory.'))).toBe(true)
+      expect(state.promptMemoryChunkPlanningDiagnostics).toMatchObject({
+        chunksCreated: 0,
+        jobsCreated: 0,
+        plannedWindows: 0,
+      })
+      expect(listMemoryJobs(memoryDb, { chatId: 'chat-1', kind: 'summarize' })).toEqual([])
+      expect(listMemorySummaries(memoryDb, { chatId: 'chat-1' })).toMatchObject([
+        {
+          id: 'legacy-summary',
+          model: LEGACY_HYPA_V3_SUMMARY_MODEL,
+          metadata: {
+            chatMemos: ['memo-a', 'memo-b'],
+            isImportant: true,
+            categoryId: 'story',
+            tags: ['imported'],
+          },
+        },
+      ])
     } finally {
       memoryDb.close()
     }
@@ -3011,8 +3119,8 @@ describe('Phase 7-11f renderAndBudget + assemblePrompt', () => {
     expect(typeof result.inputTokens).toBe('number')
     expect(typeof result.outputTokens).toBe('number')
     expect(result.formated?.length).toBeGreaterThan(0)
-    expect('biases' in result).toBe(false)
-    expect('biases' in result.prompt!).toBe(false)
+    expect(result.biases).toEqual([])
+    expect(result.prompt?.biases).toEqual([])
     // The lorebook activation report rides along on the prompt event.
     expect(result.prompt?.lorebookActivation).toBeDefined()
   })

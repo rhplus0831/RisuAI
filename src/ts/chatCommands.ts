@@ -53,6 +53,8 @@ export type AppendCurrentChatUserMessageResult =
   | { status: 'ok'; messageId: string }
   | { status: 'error'; error: string }
 
+export type ChatImportDispatchResult = { status: 'ok' } | { status: 'error'; error: string }
+
 export interface ActiveChatTarget {
   selectedCharID: number
   chatPage: number
@@ -1350,13 +1352,34 @@ export function dispatchCreateChat(characterId: string, chat: Chat, previous: Ch
   )
 }
 
-export function dispatchCreateImportedChats(
+export async function dispatchCreateChatForImport(
+  characterId: string,
+  chat: Chat,
+  previous: ChatStateSnapshot,
+  select = true,
+): Promise<ChatImportDispatchResult> {
+  const attemptedChat = cloneJsonValue(chat)
+  const rollback = chatCreateRollbackFromState(characterId, attemptedChat, previous, select)
+  const result = await runChatCommandAsync(
+    (baseRevision) =>
+      createChatCommand({
+        baseRevision,
+        characterId,
+        chat: toChatSnapshot(attemptedChat),
+        select,
+      }),
+    () => restoreCreatedChatAttempt(rollback),
+  )
+  return chatImportDispatchResult(result)
+}
+
+export async function dispatchCreateImportedChats(
   characterId: string | undefined,
   folders: ChatFolder[],
   chats: Chat[],
   previous: ChatStateSnapshot,
-): void {
-  if (!characterId) return
+): Promise<ChatImportDispatchResult> {
+  if (!characterId) return { status: 'error', error: 'server_command_unavailable' }
 
   const attemptedFolders = folders.map((folder) => cloneJsonValue(folder))
   const attemptedChats = chats.map((chat) => cloneJsonValue(chat))
@@ -1392,9 +1415,23 @@ export function dispatchCreateImportedChats(
     }),
   ]
 
-  runOptimisticCommandSequence(factories, () =>
+  const failure = await runOptimisticCommandSequenceAsync(factories, () =>
     restoreImportedChatBatchAttempt({ folders: folderSteps, chats: chatSteps }),
   )
+  return failure ? chatImportDispatchResult(failure) : { status: 'ok' }
+}
+
+function chatImportDispatchResult(result: ServerCommandResult | null): ChatImportDispatchResult {
+  if (!result || result.status === 'unavailable') {
+    return { status: 'error', error: 'server_command_unavailable' }
+  }
+  if (result.status === 'conflict') {
+    return { status: 'error', error: `revision_conflict:${result.currentRevision}` }
+  }
+  if (result.status === 'error') {
+    return result
+  }
+  return { status: 'ok' }
 }
 
 export function dispatchUpdateChat(

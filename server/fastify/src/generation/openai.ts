@@ -23,6 +23,27 @@ export interface OpenAIRequest {
   baseUrl: string
   maxTokens?: number
   temperature?: number
+  topP?: number
+  topK?: number
+  minP?: number
+  topA?: number
+  repetitionPenalty?: number
+  frequencyPenalty?: number
+  presencePenalty?: number
+  reasoningEffort?: string
+  verbosity?: string
+  seed?: number
+  responseFormat?: Record<string, unknown>
+  prediction?: string
+  openRouter?: {
+    fallback?: boolean
+    middleOut?: boolean
+    provider?: { order?: string[]; only?: string[]; ignore?: string[] }
+  }
+  n?: number
+  useCompletionTokens?: boolean
+  thinking?: Record<string, unknown>
+  logitBias?: Record<string, number>
   extraHeaders?: Record<string, string>
   /**
    * Pre-validated `[key, value][]` pairs from the SPA's additionalParams /
@@ -50,6 +71,23 @@ interface OpenAIResolveInput {
   baseUrl?: unknown
   maxTokens?: unknown
   temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  minP?: unknown
+  topA?: unknown
+  repetitionPenalty?: unknown
+  frequencyPenalty?: unknown
+  presencePenalty?: unknown
+  reasoningEffort?: unknown
+  verbosity?: unknown
+  seed?: unknown
+  responseFormat?: unknown
+  prediction?: unknown
+  openRouter?: OpenAIRequest['openRouter']
+  n?: unknown
+  useCompletionTokens?: unknown
+  thinking?: unknown
+  logitBias?: unknown
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
@@ -72,6 +110,11 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
   const temperature =
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
 
+  const numeric = (value: unknown): number | undefined =>
+    typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  const record = (value: unknown): Record<string, unknown> | undefined =>
+    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
+
   return {
     model: input.model,
     messages: input.messages,
@@ -79,6 +122,23 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     baseUrl,
     maxTokens,
     temperature,
+    topP: numeric(input.topP),
+    topK: numeric(input.topK),
+    minP: numeric(input.minP),
+    topA: numeric(input.topA),
+    repetitionPenalty: numeric(input.repetitionPenalty),
+    frequencyPenalty: numeric(input.frequencyPenalty),
+    presencePenalty: numeric(input.presencePenalty),
+    reasoningEffort: typeof input.reasoningEffort === 'string' ? input.reasoningEffort : undefined,
+    verbosity: typeof input.verbosity === 'string' ? input.verbosity : undefined,
+    seed: numeric(input.seed),
+    responseFormat: record(input.responseFormat),
+    prediction: typeof input.prediction === 'string' && input.prediction.length > 0 ? input.prediction : undefined,
+    openRouter: input.openRouter,
+    n: typeof input.n === 'number' && Number.isInteger(input.n) && input.n > 1 ? Math.min(input.n, 20) : undefined,
+    useCompletionTokens: input.useCompletionTokens === true ? true : undefined,
+    thinking: record(input.thinking),
+    logitBias: record(input.logitBias) as Record<string, number> | undefined,
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
     oobaSystemHoist: input.oobaSystemHoist === true ? true : undefined,
@@ -120,8 +180,39 @@ function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unkno
     messages,
     stream,
   }
-  if (req.maxTokens !== undefined) body.max_tokens = req.maxTokens
+  if (req.maxTokens !== undefined) {
+    body[req.useCompletionTokens ? 'max_completion_tokens' : 'max_tokens'] = req.maxTokens
+  }
   if (req.temperature !== undefined) body.temperature = req.temperature
+  if (req.topP !== undefined) body.top_p = req.topP
+  if (req.topK !== undefined) body.top_k = req.topK
+  if (req.minP !== undefined) body.min_p = req.minP
+  if (req.topA !== undefined) body.top_a = req.topA
+  if (req.repetitionPenalty !== undefined) body.repetition_penalty = req.repetitionPenalty
+  if (req.frequencyPenalty !== undefined) body.frequency_penalty = req.frequencyPenalty
+  if (req.presencePenalty !== undefined) body.presence_penalty = req.presencePenalty
+  if (req.reasoningEffort !== undefined) body.reasoning_effort = req.reasoningEffort
+  if (req.verbosity !== undefined) body.verbosity = req.verbosity
+  if (req.seed !== undefined && req.seed > 0) body.seed = req.seed
+  if (req.responseFormat !== undefined) body.response_format = req.responseFormat
+  if (req.prediction !== undefined) body.prediction = { type: 'content', content: req.prediction }
+  if (req.openRouter?.fallback) body.route = 'fallback'
+  if (req.openRouter) body.transforms = req.openRouter.middleOut ? ['middle-out'] : []
+  if (req.openRouter?.provider) {
+    const provider = Object.fromEntries(
+      Object.entries(req.openRouter.provider).filter(([, value]) => Array.isArray(value) && value.length > 0),
+    )
+    if (Object.keys(provider).length > 0) body.provider = provider
+  }
+  if (req.n !== undefined) body.n = req.n
+  if (req.thinking !== undefined) body.thinking = req.thinking
+  if (req.thinking?.type === 'enabled') {
+    delete body.temperature
+    delete body.top_p
+    delete body.frequency_penalty
+    delete body.presence_penalty
+  }
+  if (req.logitBias !== undefined && Object.keys(req.logitBias).length > 0) body.logit_bias = req.logitBias
   return body
 }
 
@@ -189,7 +280,8 @@ async function emitOpenAIProviderBodyMetric(
 }
 
 interface OpenAINonStreamChoice {
-  message?: { content?: unknown }
+  message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown }
+  reasoning_content?: unknown
   finish_reason?: unknown
 }
 
@@ -263,19 +355,42 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     return { type: 'fail', result: `invalid upstream JSON: ${msg}` }
   }
 
-  const choice = Array.isArray(body.choices) ? body.choices[0] : undefined
-  const content = choice?.message?.content
-  if (typeof content !== 'string') {
+  const choices = Array.isArray(body.choices) ? body.choices : []
+  const choiceText = (choice: OpenAINonStreamChoice | undefined): string | null => {
+    if (!choice) return null
+    const content = typeof choice.message?.content === 'string' ? choice.message.content : ''
+    const reasoning =
+      typeof choice.reasoning_content === 'string'
+        ? choice.reasoning_content
+        : typeof choice.message?.reasoning_content === 'string'
+          ? choice.message.reasoning_content
+          : typeof choice.message?.reasoning === 'string'
+            ? choice.message.reasoning
+            : ''
+    if (content.length === 0 && reasoning.length === 0) return null
+    return reasoning.length > 0 && !content.startsWith('<Thoughts>')
+      ? `<Thoughts>\n${reasoning}\n</Thoughts>\n${content}`
+      : content
+  }
+  const content = choiceText(choices[0])
+  if (content === null) {
     return { type: 'fail', result: 'upstream returned no content' }
   }
 
   const result: CompletionResult = { type: 'success', result: content }
+  const alternates = choices
+    .slice(1)
+    .map(choiceText)
+    .filter((text): text is string => text !== null)
+  if (alternates.length > 0) result.alternates = alternates
   if (typeof body.model === 'string') result.model = body.model
   return result
 }
 
 interface OpenAIDelta {
   content?: unknown
+  reasoning_content?: unknown
+  reasoning?: unknown
 }
 
 interface OpenAIStreamChoice {
@@ -382,6 +497,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
   const decoder = new TextDecoder()
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
+  let reasoningOpen = false
 
   try {
     while (true) {
@@ -407,6 +523,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
         evt = popSseEventBlock(buf)
         if (data === null) continue
         if (data.trim() === '[DONE]') {
+          if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
           yield { kind: 'done', finishReason }
           return
         }
@@ -419,8 +536,20 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
           return
         }
         const choice = Array.isArray(frame.choices) ? frame.choices[0] : undefined
+        const reasoning = choice?.delta?.reasoning_content ?? choice?.delta?.reasoning
+        if (typeof reasoning === 'string' && reasoning.length > 0) {
+          if (!reasoningOpen) {
+            reasoningOpen = true
+            yield { kind: 'token', content: '<Thoughts>\n' }
+          }
+          yield { kind: 'token', content: reasoning }
+        }
         const delta = choice?.delta?.content
         if (typeof delta === 'string' && delta.length > 0) {
+          if (reasoningOpen) {
+            reasoningOpen = false
+            yield { kind: 'token', content: '\n</Thoughts>\n' }
+          }
           yield { kind: 'token', content: delta }
         }
         if (choice?.finish_reason) {
@@ -446,6 +575,7 @@ export async function* runOpenAIStream(req: OpenAIRequest): AsyncGenerator<Compl
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
     }
+    if (reasoningOpen) yield { kind: 'token', content: '\n</Thoughts>\n' }
     yield { kind: 'done', finishReason }
   }
 }

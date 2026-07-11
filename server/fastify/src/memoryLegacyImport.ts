@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { createMemoryChunk, createMemorySummary, getMemoryChunk, getMemorySummary } from './memoryRepository.js'
+import { LEGACY_HYPA_V3_SUMMARY_MODEL } from './memorySummaryCompatibility.js'
 
-export const LEGACY_HYPA_V3_SUMMARY_MODEL = 'legacy-hypav3'
+export { LEGACY_HYPA_V3_SUMMARY_MODEL } from './memorySummaryCompatibility.js'
 
 interface LegacyDatabase {
   characters?: LegacyCharacter[]
@@ -76,16 +77,19 @@ export function replaceLegacyHypaV3MemoryRowsInTransaction(
     DELETE FROM memory_embeddings;
     DELETE FROM memory_summaries;
     DELETE FROM memory_chunks;
+    DELETE FROM memory_legacy_summary_tombstones;
   `)
   return backfillLegacyHypaV3MemoryRows(db, database)
 }
 
 export function backfillLegacyHypaV3MemoryRows(db: DatabaseSync, database: unknown): LegacyHypaV3BackfillResult {
   const plans = collectLegacySummaryPlans(database)
+  const isDeleted = db.prepare('SELECT 1 FROM memory_legacy_summary_tombstones WHERE summary_id = ? LIMIT 1')
   let chunksCreated = 0
   let summariesCreated = 0
 
   for (const plan of plans) {
+    if (isDeleted.get(plan.summaryId)) continue
     if (!getMemoryChunk(db, plan.chunkId)) {
       createMemoryChunk(db, {
         id: plan.chunkId,

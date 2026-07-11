@@ -11,6 +11,7 @@ import {
   updateMemoryChunkStatus,
   type MemoryJob,
 } from './memoryRepository.js'
+import { isMemorySummaryCompatibleWithModel } from './memorySummaryCompatibility.js'
 import { summarizeOnce, type SummaryAdapterResult } from './memorySummaryAdapter.js'
 import { resolveMemorySummaryModel, type MemorySummaryModelRequest } from './memorySummaryModel.js'
 import { loadPersistedDatabaseForMemoryJob } from './repository.js'
@@ -190,8 +191,7 @@ async function executeSummarizeJob(input: {
   const existing = listMemorySummaries(input.opts.db, {
     chatId: input.job.chatId,
     chunkId: chunk.id,
-    model: payload.model,
-  })[0]
+  }).find((summary) => isMemorySummaryCompatibleWithModel(summary, payload.model))
   if (existing) {
     updateMemoryChunkStatus(input.opts.db, chunk.id, 'summarized')
     return { kind: 'existing', job: input.job, payload, chunkId: chunk.id }
@@ -388,8 +388,7 @@ function persistSummary(
     const existing = listMemorySummaries(db, {
       chatId: input.job.chatId,
       chunkId: input.payload.chunkId,
-      model: input.payload.model,
-    })[0]
+    }).find((summary) => isMemorySummaryCompatibleWithModel(summary, input.payload.model))
     if (!existing) {
       createMemorySummary(db, {
         id: buildSummaryId(input.job.chatId, input.payload.chunkId, input.payload.model),

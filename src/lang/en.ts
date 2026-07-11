@@ -1562,7 +1562,7 @@ export const languageEnglish = {
     quickSettings: 'Quick Settings',
     toggleVoice: 'Toggle Voice',
     toggleLog: 'Toggle Log',
-    previewRequest: 'Preview Request',
+    previewRequest: 'Preview Assembled Prompt',
     import: 'Import',
     export: 'Export',
     webcam: 'Toggle Webcam',

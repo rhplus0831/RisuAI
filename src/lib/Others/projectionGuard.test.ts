@@ -24,6 +24,9 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 
 vi.mock('src/ts/process/request/serverMemory', () => ({
   canUseServerMemoryApi: () => true,
+  listServerMemorySummaries: vi.fn(async () => ({ status: 'ok', summaries: [] })),
+  patchServerMemorySummary: vi.fn(async () => ({ status: 'error', error: 'not configured' })),
+  deleteServerMemorySummary: vi.fn(async () => ({ status: 'error', error: 'not configured' })),
   listServerMemoryJobs: vi.fn(async () => ({ status: 'ok', jobs: [] })),
   cancelServerMemoryJob: vi.fn(async () => ({ status: 'ok', job: null })),
 }))
@@ -38,6 +41,7 @@ import HypaV3Modal from './HypaV3Modal.svelte'
 import { alertInput } from 'src/ts/alert'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import { listServerMemorySummaries, patchServerMemorySummary } from 'src/ts/process/request/serverMemory'
 import { bookmarkListOpen, DBState, hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
 
 interface CapturedFetch {
@@ -128,6 +132,8 @@ describe('server projection guarded UI paths', () => {
     clearCachedServerCommandRevision()
     setServerProjectionWriteGuardEnabled(false)
     seedDatabase()
+    vi.mocked(listServerMemorySummaries).mockResolvedValue({ status: 'ok', summaries: [] })
+    vi.mocked(patchServerMemorySummary).mockResolvedValue({ status: 'error', error: 'not configured' })
     target = document.createElement('div')
     document.body.appendChild(target)
   })
@@ -151,6 +157,88 @@ describe('server projection guarded UI paths', () => {
     }).not.toThrow()
 
     await tick()
+    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+  })
+
+  it('loads live server summaries into the Hypa V3 manager and edits them through the memory API', async () => {
+    vi.mocked(listServerMemorySummaries).mockResolvedValue({
+      status: 'ok',
+      summaries: [
+        {
+          id: 'server-summary-1',
+          chatId: 'chat-1',
+          chunkId: 'chunk-1',
+          model: 'summary-model',
+          text: 'Live server summary',
+          metadata: {
+            chatMemos: ['msg-1'],
+            isImportant: true,
+            categoryId: 'story',
+            tags: ['live'],
+          },
+          tokens: 4,
+          createdAt: '2026-07-12T00:00:00.000Z',
+        },
+      ],
+    })
+    vi.mocked(patchServerMemorySummary).mockResolvedValue({
+      status: 'ok',
+      summary: {
+        id: 'server-summary-1',
+        chatId: 'chat-1',
+        chunkId: 'chunk-1',
+        model: 'summary-model',
+        text: 'Edited server summary',
+        metadata: { chatMemos: ['msg-1'], isImportant: true, categoryId: 'story', tags: ['live'] },
+        tokens: 0,
+        createdAt: '2026-07-12T00:00:00.000Z',
+      },
+    })
+    hypaV3ModalOpen.set(true)
+    setServerProjectionWriteGuardEnabled(true)
+
+    component = mount(HypaV3Modal, { target })
+    let summaryTextarea: HTMLTextAreaElement | undefined
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await tick()
+      summaryTextarea = Array.from(target.querySelectorAll('textarea')).find(
+        (textarea) => textarea.value === 'Live server summary',
+      )
+      if (summaryTextarea) break
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    expect(listServerMemorySummaries).toHaveBeenCalledWith('chat-1', undefined, expect.any(AbortSignal))
+    expect(summaryTextarea).toBeDefined()
+    summaryTextarea!.value = 'Edited server summary'
+    summaryTextarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    summaryTextarea!.dispatchEvent(new Event('change', { bubbles: true }))
+
+    for (let attempt = 0; attempt < 40 && vi.mocked(patchServerMemorySummary).mock.calls.length === 0; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(patchServerMemorySummary).toHaveBeenCalledWith('server-summary-1', {
+      text: 'Edited server summary',
+      isImportant: true,
+      categoryId: 'story',
+      tags: ['live'],
+    })
+
+    const importantButton = target.querySelector<HTMLButtonElement>('button[data-summary-action="important"]')
+    expect(importantButton).not.toBeNull()
+    importantButton!.click()
+    for (let attempt = 0; attempt < 40 && vi.mocked(patchServerMemorySummary).mock.calls.length < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    expect(vi.mocked(patchServerMemorySummary).mock.calls.at(-1)).toEqual([
+      'server-summary-1',
+      {
+        text: 'Edited server summary',
+        isImportant: false,
+        categoryId: 'story',
+        tags: ['live'],
+      },
+    ])
     expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 

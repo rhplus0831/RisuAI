@@ -148,6 +148,32 @@ describe('Phase 7-2c expandVariables — chat variable write-back', () => {
     expect(db.characters[0].chats[0].scriptstate?.['$greeting']).toBe('hello')
   })
 
+  it('writes via {{setdefaultvar}} when the chat variable is missing', () => {
+    const db = makeDatabase()
+    const result = expandVariables('{{setdefaultvar::greeting::hello}}{{getvar::greeting}}', {
+      database: db,
+      runVar: true,
+    })
+
+    expect(result.text.endsWith('hello')).toBe(true)
+    expect(result.dirty).toBe(true)
+    expect(db.characters[0].chats[0].scriptstate?.['$greeting']).toBe('hello')
+  })
+
+  it('does not replace an existing value via {{setdefaultvar}}', () => {
+    const db = makeDatabase({
+      characters: [makeCharacter({ chats: [makeChat({ scriptstate: { $greeting: 'existing' } })] })],
+    })
+    const result = expandVariables('{{setdefaultvar::greeting::hello}}{{getvar::greeting}}', {
+      database: db,
+      runVar: true,
+    })
+
+    expect(result.text.endsWith('existing')).toBe(true)
+    expect(result.dirty).toBe(false)
+    expect(db.characters[0].chats[0].scriptstate?.['$greeting']).toBe('existing')
+  })
+
   it('skips writes when runVar is false (read-only mode)', () => {
     const db = makeDatabase()
     const result = expandVariables('{{setvar::greeting::hello}}done', { database: db, runVar: false })

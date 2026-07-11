@@ -11,6 +11,7 @@ import {
   type MemoryJob,
 } from '../memoryRepository.js'
 import type { PromptMemoryMissingMemoryDiagnostics } from './memoryAdapter.js'
+import { isMemorySummaryCompatibleWithModel } from '../memorySummaryCompatibility.js'
 
 const EMBED_JOB_ID_PREFIX = 'hypav3-embed'
 const EMBED_PAYLOAD_SCHEMA_VERSION = 1
@@ -59,11 +60,9 @@ export function enqueuePromptMemoryFollowUps(
       result.skippedChunkIdsMissingSummaries.push(chunkId)
       continue
     }
-    const existingSummary = listMemorySummaries(input.db, {
-      chatId: input.chatId,
-      chunkId,
-      model: input.summaryModel,
-    })[0]
+    const existingSummary = listMemorySummaries(input.db, { chatId: input.chatId, chunkId }).find((summary) =>
+      isMemorySummaryCompatibleWithModel(summary, input.summaryModel),
+    )
     if (existingSummary) continue
 
     const payload: HypaV3SummarizeJobPayload = {

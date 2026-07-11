@@ -172,7 +172,7 @@ export function buildEffectiveGenerationConfig(input: EffectiveGenerationConfigI
   }
 }
 
-function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {
+export function applyProfileBoundGenerationFields(database: Database, profile: ResolvedModelProfile): void {
   if (profile.source.kind !== 'durable-profile') return
 
   database.aiModel = profile.modelId

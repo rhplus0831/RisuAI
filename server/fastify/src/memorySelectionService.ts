@@ -18,6 +18,7 @@ import {
   type MemorySimilarityRankingDiagnostics,
   type RankedMemorySummary,
 } from './memorySimilarityRanking.js'
+import { filterMemorySummariesForModel } from './memorySummaryCompatibility.js'
 
 export interface MemorySelectionInput {
   db: DatabaseSync
@@ -100,20 +101,17 @@ export function selectMemorySummaries(input: MemorySelectionInput): MemorySelect
 
 function resolveSelectionSummaries(input: MemorySelectionInput): MemorySummary[] {
   if (!input.summarySnapshot) {
-    return listMemorySummaries(input.db, {
-      chatId: input.chatId,
-      model: input.summaryModel,
-    })
+    return filterMemorySummariesForModel(listMemorySummaries(input.db, { chatId: input.chatId }), input.summaryModel)
   }
   if (input.summarySnapshot.chatId !== input.chatId) {
     throw new Error('memory summary snapshot chatId must match selection chatId')
   }
-  return input.summarySnapshot.summaries.filter((summary) => {
+  for (const summary of input.summarySnapshot.summaries) {
     if (summary.chatId !== input.chatId) {
       throw new Error('memory summary snapshot contains summaries from another chat')
     }
-    return summary.model === input.summaryModel
-  })
+  }
+  return filterMemorySummariesForModel(input.summarySnapshot.summaries, input.summaryModel)
 }
 
 function defaultMemorySelectionSeed(input: MemorySelectionInput): string {

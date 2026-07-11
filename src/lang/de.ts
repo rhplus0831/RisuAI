@@ -1414,7 +1414,7 @@ export const languageGerman = {
     quickSettings: 'Schnelleinstellungen',
     toggleVoice: 'Stimme umschalten',
     toggleLog: 'Log umschalten',
-    previewRequest: 'Vorschau Anfrage',
+    previewRequest: 'Zusammengesetzten Prompt anzeigen',
     import: 'Importieren',
     export: 'Exportieren',
     webcam: 'Webcam umschalten',

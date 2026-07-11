@@ -10,6 +10,7 @@ import { guiSizeText, updateGuisize } from '../gui/guisize'
 import { updateTextThemeAndCSS } from '../gui/colorscheme'
 import { CustomGUISettingMenuStore } from '../stores.svelte'
 import { MAX_CHAT_DISPLAY_TAIL_COUNT, MIN_CHAT_DISPLAY_TAIL_COUNT } from '../chatDisplayTailCount'
+import { toggleFullscreen } from '../globalApi.svelte'
 
 /** Display fields edited by custom controls rather than SettingRenderer wrappers. */
 export const displayNonRendererServerSettingKeys = [
@@ -274,7 +275,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'fullscreen',
     bindKey: 'fullScreen',
-    onChange: () => {},
+    onChange: () => toggleFullscreen(),
     keywords: ['fullscreen'],
   },
   {

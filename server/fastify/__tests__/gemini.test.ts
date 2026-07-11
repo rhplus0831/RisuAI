@@ -245,6 +245,38 @@ describe('runGemini', () => {
     expect(capturedUrl).toContain('key=a%26b%3Dc')
   })
 
+  it('requests thought output and preserves thought parts in the shared envelope', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({
+        candidates: [
+          {
+            content: {
+              parts: [{ thought: true, text: 'reasoning' }, { text: 'answer' }],
+            },
+          },
+        ],
+      })
+    })
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-thinking',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      thinkingTokens: 256,
+      signal: new AbortController().signal,
+    })!
+
+    expect(await runGemini(resolved)).toEqual({
+      type: 'success',
+      result: '<Thoughts>\nreasoning</Thoughts>\n\nanswer',
+    })
+    expect(JSON.parse(captured!.body as string).generationConfig.thinkingConfig).toEqual({
+      thinkingBudget: 256,
+      includeThoughts: true,
+    })
+  })
+
   it('omits systemInstruction when no system rows are present', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
@@ -509,6 +541,16 @@ function geminiFrame(text: string, finishReason?: string): string {
   return `data: ${JSON.stringify(payload)}\n\n`
 }
 
+function geminiPartsFrame(parts: Array<Record<string, unknown>>, finishReason?: string): string {
+  const payload: Record<string, unknown> = {
+    candidates: [{ content: { parts } }],
+  }
+  if (finishReason !== undefined) {
+    ;(payload.candidates as Array<Record<string, unknown>>)[0].finishReason = finishReason
+  }
+  return `data: ${JSON.stringify(payload)}\n\n`
+}
+
 function crlf(s: string): string {
   return s.replace(/\n/g, '\r\n')
 }
@@ -532,6 +574,31 @@ describe('runGeminiStream', () => {
     expect(frames).toEqual([
       { kind: 'token', content: 'hi' },
       { kind: 'token', content: ' there' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+
+  it('keeps one reasoning envelope open across consecutive thought events', async () => {
+    vi.stubGlobal('fetch', async () =>
+      sseUpstream([
+        geminiPartsFrame([{ thought: true, text: 'first' }]),
+        geminiPartsFrame([{ thought: true, text: ' second' }]),
+        geminiPartsFrame([{ text: 'answer' }], 'STOP'),
+      ]),
+    )
+    const resolved = resolveGeminiRequest({
+      model: 'gemini-thinking',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      signal: new AbortController().signal,
+    })!
+    const frames: unknown[] = []
+    for await (const frame of runGeminiStream(resolved)) frames.push(frame)
+
+    expect(frames).toEqual([
+      { kind: 'token', content: '<Thoughts>\nfirst' },
+      { kind: 'token', content: ' second' },
+      { kind: 'token', content: '</Thoughts>\n\nanswer' },
       { kind: 'done', finishReason: 'stop' },
     ])
   })

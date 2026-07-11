@@ -125,6 +125,7 @@ describe('runAnthropic (non-streaming)', () => {
       version: '2023-06-01',
       maxTokens: 512,
       temperature: 0.5,
+      oneHourCache: true,
       additionalParams: [
         ['header::anthropic-beta', 'prompt-caching-2024-07-31'],
         ['extra.flag', 'true'],
@@ -141,6 +142,72 @@ describe('runAnthropic (non-streaming)', () => {
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['anthropic-beta']).toBe('prompt-caching-2024-07-31')
     expect(headers['x-api-key']).toBe('k')
+  })
+
+  it('adds the one-hour cache beta and forwards profile headers', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ content: [{ type: 'text', text: 'x' }] })
+    })
+
+    await runAnthropic({
+      model: 'm',
+      messages: [
+        { role: 'user', content: [{ type: 'text', text: 'hi', cache_control: { type: 'ephemeral', ttl: '1h' } }] },
+      ],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 512,
+      oneHourCache: true,
+      extraHeaders: { 'X-Profile': 'profile-value' },
+      signal: new AbortController().signal,
+    })
+
+    const headers = captured!.init.headers as Record<string, string>
+    expect(headers['anthropic-beta']).toBe('extended-cache-ttl-2025-04-11')
+    expect(headers['X-Profile']).toBe('profile-value')
+  })
+
+  it('sends adaptive thinking controls and preserves returned thinking blocks', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({
+        content: [
+          { type: 'thinking', thinking: 'reasoning' },
+          { type: 'text', text: 'answer' },
+        ],
+      })
+    })
+
+    const result = await runAnthropic({
+      model: 'claude-adaptive',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 512,
+      temperature: 0.5,
+      topP: 0.8,
+      topK: 20,
+      thinkingType: 'adaptive',
+      adaptiveThinkingEffort: 'xhigh',
+      supportsAdaptiveThinking: true,
+      supportsXHighEffort: false,
+      signal: new AbortController().signal,
+    })
+
+    expect(result).toEqual({ type: 'success', result: '<Thoughts>\nreasoning</Thoughts>\n\nanswer' })
+    expect(JSON.parse(captured!.body as string)).toMatchObject({
+      thinking: { type: 'adaptive', display: 'summarized' },
+      output_config: { effort: 'high' },
+    })
+    const body = JSON.parse(captured!.body as string)
+    expect(body.temperature).toBeUndefined()
+    expect(body.top_p).toBeUndefined()
+    expect(body.top_k).toBeUndefined()
   })
 
   it('omits system / temperature when not provided', async () => {

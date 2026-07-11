@@ -240,6 +240,8 @@ export interface ServerChatPostGeneration {
 export interface DoneEvent {
   type: 'done'
   result?: string
+  /** Additional provider choices returned by multi-generation (`genTime`). */
+  alternates?: string[]
   generationId?: string
   generationInfo?: Record<string, unknown>
   /** Server post-generation derivation. See {@link ServerChatPostGeneration}. */

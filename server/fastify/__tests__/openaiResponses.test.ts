@@ -23,7 +23,7 @@ describe('buildResponseInput', () => {
       {
         type: 'message',
         role: 'assistant',
-        status: 'complete',
+        status: 'completed',
         content: [{ type: 'output_text', text: 'hello', annotations: [] }],
       },
       { role: 'user', content: [{ type: 'input_text', text: 'follow-up' }] },
@@ -36,6 +36,39 @@ describe('buildResponseInput', () => {
       { role: 'assistant', content: 'partial' },
     ])
     expect((items[1] as { status: string }).status).toBe('incomplete')
+  })
+
+  it('maps developer-role systems and configured image detail without leaking NewChat metadata', () => {
+    const items = buildResponseInput(
+      [
+        { role: 'system', content: '[Start a new chat]', memo: 'NewChat' },
+        { role: 'system', content: 'developer instructions' },
+        { role: 'assistant', content: 'history' },
+        {
+          role: 'user',
+          content: 'look',
+          multimodals: [{ type: 'image', base64: 'data:image/png;base64,abc' }],
+        },
+      ],
+      { developerRole: true, visionQuality: 'high' },
+    )
+
+    expect(items).toEqual([
+      { role: 'developer', content: [{ type: 'input_text', text: 'developer instructions' }] },
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'history', annotations: [] }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'look' },
+          { type: 'input_image', detail: 'high', image_url: 'data:image/png;base64,abc' },
+        ],
+      },
+    ])
   })
 
   it('drops function / tool rows', () => {
@@ -113,7 +146,7 @@ describe('runOpenAIResponses', () => {
     expect(captured!.url).toBe('https://api.openai.com/v1/responses')
     const sent = JSON.parse(captured!.init.body as string)
     expect(sent.model).toBe('gpt-5-responses')
-    expect(sent.tools).toEqual([])
+    expect(sent.tools).toBeUndefined()
     expect(sent.max_output_tokens).toBe(128)
     expect(sent.temperature).toBe(0.3)
     expect(sent.input).toEqual([{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }])
@@ -148,6 +181,50 @@ describe('runOpenAIResponses', () => {
     const headers = captured!.init.headers as Record<string, string>
     expect(headers['X-Custom']).toBe('one')
     expect(headers.authorization).toBe('Bearer sk')
+  })
+
+  it('sends completed history, developer instructions, and configured native image detail on the final wire', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'ok' }] }] })
+    })
+    const resolved = resolveOpenAIResponsesRequest({
+      model: 'gpt-responses',
+      messages: [
+        { role: 'system', content: '[Start a new chat]', memo: 'NewChat' },
+        { role: 'system', content: 'rules' },
+        { role: 'assistant', content: 'history' },
+        {
+          role: 'user',
+          content: 'look',
+          multimodals: [{ type: 'image', base64: 'data:image/png;base64,abc' }],
+        },
+      ],
+      apiKey: 'sk',
+      developerRole: true,
+      visionQuality: 'high',
+      signal: new AbortController().signal,
+    })!
+
+    await runOpenAIResponses(resolved)
+
+    expect(JSON.parse(captured!.body as string).input).toEqual([
+      { role: 'developer', content: [{ type: 'input_text', text: 'rules' }] },
+      {
+        type: 'message',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text: 'history', annotations: [] }],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'input_text', text: 'look' },
+          { type: 'input_image', detail: 'high', image_url: 'data:image/png;base64,abc' },
+        ],
+      },
+    ])
   })
 
   it('returns fail with upstream error.message on non-2xx', async () => {

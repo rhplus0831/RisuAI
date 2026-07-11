@@ -706,6 +706,36 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     },
     streaming: 'none',
   },
+  {
+    id: 'memory-summary-update',
+    methods: ['PATCH'],
+    path: '/api/v1/memory/summaries/:summaryId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Memory summary editing changes user chat memory content and metadata.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Memory summary editing mutates server-owned memory state.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'memory-summary-delete',
+    methods: ['DELETE'],
+    path: '/api/v1/memory/summaries/:summaryId',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Memory summary deletion changes user chat memory content.',
+    },
+    activeWriter: {
+      decision: 'active-writer',
+      reason: 'Memory summary deletion mutates server-owned memory state.',
+    },
+    streaming: 'none',
+  },
 ] as const satisfies readonly ProtocolRouteManifestEntry[]
 
 const routePatternCache = new Map<string, RegExp>()

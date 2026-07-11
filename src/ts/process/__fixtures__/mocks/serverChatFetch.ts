@@ -54,6 +54,7 @@ interface State {
   messagePatch: ServerChatMessagePatch | null
   /** Optional provider result returned as `/chat` token + enriched done events. */
   dispatchResult: string | null
+  dispatchAlternates: string[]
   dispatchError: string | null
   emitTtsSideEffect: boolean
   sideEffects: ServerChatSideEffect[]
@@ -82,6 +83,7 @@ function defaultState(): Omit<State, 'calls'> {
     responseBudget: 50,
     messagePatch: null,
     dispatchResult: null,
+    dispatchAlternates: [],
     dispatchError: null,
     emitTtsSideEffect: false,
     sideEffects: [],
@@ -160,9 +162,14 @@ export function setServerChatDispatchResult(
   result: string,
   generationInfo: Record<string, unknown>,
   generationId = 'uuid-0',
-  opts: { emitTtsSideEffect?: boolean; postGeneration?: ServerChatPostGeneration } = {},
+  opts: {
+    emitTtsSideEffect?: boolean
+    postGeneration?: ServerChatPostGeneration
+    alternates?: string[]
+  } = {},
 ): void {
   state.dispatchResult = result
+  state.dispatchAlternates = opts.alternates ? [...opts.alternates] : []
   state.dispatchError = null
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
@@ -183,6 +190,7 @@ export function setServerChatDispatchError(
   opts: { status?: number; statusText?: string; code?: string } = {},
 ): void {
   state.dispatchResult = null
+  state.dispatchAlternates = []
   state.dispatchError = message
   state.generationId = generationId
   state.generationInfo = { ...generationInfo, generationId }
@@ -253,6 +261,7 @@ function sseChatResponse(): Response {
         }
         push('done', {
           result: state.dispatchResult,
+          alternates: state.dispatchAlternates.length > 0 ? state.dispatchAlternates : undefined,
           generationId: state.generationId,
           generationInfo: state.generationInfo,
           postGeneration: postGeneration ?? undefined,

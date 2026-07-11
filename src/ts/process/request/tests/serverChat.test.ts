@@ -399,13 +399,18 @@ describe('requestServerChat', () => {
 
   it('returns a streaming dispatch response from token + enriched done events', async () => {
     setServerChatPrompt([{ role: 'user', content: 'hello there' }], { promptText: 'hello there' })
-    setServerChatDispatchResult('server reply', {
-      model: 'echo_model',
-      inputTokens: 7,
-      outputTokens: 50,
-      maxContext: 4000,
-      stageTiming: { stage1: 1, stage2: 0, stage3: 2, stage4: 0 },
-    })
+    setServerChatDispatchResult(
+      'server reply',
+      {
+        model: 'echo_model',
+        inputTokens: 7,
+        outputTokens: 50,
+        maxContext: 4000,
+        stageTiming: { stage1: 1, stage2: 0, stage3: 2, stage4: 0 },
+      },
+      'uuid-0',
+      { alternates: ['second reply', 'third reply'] },
+    )
     vi.stubGlobal('fetch', serverChatFetch)
 
     const res = await requestServerChatGeneration(baseInput, null)
@@ -428,7 +433,11 @@ describe('requestServerChat', () => {
     await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
     await expect(res.terminal).resolves.toMatchObject({
       status: 'done',
-      done: { result: 'server reply', generationId: 'uuid-0' },
+      done: {
+        result: 'server reply',
+        alternates: ['second reply', 'third reply'],
+        generationId: 'uuid-0',
+      },
     })
   })
 

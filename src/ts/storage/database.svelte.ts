@@ -47,6 +47,7 @@ import {
   deletePromptPresetCommand,
   deletePresetCommand,
   extractLegacyBotPresetCommand,
+  importModelPresetCommand,
   importPromptPresetCommand,
   reorderModelPresetsCommand,
   reorderPromptPresetsCommand,
@@ -95,6 +96,7 @@ import {
   createExtractedPromptPreset,
   databaseKeyForModelPresetField,
   findEquivalentModelPreset,
+  hasModelPresetOnlyFields,
   MODEL_PRESET_FIELDS,
   PROMPT_PRESET_FIELDS,
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
@@ -3793,6 +3795,60 @@ export function addImportedPromptPreset(preset: PromptPreset) {
   })
 }
 
+export function addImportedLegacyPreset(preset: botPreset) {
+  withTrustedServerProjectionWrite(() => {
+    const db = DBState.db
+    normalizeSplitPresetIds(db)
+    const importedName = typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : 'Imported'
+    const modelPreset = createExtractedModelPreset(preset, {
+      id: createClientPresetId(),
+      name: importedName,
+    }) as ModelPreset
+    const promptPreset = createExtractedPromptPreset(preset, {
+      id: createClientPresetId(),
+      name: importedName,
+    }) as PromptPreset
+
+    // Legacy full presets always applied their parameter values. Keep that
+    // behavior when the prompt half is composed with its imported model half.
+    promptPreset.overrideModelParameters = true
+
+    db.modelPresets.push(modelPreset)
+    db.promptPresets.push(promptPreset)
+    db.modelPresets = db.modelPresets
+    db.promptPresets = db.promptPresets
+
+    const attemptedModelPreset = safeStructuredClone(modelPreset)
+    const attemptedPromptPreset = safeStructuredClone(promptPreset)
+    let modelAccepted = false
+    let promptAccepted = false
+    runOptimisticCommandSequence(
+      [
+        async (baseRevision) => {
+          const result = await importModelPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedModelPreset) as unknown as ModelPresetSnapshot,
+          })
+          modelAccepted = result.status === 'ok'
+          return result
+        },
+        async (baseRevision) => {
+          const result = await importPromptPresetCommand({
+            baseRevision,
+            preset: safeStructuredClone(attemptedPromptPreset) as unknown as PromptPresetSnapshot,
+          })
+          promptAccepted = result.status === 'ok'
+          return result
+        },
+      ],
+      () => {
+        if (!modelAccepted) rollbackSplitPresetCreate('model', attemptedModelPreset)
+        if (!promptAccepted) rollbackSplitPresetCreate('prompt', attemptedPromptPreset)
+      },
+    )
+  })
+}
+
 export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
   withTrustedServerProjectionWrite(() => {
     const db = DBState.db
@@ -4323,6 +4379,7 @@ export async function importPreset(
     return
   }
   let pre: any
+  let importedSource: unknown
   if (f.name.endsWith('.risupreset') || f.name.endsWith('.risup')) {
     let data = f.data
     if (f.name.endsWith('.risup')) {
@@ -4330,13 +4387,15 @@ export async function importPreset(
     }
     const decoded = await decodeMsgpack(fflate.decompressSync(data))
     if ((decoded.presetVersion === 0 || decoded.presetVersion === 2) && decoded.type === 'preset') {
+      importedSource = decodeMsgpack(Buffer.from(await decryptBuffer(decoded.preset ?? decoded.pres, 'risupreset')))
       pre = {
         ...presetTemplate,
-        ...decodeMsgpack(Buffer.from(await decryptBuffer(decoded.preset ?? decoded.pres, 'risupreset'))),
+        ...(importedSource as Record<string, unknown>),
       }
     }
   } else {
-    pre = { ...presetTemplate, ...JSON.parse(Buffer.from(f.data).toString('utf-8')) }
+    importedSource = JSON.parse(Buffer.from(f.data).toString('utf-8'))
+    pre = { ...presetTemplate, ...(importedSource as Record<string, unknown>) }
   }
   let db = DBState.db
   if (pre.presetVersion && pre.presetVersion >= 3) {
@@ -4466,5 +4525,9 @@ export async function importPreset(
   if (!Array.isArray(db.botPresets)) {
     db.botPresets = []
   }
-  addImportedPromptPreset(pre)
+  if (hasModelPresetOnlyFields(importedSource)) {
+    addImportedLegacyPreset(pre)
+  } else {
+    addImportedPromptPreset(pre)
+  }
 }

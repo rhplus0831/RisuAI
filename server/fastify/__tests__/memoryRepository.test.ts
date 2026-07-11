@@ -13,6 +13,7 @@ import {
   createMemoryEmbedding,
   createMemoryJob,
   createMemorySummary,
+  deleteMemorySummary,
   decodeEmbeddingVector,
   encodeEmbeddingVector,
   enqueueMemoryJob,
@@ -30,6 +31,7 @@ import {
   recoverRunningMemoryJobs,
   retryOrFailMemoryJob,
   updateMemoryChunkStatus,
+  updateMemorySummary,
   updateMemoryJob,
 } from '../src/memoryRepository.js'
 import { ValidationError } from '../src/repository.js'
@@ -180,6 +182,21 @@ describe('memory repository summaries', () => {
         text: 'summary text',
         tokens: 12,
       })
+
+      expect(
+        updateMemorySummary(db, 'summary-1', {
+          text: 'edited summary',
+          metadata: { isImportant: true, tags: ['kept'] },
+          tokens: 0,
+        }),
+      ).toMatchObject({
+        id: 'summary-1',
+        text: 'edited summary',
+        metadata: { isImportant: true, tags: ['kept'] },
+        tokens: 0,
+      })
+      expect(updateMemorySummary(db, 'missing-summary', { text: 'missing' })).toBeNull()
+      expect(() => updateMemorySummary(db, 'summary-1', {})).toThrow(ValidationError)
       expect(listMemorySummaries(db, { chatId: 'chat-1', model: 'model-a' }).map((row) => row.id)).toEqual([
         'summary-1',
       ])
@@ -194,6 +211,9 @@ describe('memory repository summaries', () => {
           tokens: 1,
         }),
       ).toThrow(ValidationError)
+
+      expect(deleteMemorySummary(db, 'summary-2')).toMatchObject({ id: 'summary-2' })
+      expect(deleteMemorySummary(db, 'summary-2')).toBeNull()
       expect(() =>
         createMemorySummary(db, {
           id: 'summary-bad',

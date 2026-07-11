@@ -1390,7 +1390,7 @@ export const languageKorean = {
     quickSettings: '빠른 설정',
     toggleVoice: '음성 토글',
     toggleLog: '로그 토글',
-    previewRequest: '요청 미리보기',
+    previewRequest: '조립된 프롬프트 미리보기',
     import: '가져오기',
     export: '내보내기',
     webcam: '웹캠 토글',

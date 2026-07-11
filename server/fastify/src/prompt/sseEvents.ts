@@ -46,6 +46,7 @@ export interface PromptEvent {
    * points, multimodal content).
    */
   formated?: OpenAIChat[]
+  biases?: [string, number][]
 }
 
 export interface InfoEvent {
@@ -141,6 +142,8 @@ export interface PostGenerationFrame {
 export interface DoneEvent {
   type: 'done'
   result?: string
+  /** Additional provider choices returned by multi-generation (`genTime`). */
+  alternates?: string[]
   generationId?: string
   generationInfo?: Record<string, unknown>
   /** Server post-generation derivation. See {@link PostGenerationFrame}. */

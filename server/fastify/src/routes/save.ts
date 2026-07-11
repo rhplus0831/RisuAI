@@ -24,6 +24,10 @@ import { replaceLegacyHypaV3MemoryRowsInTransaction } from '../memoryLegacyImpor
 import { decodeRisuSaveImportSnapshot, normalizeRisuSaveImportDatabase } from '../risuSave/importSnapshot.js'
 import { decodeLocalBackup } from '../risuSave/localBackupImport.js'
 import {
+  normalizeLegacyLocalBackupImportDatabase,
+  prepareLegacyLocalBackupExportDatabase,
+} from '../risuSave/localBackupDatabase.js'
+import {
   buildRepositoryRisuSaveExportSnapshot,
   buildRisuSaveExportSnapshotFromPersisted,
   encodeRisuSaveBlockExportSnapshot,
@@ -143,7 +147,11 @@ export function registerSaveRoutes(
       })
       let assetsCreated = false
       const copiedAssetFiles: StagedAssetLiveFileCopy[] = []
-      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, snapshot.database, {
+      const importedDatabase =
+        decoded.format === 'legacy-local-backup'
+          ? normalizeLegacyLocalBackupImportDatabase(snapshot.database, decoded.assetReferenceAliases)
+          : snapshot.database
+      const { revision, event, assetReport } = applyImportedDatabase(db, dataDir, importedDatabase, {
         beforeRevision: () => {
           const assetResults = persistStagedAssetsInTransaction(db, dataDir, decoded.stagedAssets, copiedAssetFiles)
           assetsCreated = assetResults.some((result) => result.created)
@@ -274,6 +282,7 @@ export function registerSaveRoutes(
       persisted.assets = getAllAssetMetadata(db)
       const estimatedBackupBytes = estimateDeviceBackupBytes(dataDir, persisted)
       const snapshot = buildRisuSaveExportSnapshotFromPersisted(persisted)
+      snapshot.database = prepareLegacyLocalBackupExportDatabase(snapshot.database, persisted.assets)
       const snapshotLoadMs = measure ? protocolDurationMs(snapshotStart) : undefined
       const encodeStart = measure ? protocolNowMs() : 0
       const risuBytes = encodeRisuSaveLegacyExportSnapshot(snapshot, LOCAL_BACKUP_DATABASE_ENVELOPE)

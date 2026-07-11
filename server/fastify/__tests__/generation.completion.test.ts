@@ -403,7 +403,12 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(sentBodies.map((body) => body.model)).toEqual(modes.map(([, model]) => model))
     for (const body of sentBodies) {
       expect(body.stream).toBe(false)
-      expect(body.max_tokens).toBe(321)
+      if (String(body.model).startsWith('gpt-5')) {
+        expect(body.max_completion_tokens).toBe(321)
+        expect(body.max_tokens).toBeUndefined()
+      } else {
+        expect(body.max_tokens).toBe(321)
+      }
       expect(body.temperature).toBe(0.42)
     }
   })

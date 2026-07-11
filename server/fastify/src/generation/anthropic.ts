@@ -18,6 +18,15 @@ export interface AnthropicRequest {
   maxTokens: number
   system?: string
   temperature?: number
+  topP?: number
+  topK?: number
+  thinkingTokens?: number
+  thinkingType?: 'off' | 'budget' | 'adaptive'
+  adaptiveThinkingEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  supportsAdaptiveThinking?: boolean
+  supportsXHighEffort?: boolean
+  oneHourCache?: boolean
+  extraHeaders?: Record<string, string>
   /**
    * Pre-validated `[key, value][]` pairs from the SPA's additionalParams /
    * xcustom `params` DSL. Applied after the dispatcher builds its default
@@ -37,6 +46,15 @@ interface AnthropicResolveInput {
   maxTokens?: unknown
   system?: unknown
   temperature?: unknown
+  topP?: unknown
+  topK?: unknown
+  thinkingTokens?: unknown
+  thinkingType?: unknown
+  adaptiveThinkingEffort?: unknown
+  supportsAdaptiveThinking?: unknown
+  supportsXHighEffort?: unknown
+  oneHourCache?: unknown
+  extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
   signal: AbortSignal
 }
@@ -58,6 +76,24 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
       : DEFAULT_MAX_TOKENS
   const temperature =
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
+  const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
+  const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const thinkingTokens =
+    typeof input.thinkingTokens === 'number' && Number.isFinite(input.thinkingTokens) && input.thinkingTokens > 0
+      ? input.thinkingTokens
+      : undefined
+  const thinkingType =
+    input.thinkingType === 'off' || input.thinkingType === 'budget' || input.thinkingType === 'adaptive'
+      ? input.thinkingType
+      : undefined
+  const adaptiveThinkingEffort =
+    input.adaptiveThinkingEffort === 'low' ||
+    input.adaptiveThinkingEffort === 'medium' ||
+    input.adaptiveThinkingEffort === 'high' ||
+    input.adaptiveThinkingEffort === 'xhigh' ||
+    input.adaptiveThinkingEffort === 'max'
+      ? input.adaptiveThinkingEffort
+      : undefined
   const system = typeof input.system === 'string' && input.system.length > 0 ? input.system : undefined
 
   return {
@@ -69,6 +105,15 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
     maxTokens,
     system,
     temperature,
+    topP,
+    topK,
+    thinkingTokens,
+    thinkingType,
+    adaptiveThinkingEffort,
+    supportsAdaptiveThinking: input.supportsAdaptiveThinking === true,
+    supportsXHighEffort: input.supportsXHighEffort === true,
+    oneHourCache: input.oneHourCache === true,
+    extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
     signal: input.signal,
   }
@@ -83,6 +128,24 @@ function buildPayload(req: AnthropicRequest, stream: boolean): Record<string, un
   }
   if (req.system !== undefined) body.system = req.system
   if (req.temperature !== undefined) body.temperature = req.temperature
+  if (req.topP !== undefined) body.top_p = req.topP
+  if (req.topK !== undefined) body.top_k = req.topK
+  if (req.thinkingType === 'adaptive' && req.supportsAdaptiveThinking) {
+    const effort =
+      req.adaptiveThinkingEffort === 'xhigh' && !req.supportsXHighEffort
+        ? 'high'
+        : (req.adaptiveThinkingEffort ?? 'high')
+    body.thinking = { type: 'adaptive', display: 'summarized' }
+    body.output_config = { effort }
+    delete body.temperature
+    delete body.top_p
+    delete body.top_k
+  } else if (req.thinkingType !== 'off' && req.thinkingTokens !== undefined) {
+    body.thinking = { type: 'enabled', budget_tokens: req.thinkingTokens, display: 'summarized' }
+    delete body.temperature
+    delete body.top_p
+    delete body.top_k
+  }
   return body
 }
 
@@ -92,11 +155,20 @@ function endpoint(req: AnthropicRequest): string {
 }
 
 function buildHeaders(req: AnthropicRequest): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     'content-type': 'application/json',
     'x-api-key': req.apiKey,
     'anthropic-version': req.version,
+    ...(req.extraHeaders ?? {}),
   }
+  const hasAnthropicBeta = Object.keys(headers).some((key) => key.toLocaleLowerCase() === 'anthropic-beta')
+  const hasAdditionalParamBeta = req.additionalParams?.some(
+    ([key]) => key.startsWith('header::') && key.slice('header::'.length).toLocaleLowerCase() === 'anthropic-beta',
+  )
+  if (req.oneHourCache && !hasAnthropicBeta && !hasAdditionalParamBeta) {
+    headers['anthropic-beta'] = 'extended-cache-ttl-2025-04-11'
+  }
+  return headers
 }
 
 function buildRequestInit(req: AnthropicRequest, stream: boolean): { body: string; headers: Record<string, string> } {
@@ -111,6 +183,7 @@ function buildRequestInit(req: AnthropicRequest, stream: boolean): { body: strin
 interface AnthropicContentBlock {
   type?: unknown
   text?: unknown
+  thinking?: unknown
 }
 
 interface AnthropicResponse {
@@ -155,15 +228,34 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
     return { type: 'fail', result: upstreamMsg }
   }
 
-  // Concatenate every text content block (anthropic may emit multiple).
+  // Preserve summarized/reasoning blocks in the shared `<Thoughts>` envelope,
+  // matching the browser provider path so the response parser can retain them.
   let text = ''
+  let thinkingOpen = false
   if (Array.isArray(body.content)) {
     for (const block of body.content) {
       if (block.type === 'text' && typeof block.text === 'string') {
+        if (thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          thinkingOpen = false
+        }
         text += block.text
+      } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
+        if (!thinkingOpen) {
+          text += '<Thoughts>\n'
+          thinkingOpen = true
+        }
+        text += block.thinking
+      } else if (block.type === 'redacted_thinking') {
+        if (!thinkingOpen) {
+          text += '<Thoughts>\n'
+          thinkingOpen = true
+        }
+        text += '\n{{redacted_thinking}}\n'
       }
     }
   }
+  if (thinkingOpen) text += '</Thoughts>\n\n'
   if (text.length === 0) {
     return { type: 'fail', result: 'upstream returned no text content' }
   }
@@ -181,6 +273,7 @@ interface AnthropicStreamEvent {
 interface AnthropicDelta {
   type?: unknown
   text?: unknown
+  thinking?: unknown
   stop_reason?: unknown
 }
 
@@ -283,6 +376,7 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
   let sawStop = false
+  let thinkingOpen = false
 
   try {
     while (true) {
@@ -313,7 +407,26 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
             const frame = JSON.parse(evt.data) as AnthropicStreamFrame
             const t = frame.delta?.text
             if (frame.delta?.type === 'text_delta' && typeof t === 'string' && t.length > 0) {
+              if (thinkingOpen) {
+                thinkingOpen = false
+                yield { kind: 'token', content: '</Thoughts>\n\n' }
+              }
               yield { kind: 'token', content: t }
+            } else if (
+              (frame.delta?.type === 'thinking' || frame.delta?.type === 'thinking_delta') &&
+              typeof frame.delta.thinking === 'string'
+            ) {
+              if (!thinkingOpen) {
+                thinkingOpen = true
+                yield { kind: 'token', content: '<Thoughts>\n' }
+              }
+              yield { kind: 'token', content: frame.delta.thinking }
+            } else if (frame.delta?.type === 'redacted_thinking') {
+              if (!thinkingOpen) {
+                thinkingOpen = true
+                yield { kind: 'token', content: '<Thoughts>\n' }
+              }
+              yield { kind: 'token', content: '\n{{redacted_thinking}}\n' }
             }
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
@@ -333,6 +446,7 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
           }
         } else if (evt.event === 'message_stop') {
           sawStop = true
+          if (thinkingOpen) yield { kind: 'token', content: '</Thoughts>\n\n' }
           yield { kind: 'done', finishReason }
           return
         }
@@ -357,6 +471,7 @@ export async function* runAnthropicStream(req: AnthropicRequest): AsyncGenerator
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
     }
+    if (thinkingOpen) yield { kind: 'token', content: '</Thoughts>\n\n' }
     yield { kind: 'done', finishReason }
   }
 }

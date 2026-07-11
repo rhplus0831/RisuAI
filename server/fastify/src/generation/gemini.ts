@@ -43,14 +43,22 @@ export interface GeminiRequest {
   temperature?: number
   topP?: number
   topK?: number
+  presencePenalty?: number
+  frequencyPenalty?: number
+  thinkingTokens?: number
   trace?: GenerationTraceContext
   signal: AbortSignal
 }
 
 export interface GeminiContent {
   role: 'user' | 'model'
-  parts: Array<{ text: string }>
+  parts: GeminiPart[]
 }
+
+export type GeminiPart =
+  | { text: string }
+  | { inlineData: { mimeType: string; data: string } }
+  | { thought: true; thoughtSignature: string }
 
 interface GeminiResolveInput {
   model?: unknown
@@ -62,6 +70,9 @@ interface GeminiResolveInput {
   temperature?: unknown
   topP?: unknown
   topK?: unknown
+  presencePenalty?: unknown
+  frequencyPenalty?: unknown
+  thinkingTokens?: unknown
   trace?: GenerationTraceContext
   signal: AbortSignal
 }
@@ -69,6 +80,13 @@ interface GeminiResolveInput {
 interface RawChatMessage {
   role?: unknown
   content?: unknown
+  memo?: unknown
+  multimodals?: unknown
+}
+
+interface RawMultimodal {
+  type?: unknown
+  base64?: unknown
 }
 
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
@@ -88,23 +106,59 @@ export interface GeminiReformatResult {
   systemInstruction?: string
 }
 
+function parseGeminiDataUrl(value: string): { mimeType: string; data: string } | null {
+  const match = /^data:([^;,]+);base64,(.*)$/su.exec(value)
+  if (!match) return null
+  return { mimeType: match[1], data: match[2] }
+}
+
+function geminiParts(message: RawChatMessage): GeminiPart[] {
+  const content = typeof message.content === 'string' ? message.content : ''
+  const isNewChat = typeof message.memo === 'string' && message.memo.startsWith('NewChat')
+  const parts: GeminiPart[] = []
+  if (!isNewChat && content.length > 0) parts.push({ text: content })
+  if (Array.isArray(message.multimodals)) {
+    for (const raw of message.multimodals as RawMultimodal[]) {
+      if ((raw.type !== 'image' && raw.type !== 'audio' && raw.type !== 'video') || typeof raw.base64 !== 'string') {
+        continue
+      }
+      const parsed = parseGeminiDataUrl(raw.base64)
+      if (parsed) parts.push({ inlineData: parsed })
+    }
+  }
+  return parts
+}
+
+function appendGeminiParts(target: GeminiPart[], incoming: GeminiPart[]): void {
+  const last = target.at(-1)
+  const first = incoming[0]
+  if (last && 'text' in last && first && 'text' in first) {
+    last.text += `\n${first.text}`
+    incoming.shift()
+  }
+  target.push(...incoming)
+}
+
 export function reformatForGemini(messages: RawChatMessage[]): GeminiReformatResult {
   const systemTexts: string[] = []
   const contents: GeminiContent[] = []
   for (const m of messages) {
-    const content = typeof m.content === 'string' ? m.content : ''
+    const content =
+      typeof m.memo === 'string' && m.memo.startsWith('NewChat') ? '' : typeof m.content === 'string' ? m.content : ''
     if (m.role === 'system') {
       if (content.length > 0) systemTexts.push(content)
       continue
     }
     const role: 'user' | 'model' = m.role === 'assistant' ? 'model' : m.role === 'user' ? 'user' : 'user'
     if (m.role !== 'user' && m.role !== 'assistant') continue
+    const parts = geminiParts(m)
+    if (parts.length === 0) continue
     const prev = contents[contents.length - 1]
     if (prev && prev.role === role) {
-      prev.parts[0].text += `\n${content}`
+      appendGeminiParts(prev.parts, parts)
       continue
     }
-    contents.push({ role, parts: [{ text: content }] })
+    contents.push({ role, parts })
   }
   const systemInstruction = systemTexts.length > 0 ? systemTexts.join('\n\n') : undefined
   return systemInstruction === undefined ? { contents } : { contents, systemInstruction }
@@ -140,6 +194,18 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     typeof input.temperature === 'number' && Number.isFinite(input.temperature) ? input.temperature : undefined
   const topP = typeof input.topP === 'number' && Number.isFinite(input.topP) ? input.topP : undefined
   const topK = typeof input.topK === 'number' && Number.isFinite(input.topK) ? input.topK : undefined
+  const presencePenalty =
+    typeof input.presencePenalty === 'number' && Number.isFinite(input.presencePenalty)
+      ? input.presencePenalty
+      : undefined
+  const frequencyPenalty =
+    typeof input.frequencyPenalty === 'number' && Number.isFinite(input.frequencyPenalty)
+      ? input.frequencyPenalty
+      : undefined
+  const thinkingTokens =
+    typeof input.thinkingTokens === 'number' && Number.isFinite(input.thinkingTokens) && input.thinkingTokens >= 0
+      ? input.thinkingTokens
+      : undefined
 
   return {
     model: input.model,
@@ -152,6 +218,9 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     temperature,
     topP,
     topK,
+    presencePenalty,
+    frequencyPenalty,
+    thinkingTokens,
     trace: input.trace,
     signal: input.signal,
   }
@@ -163,6 +232,11 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   if (req.temperature !== undefined) generationConfig.temperature = req.temperature
   if (req.topP !== undefined) generationConfig.topP = req.topP
   if (req.topK !== undefined) generationConfig.topK = req.topK
+  if (req.presencePenalty !== undefined) generationConfig.presencePenalty = req.presencePenalty
+  if (req.frequencyPenalty !== undefined) generationConfig.frequencyPenalty = req.frequencyPenalty
+  if (req.thinkingTokens !== undefined) {
+    generationConfig.thinkingConfig = { thinkingBudget: req.thinkingTokens, includeThoughts: true }
+  }
   const body: Record<string, unknown> = {
     contents: req.contents,
     generationConfig,
@@ -256,12 +330,14 @@ async function vertexHeaders(
   return { ok: true, headers: { ...base, authorization: `Bearer ${bearer.token}` } }
 }
 
-interface GeminiPart {
+interface GeminiResponsePart {
   text?: unknown
+  thought?: unknown
+  thoughtSignature?: unknown
 }
 
 interface GeminiCandidate {
-  content?: { parts?: GeminiPart[] }
+  content?: { parts?: GeminiResponsePart[] }
   finishReason?: unknown
 }
 
@@ -275,14 +351,38 @@ interface GeminiErrorResponse {
   error?: { message?: unknown; status?: unknown }
 }
 
-function extractText(body: GeminiResponse): string {
+interface GeminiTextExtractionState {
+  thinkingOpen: boolean
+}
+
+function extractText(
+  body: GeminiResponse,
+  state: GeminiTextExtractionState = { thinkingOpen: false },
+  closeThoughts = true,
+): string {
   let text = ''
   const cands = Array.isArray(body.candidates) ? body.candidates : []
   for (const c of cands) {
     const parts = Array.isArray(c?.content?.parts) ? c.content!.parts : []
     for (const p of parts) {
-      if (typeof p.text === 'string') text += p.text
+      if (p.thought === true && typeof p.text === 'string') {
+        if (!state.thinkingOpen) {
+          text += '<Thoughts>\n'
+          state.thinkingOpen = true
+        }
+        text += p.text
+      } else if (typeof p.text === 'string') {
+        if (state.thinkingOpen) {
+          text += '</Thoughts>\n\n'
+          state.thinkingOpen = false
+        }
+        text += p.text
+      }
     }
+  }
+  if (closeThoughts && state.thinkingOpen) {
+    text += '</Thoughts>\n\n'
+    state.thinkingOpen = false
   }
   return text
 }
@@ -466,6 +566,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
   const decoder = new TextDecoder()
   let buf = ''
   let finishReason: CompletionStreamFrame['finishReason'] = 'stop'
+  const extractionState: GeminiTextExtractionState = { thinkingOpen: false }
 
   try {
     while (true) {
@@ -504,7 +605,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
           yield { kind: 'error', error: `invalid upstream stream JSON: ${msg}` }
           return
         }
-        const text = extractText(frame)
+        const text = extractText(frame, extractionState, false)
         if (text.length > 0) {
           yield { kind: 'token', content: text }
         }
@@ -532,6 +633,7 @@ export async function* runGeminiStream(req: GeminiRequest): AsyncGenerator<Compl
       yield { kind: 'error', error: 'truncated upstream stream event' }
       return
     }
+    if (extractionState.thinkingOpen) yield { kind: 'token', content: '</Thoughts>\n\n' }
     yield { kind: 'done', finishReason }
   }
 }

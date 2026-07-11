@@ -1318,7 +1318,7 @@ export const languageChinese = {
     quickSettings: '快速设置',
     toggleVoice: '切换语音',
     toggleLog: '切换日志',
-    previewRequest: '预览请求',
+    previewRequest: '预览组装后的提示词',
     import: '导入',
     export: '导出',
     webcam: '切换摄像头',

@@ -302,6 +302,151 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+describe('dispatchChatProvider final wire controls', () => {
+  it('sends supported runtime controls, schema, prediction, multi-generation, and logit bias', async () => {
+    const database = db({
+      aiModel: 'reverse_proxy',
+      customProxyRequestModel: 'wire-model',
+      customAPIFormat: LLMFormat.OpenAICompatible,
+      forceReplaceUrl: 'https://wire.example/v1/chat/completions',
+      proxyKey: 'sk-wire',
+      autofillRequestUrl: true,
+      newOAIHandle: true,
+      gptVisionQuality: 'high',
+      temperature: 73,
+      top_p: 0.82,
+      top_k: 40,
+      min_p: 0.12,
+      top_a: 0.08,
+      repetition_penalty: 1.13,
+      frequencyPenalty: 25,
+      PresensePenalty: 35,
+      generationSeed: 42,
+      jsonSchemaEnabled: true,
+      jsonSchema: 'interface Reply {\nanswer: string\nconfidence?: number\n}',
+      strictJsonSchema: true,
+      OAIPrediction: 'known prefix',
+      genTime: 2,
+      useStreaming: true,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({ database })
+    const captured: CapturedDispatchRequest[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        captured.push(captureRequest(url, init))
+        return new Response(
+          JSON.stringify({
+            choices: [
+              { message: { content: 'first', reasoning_content: 'thought one' } },
+              { message: { content: 'second' } },
+            ],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }) as unknown as typeof fetch,
+    )
+
+    const frames = await dispatchChatProvider({
+      database,
+      profile,
+      formated: [
+        { role: 'system', content: '[Start a new chat]', memo: 'NewChat', removable: true },
+        {
+          role: 'user',
+          content: 'hello',
+          memo: 'internal',
+          attr: ['internal'],
+          multimodals: [{ type: 'image', base64: 'data:image/png;base64,AA' }],
+          thoughts: ['hidden'],
+          cachePoint: true,
+        },
+      ],
+      biases: [
+        ['[[123]]', -50],
+        ['avoid', -100],
+      ],
+      multiGeneration: true,
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(captured).toHaveLength(1)
+    expect(captured[0].body).toMatchObject({
+      model: 'wire-model',
+      stream: false,
+      max_tokens: 64,
+      temperature: 0.73,
+      top_p: 0.82,
+      top_k: 40,
+      min_p: 0.12,
+      top_a: 0.08,
+      repetition_penalty: 1.13,
+      frequency_penalty: 0.25,
+      presence_penalty: 0.35,
+      seed: 42,
+      n: 2,
+      prediction: { type: 'content', content: 'known prefix' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'format',
+          strict: true,
+          schema: {
+            $schema: 'https://json-schema.org/draft/2020-12/schema',
+            type: 'object',
+            additionalProperties: false,
+            properties: { answer: { type: 'string' }, confidence: { type: 'number' } },
+            required: ['answer'],
+          },
+        },
+      },
+      logit_bias: { '123': -50 },
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AA', detail: 'high' } },
+            { type: 'text', text: 'hello' },
+          ],
+        },
+      ],
+    })
+    expect(JSON.stringify(captured[0].body.messages)).not.toMatch(
+      /NewChat|memo|removable|attr|multimodals|thoughts|cachePoint/u,
+    )
+    expect(Object.keys(captured[0].body.logit_bias as Record<string, number>).length).toBeGreaterThan(1)
+    expect(emitted).toEqual([
+      { kind: 'token', content: '<Thoughts>\nthought one\n</Thoughts>\nfirst' },
+      { kind: 'done', finishReason: 'stop', alternates: ['second'] },
+    ])
+  })
+
+  it('applies the configured JSON extraction path to buffered provider output', async () => {
+    const database = db({
+      aiModel: 'echo_model',
+      echoMessage: '```json\n{"reply":{"text":"visible"}}\n```',
+      useStreaming: true,
+      jsonSchemaEnabled: true,
+      jsonSchema: '{"type":"object"}',
+      extractJson: 'reply.text',
+    } as Partial<Database>)
+    const frames = await dispatchChatProvider({
+      database,
+      formated: [{ role: 'user', content: 'hello' }],
+      signal: new AbortController().signal,
+    })
+    const emitted = []
+    for await (const frame of frames) emitted.push(frame)
+
+    expect(emitted).toEqual([
+      { kind: 'token', content: 'visible' },
+      { kind: 'done', finishReason: 'stop' },
+    ])
+  })
+})
+
 describe('dispatchChatProvider profile providerOptions', () => {
   it('emits metadata-only prompt reformat metrics when provider flags change rows', async () => {
     const profile = resolveModelProfile({
@@ -553,7 +698,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers['X-Profile']).toBe('profile')
     expect(captured[0].body.model).toBe('profile-responses-model')
     expect(captured[0].body.profileFlag).toBe(true)
-    expect(captured[0].body.store).toBeUndefined()
+    expect(captured[0].body.store).toBe(false)
   })
 
   it('uses the profile model id for OpenAI Responses Ollama Cloud store ownership', async () => {
@@ -583,7 +728,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers.authorization).toBe('Bearer sk-profile-ollama')
     expect(captured[0].headers['X-Flat']).toBeUndefined()
     expect(captured[0].body.model).toBe('profile-ollama-responses')
-    expect(captured[0].body.store).toBe(false)
+    expect(captured[0].body.store).toBeUndefined()
   })
 
   it('uses Anthropic xcustom profile options over conflicting flat database fields', async () => {
@@ -772,6 +917,16 @@ describe('dispatchChatProvider profile providerOptions', () => {
       aiModel: 'mancer',
       textgenWebUIBlockingURL: 'http://flat-ooba.example.com/api/v1/blocking',
       mancerHeader: 'flat-mancer-key',
+      temperature: 67,
+      localStopStrings: ['STOP\\nHERE'],
+      ooba: {
+        top_p: 0.81,
+        top_k: 73,
+        typical_p: 0.92,
+        repetition_penalty: 1.17,
+        do_sample: false,
+        seed: 42,
+      } as Database['ooba'],
     } as Partial<Database>)
     const captured = captureDispatchRequests(okOobaLegacyResponse())
 
@@ -780,6 +935,16 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured).toHaveLength(1)
     expect(captured[0].url).toBe('http://profile-ooba.example.com/api/v1/generate')
     expect(captured[0].headers['X-API-KEY']).toBe('profile-mancer-key')
+    expect(captured[0].body).toMatchObject({
+      temperature: 0.67,
+      top_p: 0.81,
+      top_k: 73,
+      typical_p: 0.92,
+      repetition_penalty: 1.17,
+      do_sample: false,
+      seed: 42,
+      stopping_strings: ['STOP\nHERE'],
+    })
   })
 
   it('uses Bedrock profile credentials and request model over conflicting flat database fields', async () => {
@@ -811,7 +976,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
     expect(captured[0].headers.Authorization).not.toContain('/us-east-1/bedrock/aws4_request')
     expect(captured[0].body.anthropic_version).toBe('bedrock-2023-05-31')
     expect(captured[0].body.system).toBe('profile system 1\n\nprofile system 2')
-    expect(captured[0].body.messages).toEqual([{ role: 'user', content: 'hello' }])
+    expect(captured[0].body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
     expect(captured[0].body.model).toBeUndefined()
   })
 
@@ -835,7 +1000,7 @@ describe('dispatchChatProvider profile providerOptions', () => {
       'https://bedrock-runtime.eu-central-1.amazonaws.com/model/global.anthropic.claude-sonnet-4-5-20250929-v1%3A0/invoke',
     )
     expect(captured[0].headers.Authorization).toContain('/eu-central-1/bedrock/aws4_request')
-    expect(captured[0].body.messages).toEqual([{ role: 'user', content: 'hello' }])
+    expect(captured[0].body.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hello' }] }])
   })
 
   it('uses Google AI Studio profile API key and request model over conflicting flat database fields', async () => {

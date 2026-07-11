@@ -15,7 +15,14 @@
   import BulkEditActions from './HypaV3Modal/bulk-edit-actions.svelte'
   import BulkResummaryResult from './HypaV3Modal/bulk-resummary-result.svelte'
   import ServerMemoryJobs from './HypaV3Modal/server-memory-jobs.svelte'
-  import { canUseServerMemoryApi } from 'src/ts/process/request/serverMemory'
+  import {
+    canUseServerMemoryApi,
+    deleteServerMemorySummary,
+    listServerMemorySummaries,
+    patchServerMemorySummary,
+    type ServerMemorySummary,
+  } from 'src/ts/process/request/serverMemory'
+  import { subscribeServerMemoryJobEvents } from 'src/ts/server/memoryJobEvents'
 
   import type {
     SummaryItemState,
@@ -39,7 +46,22 @@
   const serverBackedMemoryMode = $derived(canUseServerMemoryApi())
   const currentChatId = $derived(currentChat.id ?? '')
   const defaultHypaV3Data = $derived(createInitialHypaV3Data())
-  const hypaV3Data = $derived(currentChat.hypaV3Data ?? defaultHypaV3Data)
+  const legacyHypaV3Data = $derived(currentChat.hypaV3Data ?? defaultHypaV3Data)
+
+  interface ServerSummaryView extends SerializableSummary {
+    serverId: string
+  }
+
+  let serverHypaV3Data = $state<SerializableHypaV3Data>(createInitialHypaV3Data())
+  let serverMemoryLoading = $state(false)
+  let serverMemoryError = $state<string | null>(null)
+  let serverSummaryRefreshEpoch = 0
+  const serverSummaryMutationQueues = new Map<string, Promise<void>>()
+  const dirtyServerSummaryIds = new Set<string>()
+  const deletedServerSummaryIds = new Map<string, number>()
+  const serverSummaryEditVersions = new Map<string, number>()
+  let pendingServerSummaryRefreshChatId: string | null = null
+  const hypaV3Data = $derived(serverBackedMemoryMode ? serverHypaV3Data : legacyHypaV3Data)
 
   function createInitialHypaV3Data(): SerializableHypaV3Data {
     return {
@@ -48,6 +70,241 @@
       lastSelectedSummaries: [],
     }
   }
+
+  function isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+  }
+
+  function serverSummaryView(summary: ServerMemorySummary): ServerSummaryView {
+    const metadata = isObject(summary.metadata) ? summary.metadata : {}
+    const chatMemos = Array.isArray(metadata.chatMemos)
+      ? metadata.chatMemos.filter((memo): memo is string => typeof memo === 'string')
+      : []
+    const tags = Array.isArray(metadata.tags)
+      ? metadata.tags.filter((tag): tag is string => typeof tag === 'string')
+      : undefined
+
+    return {
+      serverId: summary.id,
+      text: summary.text,
+      chatMemos,
+      isImportant: metadata.isImportant === true,
+      ...(typeof metadata.categoryId === 'string' ? { categoryId: metadata.categoryId } : {}),
+      ...(tags && tags.length > 0 ? { tags } : {}),
+    }
+  }
+
+  function cloneLegacyCategories(): SerializableHypaV3Data['categories'] {
+    return (legacyHypaV3Data.categories ?? []).map((category) => ({ ...category }))
+  }
+
+  async function refreshServerSummaries(
+    chatId: string,
+    categoriesSnapshot: SerializableHypaV3Data['categories'] = cloneLegacyCategories(),
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const refreshEpoch = ++serverSummaryRefreshEpoch
+    const editVersionsAtStart = new Map(serverSummaryEditVersions)
+    serverMemoryLoading = true
+    serverMemoryError = null
+    const result = await listServerMemorySummaries(chatId, undefined, signal)
+    if (refreshEpoch !== serverSummaryRefreshEpoch || currentChatId !== chatId) return
+
+    serverMemoryLoading = false
+    if (result.status === 'ok') {
+      const localSummaries = new Map(
+        serverHypaV3Data.summaries.map((summary) => [(summary as ServerSummaryView).serverId, summary]),
+      )
+      const summaries = result.summaries.flatMap((summary) => {
+        const deletedAtVersion = deletedServerSummaryIds.get(summary.id)
+        if (deletedAtVersion !== undefined && (editVersionsAtStart.get(summary.id) ?? 0) < deletedAtVersion) {
+          return []
+        }
+        const local = localSummaries.get(summary.id)
+        const changedDuringRefresh =
+          (serverSummaryEditVersions.get(summary.id) ?? 0) !== (editVersionsAtStart.get(summary.id) ?? 0)
+        return [
+          local && (dirtyServerSummaryIds.has(summary.id) || changedDuringRefresh) ? local : serverSummaryView(summary),
+        ]
+      })
+      // A successful list that began after a deletion is authoritative: retire
+      // the stale-request guard so a later job may legitimately recreate the ID.
+      for (const [summaryId, deletedAtVersion] of deletedServerSummaryIds) {
+        if ((editVersionsAtStart.get(summaryId) ?? 0) >= deletedAtVersion) {
+          deletedServerSummaryIds.delete(summaryId)
+        }
+      }
+      serverHypaV3Data = {
+        summaries,
+        categories: categoriesSnapshot,
+        lastSelectedSummaries: [],
+      }
+      return
+    }
+    if (signal?.aborted) return
+    serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
+  }
+
+  function markServerSummaryEdited(summaryId: string): number {
+    dirtyServerSummaryIds.add(summaryId)
+    const version = (serverSummaryEditVersions.get(summaryId) ?? 0) + 1
+    serverSummaryEditVersions.set(summaryId, version)
+    return version
+  }
+
+  function acknowledgeServerSummaryEdit(summaryId: string, editVersion: number): void {
+    if ((serverSummaryEditVersions.get(summaryId) ?? 0) !== editVersion) return
+    // The acknowledgement itself is a version boundary: any list request that
+    // started before the PATCH completed must not overwrite this accepted row.
+    serverSummaryEditVersions.set(summaryId, editVersion + 1)
+    dirtyServerSummaryIds.delete(summaryId)
+  }
+
+  function queueServerSummaryMutation(summaryId: string, operation: () => Promise<void>): Promise<void> {
+    const previous = serverSummaryMutationQueues.get(summaryId) ?? Promise.resolve()
+    const next = previous
+      .catch(() => undefined)
+      .then(operation)
+      .catch((error) => {
+        serverMemoryError = error instanceof Error ? error.message : String(error)
+      })
+    serverSummaryMutationQueues.set(summaryId, next)
+    void next.then(() => {
+      if (serverSummaryMutationQueues.get(summaryId) === next) serverSummaryMutationQueues.delete(summaryId)
+      if (
+        pendingServerSummaryRefreshChatId &&
+        serverSummaryMutationQueues.size === 0 &&
+        dirtyServerSummaryIds.size === 0
+      ) {
+        const chatId = pendingServerSummaryRefreshChatId
+        pendingServerSummaryRefreshChatId = null
+        if (currentChatId === chatId) void refreshServerSummaries(chatId)
+      }
+    })
+    return next
+  }
+
+  async function handleServerSummaryChanged(summaryIndex: number): Promise<void> {
+    if (!serverBackedMemoryMode) return
+    const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
+    if (!summary) return
+    const summaryId = summary.serverId
+    const editVersion = markServerSummaryEdited(summaryId)
+    const patch = {
+      text: summary.text,
+      isImportant: summary.isImportant,
+      categoryId: summary.categoryId ?? null,
+      tags: summary.tags ?? null,
+    }
+
+    await queueServerSummaryMutation(summaryId, async () => {
+      const result = await patchServerMemorySummary(summaryId, patch)
+      if (result.status === 'ok') {
+        acknowledgeServerSummaryEdit(summaryId, editVersion)
+        serverMemoryError = null
+        return
+      }
+      acknowledgeServerSummaryEdit(summaryId, editVersion)
+      serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
+      await refreshServerSummaries(currentChatId)
+    })
+  }
+
+  function handleServerSummaryInput(summaryIndex: number): void {
+    if (!serverBackedMemoryMode) return
+    const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
+    if (!summary) return
+    markServerSummaryEdited(summary.serverId)
+  }
+
+  async function deleteServerSummaryAt(summaryIndex: number): Promise<boolean> {
+    const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
+    if (!summary) return false
+    const summaryId = summary.serverId
+    let deleted = false
+    await queueServerSummaryMutation(summaryId, async () => {
+      const result = await deleteServerMemorySummary(summaryId)
+      if (result.status !== 'ok') {
+        serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
+        return
+      }
+      const liveIndex = serverHypaV3Data.summaries.findIndex(
+        (candidate) => (candidate as ServerSummaryView).serverId === summaryId,
+      )
+      if (liveIndex !== -1) serverHypaV3Data.summaries.splice(liveIndex, 1)
+      dirtyServerSummaryIds.delete(summaryId)
+      const deleteVersion = (serverSummaryEditVersions.get(summaryId) ?? 0) + 1
+      serverSummaryEditVersions.set(summaryId, deleteVersion)
+      deletedServerSummaryIds.set(summaryId, deleteVersion)
+      serverMemoryError = null
+      deleted = true
+    })
+    if (!deleted) await refreshServerSummaries(currentChatId)
+    return deleted
+  }
+
+  async function handleServerSummaryDelete(summaryIndex: number): Promise<void> {
+    if (!serverBackedMemoryMode) return
+    await deleteServerSummaryAt(summaryIndex)
+  }
+
+  async function handleServerSummaryDeleteAfter(summaryIndex: number): Promise<void> {
+    if (!serverBackedMemoryMode) return
+    const ids = serverHypaV3Data.summaries
+      .slice(summaryIndex + 1)
+      .map((summary) => (summary as ServerSummaryView).serverId)
+      .reverse()
+    for (const summaryId of ids) {
+      const liveIndex = serverHypaV3Data.summaries.findIndex(
+        (summary) => (summary as ServerSummaryView).serverId === summaryId,
+      )
+      if (liveIndex === -1) continue
+      if (!(await deleteServerSummaryAt(liveIndex))) break
+    }
+  }
+
+  async function refreshServerSummariesAfterMutations(chatId: string): Promise<void> {
+    while (currentChatId === chatId && serverSummaryMutationQueues.size > 0) {
+      await Promise.all([...serverSummaryMutationQueues.values()])
+    }
+    if (currentChatId !== chatId) return
+    if (dirtyServerSummaryIds.size > 0) {
+      pendingServerSummaryRefreshChatId = chatId
+      return
+    }
+    await refreshServerSummaries(chatId)
+  }
+
+  $effect(() => {
+    if (!serverBackedMemoryMode || currentChatId.length === 0) return
+    const chatId = currentChatId
+    dirtyServerSummaryIds.clear()
+    deletedServerSummaryIds.clear()
+    serverSummaryEditVersions.clear()
+    pendingServerSummaryRefreshChatId = null
+    const categoriesSnapshot = untrack(() => cloneLegacyCategories())
+    tagManagerState.isOpen = false
+    tagManagerState.currentSummaryIndex = -1
+    tagManagerState.currentSummaryId = undefined
+    tagManagerState.editingTag = ''
+    tagManagerState.editingTagIndex = -1
+    serverHypaV3Data = {
+      summaries: [],
+      categories: categoriesSnapshot,
+      lastSelectedSummaries: [],
+    }
+    const controller = new AbortController()
+    void refreshServerSummaries(chatId, categoriesSnapshot, controller.signal)
+    return () => controller.abort()
+  })
+
+  $effect(() => {
+    if (!serverBackedMemoryMode) return
+    return subscribeServerMemoryJobEvents((event) => {
+      if (event.chatId !== currentChatId || event.job.kind !== 'summarize' || event.job.status !== 'completed') return
+      void refreshServerSummariesAfterMutations(currentChatId)
+    })
+  })
 
   let categories = $derived(
     (() => {
@@ -119,6 +376,7 @@
 
   $effect(() => {
     if ($hypaV3ModalOpen) {
+      hypaV3Data.summaries.length
       const currentImportantCount = untrack(() => hypaV3Data.summaries.filter((s) => s.isImportant).length)
 
       if (currentImportantCount > 0) {
@@ -147,6 +405,7 @@
 
   function handleOpenTagManager(summaryIndex: number) {
     tagManagerState.currentSummaryIndex = summaryIndex
+    tagManagerState.currentSummaryId = (hypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined)?.serverId
     tagManagerState.isOpen = true
   }
 
@@ -628,7 +887,15 @@
           <ServerMemoryJobs chatId={currentChatId} />
         {/if}
 
-        {#if hypaV3Data.summaries.length === 0}
+        {#if serverBackedMemoryMode && serverMemoryLoading}
+          <div class="p-4 text-center sm:p-3 md:p-4 text-zinc-400">
+            {language.loading}
+          </div>
+        {:else if serverBackedMemoryMode && serverMemoryError}
+          <div class="p-4 text-center sm:p-3 md:p-4 text-rose-300">
+            {serverMemoryError}
+          </div>
+        {:else if hypaV3Data.summaries.length === 0}
           <div class="p-4 text-center sm:p-3 md:p-4 text-zinc-400">
             {language.hypaV3Modal.noSummariesLabel}
           </div>
@@ -703,10 +970,15 @@
               {categories}
               {bulkEditState}
               {uiState}
-              readOnly={serverBackedMemoryMode}
+              readOnly={false}
+              tagsReadOnly={false}
               onToggleSummarySelection={handleToggleSummarySelection}
               onOpenTagManager={handleOpenTagManager}
-              onToggleCollapse={handleToggleCollapse} />
+              onToggleCollapse={handleToggleCollapse}
+              onSummaryInput={serverBackedMemoryMode ? handleServerSummaryInput : undefined}
+              onSummaryChanged={serverBackedMemoryMode ? handleServerSummaryChanged : undefined}
+              onDeleteSummary={serverBackedMemoryMode ? handleServerSummaryDelete : undefined}
+              onDeleteAfter={serverBackedMemoryMode ? handleServerSummaryDeleteAfter : undefined} />
           {/if}
         {/each}
 
@@ -750,6 +1022,9 @@
     bind:searchState
     {filterState}
     onCategoryFilter={handleCategoryFilter} />
-
-  <TagManagerModal bind:tagManagerState />
 {/if}
+
+<TagManagerModal
+  bind:tagManagerState
+  {hypaV3Data}
+  onSummaryChanged={serverBackedMemoryMode ? handleServerSummaryChanged : undefined} />

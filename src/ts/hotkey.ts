@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { alertMd, alertSelect, alertToast, alertWait, doingAlert, alertRequestLogs } from './alert'
-import { changeToPreset as changeToPreset2, getDatabase } from './storage/database.svelte'
+import { getDatabase, selectModelPreset } from './storage/database.svelte'
 import {
   alertStore,
   DBState,
@@ -20,6 +20,10 @@ import { language } from 'src/lang'
 import { updateTextThemeAndCSS } from './gui/colorscheme'
 import { defaultHotkeys } from './defaulthotkeys'
 import { doingChat, previewBody, sendChat } from './process/index.svelte'
+import {
+  resolveActiveChatGenerationSettings,
+  saveActiveChatGenerationSettingsSelection,
+} from './activeChatGenerationSettings'
 
 export function initHotkey() {
   document.addEventListener('keydown', async (ev) => {
@@ -152,10 +156,15 @@ export function initHotkey() {
             previewPrompt: true,
           })
 
+          let parsedPreview: unknown
+          try {
+            parsedPreview = JSON.parse(previewBody)
+          } catch {
+            parsedPreview = previewBody
+          }
           let md = ''
           md += '### Prompt\n'
-          md +=
-            '```json\n' + JSON.stringify(JSON.parse(previewBody), null, 2).replaceAll('```', '\\`\\`\\`') + '\n```\n'
+          md += '```json\n' + JSON.stringify(parsedPreview, null, 2).replaceAll('```', '\\`\\`\\`') + '\n```\n'
           alertMd(md)
           return
         }
@@ -434,13 +443,19 @@ export function initMobileGesture() {
   )
 }
 
-function changeToPreset(num: number) {
+export function changeToPreset(num: number): boolean {
   if (!doingAlert()) {
-    let db = getDatabase()
-    let pres = db.botPresets
-    if (pres.length > num) {
-      alertToast(`Changed to Preset: ${pres[num].name}`)
-      changeToPreset2(num)
+    const db = getDatabase()
+    const pres = Array.isArray(db.modelPresets) ? db.modelPresets : []
+    const preset = Number.isInteger(num) && num >= 0 ? pres[num] : undefined
+    if (preset && typeof preset.id === 'string' && preset.id.length > 0) {
+      const activeChat = resolveActiveChatGenerationSettings()
+      const selected = activeChat.identity.chatId
+        ? saveActiveChatGenerationSettingsSelection({ modelPresetId: preset.id })
+        : (selectModelPreset(num), true)
+      if (selected) alertToast(`${language.modelPresets}: ${preset.name ?? ''}`)
+      return selected
     }
   }
+  return false
 }

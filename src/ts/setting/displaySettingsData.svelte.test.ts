@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
+const globalApiSpies = vi.hoisted(() => ({
+  downloadFile: vi.fn(),
+  saveAsset: vi.fn(),
+  toggleFullscreen: vi.fn(),
+}))
+
+vi.mock('../globalApi.svelte', () => globalApiSpies)
+
 vi.mock('src/ts/process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
   getModuleLorebooks: vi.fn(() => []),
@@ -8,7 +16,7 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-import { displayThemeSettingsItems } from './displaySettingsData.svelte'
+import { displayOtherSettingsItems, displayThemeSettingsItems } from './displaySettingsData.svelte'
 import type { SettingContext } from './types'
 
 function contextForTheme(theme: string): SettingContext {
@@ -28,5 +36,13 @@ describe('display theme settings data', () => {
     expect(customGuiButton?.condition?.(contextForTheme('fastify'))).toBe(false)
     expect(guiHtmlEditor?.bindKey).toBe('guiHTML')
     expect(guiHtmlEditor?.condition?.(contextForTheme('customHTML'))).toBe(true)
+  })
+
+  it('wires the fullscreen setting to the browser fullscreen helper', () => {
+    const fullscreen = displayOtherSettingsItems.find((item) => item.id === 'display.fullScreen')
+
+    fullscreen?.onChange?.(true, contextForTheme('fastify'))
+
+    expect(globalApiSpies.toggleFullscreen).toHaveBeenCalledOnce()
   })
 })

@@ -21,9 +21,11 @@ vi.mock('../../../server/activeWriterSession', () => ({
 import {
   applyServerHypaV3Progress,
   cancelServerMemoryJob,
+  deleteServerMemorySummary,
   listServerMemoryChunks,
   listServerMemoryJobs,
   listServerMemorySummaries,
+  patchServerMemorySummary,
   type ServerMemoryChunk,
   type ServerMemoryJob,
   type ServerMemorySummary,
@@ -153,6 +155,64 @@ describe('server memory API adapter', () => {
     await listServerMemorySummaries('chat 1')
 
     expect(memoryFetch.calls[0].url).toBe('/api/v1/memory/summaries/chat%201')
+  })
+
+  it('patches summary text and metadata through the active-writer API', async () => {
+    const memoryFetch = makeMemoryFetch((_url, init) => {
+      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
+      expect((init.headers as Record<string, string>)['content-type']).toBe('application/json')
+      expect(JSON.parse(String(init.body))).toEqual({
+        text: 'edited',
+        isImportant: true,
+        categoryId: 'story',
+        tags: ['plot'],
+      })
+      return {
+        summary: {
+          ...baseSummary,
+          text: 'edited',
+          metadata: { isImportant: true, categoryId: 'story', tags: ['plot'] },
+          tokens: 0,
+        },
+      }
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    const result = await patchServerMemorySummary('summary/1', {
+      text: 'edited',
+      isImportant: true,
+      categoryId: 'story',
+      tags: ['plot'],
+    })
+
+    expect(result).toMatchObject({
+      status: 'ok',
+      summary: { id: 'summary-1', text: 'edited', metadata: { isImportant: true }, tokens: 0 },
+    })
+    expect(memoryFetch.calls[0]).toEqual({
+      url: '/api/v1/memory/summaries/summary%2F1',
+      method: 'PATCH',
+      authHeader: 'test-auth-token',
+      ifNoneMatch: null,
+    })
+  })
+
+  it('deletes summaries through the active-writer API', async () => {
+    const memoryFetch = makeMemoryFetch((_url, init) => {
+      expect((init.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
+      return { summary: baseSummary }
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    const result = await deleteServerMemorySummary('summary/1')
+
+    expect(result).toEqual({ status: 'ok', summary: baseSummary })
+    expect(memoryFetch.calls[0]).toEqual({
+      url: '/api/v1/memory/summaries/summary%2F1',
+      method: 'DELETE',
+      authHeader: 'test-auth-token',
+      ifNoneMatch: null,
+    })
   })
 
   it('lists jobs with optional route filters', async () => {

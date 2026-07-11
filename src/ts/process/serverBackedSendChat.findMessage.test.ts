@@ -15,6 +15,7 @@ import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serv
 import { DBState } from '../stores.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
+import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
 
 function chatWith(messages: Partial<Message>[]): Chat {
   return { id: 'chat-1', message: messages as Message[] } as unknown as Chat
@@ -166,9 +167,11 @@ describe('server-backed terminal stable chat target (R-02)', () => {
 
   beforeEach(() => {
     originalDb = DBState.db
+    resetRerollNavigation()
   })
 
   afterEach(() => {
+    resetRerollNavigation()
     DBState.db = originalDb
   })
 
@@ -194,6 +197,42 @@ describe('server-backed terminal stable chat target (R-02)', () => {
     expect(result.currentChat.id).toBe('chat-target')
     expect(target.message[0].data).toBe('stable final text')
     expect(staleIndexChat.message[0].data).toBe('stale original')
+  })
+
+  it('seeds live reroll navigation from terminal multi-generation choices', async () => {
+    const { char, target } = seedReorderedTerminalChats()
+    target.message[0].data = 'primary reply'
+
+    const result = await applyServerBackedTerminal({
+      terminal: {
+        status: 'done',
+        done: {
+          result: 'primary reply',
+          generationId: 'gen-stable',
+          alternates: ['second reply', 'third reply'],
+        },
+      },
+      currentChar: char,
+      currentChat: target,
+      selectedChar: 0,
+      selectedChat: 0,
+      targetCharacterId: 'char-stable',
+      targetChatId: 'chat-target',
+      generationInfo: { generationId: 'gen-stable' },
+    })
+
+    expect(result.status).toBe('ok')
+    expect(getRerollBuffer().map((candidate) => candidate[0]?.data)).toEqual([
+      'primary reply',
+      'second reply',
+      'third reply',
+    ])
+    expect(getRerollBuffer().map((candidate) => candidate[0]?.chatId)).toEqual([
+      'gen-stable',
+      'gen-stable:alternate:1',
+      'gen-stable:alternate:2',
+    ])
+    expect(getRerollId()).toBe(0)
   })
 
   it('applies terminal post-generation patches to the stable chat id after chat reorder', async () => {

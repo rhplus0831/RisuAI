@@ -12,6 +12,7 @@ import type { Attachment } from 'svelte/attachments'
 import { mount, unmount, type Snippet } from 'svelte'
 import PopupList from 'src/lib/UI/PopupList.svelte'
 import { getPersonaDisplayName } from './personaDisplayName'
+export { isLastCharPunctuation, trimUntilPunctuation } from './util/punctuation'
 export interface Messagec extends Message {
   index: number
 }
@@ -579,79 +580,6 @@ export function uuidtoNumber(uuid: string) {
   let result = 0
   for (let i = 0; i < uuid.length; i++) {
     result += uuid.charCodeAt(i)
-  }
-  return result
-}
-
-export function isLastCharPunctuation(s: string) {
-  const lastChar = s.trim().at(-1)
-  const punctuation = [
-    '.',
-    '!',
-    '?',
-    '。',
-    '！',
-    '？',
-    '…',
-    '@',
-    '#',
-    '$',
-    '%',
-    '^',
-    '&',
-    '*',
-    '(',
-    ')',
-    '-',
-    '_',
-    '+',
-    '=',
-    '{',
-    '}',
-    '[',
-    ']',
-    '|',
-    '\\',
-    ':',
-    ';',
-    '<',
-    '>',
-    ',',
-    '.',
-    '/',
-    '~',
-    '`',
-    ' ',
-    '¡',
-    '¿',
-    '‽',
-    '⁉',
-    "'",
-    '"',
-  ]
-  if (
-    lastChar &&
-    !(
-      punctuation.indexOf(lastChar) !== -1 ||
-      //spacing modifier letters
-      (lastChar.charCodeAt(0) >= 0x02b0 && lastChar.charCodeAt(0) <= 0x02ff) ||
-      //combining diacritical marks
-      (lastChar.charCodeAt(0) >= 0x0300 && lastChar.charCodeAt(0) <= 0x036f) ||
-      //hebrew punctuation
-      (lastChar.charCodeAt(0) >= 0x0590 && lastChar.charCodeAt(0) <= 0x05cf) ||
-      //CJK symbols and punctuation
-      (lastChar.charCodeAt(0) >= 0x3000 && lastChar.charCodeAt(0) <= 0x303f)
-    )
-  ) {
-    return false
-  }
-  return true
-}
-
-export function trimUntilPunctuation(s: string) {
-  let result = s
-  while (result.length > 0 && !isLastCharPunctuation(result)) {
-    result = result.slice(0, -1)
   }
   return result
 }

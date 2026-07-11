@@ -256,6 +256,94 @@ describe('Phase 8-7a memory read routes', () => {
     ])
   })
 
+  it('edits summary text and Important metadata without discarding job metadata', async () => {
+    seedMemoryRows(harness.dataDir)
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/memory/summaries/summary-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        text: 'edited first summary',
+        isImportant: true,
+        categoryId: 'story',
+        tags: [' favorite ', 'favorite', 'plot'],
+      },
+    })
+
+    expect(edited.statusCode).toBe(200)
+    expect((edited.json() as { summary: MemorySummary }).summary).toMatchObject({
+      id: 'summary-a',
+      text: 'edited first summary',
+      tokens: 0,
+      metadata: {
+        chatMemos: ['msg-1'],
+        isImportant: true,
+        categoryId: 'story',
+        tags: ['favorite', 'plot'],
+      },
+    })
+
+    const cleared = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/memory/summaries/summary-a',
+      headers: { 'risu-auth': assertion },
+      payload: { isImportant: false, categoryId: null, tags: null },
+    })
+    expect(cleared.statusCode).toBe(200)
+    expect((cleared.json() as { summary: MemorySummary }).summary.metadata).toEqual({
+      chatMemos: ['msg-1'],
+      isImportant: false,
+    })
+  })
+
+  it('deletes one server summary and leaves its chunk available for later regeneration', async () => {
+    seedMemoryRows(harness.dataDir)
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/memory/summaries/summary-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect((deleted.json() as { summary: MemorySummary }).summary.id).toBe('summary-a')
+
+    const summaries = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/summaries/chat-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect((summaries.json() as { summaries: MemorySummary[] }).summaries.map((summary) => summary.id)).toEqual([
+      'summary-b',
+    ])
+
+    const chunks = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/chunks/chat-1',
+      headers: { 'risu-auth': assertion },
+    })
+    expect((chunks.json() as { chunks: MemoryChunk[] }).chunks.map((chunk) => chunk.id)).toContain('chunk-first')
+  })
+
+  it('validates summary mutations and returns 404 for missing rows', async () => {
+    seedMemoryRows(harness.dataDir)
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/memory/summaries/summary-a',
+      headers: { 'risu-auth': assertion },
+      payload: { isImportant: 'yes' },
+    })
+    expect(invalid.statusCode).toBe(400)
+
+    const missing = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/memory/summaries/missing',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(missing.statusCode).toBe(404)
+  })
+
   it('returns empty arrays for chats with no chunks or summaries', async () => {
     seedMemoryRows(harness.dataDir)
 

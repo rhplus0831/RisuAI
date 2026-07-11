@@ -59,6 +59,12 @@ export interface CreateMemorySummaryInput {
   tokens: number
 }
 
+export interface UpdateMemorySummaryInput {
+  text?: string
+  metadata?: unknown | null
+  tokens?: number
+}
+
 export interface MemoryEmbedding {
   id: string
   chatId: string
@@ -602,6 +608,47 @@ export function getMemorySummary(db: DatabaseSync, id: string): MemorySummary | 
   return row ? mapMemorySummaryRow(row) : null
 }
 
+export function updateMemorySummary(
+  db: DatabaseSync,
+  id: string,
+  input: UpdateMemorySummaryInput,
+): MemorySummary | null {
+  requireString(id, 'summary id')
+  const assignments: string[] = []
+  const values: SqlValue[] = []
+
+  if (input.text !== undefined) {
+    if (typeof input.text !== 'string') {
+      throw new ValidationError('summary text must be a string')
+    }
+    assignments.push('text = ?')
+    values.push(input.text)
+  }
+  if (Object.prototype.hasOwnProperty.call(input, 'metadata')) {
+    assignments.push('metadata_json = ?')
+    values.push(stringifyNullableMetadata(input.metadata))
+  }
+  if (input.tokens !== undefined) {
+    requireNonNegativeInteger(input.tokens, 'summary tokens')
+    assignments.push('tokens = ?')
+    values.push(input.tokens)
+  }
+  if (assignments.length === 0) {
+    throw new ValidationError('memory summary update must include at least one field')
+  }
+
+  runStatement(db.prepare(`UPDATE memory_summaries SET ${assignments.join(', ')} WHERE id = ?`), ...values, id)
+  return getMemorySummary(db, id)
+}
+
+export function deleteMemorySummary(db: DatabaseSync, id: string): MemorySummary | null {
+  requireString(id, 'summary id')
+  const existing = getMemorySummary(db, id)
+  if (!existing) return null
+  runStatement(db.prepare('DELETE FROM memory_summaries WHERE id = ?'), id)
+  return existing
+}
+
 export function listMemorySummaries(
   db: DatabaseSync,
   filter: { chatId?: string; chunkId?: string; model?: string } = {},
@@ -610,26 +657,33 @@ export function listMemorySummaries(
   const values: SqlValue[] = []
   if (filter.chatId !== undefined) {
     requireString(filter.chatId, 'chat id')
-    conditions.push('chat_id = ?')
+    conditions.push('memory_summaries.chat_id = ?')
     values.push(filter.chatId)
   }
   if (filter.chunkId !== undefined) {
     requireString(filter.chunkId, 'chunk id')
-    conditions.push('chunk_id = ?')
+    conditions.push('memory_summaries.chunk_id = ?')
     values.push(filter.chunkId)
   }
   if (filter.model !== undefined) {
     requireString(filter.model, 'summary model')
-    conditions.push('model = ?')
+    conditions.push('memory_summaries.model = ?')
     values.push(filter.model)
   }
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
   const rows = allRows<MemorySummaryRow>(
     db.prepare(`
-        SELECT *
+        SELECT memory_summaries.*
         FROM memory_summaries
+        LEFT JOIN memory_chunks ON memory_chunks.id = memory_summaries.chunk_id
         ${where}
-        ORDER BY chat_id, created_at, id
+        ORDER BY
+          memory_summaries.chat_id,
+          CASE WHEN memory_chunks.id IS NULL THEN 1 ELSE 0 END,
+          memory_chunks.range_start_seq,
+          memory_chunks.range_end_seq,
+          memory_summaries.created_at,
+          memory_summaries.id
       `),
     ...values,
   )

@@ -62,6 +62,7 @@ export interface CategoryManagerState {
 export interface TagManagerState {
   isOpen: boolean
   currentSummaryIndex: number
+  currentSummaryId?: string
   editingTag: string
   editingTagIndex: number
 }

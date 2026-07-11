@@ -66,6 +66,66 @@ describe('runOobaLegacy', () => {
     expect(headers['X-API-KEY']).toBe('mancer-key')
   })
 
+  it('forwards the retained Ooba sampler block instead of replacing it with hard-coded defaults', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ results: [{ text: 'x' }] })
+    })
+    const resolved = resolveOobaLegacyRequest({
+      messages: [{ role: 'user', content: 'hi' }],
+      baseUrl: 'http://example.com/api',
+      doSample: false,
+      seed: 42,
+      topP: 0.81,
+      topK: 73,
+      typicalP: 0.92,
+      repetitionPenalty: 1.17,
+      encoderRepetitionPenalty: 1.03,
+      minLength: 4,
+      noRepeatNgramSize: 3,
+      numBeams: 2,
+      penaltyAlpha: 0.2,
+      lengthPenalty: 1.1,
+      topA: 0.08,
+      tfs: 0.95,
+      epsilonCutoff: 0.001,
+      etaCutoff: 0.002,
+      earlyStopping: true,
+      addBosToken: false,
+      banEosToken: true,
+      skipSpecialTokens: false,
+      stoppingStrings: ['STOP'],
+      signal: new AbortController().signal,
+    })!
+
+    await runOobaLegacy(resolved)
+
+    expect(JSON.parse(captured!.body as string)).toMatchObject({
+      do_sample: false,
+      seed: 42,
+      top_p: 0.81,
+      top_k: 73,
+      typical_p: 0.92,
+      repetition_penalty: 1.17,
+      encoder_repetition_penalty: 1.03,
+      min_length: 4,
+      no_repeat_ngram_size: 3,
+      num_beams: 2,
+      penalty_alpha: 0.2,
+      length_penalty: 1.1,
+      top_a: 0.08,
+      tfs: 0.95,
+      epsilon_cutoff: 0.001,
+      eta_cutoff: 0.002,
+      early_stopping: true,
+      add_bos_token: false,
+      ban_eos_token: true,
+      skip_special_tokens: false,
+      stopping_strings: ['STOP'],
+    })
+  })
+
   it('returns fail with raw body on non-2xx', async () => {
     vi.stubGlobal('fetch', async () => new Response('nope', { status: 500 }))
     const resolved = resolveOobaLegacyRequest({

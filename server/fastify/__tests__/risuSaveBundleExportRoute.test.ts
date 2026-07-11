@@ -84,7 +84,7 @@ async function stopHarness(h: Harness): Promise<void> {
   rmSync(h.dataDir, { recursive: true, force: true })
 }
 
-function persistBundleDatabase(dataDir: string): void {
+function persistBundleDatabase(dataDir: string, account?: unknown): void {
   const db = openDatabase(dataDir)
   try {
     writePersistedWithMessages(db, dataDir, {
@@ -92,6 +92,7 @@ function persistBundleDatabase(dataDir: string): void {
       database: {
         version: 1,
         selectedCharID: 0,
+        ...(account === undefined ? {} : { account }),
         userIcon: MISSING_FILE,
         characters: [
           {
@@ -276,7 +277,7 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
   })
 
   it('exports an original Risu .bin local backup with database.risudat and asset records', async () => {
-    persistBundleDatabase(harness.dataDir)
+    persistBundleDatabase(harness.dataDir, { id: 'legacy-account-id', token: 'legacy-account-token' })
 
     const exported = await authedInject({
       method: 'GET',
@@ -298,7 +299,22 @@ describe('Phase 9-8d repository .risu bundle export route', () => {
     expect(databaseBytes).toBeInstanceOf(Uint8Array)
     const decoded = decodeRisuSaveImportSnapshot(databaseBytes ?? new Uint8Array())
     expect(decoded.envelope).toBe('legacy-compressed')
-    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(INCLUDED_ASSET)
+    expect((decoded.database.characters as Array<Record<string, unknown>>)[0].image).toBe(
+      `assets/${INCLUDED_ASSET}.png`,
+    )
+    expect(decoded.database).not.toHaveProperty('account')
+
+    const liveDb = openDatabase(harness.dataDir)
+    try {
+      const liveDatabase = loadPersistedWithMessages(liveDb, harness.dataDir).database as Record<string, unknown>
+      expect(liveDatabase.account).toEqual({
+        id: 'legacy-account-id',
+        token: 'legacy-account-token',
+      })
+      expect((liveDatabase.characters as Array<Record<string, unknown>>)[0].image).toBe(INCLUDED_ASSET)
+    } finally {
+      liveDb.close()
+    }
     expect(harness.commandEvents.list()).toEqual([
       {
         type: 'state.exported',

@@ -642,12 +642,49 @@ describe('Durable generation (Milestone 1)', () => {
     expect((await chatMessages(boot)).filter((m) => m.role === 'char')).toHaveLength(1)
   })
 
+  it('streams and atomically persists every multi-generation choice as a reroll candidate', async () => {
+    providerImpl = () => {
+      async function* g(): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'primary reply' }
+        yield {
+          kind: 'done',
+          finishReason: 'stop',
+          alternates: ['second reply', 'third reply'],
+        }
+      }
+      return g()
+    }
+
+    const res = await postDurable({})
+    const events = await readSse(res, (event) => event.type === 'done')
+    const done = events.filter((event) => event.type === 'done').at(-1)
+    expect(done?.data.alternates).toEqual(['second reply', 'third reply'])
+
+    const hydration = await chatHydration(await bootstrap())
+    const active = hydration.message.find((message) => message.role === 'char')
+    expect(active).toMatchObject({ data: 'primary reply' })
+    expect(hydration.alternates.map((message) => message.data).sort()).toEqual([
+      'primary reply',
+      'second reply',
+      'third reply',
+    ])
+    expect(new Set(hydration.alternates.map((message) => message.chatId)).size).toBe(3)
+    expect(hydration.alternates.some((message) => message.chatId === active?.chatId)).toBe(true)
+    expect(hydration.alternates.find((message) => message.data === 'second reply')?.chatId).toBe(
+      `${String(active?.chatId)}:alternate:1`,
+    )
+    expect(hydration.alternates.find((message) => message.data === 'third reply')?.chatId).toBe(
+      `${String(active?.chatId)}:alternate:2`,
+    )
+    expect(generationFinalizationRetryRows()).toEqual([])
+  })
+
   it('retries a transient finalization failure without duplicating the assistant row', async () => {
     failNextGenerationPersistEvent = true
     providerImpl = () => {
       async function* g(): AsyncGenerator<CompletionStreamFrame> {
         yield { kind: 'token', content: 'retry me' }
-        yield { kind: 'done', finishReason: 'stop' }
+        yield { kind: 'done', finishReason: 'stop', alternates: ['retry alternate'] }
       }
       return g()
     }
@@ -661,10 +698,11 @@ describe('Durable generation (Milestone 1)', () => {
       const rows = generationFinalizationRetryRows()
       return rows.length === 0 ? true : undefined
     })
-    const messages = await chatMessages(await bootstrap())
-    const assistantMessages = messages.filter((m) => m.role === 'char')
+    const hydration = await chatHydration(await bootstrap())
+    const assistantMessages = hydration.message.filter((m) => m.role === 'char')
     expect(assistantMessages).toHaveLength(1)
     expect(assistantMessages[0].data).toBe('retry me')
+    expect(hydration.alternates.map((message) => message.data).sort()).toEqual(['retry alternate', 'retry me'])
     controller.abort()
   })
 

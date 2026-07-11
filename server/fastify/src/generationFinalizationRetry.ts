@@ -16,6 +16,7 @@ export interface GenerationFinalizationAttempt {
   mode: GenerationFinalizationMode
   targetMessageId?: string
   message: Message
+  alternateMessages?: Message[]
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
   targetSnapshot?: GenerationFinalizationTargetSnapshot
 }
@@ -26,6 +27,7 @@ interface GenerationFinalizationRetryRow {
   mode: GenerationFinalizationMode
   target_message_id: string | null
   message_json: string
+  alternate_messages_json: string
   chat_var_mutations_json: string
   target_snapshot_json: string | null
   failure_count: number
@@ -72,6 +74,7 @@ export function createGenerationFinalizationRetryTable(db: DatabaseSync): void {
       mode TEXT NOT NULL CHECK (mode IN ('send', 'continue', 'regenerate')),
       target_message_id TEXT,
       message_json TEXT NOT NULL CHECK (json_valid(message_json)),
+      alternate_messages_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(alternate_messages_json)),
       chat_var_mutations_json TEXT NOT NULL CHECK (json_valid(chat_var_mutations_json)),
       target_snapshot_json TEXT CHECK (target_snapshot_json IS NULL OR json_valid(target_snapshot_json)),
       failure_count INTEGER NOT NULL DEFAULT 0 CHECK (failure_count >= 0),
@@ -96,6 +99,7 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
         mode,
         target_message_id,
         message_json,
+        alternate_messages_json,
         chat_var_mutations_json,
         target_snapshot_json,
         status,
@@ -103,12 +107,13 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
         terminal_error,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
       ON CONFLICT(generation_id) DO UPDATE SET
         chat_id = excluded.chat_id,
         mode = excluded.mode,
         target_message_id = excluded.target_message_id,
         message_json = excluded.message_json,
+        alternate_messages_json = excluded.alternate_messages_json,
         chat_var_mutations_json = excluded.chat_var_mutations_json,
         target_snapshot_json = excluded.target_snapshot_json,
         status = 'pending',
@@ -122,6 +127,7 @@ export function enqueueGenerationFinalizationRetry(db: DatabaseSync, attempt: Ge
     attempt.mode,
     attempt.targetMessageId ?? null,
     JSON.stringify(attempt.message),
+    JSON.stringify(attempt.alternateMessages ?? []),
     JSON.stringify(attempt.chatVarMutations),
     attempt.targetSnapshot ? JSON.stringify(attempt.targetSnapshot) : null,
   )
@@ -198,6 +204,7 @@ export function listPendingGenerationFinalizationRetries(
           mode,
           target_message_id,
           message_json,
+          alternate_messages_json,
           chat_var_mutations_json,
           target_snapshot_json,
           failure_count,
@@ -212,15 +219,19 @@ export function listPendingGenerationFinalizationRetries(
     )
     .all(boundedLimit) as unknown as GenerationFinalizationRetryRow[]
 
-  return rows.map((row) => ({
-    generationId: row.generation_id,
-    chatId: row.chat_id,
-    mode: row.mode,
-    ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
-    message: JSON.parse(row.message_json) as Message,
-    chatVarMutations: JSON.parse(row.chat_var_mutations_json) as AssembleMutationPayload['chatVarMutations'],
-    ...(row.target_snapshot_json !== null
-      ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
-      : {}),
-  }))
+  return rows.map((row) => {
+    const alternateMessages = JSON.parse(row.alternate_messages_json) as Message[]
+    return {
+      generationId: row.generation_id,
+      chatId: row.chat_id,
+      mode: row.mode,
+      ...(row.target_message_id !== null ? { targetMessageId: row.target_message_id } : {}),
+      message: JSON.parse(row.message_json) as Message,
+      ...(alternateMessages.length > 0 ? { alternateMessages } : {}),
+      chatVarMutations: JSON.parse(row.chat_var_mutations_json) as AssembleMutationPayload['chatVarMutations'],
+      ...(row.target_snapshot_json !== null
+        ? { targetSnapshot: JSON.parse(row.target_snapshot_json) as GenerationFinalizationTargetSnapshot }
+        : {}),
+    }
+  })
 }

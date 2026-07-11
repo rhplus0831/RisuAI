@@ -46,6 +46,12 @@ export function tokenize(text: string, encoding: TokenEncoding = 'cl100k_base'):
   return getEncoder(encoding).encode(text).length
 }
 
+/** Return token ids for provider-level features such as OpenAI logit bias. */
+export function encodeTokens(text: string, encoding: TokenEncoding = 'cl100k_base'): number[] {
+  if (!text) return []
+  return Array.from(getEncoder(encoding).encode(text))
+}
+
 export interface TokenizeChatOptions {
   /** Per-message overhead added to every chat row. Defaults to 4 (matches SPA `ChatTokenizer`). */
   chatAdditionalTokens?: number

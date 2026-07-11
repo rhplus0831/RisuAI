@@ -243,7 +243,7 @@ function promptReadyLargeCorpusDatabase(fixture: LargeCorpusFixture): Record<str
 function isMemorySummaryPayloadRead(sql: string): boolean {
   const normalized = sql.toLowerCase().replace(/\s+/g, ' ').trim()
   return (
-    normalized.startsWith('select *') &&
+    (normalized.startsWith('select *') || normalized.startsWith('select memory_summaries.*')) &&
     /\bfrom memory_summaries\b/.test(normalized) &&
     !/\bchunk_id\s*=/.test(normalized)
   )

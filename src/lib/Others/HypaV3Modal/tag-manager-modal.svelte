@@ -2,42 +2,60 @@
   import { XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import type { SerializableHypaV3Data } from 'src/ts/process/memory/hypav3'
   import type { TagManagerState } from './types'
 
   interface Props {
     tagManagerState: TagManagerState
+    hypaV3Data?: SerializableHypaV3Data
+    onSummaryChanged?: (index: number) => void | Promise<void>
   }
 
-  let { tagManagerState = $bindable() }: Props = $props()
+  let { tagManagerState = $bindable(), hypaV3Data: providedHypaV3Data, onSummaryChanged }: Props = $props()
 
-  const hypaV3Data = $derived(
+  const legacyHypaV3Data = $derived(
     DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
   )
+  const hypaV3Data = $derived(providedHypaV3Data ?? legacyHypaV3Data)
 
   function closeTagManager() {
     tagManagerState.isOpen = false
     tagManagerState.currentSummaryIndex = -1
+    tagManagerState.currentSummaryId = undefined
     tagManagerState.editingTag = ''
     tagManagerState.editingTagIndex = -1
   }
 
+  function currentSummaryIndex(): number {
+    if (tagManagerState.currentSummaryId) {
+      return hypaV3Data.summaries.findIndex(
+        (summary) => (summary as unknown as { serverId?: string }).serverId === tagManagerState.currentSummaryId,
+      )
+    }
+    return tagManagerState.currentSummaryIndex
+  }
+
   function addTag(summaryIndex: number, tagName: string) {
-    if (!tagName.trim()) return
+    if (summaryIndex < 0 || !tagName.trim()) return
 
     const summary = hypaV3Data.summaries[summaryIndex]
+    if (!summary) return
     if (!summary.tags) {
       summary.tags = []
     }
 
     if (!summary.tags.includes(tagName.trim())) {
       summary.tags.push(tagName.trim())
+      void onSummaryChanged?.(summaryIndex)
     }
   }
 
   function removeTag(summaryIndex: number, tagIndex: number) {
     const summary = hypaV3Data.summaries[summaryIndex]
+    if (!summary) return
     if (summary.tags && tagIndex >= 0 && tagIndex < summary.tags.length) {
       summary.tags.splice(tagIndex, 1)
+      void onSummaryChanged?.(summaryIndex)
     }
   }
 
@@ -49,9 +67,12 @@
   function saveEditingTag() {
     if (tagManagerState.editingTagIndex === -1 || !tagManagerState.editingTag.trim()) return
 
-    const summary = hypaV3Data.summaries[tagManagerState.currentSummaryIndex]
+    const summaryIndex = currentSummaryIndex()
+    const summary = hypaV3Data.summaries[summaryIndex]
+    if (!summary) return
     if (summary.tags && tagManagerState.editingTagIndex < summary.tags.length) {
       summary.tags[tagManagerState.editingTagIndex] = tagManagerState.editingTag.trim()
+      void onSummaryChanged?.(summaryIndex)
     }
 
     tagManagerState.editingTag = ''
@@ -64,7 +85,7 @@
   }
 
   function handleAddTagEnter() {
-    addTag(tagManagerState.currentSummaryIndex, tagManagerState.editingTag)
+    addTag(currentSummaryIndex(), tagManagerState.editingTag)
     tagManagerState.editingTag = ''
   }
 
@@ -84,12 +105,12 @@
 </script>
 
 <!-- Tag Manager Modal -->
-{#if tagManagerState.isOpen && tagManagerState.currentSummaryIndex >= 0}
+{#if tagManagerState.isOpen && currentSummaryIndex() >= 0}
   <div class="fixed inset-0 z-50 p-4 bg-black/70 flex items-center justify-center">
     <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md">
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-lg font-semibold text-zinc-300">
-          {language.hypaV3Modal.tagManagerTitle.replace('{0}', (tagManagerState.currentSummaryIndex + 1).toString())}
+          {language.hypaV3Modal.tagManagerTitle.replace('{0}', (currentSummaryIndex() + 1).toString())}
         </h2>
         <button class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={closeTagManager}>
           <XIcon class="w-5 h-5" />
@@ -115,8 +136,8 @@
 
       <!-- Tag List -->
       <div class="space-y-2 max-h-60 overflow-y-auto">
-        {#if hypaV3Data.summaries[tagManagerState.currentSummaryIndex].tags && hypaV3Data.summaries[tagManagerState.currentSummaryIndex].tags.length > 0}
-          {#each hypaV3Data.summaries[tagManagerState.currentSummaryIndex].tags as tag, tagIndex}
+        {#if hypaV3Data.summaries[currentSummaryIndex()]?.tags && hypaV3Data.summaries[currentSummaryIndex()].tags.length > 0}
+          {#each hypaV3Data.summaries[currentSummaryIndex()].tags as tag, tagIndex}
             <div class="flex items-center gap-2 px-3 py-2 rounded-sm bg-zinc-800">
               {#if tagManagerState.editingTagIndex === tagIndex}
                 <input
@@ -139,7 +160,7 @@
                 </button>
                 <button
                   class="p-1.5 text-red-400 hover:text-red-300 transition-colors"
-                  onclick={() => removeTag(tagManagerState.currentSummaryIndex, tagIndex)}>
+                  onclick={() => removeTag(currentSummaryIndex(), tagIndex)}>
                   <Trash2Icon class="w-4 h-4" />
                 </button>
               {/if}

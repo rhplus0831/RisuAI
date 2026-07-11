@@ -1383,7 +1383,7 @@ export const languageVietnamese = {
     quickSettings: 'Cài đặt nhanh',
     toggleVoice: 'Bật/Tắt giọng nói',
     toggleLog: 'Bật/Tắt nhật ký',
-    previewRequest: 'Xem trước yêu cầu',
+    previewRequest: 'Xem trước prompt đã lắp ráp',
     import: 'Nhập',
     export: 'Xuất',
     webcam: 'Bật/Tắt Webcam',

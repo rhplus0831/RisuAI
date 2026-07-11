@@ -37,11 +37,14 @@ export interface DecodedLocalBackup {
   databaseBytes: Uint8Array
   includedAssetCount: number
   stagedAssets: LocalBackupStagedAsset[]
+  /** Original-Risu database path -> canonical sha256 id for legacy records. */
+  assetReferenceAliases: ReadonlyMap<string, string>
 }
 
 // Extension -> content-type, derived from the canonical content-type table. Used
-// to classify asset entries by filename without trusting a manifest. Media-only
-// helpers below avoid mis-registering legacy cold-storage `.json` records.
+// to classify asset entries by filename without trusting a manifest. Original
+// backups may also contain unrelated/cold-storage JSON records, so non-media
+// records are accepted only when their filename carries a sha256 asset id.
 const extensionContentType = buildExtensionContentTypeMap()
 function buildExtensionContentTypeMap(): Map<string, string> {
   const map = new Map<string, string>()
@@ -123,7 +126,7 @@ class AssetStager {
     return this.assets.length
   }
 
-  add(asset: LocalBackupAssetUpload): void {
+  add(asset: LocalBackupAssetUpload): LocalBackupStagedAsset {
     const ext = CONTENT_TYPE_EXTENSIONS[asset.contentType]
     if (!ext) {
       throw new ValidationError(`Unsupported content-type: ${asset.contentType}`)
@@ -137,13 +140,15 @@ class AssetStager {
     }
     const filePath = path.join(this.dir(), `${this.assets.length}-${id}.${ext}`)
     fs.writeFileSync(filePath, asset.bytes)
-    this.assets.push({
+    const staged = {
       id,
       ext,
       size: asset.bytes.length,
       contentType: asset.contentType,
       filePath,
-    })
+    }
+    this.assets.push(staged)
+    return staged
   }
 
   cleanup(): void {
@@ -244,6 +249,7 @@ function decodeBundleZip(filePath: string, options: DecodeLocalBackupOptions): P
           databaseBytes,
           includedAssetCount: stager.count,
           stagedAssets: stager.assets,
+          assetReferenceAliases: new Map(),
         })
       } catch (err) {
         fail(err)
@@ -289,10 +295,11 @@ function assertValidBundleManifest(manifestBytes: Uint8Array | undefined): void 
 /**
  * Decode the original app's `LocalWriter` `.bin` blob: a sequence of
  * `[u32-LE nameLen][name][u32-LE dataLen][data]` records. The database record is
- * `database.risudat` (a legacy compressed `.risu`); media records are
- * content-addressed by the same sha256 scheme Fastify uses, so they stage
- * without any reference remapping. Cold-storage and other non-media records are
- * skipped (they are browser-local concepts with no server equivalent).
+ * `database.risudat` (a legacy compressed `.risu`). Recognized media records
+ * are staged as before; hash-named records also retain every supported Fastify
+ * asset type (including ONNX, CSS, and signature JSON). Unrelated non-media
+ * records are skipped because they are browser-local concepts with no server
+ * equivalent.
  */
 async function decodeLegacyLocalBackup(
   filePath: string,
@@ -300,6 +307,7 @@ async function decodeLegacyLocalBackup(
 ): Promise<DecodedLocalBackup> {
   const stager = new AssetStager(filePath)
   const sizeTracker = new ExpandedSizeTracker(options.maxExpandedBytes)
+  const assetReferenceAliases = new Map<string, string>()
   let databaseBytes: Uint8Array | undefined
 
   const fd = fs.openSync(filePath, 'r')
@@ -332,12 +340,20 @@ async function decodeLegacyLocalBackup(
         databaseBytes = data
         continue
       }
-      const ext = name.includes('.') ? (name.split('.').pop() ?? '').toLowerCase() : ''
+      const dot = name.lastIndexOf('.')
+      const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : ''
       const contentType = extensionContentType.get(ext)
-      if (contentType && isMediaContentType(contentType)) {
-        stager.add({ contentType, bytes: data })
+      const namedAssetId = dot >= 0 ? contentAddressedAssetId(name.slice(0, dot)) : undefined
+      if (contentType && (isMediaContentType(contentType) || namedAssetId)) {
+        const staged = stager.add({ contentType, bytes: data, id: namedAssetId })
+        // LocalWriter strips the `assets/` prefix from record names while the
+        // embedded database retains it. Original Risu normally uses sha256
+        // names, but custom/fallback ids (notably UUIDs) are also valid. Keep
+        // the exact restored path as an alias for canonicalization after the
+        // database envelope is decoded.
+        assetReferenceAliases.set(`${ASSET_PREFIX}${name}`, staged.id)
       }
-      // Non-media records (e.g. cold-storage `*.json`) have no server analogue.
+      // Unrelated non-media records (e.g. cold-storage `*.json`) have no server analogue.
     }
   } catch (err) {
     stager.cleanup()
@@ -355,7 +371,13 @@ async function decodeLegacyLocalBackup(
     databaseBytes,
     includedAssetCount: stager.count,
     stagedAssets: stager.assets,
+    assetReferenceAliases,
   }
+}
+
+function contentAddressedAssetId(name: string): string | undefined {
+  const normalized = name.toLowerCase()
+  return isValidAssetId(normalized) ? normalized : undefined
 }
 
 function concatChunks(chunks: readonly Uint8Array[]): Uint8Array {

@@ -25,14 +25,17 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
 /** Returns accessed key as the value. */
 const varStorage = vi.hoisted(
   () =>
-    new Proxy(
-      {},
-      {
-        get(_, prop) {
-          return trimVarPrefix(prop)
-        },
+    new Proxy({} as Record<string, unknown>, {
+      get(target, prop) {
+        if (Reflect.has(target, prop)) {
+          return Reflect.get(target, prop)
+        }
+        if (prop === '$missingDefault') {
+          return undefined
+        }
+        return trimVarPrefix(prop)
       },
-    ),
+    }),
 )
 
 vi.mock(import('../../../stores.svelte'), () => {
@@ -175,11 +178,19 @@ test('capitalize, lower, upper', () => {
   )
 })
 
-// Skipped: `reverse` currently reverses the raw matcher text, including the
-// `reverse::` prefix, instead of its first parsed argument.
-test.skip('reverse', () => {
+test('setdefaultvar installs a missing browser chat variable without replacing existing values', () => {
+  delete varStorage.$missingDefault
+
+  expect(risuChatParser('{{setdefaultvar::missingDefault::fallback}}', { runVar: true })).toBe('')
+  expect(varStorage.$missingDefault).toBe('fallback')
+  expect(risuChatParser('{{setdefaultvar::missingDefault::replacement}}', { runVar: true })).toBe('')
+  expect(varStorage.$missingDefault).toBe('fallback')
+})
+
+test('reverse', () => {
   const splitByPoints = (str: string) => [...str].reverse().join('')
 
+  expect(quickParse('reverse')).toBe('')
   expect(quickParse('reverse', 'Hello World')).toBe('dlroW olleH')
   // No combiner: 👦‍👧‍👩‍👨
   // Intended behavior. See https://github.com/kwaroran/Risuai/pull/1151#issuecomment-3714792523

@@ -13,7 +13,7 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                     |
 | `server/fastify/src/app.ts`                                                   | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA. |
 | `server/fastify/src/config.ts`                                                | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.      |
-| `server/fastify/src/db.ts`                                                    | SQLite schema v19, migrations, `schema_version`, global revision.                                        |
+| `server/fastify/src/db.ts`                                                    | SQLite schema v21, migrations, `schema_version`, global revision.                                        |
 | `server/fastify/src/repository.ts`                                            | Domain load/write, projections/body cache, legacy `db.json` import, `applyImport`, assets, backups.      |
 | `server/fastify/src/messageStore.ts`                                          | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                    |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
@@ -100,7 +100,7 @@ and generation submit `60/min`.
 | Push notifications    | `pushNotifications.ts`                                    | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`. |
 | Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
 | Generation            | `generation.ts`, `generationChat.ts`                      | Completion route, server-assembled chat generation, preview prompt, internal chat generation settings/profile/Agent Preset readiness preflight, durable reattach/cancel.             |
-| Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus read chunk/summary routes.                                                                                                                               |
+| Memory                | `memoryJobs.ts`, `memoryReads.ts`                         | Queue/cancel/list jobs plus chunk/summary reads and active-writer summary edit/delete routes.                                                                                         |
 
 `routeManifest.ts` classifies auth, active-writer, and streaming decisions;
 it is not a literal endpoint inventory because command and hub routes are
@@ -205,7 +205,10 @@ Prompt assembly snapshots summaries, plans new chunks/jobs, selects existing
 summaries without provider calls, and enqueues follow-up summarize/embed jobs for
 the worker. Provider-backed embedding/summarization work runs in the worker, not
 inline on the chat hot path. `GET /api/v1/memory/jobs` is compact and ETag-backed;
-chunk/summary read routes currently return full text for a chat.
+chunk/summary read routes return full text for a chat. Authenticated active
+writers can edit summary text/Important/category/tag metadata or delete a
+summary through `PATCH`/`DELETE /api/v1/memory/summaries/:summaryId`; the Hypa
+V3 manager reads and mutates these server-owned rows directly.
 
 ## Static SPA
 

@@ -29,11 +29,11 @@ vi.mock('./process/modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-import { hotkeyMatches } from './hotkey'
+import { changeToPreset, hotkeyMatches } from './hotkey'
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState } from './stores.svelte'
+import { DBState, selectedCharID } from './stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -66,6 +66,20 @@ function stubCommandFetch(): CapturedFetch[] {
           event: { type: 'settings.patched', revision: 11, resource: 'settings' },
         })
       }
+      if (url === '/api/v1/commands/model-presets/select') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'modelPreset.selected', revision: 11, resource: 'model-preset' },
+          modelPresetId: 'model-second',
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'chat.generation-settings.updated', revision: 11, resource: 'chat' },
+          chatId: 'chat-a',
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -90,11 +104,20 @@ function seedDatabase(): void {
       { key: 'a', action: 'home' },
       { key: 'r', ctrl: true, alt: true, action: 'reroll' },
     ],
+    botPresets: [],
+    modelPresets: [
+      { id: 'model-default', name: 'Default Model' },
+      { id: 'model-second', name: 'Second Model' },
+    ],
+    modelPresetsId: 0,
+    promptPresets: [{ id: 'prompt-default', name: 'Default Prompt' }],
+    promptPresetsId: 0,
   } as any
 }
 
 beforeEach(() => {
   platformState.isFastifyServer = true
+  selectedCharID.set(-1)
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   seedDatabase()
@@ -141,6 +164,66 @@ describe('hotkey handling under the projection guard', () => {
 
     expect(hotkeyMatches(hotkey, event)).toBe(false)
     expect(hotkey.ctrl).toBeUndefined()
+  })
+
+  it('routes numbered preset shortcuts to modern model presets on a fresh split database', async () => {
+    const calls = stubCommandFetch()
+    expect(DBState.db.botPresets).toEqual([])
+
+    expect(changeToPreset(1)).toBe(true)
+    expect(DBState.db.modelPresetsId).toBe(1)
+    expect(changeToPreset(8)).toBe(false)
+
+    const command = await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/model-presets/select' && call.method === 'POST',
+    )
+    expect(command.body).toMatchObject({ modelPresetId: 'model-second' })
+  })
+
+  it('keeps Ctrl+1 functional when a fresh database has only its default modern preset', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.modelPresets = [{ id: 'model-default', name: 'Default Model' }]
+    DBState.db.modelPresetsId = 0
+
+    expect(changeToPreset(0)).toBe(true)
+
+    const command = await waitForCommand(
+      calls,
+      (call) => call.url === '/api/v1/commands/model-presets/select' && call.method === 'POST',
+    )
+    expect(command.body).toMatchObject({ modelPresetId: 'model-default' })
+  })
+
+  it('switches the active chat generation model preset when the chat owns preset selection', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters = [
+      {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            generationSettings: {
+              configured: true,
+              personaId: 'persona-default',
+              modelPresetId: 'model-default',
+              promptPresetId: 'prompt-default',
+              jailbreakToggle: false,
+              sidebarToggles: {},
+            },
+          },
+        ],
+      },
+    ] as any
+    selectedCharID.set(0)
+
+    expect(changeToPreset(1)).toBe(true)
+    expect(DBState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-second')
+    expect(DBState.db.modelPresetsId).toBe(0)
+
+    const command = await waitForCommand(calls, (call) => call.url.endsWith('/chat-a/generation-settings'))
+    expect(command.body.generationSettings.modelPresetId).toBe('model-second')
   })
 
   it('routes a hotkey settings edit through a sidebar settings patch', async () => {

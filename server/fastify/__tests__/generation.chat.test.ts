@@ -14,6 +14,7 @@ import { applyImport, hydrateAssemblyModuleBodies } from '../src/repository.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   createRequestScopedStoredAssetResolver,
+  type ChatProviderDispatchContext,
   type GenerationChatRouteOptions,
 } from '../src/routes/generationChat.js'
 import { normalizeRisuSaveSnapshotDatabase } from '../src/risuSave/importSnapshot.js'
@@ -268,6 +269,19 @@ async function seedDatabase(_app: FastifyInstance, _assertion: string, database:
   } finally {
     db.close()
   }
+}
+
+async function readPersistedMessages(
+  assertion: string,
+  chatId = 'chat-1',
+): Promise<Array<{ role: string; data: string; chatId: string; generationInfo?: Record<string, unknown> }>> {
+  const res = await harness.app.inject({
+    method: 'GET',
+    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    headers: { 'risu-auth': assertion },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json().message
 }
 
 async function importRisuSaveDatabase(app: FastifyInstance, assertion: string, database: unknown): Promise<number> {
@@ -955,7 +969,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     const formated = prompt.data.formated as Array<{ role: string; content: unknown }>
     expect(Array.isArray(formated)).toBe(true)
     expect(formated.map((r) => ({ role: r.role, content: r.content }))).toEqual(prompt.data.messages)
-    expect((prompt.data as Record<string, unknown>).biases).toBeUndefined()
+    expect((prompt.data as Record<string, unknown>).biases).toEqual([])
     const messagePatch = events.find((e) => e.type === 'message_patch')
     expect(messagePatch?.data.patch).toMatchObject({
       chatId: 'chat-1',
@@ -2960,6 +2974,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
   function doneFrame(events: PromptChatFrame[]): {
     result?: string
+    alternates?: string[]
     postGeneration?: {
       finalText?: string
       revision?: number
@@ -3374,6 +3389,94 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
     const persisted = await persistedMessages(assertion)
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo REPLY' })
+  })
+
+  it('applies editoutput and incomplete-response trimming to every multi-generation choice', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'primary reply. unfinished' }
+        yield {
+          kind: 'done',
+          finishReason: 'stop',
+          alternates: ['second reply. unfinished', 'third reply. unfinished'],
+        }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        customscript: [{ comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false }],
+      }) as Record<string, unknown>),
+      removeIncompleteResponse: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+    expect(done.postGeneration?.finalText).toBe('primary REPLY. ')
+    expect(done.alternates).toEqual(['second REPLY. ', 'third REPLY. '])
+
+    const alternates = await persistedAlternates(assertion)
+    expect(alternates.find((message) => message.chatId.endsWith(':alternate:1'))?.data).toBe('second REPLY. ')
+    expect(alternates.find((message) => message.chatId.endsWith(':alternate:2'))?.data).toBe('third REPLY. ')
+  })
+
+  it('transforms alternates with the transformed primary present in chat context', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'primary' }
+        yield { kind: 'done', finishReason: 'stop', alternates: ['alternate'] }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(
+      harness.app,
+      assertion,
+      dbWithServerDispatch({
+        triggerscript: [
+          {
+            comment: '',
+            type: 'output',
+            conditions: [],
+            effect: [
+              {
+                type: 'triggerlua',
+                code: `
+                  listenEdit('editOutput', function(id, data, meta)
+                    return data .. ' [LEN:' .. tostring(getChatLength(id)) .. ']'
+                  end)
+                  function onOutput(id)
+                    addChat(id, 'char', 'OUTPUT-MUTATION')
+                  end
+                `,
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    const done = doneFrame(parseEvents(res.body))
+    const primaryLength = Number(/\[LEN:(\d+)\]/u.exec(done.postGeneration?.finalText ?? '')?.[1])
+    const alternateLength = Number(/\[LEN:(\d+)\]/u.exec(done.alternates?.[0] ?? '')?.[1])
+    expect(primaryLength).toBeGreaterThanOrEqual(0)
+    expect(alternateLength).toBe(primaryLength + 1)
   })
 
   it('runs after-main Agent Preset modifiers before persisting the assistant row', async () => {
@@ -4153,10 +4256,8 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
 
   it('warns and persists raw provider text when server Lua editOutput fails', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    await seedDatabase(
-      harness.app,
-      assertion,
-      dbWithServerDispatch({
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
         triggerscript: [
           {
             comment: '',
@@ -4166,16 +4267,18 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
               {
                 type: 'triggerlua',
                 code: `
-                  listenEdit('editOutput', function(id, data, meta)
-                    error('lua edit output failed')
-                  end)
-                `,
+                    listenEdit('editOutput', function(id, data, meta)
+                      error('lua edit output failed')
+                    end)
+                  `,
               },
             ],
           },
         ],
-      }),
-    )
+      }) as Record<string, unknown>),
+      echoMessage: 'Complete sentence. unfinished fragment',
+      removeIncompleteResponse: true,
+    })
 
     const res = await harness.app.inject({
       method: 'POST',
@@ -4193,7 +4296,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(done.postGeneration?.finalText).toBeUndefined()
 
     const persisted = await persistedMessages(assertion)
-    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
+    expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'Complete sentence. ' })
   })
 
   it('emits a metadata-only raw fallback metric when Lua onOutput fails', async () => {
@@ -4601,7 +4704,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     // Full rows ride on the JSON payload too.
     expect(Array.isArray(body.formated)).toBe(true)
     expect(body.formated.length).toBe(body.messages.length)
-    expect((body as Record<string, unknown>).biases).toBeUndefined()
+    expect((body as Record<string, unknown>).biases).toEqual([])
   })
 
   it('L6: returns only promptInfo.promptText from preview JSON for compact-capable clients', async () => {
@@ -4622,6 +4725,8 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(Object.keys(body)).toEqual(['promptInfo'])
     expect(Object.keys(body.promptInfo)).toEqual(['promptText'])
     expect(typeof body.promptInfo.promptText).toBe('string')
+    expect(JSON.parse(body.promptInfo.promptText)).toEqual(expect.any(Array))
+    expect(JSON.parse(body.promptInfo.promptText).length).toBeGreaterThan(0)
     expect(Object.prototype.hasOwnProperty.call(body, 'messages')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(body, 'formated')).toBe(false)
     expect(Object.prototype.hasOwnProperty.call(body, 'lorebookActivation')).toBe(false)
@@ -4886,7 +4991,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     expect(providerBody).toMatchObject({
       model: 'gpt-5.4',
       temperature: 0.73,
-      max_tokens: 37,
+      max_completion_tokens: 37,
     })
     expect(authorization).toBe('Bearer sk-chat')
     expect(events.at(-1)?.data).toMatchObject({ result: 'chat preset reply' })
@@ -5179,7 +5284,7 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     })
   })
 
-  it('omits disabled temperature and unsupported bias fields from default OpenAI dispatch', async () => {
+  it('omits disabled temperature and sends expanded bias fields in default OpenAI dispatch', async () => {
     const captured: Array<{ url: string; body: Record<string, unknown> }> = []
     vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
       captured.push({
@@ -5220,12 +5325,15 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
     const providerBody = captured.find((call) => call.url.endsWith('/chat/completions'))?.body
     expect(providerBody).toBeDefined()
     expect(providerBody?.temperature).toBeUndefined()
-    expect(providerBody?.logit_bias).toBeUndefined()
+    expect(providerBody?.logit_bias).toBeDefined()
     expect(providerBody?.biases).toBeUndefined()
 
     const prompt = parseEvents(res.body).find((e) => e.type === 'prompt')
     expect(prompt).toBeDefined()
-    expect((prompt!.data as Record<string, unknown>).biases).toBeUndefined()
+    expect((prompt!.data as Record<string, unknown>).biases).toEqual([
+      ['forbidden', -100],
+      ['Tess', 50],
+    ])
   })
 
   it('preserves active temperature in default OpenAI dispatch', async () => {
@@ -5591,6 +5699,254 @@ describe('Phase 7-11h POST /api/v1/generate/preview-prompt', () => {
         toggleKey: 'mode',
       }),
     )
+  })
+
+  it('applies request triggers, retries, blank fallback, banned-script retry, and Escape Output', async () => {
+    const seen: Array<{ modelId: string | undefined; firstContent: string | undefined }> = []
+    let call = 0
+    const dispatchProvider = vi.fn((context: ChatProviderDispatchContext) => {
+      call++
+      seen.push({
+        modelId: context.profile?.modelId,
+        firstContent: context.result.formated?.[0]?.content,
+      })
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        if (call === 1) {
+          yield { kind: 'error', error: 'transient provider failure', status: 503 }
+          return
+        }
+        if (call === 2) {
+          yield { kind: 'token', content: '' }
+          yield { kind: 'done', finishReason: 'stop' }
+          return
+        }
+        if (call === 3) {
+          yield { kind: 'token', content: 'Ж banned' }
+          yield { kind: 'done', finishReason: 'stop' }
+          return
+        }
+        yield { kind: 'token', content: '{ok}' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    })
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'gpt-5',
+      requestRetrys: 1,
+      fallbackWhenBlankResponse: true,
+      fallbackModels: { model: ['echo_model'] },
+      banCharacterset: ['Cyrillic'],
+      useStreaming: true,
+      characters: [
+        {
+          ...fixtureDatabase.characters[0],
+          escapeOutput: true,
+          triggerscript: [
+            {
+              type: 'request',
+              comment: 'rewrite request',
+              conditions: [],
+              effect: [
+                {
+                  type: 'v2SetRequestState',
+                  indexType: 'value',
+                  index: '0',
+                  valueType: 'value',
+                  value: 'request-trigger-rewrite',
+                  indent: 0,
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: '\uE9B8hello\uE9B9' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(4)
+    expect(seen.map((entry) => entry.modelId)).toEqual(['gpt-5', 'gpt-5', 'echo_model', 'echo_model'])
+    expect(seen.every((entry) => entry.firstContent === 'request-trigger-rewrite')).toBe(true)
+    const events = parseEvents(res.body)
+    expect(events.filter((event) => event.type === 'token')).toEqual([
+      { type: 'token', data: { content: '\uE9B8ok\uE9B9' } },
+    ])
+    expect(events.at(-1)?.data.result).toBe('\uE9B8ok\uE9B9')
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+  })
+
+  it('never emits or persists a banned response when every retry and fallback is rejected', async () => {
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        yield { kind: 'token', content: 'Ж rejected' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'gpt-5',
+      requestRetrys: 1,
+      fallbackModels: { model: ['echo_model'] },
+      banCharacterset: ['Cyrillic'],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(4)
+    const events = parseEvents(res.body)
+    expect(events.filter((event) => event.type === 'token')).toEqual([])
+    expect(events.find((event) => event.type === 'error')?.data).toMatchObject({
+      reason: 'provider_output_banned',
+    })
+    expect(events.at(-1)?.type).toBe('done')
+    expect((await readPersistedMessages(assertion)).filter((message) => message.role === 'char')).toEqual([])
+  })
+
+  it('retries an unbuffered provider iterator that throws before its first token', async () => {
+    let call = 0
+    const dispatchProvider = vi.fn(() =>
+      (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        call++
+        if (call === 1) throw new Error('connect stream failed')
+        yield { kind: 'token', content: 'retry succeeded' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })(),
+    )
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      requestRetrys: 1,
+      useStreaming: true,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(dispatchProvider).toHaveBeenCalledTimes(2)
+    const events = parseEvents(res.body)
+    expect(events.filter((event) => event.type === 'token')).toEqual([
+      { type: 'token', data: { content: 'retry succeeded' } },
+    ])
+    expect(events.some((event) => event.type === 'error')).toBe(false)
+    expect((await readPersistedMessages(assertion)).at(-1)?.data).toBe('retry succeeded')
+  })
+
+  it('materializes fallback-profile runtime settings and records the successful fallback model', async () => {
+    const attempts: Array<{ profileId?: string; database: Record<string, unknown>; outputTokens?: number }> = []
+    const dispatchProvider = vi.fn((context: ChatProviderDispatchContext) => {
+      attempts.push({
+        profileId: context.profile?.profileId,
+        database: structuredClone(context.database) as unknown as Record<string, unknown>,
+        outputTokens: context.result.outputTokens,
+      })
+      return (async function* (): AsyncGenerator<CompletionStreamFrame> {
+        if (context.profile?.profileId === 'primary-profile') {
+          yield { kind: 'error', error: 'primary unavailable', status: 503 }
+          return
+        }
+        yield { kind: 'token', content: 'fallback reply' }
+        yield { kind: 'done', finishReason: 'stop' }
+      })()
+    })
+    await restartHarness({ dispatchProvider })
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      requestRetrys: 0,
+      modelProfiles: [
+        {
+          id: 'primary-profile',
+          name: 'Primary',
+          providerId: 'custom-api',
+          modelId: 'custom-api',
+          providerOptions: { baseUrl: 'https://primary.example/v1', requestModel: 'primary-wire' },
+          runtimeOptions: {
+            temperature: 10,
+            maxContext: 1111,
+            maxResponse: 11,
+            useStreaming: true,
+            jsonSchemaEnabled: true,
+            jsonSchema: '{"type":"object","title":"primary"}',
+          },
+          fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
+        },
+        {
+          id: 'fallback-profile',
+          name: 'Fallback',
+          providerId: 'custom-api',
+          modelId: 'custom-api',
+          providerOptions: { baseUrl: 'https://fallback.example/v1', requestModel: 'fallback-wire' },
+          runtimeOptions: {
+            temperature: 90,
+            maxContext: 9999,
+            maxResponse: 99,
+            useStreaming: false,
+            jsonSchemaEnabled: true,
+            jsonSchema: '{"type":"object","title":"fallback"}',
+          },
+        },
+      ],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'primary-profile' } },
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: basePayload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(attempts.map((attempt) => attempt.profileId)).toEqual(['primary-profile', 'fallback-profile'])
+    expect(attempts[0]).toMatchObject({
+      database: {
+        temperature: 10,
+        maxContext: 1111,
+        maxResponse: 11,
+        useStreaming: true,
+        jsonSchema: '{"type":"object","title":"primary"}',
+      },
+      outputTokens: 11,
+    })
+    expect(attempts[1]).toMatchObject({
+      database: {
+        temperature: 90,
+        maxContext: 9999,
+        maxResponse: 99,
+        useStreaming: false,
+        jsonSchema: '{"type":"object","title":"fallback"}',
+      },
+      outputTokens: 99,
+    })
+    const done = parseEvents(res.body).at(-1)?.data
+    expect(done?.generationInfo).toMatchObject({ model: 'fallback-wire', maxContext: 9999, outputTokens: 99 })
+    expect((await readPersistedMessages(assertion)).at(-1)?.generationInfo).toMatchObject({
+      model: 'fallback-wire',
+      maxContext: 9999,
+      outputTokens: 99,
+    })
   })
 
   it('returns 404 when no database is persisted', async () => {

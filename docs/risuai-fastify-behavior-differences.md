@@ -43,6 +43,42 @@ The audit identified 15 actionable potential bug points. Two additional differen
 | F14 | Medium | Very high | Display → Fullscreen | The visible setting has an empty callback despite a working browser fullscreen helper elsewhere. |
 | F15 | Medium | Very high | Ctrl+1…9 preset shortcuts | Shortcuts still address legacy `botPresets`, which are empty on a fresh Variant database, instead of the split/profile-first preset model. |
 
+## Remediation update — 2026-07-12
+
+The findings below remain as the historical audit evidence. The implementation
+has since been updated as follows:
+
+- F01–F03 and F10: provider-native message/media shaping, retained generation
+  controls, request policies, fallback-profile runtime materialization,
+  multi-generation rerolls (including per-choice output transforms), reasoning
+  output, cache/privacy headers, schema/extraction handling, iterator-failure
+  retries, and authoritative incomplete-response trimming now run on the server
+  path.
+- F04: the hotkey contract is deliberately defined as **Preview Assembled
+  Prompt** (not a provider URL/header inspector). Compact responses now contain
+  parseable prompt rows, and malformed/legacy payloads no longer crash the
+  hotkey.
+- F05–F07 and C01: chat imports are fully re-keyed before command dispatch;
+  legacy local backups retain supported non-media assets, redact the obsolete
+  account object, and translate asset references in both directions for
+  original-Risu compatibility, including custom/non-SHA media record names.
+- F08–F09: the Hypa V3 manager reads live server summaries and supports
+  per-summary text, Important, category/tag, reroll/apply, and deletion updates.
+  Imported `legacy-hypav3` rows participate in selection/planning without
+  duplicate re-summarization, and durable delete tombstones prevent removed
+  imported summaries from returning on restart. Category-name registry
+  management and bulk re-summarization remain unavailable server-side.
+- F11–F15: CBS compatibility, legacy full-preset splitting, fullscreen, and
+  numbered modern model-preset shortcuts are covered by focused regressions;
+  active-chat shortcuts update the chat-scoped generation selection.
+- C02 remains a runtime-test candidate. This remediation did not treat the
+  intentional server-authoritative projection latency as a reproduced race.
+
+One F02 boundary is still explicit: arbitrary browser MCP/function-tool
+round-trips are not executed by the server-owned chat path. Hosted Responses
+search tools are wired; broader MCP execution requires a separate interactive
+client/server tool-call protocol rather than silent request-field forwarding.
+
 ## Detailed findings
 
 ### F01 — Provider rows are not sanitized or converted to native multimodal content

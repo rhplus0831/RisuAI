@@ -40,6 +40,13 @@ export interface ServerMemorySummary {
   createdAt: string
 }
 
+export interface PatchServerMemorySummaryInput {
+  text?: string
+  isImportant?: boolean
+  categoryId?: string | null
+  tags?: string[] | null
+}
+
 export interface ServerMemoryJob {
   id: string
   chatId: string
@@ -110,9 +117,9 @@ async function requestMemoryJson<T>(
 ): Promise<ServerMemoryResult<T>> {
   if (!canUseServerMemoryApi()) return { status: 'unavailable' }
 
-  const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
+    const auth = await getNodeServerProxyAuth()
     response = await fetch(path, {
       ...init,
       headers: {
@@ -166,6 +173,34 @@ export async function listServerMemorySummaries(
   return requestMemoryJson<{ summaries: ServerMemorySummary[] }>(
     appendQuery(`${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(chatId)}`, { model }),
     { signal: signal ?? undefined },
+  )
+}
+
+export async function patchServerMemorySummary(
+  summaryId: string,
+  patch: PatchServerMemorySummaryInput,
+  signal?: AbortSignal | null,
+): Promise<ServerMemoryResult<{ summary: ServerMemorySummary }>> {
+  return requestMemoryJson<{ summary: ServerMemorySummary }>(
+    `${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(summaryId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+      signal: signal ?? undefined,
+    },
+    { activeWriter: true },
+  )
+}
+
+export async function deleteServerMemorySummary(
+  summaryId: string,
+  signal?: AbortSignal | null,
+): Promise<ServerMemoryResult<{ summary: ServerMemorySummary }>> {
+  return requestMemoryJson<{ summary: ServerMemorySummary }>(
+    `${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(summaryId)}`,
+    { method: 'DELETE', signal: signal ?? undefined },
+    { activeWriter: true },
   )
 }
 

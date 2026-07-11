@@ -13,7 +13,7 @@ import {
   seedProjectionBodyCacheRevisions,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 19
+export const CURRENT_SCHEMA_VERSION = 21
 
 export interface MigrationStep {
   version: number
@@ -184,6 +184,26 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createPushSubscriptionsTable(db)
     },
   },
+  {
+    version: 20,
+    name: 'generation-finalization-alternates',
+    up: (db) => {
+      createGenerationFinalizationRetryTable(db)
+      ensureColumn(
+        db,
+        'generation_finalization_retries',
+        'alternate_messages_json',
+        "ALTER TABLE generation_finalization_retries ADD COLUMN alternate_messages_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(alternate_messages_json))",
+      )
+    },
+  },
+  {
+    version: 21,
+    name: 'legacy-memory-summary-delete-tombstones',
+    up: (db) => {
+      createMemoryTables(db)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -344,6 +364,23 @@ function createMemoryTables(db: DatabaseSync): void {
       ON memory_summaries (chunk_id);
     CREATE INDEX IF NOT EXISTS idx_memory_summaries_chat_model
       ON memory_summaries (chat_id, model);
+
+    -- Legacy Hypa V3 rows are derived from the retained chat.hypaV3Data
+    -- projection at startup. Remember explicit deletions so the repeatable
+    -- backfill does not resurrect a row on the next process start.
+    CREATE TABLE IF NOT EXISTS memory_legacy_summary_tombstones (
+      summary_id TEXT PRIMARY KEY,
+      chat_id TEXT NOT NULL,
+      deleted_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    );
+
+    CREATE TRIGGER IF NOT EXISTS tombstone_deleted_legacy_memory_summary
+    AFTER DELETE ON memory_summaries
+    WHEN OLD.model = 'legacy-hypav3'
+    BEGIN
+      INSERT OR IGNORE INTO memory_legacy_summary_tombstones (summary_id, chat_id)
+      VALUES (OLD.id, OLD.chat_id);
+    END;
 
     CREATE TABLE IF NOT EXISTS memory_embeddings (
       id TEXT PRIMARY KEY,

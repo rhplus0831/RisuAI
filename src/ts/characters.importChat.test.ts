@@ -59,6 +59,7 @@ import {
 } from './server/projectionWriteGuard.svelte'
 import { DBState, selectedCharID } from './stores.svelte'
 import { importChat } from './characters'
+import { alertError, alertNormal } from './alert'
 
 interface CapturedFetch {
   url: string
@@ -202,6 +203,7 @@ function importedChat(overrides: Record<string, unknown> = {}): Record<string, u
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
@@ -279,10 +281,13 @@ describe('chat import projection helpers', () => {
           id: expect.any(String),
           name: 'Imported Chat',
           fmIndex: -1,
+          message: [expect.objectContaining({ chatId: expect.any(String) })],
         }),
         select: false,
       },
     })
+    expect(alertNormal).toHaveBeenCalledWith(expect.any(String))
+    expect(alertError).not.toHaveBeenCalled()
   })
 
   it('sequences v2 multi-chat imports as folder creates before chat creates with advancing revisions', async () => {
@@ -316,9 +321,97 @@ describe('chat import projection helpers', () => {
     expect(folderPayloads.map((folder) => folder.name)).toEqual(['Folder A', 'Folder B'])
     expect(chatPayloads.map((chat) => chat.name)).toEqual(['Imported One', 'Imported Two'])
     expect(folderPayloads[0].id).not.toBe('folder-a')
-    expect(folderPayloads[1].id).toBe('folder-b')
+    expect(folderPayloads[1].id).not.toBe('folder-b')
     expect(chatPayloads[0].folderId).toBe(folderPayloads[0].id)
-    expect(chatPayloads[1].folderId).toBe('folder-b')
+    expect(chatPayloads[1].folderId).toBe(folderPayloads[1].id)
+    expect(chatPayloads.every((chat) => typeof chat.message[0].chatId === 'string')).toBe(true)
+  })
+
+  it('re-keys v2 chat, folder, and message ids and rewrites bookmark and memory references', async () => {
+    const calls = stubCommandFetch()
+    DBState.db.characters.push({
+      chaId: 'char-b',
+      name: 'Character B',
+      chatPage: 0,
+      chats: [
+        {
+          id: 'imported-chat-id',
+          name: 'Other Chat',
+          note: '',
+          localLore: [],
+          message: [{ role: 'user', data: 'existing', chatId: 'imported-message-id' }],
+        },
+      ],
+      chatFolders: [{ id: 'imported-folder-id', name: 'Other Folder', folded: false }],
+    } as any)
+    selectJsonFile('chats.json', {
+      type: 'risuAllChats',
+      ver: 2,
+      folders: [{ id: 'imported-folder-id', name: 'Imported Folder', folded: false }],
+      data: [
+        importedChat({
+          id: 'imported-chat-id',
+          folderId: 'imported-folder-id',
+          message: [
+            { role: 'user', data: 'first', chatId: 'imported-message-id' },
+            {
+              role: 'char',
+              data: 'second',
+              chatId: 'second-message-id',
+              generationInfo: { generationId: 'second-message-id', model: 'imported-model' },
+            },
+          ],
+          bookmarks: ['imported-message-id'],
+          bookmarkNames: { 'imported-message-id': 'First' },
+          hypaV3Data: {
+            summaries: [
+              {
+                text: 'summary',
+                chatMemos: ['imported-message-id', 'second-message-id'],
+                isImportant: true,
+              },
+            ],
+          },
+        }),
+      ],
+    })
+
+    await importChat()
+
+    const [folderCall] = createFolderCalls(calls)
+    const [chatCall] = createChatCalls(calls)
+    const folder = (folderCall.body as any).folder
+    const chat = (chatCall.body as any).chat
+    const [firstMessage, secondMessage] = chat.message
+    expect(folder.id).not.toBe('imported-folder-id')
+    expect(chat.id).not.toBe('imported-chat-id')
+    expect(chat.folderId).toBe(folder.id)
+    expect(firstMessage.chatId).not.toBe('imported-message-id')
+    expect(secondMessage.chatId).not.toBe('second-message-id')
+    expect(secondMessage.generationInfo.generationId).toBe(secondMessage.chatId)
+    expect(new Set([firstMessage.chatId, secondMessage.chatId]).size).toBe(2)
+    expect(chat.bookmarks).toEqual([firstMessage.chatId])
+    expect(chat.bookmarkNames).toEqual({ [firstMessage.chatId]: 'First' })
+    expect(chat.hypaV3Data.summaries[0].chatMemos).toEqual([firstMessage.chatId, secondMessage.chatId])
+  })
+
+  it('re-keys prototype-like folder ids without confusing inherited object keys', async () => {
+    const calls = stubCommandFetch()
+    selectJsonFile('chats.json', {
+      type: 'risuChat',
+      ver: 2,
+      folders: [{ id: 'constructor', name: 'Prototype Folder', folded: false }],
+      data: importedChat({ folderId: 'constructor' }),
+    })
+
+    await importChat()
+
+    const [folderCall] = createFolderCalls(calls)
+    const [chatCall] = createChatCalls(calls)
+    const folder = (folderCall.body as any).folder
+    const chat = (chatCall.body as any).chat
+    expect(folder.id).not.toBe('constructor')
+    expect(chat.folderId).toBe(folder.id)
   })
 
   it('keeps an accepted imported folder when a later folder create fails and skips later commands', async () => {
@@ -341,12 +434,15 @@ describe('chat import projection helpers', () => {
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(2)
       expect(DBState.db.characters[0].chatFolders).toEqual([
-        { id: 'folder-a', name: 'Folder A', color: '#c00', folded: false },
+        { id: expect.any(String), name: 'Folder A', color: '#c00', folded: false },
       ])
       expect(DBState.db.characters[0].chats).toHaveLength(1)
     })
+    expect(DBState.db.characters[0].chatFolders[0].id).not.toBe('folder-a')
     expect(DBState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
     expect(createChatCalls(calls)).toHaveLength(0)
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith('command failed')
   })
 
   it('keeps imported folders when the first chat create fails and removes the chat tail', async () => {
@@ -492,6 +588,7 @@ describe('chat import projection helpers', () => {
         message: [
           {
             data: 'newer import wins',
+            chatId: expect.any(String),
           },
         ],
       },
@@ -521,9 +618,13 @@ describe('chat import projection helpers', () => {
     ])
     expect(commands.map((call) => (call.body as any).baseRevision)).toEqual([10, 11, 12])
     expect(commands.map((call) => (call.body as any).chat.name)).toEqual(['V1 One', 'V1 Two', 'V1 Three'])
+    expect(commands.map((call) => (call.body as any).chat.id)).not.toContain('v1-a')
+    expect(commands.map((call) => (call.body as any).chat.id)).not.toContain('v1-b')
+    expect(commands.map((call) => (call.body as any).chat.id)).not.toContain('v1-c')
+    expect(commands.every((call) => typeof (call.body as any).chat.message[0].chatId === 'string')).toBe(true)
   })
 
-  it('removes an unchanged duplicate-id v1 imported chat when create fails', async () => {
+  it('re-keys and removes an unchanged v1 imported chat when create fails', async () => {
     const calls = stubCommandFetch({ failCommandNumber: 1 })
     selectJsonFile('chats.json', {
       type: 'risuAllChats',
@@ -540,12 +641,15 @@ describe('chat import projection helpers', () => {
       ])
     })
     expect((createChatCalls(calls)[0].body as any).chat).toMatchObject({
-      id: 'chat-a',
+      id: expect.any(String),
       name: 'Imported Duplicate',
     })
+    expect((createChatCalls(calls)[0].body as any).chat.id).not.toBe('chat-a')
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith('command failed')
   })
 
-  it('preserves an edited duplicate-id v1 imported chat when create fails', async () => {
+  it('preserves an edited re-keyed v1 imported chat when create fails', async () => {
     const calls = stubCommandFetch({
       failCommandNumber: 1,
       onCommand: ({ commandNumber }) => {
@@ -568,11 +672,10 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
-      expect(DBState.db.characters[0].chats.map((chat) => ({ id: chat.id, name: chat.name }))).toEqual([
-        { id: 'chat-a', name: 'Imported Duplicate edited' },
-        { id: 'chat-a', name: 'Chat A' },
-      ])
+      expect(DBState.db.characters[0].chats.map((chat) => chat.name)).toEqual(['Imported Duplicate edited', 'Chat A'])
     })
+    expect(DBState.db.characters[0].chats[0].id).not.toBe('chat-a')
+    expect(new Set(DBState.db.characters[0].chats.map((chat) => chat.id)).size).toBe(2)
   })
 
   it('normalizes risuChat v1 generation settings to incomplete prefill before create-chat dispatch', async () => {
@@ -688,6 +791,8 @@ describe('chat import projection helpers', () => {
     const calls = stubCommandFetch()
     selectHtmlChatFile(
       importedChat({
+        id: 'chat-a',
+        message: [{ role: 'user', data: 'hello', chatId: 'html-message-id' }],
         generationSettings: {
           configured: true,
           personaId: 'persona-a',
@@ -725,5 +830,7 @@ describe('chat import projection helpers', () => {
         },
       },
     })
+    expect((createCall.body as any).chat.id).not.toBe('chat-a')
+    expect((createCall.body as any).chat.message[0].chatId).not.toBe('html-message-id')
   })
 })

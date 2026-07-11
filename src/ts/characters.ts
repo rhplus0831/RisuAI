@@ -23,7 +23,7 @@ import { translateHTML } from './translator/translator'
 import { doingChat } from './process/index.svelte'
 import { importCharacter } from './characterCards'
 import { PngChunk } from './pngChunk'
-import { currentChatStateSnapshot, dispatchCreateChat, dispatchCreateImportedChats } from './chatCommands'
+import { currentChatStateSnapshot, dispatchCreateChatForImport, dispatchCreateImportedChats } from './chatCommands'
 import { CHAT_GENERATION_SETTINGS_FIELD, type ChatGenerationSettings } from './chatGenerationSettings'
 import { getColdStorageItem } from './process/coldstorage.svelte'
 import {
@@ -652,6 +652,86 @@ function resolveFreshChatImportTarget(
   return resolveChatImportTarget(target)
 }
 
+function rekeyImportedChat(chat: Chat): void {
+  chat.id = v4()
+  const messageIdMap = new Map<string, string>()
+  if (Array.isArray(chat.message)) {
+    for (const message of chat.message) {
+      if (!isRecord(message)) continue
+      const previousId = typeof message.chatId === 'string' && message.chatId.trim() ? message.chatId : null
+      const nextId = v4()
+      message.chatId = nextId
+      if (previousId && !messageIdMap.has(previousId)) {
+        messageIdMap.set(previousId, nextId)
+      }
+    }
+
+    for (const message of chat.message) {
+      if (!isRecord(message) || !isRecord(message.generationInfo)) continue
+      const generationId = message.generationInfo.generationId
+      if (typeof generationId !== 'string') continue
+      const nextGenerationId = messageIdMap.get(generationId)
+      if (nextGenerationId) {
+        message.generationInfo.generationId = nextGenerationId
+      }
+    }
+  }
+
+  if (Array.isArray(chat.bookmarks)) {
+    chat.bookmarks = chat.bookmarks.map((messageId) => messageIdMap.get(messageId) ?? messageId)
+  }
+  if (isRecord(chat.bookmarkNames)) {
+    const renamed: Record<string, string> = {}
+    for (const [messageId, name] of Object.entries(chat.bookmarkNames)) {
+      renamed[messageIdMap.get(messageId) ?? messageId] = name
+    }
+    chat.bookmarkNames = renamed
+  }
+
+  const memory = chat.hypaV3Data
+  if (isRecord(memory) && Array.isArray(memory.summaries)) {
+    for (const summary of memory.summaries) {
+      if (!isRecord(summary) || !Array.isArray(summary.chatMemos)) continue
+      summary.chatMemos = summary.chatMemos.map((messageId) =>
+        typeof messageId === 'string' ? (messageIdMap.get(messageId) ?? messageId) : messageId,
+      )
+    }
+  }
+}
+
+function rekeyImportedChatFolders(folders: unknown[]): Map<string, string> {
+  const folderIdMap = new Map<string, string>()
+  for (const folder of folders) {
+    if (!isRecord(folder)) continue
+    const previousId = typeof folder.id === 'string' && folder.id.trim() ? folder.id : null
+    const nextId = v4()
+    folder.id = nextId
+    if (previousId && !folderIdMap.has(previousId)) {
+      folderIdMap.set(previousId, nextId)
+    }
+  }
+  return folderIdMap
+}
+
+function clearUnknownImportedFolder(chat: Chat, character: character): void {
+  if (!chat.folderId) return
+  if (!character.chatFolders?.some((folder) => folder.id === chat.folderId)) {
+    chat.folderId = null
+  }
+}
+
+function reportChatImportCommandResult(result: Awaited<ReturnType<typeof dispatchCreateChatForImport>>): boolean {
+  if (result.status === 'ok') return true
+  if (result.error === 'server_command_unavailable') {
+    alertError(language.modelProfiles.commandUnavailable)
+  } else if (result.error.startsWith('revision_conflict:')) {
+    alertError(language.modelProfiles.commandConflict)
+  } else {
+    alertError(result.error)
+  }
+  return false
+}
+
 export async function importChat() {
   const capturedTarget = captureCurrentChatImportTarget()
   if (!capturedTarget) {
@@ -703,6 +783,8 @@ export async function importChat() {
         return
       }
 
+      rekeyImportedChat(newChat)
+
       if (
         (DBState.db.characters[selectedID].chatFolders ?? []).filter((folder) => folder.id === newChat.folderId)
           .length === 0
@@ -716,29 +798,24 @@ export async function importChat() {
         character.chatPage = 0
       })
       if (characterId) {
-        dispatchCreateChat(characterId, newChat, previous)
+        const result = await dispatchCreateChatForImport(characterId, newChat, previous)
+        if (!reportChatImportCommandResult(result)) return
       }
       alertNormal(language.successImport)
     } else if (dat.name.endsWith('json')) {
       const json = JSON.parse(Buffer.from(dat.data).toString('utf-8'))
       if ((json.type === 'risuAllChats' || json.type === 'risuChat') && json.ver === 2) {
-        const folders = json.folders || []
+        const folders = Array.isArray(json.folders) ? json.folders : []
         const chats = Array.isArray(json.data) ? json.data : [json.data]
-        const folderIdMap: Record<string, string> = {}
-        folders.forEach((folder) => {
-          if (DBState.db.characters[selectedID].chatFolders?.some((f) => f.id === folder.id)) {
-            const newId = uuidv4()
-            folderIdMap[folder.id] = newId
-            folder.id = newId
-          } else {
-            folderIdMap[folder.id] = folder.id
-          }
-        })
+        const folderIdMap = rekeyImportedChatFolders(folders)
         chats.forEach((chat) => {
-          if (chat.folderId && folderIdMap[chat.folderId]) {
-            chat.folderId = folderIdMap[chat.folderId]
+          const importedFolderId = typeof chat.folderId === 'string' ? folderIdMap.get(chat.folderId) : undefined
+          if (importedFolderId) {
+            chat.folderId = importedFolderId
+          } else {
+            clearUnknownImportedFolder(chat, DBState.db.characters[selectedID])
           }
-          chat.id = v4()
+          rekeyImportedChat(chat)
           normalizeImportedChatGenerationSettings(chat)
         })
         withTrustedServerProjectionWrite(() => {
@@ -748,7 +825,8 @@ export async function importChat() {
           DBState.db.characters[selectedID].chatFolders.push(...folders)
           DBState.db.characters[selectedID].chats.unshift(...chats)
         })
-        dispatchCreateImportedChats(characterId, folders, chats, previous)
+        const result = await dispatchCreateImportedChats(characterId, folders, chats, previous)
+        if (!reportChatImportCommandResult(result)) return
         alertNormal(language.successImport)
         return
       }
@@ -763,13 +841,16 @@ export async function importChat() {
               v.localLore = []
             }
             v.fmIndex ??= -1
+            clearUnknownImportedFolder(v, DBState.db.characters[selectedID])
+            rekeyImportedChat(v)
             normalizeImportedChatGenerationSettings(v)
             return v
           })
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[selectedID].chats.unshift(...normalizedChats)
           })
-          dispatchCreateImportedChats(characterId, [], normalizedChats, previous)
+          const result = await dispatchCreateImportedChats(characterId, [], normalizedChats, previous)
+          if (!reportChatImportCommandResult(result)) return
           alertNormal(language.successImport)
           return
         } else {
@@ -788,13 +869,15 @@ export async function importChat() {
           )
         ) {
           das.fmIndex ??= -1
-          das.id = v4()
+          clearUnknownImportedFolder(das, DBState.db.characters[selectedID])
+          rekeyImportedChat(das)
           normalizeImportedChatGenerationSettings(das)
           withTrustedServerProjectionWrite(() => {
             DBState.db.characters[selectedID].chats.unshift(das)
           })
           if (characterId) {
-            dispatchCreateChat(characterId, das, previous, false)
+            const result = await dispatchCreateChatForImport(characterId, das, previous, false)
+            if (!reportChatImportCommandResult(result)) return
           }
           alertNormal(language.successImport)
           return
@@ -808,16 +891,29 @@ export async function importChat() {
       }
     } else if (dat.name.endsWith('html')) {
       const doc = new DOMParser().parseFromString(Buffer.from(dat.data).toString('utf-8'), 'text/html')
-      const chat = doc.querySelector('.idat').textContent
+      const chat = doc.querySelector('.idat')?.textContent
+      if (!chat) {
+        alertError(language.errors.noData)
+        return
+      }
       const json = JSON.parse(chat)
-      if (json.message && json.note && json.name && json.localLore) {
-        json.id = typeof json.id === 'string' && json.id ? json.id : v4()
+      if (
+        !(
+          checkNullish(json.message) ||
+          checkNullish(json.note) ||
+          checkNullish(json.name) ||
+          checkNullish(json.localLore)
+        )
+      ) {
+        clearUnknownImportedFolder(json, DBState.db.characters[selectedID])
+        rekeyImportedChat(json)
         normalizeImportedChatGenerationSettings(json)
         withTrustedServerProjectionWrite(() => {
           DBState.db.characters[selectedID].chats.unshift(json)
         })
         if (characterId) {
-          dispatchCreateChat(characterId, json, previous, false)
+          const result = await dispatchCreateChatForImport(characterId, json, previous, false)
+          if (!reportChatImportCommandResult(result)) return
         }
         alertNormal(language.successImport)
       } else {

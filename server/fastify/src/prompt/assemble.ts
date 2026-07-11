@@ -5,6 +5,7 @@ import type { Chat, Database, Message, character } from '../../../../src/ts/stor
 import type { CbsCallbackMemo } from '../../../../src/ts/cbs'
 import type { PromptItem } from '../../../../src/ts/process/prompt'
 import type { OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
 import { EntityNotFoundError } from '../repository.js'
 import {
   normalizeHypaV3Settings,
@@ -88,6 +89,7 @@ import {
   type MemorySummary,
   type MemorySummarySnapshot,
 } from '../memoryRepository.js'
+import { filterMemorySummariesForModel } from '../memorySummaryCompatibility.js'
 import { tokenize, tokenizeChat } from './tokens.js'
 import { tokenizeHypaV3PrefixChat } from './prefixTokenMemo.js'
 import { tokenizerOptionsFromDb } from './tokenizerConfig.js'
@@ -358,6 +360,8 @@ export interface AssembleResult {
   prompt?: Omit<PromptEvent, 'type'>
   /** The budgeted flat prompt (full `OpenAIChat` rows) for dispatch. */
   formated?: OpenAIChat[]
+  /** Expanded global + character provider logit-bias rows. */
+  biases?: [string, number][]
   /** Metadata-only deterministic summary/hash of the budgeted dispatch rows. */
   promptSummary?: PromptRowsSummary
   /** Final input token count from `finalizeRequestBudget`. */
@@ -457,6 +461,7 @@ export interface AssemblyState {
    * the memory window pushes them into `unformated.chats`.
    */
   historyMessages?: OpenAIChat[]
+  biases?: [string, number][]
   /**
    * The start-trigger result threaded out of the history walk. Later assembly
    * merges `triggerResult.additonalSysPrompt` into the slots; `null` when no
@@ -916,6 +921,34 @@ async function runInputTrigger(state: AssemblyState): Promise<void> {
     state.inputTriggerRewroteTranscript = true
     syncWorkingTranscript(state)
     captureMessageReplacement(state, 'input_trigger')
+  }
+}
+
+/**
+ * Apply the declarative `request` trigger to the final provider rows. Request
+ * mode is deliberately display-only and limited by the trigger runner's
+ * request allowlist, matching the retained browser wrapper.
+ */
+export async function applyRequestTrigger(state: AssemblyState, rows: OpenAIChat[]): Promise<OpenAIChat[]> {
+  const triggerCtx: TriggerRunContext = {
+    modules: getActiveModules(state.database, state.currentChar, state.currentChat),
+    model: state.database.aiModel,
+    database: state.database,
+    selectedCharID: state.selectedCharID,
+    chatPage: state.chatPage,
+    signal: state.signal,
+  }
+  try {
+    const result = await runTrigger(triggerCtx, state.currentChar, 'request', {
+      chat: state.currentChat,
+      displayMode: true,
+      displayData: JSON.stringify(rows),
+    })
+    if (!result || typeof result.displayData !== 'string') return rows
+    const parsed = JSON.parse(result.displayData) as unknown
+    return Array.isArray(parsed) ? (parsed as OpenAIChat[]) : rows
+  } catch {
+    return rows
   }
 }
 
@@ -1480,12 +1513,16 @@ export async function fillHistoryAndBias(state: AssemblyState): Promise<void> {
   state.currentTokens = (state.currentTokens ?? 0) + history.addedTokens
   state.historyMessages = history.messages
   state.preparedDepthPrompts = history.preparedDepthPrompts
+  const globalBias = Array.isArray(state.database.bias) ? state.database.bias : []
+  const characterBias = Array.isArray(currentChar.bias) ? currentChar.bias : []
+  state.biases = [...globalBias, ...characterBias].flatMap((row) => {
+    if (!Array.isArray(row) || typeof row[0] !== 'string' || typeof row[1] !== 'number') return []
+    const source = row[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\')
+    return [[expandVariables(source, { ...state.ctx, chara: currentChar }).text, row[1]] as [string, number]]
+  })
   if (history.triggerResult) {
     captureMessageReplacement(state, 'start_trigger')
   }
-
-  // The server dispatch path currently has no provider-level logit-bias
-  // contract, so assembly intentionally does not compute or emit bias rows.
 }
 
 /**
@@ -1683,7 +1720,7 @@ function planPromptMemoryChunksForAssembly(input: {
       summarySnapshot = cleaned.summarySnapshot
     }
 
-    const summaries = summarySnapshot.summaries.filter((summary) => summary.model === input.settings.summarizationModel)
+    const summaries = filterMemorySummariesForModel(summarySnapshot.summaries, input.settings.summarizationModel)
     const { encoding, options } = tokenizerOptionsFromDb(input.state.database)
     const plan = planStandardHypaV3Memory({
       chats,
@@ -2017,8 +2054,10 @@ export async function assemblePrompt(input: AssembleInput, deps: AssembleDeps): 
       // Carry the full rows on the wire so preview clients can inspect the
       // dispatch payload, not just the lossy `messages` projection.
       formated,
+      biases: state.biases ?? [],
     },
     formated,
+    biases: state.biases ?? [],
     promptSummary,
     inputTokens: state.inputTokens,
     outputTokens: state.outputTokens,
@@ -2059,6 +2098,12 @@ export interface ServerPostGenerationInput {
   luaProgress?: PostGenerationLuaProgressTracker
   /** Optional live progress reporter for after-main Agent Preset steps. */
   agentPresetProgress?: AgentPresetProgressReporter
+  /**
+   * Runs after the transformed primary row is present but before run-vars and
+   * the output trigger mutate the transcript. Used to derive provider reroll
+   * choices against the same context/order as retained multiline generation.
+   */
+  beforeOutputTrigger?: (alternateState: AssemblyState) => Promise<void>
 }
 
 /** Result of {@link runServerPostGeneration}. */
@@ -2075,6 +2120,78 @@ export interface ServerPostGenerationResult {
   resendChat: boolean
   /** A durable chat-var write occurred; the route persists when true. */
   changed: boolean
+}
+
+function cloneAgentPresetRuntime(runtime: AgentPresetRuntimeState | undefined): AgentPresetRuntimeState | undefined {
+  if (!runtime) return undefined
+  return {
+    ...runtime,
+    previousAgentOutputs: structuredClone(runtime.previousAgentOutputs),
+    promptOutputs: { ...runtime.promptOutputs },
+    outputRequired: { ...runtime.outputRequired },
+    ...(runtime.beforeMain ? { beforeMain: structuredClone(runtime.beforeMain) } : {}),
+    afterMain: undefined,
+    failure: undefined,
+  }
+}
+
+function clonePostGenerationState(state: AssemblyState): AssemblyState {
+  const database = structuredClone(state.database)
+  const currentChar = structuredClone(state.currentChar)
+  const currentChat = structuredClone(state.currentChat)
+  const luaExecBudget = state.luaExecBudget ? { ...state.luaExecBudget } : undefined
+  currentChar.chats[state.chatPage] = currentChat
+  database.characters[state.selectedCharID] = currentChar
+
+  return {
+    ...state,
+    database,
+    currentChar,
+    currentChat,
+    ctx: {
+      ...state.ctx,
+      database,
+      ...(typeof state.ctx.chara === 'object' ? { chara: currentChar } : {}),
+      ...(luaExecBudget ? { luaExecBudget } : {}),
+    },
+    ...(luaExecBudget ? { luaExecBudget } : {}),
+    ...(state.initialMessages ? { initialMessages: structuredClone(state.initialMessages) } : {}),
+    ...(state.messageMutationCheckpoint
+      ? { messageMutationCheckpoint: structuredClone(state.messageMutationCheckpoint) }
+      : {}),
+    ...(state.initialScriptstate ? { initialScriptstate: structuredClone(state.initialScriptstate) } : {}),
+    messageMutations: [],
+    additionalSystemPromptMutations: [],
+    varChanged: false,
+    agentPreset: cloneAgentPresetRuntime(state.agentPreset),
+  }
+}
+
+/**
+ * Apply the per-choice presentation transforms to a provider alternate without
+ * committing its scriptstate/message side effects. Each choice gets an isolated
+ * state clone so `editoutput` and Agent Preset modifiers match the primary while
+ * only the selected primary runs the output trigger and persists mutations.
+ */
+export async function runServerAlternatePostGeneration(state: AssemblyState, completionText: string): Promise<string> {
+  const isolated = clonePostGenerationState(state)
+  const isContinue = isolated.input.mode === 'continue'
+  const messages = isolated.currentChat.message ?? []
+  const continueIndex = messages.length - 1
+  const initialMessages = isolated.initialMessages ?? messages
+  const initialContinueIndex = initialMessages.length - 1
+  const continueBase =
+    isContinue && initialMessages[initialContinueIndex]?.role === 'char'
+      ? (initialMessages[initialContinueIndex].data ?? '')
+      : ''
+  const editIndex = isContinue ? continueIndex : messages.length
+
+  const reformatted = reformatCompletion(continueBase + completionText)
+  let editedText = await applyEditOutput(isolated, reformatted, editIndex)
+  if (isolated.database.removeIncompleteResponse) {
+    editedText = trimUntilPunctuation(editedText)
+  }
+  return (await runAgentPresetAfterMainStage(isolated, editedText)).finalText
 }
 
 /** Browser `sendChat`'s `reformatContent` is `.trim()`; mirror it server-side. */
@@ -2426,11 +2543,16 @@ export async function runServerPostGeneration(
   state.additionalSystemPromptMutations = []
 
   const reformatted = reformatCompletion(continueBase + input.completionText)
-  const editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
+  let editedText = await applyEditOutput(state, reformatted, editIndex, input.luaTrace, input.luaProgress)
+  if (state.database.removeIncompleteResponse) {
+    editedText = trimUntilPunctuation(editedText)
+  }
+  const alternateAgentPreset = cloneAgentPresetRuntime(state.agentPreset)
   const agentPresetAfterMain = await runAgentPresetAfterMainStage(state, editedText, input.agentPresetProgress)
   attachAgentPresetDiagnostics(input.generationInfo, state)
 
   appendAssistantRow(state, agentPresetAfterMain.finalText, input, isContinue, continueIndex)
+  await input.beforeOutputTrigger?.({ ...state, agentPreset: alternateAgentPreset })
   if (agentPresetAfterMain.error) {
     return {
       finalText: agentPresetAfterMain.finalText,

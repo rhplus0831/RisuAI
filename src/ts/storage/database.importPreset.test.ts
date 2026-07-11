@@ -41,6 +41,7 @@ function clonePlain<T>(value: T): T {
 
 function stubCommandFetch(): CapturedFetch[] {
   const calls: CapturedFetch[] = []
+  let revision = 10
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -51,11 +52,20 @@ function stubCommandFetch(): CapturedFetch[] {
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url === '/api/v1/commands/prompt-presets/import') {
+      if (url === '/api/v1/commands/model-presets/import') {
+        revision += 1
         return jsonResponse({
-          revision: 11,
-          event: { type: 'preset.imported', revision: 11, resource: 'preset' },
-          presetId: 'preset-imported',
+          revision,
+          event: { type: 'modelPreset.imported', revision, resource: 'model-preset' },
+          modelPresetId: 'model-imported',
+        })
+      }
+      if (url === '/api/v1/commands/prompt-presets/import') {
+        revision += 1
+        return jsonResponse({
+          revision,
+          event: { type: 'promptPreset.imported', revision, resource: 'prompt-preset' },
+          promptPresetId: 'preset-imported',
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -125,6 +135,8 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   DBState.db = {
+    modelPresets: [],
+    modelPresetsId: -1,
     promptPresets: [],
     promptPresetsId: -1,
   } as any
@@ -202,6 +214,93 @@ describe('importPreset warm-path logging (L37)', () => {
     } finally {
       logSpy.mockRestore()
     }
+  })
+
+  it('splits a full legacy binary preset into model and prompt presets without dropping runtime fields', async () => {
+    const calls = stubCommandFetch()
+    const file = await buildRisupresetFile({
+      id: 'legacy-source-id',
+      name: 'Legacy Full',
+      apiType: 'openai',
+      aiModel: 'gpt-4o',
+      openrouterRequestModel: 'openai/gpt-4o',
+      temperature: 42,
+      maxContext: 16000,
+      mainPrompt: 'Legacy main prompt',
+      jailbreak: 'Legacy jailbreak',
+    })
+
+    await importPreset({ name: 'legacy-full.risupreset', data: file })
+
+    expect(DBState.db.modelPresets).toHaveLength(1)
+    expect(DBState.db.modelPresets[0]).toMatchObject({
+      name: 'Legacy Full',
+      apiType: 'openai',
+      aiModel: 'gpt-4o',
+      openrouterRequestModel: 'openai/gpt-4o',
+      temperature: 42,
+      maxContext: 16000,
+    })
+    expect(DBState.db.modelPresets[0].id).not.toBe('legacy-source-id')
+
+    expect(DBState.db.promptPresets).toHaveLength(1)
+    expect(DBState.db.promptPresets[0]).toMatchObject({
+      name: 'Legacy Full',
+      mainPrompt: 'Legacy main prompt',
+      jailbreak: 'Legacy jailbreak',
+      temperature: 42,
+      maxContext: 16000,
+      overrideModelParameters: true,
+    })
+    expect(DBState.db.promptPresets[0].id).not.toBe('legacy-source-id')
+
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url.endsWith('/model-presets/import'))).toHaveLength(1)
+      expect(calls.filter((call) => call.url.endsWith('/prompt-presets/import'))).toHaveLength(1)
+    })
+    const [modelCommand, promptCommand] = calls.filter((call) => call.url.includes('-presets/import'))
+    expect(modelCommand.body.preset).toMatchObject({
+      aiModel: 'gpt-4o',
+      openrouterRequestModel: 'openai/gpt-4o',
+      maxContext: 16000,
+    })
+    expect(promptCommand.body.preset).toMatchObject({
+      mainPrompt: 'Legacy main prompt',
+      overrideModelParameters: true,
+      maxContext: 16000,
+    })
+  })
+
+  it('imports a modern prompt export with blank redacted fields as prompt-only', async () => {
+    const calls = stubCommandFetch()
+    const file = await buildRisupresetFile({
+      id: 'prompt-source-id',
+      name: 'Modern Prompt Export',
+      mainPrompt: 'Modern main prompt',
+      temperature: 61,
+      overrideModelParameters: true,
+      openAIKey: '',
+      forceReplaceUrl: '',
+      forceReplaceUrl2: '',
+      proxyKey: '',
+      textgenWebUIStreamURL: '',
+      textgenWebUIBlockingURL: '',
+    })
+
+    await importPreset({ name: 'modern-prompt.risupreset', data: file })
+
+    expect(DBState.db.modelPresets).toHaveLength(0)
+    expect(DBState.db.promptPresets).toHaveLength(1)
+    expect(DBState.db.promptPresets[0]).toMatchObject({
+      name: 'Modern Prompt Export',
+      mainPrompt: 'Modern main prompt',
+      temperature: 61,
+      overrideModelParameters: true,
+    })
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url.endsWith('/model-presets/import'))).toHaveLength(0)
+      expect(calls.filter((call) => call.url.endsWith('/prompt-presets/import'))).toHaveLength(1)
+    })
   })
 
   it('L21: a failed preset import rolls back the optimistic imported row', async () => {

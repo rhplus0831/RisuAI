@@ -1339,7 +1339,7 @@ export const languageChineseTraditional = {
     quickSettings: '快速設定',
     toggleVoice: '切換語音',
     toggleLog: '切換記錄',
-    previewRequest: '預覽請求',
+    previewRequest: '預覽組合後的提示詞',
     import: '匯入',
     export: '匯出',
     webcam: '切換網路攝影機',

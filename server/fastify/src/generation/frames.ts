@@ -6,6 +6,8 @@ export interface CompletionStreamFrame {
   status?: number
   statusText?: string
   code?: string
+  reason?: string
+  alternates?: string[]
 }
 
 export interface CompletionResult {
@@ -16,4 +18,5 @@ export interface CompletionResult {
   statusText?: string
   code?: string
   aborted?: boolean
+  alternates?: string[]
 }

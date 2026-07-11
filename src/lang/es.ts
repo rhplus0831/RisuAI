@@ -1395,7 +1395,7 @@ export const languageSpanish = {
     quickSettings: 'Configuración Rápida',
     toggleVoice: 'Alternar Voz',
     toggleLog: 'Alternar Registro',
-    previewRequest: 'Vista Previa de Solicitud',
+    previewRequest: 'Vista previa del prompt ensamblado',
     import: 'Importar',
     export: 'Exportar',
     webcam: 'Alternar Webcam',

@@ -79,6 +79,7 @@ describe('schema migrations', () => {
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
+        'memory_legacy_summary_tombstones',
         'memory_summaries',
         'messages',
         'model_presets',
@@ -93,6 +94,79 @@ describe('schema migrations', () => {
         'schema_version',
         'settings',
         'translator_presets',
+      ])
+    } finally {
+      db.close()
+    }
+  })
+
+  it('migrates finalization retries to retain multi-generation alternates', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 19, 4)
+    const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      before.exec(`
+        CREATE TABLE generation_finalization_retries (
+          generation_id TEXT PRIMARY KEY,
+          chat_id TEXT NOT NULL,
+          mode TEXT NOT NULL,
+          target_message_id TEXT,
+          message_json TEXT NOT NULL,
+          chat_var_mutations_json TEXT NOT NULL,
+          target_snapshot_json TEXT,
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          terminal_error TEXT,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `)
+    } finally {
+      before.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 4 })
+      const columns = db.prepare('PRAGMA table_info(generation_finalization_retries)').all() as Array<{
+        name: string
+        dflt_value: string | null
+      }>
+      expect(columns.find((column) => column.name === 'alternate_messages_json')).toMatchObject({
+        dflt_value: "'[]'",
+      })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('migrates legacy-memory delete tombstones and records explicit row deletion', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 20, 5)
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 5 })
+      expect(listTables(db)).toContain('memory_legacy_summary_tombstones')
+
+      insertMemoryChunk(db)
+      db.prepare(
+        `
+          INSERT INTO memory_summaries (
+            id,
+            chat_id,
+            chunk_id,
+            model,
+            text,
+            tokens
+          ) VALUES ('legacy-summary', 'chat-1', 'chunk-1', 'legacy-hypav3', 'legacy text', 0)
+        `,
+      ).run()
+      db.prepare("DELETE FROM memory_summaries WHERE id = 'legacy-summary'").run()
+
+      expect(db.prepare('SELECT summary_id, chat_id FROM memory_legacy_summary_tombstones').all()).toEqual([
+        { summary_id: 'legacy-summary', chat_id: 'chat-1' },
       ])
     } finally {
       db.close()
@@ -134,6 +208,7 @@ describe('schema migrations', () => {
         'memory_chunks',
         'memory_embeddings',
         'memory_jobs',
+        'memory_legacy_summary_tombstones',
         'memory_summaries',
         'messages',
         'model_presets',

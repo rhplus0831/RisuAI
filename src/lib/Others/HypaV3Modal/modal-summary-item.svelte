@@ -38,9 +38,14 @@
     bulkEditState?: BulkEditState
     uiState?: UIState
     readOnly?: boolean
+    tagsReadOnly?: boolean
     onToggleSummarySelection?: (index: number) => void
     onOpenTagManager?: (index: number) => void
     onToggleCollapse?: (index: number) => void
+    onSummaryInput?: (index: number) => void
+    onSummaryChanged?: (index: number) => void | Promise<void>
+    onDeleteSummary?: (index: number) => void | Promise<void>
+    onDeleteAfter?: (index: number) => void | Promise<void>
   }
 
   let {
@@ -54,9 +59,14 @@
     bulkEditState,
     uiState,
     readOnly = false,
+    tagsReadOnly = false,
     onToggleSummarySelection,
     onOpenTagManager,
     onToggleCollapse,
+    onSummaryInput,
+    onSummaryChanged,
+    onDeleteSummary,
+    onDeleteAfter,
   }: Props = $props()
 
   const summary = $derived(hypaV3Data.summaries[summaryIndex])
@@ -128,6 +138,7 @@
 
   function toggleImportant(): void {
     summary.isImportant = !summary.isImportant
+    void onSummaryChanged?.(summaryIndex)
   }
 
   function isOrphan(): boolean {
@@ -199,7 +210,8 @@
 
   async function deleteThis(): Promise<void> {
     if (await alertConfirm(language.hypaV3Modal.deleteThisConfirmMessage)) {
-      hypaV3Data.summaries = hypaV3Data.summaries.filter((_, i) => i !== summaryIndex)
+      if (onDeleteSummary) await onDeleteSummary(summaryIndex)
+      else hypaV3Data.summaries = hypaV3Data.summaries.filter((_, i) => i !== summaryIndex)
     }
   }
 
@@ -210,7 +222,8 @@
         language.hypaV3Modal.deleteAfterConfirmSecondMessage,
       )
     ) {
-      hypaV3Data.summaries.splice(summaryIndex + 1)
+      if (onDeleteAfter) await onDeleteAfter(summaryIndex)
+      else hypaV3Data.summaries.splice(summaryIndex + 1)
     }
   }
 
@@ -252,6 +265,7 @@
 
   function applyRerolled(): void {
     summary.text = rerolled
+    void onSummaryChanged?.(summaryIndex)
     translation = null
     rerolled = null
     rerolledTranslation = null
@@ -344,19 +358,36 @@
         >{language.hypaV3Modal.summaryNumberLabel.replace('{0}', (summaryIndex + 1).toString())}</span>
 
       <!-- Category Tag -->
-      <span class="px-2 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">
-        <TagIcon class="w-3 h-3 inline mr-1" />
-        {getCategoryName(summary.categoryId, categories)}
-      </span>
+      {#if readOnly}
+        <span class="px-2 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">
+          <TagIcon class="w-3 h-3 inline mr-1" />
+          {getCategoryName(summary.categoryId, categories)}
+        </span>
+      {:else}
+        <label class="flex items-center gap-1 px-2 py-1 text-xs rounded-full bg-zinc-700 text-zinc-300">
+          <TagIcon class="w-3 h-3" />
+          <select
+            class="max-w-36 bg-transparent text-zinc-200 focus:outline-hidden"
+            value={summary.categoryId ?? ''}
+            onchange={(event) => {
+              summary.categoryId = event.currentTarget.value || undefined
+              void onSummaryChanged?.(summaryIndex)
+            }}>
+            {#each categories as category}
+              <option value={category.id}>{category.name}</option>
+            {/each}
+          </select>
+        </label>
+      {/if}
 
       <!-- Individual Tags -->
       {#if summary.tags && summary.tags.length > 0}
         {#each summary.tags as tag}
           <button
-            class="px-2 py-1 text-xs rounded-full bg-blue-600 text-white transition-colors {readOnly
+            class="px-2 py-1 text-xs rounded-full bg-blue-600 text-white transition-colors {readOnly || tagsReadOnly
               ? 'cursor-default'
               : 'hover:bg-blue-500'}"
-            disabled={readOnly}
+            disabled={readOnly || tagsReadOnly}
             onclick={() => onOpenTagManager?.(summaryIndex)}>
             #{tag}
           </button>
@@ -364,7 +395,7 @@
       {/if}
 
       <!-- Add Tag Button -->
-      {#if !readOnly}
+      {#if !readOnly && !tagsReadOnly}
         <button
           class="px-2 py-1 text-xs rounded-full bg-zinc-600 hover:bg-zinc-500 text-zinc-300 transition-colors"
           onclick={() => onOpenTagManager?.(summaryIndex)}
@@ -418,6 +449,7 @@
           class="p-2 transition-colors {summary.isImportant
             ? 'text-yellow-400 hover:text-yellow-300'
             : 'text-zinc-400 hover:text-zinc-200'}"
+          data-summary-action="important"
           tabindex="-1"
           onclick={toggleImportant}>
           <StarIcon class="w-4 h-4" />
@@ -458,6 +490,8 @@
       bind:this={summaryItemState.originalRef}
       bind:value={summary.text}
       readonly={readOnly}
+      oninput={() => onSummaryInput?.(summaryIndex)}
+      onchange={() => void onSummaryChanged?.(summaryIndex)}
       onfocus={() => {
         if (searchState && !searchState.isNavigating) {
           searchState.requestedSearchFromIndex = summaryIndex

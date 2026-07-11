@@ -10,6 +10,7 @@ import {
   loadMemorySummarySnapshot,
 } from '../src/memoryRepository.js'
 import { selectMemorySummaries } from '../src/memorySelectionService.js'
+import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.js'
 import { ValidationError } from '../src/repository.js'
 
 const dataDirs: string[] = []
@@ -27,6 +28,76 @@ afterEach(() => {
 })
 
 describe('memory selection service', () => {
+  it('selects imported legacy summaries for any active model and keeps their metadata over duplicate replacements', () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      seedMemory(db, {
+        chatId: 'chat-1',
+        chunkId: 'legacy-chunk',
+        summaryId: 'legacy-summary',
+        summaryModel: LEGACY_HYPA_V3_SUMMARY_MODEL,
+        embeddingId: 'legacy-embedding',
+        embeddingModel: 'embedding-model',
+        rangeStartSeq: 0,
+        vector: [1, 0],
+        tokens: 5,
+        metadata: {
+          source: 'legacy-hypav3',
+          chatMemos: ['memo-a', 'memo-b'],
+          isImportant: true,
+          categoryId: 'story',
+          tags: ['imported'],
+        },
+      })
+
+      const input = {
+        db,
+        chatId: 'chat-1',
+        summaryModel: 'current-summary-model',
+        embeddingModel: 'embedding-model',
+        queryVectors: [[1, 0]],
+        availableTokens: 100,
+        settings: { recentMemoryRatio: 0, similarMemoryRatio: 1 },
+      }
+      const selected = selectMemorySummaries(input)
+      expect(selected.selectedSummaries.map((summary) => summary.id)).toEqual(['legacy-summary'])
+      expect(selected.importantSummaries.map((summary) => summary.id)).toEqual(['legacy-summary'])
+      expect(selected.selectedSummaries[0].metadata).toMatchObject({
+        chatMemos: ['memo-a', 'memo-b'],
+        isImportant: true,
+        categoryId: 'story',
+        tags: ['imported'],
+      })
+
+      const fromSnapshot = selectMemorySummaries({
+        ...input,
+        summarySnapshot: loadMemorySummarySnapshot(db, { chatId: 'chat-1' }),
+      })
+      expect(fromSnapshot.selectedSummaries.map((summary) => summary.id)).toEqual(['legacy-summary'])
+
+      createMemorySummary(db, {
+        id: 'active-summary',
+        chatId: 'chat-1',
+        chunkId: 'legacy-chunk',
+        model: 'current-summary-model',
+        text: 'replacement summary',
+        tokens: 5,
+      })
+      const replacement = selectMemorySummaries({
+        ...input,
+        settings: { recentMemoryRatio: 1, similarMemoryRatio: 0 },
+      })
+      expect(replacement.selectedSummaries.map((summary) => summary.id)).toEqual(['legacy-summary'])
+      expect(replacement.selectedSummaries[0].metadata).toMatchObject({
+        isImportant: true,
+        categoryId: 'story',
+        tags: ['imported'],
+      })
+    } finally {
+      db.close()
+    }
+  })
+
   it('reads repository rows by chat and model, ranks them, and allocates the selected summaries', () => {
     const db = openDatabase(makeDataDir())
     try {

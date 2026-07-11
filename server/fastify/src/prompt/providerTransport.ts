@@ -7,9 +7,16 @@ export interface ProviderChunkTransportResult {
   status: 'done' | 'error' | 'aborted'
   result: string
   finishReason?: CompletionStreamFrame['finishReason']
+  alternates?: string[]
 }
 
 export type ProviderDoneMetadata = (result: string) => Omit<DoneEvent, 'type' | 'result'> | undefined
+
+export interface ProviderPostGenerationResult {
+  frame?: PostGenerationFrame
+  /** Final per-choice text to expose on the terminal done event. */
+  alternates?: readonly string[]
+}
 
 export interface ProviderChunkTransportOptions {
   doneMetadata?: ProviderDoneMetadata
@@ -23,7 +30,18 @@ export interface ProviderChunkTransportOptions {
    * `undefined` (or throws — the route callback swallows its own failures) to
    * leave `done` untouched.
    */
-  postGeneration?: (result: string) => Promise<PostGenerationFrame | undefined>
+  postGeneration?: (
+    result: string,
+    alternates: readonly string[],
+  ) => Promise<PostGenerationFrame | ProviderPostGenerationResult | undefined>
+}
+
+function isProviderPostGenerationResult(
+  value: PostGenerationFrame | ProviderPostGenerationResult,
+): value is ProviderPostGenerationResult {
+  return (
+    Object.prototype.hasOwnProperty.call(value, 'frame') || Object.prototype.hasOwnProperty.call(value, 'alternates')
+  )
 }
 
 function errorMessage(err: unknown): string {
@@ -47,6 +65,7 @@ export async function emitProviderChunks(
   options: ProviderChunkTransportOptions | ProviderDoneMetadata = {},
 ): Promise<ProviderChunkTransportResult> {
   let result = ''
+  let alternates: string[] = []
   const normalizedOptions: ProviderChunkTransportOptions =
     typeof options === 'function' ? { doneMetadata: options } : options
   const emitSideEffects = (): void => {
@@ -58,11 +77,23 @@ export async function emitProviderChunks(
   // handled by the streaming route's provider-error path.
   const emitSuccessDone = async (): Promise<void> => {
     emitSideEffects()
-    const postGeneration = normalizedOptions.postGeneration ? await normalizedOptions.postGeneration(result) : undefined
+    const postGenerationResult = normalizedOptions.postGeneration
+      ? await normalizedOptions.postGeneration(result, alternates)
+      : undefined
+    let postGeneration: PostGenerationFrame | undefined
+    if (postGenerationResult) {
+      if (isProviderPostGenerationResult(postGenerationResult)) {
+        postGeneration = postGenerationResult.frame
+        alternates = [...(postGenerationResult.alternates ?? alternates)]
+      } else {
+        postGeneration = postGenerationResult as PostGenerationFrame
+      }
+    }
     emit({
       type: 'done',
       result,
       ...(normalizedOptions.doneMetadata?.(result) ?? {}),
+      ...(alternates.length > 0 ? { alternates } : {}),
       ...(postGeneration ? { postGeneration } : {}),
     })
   }
@@ -90,7 +121,12 @@ export async function emitProviderChunks(
         emit({
           type: 'error',
           error: providerError ?? 'Provider stream failed without an error message.',
-          reason: providerError ? 'provider_stream_error_frame' : 'provider_stream_error_frame_empty',
+          reason:
+            typeof frame.reason === 'string' && frame.reason.length > 0
+              ? frame.reason
+              : providerError
+                ? 'provider_stream_error_frame'
+                : 'provider_stream_error_frame_empty',
           ...(status !== undefined ? { status } : {}),
           ...(statusText ? { statusText } : {}),
           ...(code ? { code } : {}),
@@ -104,11 +140,13 @@ export async function emitProviderChunks(
         return { status: 'aborted', result }
       }
 
+      alternates = Array.isArray(frame.alternates) ? [...frame.alternates] : []
       await emitSuccessDone()
       return {
         status: 'done',
         result,
         finishReason: frame.finishReason,
+        ...(alternates.length > 0 ? { alternates } : {}),
       }
     }
   } catch (err) {

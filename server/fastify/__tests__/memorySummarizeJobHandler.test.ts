@@ -11,12 +11,14 @@ import { MemoryWorker } from '../src/memoryWorker.js'
 import {
   cancelMemoryJob,
   createMemoryChunk,
+  createMemorySummary,
   enqueueMemoryJob,
   getMemoryChunk,
   getMemoryJob,
   listMemorySummaries,
   updateMemoryChunkStatus,
 } from '../src/memoryRepository.js'
+import { LEGACY_HYPA_V3_SUMMARY_MODEL } from '../src/memorySummaryCompatibility.js'
 import type { SummaryAdapterResult } from '../src/memorySummaryAdapter.js'
 import { writePersistedWithMessages } from '../src/repository.js'
 import { assertScopedLoadOnHotPath } from './helpers/loadCostHarness.js'
@@ -204,6 +206,35 @@ describe('summarize memory job handler', () => {
 
       expect(summarize).not.toHaveBeenCalled()
       expect(listMemorySummaries(db, { chatId: 'chat-1', chunkId: 'chunk-1' })).toHaveLength(1)
+      expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('treats an imported legacy summary as an existing result for a queued active-model job', async () => {
+    const db = openDatabase(makeDataDir())
+    try {
+      const job = seedChunkAndJob(db)
+      createMemorySummary(db, {
+        id: 'legacy-summary',
+        chatId: 'chat-1',
+        chunkId: 'chunk-1',
+        model: LEGACY_HYPA_V3_SUMMARY_MODEL,
+        text: 'imported summary',
+        metadata: { source: 'legacy-hypav3', chatMemos: ['m0', 'm1'], isImportant: true },
+        tokens: 0,
+      })
+      const summarize = vi.fn(async (): Promise<SummaryAdapterResult> => {
+        throw new Error('legacy summary must prevent re-summarization')
+      })
+
+      await createSummarizeMemoryJobHandler({ db, loadDatabase: database, summarize })(job)
+
+      expect(summarize).not.toHaveBeenCalled()
+      expect(listMemorySummaries(db, { chatId: 'chat-1', chunkId: 'chunk-1' })).toMatchObject([
+        { id: 'legacy-summary', model: LEGACY_HYPA_V3_SUMMARY_MODEL, text: 'imported summary' },
+      ])
       expect(getMemoryChunk(db, 'chunk-1')).toMatchObject({ status: 'summarized' })
     } finally {
       db.close()

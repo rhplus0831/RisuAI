@@ -5,6 +5,7 @@ import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
   findEquivalentModelPreset,
+  hasModelPresetOnlyFields,
   modelPresetFingerprint,
   promptPresetExportPayload,
   resolvePromptPresetRegexField,
@@ -141,6 +142,24 @@ describe('preset split helpers', () => {
       enableCustomFlags: true,
       customFlags: [8],
     })
+  })
+
+  it('distinguishes full legacy presets from modern prompt-only payloads', () => {
+    expect(hasModelPresetOnlyFields(legacyPreset)).toBe(true)
+    expect(
+      hasModelPresetOnlyFields({
+        name: 'Prompt only',
+        mainPrompt: 'Prompt text',
+        temperature: 70,
+        overrideModelParameters: true,
+        additionalParams: [['temperature', '{{none}}']],
+        openAIKey: '',
+        forceReplaceUrl: '   ',
+        proxyKey: '',
+        textgenWebUIStreamURL: '',
+        textgenWebUIBlockingURL: '',
+      }),
+    ).toBe(false)
   })
 
   it('resolves prompt preset regex aliases as one logical field', () => {

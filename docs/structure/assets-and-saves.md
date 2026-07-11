@@ -59,6 +59,7 @@ revision or emit command events.
 | `server/fastify/src/risuSave/bundleExport.ts`                         | Zip bundle export with `.risu` bytes plus present asset files.      |
 | `server/fastify/src/risuSave/localBackupExport.ts`                    | Original Risu `.bin` local-backup export with asset records.        |
 | `server/fastify/src/risuSave/localBackupImport.ts`                    | Streaming device-backup decode for `.risu.zip` and legacy `.bin`.   |
+| `server/fastify/src/risuSave/localBackupDatabase.ts`                  | Legacy `.bin` account redaction and asset-reference conversion.     |
 | `server/fastify/src/risuSave/importLimits.ts`                         | Expanded-payload guard shared by `.risu` and Realm import decoding. |
 | `server/fastify/src/risuSave/boundedInflate.ts`                       | Streaming bounded inflate used by block and legacy envelope codecs. |
 | `server/fastify/src/risuSave/blockCodec.ts`, `legacyEnvelopeCodec.ts` | Current and legacy `.risu` envelope codecs.                         |
@@ -77,8 +78,10 @@ supports envelope/compression query options.
 `manifest.json`, and present referenced asset files.
 `GET /api/v1/export/local-backup` returns an original Risu-style `.bin` local
 backup with referenced asset records and a legacy-compressed `database.risudat`
-record. Export routes emit `state.exported` notifications without bumping the
-domain revision.
+record. The embedded database omits the obsolete legacy `account` object and
+rewrites known Fastify asset ids to original-Risu `assets/<sha>.<ext>` paths so
+the original loader resolves the matching records. Export routes emit
+`state.exported` notifications without bumping the domain revision.
 
 `POST /api/v1/import/bundle` handles the browser "Load Backup Locally" path. It
 streams upload bytes to disk, bounded by `RISU_API_IMPORT_MAX_BYTES` (unlimited
@@ -87,8 +90,11 @@ the original app's legacy `.bin` local backup. Bundle zip import reads
 `manifest.json` version `1`, accepts a `.risu` database payload entry, validates
 `assets/<sha>.<ext>` entries by extension and content hash, ignores unrelated
 zip entries, and still caps inner `.risu` expansion even when the outer upload
-limit is unlimited. Legacy `.bin` import keeps image, audio, video, and font
-asset records and skips unrelated/cold-storage records.
+limit is unlimited. Legacy `.bin` import keeps recognized media records plus
+all hash-named supported asset records, including ONNX, CSS, and inlay-signature
+JSON, while skipping unrelated non-media/cold-storage records. Original-Risu
+asset paths in the embedded database are canonicalized back to server asset ids
+before persistence, including custom or fallback non-sha256 media filenames.
 `src/ts/server/backups.ts` uses the `x-risu-estimated-backup-bytes` progress
 header when present; UI-facing wrappers live in `src/ts/storage/backup.ts`.
 

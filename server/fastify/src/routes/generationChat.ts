@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { Database, Message } from '../../../../src/ts/storage/database.svelte'
 import type { MultiModal, OpenAIChat } from '../../../../src/ts/process/index.svelte'
+import { trimUntilPunctuation } from '../../../../src/ts/util/punctuation.js'
 import type { CompletionStreamFrame } from '../generation/frames.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
@@ -19,7 +20,9 @@ import {
 } from '../repository.js'
 import {
   assemblePrompt,
+  applyRequestTrigger,
   getMessageMutationFirstChangedIndex,
+  runServerAlternatePostGeneration,
   runServerPostGeneration,
   type AssembleDeps,
   type AssembleAbortReason,
@@ -30,6 +33,7 @@ import {
   type PromptAssemblyStage,
 } from '../prompt/assemble.js'
 import {
+  applyProfileBoundGenerationFields,
   buildEffectiveGenerationConfig,
   isChatGenerationSettingsIncompleteAssemblyError,
   isModelProfileGenerationGuardAssemblyError,
@@ -41,6 +45,7 @@ import { COMMAND_EVENT_CATALOG, type CommandEventSink } from '../commands/events
 import { applyTargetedCommandMutation } from '../commands/mutations.js'
 import {
   addAlternateMessage,
+  activeMessageIdExists,
   activeMessageIdExistsOutsideChat,
   appendActiveChatMessageTail,
   clearAlternateMessages,
@@ -51,9 +56,15 @@ import {
   writeGenerationChatMessage,
 } from '../messageStore.js'
 import { dispatchChatProvider, getServerGenerationModelString } from '../prompt/chatDispatch.js'
+import {
+  resolveModelProfile,
+  type ModelProfileFallbackRef,
+  type ResolvedModelProfile,
+} from '../../../../src/ts/model/modelProfileResolver.js'
+import { risuEscape, risuUnescape } from '../../../../src/ts/parser/risuChatParserHelpers.js'
 import { ServerLuaFailureError } from '../prompt/luaRuntime.js'
 import { isAgentPresetGenerationError, type AgentPresetProgressReporter } from '../prompt/agentPresetExecution.js'
-import { emitProviderChunks } from '../prompt/providerTransport.js'
+import { emitProviderChunks, type ProviderPostGenerationResult } from '../prompt/providerTransport.js'
 import { promptSummaryMetricFields, summarizePromptRows, type PromptRowsSummary } from '../prompt/promptSummary.js'
 import { triggerSourceMetricFields } from '../prompt/triggerSource.js'
 import {
@@ -138,6 +149,8 @@ export interface ChatProviderDispatchContext {
   generationInfo: Record<string, unknown>
   signal: AbortSignal
   trace?: GenerationTraceContext
+  /** Explicit primary/fallback profile selected by the request-policy wrapper. */
+  profile?: ResolvedModelProfile
 }
 
 export type ChatProviderDispatcher = (
@@ -169,6 +182,259 @@ export interface GenerationChatRouteOptions {
 export interface GenerationFinalizationRetryLogger {
   warn(obj: Record<string, unknown>, msg: string): void
   error(obj: Record<string, unknown>, msg: string): void
+}
+
+function fallbackProfileDatabase(database: Database, profileId: string): Database {
+  const cloned = structuredClone(database)
+  const bindings = { ...(cloned.modelRoleProfiles ?? {}) } as Record<string, unknown>
+  bindings.chatMain = { mode: 'profile', profileId }
+  cloned.modelRoleProfiles = bindings as Database['modelRoleProfiles']
+  return cloned
+}
+
+function resolvePolicyProfiles(database: Database): ResolvedModelProfile[] {
+  const primary = resolveModelProfile({ database, role: 'chatMain' })
+  const profiles = [primary]
+  for (const fallback of primary.fallbacks) {
+    try {
+      const resolved = resolvePolicyFallback(database, fallback)
+      if (
+        resolved &&
+        !profiles.some((profile) => profile.profileId === resolved.profileId && profile.modelId === resolved.modelId)
+      ) {
+        profiles.push(resolved)
+      }
+    } catch {
+      // An invalid fallback must not suppress the primary model or later valid fallbacks.
+    }
+  }
+  return profiles
+}
+
+function resolvePolicyFallback(database: Database, fallback: ModelProfileFallbackRef): ResolvedModelProfile | null {
+  if (fallback.kind === 'legacy-model-id') {
+    return resolveModelProfile({ database, role: 'chatMain', staticModel: fallback.modelId })
+  }
+  return resolveModelProfile({ database: fallbackProfileDatabase(database, fallback.profileId), role: 'chatMain' })
+}
+
+function configuredRequestRetries(database: Database): number {
+  const value = typeof database.requestRetrys === 'number' ? Math.floor(database.requestRetrys) : 0
+  return Math.max(0, Math.min(value, 10))
+}
+
+function materializePolicyProfileDatabase(
+  database: Database,
+  profile: ResolvedModelProfile,
+  forceNonStreaming: boolean,
+): Database {
+  const effective = structuredClone(database)
+  applyProfileBoundGenerationFields(effective, profile)
+  if (forceNonStreaming) effective.useStreaming = false
+  return effective
+}
+
+function markPolicyProfileSuccess(
+  context: ChatProviderDispatchContext,
+  database: Database,
+  profile: ResolvedModelProfile,
+): void {
+  context.generationInfo.model = profile.requestModel || profile.modelId
+  if (typeof database.maxContext === 'number') context.generationInfo.maxContext = database.maxContext
+  if (typeof database.maxResponse === 'number') context.generationInfo.outputTokens = database.maxResponse
+}
+
+function containsBannedScript(text: string, scripts: unknown): boolean {
+  if (!Array.isArray(scripts) || text.length === 0) return false
+  for (const script of scripts) {
+    if (typeof script !== 'string' || script.length === 0) continue
+    try {
+      if (new RegExp(`\\p{Script=${script}}`, 'u').test(text)) return true
+    } catch {
+      // Ignore invalid Unicode script names retained in imported settings.
+    }
+  }
+  return false
+}
+
+function escapedRows(rows: OpenAIChat[], escape: boolean): OpenAIChat[] {
+  const cloned = structuredClone(rows)
+  if (!escape) return cloned
+  for (const row of cloned) row.content = risuUnescape(row.content)
+  return cloned
+}
+
+function transformEscapedFrames(frames: CompletionStreamFrame[], escape: boolean): CompletionStreamFrame[] {
+  if (!escape) return frames
+  return frames.map((frame) =>
+    frame.kind === 'token'
+      ? { ...frame, content: risuEscape(frame.content ?? '') }
+      : frame.kind === 'done' && frame.alternates
+        ? { ...frame, alternates: frame.alternates.map(risuEscape) }
+        : frame,
+  )
+}
+
+/**
+ * Retained request wrapper policies around the server-owned provider dispatch.
+ * Streaming remains live after the first token; failures before that boundary
+ * can be retried safely. Non-stream results are buffered so blank/banned-output
+ * policies can decide before anything reaches the client.
+ */
+function dispatchProviderWithPolicies(
+  context: ChatProviderDispatchContext,
+  dispatcher: ChatProviderDispatcher,
+): AsyncIterable<CompletionStreamFrame> {
+  return (async function* () {
+    const state = context.result.state
+    const escape = state?.currentChar.escapeOutput === true
+    const baseRows = escapedRows(context.result.formated ?? context.result.prompt.formated ?? [], escape)
+    const policyDatabase = context.database
+    const profiles = resolvePolicyProfiles(policyDatabase)
+    const retries = configuredRequestRetries(policyDatabase)
+    const requiresBufferedInspection =
+      escape ||
+      (Array.isArray(policyDatabase.banCharacterset) && policyDatabase.banCharacterset.length > 0) ||
+      (policyDatabase.fallbackWhenBlankResponse === true && profiles.length > 1)
+    let lastFailure: CompletionStreamFrame | undefined
+
+    for (let profileIndex = 0; profileIndex < profiles.length; profileIndex++) {
+      const profile = profiles[profileIndex]
+      // Assembly already materialized the primary profile and then applied the
+      // chat prompt preset's explicit overrides. Reapplying it here would erase
+      // those final overrides; only fallback profiles need fresh materialization.
+      const database =
+        profileIndex === 0
+          ? escape
+            ? ({ ...policyDatabase, useStreaming: false } as Database)
+            : policyDatabase
+          : materializePolicyProfileDatabase(policyDatabase, profile, escape)
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        if (context.signal.aborted) return
+        const requestRows = state
+          ? await applyRequestTrigger(state, structuredClone(baseRows))
+          : structuredClone(baseRows)
+        const attemptContext: ChatProviderDispatchContext = {
+          ...context,
+          database,
+          profile,
+          result: {
+            ...context.result,
+            outputTokens:
+              typeof database.maxResponse === 'number' && Number.isFinite(database.maxResponse)
+                ? database.maxResponse
+                : context.result.outputTokens,
+            formated: requestRows,
+            prompt: { ...context.result.prompt, formated: requestRows },
+          },
+        }
+        let iterable: AsyncIterable<CompletionStreamFrame> | null | undefined
+        try {
+          iterable = await dispatcher(attemptContext)
+        } catch (error) {
+          lastFailure = {
+            kind: 'error',
+            error: errorMessage(error, PROVIDER_DISPATCH_FALLBACK),
+            reason: 'provider_dispatch_exception',
+          }
+          continue
+        }
+        if (!iterable) {
+          lastFailure = { kind: 'error', error: PROVIDER_DISPATCH_FALLBACK }
+          continue
+        }
+
+        if (!requiresBufferedInspection) {
+          let emittedToken = false
+          let retry = false
+          try {
+            for await (const frame of iterable) {
+              if (frame.kind === 'token') {
+                emittedToken = true
+                markPolicyProfileSuccess(context, database, profile)
+                yield frame
+                continue
+              }
+              if (frame.kind === 'error' && !emittedToken) {
+                lastFailure = frame
+                retry = true
+                break
+              }
+              if (
+                frame.kind === 'done' &&
+                !emittedToken &&
+                database.fallbackWhenBlankResponse === true &&
+                profileIndex < profiles.length - 1
+              ) {
+                retry = true
+                attempt = retries
+                break
+              }
+              if (frame.kind === 'done') markPolicyProfileSuccess(context, database, profile)
+              yield frame
+              if (frame.kind === 'done' || frame.kind === 'error') return
+            }
+          } catch (error) {
+            const failure: CompletionStreamFrame = {
+              kind: 'error',
+              error: errorMessage(error, PROVIDER_DISPATCH_FALLBACK),
+              reason: 'provider_dispatch_exception',
+            }
+            if (emittedToken) {
+              throw error
+            }
+            lastFailure = failure
+            retry = true
+          }
+          if (!retry) return
+          continue
+        }
+
+        const buffered: CompletionStreamFrame[] = []
+        let text = ''
+        let failed = false
+        try {
+          for await (const frame of iterable) {
+            buffered.push(frame)
+            if (frame.kind === 'token') text += frame.content ?? ''
+            if (frame.kind === 'error') {
+              lastFailure = frame
+              failed = true
+              break
+            }
+          }
+        } catch (error) {
+          lastFailure = { kind: 'error', error: errorMessage(error, PROVIDER_DISPATCH_FALLBACK) }
+          failed = true
+        }
+        if (failed) continue
+
+        const transformed = transformEscapedFrames(buffered, escape)
+        const transformedText = escape ? risuEscape(text) : text
+        if (containsBannedScript(transformedText, database.banCharacterset)) {
+          lastFailure = {
+            kind: 'error',
+            error: 'Provider response contained a banned character set after all configured retries.',
+            reason: 'provider_output_banned',
+          }
+          continue
+        }
+        if (
+          transformedText.trim().length === 0 &&
+          database.fallbackWhenBlankResponse === true &&
+          profileIndex < profiles.length - 1
+        ) {
+          attempt = retries
+          continue
+        }
+        markPolicyProfileSuccess(context, database, profile)
+        yield* transformed
+        return
+      }
+    }
+
+    yield lastFailure ?? { kind: 'error', error: 'All configured models failed.' }
+  })()
 }
 
 interface GenerationFinalizationSnapshotRow {
@@ -218,7 +484,17 @@ function promptEventForClient(
   if (!capabilities.compactPromptEvent) return prompt
   if (mode === 'preview_prompt') {
     const promptText = prompt.promptInfo?.promptText
-    return { promptInfo: { promptText: typeof promptText === 'string' ? promptText : '' } }
+    const previewRows =
+      Array.isArray(promptText) && promptText.length > 0
+        ? promptText
+        : Array.isArray(prompt.formated)
+          ? prompt.formated
+          : (prompt.messages ?? [])
+    return {
+      promptInfo: {
+        promptText: typeof promptText === 'string' ? promptText : JSON.stringify(previewRows),
+      },
+    }
   }
   const { messages: _messages, lorebookActivation: _lorebookActivation, ...compactPrompt } = prompt
   return compactPrompt
@@ -1169,11 +1445,14 @@ function buildRawModeMessage(args: {
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
+  removeIncompleteResponse?: boolean
 }): { message: Message; targetMessageId?: string } {
+  const normalizeRawText = (text: string): string =>
+    args.removeIncompleteResponse ? trimUntilPunctuation(text) : text.trim()
   if (args.input.mode === 'continue') {
     return {
       message: buildAssistantMessage({
-        data: ((args.continueRow?.data ?? '') + args.text).trim(),
+        data: normalizeRawText((args.continueRow?.data ?? '') + args.text),
         generationId: args.continueRow?.chatId ?? args.generationId,
         characterId: args.input.characterId,
         generationInfo: args.generationInfo,
@@ -1183,7 +1462,7 @@ function buildRawModeMessage(args: {
   }
   return {
     message: buildAssistantMessage({
-      data: args.text.trim(),
+      data: normalizeRawText(args.text),
       generationId: args.generationId,
       characterId: args.input.characterId,
       generationInfo: args.generationInfo,
@@ -1314,6 +1593,7 @@ async function resolvePostGenerationResult(args: {
   state: AssemblyState
   input: AssembleInput
   completionText: string
+  alternateTexts?: readonly string[]
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
@@ -1328,6 +1608,7 @@ async function resolvePostGenerationResult(args: {
   message: Message
   targetMessageId?: string
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
+  alternateTexts: string[]
   targetSnapshot?: GenerationFinalizationTargetSnapshot
   postGenMetricError?: string
 }> {
@@ -1336,6 +1617,7 @@ async function resolvePostGenerationResult(args: {
   const continueRow = args.input.mode === 'continue' ? findContinueRow(args.state) : undefined
   const luaTrace = protocolMetricsEnabled() ? new PostGenerationLuaTraceCollector() : undefined
   const luaProgress = args.emit ? new PostGenerationLuaProgressTracker(args.emit) : undefined
+  let alternateTexts: string[] = []
   try {
     const postGen = await runServerPostGeneration(args.state, {
       completionText: args.completionText,
@@ -1347,6 +1629,9 @@ async function resolvePostGenerationResult(args: {
       agentPresetProgress: args.emit
         ? (progress) => args.emit?.({ type: 'agent_preset_progress', ...progress })
         : undefined,
+      beforeOutputTrigger: async (alternateState) => {
+        alternateTexts = await transformProviderAlternateTexts(alternateState, args.input, args.alternateTexts ?? [])
+      },
     })
     await emitPostGenerationLuaTraceMetric({
       collector: luaTrace,
@@ -1371,6 +1656,7 @@ async function resolvePostGenerationResult(args: {
       message: resolved.message,
       targetMessageId: resolved.targetMessageId,
       chatVarMutations: postGen.mutations.chatVarMutations,
+      alternateTexts,
       targetSnapshot,
     }
   } catch (err) {
@@ -1383,6 +1669,7 @@ async function resolvePostGenerationResult(args: {
       generationId: args.generationId,
       generationInfo: args.generationInfo,
       promptInfo: args.promptInfo,
+      removeIncompleteResponse: args.state.database.removeIncompleteResponse,
     })
     const error = errorMessage(err, 'server post-generation derivation failed')
     const metricError = safePostGenerationFallbackMetricError(err, 'server post-generation derivation failed')
@@ -1418,6 +1705,7 @@ async function resolvePostGenerationResult(args: {
       message: raw.message,
       targetMessageId: raw.targetMessageId,
       chatVarMutations: [],
+      alternateTexts: (args.alternateTexts ?? []).map((text) => rawProviderAlternateText(args.state, args.input, text)),
       targetSnapshot,
       postGenMetricError: metricError,
     }
@@ -1467,6 +1755,7 @@ async function buildPostGenerationFrame(args: {
   eventSink: CommandEventSink
   input: AssembleInput
   completionText: string
+  alternateTexts?: readonly string[]
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
@@ -1474,21 +1763,34 @@ async function buildPostGenerationFrame(args: {
   pushNotifications?: false | PushNotificationService
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
-}): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
-    await resolvePostGenerationResult({
-      state: args.state,
-      input: args.input,
-      completionText: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-      dataDir: args.dataDir,
-      durable: false,
-      emit: args.emit,
-      generationTrace: args.generationTrace,
-      metricContext: args.metricContext,
-    })
+}): Promise<ProviderPostGenerationResult | undefined> {
+  const {
+    postGen,
+    postGenError,
+    postGenMetricError,
+    message,
+    targetMessageId,
+    chatVarMutations,
+    alternateTexts,
+    targetSnapshot,
+  } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.completionText,
+    alternateTexts: args.alternateTexts,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+    dataDir: args.dataDir,
+    durable: false,
+    emit: args.emit,
+    generationTrace: args.generationTrace,
+    metricContext: args.metricContext,
+  })
+  const alternateMessages = buildProviderAlternateMessages({
+    primaryMessage: message,
+    alternateTexts,
+  })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -1503,6 +1805,7 @@ async function buildPostGenerationFrame(args: {
       targetMessageId,
       mode: finalizationModeFromInput(args.input),
       targetSnapshot,
+      alternateMessages,
     })
   } catch (err) {
     emitProtocolMetric('generation_persistence', {
@@ -1514,7 +1817,7 @@ async function buildPostGenerationFrame(args: {
     })
     // Chat changed / gone during persist: leave the browser's optimistic copy
     // and terminate cleanly (no frame).
-    return undefined
+    return { alternates: alternateTexts }
   }
 
   emitProtocolMetric('generation_persistence', {
@@ -1533,7 +1836,7 @@ async function buildPostGenerationFrame(args: {
     })
   }
   notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
-  return buildPostGenerationFrameBody(revision, postGen)
+  return { frame: buildPostGenerationFrameBody(revision, postGen), alternates: alternateTexts }
 }
 
 /**
@@ -1659,21 +1962,27 @@ async function streamAssembly(
                 database: context.database,
                 formated: context.result.formated ?? context.result.prompt.formated ?? [],
                 outputTokens: context.result.outputTokens,
+                biases: context.result.biases,
+                multiGeneration: context.input.mode !== 'continue',
                 signal: context.signal,
                 trace: context.trace,
+                profile: context.profile,
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
           try {
-            frames = await dispatchProvider({
-              input,
-              result: successfulResult,
-              database,
-              generationId,
-              generationInfo,
-              signal,
-              trace,
-            })
+            frames = dispatchProviderWithPolicies(
+              {
+                input,
+                result: successfulResult,
+                database,
+                generationId,
+                generationInfo,
+                signal,
+                trace,
+              },
+              dispatchProvider,
+            )
           } catch (err) {
             emit({
               type: 'error',
@@ -1704,7 +2013,7 @@ async function streamAssembly(
                     ]
                   : [],
               errorRestoration: () => successfulResult.restoration,
-              postGeneration: (completionText) =>
+              postGeneration: (completionText, alternateTexts) =>
                 successfulResult.state
                   ? buildPostGenerationFrame({
                       state: successfulResult.state,
@@ -1713,6 +2022,7 @@ async function streamAssembly(
                       eventSink,
                       input,
                       completionText,
+                      alternateTexts,
                       generationId,
                       generationInfo,
                       promptInfo: successfulResult.prompt.promptInfo,
@@ -1891,6 +2201,58 @@ function extractAssistantMessage(
   })
 }
 
+/** Build complete message records for the additional provider choices. */
+function buildProviderAlternateMessages(args: {
+  primaryMessage: Message
+  alternateTexts: readonly string[]
+}): Message[] {
+  if (args.alternateTexts.length === 0) return []
+
+  const primaryId = args.primaryMessage.chatId ?? randomUUID()
+  return args.alternateTexts.map((text, index) => {
+    const message = structuredClone(args.primaryMessage)
+    message.data = text
+    // The browser derives the same ids from `done.alternates`, so a live swipe
+    // selects the already-durable candidate instead of creating a duplicate.
+    message.chatId = `${primaryId}:alternate:${index + 1}`
+    delete message.translation
+    return message
+  })
+}
+
+function rawProviderAlternateText(state: AssemblyState, input: AssembleInput, text: string): string {
+  let continueBase = ''
+  if (input.mode === 'continue') {
+    const initialMessages = state.initialMessages ?? []
+    for (let index = initialMessages.length - 1; index >= 0; index--) {
+      if (initialMessages[index]?.role === 'char') {
+        continueBase = initialMessages[index].data ?? ''
+        break
+      }
+    }
+  }
+  const combined = (continueBase + text).trim()
+  return state.database.removeIncompleteResponse ? trimUntilPunctuation(combined) : combined
+}
+
+async function transformProviderAlternateTexts(
+  state: AssemblyState,
+  input: AssembleInput,
+  alternateTexts: readonly string[],
+): Promise<string[]> {
+  const transformed: string[] = []
+  for (const text of alternateTexts) {
+    try {
+      transformed.push(await runServerAlternatePostGeneration(state, text))
+    } catch {
+      // Keep an alternate usable even if its isolated presentation transform
+      // fails; the primary's authoritative post-generation pass is unaffected.
+      transformed.push(rawProviderAlternateText(state, input, text))
+    }
+  }
+  return transformed
+}
+
 function regenerateTargetMessageIdFromInitialMessages(
   input: AssembleInput,
   initialMessages: readonly Message[] | undefined,
@@ -2028,6 +2390,8 @@ function persistServerGenerationResult(args: {
   eventSink: CommandEventSink
   chatId: string
   message: Message
+  /** Additional provider choices persisted as reroll candidates atomically. */
+  alternateMessages?: readonly Message[]
   chatVarMutations: AssembleMutationPayload['chatVarMutations']
   /**
    * Continue/regenerate target. When set, the result REPLACES the existing
@@ -2100,6 +2464,15 @@ function persistServerGenerationResult(args: {
           }
         }
         const record = createMessageRecord(structuredClone(args.message), 'generationResult.message')
+        const providerAlternates = (args.alternateMessages ?? []).map((message, index) =>
+          createMessageRecord(structuredClone(message), `generationResult.alternateMessages[${index}]`),
+        )
+        validateUniqueMessageIds([record, ...providerAlternates])
+        for (const alternate of providerAlternates) {
+          if (activeMessageIdExists(targetDb, alternate.chatId)) {
+            throw new ValidationError(`Duplicate message id: ${alternate.chatId}`)
+          }
+        }
         const write = writeGenerationChatMessage(targetDb, args.chatId, record, args.targetMessageId)
         if (write.ok === false) {
           switch (write.reason) {
@@ -2121,7 +2494,14 @@ function persistServerGenerationResult(args: {
         // Both run inside this mutation's transaction (atomic with the message write).
         const preservesRerollCandidate =
           !!args.targetMessageId || (args.mode === 'regenerate' && countAlternateMessages(targetDb, args.chatId) > 0)
-        if (preservesRerollCandidate) {
+        if (providerAlternates.length > 0) {
+          if (!preservesRerollCandidate) clearAlternateMessages(targetDb, args.chatId)
+          if (preservesRerollCandidate && write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
+          addAlternateMessage(targetDb, args.chatId, record)
+          for (const alternate of providerAlternates) {
+            addAlternateMessage(targetDb, args.chatId, alternate)
+          }
+        } else if (preservesRerollCandidate) {
           if (write.displaced) addAlternateMessage(targetDb, args.chatId, write.displaced)
           addAlternateMessage(targetDb, args.chatId, record)
         } else {
@@ -2176,6 +2556,7 @@ function persistGenerationFinalizationAttempt(args: {
     eventSink: args.eventSink,
     chatId: args.attempt.chatId,
     message: args.attempt.message,
+    alternateMessages: args.attempt.alternateMessages,
     chatVarMutations: args.attempt.chatVarMutations,
     targetMessageId: args.attempt.targetMessageId,
     mode: args.attempt.mode,
@@ -2320,27 +2701,41 @@ async function buildDurablePostGeneration(args: {
   eventSink: CommandEventSink
   input: AssembleInput
   completionText: string
+  alternateTexts?: readonly string[]
   generationId: string
   generationInfo: Record<string, unknown>
   promptInfo?: Record<string, unknown>
   pushNotifications?: false | PushNotificationService
   generationTrace?: GenerationTraceOptions
   metricContext?: PromptAssemblyMetricContext
-}): Promise<PostGenerationFrame | undefined> {
-  const { postGen, postGenError, postGenMetricError, message, targetMessageId, chatVarMutations, targetSnapshot } =
-    await resolvePostGenerationResult({
-      state: args.state,
-      input: args.input,
-      completionText: args.completionText,
-      generationId: args.generationId,
-      generationInfo: args.generationInfo,
-      promptInfo: args.promptInfo,
-      dataDir: args.dataDir,
-      durable: true,
-      emit: args.emit,
-      generationTrace: args.generationTrace,
-      metricContext: args.metricContext,
-    })
+}): Promise<ProviderPostGenerationResult | undefined> {
+  const {
+    postGen,
+    postGenError,
+    postGenMetricError,
+    message,
+    targetMessageId,
+    chatVarMutations,
+    alternateTexts,
+    targetSnapshot,
+  } = await resolvePostGenerationResult({
+    state: args.state,
+    input: args.input,
+    completionText: args.completionText,
+    alternateTexts: args.alternateTexts,
+    generationId: args.generationId,
+    generationInfo: args.generationInfo,
+    promptInfo: args.promptInfo,
+    dataDir: args.dataDir,
+    durable: true,
+    emit: args.emit,
+    generationTrace: args.generationTrace,
+    metricContext: args.metricContext,
+  })
+  const alternateMessages = buildProviderAlternateMessages({
+    primaryMessage: message,
+    alternateTexts,
+  })
 
   let revision: number
   const persistStartedAt = protocolNowMs()
@@ -2354,6 +2749,7 @@ async function buildDurablePostGeneration(args: {
         chatId: args.input.chatId,
         mode: finalizationModeFromInput(args.input),
         message,
+        alternateMessages,
         chatVarMutations,
         ...(targetMessageId ? { targetMessageId } : {}),
         ...(targetSnapshot ? { targetSnapshot } : {}),
@@ -2371,7 +2767,7 @@ async function buildDurablePostGeneration(args: {
       type: 'error',
       error: errorMessage(err, 'failed to persist the generation result'),
     })
-    return undefined
+    return { alternates: alternateTexts }
   }
 
   // `postGen === undefined` means the derivation threw: the client may be gone, so
@@ -2391,7 +2787,7 @@ async function buildDurablePostGeneration(args: {
       ...(postGenError ? { context: { error: postGenError } } : {}),
     })
     notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
-    return { revision }
+    return { frame: { revision }, alternates: alternateTexts }
   }
 
   emitProtocolMetric('generation_persistence', {
@@ -2402,7 +2798,7 @@ async function buildDurablePostGeneration(args: {
     durationMs: protocolDurationMs(persistStartedAt),
   })
   notifyChatCompletion(args.pushNotifications, { characterId: args.input.characterId, chatId: args.input.chatId })
-  return buildPostGenerationFrameBody(revision, postGen)
+  return { frame: buildPostGenerationFrameBody(revision, postGen), alternates: alternateTexts }
 }
 
 /**
@@ -2433,6 +2829,7 @@ function persistRawCancelledResult(args: {
     generationId: args.generationId,
     generationInfo: args.generationInfo,
     promptInfo: args.promptInfo,
+    removeIncompleteResponse: args.state.database.removeIncompleteResponse,
   })
   try {
     queueAndPersistGenerationFinalization({
@@ -2576,21 +2973,27 @@ async function runGenerationJob(args: {
                 database: context.database,
                 formated: context.result.formated ?? context.result.prompt.formated ?? [],
                 outputTokens: context.result.outputTokens,
+                biases: context.result.biases,
+                multiGeneration: context.input.mode !== 'continue',
                 signal: context.signal,
                 trace: context.trace,
+                profile: context.profile,
               }))
           const providerStartedAt = Date.now()
           let frames: AsyncIterable<CompletionStreamFrame> | null | undefined
           try {
-            frames = await dispatchProvider({
-              input,
-              result: successfulResult,
-              database,
-              generationId,
-              generationInfo,
-              signal,
-              trace,
-            })
+            frames = dispatchProviderWithPolicies(
+              {
+                input,
+                result: successfulResult,
+                database,
+                generationId,
+                generationInfo,
+                signal,
+                trace,
+              },
+              dispatchProvider,
+            )
           } catch (err) {
             emit({
               type: 'error',
@@ -2621,7 +3024,7 @@ async function runGenerationJob(args: {
                     ]
                   : [],
               errorRestoration: () => successfulResult.restoration,
-              postGeneration: (completionText) => {
+              postGeneration: (completionText, alternateTexts) => {
                 if (!successfulResult.state) return Promise.resolve(undefined)
                 // Stamp stage3 BEFORE the persist so the server-written message's
                 // generationInfo carries it (the persist runs ahead of doneMetadata,
@@ -2636,6 +3039,7 @@ async function runGenerationJob(args: {
                   eventSink,
                   input,
                   completionText,
+                  alternateTexts,
                   generationId,
                   generationInfo,
                   promptInfo: successfulResult.prompt.promptInfo,
