@@ -44,8 +44,8 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('{:else if selectedPromptPresetOwnsPromptTemplate}')
     expect(source).toContain('{:else if !selectedPromptPresetOwnsPromptTemplate}')
     expect(source).toContain('{#if promptTemplateHydrated && selectedPromptPresetOwnsPromptTemplate && submenu === -1}')
-    expect(source).not.toContain('{:else if DBState.db.promptTemplate}')
-    expect(source).not.toContain('{:else if !DBState.db.promptTemplate}')
+    expect(source).not.toContain('{:else if getDatabase().promptTemplate}')
+    expect(source).not.toContain('{:else if !getDatabase().promptTemplate}')
   })
 
   it('enables prompt templates on the selected prompt preset with a scoped command', () => {
@@ -54,7 +54,7 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('async function setSelectedPromptTemplateEnabled(enabled: boolean)')
     expect(source).toContain('ensurePromptTemplateHydrated({ promptPresetId: ownerId })')
     expect(source).toContain('preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])')
-    expect(source).toContain('DBState.db.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])')
+    expect(source).toContain('getDatabase().promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])')
     expect(source).toContain('enablePromptItemsCommand({')
     expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')
     expect(source).toContain('enabled,')
@@ -76,7 +76,7 @@ describe('BotSettings prompt edit persistence contracts', () => {
     const source = botSettingsSource()
 
     expect(source).toContain('delete preset.promptTemplate')
-    expect(source).toContain('delete (DBState.db as unknown as Record<string, unknown>).promptTemplate')
+    expect(source).toContain('delete (getDatabase() as unknown as Record<string, unknown>).promptTemplate')
     expect(source).toContain('rollback: () =>')
     expect(source).toContain('runPromptTemplateOwnerRollback(ownerId, () =>')
     expect(source).toContain('restoreSelectedPromptPresetTemplateProjection(previous)')
@@ -128,7 +128,7 @@ describe('BotSettings model-role provider visibility', () => {
     expect(source).toContain("import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'")
     expect(source).toContain('let modelProfileUiState = $derived.by(() =>')
     expect(source).toContain('resolveModelProfileUiState({')
-    expect(source).toContain('database: DBState.db')
+    expect(source).toContain('database: getDatabase()')
     expect(source).toContain('lookupModelInfo: (_database, id) => getModelInfo(id)')
     expect(source).toContain('let effectiveRoleApiKeyModels = $derived(modelProfileUiState.apiKeyModels)')
     expect(source).toContain('let usesGoogleCloudProvider = $derived(modelProfileUiState.usesGoogleCloudProvider)')
@@ -142,8 +142,10 @@ describe('BotSettings model-role provider visibility', () => {
     expect(source).not.toContain('let effectiveRoleModelIds')
     expect(source).not.toContain('let effectiveRoleModelInfos')
     expect(source).not.toContain('baseUsesOllamaCloud')
-    expect(source).not.toContain("{#if DBState.db.aiModel === 'nanogpt' || DBState.db.subModel === 'nanogpt'}")
-    expect(source).not.toContain("{#if DBState.db.aiModel === 'openrouter' || DBState.db.subModel === 'openrouter'}")
+    expect(source).not.toContain("{#if getDatabase().aiModel === 'nanogpt' || getDatabase().subModel === 'nanogpt'}")
+    expect(source).not.toContain(
+      "{#if getDatabase().aiModel === 'openrouter' || getDatabase().subModel === 'openrouter'}",
+    )
   })
 
   it('passes provider draft keys to dynamic model catalogs', () => {

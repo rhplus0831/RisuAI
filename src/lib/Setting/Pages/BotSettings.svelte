@@ -3,7 +3,6 @@
   import { language } from 'src/lang'
   import Help from 'src/lib/Others/Help.svelte'
 
-  import { DBState } from 'src/ts/stores.svelte'
   import { customProviderStore } from 'src/ts/plugins/plugins.svelte'
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { tokenizeAccurate, tokenizerList } from 'src/ts/tokenizer'
@@ -32,7 +31,7 @@
   import PromptSettings from './PromptSettings.svelte'
   import { openPresetListModal } from 'src/ts/stores.svelte'
   import { selectSingleFile } from 'src/ts/util'
-  import { updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
+  import { getDatabase, updatePromptPreset, type PromptPreset } from 'src/ts/storage/database.svelte'
   import { alertError } from 'src/ts/alert'
   import { getModelInfo, LLMFlags, LLMFormat } from 'src/ts/model/modellist'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
@@ -218,9 +217,9 @@
   const globalNoteDraft = createPromptFieldDraft<string>('globalNote', '')
   const formatingOrderDraft = createPromptFieldDraft<string[]>('formatingOrder', [])
   const promptPreprocessDraft = createPromptFieldDraft<boolean>('promptPreprocess', false)
-  let currentPluginProviderDraft = $state(DBState.db.currentPluginProvider ?? '')
+  let currentPluginProviderDraft = $state(getDatabase().currentPluginProvider ?? '')
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
-  let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
+  let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
   const PROMPT_PRESET_ICON_SIZE = 48
   type SelectedPromptPresetIconFile = NonNullable<Awaited<ReturnType<typeof selectSingleFile>>>
@@ -230,7 +229,7 @@
   let lastPluginWatchSuppressionVersion = currentPluginWatchSuppressionVersion()
   let suppressPluginProviderDraftDispatch = false
   $effect(() => {
-    const provider = DBState.db.currentPluginProvider ?? ''
+    const provider = getDatabase().currentPluginProvider ?? ''
     const suppressionVersion = currentPluginWatchSuppressionVersion()
     const draftProvider = untrack(() => currentPluginProviderDraft)
     if (provider !== draftProvider) {
@@ -250,7 +249,7 @@
   $effect(() => {
     const provider = currentPluginProviderDraft
     if (!canUseServerCommands()) {
-      DBState.db.currentPluginProvider = provider
+      getDatabase().currentPluginProvider = provider
       previousPluginProvider = provider
       return
     }
@@ -259,7 +258,7 @@
     const previous = currentPluginStateSnapshot()
     previous.currentPluginProvider = previousPluginProvider
     withTrustedServerProjectionWrite(() => {
-      DBState.db.currentPluginProvider = provider
+      getDatabase().currentPluginProvider = provider
     })
     const mirroredToPreset = mirrorTopLevelPresetField('currentPluginProvider', provider)
     previousPluginProvider = provider
@@ -347,7 +346,7 @@
   function defaultSubmenuForKind(kind: BotSettingsKind): number {
     if (kind === 'model') return 0
     if (kind === 'prompt') return 2
-    return DBState.db.useLegacyGUI ? -1 : 0
+    return getDatabase().useLegacyGUI ? -1 : 0
   }
 
   // svelte-ignore state_referenced_locally
@@ -365,7 +364,7 @@
   let showModelOthersControls = $derived(settingsKind !== 'model')
   let showModelPresetButton = $derived(settingsKind !== 'prompt' && submenu !== -1)
   let showPromptPresetButton = $derived(settingsKind === 'legacy' && submenu === -1)
-  let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && DBState.db.botPresets?.length > 0)
+  let showLegacyMigrationButton = $derived(settingsKind === 'legacy' && getDatabase().botPresets?.length > 0)
   let selectedPromptPresetName = $derived(selectedPromptPreset?.name?.trim() || language.promptPresets)
   let parameterItems = $derived.by(() =>
     promptParameterOverrideMode
@@ -493,10 +492,10 @@
 
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
-        const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
+        const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
         withTrustedServerProjectionWrite(() => {
           // Re-read inside the trusted write to get the mutable projection.
-          const target = DBState.db as unknown as Record<string, unknown>
+          const target = getDatabase() as unknown as Record<string, unknown>
           target[key] = attempted
         })
         const mirroredToPreset = writeSelectedPromptPresetField(key, attempted)
@@ -511,18 +510,20 @@
   }
 
   function promptFieldOwnerSignature(): string {
-    const selectedIndex = DBState.db.promptPresetsId
+    const selectedIndex = getDatabase().promptPresetsId
     const selectedId =
-      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? DBState.db.promptPresets?.[selectedIndex]?.id : undefined
+      Number.isInteger(selectedIndex) && selectedIndex >= 0
+        ? getDatabase().promptPresets?.[selectedIndex]?.id
+        : undefined
     return selectedId ? `preset:${selectedId}` : 'root'
   }
 
   function reassertDirtyPromptFieldDraftValue<T>(key: string, value: T): void {
     withTrustedServerProjectionWrite(() => {
-      const target = DBState.db as unknown as Record<string, unknown>
+      const target = getDatabase() as unknown as Record<string, unknown>
       target[key] = cloneJsonValue(value)
-      const selectedIndex = DBState.db.promptPresetsId
-      const preset = DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+      const selectedIndex = getDatabase().promptPresetsId
+      const preset = getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
       if (!preset) return
       preset[key] = cloneJsonValue(value)
       if (key === 'presetRegex') preset.regex = []
@@ -586,7 +587,7 @@
 
   function rollbackPromptFields(previous: SettingsPatch, attempted: SettingsPatch): void {
     withTrustedServerProjectionWrite(() => {
-      const target = DBState.db as unknown as Record<string, unknown>
+      const target = getDatabase() as unknown as Record<string, unknown>
       for (const [key, previousValue] of Object.entries(previous)) {
         if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
           target[key] = cloneJsonValue(previousValue)
@@ -596,7 +597,7 @@
   }
 
   function currentPromptFieldValue<T>(key: string, fallback: T): T {
-    const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+    const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
     if (preset) {
       if (key === 'presetRegex') {
         const regexField = resolvePromptPresetRegexField(preset)
@@ -604,16 +605,16 @@
       }
       if (Object.prototype.hasOwnProperty.call(preset, key)) return preset[key] as T
     }
-    const target = DBState.db as unknown as Record<string, unknown> | undefined
+    const target = getDatabase() as unknown as Record<string, unknown> | undefined
     const value = target?.[key]
     return value === undefined ? fallback : (value as T)
   }
 
   function writeSelectedPromptPresetField<T>(key: string, value: T): boolean {
     if (value === undefined) return false
-    const selectedIndex = DBState.db.promptPresetsId
+    const selectedIndex = getDatabase().promptPresetsId
     if (selectedIndex < 0) return false
-    const preset = DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+    const preset = getDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
     if (!preset) return false
     if (snapshotJson(preset[key]) === snapshotJson(value)) return false
     updatePromptPreset(selectedIndex, { [key]: cloneJsonValue(value) } as Partial<PromptPreset>)
@@ -621,19 +622,19 @@
   }
 
   function selectedPromptPresetHasOwnPromptTemplate(): boolean {
-    const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+    const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
     return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
   }
 
   function promptTemplatePresetSelectionSignature(): string {
-    const selectedIndex = DBState.db.promptPresetsId
+    const selectedIndex = getDatabase().promptPresetsId
     const selectedId =
-      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? DBState.db.promptPresets?.[selectedIndex]?.id : null
+      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? getDatabase().promptPresets?.[selectedIndex]?.id : null
     return `${selectedIndex}:${selectedId ?? ''}`
   }
 
   function snapshotSelectedPromptPresetTemplate(): { hasTemplate: boolean; template: unknown } {
-    const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+    const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
     if (!preset || !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
       return { hasTemplate: false, template: undefined }
     }
@@ -642,7 +643,7 @@
 
   function setSelectedPromptPresetTemplateProjection(enabled: boolean, template: unknown = []): void {
     withTrustedServerProjectionWrite(() => {
-      const preset = DBState.db.promptPresets?.[DBState.db.promptPresetsId] as Record<string, unknown> | undefined
+      const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
       if (preset) {
         if (enabled) {
           preset.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
@@ -651,9 +652,9 @@
         }
       }
       if (enabled) {
-        DBState.db.promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
+        getDatabase().promptTemplate = cloneJsonValue(Array.isArray(template) ? template : [])
       } else {
-        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+        delete (getDatabase() as unknown as Record<string, unknown>).promptTemplate
       }
     })
   }
@@ -686,16 +687,16 @@
   }
 
   function currentPromptPresetIconUploadTarget() {
-    const selectedIndex = DBState.db.promptPresetsId
+    const selectedIndex = getDatabase().promptPresetsId
     return capturePromptPresetIconUploadTarget({
       presetIndex: selectedIndex,
-      preset: DBState.db.promptPresets?.[selectedIndex],
+      preset: getDatabase().promptPresets?.[selectedIndex],
     })
   }
 
   function promptPresetIconUploadFreshness(operation: PromptPresetIconUploadOperation) {
-    const selectedPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
-    const rowPreset = DBState.db.promptPresets?.[operation.presetIndex]
+    const selectedPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
+    const rowPreset = getDatabase().promptPresets?.[operation.presetIndex]
 
     return {
       selectedPresetId: selectedPreset?.id,
@@ -709,7 +710,7 @@
   }
 
   function currentBiasImportFreshness() {
-    const selectedPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
+    const selectedPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
     return {
       selectedPromptPresetId: selectedPreset?.id,
       bias: biasDraft.value,
@@ -835,7 +836,7 @@
   })
 
   $effect.pre(() => {
-    if (usesTextgenStreamUrl(DBState.db.aiModel) || usesTextgenStreamUrl(DBState.db.subModel)) {
+    if (usesTextgenStreamUrl(getDatabase().aiModel) || usesTextgenStreamUrl(getDatabase().subModel)) {
       useStreamingDraft.value = textgenWebUIStreamURLDraft.value.startsWith('wss://')
     }
   })
@@ -864,11 +865,11 @@
     flushPendingPromptFieldPatch()
   })
 
-  let modelInfo = $derived(getModelInfo(DBState.db.aiModel))
-  let subModelInfo = $derived(getModelInfo(DBState.db.subModel))
+  let modelInfo = $derived(getModelInfo(getDatabase().aiModel))
+  let subModelInfo = $derived(getModelInfo(getDatabase().subModel))
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
-      database: DBState.db,
+      database: getDatabase(),
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
@@ -896,7 +897,7 @@
   let usesTextgenWebUIModel = $derived(modelProfileUiState.usesTextgenWebUIModel)
   let usesOobaModel = $derived(modelProfileUiState.usesOobaModel)
   let nanogptInputMode = $state<'list' | 'manual'>(
-    DBState.db.nanogptRequestModel && !DBState.db.nanogptRequestModelName ? 'manual' : 'list',
+    getDatabase().nanogptRequestModel && !getDatabase().nanogptRequestModelName ? 'manual' : 'list',
   )
   // svelte-ignore state_referenced_locally
   let prevNanogptInputMode = nanogptInputMode
@@ -1335,7 +1336,7 @@
       {modelInfo}
       {subModelInfo}
       presetMirrorTarget={promptParameterOverrideMode ? 'promptModelOverrides' : 'auto'} />
-    {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
+    {#if getDatabase().aiModel === 'textgen_webui' || getDatabase().aiModel === 'mancer' || getDatabase().aiModel.startsWith('local_') || getDatabase().aiModel.startsWith('hf:::')}
       <span class="text-textcolor">Repetition Penalty</span>
       <SliderInput
         min={1}
@@ -1549,7 +1550,7 @@
       <!-- Standard parameters come from SettingRenderer. -->
     {/if}
 
-    {#if (DBState.db.reverseProxyOobaMode && usesReverseProxyModel) || usesOobaModel}
+    {#if (getDatabase().reverseProxyOobaMode && usesReverseProxyModel) || usesOobaModel}
       <OobaSettings instructionMode={usesOobaModel} />
     {/if}
 
