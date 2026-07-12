@@ -9,6 +9,7 @@ import {
   applyCharacterPatchLocalEffect,
   applyCharacterResource,
   applyCharacterOrderResource,
+  applyCharacterSelectionLocalEffect,
   applyCharacterSelectionResource,
   applyCharactersResource,
   applyCollectionsResource,
@@ -298,6 +299,30 @@ describe('resource-scoped database state', () => {
       currentChar: 1,
       characters: [{ chaId: 'char-a', lastInteraction: 88 }, { chaId: 'char-b' }],
     })
+  })
+
+  it('acknowledges an optimistic character selection without replacing a newer selection', () => {
+    const ada = metadataCharacter('char-a', 'Ada')
+    ada.lastInteraction = 200
+    applyCharactersResource({
+      revision: 5,
+      characters: [ada, metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    })
+
+    expect(
+      applyCharacterSelectionLocalEffect({
+        revision: 6,
+        characterId: 'char-a',
+        lastInteraction: 100,
+      }),
+    ).toBe(true)
+
+    expect(charactersResourceState.currentChar).toBe(1)
+    expect(getResourceDatabase().characters[0].lastInteraction).toBe(200)
+    expect(charactersResourceState.selectionRevision).toBe(6)
+    expect(charactersResourceState.rowRevisions).toEqual({ 'char-a': 6, 'char-b': 5 })
   })
 
   it('preserves resident transcript and hypa bodies across newer metadata lists', () => {

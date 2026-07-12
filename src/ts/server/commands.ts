@@ -48,7 +48,16 @@ export interface CharacterPatchLocalEffect {
   patch: CharacterSnapshot
 }
 
-export type ServerCommandLocalEffect = ChatGenerationSettingsLocalEffect | CharacterPatchLocalEffect
+export interface CharacterSelectionLocalEffect {
+  kind: 'characterSelection'
+  characterId: string
+  lastInteraction: number
+}
+
+export type ServerCommandLocalEffect =
+  | ChatGenerationSettingsLocalEffect
+  | CharacterPatchLocalEffect
+  | CharacterSelectionLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -2221,6 +2230,8 @@ export async function selectCharacterCommand(
       lastInteraction: input.lastInteraction,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readCharacterSelectionLocalEffect(body, event, input.characterId, input.lastInteraction),
   })
 }
 
@@ -3347,6 +3358,24 @@ function readCharacterPatchLocalEffect(
     kind: 'characterPatch',
     characterId,
     patch: cloneJsonValue(patch),
+  }
+}
+
+function readCharacterSelectionLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  expectedCharacterId: string,
+  lastInteraction: number | undefined,
+): CharacterSelectionLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const characterId = (body as Record<string, unknown>).characterId
+  if (characterId !== expectedCharacterId) return undefined
+  if (event.resource !== 'characterSelection' || event.id !== characterId) return undefined
+  if (typeof lastInteraction !== 'number' || !Number.isFinite(lastInteraction)) return undefined
+  return {
+    kind: 'characterSelection',
+    characterId,
+    lastInteraction,
   }
 }
 

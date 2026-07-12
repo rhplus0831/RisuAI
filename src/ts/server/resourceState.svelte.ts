@@ -80,6 +80,12 @@ export interface ServerCharacterPatchLocalEffectPayload {
   patch: Record<string, unknown>
 }
 
+export interface ServerCharacterSelectionLocalEffectPayload {
+  revision: number
+  characterId: string
+  lastInteraction: number
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -454,6 +460,28 @@ export function applyCharacterPatchLocalEffect(payload: ServerCharacterPatchLoca
   // A newer optimistic delete can remove the row before this accepted patch is
   // reconciled. Fence the acknowledgement anyway so the following delete event
   // can reconcile instead of trying to read a row that no longer exists.
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence a response-confirmed optimistic character selection. A later selection
+ * or delete may already be visible, so keep the live pointers and timestamp.
+ */
+export function applyCharacterSelectionLocalEffect(payload: ServerCharacterSelectionLocalEffectPayload): boolean {
+  const knownSelectionRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.selectionRevision ?? -1,
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+  )
+  if (knownSelectionRevision >= payload.revision) return true
+  if (!Number.isFinite(payload.lastInteraction)) return false
+
+  charactersResourceState.selectionRevision = payload.revision
   charactersResourceState.rowRevisions[payload.characterId] = payload.revision
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]

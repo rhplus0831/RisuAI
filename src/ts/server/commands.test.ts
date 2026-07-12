@@ -2919,6 +2919,40 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('reports an accepted character selection as a local command effect', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 4,
+      event: {
+        type: 'character.selected',
+        revision: 4,
+        resource: 'characterSelection',
+        id: 'char-b',
+      },
+      characterId: 'char-b',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      selectCharacterCommand({
+        baseRevision: 3,
+        characterId: 'char-b',
+        lastInteraction: 1234,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 4, characterId: 'char-b' })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'characterSelection',
+        characterId: 'char-b',
+        lastInteraction: 1234,
+      },
+    ])
+  })
+
   it('dispatches lorebook commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (

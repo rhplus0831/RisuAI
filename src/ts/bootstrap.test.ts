@@ -388,6 +388,39 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('acknowledges a contiguous character selection without replacing a newer selection', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].lastInteraction = 200
+    })
+    const event = {
+      type: 'character.selected',
+      revision: 6,
+      resource: 'characterSelection',
+      id: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterSelection',
+            characterId: 'char-a',
+            lastInteraction: 100,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect((getDatabase() as unknown as { currentChar: number }).currentChar).toBe(1)
+    expect(getDatabase().characters[0].lastInteraction).toBe(200)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('uses a full resource result revision and invalidates chat hydration after a gap', async () => {
     await loadWebInitialDatabase()
     resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })

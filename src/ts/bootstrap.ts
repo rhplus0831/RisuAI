@@ -40,7 +40,11 @@ import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import { enableChatCompletionPushNotifications } from './server/pushNotifications'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
-import { applyCharacterPatchLocalEffect, applyChatGenerationSettingsLocalEffect } from './server/resourceState.svelte'
+import {
+  applyCharacterPatchLocalEffect,
+  applyCharacterSelectionLocalEffect,
+  applyChatGenerationSettingsLocalEffect,
+} from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
@@ -372,6 +376,15 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           revision: event.revision,
           characterId: localEffect.characterId,
           patch: localEffect.patch,
+        }),
+      )
+    case 'characterSelection':
+      if (event.resource !== 'characterSelection' || event.id !== localEffect.characterId) return false
+      return withServerResourceApply(() =>
+        applyCharacterSelectionLocalEffect({
+          revision: event.revision,
+          characterId: localEffect.characterId,
+          lastInteraction: localEffect.lastInteraction,
         }),
       )
   }
