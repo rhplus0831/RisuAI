@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-13.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -15,10 +15,10 @@ past decisions; they are not the source of current behavior.
 3. `src/docs/README.md` - local index for current frontend/client notes.
 4. `src/docs/svelte-ui.md` - Svelte UI/UX app shell, routes/stores, components,
    settings, controls, chat/sidebar/mobile/playground, styling, tests.
-5. `src/docs/client-runtime.md` - browser Fastify adapters, bootstrap,
-   projection/hydration touchpoints, generation client, assets/storage/plugins.
-6. `docs/structure/server-projection-and-bridges.md` - bootstrap, projection,
-   hydration, SSE reconcile, bridge watchers.
+5. `src/docs/client-runtime.md` - browser Fastify adapters, bootstrap, REST
+   resource reads and hydration, generation client, assets/storage/plugins.
+6. `docs/structure/server-resources-and-bridges.md` - bootstrap, API-backed
+   resource state, lazy hydration, SSE invalidation, bridge watchers.
 7. `docs/structure/data-and-events.md` - SQLite, auth, active writer, revisions,
    events, streaming.
 8. `docs/structure/assets-and-saves.md` - assets, `.risu`, bundle import/export,
@@ -57,8 +57,8 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/index.ts`                                                                                                               | API process entrypoint: load config, build app, listen, graceful shutdown/signal handling.                                  |
 | `server/fastify/src/app.ts`                                                                                                                 | Fastify composition root: plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA.               |
 | `server/fastify/src/config.ts`, `server/fastify/src/routeRateLimits.ts`                                                                     | Runtime env parsing and per-route rate-limit presets.                                                                       |
-| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v21, migrations, schema version, global revision.                                                             |
-| `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain load/write for settings, characters/chats, split collections, projections/body cache, legacy `db.json` import/applyImport, asset metadata, backups, chat message tables. |
+| `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v22, migrations, schema version, global revision.                                                             |
+| `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain load/write for settings, characters/chats, split collections, legacy `db.json` import/applyImport, asset metadata, backups, and chat message tables. |
 | `server/fastify/src/routeManifest.ts`                                                                                                       | Auth, active-writer, streaming, and route classification decisions used by tests/audits. Update it for route changes; use `app.printRoutes()` for the endpoint inventory. |
 | `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
@@ -68,12 +68,12 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/memory*.ts`                                                                                                             | Maintained Hypa V3 memory tables, planning, selection, jobs, worker, events.                                                |
 | `server/fastify/src/risuSave/`, `server/fastify/src/realmImport/`                                                                           | `.risu` codecs, bounded inflate, bundles/local-backup import/export, asset reports, and Realm/charx conversion helpers.     |
 | `server/fastify/src/streamJobs.ts`, `server/fastify/src/streamBackpressure.ts`                                                              | Process-local proxy stream jobs and shared bounded stream writers.                                                          |
-| `src/main.ts`, `src/App.svelte`, `src/ts/bootstrap.ts`                                                                                      | Browser bootstrap, app shell, Fastify projection startup.                                                                   |
+| `src/main.ts`, `src/App.svelte`, `src/ts/bootstrap.ts`                                                                                      | Browser bootstrap, app shell, initial REST resource load, and SSE invalidation startup.                                     |
 | `src/lib/`                                                                                                                                  | Svelte UI components by feature area.                                                                                       |
-| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: bootstrap/body cache, commands, projection/hydration/resync, character/prompt hydration, events, memory job events, message translation refresh, bridges, assets, backups, Realm import, push notifications, stale-operation guards, protocol diagnostics, browser smoke hooks. |
-| `src/ts/chatCommands.ts`, `src/ts/server/chatGenerationSettingsProjectionGuard.ts`                                                          | Narrow optimistic chat/message commands and pending chat-generation-settings protection during targeted character-row projection. |
+| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: runtime bootstrap, resource reads/state/invalidation, lazy character/chat/lorebook/prompt hydration, commands, events, memory jobs, message translation refresh, bridges, assets, backups, Realm import, push notifications, stale-operation guards, protocol diagnostics, and browser smoke hooks. |
+| `src/ts/chatCommands.ts`, `src/ts/server/chatGenerationSettingsResourceGuard.ts`                                                            | Narrow optimistic chat/message commands and pending chat-generation-settings protection while an authoritative character resource refresh is in flight. |
 | `src/ts/process/`, `src/ts/process/request/`                                                                                                | `sendChat`, server-backed generation bridge, request routing, SSE parsing, retained parity helpers.                         |
-| `src/ts/storage/`                                                                                                                           | Browser projection state, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
+| `src/ts/storage/`                                                                                                                           | API-backed resource access adapters, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
 | `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/modules.ts`, `src/ts/moduleCommands.ts`, `src/ts/process/mcp/`               | Browser plugin/module runtime, Plugin V3 API host, command-backed plugin/module state, `.risum` import, and MCP clients/tools. |
 | `src/ts/model/`, `src/ts/horde/`                                                                                                            | Browser model registry and provider catalog helpers.                                                                        |
 | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | Agent Preset authoring UI and chat-scoped Agent Preset selection.                                                           |

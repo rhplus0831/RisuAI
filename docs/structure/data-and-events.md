@@ -1,15 +1,15 @@
 # Data And Events
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-13.
 
-Fastify owns durable state. The browser receives a projected copy and sends
-revision-checked commands or explicit server-owned mutation requests.
+Fastify owns durable state. The browser reads authenticated REST resources and
+sends revision-checked commands or explicit server-owned mutation requests.
 
 ## Stores
 
 | Store            | Path                                                                                               | Contents                                                                                                                                                                                                             |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `projection_body_cache_state`, `collection_body_revisions`, `command_events`, `push_subscriptions`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror/projection. |
+| SQLite           | `data/risu.db`                                                                                     | `schema_version.version` plus domain `revision`; settings; row tables for characters, chats, messages, and `chat_hypa_v3`; split collections in `modules`, `plugins`, `model_presets`, `prompt_presets`, `bot_presets`, `prompt_templates`, `personas`, `loadouts`, `lore_books`, `translator_presets`, `hypa_v3_presets`, and `plugin_custom_storage`; `assets`, `command_events`, `push_subscriptions`, memory tables/jobs, and `generation_finalization_retries`. Prompt templates are normally owned by `prompt_presets` rows; `prompt_templates` is retained as a compatibility mirror. |
 | Asset bytes      | `data/assets/<sha256>.<ext>`                                                                       | Content-addressed images, audio, video, fonts, CSS, ONNX, inlay signatures, and other supported asset types. Metadata is in SQLite `assets`.                                                                         |
 | Backups          | `data/backups/<id>/`                                                                               | Snapshot `risu.db`, `manifest.json`, assets when present, and legacy `save/` when present. Creation copies `risu.db` after a WAL checkpoint; restore uses `ATTACH` and swaps only the `SQLITE_BACKUP_TABLES` allowlist. |
 | Legacy `db.json` | `data/db.json`                                                                                     | Import-only compatibility input. Boot imports it into SQLite and renames it to `db.json.migrated`.                                                                                                                   |
@@ -18,7 +18,7 @@ revision-checked commands or explicit server-owned mutation requests.
 | Web Push keys    | `data/__web_push_vapid_keys.json`                                                                  | Generated VAPID keypair when explicit `RISU_WEB_PUSH_VAPID_*` env keys are not supplied. Push subscription rows live in SQLite `push_subscriptions`.                                                                 |
 
 Primary boundaries: `db.ts` owns schema/migrations/revision, `repository.ts`
-owns domain load/write/projection/import/applyImport/assets/backups,
+owns domain load/write/resource-read/import/applyImport/assets/backups,
 `messageStore.ts` owns message tables, and `commands/mutations.ts` owns command
 transactions. Messages live in `messages` with `(chat_id, seq)` ordering and
 `uid` as the message id. Active chat reads filter `alternate = 0`; reroll
@@ -30,7 +30,7 @@ reroll buffer for the appended path. Per-chat `hypaV3Data` lives in
 Prompt-template ownership follows the split-preset contract:
 `prompt_presets.prompt_template` is the durable owner for modern prompt preset
 templates. The legacy/top-level `prompt_templates` table remains as a
-compatibility projection/mirror for older command shapes, selected-owner
+compatibility mirror for older command shapes, selected-owner
 bridges, import/export, and code that still expects `Database.promptTemplate`.
 Legacy `botPresets[].promptTemplate` is preserved for old save import/export,
 prompt diff reads, and explicit extraction into modern prompt presets, but
@@ -55,10 +55,12 @@ from bootstrap, command responses, and event reconciliation.
 
 High-level browser mutations share one serialized transport lane so each request
 uses the revision accepted by the preceding request. Accepted responses advance
-the known-server cursor immediately, but their projection work is deferred while
-later mutations are queued. Once the lane drains, success events are coalesced to
-the latest revision and reconciled authoritatively; a multi-revision batch forms
-a gap from the pre-batch applied cursor and therefore performs one full resync.
+the known-server cursor immediately, but their authoritative resource reads are
+deferred while later mutations are queued. Once the lane drains, success events
+are coalesced to the latest revision and reconciled authoritatively through one
+invalidation plan.
+Contiguous multi-revision batches may combine targeted reads; an actual revision
+gap triggers one complete resource refresh.
 The mutation promises settle only after that shared reconciliation, while
 explicitly unqueued operations such as raw message translation retain immediate
 response reconciliation.
@@ -69,60 +71,33 @@ same invariant: one revision bump and one persisted command event per normal
 command transaction.
 
 Command-event resources should be as narrow as practical and are defined by
-`COMMAND_EVENT_CATALOG` plus the projection route's `RESOURCE_PROJECTION_FIELDS`.
-Examples include `characterSelection`, `characterOrder`, `characterRow`, `character`,
-`message`, `globalLorebook`, `characterLorebook`, legacy `chat`/`chatFolder` and
-`lorebook`, `module`, `moduleCreated`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
-`moduleScriptDefinition`, `moduleTriggerDefinition`, legacy-preset slices
-`presetRow`/`presetCollection`/`presetApplied`, collection slices such as `promptItem`/
-`modelPreset`/`promptPreset`/`translatorPreset`/`loadout`, `modelProfile`,
-`agentPreset`, `agentPresetDeleted`, `persona`, `legacyBotPreset`, `plugin`,
-`asset`, `generation`, and the composite `chatTranscript`. Grouped
-`settings.updated` events carry their
-settings group in `id`, allowing projection to read and return only the keys in
-that authoritative group. Historical settings events with no recognized group
-still fall back to a full bootstrap. Known sprawling resources such as `state`
-intentionally fall back to a full bootstrap. Prompt settings project their
-explicit 21-key command surface, and plugin storage projects the complete
-`pluginCustomStorage` map so deletion and clear operations remain authoritative.
-Optional projection-owned fields that disappear from SQLite use explicit null
-deletion sentinels; currently this covers `promptTemplate` and
-`agentPresetDefaultId`, preventing an empty table or cleared default from
-silently leaving an older client value resident.
-`asset` is a no-op targeted projection that advances the cached revision because
-asset metadata lives outside the projected `Database`.
-Character script/trigger replacements and chat/chat-folder metadata mutations
-emit `characterRow` with the owning character id, so reconciliation ships one
-row. The older `scriptDefinition`, `triggerDefinition`, `chat`, and `chatFolder`
-resource names remain replay aliases: qualified events use the same single-row
-response, while events without enough owner metadata retain the broad safe
-fallback.
-Character reorder events use `characterOrder`, which projects only the
-settings-level presentation structure and never re-stubs character rows.
-When a character-row projection structurally changes chats, the browser keeps
-resident histories for surviving ids, invalidates hydration only for added or
-removed ids, and refreshes generation attachment if the active chat changed.
-`modelPreset` projections include both the preset collection/pointer and every
-root model setting the selected model and prompt-preset overrides can apply.
-Legacy bot-preset updates use a keyed full `presetRow`; membership/order changes
-use `presetCollection`; and select/delete operations that apply a preset use
-`presetApplied`, which also ships the complete root setting surface owned by
-`applyPreset`. Collection responses carry authoritative stubs plus the full rows
-named by the event. The browser merges by stable id, preserves hydrated siblings
-and post-request local field edits, and adopts authoritative order/pointer state.
-Historical `preset` events remain a compatibility alias and return the full
-collection plus applied fields because old events did not record whether
-`saveCurrent` changed another row.
-Ordinary `message` events project the complete affected transcript so deletes,
-truncations, and same-length replacements cannot leave stale or placeholder
-rows outside a short tail window.
-Message-only `generation.persisted` events are keyed by `parentId` = chat id and
-return the ranged `generation-chat` projection. Revisions that persist a chat
-row and transcript together use `chatTranscript` and projection mode
-`chat-transcript`: assembly-time input rewrites, generation finalization with a
-scriptstate write, and chat create/fork with non-empty initial messages. The
-payload carries the single parent character row plus the complete changed
-transcript so both halves reconcile before the command settles.
+`COMMAND_EVENT_CATALOG`. `src/ts/server/resourceInvalidation.ts` maps those
+protocol keys to concrete REST reads. Examples include `characterSelection`,
+`characterOrder`, `characterRow`, `character`, `message`, `globalLorebook`,
+`characterLorebook`, legacy `chat`/`chatFolder` and `lorebook`, `module`,
+`moduleCreated`, `moduleUpdated`, `moduleEnabled`, `moduleReordered`,
+`moduleScriptDefinition`, `moduleTriggerDefinition`, legacy-preset keys
+`presetRow`/`presetCollection`/`presetApplied`, collection keys such as
+`promptItem`/`modelPreset`/`promptPreset`/`translatorPreset`/`loadout`,
+`modelProfile`, `agentPreset`, `agentPresetDeleted`, `persona`,
+`legacyBotPreset`, `plugin`, `asset`, `generation`, and `chatTranscript`.
+
+Settings-like events reread `/api/v1/settings`; collection events reread the
+owning `/api/v1/collections/:name`; character metadata events reread the list or
+one character row; and message/generation/transcript events reread the complete
+affected chat body. Character lorebook events use the single or bulk lorebook
+endpoint. `asset` advances the applied revision without an application-data
+read. Broad `state`/`lorebook` events, unknown resources, missing required owner
+ids, and revision gaps fall back to a common-revision refresh of settings,
+collections, and characters. Plugin storage is always applied as a complete
+map, with pending local operations replayed over the incoming value until their
+commands settle.
+
+Character list and row responses omit message bodies. Resource application
+keeps resident chat bodies for surviving same-id rows during safe targeted
+updates, but a complete refresh deliberately resets them to stubs and forces
+lazy rehydration. Chat-generation-settings saves have a dedicated pending-value
+guard so an in-flight row read cannot replace the newest optimistic edit.
 
 ## Server-Owned Exceptions
 
@@ -150,15 +125,15 @@ not ordinary browser `/commands/*` resource endpoints:
   streamed-so-far text through the raw cancel path.
 - Raw message translation uses
   `POST /api/v1/commands/messages/:messageId/translate`: the server detaches the
-  provider work from the browser request, projects active rows through
+  provider work from the browser request, exposes active rows through
   `activeMessageTranslations`, then persists the translated text through a
   targeted message command event if the source row is still unchanged.
 - Memory job create/cancel writes durable memory-job state and emits memory
   events without a domain revision.
 - The startup push service loads or generates VAPID keys; push notification
   subscription create/delete routes mutate operational Web Push rows without a
-  domain revision. They are authenticated runtime state, not projected
-  `Database` state.
+  domain revision. They are authenticated runtime state, not application
+  resource state.
 - Backup create/delete mutate backup files without a domain revision; restore
   replaces repository state and emits `state.restored`. Backup creation
   file-copies the whole `risu.db` after a WAL checkpoint, but restore swaps only
@@ -190,42 +165,46 @@ leaves password auth enabled by default.
 The active-writer guard is separate. Any authenticated bootstrap carrying
 `risu-writer-session` latches the latest writer; routes whose manifest decision
 is `active-writer` reject stale sessions with `423 active_writer_stale`.
-Read-only bootstrap/projection/event routes do not need writer ownership.
+Read-only bootstrap, resource-read, and event routes do not need writer
+ownership.
 
 `server/fastify/src/routeManifest.ts` is the source of truth for auth,
 active-writer, streaming, public exceptions, and read-only POST decisions.
 
-## Projection And Hydration
+## REST Resources And Hydration
 
-`GET /api/v1/bootstrap` returns revision, schema version, asset base URL,
-`activeGenerationJobs`, `activeMessageTranslations`, optional `bodyCache`, and
-a lean database projection. If no database exists, the browser calls
-`commands/state/initialize` and refetches bootstrap read-only. Module/plugin body cache uses
-`x-risu-body-cache-manifest`, `projection_body_cache_state`, and
-`collection_body_revisions` so unchanged heavy bodies can be merged from browser
-cache instead of retransmitted.
+`GET /api/v1/bootstrap` returns initialization state, revision, schema version,
+asset base URL, `activeGenerationJobs`, and `activeMessageTranslations`. It does
+not return durable application data. If no database exists, the browser calls
+`commands/state/initialize`, refetches runtime bootstrap read-only, and then
+loads the three root resources at one common revision.
 
-Bootstrap and broad targeted projections are lean. Chat metadata ships with empty
-`message[]`, per-chat `hypaV3Data` and reroll alternates hydrate on demand,
-inactive characters can be shell rows, selected/requested prompt-preset
-`promptTemplate` bodies and the top-level compatibility projection can be
-stripped, bot presets can be stubs, and module/plugin bodies can arrive via body
-cache. Heavy fields hydrate on demand:
+| Data                                                | Endpoint                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------- |
+| Scalar/settings fields                              | `GET /api/v1/settings`                                         |
+| All split collections                               | `GET /api/v1/collections`                                      |
+| One named split collection                          | `GET /api/v1/collections/:name`                                |
+| Message-free character list/order/current selection | `GET /api/v1/characters`                                      |
+| One message-free character row                      | `GET /api/v1/characters/:id`                                  |
+| Full, tail, or ranged chat messages, per-chat memory data, and reroll alternates | `GET /api/v1/chats/:id/messages` with optional `tail` or `start`/`limit` |
+| Many chat histories                                 | `POST /api/v1/chats/messages/bulk`                              |
+| Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/characters/:id/lorebook`                           |
+| Many character lorebooks                            | `POST /api/v1/characters/lorebooks/bulk`                        |
+| One legacy bot-preset body                          | `GET /api/v1/legacy-presets/:id`                                |
+| One prompt-preset-owned template                    | `GET /api/v1/prompt-presets/:id/template`                       |
 
-| Data                                                | Endpoint                                                        |
-| --------------------------------------------------- | --------------------------------------------------------------- |
-| Active chat messages, tail-window first and later `start`/`limit` ranges | `GET /api/v1/projection/chatMessages?id=...`          |
-| Many chat histories                                 | `POST /api/v1/projection/chatMessages/bulk`                     |
-| Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/projection/characterLorebook?id=...`               |
-| Many character lorebooks                            | `POST /api/v1/projection/characterLorebooks/bulk`               |
-| Inactive/selected character shell                   | `GET /api/v1/projection/characterRow?id=...`                    |
-| Prompt template collection fields                   | `GET /api/v1/projection/promptItem`, with `parentId` for explicit prompt-preset owner hydration |
-| Bot preset body / split preset collection fields    | `GET /api/v1/projection/preset?id=...` and collection resources |
+The root browser wrappers live in `src/ts/server/resourceReads.ts`, body-read
+wrappers live in `src/ts/server/hydrationReads.ts`, and application state is
+owned by `src/ts/server/resourceState.svelte.ts`. Hydration and stale-response
+logic live in `chatMessageHydration.svelte.ts`,
+`characterShellHydration.svelte.ts`, and `promptTemplateHydration.ts`.
 
-Browser wrappers live in `src/ts/server/projection.ts`; hydration/cache logic
-lives in `src/ts/server/chatMessageHydration.svelte.ts`,
-`characterShellHydration.svelte.ts`, `promptTemplateHydration.ts`, and
-`bootstrapBodyCache.ts`.
+The character list and row endpoints intentionally omit message bodies. Active
+chat messages, per-chat `hypaV3Data`, reroll alternates, character lorebooks,
+legacy preset bodies, and prompt-preset templates hydrate on demand. Bulk chat
+reads omit reroll alternates and are used only by workflows that need many
+histories; event invalidation uses the single-chat endpoint to keep alternates
+authoritative.
 
 ## SSE And Streaming
 
@@ -233,23 +212,25 @@ lives in `src/ts/server/chatMessageHydration.svelte.ts`,
 then streams live command-sink events plus live memory events. Clients subscribe
 with `sinceRevision` or `Last-Event-ID`; replay gaps return
 `409 event_replay_unavailable`, after which the browser performs a read-only
-full bootstrap before resubscribing. SQLite replay keeps a 1000-revision window
+complete resource refresh before resubscribing. SQLite replay keeps a
+1000-revision window
 and persists `origin_writer_session_id` for own-echo suppression. The live
 command sink can also carry non-replay notifications such as export events at
 the current revision. Memory events are never replayed.
 
 Browser reconcile rules: process events serially, skip already-reconciled
 own-origin revisions through a 256-entry cache, skip already-applied foreign
-revisions, fetch a targeted projection for contiguous foreign events, and fall
-back to full bootstrap for gaps, unknown resources, replay misses, or projection
-errors. The browser keeps separate known-server and applied-projection revision
-cursors: mutation base revisions and hydration freshness use the known cursor,
-while SSE replay, gap detection, and already-applied skips use only the applied
-cursor. An own-origin event that arrives before the command response advances the
-known revision may still reconcile so local state does not wait for another event.
-When targeted reconciliation and its full-bootstrap fallback both fail, the
-browser leaves the applied cursor unchanged and reconnects from it so command
-event replay retries the event instead of waiting for a later mutation.
+revisions, issue targeted REST reads for contiguous events, and fall back to a
+complete settings/collections/characters refresh for gaps, unknown resources,
+replay misses, or invalidation failures. The browser keeps separate known-server
+and applied-resource revision cursors: mutation base revisions and hydration
+freshness use the known cursor, while SSE replay, gap detection, and
+already-applied skips use only the applied cursor. An own-origin event that
+arrives before the command response advances the known revision may still
+reconcile so local state does not wait for another event. When targeted
+reconciliation fails, the browser leaves the applied cursor unchanged and
+reconnects from it so command-event replay retries the event instead of waiting
+for a later mutation.
 Memory events update Hypa V3 job/progress UI directly.
 
 Chat generation SSE frame types are `stage`, `job_accepted`, `prompt`, `info`,

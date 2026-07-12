@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-13.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -187,11 +187,11 @@ command payload assertions, and fetch mocks can support the test, but they are
 not enough for stale-visible-UI bugs. If behavior includes optimistic updates or
 rollback, assert both the visible optimistic change and the visible rollback.
 
-Use helper Vitest for pure helpers and projection calculations, Svelte DOM
+Use helper Vitest for pure helpers and resource-invalidation calculations, Svelte DOM
 Vitest for state-to-DOM contracts, and sparse Fastify browser smoke for
 end-to-end boot/API/SSE wiring. Add state-to-DOM coverage when touching
-`DBState`, `selectedCharID`, `chatPage`, `loadedStore`, projection writes,
-bootstrap/resync/SSE, optimistic command helpers, bridge watchers, router
+resource slice state, `selectedCharID`, `chatPage`, `loadedStore`, authoritative
+resource applies, bootstrap/refresh/SSE, optimistic command helpers, bridge watchers, router
 selection, array create/delete/reorder flows, `$derived`, `$effect`, keyed lists,
 memo signatures, or render dependency keys.
 
@@ -298,7 +298,7 @@ Client/build:
 Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
 `CLIENT_THINNING_AUDIT_CHECK_IDS`, `UPDATE_FIXTURES`,
 `RISU_DIRECT_REALM_IMPORT_TEST`,
-`RISU_COMMAND_METRIC_SUMMARY`, `RISU_PROJECTION_FULL_SUMMARY`,
+`RISU_COMMAND_METRIC_SUMMARY`,
 `RISU_ASSET_BYTE_SUMMARY`, `RISU_EXPORT_MATERIALIZE_SUMMARY`, and
 `RISU_GENERATION_METRIC_SUMMARY`.
 
