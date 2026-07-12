@@ -225,8 +225,8 @@ vi.mock('./Scripts/TriggerList.svelte', async () => {
 })
 
 import CharConfig from './CharConfig.svelte'
-import { CharConfigSubMenu, DBState, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
-import type { character } from 'src/ts/storage/database.svelte'
+import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
 
 function charConfigSource(): string {
   return readFileSync(resolve(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
@@ -316,7 +316,7 @@ async function settleComponent(): Promise<void> {
 }
 
 async function mountCharConfig(subMenu: number, characterFields: Partial<character> = {}): Promise<void> {
-  DBState.db = {
+  setDatabaseLite({
     characters: [makeCharacter(characterFields)],
     currentChar: 0,
     fishSpeechKey: '',
@@ -325,7 +325,7 @@ async function mountCharConfig(subMenu: number, characterFields: Partial<charact
     showDeprecatedTriggerV1: false,
     showUnrecommended: false,
     useAdditionalAssetsPreview: false,
-  } as never
+  } as never)
   selectedCharID.set(0)
   CharConfigSubMenu.set(0)
   MobileGUI.set(true)
@@ -402,7 +402,7 @@ afterEach(() => {
   selectedCharID.set(-1)
   CharConfigSubMenu.set(0)
   MobileGUI.set(false)
-  DBState.db = {} as never
+  setDatabaseLite({} as never)
   vi.unstubAllGlobals()
   vi.clearAllTimers()
   vi.useRealTimers()
@@ -538,7 +538,7 @@ describe('CharConfig character media callback freshness contracts', () => {
     })
     await settleComponent()
 
-    expect(DBState.db.characters[0].vits).toEqual({
+    expect(getDatabase().characters[0].vits).toEqual({
       files: { 'model.onnx': 'newer-model-asset' },
       id: 'newer-model-id',
       name: 'newer-model',
@@ -563,13 +563,13 @@ describe('CharConfig character media callback freshness contracts', () => {
 
     expect(assetMocks.saveAsset).toHaveBeenCalledTimes(1)
     expect(assetMocks.saveAsset).toHaveBeenCalledWith(newerFile.data, '', newerFile.name)
-    expect(DBState.db.characters[0].notificationImage).toBe('newer-notification-asset')
+    expect(getDatabase().characters[0].notificationImage).toBe('newer-notification-asset')
 
     olderRead.resolve(olderFile)
     await settleComponent()
 
     expect(assetMocks.saveAsset).toHaveBeenCalledTimes(1)
-    expect(DBState.db.characters[0].notificationImage).toBe('newer-notification-asset')
+    expect(getDatabase().characters[0].notificationImage).toBe('newer-notification-asset')
   })
 
   it('keeps a clear made while an older notification-image upload is pending', async () => {
@@ -587,12 +587,12 @@ describe('CharConfig character media callback freshness contracts', () => {
 
     notificationImageClearButton().click()
     await settleComponent()
-    expect(DBState.db.characters[0].notificationImage).toBe('')
+    expect(getDatabase().characters[0].notificationImage).toBe('')
 
     olderUpload.resolve('older-notification-asset')
     await settleComponent()
 
-    expect(DBState.db.characters[0].notificationImage).toBe('')
+    expect(getDatabase().characters[0].notificationImage).toBe('')
   })
 })
 
@@ -632,12 +632,12 @@ describe('CharConfig draft-type-less character actions', () => {
   it('adds a bias row when the live selected row is a real character', async () => {
     await mountCharConfig(2)
 
-    expect(DBState.db.characters[0].bias).toEqual([])
+    expect(getDatabase().characters[0].bias).toEqual([])
 
     buttons()[0].click()
     await settleComponent()
 
-    expect(DBState.db.characters[0].bias).toEqual([['', 0]])
+    expect(getDatabase().characters[0].bias).toEqual([['', 0]])
   })
 
   it('adds and deletes alternate greetings using the validated selected index', async () => {
@@ -648,7 +648,7 @@ describe('CharConfig draft-type-less character actions', () => {
     buttons()[1].click()
     await settleComponent()
 
-    expect(DBState.db.characters[0].alternateGreetings).toEqual(['Hello again', ''])
+    expect(getDatabase().characters[0].alternateGreetings).toEqual(['Hello again', ''])
 
     buttons()[4].click()
     await settleComponent()
@@ -657,8 +657,8 @@ describe('CharConfig draft-type-less character actions', () => {
       selectedChar: 0,
       dispatch: false,
     })
-    expect(DBState.db.characters[0].chats[0].fmIndex).toBe(-1)
-    expect(DBState.db.characters[0].alternateGreetings).toEqual([''])
+    expect(getDatabase().characters[0].chats[0].fmIndex).toBe(-1)
+    expect(getDatabase().characters[0].alternateGreetings).toEqual([''])
   })
 
   it('adds a regex script row when the script draft still targets the selected character', async () => {
@@ -670,8 +670,8 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('1')
-    expect(DBState.db.characters[0].customscript).toHaveLength(1)
-    expect(DBState.db.characters[0].customscript[0]).toMatchObject({
+    expect(getDatabase().characters[0].customscript).toHaveLength(1)
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({
       comment: '',
       in: '',
       out: '',
@@ -708,6 +708,6 @@ describe('CharConfig draft-type-less character actions', () => {
     await settleComponent()
 
     expect(target.querySelector('[data-testid="regex-count"]')?.textContent).toBe('2')
-    expect(DBState.db.characters[0].customscript).toHaveLength(2)
+    expect(getDatabase().characters[0].customscript).toHaveLength(2)
   })
 })

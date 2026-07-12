@@ -3,12 +3,12 @@
   import { tokenizeAccurate } from '../../ts/tokenizer'
   import {
     saveImage as saveAsset,
+    getDatabase,
     isServerCharacterShell,
     type character,
     type customscript,
     type triggerscript,
   } from '../../ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
   import { untrack } from 'svelte'
   import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from '../../ts/stores.svelte'
   import {
@@ -218,7 +218,7 @@
     const projectionApplyEpoch = getServerProjectionApplyEpoch()
     const projectionApplyChanged = projectionApplyEpoch !== previousScriptDraftProjectionApplyEpoch
     previousScriptDraftProjectionApplyEpoch = projectionApplyEpoch
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     const characterId = character?.chaId ?? null
     const snapshot = snapshotJson({
       characterId,
@@ -345,7 +345,7 @@
   let licensed = $state(currentEditableCharacterTarget()?.character.license ?? '')
 
   $effect.pre(() => {
-    const chara = DBState.db.characters[$selectedCharID]
+    const chara = getDatabase().characters[$selectedCharID]
     const desc = chara.desc
     const firstMsg = chara.firstMessage
 
@@ -355,7 +355,7 @@
   })
 
   const selectedCharacterAssetSourceKey = $derived(
-    currentRealCharacterDraftTarget() && DBState.db.useAdditionalAssetsPreview
+    currentRealCharacterDraftTarget() && getDatabase().useAdditionalAssetsPreview
       ? ((characterDraft.value as unknown as character).additionalAssets ?? [])
           .map((asset) => `${asset[1]}:${asset[2] ?? ''}`)
           .join('\n')
@@ -367,7 +367,7 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (currentRealCharacterDraftTarget() && DBState.db.useAdditionalAssetsPreview) {
+    if (currentRealCharacterDraftTarget() && getDatabase().useAdditionalAssetsPreview) {
       for (const asset of (characterDraft.value as unknown as character).additionalAssets ?? []) {
         const assetPath = asset[1]
         nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
@@ -458,12 +458,12 @@
     try {
       const res = await fetch(`https://api.fish.audio/model?self=true`, {
         headers: {
-          Authorization: `Bearer ${DBState.db.fishSpeechKey}`,
+          Authorization: `Bearer ${getDatabase().fishSpeechKey}`,
         },
       })
       const data = await res.json()
       console.log(data.items)
-      console.log(DBState.db.characters[$selectedCharID])
+      console.log(getDatabase().characters[$selectedCharID])
 
       if (Array.isArray(data.items)) {
         fishSpeechModels = data.items.map((item) => ({
@@ -483,7 +483,7 @@
 
   function currentEditableCharacterTarget(): { selectedIndex: number; character: character } | null {
     const selectedIndex = $selectedCharID
-    const selectedCharacter = DBState.db.characters?.[selectedIndex]
+    const selectedCharacter = getDatabase().characters?.[selectedIndex]
     if (!selectedCharacter?.chaId) return null
     if (isServerCharacterShell(selectedCharacter)) return null
     if (selectedCharacter.type && selectedCharacter.type !== 'character') return null
@@ -590,9 +590,9 @@
   }
 
   function editorAdditionalAssetUploadFreshness(operation: CharacterAdditionalAssetUploadOperation) {
-    const selectedCharacter = DBState.db.characters?.[$selectedCharID]
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
     const targetRow =
-      operation.characterIndex === undefined ? undefined : DBState.db.characters?.[operation.characterIndex]
+      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
 
     return {
       currentCharacterId: selectedCharacter?.chaId,
@@ -678,7 +678,7 @@
   function editorNotificationImageUploadFreshness(operation: CharacterNotificationImageUploadOperation) {
     const editableTarget = currentEditableCharacterTarget()
     const targetRow =
-      operation.characterIndex === undefined ? undefined : DBState.db.characters?.[operation.characterIndex]
+      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
 
     return {
       currentCharacterId: editableTarget?.character.chaId,
@@ -757,9 +757,9 @@
   }
 
   function editorTtsAssetUploadFreshness(operation: CharacterTtsAssetUploadOperation) {
-    const selectedCharacter = DBState.db.characters?.[$selectedCharID]
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
     const targetRow =
-      operation.characterIndex === undefined ? undefined : DBState.db.characters?.[operation.characterIndex]
+      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
     const draft = characterDraft.value as unknown as character
 
     return {
@@ -1250,7 +1250,7 @@
         }} />
     {/if}
   {:else if viewSubMenu === 2}
-    {#if DBState.db.newImageHandlingBeta}
+    {#if getDatabase().newImageHandlingBeta}
       <CheckInput bind:check={characterDraft.value.prebuiltAssetCommand} name={language.insertAssetPrompt} />
 
       {#if characterDraft.value.prebuiltAssetCommand}
@@ -1284,7 +1284,7 @@
             {#each characterDraft.value.additionalAssets as assets, i (assets[1])}
               <tr>
                 <td class="font-medium truncate">
-                  {#if assetFilePath[assets[1]] && DBState.db.useAdditionalAssetsPreview}
+                  {#if assetFilePath[assets[1]] && getDatabase().useAdditionalAssetsPreview}
                     {#if assetFileExtensions[assets[1]] === 'mp4'}
                       <!-- svelte-ignore a11y_media_has_caption -->
                       <video controls class="mt-2 px-2 w-full m-1 rounded-md"
@@ -1320,7 +1320,7 @@
                     }}>
                     <TrashIcon />
                   </button>
-                  {#if DBState.db.useAdditionalAssetsPreview}
+                  {#if getDatabase().useAdditionalAssetsPreview}
                     <button
                       class="hover:text-blue-500"
                       class:text-textcolor2={characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
@@ -1391,15 +1391,15 @@
     <span class="text-textcolor mt-4">{language.triggerScript} <Help key="triggerScript" /></span>
     <TriggerList
       bind:value={characterTriggersDraft}
-      lowLevelAble={DBState.db.characters[$selectedCharID].lowLevelAccess} />
+      lowLevelAble={getDatabase().characters[$selectedCharID].lowLevelAccess} />
 
-    {#if characterDraft.value.virtualscript || DBState.db.showUnrecommended}
+    {#if characterDraft.value.virtualscript || getDatabase().showUnrecommended}
       <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended /></span>
       <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.virtualscript}></TextAreaInput>
     {/if}
   {/if}
 {:else if $CharConfigSubMenu === 6}
-  {#if DBState.db.characters[$selectedCharID].license !== 'CC BY-NC-SA 4.0' && DBState.db.characters[$selectedCharID].license !== 'CC BY-SA 4.0' && DBState.db.characters[$selectedCharID].license !== 'CC BY-ND 4.0' && DBState.db.characters[$selectedCharID].license !== 'CC BY-NC-ND 4.0'}
+  {#if getDatabase().characters[$selectedCharID].license !== 'CC BY-NC-SA 4.0' && getDatabase().characters[$selectedCharID].license !== 'CC BY-SA 4.0' && getDatabase().characters[$selectedCharID].license !== 'CC BY-ND 4.0' && getDatabase().characters[$selectedCharID].license !== 'CC BY-NC-ND 4.0'}
     <Button
       size="sm"
       onclick={async () => {
@@ -1410,7 +1410,7 @@
 
   <Button
     onclick={async () => {
-      removeChar($selectedCharID, getCharacterDisplayName(DBState.db.characters[$selectedCharID]))
+      removeChar($selectedCharID, getCharacterDisplayName(getDatabase().characters[$selectedCharID]))
     }}
     className="mt-2"
     size="sm">{language.removeCharacter}</Button>
@@ -1787,12 +1787,12 @@
   <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.additionalText}
   ></TextAreaInput>
 
-  {#if DBState.db.showUnrecommended || characterDraft.value.personality.length > 3}
+  {#if getDatabase().showUnrecommended || characterDraft.value.personality.length > 3}
     <span class="text-textcolor">{language.personality} <Help key="personality" unrecommended /></span>
     <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.personality}
     ></TextAreaInput>
   {/if}
-  {#if DBState.db.showUnrecommended || characterDraft.value.scenario.length > 3}
+  {#if getDatabase().showUnrecommended || characterDraft.value.scenario.length > 3}
     <span class="text-textcolor">{language.scenario} <Help key="scenario" unrecommended /></span>
     <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.scenario}
     ></TextAreaInput>
@@ -1908,7 +1908,7 @@
     <Check bind:check={characterDraft.value.escapeOutput} name={language.escapeOutput} />
   </div>
 
-  {#if DBState.db.hypaV3}
+  {#if getDatabase().hypaV3}
     <Button
       onclick={() => {
         $hypaV3ModalOpen = true
