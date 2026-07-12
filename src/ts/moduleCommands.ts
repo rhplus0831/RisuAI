@@ -22,9 +22,9 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
-import { DBState, reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
+import { reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
-import type { character } from './storage/database.svelte'
+import { getDatabase, type character } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   fillMissingActiveChatSidebarToggleDefaults,
@@ -161,8 +161,8 @@ export function cloneJsonValue<T>(value: T): T {
 
 export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string): GlobalModuleStateSnapshot {
   const snapshot: GlobalModuleStateSnapshot = {
-    modules: cloneJsonValue(DBState.db.modules ?? []),
-    enabledModules: cloneJsonValue(DBState.db.enabledModules ?? []),
+    modules: cloneJsonValue(getDatabase().modules ?? []),
+    enabledModules: cloneJsonValue(getDatabase().enabledModules ?? []),
   }
 
   if (moduleIdForReferences) {
@@ -174,8 +174,8 @@ export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string)
 
 export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.modules = cloneJsonValue(snapshot.modules)
-    DBState.db.enabledModules = cloneJsonValue(snapshot.enabledModules)
+    getDatabase().modules = cloneJsonValue(snapshot.modules)
+    getDatabase().enabledModules = cloneJsonValue(snapshot.enabledModules)
     if (snapshot.moduleReferences) {
       restoreModuleReferenceState(snapshot.moduleReferences)
     }
@@ -187,7 +187,7 @@ function currentModuleReferenceStateSnapshot(moduleId: string): ModuleReferenceS
   const characters: CharacterModuleReferenceSnapshot[] = []
   const loadouts: LoadoutModuleReferenceSnapshot[] = []
 
-  for (const candidate of DBState.db.characters ?? []) {
+  for (const candidate of getDatabase().characters ?? []) {
     if (!candidate?.chaId) continue
 
     const characterModules = moduleIdsFieldSnapshot(candidate, moduleId)
@@ -213,7 +213,7 @@ function currentModuleReferenceStateSnapshot(moduleId: string): ModuleReferenceS
     }
   }
 
-  for (const [loadoutIndex, candidate] of (DBState.db.loadouts ?? []).entries()) {
+  for (const [loadoutIndex, candidate] of (getDatabase().loadouts ?? []).entries()) {
     if (!candidate || typeof candidate !== 'object') continue
     const loadoutModules = moduleIdsFieldSnapshot(candidate, moduleId)
     if (!loadoutModules) continue
@@ -268,11 +268,11 @@ function restoreModulesField(target: { modules?: string[] }, snapshot: ModuleIds
 }
 
 function findCharacterById(characterId: string): character | undefined {
-  return DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  return getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
 }
 
 function findLoadoutForReference(snapshot: LoadoutModuleReferenceSnapshot): { modules?: string[] } | undefined {
-  const loadouts = DBState.db.loadouts ?? []
+  const loadouts = getDatabase().loadouts ?? []
   if (snapshot.loadoutId) {
     const byId = loadouts.find((candidate) => candidate?.id === snapshot.loadoutId)
     if (byId) return byId
@@ -444,11 +444,11 @@ export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void
   }
 
   if (enabled) {
-    if (!DBState.db.enabledModules.includes(moduleId)) {
-      DBState.db.enabledModules.push(moduleId)
+    if (!getDatabase().enabledModules.includes(moduleId)) {
+      getDatabase().enabledModules.push(moduleId)
     }
   } else {
-    DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
+    getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== moduleId)
   }
   reloadGuiAfterDefinitionChange()
 }
@@ -461,7 +461,7 @@ export function createGlobalModule(module: RisuModule): void {
     return
   }
 
-  DBState.db.modules.push(module)
+  getDatabase().modules.push(module)
   reloadGuiAfterDefinitionChange()
 }
 
@@ -471,9 +471,9 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
     const nextModule = cloneJsonValue(module)
     let applied = false
     withTrustedServerProjectionWrite(() => {
-      const index = DBState.db.modules.findIndex((candidate) => candidate.id === moduleId)
+      const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
       if (index !== -1) {
-        DBState.db.modules[index] = nextModule
+        getDatabase().modules[index] = nextModule
         applied = true
       }
     })
@@ -482,9 +482,9 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
     return
   }
 
-  const index = DBState.db.modules.findIndex((candidate) => candidate.id === moduleId)
+  const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
   if (index !== -1) {
-    DBState.db.modules[index] = module
+    getDatabase().modules[index] = module
     reloadGuiAfterDefinitionChange()
   }
 }
@@ -497,43 +497,43 @@ export function deleteGlobalModule(moduleId: string): void {
     return
   }
 
-  DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => id !== moduleId)
-  DBState.db.modules = DBState.db.modules.filter((module) => module.id !== moduleId)
+  getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== moduleId)
+  getDatabase().modules = getDatabase().modules.filter((module) => module.id !== moduleId)
   removeProjectedModuleReferences(moduleId)
   reloadGuiAfterDefinitionChange()
 }
 
 function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
   withTrustedServerProjectionWrite(() => {
-    const enabledModules = new Set(DBState.db.enabledModules ?? [])
+    const enabledModules = new Set(getDatabase().enabledModules ?? [])
     if (enabled) {
       enabledModules.add(moduleId)
     } else {
       enabledModules.delete(moduleId)
     }
-    DBState.db.enabledModules = Array.from(enabledModules)
+    getDatabase().enabledModules = Array.from(enabledModules)
   })
   reloadGuiAfterDefinitionChange()
 }
 
 function applyOptimisticCreatedGlobalModule(module: RisuModule): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.modules = [...(DBState.db.modules ?? []), cloneJsonValue(module)]
+    getDatabase().modules = [...(getDatabase().modules ?? []), cloneJsonValue(module)]
   })
   reloadGuiAfterDefinitionChange()
 }
 
 function applyOptimisticDeletedGlobalModule(moduleId: string): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.enabledModules = (DBState.db.enabledModules ?? []).filter((id) => id !== moduleId)
-    DBState.db.modules = (DBState.db.modules ?? []).filter((module) => module.id !== moduleId)
+    getDatabase().enabledModules = (getDatabase().enabledModules ?? []).filter((id) => id !== moduleId)
+    getDatabase().modules = (getDatabase().modules ?? []).filter((module) => module.id !== moduleId)
     removeProjectedModuleReferences(moduleId)
   })
   reloadGuiAfterDefinitionChange()
 }
 
 function removeProjectedModuleReferences(moduleId: string): void {
-  for (const character of DBState.db.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     if (Array.isArray(character.modules)) {
       character.modules = character.modules.filter((id) => id !== moduleId)
     }
@@ -545,7 +545,7 @@ function removeProjectedModuleReferences(moduleId: string): void {
     }
   }
 
-  for (const loadout of DBState.db.loadouts ?? []) {
+  for (const loadout of getDatabase().loadouts ?? []) {
     if (Array.isArray(loadout.modules)) {
       loadout.modules = loadout.modules.filter((id) => id !== moduleId)
     }
@@ -554,7 +554,7 @@ function removeProjectedModuleReferences(moduleId: string): void {
 
 export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): void {
   if (!canUseServerCommands()) return
-  const attemptedModuleIds = (DBState.db.modules ?? []).map((module) => module.id)
+  const attemptedModuleIds = (getDatabase().modules ?? []).map((module) => module.id)
   const rollbackEntry = moduleOrderRollbackEntry(previous, attemptedModuleIds)
   const operation = issueGlobalModuleOperation([rollbackEntry])
   runModuleCommand(
@@ -949,16 +949,16 @@ function rollbackGlobalModuleEntryIfLiveMatches(entry: GlobalModuleRollbackEntry
 }
 
 function rollbackModuleCreateIfLiveMatches(entry: ModuleCreateRollbackEntry): boolean {
-  const modules = DBState.db.modules ?? []
+  const modules = getDatabase().modules ?? []
   const index = modules.findIndex((module) => module.id === entry.moduleId)
   if (index === -1 || !isJsonValueEqual(modules[index], entry.attemptedModule)) return false
 
-  DBState.db.modules = modules.filter((_, moduleIndex) => moduleIndex !== index)
+  getDatabase().modules = modules.filter((_, moduleIndex) => moduleIndex !== index)
   return true
 }
 
 function rollbackModuleFieldIfLiveMatches(entry: ModuleFieldRollbackEntry): boolean {
-  const modules = DBState.db.modules ?? []
+  const modules = getDatabase().modules ?? []
   const index = modules.findIndex((module) => module.id === entry.moduleId)
   if (index === -1) return false
 
@@ -980,23 +980,23 @@ function rollbackModuleFieldIfLiveMatches(entry: ModuleFieldRollbackEntry): bool
     delete nextModule[entry.field]
   }
 
-  DBState.db.modules[index] = nextModule
+  getDatabase().modules[index] = nextModule
   return true
 }
 
 function rollbackModuleDeleteRowIfLiveMatches(entry: ModuleDeleteRowRollbackEntry): boolean {
-  const modules = DBState.db.modules ?? []
+  const modules = getDatabase().modules ?? []
   if (modules.some((module) => module.id === entry.moduleId)) return false
 
   const nextModules = [...modules]
   const insertIndex = boundedInsertIndex(entry.previousIndex, nextModules.length)
   nextModules.splice(insertIndex, 0, cloneJsonValue(entry.previousModule))
-  DBState.db.modules = nextModules
+  getDatabase().modules = nextModules
   return true
 }
 
 function rollbackModuleEnableIfLiveMatches(entry: ModuleEnableRollbackEntry): boolean {
-  const enabledModules = DBState.db.enabledModules ?? []
+  const enabledModules = getDatabase().enabledModules ?? []
   const liveIndex = enabledModules.indexOf(entry.moduleId)
   const liveEnabled = liveIndex !== -1
   if (liveEnabled !== entry.attemptedEnabled) return false
@@ -1006,11 +1006,11 @@ function rollbackModuleEnableIfLiveMatches(entry: ModuleEnableRollbackEntry): bo
     const nextEnabledModules = enabledModules.filter((id) => id !== entry.moduleId)
     const insertIndex = boundedInsertIndex(entry.previousIndex, nextEnabledModules.length)
     nextEnabledModules.splice(insertIndex, 0, entry.moduleId)
-    DBState.db.enabledModules = nextEnabledModules
+    getDatabase().enabledModules = nextEnabledModules
     return true
   }
 
-  DBState.db.enabledModules = enabledModules.filter((id) => id !== entry.moduleId)
+  getDatabase().enabledModules = enabledModules.filter((id) => id !== entry.moduleId)
   return true
 }
 
@@ -1029,7 +1029,7 @@ function findModuleReferenceTarget(entry: ModuleReferenceRollbackEntry): { modul
   if (entry.characterId) {
     return findCharacterById(entry.characterId)
   }
-  const loadouts = DBState.db.loadouts ?? []
+  const loadouts = getDatabase().loadouts ?? []
   if (entry.loadoutId) {
     const byId = loadouts.find((candidate) => candidate?.id === entry.loadoutId)
     if (byId) return byId
@@ -1047,7 +1047,7 @@ function modulesFieldMatches(target: { modules?: string[] }, snapshot: ModuleIds
 }
 
 function rollbackModuleOrderIfLiveMatches(entry: ModuleOrderRollbackEntry): boolean {
-  const modules = DBState.db.modules ?? []
+  const modules = getDatabase().modules ?? []
   const liveModuleIds = modules.map((module) => module.id)
   if (!isStringArrayEqual(liveModuleIds, entry.attemptedModuleIds)) return false
 
@@ -1074,7 +1074,7 @@ function rollbackModuleOrderIfLiveMatches(entry: ModuleOrderRollbackEntry): bool
     )
   )
     return false
-  DBState.db.modules = reorderedModules
+  getDatabase().modules = reorderedModules
   return true
 }
 
@@ -1155,7 +1155,7 @@ function applyMissingActiveChatSidebarToggleDefaults(): ActiveChatSidebarToggleD
   const commandSettings = cloneJsonValue(generationSettings)
   let applied = false
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.[state.identity.selectedCharIndex]
+    const character = getDatabase().characters?.[state.identity.selectedCharIndex]
     const chat =
       state.identity.chatIndex >= 0 && Number.isInteger(state.identity.chatIndex)
         ? character?.chats?.[state.identity.chatIndex]
@@ -1272,7 +1272,7 @@ export function dispatchReorderCharacterModules(characterId: string, previous: C
 
 export function toggleSelectedChatModule(moduleId: string): void {
   const selectedIndex = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedIndex]
+  const character = getDatabase().characters?.[selectedIndex]
   const chatIndex = character?.chatPage
   const chat = Number.isInteger(chatIndex) ? character?.chats?.[chatIndex] : undefined
   if (!chat?.id) return
@@ -1285,7 +1285,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
   const nextModules = toggledModuleIds(chat.modules, moduleId)
 
   withTrustedServerProjectionWrite(() => {
-    const targetCharacter = DBState.db.characters?.[selectedIndex]
+    const targetCharacter = getDatabase().characters?.[selectedIndex]
     const targetChat = Number.isInteger(chatIndex) ? targetCharacter?.chats?.[chatIndex] : undefined
     if (!targetChat || targetChat.id !== chat.id) return
     targetChat.modules = cloneJsonValue(nextModules)
@@ -1302,7 +1302,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
 
 export function toggleSelectedCharacterModule(moduleId: string): void {
   const selectedIndex = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedIndex]
+  const character = getDatabase().characters?.[selectedIndex]
   if (!character?.chaId) return
 
   const previous = currentCharacterModuleStateSnapshot(character.chaId)
@@ -1311,7 +1311,7 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   const nextModules = toggledModuleIds(character.modules, moduleId)
 
   withTrustedServerProjectionWrite(() => {
-    const targetCharacter = DBState.db.characters?.[selectedIndex]
+    const targetCharacter = getDatabase().characters?.[selectedIndex]
     if (!targetCharacter || targetCharacter.chaId !== character.chaId) return
     targetCharacter.modules = cloneJsonValue(nextModules)
   })
