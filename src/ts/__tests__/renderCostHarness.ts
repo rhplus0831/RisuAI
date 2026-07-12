@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { vi } from 'vitest'
-import type { character, customscript, Message } from '../storage/database.svelte'
+import type { character, customscript, Database, Message } from '../storage/database.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import {
-  DBState,
   HideIconStore,
   ReloadChatPointer,
   ReloadGUIPointer,
@@ -13,6 +13,15 @@ import {
   reloadGuiDisplay,
   selectedCharID,
 } from '../stores.svelte'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 export interface RenderParseCounts {
   parseMarkdown: number
@@ -115,7 +124,7 @@ export function seedRenderCostMessages(messageCount: number): RenderCostSeed {
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
   HideIconStore.set(false)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [character],
     characterOrder: [character.chaId],
     currentChar: 0,
@@ -243,7 +252,7 @@ async function finishCacheProofAfterBump(
 }
 
 export async function runRenderCostHarness(options: RenderCostHarnessOptions): Promise<RenderCostHarnessResult> {
-  const previousDb = DBState.db
+  const previousDb = testDatabaseState.db
   const previousSelectedChar = get(selectedCharID)
   const previousReloadGui = get(ReloadGUIPointer)
   const previousVariableReloadGui = get(VariableReloadGUIPointer)
@@ -339,7 +348,7 @@ export async function runRenderCostHarness(options: RenderCostHarnessOptions): P
     risuChatParserSpy.mockRestore()
     parseMarkdownSpy.mockRestore()
     parseMemoModule.clearChatBodyParseMemo()
-    DBState.db = previousDb
+    testDatabaseState.db = previousDb
     selectedCharID.set(previousSelectedChar)
     ReloadChatPointer.set(previousReloadChat)
     ReloadGUIPointer.set(previousReloadGui)

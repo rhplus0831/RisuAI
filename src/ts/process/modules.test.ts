@@ -14,6 +14,7 @@ const createGlobalModule = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
 const getCurrentChatMock = vi.hoisted(() => vi.fn())
 type ModuleDatabaseFixture = {
+  characters?: unknown[]
   enabledModules?: string[]
   moduleIntergration?: string
   promptPresets?: Array<Record<string, unknown>>

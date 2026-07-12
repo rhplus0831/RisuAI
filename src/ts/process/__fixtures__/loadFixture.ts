@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { LLMModel } from '../../model/types'
-import { DBState, selectedCharID } from '../../stores.svelte'
+import { getResourceDatabase as getDatabase } from '../../server/resourceState.svelte'
+import { selectedCharID } from '../../stores.svelte'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
 import {
   resolveChatGenerationControlRequirements,
@@ -126,7 +127,7 @@ export interface LoadedFixture {
 }
 
 /**
- * Load a fixture by name and install it into DBState + selectedCharID.
+ * Load a fixture by name and install it into resource database + selectedCharID.
  * Returns a cleanup() that restores the prior state.
  */
 export async function loadFixture(name: string): Promise<LoadedFixture> {
@@ -142,13 +143,13 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
   const promptInfoOverride = fixture.db?.promptInfoInsideChat
   const promptTextInfoOverride = fixture.db?.promptTextInfoInsideChat
   setDatabase(seed)
-  // setDatabase mutates `seed` in place and assigns it to DBState.db via setDatabaseLite.
+  // setDatabase mutates `seed` in place and assigns it to getDatabase() via setDatabaseLite.
   // Characters/chats from the fixture survive because they're carried in `seed`.
   if (promptInfoOverride !== undefined) {
-    DBState.db.promptInfoInsideChat = promptInfoOverride
+    getDatabase().promptInfoInsideChat = promptInfoOverride
   }
   if (promptTextInfoOverride !== undefined) {
-    DBState.db.promptTextInfoInsideChat = promptTextInfoOverride
+    getDatabase().promptTextInfoInsideChat = promptTextInfoOverride
   }
 
   const selectId = fixture.selectedCharID ?? 0
@@ -174,11 +175,11 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
     name,
     fixture,
     cleanup() {
-      // Intentionally do not restore the prior DBState/selectedCharID:
+      // Intentionally do not restore the prior resource database/selectedCharID:
       // downstream $effect.root listeners (parser.svelte.ts, stores.svelte.ts)
       // fire reactively on those writes, and tearing them back to `{}` mid-run
       // surfaces as an unhandled error. Each fixture's loadFixture() reseeds
-      // DBState wholesale, so leaving stale state between tests is safe.
+      // resource database wholesale, so leaving stale state between tests is safe.
       // Remove injected models in reverse order so each splice doesn't shift
       // the remaining indices.
       if (modelRegistry !== null) {
@@ -196,7 +197,7 @@ export async function loadFixture(name: string): Promise<LoadedFixture> {
  * as configured instead of relying on the product's legacy global defaults.
  */
 export function markFixtureActiveChatGenerationSettingsReady(): void {
-  const db = DBState.db
+  const db = getDatabase()
   const selectedCharacterIndex = getInteger(selectedCharIDValue(), 0)
   const character = db.characters?.[selectedCharacterIndex] ?? db.characters?.[0]
   const chatIndex = getInteger(character?.chatPage, 0)

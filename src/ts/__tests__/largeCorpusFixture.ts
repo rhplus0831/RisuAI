@@ -6,7 +6,7 @@
  * - server tests import it from `server/fastify/__tests__/` and seed it through
  *   `POST /api/v1/import/risusave` (or `writePersistedWithMessages`), then put
  *   the load-count harness (`helpers/loadCostHarness.ts`) around a route;
- * - client tests assign `fixture.database` to `DBState.db` (cast like the
+ * - client tests install `fixture.database` into resource state (cast like the
  *   existing command-test seeds) and put `withCloneInstrumentation` around a
  *   snapshot call.
  *
@@ -98,7 +98,7 @@ export interface LargeCorpusCharacter {
 export interface LargeCorpusFixture {
   /** The full `Database`-shaped object both suites seed from. */
   database: Record<string, unknown>
-  /** All characters, typed for client-side `DBState.db` assignment. */
+  /** All characters, typed for client-side resource-state installation. */
   characters: LargeCorpusCharacter[]
   /** The one large hydrated chat. Has messages AND `hypaV3Data`. */
   hot: { characterId: string; chatId: string; messageCount: number }

@@ -9,10 +9,20 @@ import {
 } from '../process/__fixtures__/mocks/serverChatFetch'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setDatabase, type Database, type character } from '../storage/database.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { appendCurrentChatUserMessageForSend } from '../chatCommands'
 import { seedCloneCostDb, withAsyncCloneInstrumentation, type CloneInstrumentation } from './cloneCostHarness'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 export interface SendCloneCountProbeOptions {
   characterCount?: number
@@ -157,12 +167,12 @@ function seedProbeDb(options: Required<SendCloneCountProbeOptions>): SendCloneCo
     characters: characters as unknown as Database['characters'],
   } as unknown as Database)
   selectedCharID.set(0)
-  ;(DBState.db as typeof DBState.db & { currentChar?: number }).currentChar = 0
+  ;(testDatabaseState.db as typeof testDatabaseState.db & { currentChar?: number }).currentChar = 0
 
-  const activeCharacter = DBState.db.characters[0]
+  const activeCharacter = testDatabaseState.db.characters[0]
   const activeChat = activeCharacter.chats[activeCharacter.chatPage ?? 0]
   return {
-    characterCount: DBState.db.characters.length,
+    characterCount: testDatabaseState.db.characters.length,
     messageCountBeforeSend: activeChat.message.length,
     messageCountAfterSubmit: activeChat.message.length + 1,
     finalMessageCount: activeChat.message.length + 2,
@@ -170,7 +180,7 @@ function seedProbeDb(options: Required<SendCloneCountProbeOptions>): SendCloneCo
     transcriptJsonSizeBeforeSend: JSON.stringify(activeChat.message).length,
     activeChatJsonSizeBeforeSend: JSON.stringify(activeChat).length,
     activeCharacterJsonSizeBeforeSend: JSON.stringify(activeCharacter).length,
-    charactersJsonSizeBeforeSend: JSON.stringify(DBState.db.characters).length,
+    charactersJsonSizeBeforeSend: JSON.stringify(testDatabaseState.db.characters).length,
   }
 }
 
@@ -349,7 +359,7 @@ export async function runSendCloneCountProbe(
       },
     )
 
-    const activeChat = DBState.db.characters[0].chats[DBState.db.characters[0].chatPage ?? 0]
+    const activeChat = testDatabaseState.db.characters[0].chats[testDatabaseState.db.characters[0].chatPage ?? 0]
     fixture.finalMessageCount = activeChat.message.length
 
     return {

@@ -290,7 +290,7 @@ export interface SeedCloneCostDbOptions {
 /**
  * Build a multi-character DB with at least one multi-message hydrated chat so a
  * whole-characters clone is distinguishable from a single-row clone by size.
- * Returned as a plain object the caller assigns to `DBState.db` (cast as any in
+ * Returned as a plain object the caller installs into resource state (cast as any in
  * tests, mirroring the existing command-test seeds).
  */
 export function seedCloneCostDb(options: SeedCloneCostDbOptions = {}): {
