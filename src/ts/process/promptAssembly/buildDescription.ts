@@ -1,14 +1,13 @@
-import type { Chat, character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
 import { additionalInformations } from '../embedding/addinfo'
 import type { OpenAIChat } from '../index.svelte'
 import { risuChatParser } from '../scripts'
 
 export async function buildDescription(currentChar: character, currentChat: Chat): Promise<OpenAIChat> {
-  let description = risuChatParser(
-    (DBState.db.promptPreprocess ? DBState.db.descriptionPrefix : '') + currentChar.desc,
-    { chara: currentChar },
-  )
+  const db = getDatabase()
+  let description = risuChatParser((db.promptPreprocess ? db.descriptionPrefix : '') + currentChar.desc, {
+    chara: currentChar,
+  })
 
   const additionalInfo = await additionalInformations(currentChar, currentChat)
 

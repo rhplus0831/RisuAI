@@ -1,5 +1,4 @@
-import { DBState } from '../../stores.svelte'
-import type { character } from '../../storage/database.svelte'
+import { getDatabase, type character } from '../../storage/database.svelte'
 import { stableDiff } from '../stableDiff'
 
 export interface RunImggenStableDiffOptions {
@@ -10,7 +9,7 @@ export interface RunImggenStableDiffOptions {
 }
 
 export async function runImggenStableDiff(opts: RunImggenStableDiffOptions): Promise<void> {
-  const msgs = DBState.db.characters[opts.selectedChar].chats[opts.selectedChat].message
+  const msgs = getDatabase().characters[opts.selectedChar].chats[opts.selectedChat].message
   let msgStr = ''
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].role === 'char') {

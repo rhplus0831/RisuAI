@@ -1,5 +1,4 @@
-import { DBState } from '../../stores.svelte'
-import { setCurrentChat, type Chat, type Message, type character } from '../../storage/database.svelte'
+import { getDatabase, setCurrentChat, type Chat, type Message, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import { getUserName } from '../../util'
 import { exampleMessage } from '../exampleMessages'
@@ -62,7 +61,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
 
   const chats: OpenAIChat[] = examples
 
-  if (!DBState.db.aiModel.startsWith('novelai') && !DBState.db?.promptSettings?.trimStartNewChat) {
+  if (!getDatabase().aiModel.startsWith('novelai') && !getDatabase().promptSettings?.trimStartNewChat) {
     chats.push({
       role: 'system',
       content: '[Start a new chat]',
@@ -99,7 +98,7 @@ export async function buildHistoryWindow(args: BuildHistoryWindowArgs): Promise<
       content: await processScript(nowChatroom, risuChatParser(firstMsg, { chara: currentChar }), 'editprocess'),
     }
 
-    if (usingPromptTemplate && DBState.db.promptSettings.sendName) {
+    if (usingPromptTemplate && getDatabase().promptSettings.sendName) {
       chat.content = `${currentChar.name}: ${chat.content}`
       chat.attr = ['nameAdded']
     }

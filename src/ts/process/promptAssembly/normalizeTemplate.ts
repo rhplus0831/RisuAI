@@ -1,5 +1,4 @@
-import type { Database, character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getDatabase, type Database, type character } from '../../storage/database.svelte'
 import type { PromptItem } from '../prompt'
 import { resolveEffectivePromptTemplate, type EffectivePromptTemplateOptions } from './effectivePromptTemplate'
 
@@ -13,7 +12,7 @@ export interface NormalizeTemplateOptions extends EffectivePromptTemplateOptions
 }
 
 export function normalizeTemplate(currentChar: character, options: NormalizeTemplateOptions = {}): NormalizedTemplate {
-  const db = options.db ?? DBState.db
+  const db = options.db ?? getDatabase()
   const resolved = resolveEffectivePromptTemplate(db, options)
   let promptTemplate = safeStructuredClone(resolved.promptTemplate) ?? null
   const usingPromptTemplate = !!promptTemplate

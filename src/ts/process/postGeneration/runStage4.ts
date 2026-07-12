@@ -1,5 +1,4 @@
-import { DBState } from '../../stores.svelte'
-import type { character, MessageGenerationInfo } from '../../storage/database.svelte'
+import { getDatabase, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
 import { loadAndTrimCharEmotion } from './charEmotionStore'
 import { applyEmotionFromResponse } from './emotionFromResponse'
 import { runEmotionEmbeddingFallback } from './emotionFallbackEmbedding'
@@ -71,7 +70,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     return { status: 'resend' }
   }
 
-  if (DBState.db.notification) {
+  if (getDatabase().notification) {
     await fireDesktopNotification(chatCompletionNotificationInput(currentChar, result))
   }
 
@@ -83,7 +82,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
     if (currentChar.viewScreen === 'emotion' && !emoChanged && abortSignal.aborted === false) {
       const { tempEmotion, charemotions } = loadAndTrimCharEmotion(currentChar.chaId)
 
-      if (DBState.db.emotionProcesser === 'embedding') {
+      if (getDatabase().emotionProcesser === 'embedding') {
         await runEmotionEmbeddingFallback({
           result,
           currentChar,
@@ -98,7 +97,7 @@ export async function runStage4(args: RunStage4Args): Promise<RunStage4Result> {
         currentChar,
         abortSignal,
         throwError,
-        emotionPrompt2: DBState.db.emotionPrompt2,
+        emotionPrompt2: getDatabase().emotionPrompt2,
         tempEmotion,
         charemotions,
       })

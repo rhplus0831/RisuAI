@@ -1,5 +1,4 @@
-import type { Chat, character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { risuChatParser } from '../scripts'
 import { getAuthorNoteDefaultText, getPersonaPrompt } from '../../util'
@@ -31,13 +30,13 @@ export function buildAuthorNote(currentChar: character, currentChat: Chat): Open
 }
 
 export function buildCotInstruction(usingPromptTemplate: boolean): OpenAIChat[] {
-  if (!DBState.db.chainOfThought) return []
-  if (usingPromptTemplate && DBState.db.promptSettings.customChainOfThought) return []
+  if (!getDatabase().chainOfThought) return []
+  if (usingPromptTemplate && getDatabase().promptSettings.customChainOfThought) return []
   return [{ role: 'system', content: COT_INSTRUCTION }]
 }
 
 export function buildPersona(currentChar: character): OpenAIChat[] {
-  if (!DBState.db.personaPrompt) return []
+  if (!getDatabase().personaPrompt) return []
   return [
     {
       role: 'system',

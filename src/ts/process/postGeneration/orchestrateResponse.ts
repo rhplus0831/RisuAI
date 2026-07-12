@@ -1,5 +1,4 @@
 import { addRerolls } from '../prereroll'
-import { DBState } from '../../stores.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import { sayTTS } from '../tts'
 import { evaluateIgp } from './igp'
@@ -7,7 +6,13 @@ import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
-import type { Chat, MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
+import {
+  getDatabase,
+  type Chat,
+  type MessageGenerationInfo,
+  type MessagePresetInfo,
+  type character,
+} from '../../storage/database.svelte'
 import type { DispatchSuccessReq } from '../dispatch/dispatchRequest'
 
 export type OrchestrateResponseResult =
@@ -115,7 +120,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       // The server already ran the run-var pass, `'output'` trigger, and
       // `editoutput`. The browser keeps streamed text for display; final text,
       // inlay rendering, scriptstate patch, and resend arrive on the terminal.
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
     } else {
       const streamTrigger = await applyOutputTrigger({
         currentChar,
@@ -129,19 +134,19 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       }
       const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
       withTrustedServerProjectionWrite(() => {
-        currentChat = streamTrigger.triggerChat ?? DBState.db.characters[selectedChar].chats[selectedChat]
+        currentChat = streamTrigger.triggerChat ?? getDatabase().characters[selectedChar].chats[selectedChat]
         currentChat.message[stream.msgIndex].data = inlayr.text
-        DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+        getDatabase().characters[selectedChar].chats[selectedChat] = currentChat
       })
       if (inlayr.promise) {
         const t = await inlayr.promise
         withTrustedServerProjectionWrite(() => {
-          currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+          currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
           currentChat.message[stream.msgIndex].data = t
-          DBState.db.characters[selectedChar].chats[selectedChat] = currentChat
+          getDatabase().characters[selectedChar].chats[selectedChat] = currentChat
         })
       }
-      if (DBState.db.ttsAutoSpeech && !suppressStreamingTts) {
+      if (getDatabase().ttsAutoSpeech && !suppressStreamingTts) {
         await sayTTS(currentChar, result)
       }
     }
@@ -177,7 +182,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
       })
       if (nonStreamTrigger.triggerChat) {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat!
+          getDatabase().characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat!
         })
       }
       if (nonStreamTrigger.resendChat) {
@@ -187,7 +192,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
   }
 
   await evaluateIgp({
-    promptTemplate: DBState.db.igpPrompt ?? '',
+    promptTemplate: getDatabase().igpPrompt ?? '',
     abortSignal,
     selectedChar,
     selectedChat,

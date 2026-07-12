@@ -1,6 +1,5 @@
-import { DBState } from '../../stores.svelte'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
-import type { MessageGenerationInfo } from '../../storage/database.svelte'
+import { getDatabase, type MessageGenerationInfo } from '../../storage/database.svelte'
 
 export interface StageTimings {
   stage1Start: number
@@ -29,11 +28,12 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
     generationInfo.stageTiming.stage3 = stageTimings.stage3Duration
     generationInfo.stageTiming.stage4 = stageTimings.stage4Duration
   }
-  const messages = DBState.db.characters[selectedChar].chats[selectedChat].message
+  const messages = getDatabase().characters[selectedChar].chats[selectedChat].message
   const lastMessageIndex = messages.length - 1
   if (lastMessageIndex >= 0 && messages[lastMessageIndex].generationInfo) {
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo = generationInfo
+      getDatabase().characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo =
+        generationInfo
     })
   }
 }

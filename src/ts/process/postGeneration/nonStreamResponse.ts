@@ -1,5 +1,10 @@
-import type { Chat, MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import {
+  getDatabase,
+  type Chat,
+  type MessageGenerationInfo,
+  type MessagePresetInfo,
+  type character,
+} from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import { runInlayScreen } from '../inlayScreen'
@@ -61,7 +66,7 @@ export async function applyNonStreamResponse(
   let emoChanged = false
   const mrerolls: string[] = []
 
-  const messagesAt = (): Chat['message'] => DBState.db.characters[selectedChar].chats[selectedChat].message
+  const messagesAt = (): Chat['message'] => getDatabase().characters[selectedChar].chats[selectedChat].message
 
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i]
@@ -73,7 +78,7 @@ export async function applyNonStreamResponse(
       const beforeChat = messagesAt()[msgIndex]
       result2 = await runEditOutput(beforeChat.data + mess, msgIndex)
     }
-    if (DBState.db.removeIncompleteResponse) {
+    if (getDatabase().removeIncompleteResponse) {
       result2.data = trimUntilPunctuation(result2.data)
     }
     result = result2.data
@@ -122,9 +127,9 @@ export async function applyNonStreamResponse(
       mrerolls.push(result)
     }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedChar].reloadKeys += 1
+      getDatabase().characters[selectedChar].reloadKeys += 1
     })
-    if (DBState.db.ttsAutoSpeech) {
+    if (getDatabase().ttsAutoSpeech) {
       await sayTTS(currentChar, result)
     }
   }

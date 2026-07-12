@@ -1,5 +1,11 @@
-import type { Chat, Message, MessageGenerationInfo, MessagePresetInfo, character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import {
+  getDatabase,
+  type Chat,
+  type Message,
+  type MessageGenerationInfo,
+  type MessagePresetInfo,
+  type character,
+} from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
@@ -58,7 +64,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
   } = opts
 
   const reader = req.result.getReader()
-  const currentLiveCharacter = (): character | undefined => DBState.db.characters?.[selectedChar]
+  const currentLiveCharacter = (): character | undefined => getDatabase().characters?.[selectedChar]
   let streamChatId: string | undefined
   const currentLiveChat = (): Chat | undefined => {
     const chats = currentLiveCharacter()?.chats
@@ -198,7 +204,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
         if (!result) {
           result = ''
         }
-        if (DBState.db.removeIncompleteResponse) {
+        if (getDatabase().removeIncompleteResponse) {
           result = trimUntilPunctuation(result)
         }
         renderCoalescer.notify()

@@ -1,7 +1,6 @@
-import { DBState } from '../../stores.svelte'
 import { parseChatML } from '../../parser/chatML'
 import { prebuiltAssetCommand } from '../../util'
-import type { character } from '../../storage/database.svelte'
+import { getDatabase, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
 import { risuChatParser } from '../scripts'
@@ -28,7 +27,7 @@ export interface RenderFinalPromptArgs {
   unformated: UnformatedPromptSlots
   promptTemplate: PromptItem[] | null
   usingPromptTemplate: boolean
-  /** Cloned + `postEverything`-appended `DBState.db.formatingOrder`. Used only on the non-template path. */
+  /** Cloned + `postEverything`-appended client-database formatting order. Used only on the non-template path. */
   formatOrder: FormatOrderKey[]
   /** Memory rows captured by `buildMemoryWindow` for the `'memory'` template card. */
   memories: OpenAIChat[]
@@ -74,10 +73,10 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
 
   if (
     isContinue &&
-    (DBState.db.aiModel.startsWith('claude') ||
-      DBState.db.aiModel.startsWith('gpt') ||
-      DBState.db.aiModel.startsWith('openrouter') ||
-      DBState.db.aiModel.startsWith('reverse_proxy'))
+    (getDatabase().aiModel.startsWith('claude') ||
+      getDatabase().aiModel.startsWith('gpt') ||
+      getDatabase().aiModel.startsWith('openrouter') ||
+      getDatabase().aiModel.startsWith('reverse_proxy'))
   ) {
     unformated.postEverything.push({
       role: 'system',
@@ -92,10 +91,10 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
       }
       if (
         !(
-          DBState.db.aiModel.startsWith('gpt') ||
-          DBState.db.aiModel.startsWith('claude') ||
-          DBState.db.aiModel === 'openrouter' ||
-          DBState.db.aiModel === 'reverse_proxy'
+          getDatabase().aiModel.startsWith('gpt') ||
+          getDatabase().aiModel.startsWith('claude') ||
+          getDatabase().aiModel === 'openrouter' ||
+          getDatabase().aiModel === 'reverse_proxy'
         )
       ) {
         formated.push(chat)
@@ -143,7 +142,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 chara: currentChar,
               }).replace('{{slot}}', pmt[i].content)
 
-              if (DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat) {
+              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -160,7 +159,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 chara: currentChar,
               }).replace('{{slot}}', pmt[i].content)
 
-              if (DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat) {
+              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -177,7 +176,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 chara: currentChar,
               }).replace('{{slot}}', pmt[i].content || card.defaultText || '')
 
-              if (DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat) {
+              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -192,11 +191,11 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
         }
         case 'postEverything': {
           pushPrompts(unformated.postEverything)
-          if (usingPromptTemplate && DBState.db.promptSettings.postEndInnerFormat) {
+          if (usingPromptTemplate && getDatabase().promptSettings.postEndInnerFormat) {
             pushPrompts([
               {
                 role: 'system',
-                content: DBState.db.promptSettings.postEndInnerFormat,
+                content: getDatabase().promptSettings.postEndInnerFormat,
               },
             ])
           }
@@ -205,10 +204,10 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
         case 'plain':
         case 'jailbreak':
         case 'cot': {
-          if (!DBState.db.jailbreakToggle && card.type === 'jailbreak') {
+          if (!getDatabase().jailbreakToggle && card.type === 'jailbreak') {
             continue
           }
-          if (!DBState.db.chainOfThought && card.type === 'cot') {
+          if (!getDatabase().chainOfThought && card.type === 'cot') {
             continue
           }
 
@@ -240,7 +239,11 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
             content: content,
           }
 
-          if (DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat && card.type2 !== 'globalNote') {
+          if (
+            getDatabase().promptInfoInsideChat &&
+            getDatabase().promptTextInfoInsideChat &&
+            card.type2 !== 'globalNote'
+          ) {
             pushPromptInfoBody(prompt.role, prompt.content, promptBodyformatedForChatStore)
           }
 
@@ -277,12 +280,12 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
           }
 
           let chats = unformated.chats.slice(start, end)
-          if (usingPromptTemplate && DBState.db.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
+          if (usingPromptTemplate && getDatabase().promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
             chats = systemizeChat(chats)
           }
           pushPrompts(chats)
 
-          if (DBState.db.automaticCachePoint && !hasCachePoint) {
+          if (getDatabase().automaticCachePoint && !hasCachePoint) {
             let pointer = formated.length - 1
             let depthRemaining = 3
             while (pointer >= 0) {
@@ -307,7 +310,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
                 pmt[i].content,
               )
 
-              if (DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat) {
+              if (getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat) {
                 pushPromptInfoBody(pmt[i].role, card.innerFormat, promptBodyformatedForChatStore)
               }
             }
@@ -345,7 +348,7 @@ export async function renderFinalPrompt(args: RenderFinalPromptArgs): Promise<Re
     return v
   })
 
-  const captureInfo = DBState.db.promptInfoInsideChat && DBState.db.promptTextInfoInsideChat
+  const captureInfo = getDatabase().promptInfoInsideChat && getDatabase().promptTextInfoInsideChat
   if (captureInfo) {
     promptBodyformatedForChatStore = promptBodyformatedForChatStore.map((v) => {
       v.content = v.content.trim()

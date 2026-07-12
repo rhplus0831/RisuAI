@@ -1,5 +1,4 @@
-import type { character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getDatabase, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { parseChatML } from '../../parser/chatML'
 import type { PromptItem } from '../prompt'
@@ -99,11 +98,11 @@ export async function preflightTemplateTokens(
       }
       case 'postEverything': {
         await tokenizeChatArray(unformated.postEverything)
-        if (usingPromptTemplate && DBState.db.promptSettings.postEndInnerFormat) {
+        if (usingPromptTemplate && getDatabase().promptSettings.postEndInnerFormat) {
           await tokenizeChatArray([
             {
               role: 'system',
-              content: DBState.db.promptSettings.postEndInnerFormat,
+              content: getDatabase().promptSettings.postEndInnerFormat,
             },
           ])
         }
@@ -112,10 +111,10 @@ export async function preflightTemplateTokens(
       case 'plain':
       case 'jailbreak':
       case 'cot': {
-        if (!DBState.db.jailbreakToggle && card.type === 'jailbreak') {
+        if (!getDatabase().jailbreakToggle && card.type === 'jailbreak') {
           continue
         }
-        if (!DBState.db.chainOfThought && card.type === 'cot') {
+        if (!getDatabase().chainOfThought && card.type === 'cot') {
           continue
         }
 
@@ -181,7 +180,7 @@ export async function preflightTemplateTokens(
         }
 
         let chats = unformated.chats.slice(start, end)
-        if (usingPromptTemplate && DBState.db.promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
+        if (usingPromptTemplate && getDatabase().promptSettings.sendChatAsSystem && !card.chatAsOriginalOnSystem) {
           chats = systemizeChat(chats)
         }
         await tokenizeChatArray(chats)

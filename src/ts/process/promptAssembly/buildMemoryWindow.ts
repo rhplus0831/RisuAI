@@ -1,9 +1,8 @@
 import { language } from '../../../lang'
 import { canUseServerCommands } from '../../server/commands'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
-import { DBState } from '../../stores.svelte'
 import { currentChatStateSnapshot, dispatchUpdateChat } from '../../chatCommands'
-import type { Chat, character } from '../../storage/database.svelte'
+import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
 import { hypaMemoryV3 } from '../memory/hypav3'
@@ -14,7 +13,7 @@ export interface BuildMemoryWindowArgs {
   currentTokens: number
   maxContextTokens: number
   currentChat: Chat
-  /** Always `DBState.db.characters[selectedChar]` at the call site. */
+  /** Always the selected character from the client database at the call site. */
   nowChatroom: character
   tokenizer: ChatTokenizer
   selectedChar: number
@@ -57,7 +56,7 @@ export type BuildMemoryWindowResult =
  * Apply the long-term memory window to an assembled history:
  *
  *   - If HypaV3 is enabled on the chatroom, hand off to `hypaMemoryV3`,
- *     persisting summaries back into `DBState` and the supplied `currentChat`.
+ *     persisting summaries back into the client database and the supplied `currentChat`.
  *     A HypaV3 error short-circuits with `stopSending: true` after a final
  *     summary writeback.
  *   - Otherwise, drop the oldest messages until the budget is met. If the
@@ -90,7 +89,7 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
   let currentTokens = args.currentTokens
   let currentChat = args.currentChat
 
-  if (nowChatroom.supaMemory && DBState.db.hypaV3) {
+  if (nowChatroom.supaMemory && getDatabase().hypaV3) {
     stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
     setProcessStage(2)
     stageTimings.stage2Start = Date.now()
@@ -108,7 +107,7 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
       writeLegacyHypaV3Memory(currentChat, selectedChar, selectedChat, sp.memory)
     }
     if (!canUseServerCommands()) {
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
     }
     stageTimings.stage2Duration = Date.now() - stageTimings.stage2Start
     setProcessStage(1)
@@ -127,10 +126,10 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
     if (canUseServerCommands() && currentChat.id) {
       const previous = currentChatStateSnapshot()
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
+        getDatabase().characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
       })
       dispatchUpdateChat(currentChat.id, { lastMemory }, previous)
-      currentChat = DBState.db.characters[selectedChar].chats[selectedChat]
+      currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
     } else if (canUseServerCommands()) {
       currentChat = { ...currentChat, lastMemory }
     } else {
@@ -175,5 +174,5 @@ function writeLegacyHypaV3Memory(
 ): void {
   if (canUseServerCommands()) return
   currentChat.hypaV3Data = memory
-  DBState.db.characters[selectedChar].chats[selectedChat].hypaV3Data = memory
+  getDatabase().characters[selectedChar].chats[selectedChat].hypaV3Data = memory
 }

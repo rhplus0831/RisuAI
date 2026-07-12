@@ -1,7 +1,6 @@
 import { Buffer } from 'buffer'
 import { v4 } from 'uuid'
-import type { Message, character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getDatabase, type Message, type character } from '../../storage/database.svelte'
 import { readImage } from '../../globalApi.svelte'
 import { getModelInfo, LLMFlags } from '../../model/modellist'
 import { getUserName } from '../../util'
@@ -87,7 +86,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   }
 
   const multimodal: MultiModal[] = []
-  const modelinfo = getModelInfo(DBState.db.aiModel)
+  const modelinfo = getModelInfo(getDatabase().aiModel)
   if (inlays.length > 0) {
     for (const inlay of inlays) {
       const inlayName = inlay
@@ -130,7 +129,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   const attr: string[] = []
   const role: 'user' | 'assistant' | 'system' = msg.role === 'user' ? 'user' : 'assistant'
 
-  if (usingPromptTemplate && DBState.db.promptSettings.sendName) {
+  if (usingPromptTemplate && getDatabase().promptSettings.sendName) {
     const form = `<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`
     formatedChat = risuChatParser(form, {
       chara: findCharacterbyIdwithCache(msg.saying).name,
@@ -138,7 +137,7 @@ export async function formatHistoryMessage(args: FormatHistoryMessageArgs): Prom
   }
 
   const thoughts: string[] = []
-  const maxThoughtDepth = DBState.db.promptSettings?.maxThoughtTagDepth ?? -1
+  const maxThoughtDepth = getDatabase().promptSettings?.maxThoughtTagDepth ?? -1
   formatedChat = formatedChat.replace(/<Thoughts>(.+)<\/Thoughts>/gms, (_match, p1) => {
     if (maxThoughtDepth === -1 || maxThoughtDepth - totalCount <= index) {
       thoughts.push(p1)

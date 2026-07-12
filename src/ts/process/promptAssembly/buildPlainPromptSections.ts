@@ -1,5 +1,4 @@
-import type { character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getDatabase, type character } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { risuChatParser } from '../scripts'
 
@@ -24,25 +23,21 @@ export function buildPlainPromptSections(currentChar: character): {
   jailbreak: OpenAIChat[]
   globalNote: OpenAIChat[]
 } {
-  const mainp = currentChar.systemPrompt?.replaceAll('{{original}}', DBState.db.mainPrompt) || DBState.db.mainPrompt
+  const db = getDatabase()
+  const mainp = currentChar.systemPrompt?.replaceAll('{{original}}', db.mainPrompt) || db.mainPrompt
 
   const main = formatPrompt(
-    risuChatParser(
-      mainp +
-        (DBState.db.additionalPrompt === '' || !DBState.db.promptPreprocess ? '' : `\n${DBState.db.additionalPrompt}`),
-      { chara: currentChar },
-    ),
+    risuChatParser(mainp + (db.additionalPrompt === '' || !db.promptPreprocess ? '' : `\n${db.additionalPrompt}`), {
+      chara: currentChar,
+    }),
   )
 
-  const jailbreak = DBState.db.jailbreakToggle
-    ? formatPrompt(risuChatParser(DBState.db.jailbreak, { chara: currentChar }))
-    : []
+  const jailbreak = db.jailbreakToggle ? formatPrompt(risuChatParser(db.jailbreak, { chara: currentChar })) : []
 
   const globalNote = formatPrompt(
-    risuChatParser(
-      currentChar.replaceGlobalNote?.replaceAll('{{original}}', DBState.db.globalNote) || DBState.db.globalNote,
-      { chara: currentChar },
-    ),
+    risuChatParser(currentChar.replaceGlobalNote?.replaceAll('{{original}}', db.globalNote) || db.globalNote, {
+      chara: currentChar,
+    }),
   )
 
   return { main, jailbreak, globalNote }
