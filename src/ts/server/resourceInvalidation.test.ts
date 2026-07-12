@@ -11,6 +11,7 @@ const api = vi.hoisted(() => ({
   characterOrder: vi.fn(),
   characterSelection: vi.fn(),
   chat: vi.fn(),
+  generationChat: vi.fn(),
   lorebook: vi.fn(),
   lorebooks: vi.fn(),
 }))
@@ -36,6 +37,7 @@ vi.mock('./resourceReads', () => ({
 
 vi.mock('./hydrationReads', () => ({
   fetchServerChatMessages: api.chat,
+  fetchServerGenerationChatMessages: api.generationChat,
   fetchServerCharacterLorebook: api.lorebook,
   fetchServerBulkCharacterLorebooks: api.lorebooks,
 }))
@@ -280,9 +282,19 @@ describe('API-backed resource invalidation', () => {
       status: 'ok',
       revision: 5,
       chatId,
-      message: [{ role: 'char', data: chatId === 'chat-a' ? 'fresh-a' : 'fresh-b' }],
-      hypaV3Data: { fresh: chatId === 'chat-a' ? 'a' : 'b' },
+      message: [{ role: 'char', data: 'fresh-a' }],
+      hypaV3Data: { fresh: 'a' },
       alternates: [{ role: 'char', data: `${chatId}-alternate` }],
+    }))
+    api.generationChat.mockImplementation(async (chatId: string) => ({
+      status: 'ok',
+      revision: 5,
+      chatId,
+      message: [{ role: 'char', data: 'fresh-b' }],
+      hypaV3Data: { fresh: 'b' },
+      alternates: [{ role: 'char', data: `${chatId}-alternate` }],
+      messageStart: 1,
+      messageTotal: 2,
     }))
     api.lorebooks.mockResolvedValue({
       status: 'ok',
@@ -305,9 +317,9 @@ describe('API-backed resource invalidation', () => {
     )
 
     expect(result).toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
-    expect(api.chat).toHaveBeenCalledTimes(2)
+    expect(api.chat).toHaveBeenCalledTimes(1)
     expect(api.chat).toHaveBeenCalledWith('chat-a', { signal: undefined })
-    expect(api.chat).toHaveBeenCalledWith('chat-b', { signal: undefined })
+    expect(api.generationChat).toHaveBeenCalledWith('chat-b', 'message-b', { signal: undefined })
     expect(api.lorebooks).toHaveBeenCalledWith(['char-a', 'char-b'], { signal: undefined })
     expect(api.lorebook).not.toHaveBeenCalled()
     expect(sideEffects.applyChat).toHaveBeenCalledWith(
@@ -322,13 +334,71 @@ describe('API-backed resource invalidation', () => {
       [{ role: 'char', data: 'fresh-b' }],
       { fresh: 'b' },
       [{ role: 'char', data: 'chat-b-alternate' }],
-      undefined,
+      { start: 1, total: 2 },
     )
     expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-a', [{ key: 'A' }])
     expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-b', [{ key: 'B' }])
     expect(sideEffects.reattach).toHaveBeenCalledTimes(1)
     expect(sideEffects.clearTranslation).toHaveBeenCalledWith('message-a')
     expect(sideEffects.markLorebook).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses a full chat read when generation windows for one chat are ambiguous', async () => {
+    seedResources(1)
+    api.chat.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'authoritative transcript' }],
+      hypaV3Data: undefined,
+      alternates: [],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [
+          event(2, 'generation', { id: 'generated-late', parentId: 'chat-a' }),
+          event(3, 'generation', { id: 'generated-earlier', parentId: 'chat-a' }),
+        ],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+    expect(api.chat).toHaveBeenCalledOnce()
+    expect(api.chat).toHaveBeenCalledWith('chat-a', { signal: undefined })
+    expect(api.generationChat).not.toHaveBeenCalled()
+    expect(sideEffects.applyChat).toHaveBeenCalledWith(
+      'chat-a',
+      [{ role: 'char', data: 'authoritative transcript' }],
+      undefined,
+      [],
+      undefined,
+    )
+  })
+
+  it('lets a full message invalidation win over a generation window for the same chat', async () => {
+    seedResources(1)
+    api.chat.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'full transcript' }],
+      hypaV3Data: undefined,
+      alternates: [],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [
+          event(2, 'generation', { id: 'generated-a', parentId: 'chat-a' }),
+          event(3, 'message', { id: 'message-a', parentId: 'chat-a' }),
+        ],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+    expect(api.chat).toHaveBeenCalledOnce()
+    expect(api.generationChat).not.toHaveBeenCalled()
   })
 
   it('rejects chat invalidation before reading when required apply hooks are absent', async () => {

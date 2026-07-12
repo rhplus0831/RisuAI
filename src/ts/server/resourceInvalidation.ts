@@ -3,6 +3,7 @@ import {
   fetchServerBulkCharacterLorebooks,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
+  fetchServerGenerationChatMessages,
 } from './hydrationReads'
 import {
   fetchServerCharacter,
@@ -67,6 +68,7 @@ interface RefreshPlan {
   characterOrder: boolean
   characterSelectionIds: Set<string>
   chatIds: Set<string>
+  generationChatMessageIds: Map<string, string>
   lorebookCharacterIds: Set<string>
   translatedMessageIds: Set<string>
   full: boolean
@@ -217,7 +219,9 @@ export async function refreshInvalidatedServerResources(
     }
   }
 
-  if (plan.chatIds.size > 0) options.hooks?.triggerOpenChatGenerationReattach?.()
+  if (plan.chatIds.size > 0 || plan.generationChatMessageIds.size > 0) {
+    options.hooks?.triggerOpenChatGenerationReattach?.()
+  }
   for (const messageId of plan.translatedMessageIds) options.hooks?.clearActiveMessageTranslation?.(messageId)
 
   return { status: 'ok', revision: normalized.revision, scope: 'targeted' }
@@ -232,6 +236,7 @@ function createRefreshPlan(): RefreshPlan {
     characterOrder: false,
     characterSelectionIds: new Set(),
     chatIds: new Set(),
+    generationChatMessageIds: new Map(),
     lorebookCharacterIds: new Set(),
     translatedMessageIds: new Set(),
     full: false,
@@ -252,6 +257,22 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       return
     }
     plan.chatIds.add(chatId)
+    plan.generationChatMessageIds.delete(chatId)
+  }
+  const addGenerationChat = (chatId: string | undefined, messageId: string | undefined): void => {
+    if (!nonEmptyString(chatId)) {
+      plan.full = true
+      return
+    }
+    if (plan.chatIds.has(chatId)) return
+    if (!nonEmptyString(messageId) || plan.generationChatMessageIds.has(chatId)) {
+      // A missing anchor or two generation writes in one chat cannot be safely
+      // represented by one suffix: later revision order need not match message
+      // sequence order. Fall back to one authoritative full transcript.
+      addChat(chatId)
+      return
+    }
+    plan.generationChatMessageIds.set(chatId, messageId)
   }
   const addLorebook = (characterId: string | undefined): void => {
     if (!nonEmptyString(characterId)) {
@@ -308,7 +329,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addChat(event.parentId)
       return
     case 'generation':
-      addChat(event.parentId)
+      addGenerationChat(event.parentId, event.id)
       return
     case 'characterLorebook':
       addLorebook(event.id)
@@ -433,6 +454,15 @@ async function runTargetedReads(
       fetchServerChatMessages(chatId, { signal }).then((result) => ({ kind: 'chat' as const, chatId, result })),
     )
   }
+  for (const [chatId, messageId] of plan.generationChatMessageIds) {
+    reads.push(
+      fetchServerGenerationChatMessages(chatId, messageId, { signal }).then((result) => ({
+        kind: 'chat' as const,
+        chatId,
+        result,
+      })),
+    )
+  }
 
   const lorebookCharacterIds = [...plan.lorebookCharacterIds]
   if (lorebookCharacterIds.length === 1) {
@@ -503,7 +533,9 @@ function applyTargetedRead(
         characterSelectionAlreadyAtLeast(entry.characterId, entry.result.revision)
       )
     case 'chat':
-      return entry.result.status !== 'ok' || applyChatMessages(entry.result, hooks)
+      return (
+        entry.result.status !== 'ok' || (entry.result.chatId === entry.chatId && applyChatMessages(entry.result, hooks))
+      )
     case 'lorebook':
       return entry.result.status !== 'ok' || applyCharacterLorebook(entry.result, hooks)
     case 'lorebooks': {
@@ -590,8 +622,9 @@ function missingRequiredHook(
   plan: RefreshPlan,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): keyof ServerResourceInvalidationHooks | null {
-  if (plan.chatIds.size > 0 && !hooks?.applyChatMessages) return 'applyChatMessages'
-  if (plan.chatIds.size > 0 && !hooks?.triggerOpenChatGenerationReattach) {
+  const hasChatReads = plan.chatIds.size > 0 || plan.generationChatMessageIds.size > 0
+  if (hasChatReads && !hooks?.applyChatMessages) return 'applyChatMessages'
+  if (hasChatReads && !hooks?.triggerOpenChatGenerationReattach) {
     return 'triggerOpenChatGenerationReattach'
   }
   if (plan.translatedMessageIds.size > 0 && !hooks?.clearActiveMessageTranslation) {

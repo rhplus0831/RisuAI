@@ -320,6 +320,20 @@ describe('authenticated resource read routes', () => {
       messageTotal: 2,
     })
 
+    const generationWindow = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/chats/chat-a/messages?generationMessageId=${encodeURIComponent(full.json().message[1].chatId)}`,
+      headers: authHeaders(),
+    })
+    expect(generationWindow.statusCode).toBe(200)
+    expect(generationWindow.json()).toMatchObject({
+      chatId: 'chat-a',
+      message: [{ uid: 'message-b', data: 'two' }],
+      messageStart: 1,
+      messageTotal: 2,
+      alternates: [],
+    })
+
     const bulk = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/chats/messages/bulk',
@@ -340,6 +354,14 @@ describe('authenticated resource read routes', () => {
     })
     expect(invalid.statusCode).toBe(400)
     expect(invalid.json().error).toBe('invalid_chat_message_range')
+
+    const invalidGenerationWindow = await harness.app.inject({
+      method: 'GET',
+      url: `/api/v1/chats/chat-a/messages?generationMessageId=${encodeURIComponent(full.json().message[1].chatId)}&tail=1`,
+      headers: authHeaders(),
+    })
+    expect(invalidGenerationWindow.statusCode).toBe(400)
+    expect(invalidGenerationWindow.json().error).toBe('invalid_chat_message_range')
   })
 
   it('serves full single and bulk character lorebooks while character rows are stubbed', async () => {

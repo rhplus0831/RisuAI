@@ -153,10 +153,37 @@ export async function fetchServerChatMessages(
   chatId: string,
   options: { signal?: AbortSignal | null; start?: number; limit?: number; tail?: number } = {},
 ): Promise<ServerChatMessagesResult> {
+  return fetchServerChatMessagesFromEndpoint(chatId, options)
+}
+
+/** Fetch the authoritative suffix changed by one generation-persisted event. */
+export async function fetchServerGenerationChatMessages(
+  chatId: string,
+  generationMessageId: string,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<ServerChatMessagesResult> {
+  if (!nonEmptyString(generationMessageId)) {
+    return { status: 'error', error: 'Generation message id is required' }
+  }
+  return fetchServerChatMessagesFromEndpoint(chatId, { ...options, generationMessageId })
+}
+
+async function fetchServerChatMessagesFromEndpoint(
+  chatId: string,
+  options: {
+    signal?: AbortSignal | null
+    start?: number
+    limit?: number
+    tail?: number
+    generationMessageId?: string
+  },
+): Promise<ServerChatMessagesResult> {
   if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const query = new URLSearchParams()
-  if (Number.isInteger(options.tail) && (options.tail as number) > 0) {
+  if (nonEmptyString(options.generationMessageId)) {
+    query.set('generationMessageId', options.generationMessageId)
+  } else if (Number.isInteger(options.tail) && (options.tail as number) > 0) {
     query.set('tail', String(options.tail))
   } else if (
     Number.isInteger(options.start) &&
@@ -455,4 +482,8 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
     if (typeof record.reason === 'string') return record.reason
   }
   return fallback
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== ''
 }

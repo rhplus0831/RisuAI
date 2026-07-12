@@ -9,6 +9,7 @@ import {
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
+  fetchServerGenerationChatMessages,
   fetchServerLegacyPreset,
   fetchServerPromptPresetTemplate,
 } from './hydrationReads'
@@ -175,6 +176,47 @@ describe('server hydration read clients', () => {
     expect(rangeUrl.searchParams.has('id')).toBe(false)
     expect(rangeUrl.searchParams.get('start')).toBe('4')
     expect(rangeUrl.searchParams.get('limit')).toBe('8')
+  })
+
+  it('fetches a bounded generation suffix by encoded active message id', async () => {
+    const controller = new AbortController()
+    const resourceFetch = makeResourceFetch(() => ({
+      revision: 12,
+      chatId: 'chat/request',
+      message: [{ role: 'char', data: 'generated' }],
+      messageStart: 9,
+      messageTotal: 10,
+      alternates: [{ role: 'char', data: 'alternate' }],
+    }))
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    await expect(
+      fetchServerGenerationChatMessages('chat/request', 'message/generated', { signal: controller.signal }),
+    ).resolves.toEqual({
+      status: 'ok',
+      revision: 12,
+      chatId: 'chat/request',
+      message: [{ role: 'char', data: 'generated' }],
+      hypaV3Data: undefined,
+      messageStart: 9,
+      messageTotal: 10,
+      alternates: [{ role: 'char', data: 'alternate' }],
+    })
+
+    const url = parsedCallUrl(resourceFetch.calls[0])
+    expect(url.pathname).toBe('/api/v1/chats/chat%2Frequest/messages')
+    expect(url.searchParams.get('generationMessageId')).toBe('message/generated')
+    expect(resourceFetch.calls[0]).toMatchObject({
+      method: 'GET',
+      authHeader: 'resource-auth-token',
+      signal: controller.signal,
+    })
+
+    await expect(fetchServerGenerationChatMessages('chat-a', '')).resolves.toEqual({
+      status: 'error',
+      error: 'Generation message id is required',
+    })
+    expect(resourceFetch.calls).toHaveLength(1)
   })
 
   it('posts bulk chat hydration with JSON body and filters malformed missing ids', async () => {

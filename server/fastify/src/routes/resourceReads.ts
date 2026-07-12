@@ -13,6 +13,7 @@ import {
   loadChatHydration,
   loadChatHydrationRange,
   loadChatHydrations,
+  loadGenerationChatHydration,
   loadPersistedDatabaseFields,
   loadPresetHydration,
   loadSettingsFromSqlite,
@@ -28,6 +29,7 @@ interface ChatMessageRangeQuery {
   start?: string
   limit?: string
   tail?: string
+  generationMessageId?: string
 }
 
 export function registerResourceReadRoutes(
@@ -136,6 +138,15 @@ export function registerResourceReadRoutes(
     { exposeHeadRoute: false },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
+      const generationMessageId = readGenerationMessageId(req.query)
+      if (generationMessageId === 'invalid') {
+        reply.code(400).send({
+          error: 'invalid_chat_message_range',
+          reason:
+            'Use generationMessageId=<message id>, tail=<positive integer>, or start=<non-negative integer>&limit=<positive integer>.',
+        })
+        return
+      }
       const range = readChatMessageRange(req.query)
       if (range === 'invalid') {
         reply.code(400).send({
@@ -146,6 +157,18 @@ export function registerResourceReadRoutes(
       }
 
       const { revision } = getSchemaState(db)
+      if (generationMessageId) {
+        const hydration = loadGenerationChatHydration(db, dataDir, req.params.id, generationMessageId)
+        return {
+          revision,
+          chatId: req.params.id,
+          message: hydration.message,
+          hypaV3Data: hydration.hypaV3Data,
+          alternates: hydration.alternates,
+          messageStart: hydration.messageStart,
+          messageTotal: hydration.messageTotal,
+        }
+      }
       if (range) {
         const hydration = loadChatHydrationRange(db, dataDir, req.params.id, range)
         return {
@@ -331,6 +354,14 @@ function readChatMessageRange(
   const limit = readPositiveInteger(query.limit)
   if (start === null || limit === null) return 'invalid'
   return { start, limit }
+}
+
+function readGenerationMessageId(query: ChatMessageRangeQuery): string | 'invalid' | null {
+  if (query.generationMessageId === undefined) return null
+  if (query.start !== undefined || query.limit !== undefined || query.tail !== undefined) return 'invalid'
+  return typeof query.generationMessageId === 'string' && query.generationMessageId.trim() !== ''
+    ? query.generationMessageId
+    : 'invalid'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
