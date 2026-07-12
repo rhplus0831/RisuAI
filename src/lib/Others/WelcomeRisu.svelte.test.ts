@@ -69,7 +69,10 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
 }))
 
 import WelcomeRisu from './WelcomeRisu.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -156,10 +159,10 @@ beforeEach(() => {
     configurable: true,
     value: 'en-US',
   })
-  DBState.db = {
+  setDatabaseLite({
     didFirstSetup: false,
     username: '',
-  } as never
+  } as never)
   welcomeMocks.applyOnboardingServerBackedSettings.mockReset()
   welcomeMocks.applyServerBackedSetting.mockReset()
   welcomeMocks.changeLanguage.mockReset()
@@ -168,7 +171,7 @@ beforeEach(() => {
   welcomeMocks.watchServerBackedSettings.mockClear()
   welcomeMocks.watchServerBackedSettings.mockReturnValue(welcomeMocks.stopServerSettingsWatch)
   welcomeMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
-    ;(DBState.db as unknown as Record<string, unknown>)[key] = value
+    ;(getDatabase() as unknown as Record<string, unknown>)[key] = value
   })
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -182,7 +185,7 @@ afterEach(() => {
   vi.clearAllTimers()
   vi.useRealTimers()
   target.remove()
-  DBState.db = {} as never
+  setDatabaseLite({} as never)
 })
 
 describe('WelcomeRisu onboarding setup timer', () => {
@@ -225,7 +228,7 @@ describe('WelcomeRisu onboarding setup timer', () => {
   it('does not apply stale setup when first setup completes before the timer fires', async () => {
     await completeOpenAiSetup()
 
-    DBState.db.didFirstSetup = true
+    getDatabase().didFirstSetup = true
     vi.advanceTimersByTime(1000)
     await flushAsync()
 

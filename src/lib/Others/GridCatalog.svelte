@@ -55,7 +55,7 @@
 
 <script lang="ts">
   import { changeChar, getCharImage, removeChar } from '../../ts/characters'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from '@lucide/svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
@@ -75,13 +75,13 @@
   let search = $state('')
   let selected = $state(3)
   let normalizedSearch = $derived(normalizeGridCatalogSearch(search))
-  let catalogCharacters = $derived(formatGridCatalogCharacterLists(DBState.db, normalizedSearch))
+  let catalogCharacters = $derived(formatGridCatalogCharacterLists(getDatabase(), normalizedSearch))
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
   )
 
   function openCharacterRoute(index: number) {
-    const character = DBState.db.characters?.[index]
+    const character = getDatabase().characters?.[index]
     if (!character?.chaId) {
       changeChar(index)
       return
@@ -90,7 +90,7 @@
   }
 
   function restoreTrashedCharacter(index: number): void {
-    const character = DBState.db.characters?.[index]
+    const character = getDatabase().characters?.[index]
     if (!character) return
 
     const characterId = character.chaId
@@ -98,9 +98,9 @@
     let applied = false
     withTrustedServerProjectionWrite(() => {
       const liveIndex = characterId
-        ? DBState.db.characters.findIndex((candidate) => candidate.chaId === characterId)
+        ? getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
         : index
-      const liveCharacter = DBState.db.characters?.[liveIndex] as
+      const liveCharacter = getDatabase().characters?.[liveIndex] as
         | (typeof character & { trashTime?: number | null })
         | undefined
       if (!liveCharacter) return

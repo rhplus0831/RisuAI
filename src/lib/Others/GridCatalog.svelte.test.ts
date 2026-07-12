@@ -18,10 +18,22 @@ const globalApiSpies = vi.hoisted(() => ({
   saveAsset: vi.fn(),
 }))
 
+const characterDisplaySpies = vi.hoisted(() => ({
+  getCharacterDisplayInfo: vi.fn(),
+}))
+
 vi.mock('../../ts/characters', () => characterSpies)
 vi.mock('src/ts/characters', () => characterSpies)
 vi.mock('src/ts/characterCommands', () => characterCommandSpies)
 vi.mock('src/ts/globalApi.svelte', () => globalApiSpies)
+vi.mock('src/ts/characterDisplayName', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('src/ts/characterDisplayName')>()
+  characterDisplaySpies.getCharacterDisplayInfo.mockImplementation(actual.getCharacterDisplayInfo)
+  return {
+    ...actual,
+    getCharacterDisplayInfo: characterDisplaySpies.getCharacterDisplayInfo,
+  }
+})
 
 import GridCatalog, { formatGridCatalogCharacterLists, normalizeGridCatalogSearch } from './GridCatalog.svelte'
 import MobileCharacters, {
@@ -30,13 +42,13 @@ import MobileCharacters, {
   mobileCharacterRowKey,
   normalizeMobileCharacterSearch,
 } from '../Mobile/MobileCharacters.svelte'
-import { DBState, MobileSearch } from 'src/ts/stores.svelte'
+import { MobileSearch } from 'src/ts/stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
-
-interface NameReadCounter {
-  count: number
-}
 
 interface CharacterFixtureOptions {
   chaId?: string
@@ -47,7 +59,6 @@ interface CharacterFixtureOptions {
   trashTime?: number
   lastInteraction?: number
   chatCount?: number
-  readCounter?: NameReadCounter
 }
 
 let target: HTMLElement
@@ -56,9 +67,9 @@ let component: MountedComponent | undefined
 type GridCatalogListKind = 'simple' | 'grid' | 'list' | 'trash'
 
 function makeCharacter(options: CharacterFixtureOptions) {
-  let currentName = options.name
   const char: Record<string, unknown> = {
     chaId: options.chaId ?? '',
+    name: options.name,
     image: options.image ?? '',
     creatorNotes: options.creatorNotes ?? 'No description',
     trashTime: options.trashTime,
@@ -66,25 +77,14 @@ function makeCharacter(options: CharacterFixtureOptions) {
     lastInteraction: options.lastInteraction ?? 0,
     type: 'character',
   }
-  Object.defineProperty(char, 'name', {
-    configurable: true,
-    enumerable: true,
-    get() {
-      options.readCounter && (options.readCounter.count += 1)
-      return currentName
-    },
-    set(value: string) {
-      currentName = value
-    },
-  })
   if (options.displayName !== undefined) {
     char.displayName = options.displayName
   }
   return char
 }
 
-function seedCatalog(readCounter?: NameReadCounter) {
-  DBState.db = {
+function seedCatalog() {
+  setDatabaseLite({
     language: 'en',
     characters: [
       makeCharacter({
@@ -92,7 +92,6 @@ function seedCatalog(readCounter?: NameReadCounter) {
         name: 'AlphaHero',
         image: 'alpha.png',
         creatorNotes: '# `en`\nLead alpha',
-        readCounter,
       }),
       makeCharacter({
         chaId: 'trash-beta',
@@ -100,21 +99,18 @@ function seedCatalog(readCounter?: NameReadCounter) {
         image: 'beta.png',
         creatorNotes: '# `en`\nTrash beta',
         trashTime: 20,
-        readCounter,
       }),
       makeCharacter({
         chaId: 'alpha-side',
         name: 'Alpha Sidekick',
         image: 'side.png',
         creatorNotes: 'Side alpha',
-        readCounter,
       }),
       makeCharacter({
         chaId: 'garden',
         name: 'Garden Friend',
         image: 'garden.png',
         creatorNotes: '# `en`\nGarden',
-        readCounter,
       }),
       makeCharacter({
         chaId: 'trash-alpha',
@@ -122,10 +118,9 @@ function seedCatalog(readCounter?: NameReadCounter) {
         image: 'trash-alpha.png',
         creatorNotes: '# `en`\nTrash alpha',
         trashTime: 40,
-        readCounter,
       }),
     ],
-  } as any
+  } as any)
 }
 
 function mountCatalog() {
@@ -238,21 +233,20 @@ describe('GridCatalog derived lists', () => {
   })
 
   it('L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
-    const readCounter = { count: 0 }
-    seedCatalog(readCounter)
+    seedCatalog()
     mountCatalog()
     await clickCatalogTab('grid')
 
-    readCounter.count = 0
+    characterDisplaySpies.getCharacterDisplayInfo.mockClear()
     await updateSearch('alpha')
-    expect(readCounter.count).toBe(DBState.db.characters.length)
+    expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(getDatabase().characters.length)
 
     await updateSearch('beta')
-    expect(readCounter.count).toBe(DBState.db.characters.length * 2)
+    expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(getDatabase().characters.length * 2)
 
     await clickCatalogTab('list')
     await clickCatalogTab('trash')
-    expect(readCounter.count).toBe(DBState.db.characters.length * 2)
+    expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(getDatabase().characters.length * 2)
   })
 
   it('L42: GridCatalog trash actions keep restore and permanent-delete targets', async () => {
@@ -264,7 +258,7 @@ describe('GridCatalog derived lists', () => {
     gridAction('trash', 'trash-beta', 'restore').click()
     await tick()
 
-    expect(DBState.db.characters[1].trashTime).toBeNull()
+    expect(getDatabase().characters[1].trashTime).toBeNull()
     expect(gridRows('trash').map((row) => row.dataset.risuRowId)).toEqual(['trash-alpha'])
     expect(characterCommandSpies.dispatchUpdateCharacterScoped).toHaveBeenCalledWith(
       'trash-beta',
@@ -400,49 +394,45 @@ describe('GridCatalog derived lists', () => {
   })
 
   it('M6: MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {
-    const readCounter = { count: 0 }
-    DBState.db = {
+    setDatabaseLite({
       language: 'en',
       characters: [
         makeCharacter({
           chaId: 'alpha-old',
           name: 'Alpha Old',
           lastInteraction: 1_000,
-          readCounter,
         }),
         makeCharacter({
           chaId: 'beta-new',
           name: 'Beta New',
           lastInteraction: 3_000,
-          readCounter,
         }),
         makeCharacter({
           chaId: 'alpha-trash',
           name: 'Alpha Trash',
           lastInteraction: 5_000,
           trashTime: 1,
-          readCounter,
         }),
       ],
-    } as any
+    } as any)
 
     mountMobileCharacters({ hideTrash: true })
     await tick()
     expect(mobileRowNames()).toEqual(['Beta New', 'Alpha Old'])
 
-    readCounter.count = 0
+    characterDisplaySpies.getCharacterDisplayInfo.mockClear()
     MobileSearch.set('AL PHA')
     await tick()
-    expect(readCounter.count).toBe(0)
+    expect(characterDisplaySpies.getCharacterDisplayInfo).not.toHaveBeenCalled()
     expect(mobileRowNames()).toEqual(['Alpha Old'])
 
-    DBState.db.characters[0].lastInteraction = 4_000
+    getDatabase().characters[0].lastInteraction = 4_000
     await tick()
-    expect(readCounter.count).toBe(2)
+    expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(2)
 
     MobileSearch.set('')
     await tick()
-    expect(readCounter.count).toBe(2)
+    expect(characterDisplaySpies.getCharacterDisplayInfo).toHaveBeenCalledTimes(2)
     expect(mobileRowNames()).toEqual(['Alpha Old', 'Beta New'])
   })
 })

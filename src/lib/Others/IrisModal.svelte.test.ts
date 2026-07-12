@@ -30,8 +30,8 @@ vi.mock('src/ts/process/mcp/risuaccess', () => ({
 }))
 
 import IrisModal from './IrisModal.svelte'
-import { DBState } from 'src/ts/stores.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 
 const originalAnimate = Element.prototype.animate
 
@@ -89,7 +89,7 @@ beforeEach(() => {
   })
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     language: 'en',
     aiModel: 'echo_model',
     subModel: 'echo_model',
@@ -106,7 +106,7 @@ beforeEach(() => {
       scriptAux: '',
     },
     customModels: [],
-  } as unknown as Database
+  } as unknown as Database)
 })
 
 afterEach(() => {
@@ -115,7 +115,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as Database
+  setDatabaseLite({} as Database)
   if (originalAnimate) {
     Object.defineProperty(Element.prototype, 'animate', {
       configurable: true,
@@ -135,9 +135,9 @@ describe('IrisModal model availability', () => {
     const unsupportedBody = extractDerivedBody(source, 'isUnsupportedModel')
 
     expect(source).toContain("import { resolveModelForRole } from 'src/ts/model/modelRoles'")
-    expect(unsupportedBody).toContain("resolveModelForRole(DBState.db, 'otherAx')")
-    expect(unsupportedBody).not.toContain('DBState.db.seperateModels')
-    expect(unsupportedBody).not.toContain('DBState.db.subModel')
+    expect(unsupportedBody).toContain("resolveModelForRole(getDatabase(), 'otherAx')")
+    expect(unsupportedBody).not.toContain('getDatabase().seperateModels')
+    expect(unsupportedBody).not.toContain('getDatabase().subModel')
   })
 
   it('treats canonical otherAx overrides as available even when subModel is unsupported', async () => {

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Send } from '@lucide/svelte'
   import { changeLanguage, language } from 'src/lang'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import { alertError } from 'src/ts/alert'
@@ -71,7 +71,7 @@
       provider === snapshot.provider &&
       chatLang === snapshot.chatLang &&
       chatMemorySelection === snapshot.chatMemorySelection &&
-      DBState.db.didFirstSetup !== true
+      getDatabase().didFirstSetup !== true
     )
   }
 
@@ -223,11 +223,11 @@
         {:else}
           <Chat name="Airisu" img={airisuStyle} message={language.setup.welcome} isLastMemory={false} />
           {#if step >= 2}
-            <Chat name={DBState.db.username} message={DBState.db.username} isLastMemory={false} />
+            <Chat name={getDatabase().username} message={getDatabase().username} isLastMemory={false} />
             <Chat
               name="Airisu"
               img={airisuStyle}
-              message={language.setup.setupLaterMessage.replace('{username}', DBState.db.username)}
+              message={language.setup.setupLaterMessage.replace('{username}', getDatabase().username)}
               isLastMemory={false} />
           {/if}
           {#if step === 2}
@@ -253,11 +253,11 @@
             </div>
           {/if}
           {#if step >= 3}
-            <Chat name={DBState.db.username} message={language.setup.setupMessageOption1} isLastMemory={false} />
+            <Chat name={getDatabase().username} message={language.setup.setupMessageOption1} isLastMemory={false} />
             <Chat
               name="Airisu"
               img={airisuStyle}
-              message={language.setup.welcome2.replace('{username}', DBState.db.username)}
+              message={language.setup.welcome2.replace('{username}', getDatabase().username)}
               isLastMemory={false} />
           {/if}
           {#if step === 3}
@@ -303,7 +303,7 @@
             </div>
           {/if}
           {#if step >= 4}
-            <Chat name={DBState.db.username} message={provider} isLastMemory={false} />
+            <Chat name={getDatabase().username} message={provider} isLastMemory={false} />
             {#if provider === 'openai'}
               <Chat name="Airisu" img={airisuStyle} message={language.setup.setupOpenAI} isLastMemory={false} />
             {/if}
@@ -322,7 +322,7 @@
             {/if}
           {/if}
           {#if step >= 5}
-            <Chat name={DBState.db.username} message="<HIDDEN>" isLastMemory={false} />
+            <Chat name={getDatabase().username} message="<HIDDEN>" isLastMemory={false} />
             <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseChatType} isLastMemory={false} />
           {/if}
           {#if step === 5}
@@ -364,7 +364,7 @@
           {/if}
           {#if step >= 6}
             <Chat
-              name={DBState.db.username}
+              name={getDatabase().username}
               message={language.setup[`chooseChatTypeOption${chatLang + 1}`]}
               isLastMemory={false} />
             <Chat name="Airisu" img={airisuStyle} message={language.setup.chooseCheapOrMemory} isLastMemory={false} />
