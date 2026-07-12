@@ -5,7 +5,7 @@
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { alertConfirm, alertError, alertInput, alertNormal } from 'src/ts/alert'
   import { downloadFile } from 'src/ts/globalApi.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import {
     canUseServerCommands,
     createTranslatorPresetCommand,
@@ -30,12 +30,12 @@
     normalizeTranslatorPresetState,
     syncCurrentTranslatorPresetToLegacyFields,
     translatorPresetImportExtensions,
+    type TranslatorPreset,
   } from 'src/ts/translator/presets'
   import { selectSingleFile } from 'src/ts/util'
   import { language } from 'src/lang'
   import { onDestroy, untrack } from 'svelte'
 
-  type TranslatorPreset = (typeof DBState.db.translatorPresets)[number]
   type TranslatorPresetDirtyField = 'name' | 'prompt' | 'maxResponse'
 
   interface TranslatorPresetStateSnapshot {
@@ -80,10 +80,10 @@
 
   function currentTranslatorPresetStateSnapshot(): TranslatorPresetStateSnapshot {
     return {
-      translatorPresets: cloneJsonValue(DBState.db.translatorPresets ?? []),
-      translatorPresetId: DBState.db.translatorPresetId,
-      translatorPrompt: DBState.db.translatorPrompt,
-      translatorMaxResponse: DBState.db.translatorMaxResponse,
+      translatorPresets: cloneJsonValue(getDatabase().translatorPresets ?? []),
+      translatorPresetId: getDatabase().translatorPresetId,
+      translatorPrompt: getDatabase().translatorPrompt,
+      translatorMaxResponse: getDatabase().translatorMaxResponse,
     }
   }
 
@@ -95,7 +95,7 @@
   }
 
   function currentTranslatorPresetById(presetId: string): TranslatorPreset | null {
-    return DBState.db.translatorPresets?.find((preset) => preset.id === presetId) ?? null
+    return getDatabase().translatorPresets?.find((preset) => preset.id === presetId) ?? null
   }
 
   function isTranslatorPresetDirtyField(key: string): key is TranslatorPresetDirtyField {
@@ -161,9 +161,9 @@
     value: unknown,
   ): boolean {
     if (snapshotJson(preset[field]) !== snapshotJson(value)) return false
-    if (DBState.db.translatorPresetId !== presetIndex) return true
-    if (field === 'prompt') return snapshotJson(DBState.db.translatorPrompt) === snapshotJson(value)
-    if (field === 'maxResponse') return snapshotJson(DBState.db.translatorMaxResponse) === snapshotJson(value)
+    if (getDatabase().translatorPresetId !== presetIndex) return true
+    if (field === 'prompt') return snapshotJson(getDatabase().translatorPrompt) === snapshotJson(value)
+    if (field === 'maxResponse') return snapshotJson(getDatabase().translatorMaxResponse) === snapshotJson(value)
     return true
   }
 
@@ -186,7 +186,7 @@
     if (dirtyFields.size === 0) return
 
     withTrustedServerProjectionWrite(() => {
-      const presets = DBState.db.translatorPresets ?? []
+      const presets = getDatabase().translatorPresets ?? []
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) {
         translatorPresetDirtyFieldsById.delete(presetId)
@@ -208,7 +208,7 @@
         }),
       )
 
-      if (DBState.db.translatorPresetId === presetIndex) {
+      if (getDatabase().translatorPresetId === presetIndex) {
         syncCurrentTranslatorPreset()
       }
     })
@@ -217,7 +217,7 @@
   function reconcileTranslatorPresetProjectionEpoch(): void {
     if (translatorPresetDirtyFieldsById.size === 0) return
 
-    const presets = DBState.db.translatorPresets ?? []
+    const presets = getDatabase().translatorPresets ?? []
     for (const [presetId, dirtyFields] of Array.from(translatorPresetDirtyFieldsById.entries())) {
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) {
@@ -253,10 +253,10 @@
     if (rollbackFields.length === 0) return
 
     withTrustedServerProjectionWrite(() => {
-      const presetIndex = DBState.db.translatorPresets.findIndex((preset) => preset.id === presetId)
+      const presetIndex = getDatabase().translatorPresets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
 
-      const nextPresets = [...DBState.db.translatorPresets]
+      const nextPresets = [...getDatabase().translatorPresets]
       const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as unknown as Record<string, unknown>
       const rolledBackFields = applyAttemptedFieldRollback({
         target: nextPreset,
@@ -267,9 +267,9 @@
       if (rolledBackFields.length === 0) return
 
       nextPresets[presetIndex] = translatorPresetFromRecord(nextPreset)
-      DBState.db.translatorPresets = nextPresets
+      getDatabase().translatorPresets = nextPresets
 
-      if (DBState.db.translatorPresetId === presetIndex) {
+      if (getDatabase().translatorPresetId === presetIndex) {
         syncCurrentTranslatorPreset()
       }
 
@@ -286,16 +286,16 @@
   }
 
   function normalizeTranslatorPresets() {
-    normalizeTranslatorPresetState(DBState.db)
+    normalizeTranslatorPresetState(getDatabase())
   }
 
   function syncCurrentTranslatorPreset() {
-    syncCurrentTranslatorPresetToLegacyFields(DBState.db)
+    syncCurrentTranslatorPresetToLegacyFields(getDatabase())
   }
 
-  function applyTranslatorPresetPatchToDBState(presetId: string, patch: TranslatorPresetSnapshot): void {
+  function applyTranslatorPresetPatchToDatabase(presetId: string, patch: TranslatorPresetSnapshot): void {
     withTrustedServerProjectionWrite(() => {
-      const presets = DBState.db.translatorPresets ?? []
+      const presets = getDatabase().translatorPresets ?? []
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
 
@@ -305,9 +305,9 @@
       } as TranslatorPreset
       const nextPresets = [...presets]
       nextPresets[presetIndex] = nextPreset
-      DBState.db.translatorPresets = nextPresets
+      getDatabase().translatorPresets = nextPresets
 
-      if (DBState.db.translatorPresetId === presetIndex) {
+      if (getDatabase().translatorPresetId === presetIndex) {
         syncCurrentTranslatorPreset()
       }
     })
@@ -317,7 +317,7 @@
     if (!canUseServerCommands()) {
       normalizeTranslatorPresets()
     }
-    return DBState.db.translatorPresets[DBState.db.translatorPresetId]?.id ?? null
+    return getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id ?? null
   }
 
   function runTranslatorPresetCommand<T extends Record<string, unknown>>(
@@ -439,12 +439,12 @@
 <select
   class={'border border-darkborderc focus:border-borderc rounded-md shadow-xs text-textcolor bg-transparent focus:ring-borderc focus:ring-2 focus:outline-hidden transition-colors duration-200 text-md px-4 py-2 mb-1'}
   bind:value={
-    () => DBState.db.translatorPresetId,
+    () => getDatabase().translatorPresetId,
     (value) => {
       const presetIndex = Number(value)
-      const presetId = DBState.db.translatorPresets[presetIndex]?.id ?? null
+      const presetId = getDatabase().translatorPresets[presetIndex]?.id ?? null
       if (!canUseServerCommands()) {
-        DBState.db.translatorPresetId = presetIndex
+        getDatabase().translatorPresetId = presetIndex
         syncCurrentTranslatorPreset()
         if (presetId) dispatchSelectTranslatorPreset(presetId)
       } else if (presetId) {
@@ -454,7 +454,7 @@
       }
     }
   }>
-  {#each DBState.db.translatorPresets as preset, i}
+  {#each getDatabase().translatorPresets as preset, i}
     <option class="bg-darkbg appearance-none" value={i}>{preset.name}</option>
   {/each}
 </select>
@@ -467,12 +467,12 @@
       const newPreset = createTranslatorPreset()
       newPreset.id = createClientTranslatorPresetId()
       if (!canUseServerCommands()) {
-        const presets = DBState.db.translatorPresets
+        const presets = getDatabase().translatorPresets
         presets.push(newPreset)
-        DBState.db.translatorPresets = presets
-        DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
+        getDatabase().translatorPresets = presets
+        getDatabase().translatorPresetId = getDatabase().translatorPresets.length - 1
         normalizeTranslatorPresets()
-        dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId])
+        dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId])
       } else {
         dispatchCreateTranslatorPreset(newPreset)
       }
@@ -483,14 +483,14 @@
   <button
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
-      const presets = DBState.db.translatorPresets
+      const presets = getDatabase().translatorPresets
 
       if (presets.length === 0) {
         alertError('There must be at least one preset.')
         return
       }
 
-      const id = DBState.db.translatorPresetId
+      const id = getDatabase().translatorPresetId
       const preset = presets[id]
       const newName = await alertInput(`Enter new name for ${preset.name}`, [], preset.name)
 
@@ -500,11 +500,11 @@
       const presetId = selectedTranslatorPresetId()
       if (!canUseServerCommands()) {
         preset.name = newName
-        DBState.db.translatorPresets = presets
+        getDatabase().translatorPresets = presets
         syncCurrentTranslatorPreset()
       } else if (presetId) {
         markTranslatorPresetDirtyFields(presetId, { name: newName })
-        applyTranslatorPresetPatchToDBState(presetId, { name: newName })
+        applyTranslatorPresetPatchToDatabase(presetId, { name: newName })
       }
       if (presetId) queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
     }}>
@@ -514,14 +514,14 @@
   <button
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
-      const presets = DBState.db.translatorPresets
+      const presets = getDatabase().translatorPresets
 
       if (presets.length <= 1) {
         alertError('There must be at least one preset.')
         return
       }
 
-      const id = DBState.db.translatorPresetId
+      const id = getDatabase().translatorPresetId
       const preset = presets[id]
       const confirmed = await alertConfirm(`${language.removeConfirm}${preset.name}`)
 
@@ -534,11 +534,11 @@
       const presetId = preset.id
       let selectPresetId: string | undefined
       if (!canUseServerCommands()) {
-        DBState.db.translatorPresetId = 0
+        getDatabase().translatorPresetId = 0
         presets.splice(id, 1)
-        DBState.db.translatorPresets = presets
+        getDatabase().translatorPresets = presets
         normalizeTranslatorPresets()
-        selectPresetId = DBState.db.translatorPresets[DBState.db.translatorPresetId]?.id
+        selectPresetId = getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id
       } else {
         const nextPresets = cloneJsonValue(presets)
         nextPresets.splice(id, 1)
@@ -557,14 +557,14 @@
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       try {
-        const presets = DBState.db.translatorPresets
+        const presets = getDatabase().translatorPresets
 
         if (presets.length === 0) {
           alertError('There must be at least one preset.')
           return
         }
 
-        const preset = presets[DBState.db.translatorPresetId]
+        const preset = presets[getDatabase().translatorPresetId]
         await downloadFile(getTranslatorPresetDownloadName(preset.name), await encodeTranslatorPresetFile(preset))
         alertNormal(language.successExport)
       } catch (error) {
@@ -586,13 +586,13 @@
         newPreset.id = createClientTranslatorPresetId()
         await flushPendingTranslatorPresetUpdates()
         if (!canUseServerCommands()) {
-          const presets = DBState.db.translatorPresets
+          const presets = getDatabase().translatorPresets
 
           presets.push(newPreset)
-          DBState.db.translatorPresets = presets
-          DBState.db.translatorPresetId = DBState.db.translatorPresets.length - 1
+          getDatabase().translatorPresets = presets
+          getDatabase().translatorPresetId = getDatabase().translatorPresets.length - 1
           normalizeTranslatorPresets()
-          dispatchCreateTranslatorPreset(DBState.db.translatorPresets[DBState.db.translatorPresetId])
+          dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId])
         } else {
           dispatchCreateTranslatorPreset(newPreset)
         }
@@ -606,8 +606,8 @@
   </button>
 </div>
 
-{#if DBState.db.translatorPresets?.[DBState.db.translatorPresetId]}
-  {@const preset = DBState.db.translatorPresets[DBState.db.translatorPresetId]}
+{#if getDatabase().translatorPresets?.[getDatabase().translatorPresetId]}
+  {@const preset = getDatabase().translatorPresets[getDatabase().translatorPresetId]}
   <span class="text-textcolor mt-4">{language.translationResponseSize}</span>
   <NumberInput
     min={0}
@@ -623,7 +623,7 @@
           syncCurrentTranslatorPreset()
         } else if (presetId) {
           markTranslatorPresetDirtyFields(presetId, { maxResponse: value })
-          applyTranslatorPresetPatchToDBState(presetId, { maxResponse: value })
+          applyTranslatorPresetPatchToDatabase(presetId, { maxResponse: value })
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { maxResponse: value }, previous)
       }
@@ -640,7 +640,7 @@
           syncCurrentTranslatorPreset()
         } else if (presetId) {
           markTranslatorPresetDirtyFields(presetId, { prompt: value })
-          applyTranslatorPresetPatchToDBState(presetId, { prompt: value })
+          applyTranslatorPresetPatchToDatabase(presetId, { prompt: value })
         }
         if (presetId) queueTranslatorPresetUpdate(presetId, { prompt: value }, previous)
       }

@@ -183,7 +183,7 @@ vi.mock('src/ts/util', async (importActual) => {
 
 import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { alertConfirm, alertInput } from 'src/ts/alert'
-import { DBState } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
   setServerProjectionWriteGuardEnabled,
   withServerProjectionApply,
@@ -196,7 +196,7 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 function seedTranslatorPresets(): void {
-  DBState.db = {
+  setDatabaseLite({
     hotkeys: [],
     longPressToPopupEditor: false,
     translatorPresets: [
@@ -206,7 +206,7 @@ function seedTranslatorPresets(): void {
     translatorPresetId: 0,
     translatorPrompt: 'old prompt A',
     translatorMaxResponse: 100,
-  } as any
+  } as any)
 }
 
 function promptTextarea(): HTMLTextAreaElement {
@@ -295,9 +295,9 @@ async function selectTranslatorPreset(index: number): Promise<void> {
 
 async function switchProjectedPreset(index: number): Promise<void> {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.translatorPresetId = index
-    DBState.db.translatorPrompt = DBState.db.translatorPresets[index].prompt
-    DBState.db.translatorMaxResponse = DBState.db.translatorPresets[index].maxResponse
+    getDatabase().translatorPresetId = index
+    getDatabase().translatorPrompt = getDatabase().translatorPresets[index].prompt
+    getDatabase().translatorMaxResponse = getDatabase().translatorPresets[index].maxResponse
   })
   await tick()
 }
@@ -307,11 +307,11 @@ async function applyTranslatorPresetProjection(input: {
   selectedIndex?: number
 }): Promise<void> {
   withServerProjectionApply(() => {
-    const selectedIndex = input.selectedIndex ?? DBState.db.translatorPresetId
-    DBState.db.translatorPresets = input.presets.map((preset) => ({ ...preset }))
-    DBState.db.translatorPresetId = selectedIndex
-    DBState.db.translatorPrompt = DBState.db.translatorPresets[selectedIndex]?.prompt ?? ''
-    DBState.db.translatorMaxResponse = DBState.db.translatorPresets[selectedIndex]?.maxResponse ?? 0
+    const selectedIndex = input.selectedIndex ?? getDatabase().translatorPresetId
+    getDatabase().translatorPresets = input.presets.map((preset) => ({ ...preset }))
+    getDatabase().translatorPresetId = selectedIndex
+    getDatabase().translatorPrompt = getDatabase().translatorPresets[selectedIndex]?.prompt ?? ''
+    getDatabase().translatorMaxResponse = getDatabase().translatorPresets[selectedIndex]?.maxResponse ?? 0
   })
   await tick()
   await flushMicrotasks()
@@ -378,18 +378,18 @@ afterEach(async () => {
     component = undefined
   }
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
   target.remove()
   document.body.innerHTML = ''
   vi.useRealTimers()
 })
 
 describe('TranslatorPresetSettings server-backed edits', () => {
-  it('optimistically updates DBState before the debounced command is sent', async () => {
+  it('optimistically updates resource-backed state before the debounced command is sent', async () => {
     await editPrompt('new prompt A')
 
-    expect(DBState.db.translatorPresets[0].prompt).toBe('new prompt A')
-    expect(DBState.db.translatorPrompt).toBe('new prompt A')
+    expect(getDatabase().translatorPresets[0].prompt).toBe('new prompt A')
+    expect(getDatabase().translatorPrompt).toBe('new prompt A')
     expect(commandSpies.updateInputs).toHaveLength(0)
 
     await vi.advanceTimersByTimeAsync(250)
@@ -408,7 +408,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await switchProjectedPreset(1)
     await editPrompt('new prompt B')
 
-    expect(DBState.db.translatorPresets.map((preset) => preset.prompt)).toEqual(['new prompt A', 'new prompt B'])
+    expect(getDatabase().translatorPresets.map((preset) => preset.prompt)).toEqual(['new prompt A', 'new prompt B'])
     expect(commandSpies.updateInputs).toHaveLength(0)
 
     await vi.advanceTimersByTimeAsync(250)
@@ -440,8 +440,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         patch: { prompt: 'rejected prompt A' },
       },
     ])
-    expect(DBState.db.translatorPresets[0].prompt).toBe('old prompt A')
-    expect(DBState.db.translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
   })
 
   it('preserves newer translator state when a deferred create command fails', async () => {
@@ -457,26 +457,26 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.translatorPresets = [
-        { ...DBState.db.translatorPresets[0], name: 'Preset A Edited', prompt: 'newer prompt A' },
-        { ...DBState.db.translatorPresets[1] },
+      getDatabase().translatorPresets = [
+        { ...getDatabase().translatorPresets[0], name: 'Preset A Edited', prompt: 'newer prompt A' },
+        { ...getDatabase().translatorPresets[1] },
         { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 },
       ]
-      DBState.db.translatorPresetId = 2
-      DBState.db.translatorPrompt = 'new prompt C'
-      DBState.db.translatorMaxResponse = 300
+      getDatabase().translatorPresetId = 2
+      getDatabase().translatorPrompt = 'new prompt C'
+      getDatabase().translatorMaxResponse = 300
     })
 
     await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
 
-    expect(DBState.db.translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       name: 'Preset A Edited',
       prompt: 'newer prompt A',
     })
-    expect(DBState.db.translatorPresetId).toBe(2)
-    expect(DBState.db.translatorPrompt).toBe('new prompt C')
-    expect(DBState.db.translatorMaxResponse).toBe(300)
+    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPrompt).toBe('new prompt C')
+    expect(getDatabase().translatorMaxResponse).toBe(300)
   })
 
   it('preserves newer translator selection and field edits when a deferred select command fails', async () => {
@@ -488,30 +488,30 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.translatorPresets = [
-        { ...DBState.db.translatorPresets[0] },
+      getDatabase().translatorPresets = [
+        { ...getDatabase().translatorPresets[0] },
         {
-          ...DBState.db.translatorPresets[1],
+          ...getDatabase().translatorPresets[1],
           name: 'Preset B Edited',
           prompt: 'newer prompt B',
           maxResponse: 222,
         },
       ]
-      DBState.db.translatorPresetId = 1
-      DBState.db.translatorPrompt = 'newer prompt B'
-      DBState.db.translatorMaxResponse = 222
+      getDatabase().translatorPresetId = 1
+      getDatabase().translatorPrompt = 'newer prompt B'
+      getDatabase().translatorMaxResponse = 222
     })
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
 
-    expect(DBState.db.translatorPresetId).toBe(1)
-    expect(DBState.db.translatorPresets[1]).toMatchObject({
+    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresets[1]).toMatchObject({
       name: 'Preset B Edited',
       prompt: 'newer prompt B',
       maxResponse: 222,
     })
-    expect(DBState.db.translatorPrompt).toBe('newer prompt B')
-    expect(DBState.db.translatorMaxResponse).toBe(222)
+    expect(getDatabase().translatorPrompt).toBe('newer prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(222)
   })
 
   it('preserves newer row edits and appended rows when a deferred delete command fails', async () => {
@@ -523,32 +523,32 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.translatorPresets = [
+      getDatabase().translatorPresets = [
         {
-          ...DBState.db.translatorPresets[0],
+          ...getDatabase().translatorPresets[0],
           name: 'Preset A Edited',
           prompt: 'newer prompt A',
           maxResponse: 111,
         },
-        { ...DBState.db.translatorPresets[1] },
+        { ...getDatabase().translatorPresets[1] },
         { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 },
       ]
-      DBState.db.translatorPresetId = 2
-      DBState.db.translatorPrompt = 'new prompt C'
-      DBState.db.translatorMaxResponse = 300
+      getDatabase().translatorPresetId = 2
+      getDatabase().translatorPrompt = 'new prompt C'
+      getDatabase().translatorMaxResponse = 300
     })
 
     await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
 
-    expect(DBState.db.translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       name: 'Preset A Edited',
       prompt: 'newer prompt A',
       maxResponse: 111,
     })
-    expect(DBState.db.translatorPresetId).toBe(2)
-    expect(DBState.db.translatorPrompt).toBe('new prompt C')
-    expect(DBState.db.translatorMaxResponse).toBe(300)
+    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPrompt).toBe('new prompt C')
+    expect(getDatabase().translatorMaxResponse).toBe(300)
   })
 
   it('flushes a pending preset edit when the component is destroyed', async () => {
@@ -580,13 +580,13 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       selectedIndex: 0,
     })
 
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       id: 'preset-a',
       name: 'Projected A',
       prompt: 'dirty prompt A',
       maxResponse: 100,
     })
-    expect(DBState.db.translatorPrompt).toBe('dirty prompt A')
+    expect(getDatabase().translatorPrompt).toBe('dirty prompt A')
   })
 
   it('refreshes clean sibling fields while preserving a dirty prompt', async () => {
@@ -600,13 +600,13 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       selectedIndex: 0,
     })
 
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       name: 'Server A',
       prompt: 'dirty prompt A',
       maxResponse: 333,
     })
-    expect(DBState.db.translatorPrompt).toBe('dirty prompt A')
-    expect(DBState.db.translatorMaxResponse).toBe(333)
+    expect(getDatabase().translatorPrompt).toBe('dirty prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(333)
   })
 
   it('clears dirty prompt state when projection catches up so later clean projections apply', async () => {
@@ -628,13 +628,13 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       selectedIndex: 0,
     })
 
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       name: 'Server A2',
       prompt: 'server later prompt A',
       maxResponse: 456,
     })
-    expect(DBState.db.translatorPrompt).toBe('server later prompt A')
-    expect(DBState.db.translatorMaxResponse).toBe(456)
+    expect(getDatabase().translatorPrompt).toBe('server later prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(456)
   })
 
   it('does not roll back a caught-up dirty prompt when its pending update later fails', async () => {
@@ -658,13 +658,13 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         patch: { prompt: 'dirty prompt A' },
       },
     ])
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       name: 'Server A',
       prompt: 'dirty prompt A',
       maxResponse: 333,
     })
-    expect(DBState.db.translatorPrompt).toBe('dirty prompt A')
-    expect(DBState.db.translatorMaxResponse).toBe(333)
+    expect(getDatabase().translatorPrompt).toBe('dirty prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(333)
   })
 
   it('clears dirty prompt state when the target preset disappears', async () => {
@@ -680,14 +680,14 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       selectedIndex: 0,
     })
 
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       id: 'preset-a',
       name: 'Reintroduced A',
       prompt: 'server prompt A',
       maxResponse: 321,
     })
-    expect(DBState.db.translatorPrompt).toBe('server prompt A')
-    expect(DBState.db.translatorMaxResponse).toBe(321)
+    expect(getDatabase().translatorPrompt).toBe('server prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(321)
   })
 
   it('keeps dirty maxResponse and rename values through stale projection', async () => {
@@ -702,12 +702,12 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       selectedIndex: 0,
     })
 
-    expect(DBState.db.translatorPresets[0]).toMatchObject({
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
       name: 'Dirty Name A',
       prompt: 'server prompt A',
       maxResponse: 777,
     })
-    expect(DBState.db.translatorPrompt).toBe('server prompt A')
-    expect(DBState.db.translatorMaxResponse).toBe(777)
+    expect(getDatabase().translatorPrompt).toBe('server prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(777)
   })
 })
