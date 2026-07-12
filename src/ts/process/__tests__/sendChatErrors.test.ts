@@ -25,13 +25,22 @@ import {
   type character,
 } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
-import { DBState } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { reportSendChatError, type SendChatErrorContext } from '../sendChatErrors'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../../server/projectionWriteGuard.svelte'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -128,7 +137,7 @@ describe('reportSendChatError', () => {
     vi.unstubAllGlobals()
     stubCommandFetch()
     alertErrorSpy.mockReset()
-    // Each test calls seed() which wholesale reseeds DBState. Restoring to {}
+    // Each test calls seed() which wholesale reseeds testDatabaseState. Restoring to {}
     // between tests would fire a $effect chain that reads modules off a partial
     // DB and throws (same shape as the guard in parser.svelte.ts).
   })
@@ -143,7 +152,7 @@ describe('reportSendChatError', () => {
     reportSendChatError('boom', baseCtx)
     expect(alertErrorSpy).toHaveBeenCalledTimes(1)
     expect(alertErrorSpy).toHaveBeenCalledWith('boom')
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(0)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(0)
   })
 
   it('falls back to alertError when the character slot is missing', () => {
@@ -169,7 +178,7 @@ describe('reportSendChatError', () => {
     seed({ inlayErrorResponse: true, char })
     reportSendChatError('boom', baseCtx)
     expect(alertErrorSpy).not.toHaveBeenCalled()
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].data).toBe('hello\n```risuerror\nboom\n```')
   })
@@ -179,7 +188,7 @@ describe('reportSendChatError', () => {
     char.chats[0].message = [{ role: 'user', data: 'hi', time: 0 }]
     seed({ inlayErrorResponse: true, char })
     reportSendChatError('boom', { ...baseCtx, currentChar: char })
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].role).toBe('char')
     expect(messages[1].data).toBe('```risuerror\nboom\n```')
@@ -189,7 +198,7 @@ describe('reportSendChatError', () => {
   it('pushes a new char message when the chat is empty', () => {
     seed({ inlayErrorResponse: true })
     reportSendChatError('boom', baseCtx)
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(1)
     expect(messages[0].role).toBe('char')
     expect(messages[0].data).toBe('```risuerror\nboom\n```')
@@ -201,7 +210,7 @@ describe('reportSendChatError', () => {
       ...baseCtx,
       generationInfo: { model: 'test-model', generationId: 'g-1' },
     })
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[0].generationInfo).toEqual({
       model: 'test-model',
       generationId: 'g-1',
@@ -225,7 +234,7 @@ describe('reportSendChatError', () => {
     seed({ inlayErrorResponse: true })
     selectedCharID.set(0)
     reportSendChatError('boom', { ...baseCtx, selectedChar: -1 })
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(1)
     expect(messages[0].data).toBe('```risuerror\nboom\n```')
   })
@@ -239,8 +248,8 @@ describe('reportSendChatError', () => {
     char.chatPage = 1
     seed({ inlayErrorResponse: true, char })
     reportSendChatError('boom', { ...baseCtx, selectedChat: -1 })
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(0)
-    expect(DBState.db.characters[0].chats[1].message).toHaveLength(1)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(0)
+    expect(testDatabaseState.db.characters[0].chats[1].message).toHaveLength(1)
   })
 
   it('L35: writes and persists the inlay bubble under the enabled projection guard', async () => {
@@ -250,12 +259,12 @@ describe('reportSendChatError', () => {
     seed({ inlayErrorResponse: true, char })
     setServerProjectionWriteGuardEnabled(true)
     expect(() => {
-      DBState.db.characters[0].chats[0].message.push({ role: 'char', data: 'raw' })
+      testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'raw' })
     }).toThrow(/read-only (server projection|outside withResourceDatabaseWrite)/)
 
     reportSendChatError('boom', { ...baseCtx, currentChar: char })
 
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(alertErrorSpy).not.toHaveBeenCalled()
     expect(messages.at(-1)).toMatchObject({
       role: 'char',
@@ -273,7 +282,7 @@ describe('reportSendChatError', () => {
     const projectedMessages = [{ role: 'user', data: 'hi', time: 0, chatId: 'm-user' }, command.body.message]
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message = [{ role: 'user', data: 'stale' }]
+      testDatabaseState.db.characters[0].chats[0].message = [{ role: 'user', data: 'stale' }]
     })
     applyServerProjectionDatabase({
       characters: [
@@ -289,7 +298,7 @@ describe('reportSendChatError', () => {
       ],
       inlayErrorResponse: true,
     } as Database)
-    expect(DBState.db.characters[0].chats[0].message.at(-1).data).toBe('```risuerror\nboom\n```')
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1).data).toBe('```risuerror\nboom\n```')
   })
 
   it('L35: keeps modal fallback for invalid targets while the guard is enabled', () => {

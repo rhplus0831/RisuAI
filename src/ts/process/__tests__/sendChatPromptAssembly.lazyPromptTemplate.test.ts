@@ -26,6 +26,11 @@ vi.mock('../scripts', () => ({
   risuChatParser: (text: string) => text,
 }))
 
+vi.mock('../modules', async (importActual) => {
+  const actual = await importActual<typeof import('../modules')>()
+  return { ...actual, moduleUpdate: () => {} }
+})
+
 vi.mock('../promptAssembly/buildDescription', () => ({
   buildDescription: async () => [],
 }))
@@ -75,13 +80,21 @@ vi.mock('../promptBudget/finalizeRequestBudget', () => ({
 }))
 
 import { language } from 'src/lang'
-import { DBState } from '../../stores.svelte'
-import { setServerProjectionWriteGuardEnabled } from '../../storage/database.svelte'
+import { getDatabase, setDatabaseLite, setServerProjectionWriteGuardEnabled } from '../../storage/database.svelte'
 import type { Chat, character } from '../../storage/database.svelte'
 import { assembleLocalSendChatPrompt, type SendChatPromptStageTimings } from '../sendChatPromptAssembly'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../../server/commands'
 import { resetPromptTemplateHydration } from '../../server/promptTemplateHydration'
 import type { PromptItem } from '../prompt'
+
+const testDatabaseState = {
+  get db() {
+    return getDatabase()
+  },
+  set db(value: ReturnType<typeof getDatabase>) {
+    setDatabaseLite(value)
+  },
+}
 
 function makeChat(): Chat {
   return {
@@ -125,7 +138,7 @@ function stageTimings(): SendChatPromptStageTimings {
 describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
   beforeEach(() => {
     setServerProjectionWriteGuardEnabled(false)
-    ;(DBState as { db: unknown }).db = {}
+    ;(testDatabaseState as { db: unknown }).db = {}
     clearCachedServerCommandRevision()
     resetPromptTemplateHydration()
     projectionState.canUse = true
@@ -137,7 +150,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
   it('stops clearly instead of falling back when promptTemplate is still unloaded', async () => {
     const chat = makeChat()
     const currentChar = makeCharacter(chat)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       characters: [currentChar],
       promptPresetsId: -1,
       maxResponse: 200,
@@ -177,7 +190,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
       generationSettings: { promptPresetId: 'prompt-chat' },
     } as Chat
     const currentChar = makeCharacter(chat)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       characters: [currentChar],
       promptPresetsId: 0,
       promptTemplate: globalTemplate,
@@ -233,8 +246,8 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
       outputTokens: 200,
     })
     expect(projectionState.fetchResource).toHaveBeenCalledWith('prompt-chat')
-    expect(DBState.db.promptPresets[1].promptTemplate).toEqual(chatTemplate)
-    expect(DBState.db.promptTemplate).toEqual(globalTemplate)
+    expect(testDatabaseState.db.promptPresets[1].promptTemplate).toEqual(chatTemplate)
+    expect(testDatabaseState.db.promptTemplate).toEqual(globalTemplate)
     expect(assemblyState.renderFinalPrompt).toHaveBeenCalledWith(
       expect.objectContaining({
         promptTemplate: [...chatTemplate, { type: 'postEverything' }],

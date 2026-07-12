@@ -78,12 +78,21 @@ import {
   resetServerCompletionCalls,
   serverCompletionFetch,
 } from '../__fixtures__/mocks/serverCompletionFetch'
-import { DBState } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { abortChat, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
 import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
 import { currentPersonaStateSnapshot, queueSelectedPersonaUpdate, updateSelectedPersonaField } from '../../persona'
 import { clearCachedServerCommandRevision } from '../../server/commands'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 let cleanups: (() => void)[] = []
 
@@ -104,7 +113,7 @@ afterEach(() => {
 })
 
 function markActiveChatGenerationSettingsReady(): void {
-  const db = DBState.db as typeof DBState.db & {
+  const db = testDatabaseState.db as typeof testDatabaseState.db & {
     personas?: Array<Record<string, unknown>>
     botPresets?: Array<Record<string, unknown>>
   }
@@ -182,24 +191,24 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function queuePersonaPromptSave(prompt: string): string {
-  DBState.db.personas = Array.isArray(DBState.db.personas) ? DBState.db.personas : []
-  const character = DBState.db.characters?.[0]
+  testDatabaseState.db.personas = Array.isArray(testDatabaseState.db.personas) ? testDatabaseState.db.personas : []
+  const character = testDatabaseState.db.characters?.[0]
   const chat = character?.chats?.[character.chatPage ?? 0]
   const personaId = chat?.generationSettings?.personaId ?? 'test-chat-persona'
-  let selectedPersona = DBState.db.personas.findIndex((persona) => persona.id === personaId)
+  let selectedPersona = testDatabaseState.db.personas.findIndex((persona) => persona.id === personaId)
   if (selectedPersona < 0) {
-    selectedPersona = DBState.db.personas.length
-    DBState.db.personas.push({
+    selectedPersona = testDatabaseState.db.personas.length
+    testDatabaseState.db.personas.push({
       id: personaId,
-      name: DBState.db.username ?? 'User',
-      icon: DBState.db.userIcon ?? '',
-      personaPrompt: DBState.db.personaPrompt ?? '',
-      note: DBState.db.userNote ?? '',
+      name: testDatabaseState.db.username ?? 'User',
+      icon: testDatabaseState.db.userIcon ?? '',
+      personaPrompt: testDatabaseState.db.personaPrompt ?? '',
+      note: testDatabaseState.db.userNote ?? '',
       largePortrait: false,
     })
   }
-  DBState.db.selectedPersona = selectedPersona
-  const persona = DBState.db.personas[selectedPersona]
+  testDatabaseState.db.selectedPersona = selectedPersona
+  const persona = testDatabaseState.db.personas[selectedPersona]
   if (!persona?.id) throw new Error('Fixture did not seed a selected persona')
   const previous = currentPersonaStateSnapshot()
   updateSelectedPersonaField('personaPrompt', prompt)
@@ -255,7 +264,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     async (_mode, args) => {
       await seedEcho({ ready: false })
       vi.stubGlobal('fetch', serverChatFetch)
-      const beforeLastInteraction = DBState.db.characters[0].lastInteraction
+      const beforeLastInteraction = testDatabaseState.db.characters[0].lastInteraction
 
       const ok = await chatModule.sendChat(-1, args)
 
@@ -263,8 +272,8 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       expect(getServerChatCalls()).toHaveLength(0)
       expect(get(doingChat)).toBe(false)
       expect(get(chatProcessStage)).toBe(0)
-      expect(DBState.db.characters[0].lastInteraction).toBe(beforeLastInteraction)
-      expect(DBState.db.characters[0].chats[0].message).toEqual([
+      expect(testDatabaseState.db.characters[0].lastInteraction).toBe(beforeLastInteraction)
+      expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
         { role: 'user', data: 'ping', chatId: 'msg-user-1', time: 0 },
       ])
     },
@@ -292,7 +301,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       }) as unknown as typeof fetch,
     )
 
-    const activeChat = DBState.db.characters[0].chats[0]
+    const activeChat = testDatabaseState.db.characters[0].chats[0]
     activeChat.id = 'chat-1'
     expect(dispatchSaveChatGenerationSettings(activeChat.id, activeChat.generationSettings!)).toBe(true)
     await waitForState(() => expect(settingsSaveRequests).toBe(1))
@@ -454,7 +463,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       userMessage: 'ping',
     })
     expect(getServerCompletionCalls()).toEqual([])
-    const chat = DBState.db.characters[0].chats[0]
+    const chat = testDatabaseState.db.characters[0].chats[0]
     expect(chat.scriptstate?.$mood).toBe('bright')
     expect(chat.message[0].data).toBe('patched ping')
     expect(chat.message.at(-1)?.data).toBe('fixture echo reply')
@@ -544,7 +553,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     const ok = await chatModule.sendChat(-1)
     expect(ok).toBe(false)
 
-    const chat = DBState.db.characters[0].chats[0]
+    const chat = testDatabaseState.db.characters[0].chats[0]
     expect(chat.scriptstate?.$mood).toBe('bright')
     expect(chat.message.map((m) => m.data)).toEqual(['patched ping', expect.stringContaining('mutated before stop')])
     expect(getServerCompletionCalls()).toEqual([])
@@ -578,12 +587,12 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
   it('hard-fails an interactive Lua source before /chat when Strict Script Check is enabled', async () => {
     await seedEcho()
     localAssemblerState.throwIfEntered = true
-    DBState.db.strictScriptCheck = true
+    testDatabaseState.db.strictScriptCheck = true
     // With Strict Script Check enabled, a script referencing an interactive
     // dialog API is rejected by the browser classifier before /chat. With the
     // default setting off, the server Lua runtime fails only if the API is
     // actually invoked during prompt assembly.
-    DBState.db.characters[0].triggerscript = [
+    testDatabaseState.db.characters[0].triggerscript = [
       {
         comment: '',
         type: 'start',
@@ -609,7 +618,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     // Armed: a non-interactive Lua char is now in-subset (server-mandatory), so the
     // local assembler must never be entered.
     localAssemblerState.throwIfEntered = true
-    DBState.db.characters[0].triggerscript = [
+    testDatabaseState.db.characters[0].triggerscript = [
       {
         comment: '',
         type: 'request',

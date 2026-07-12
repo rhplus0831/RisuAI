@@ -27,9 +27,19 @@ vi.mock('../../alert', () => ({
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
-import { DBState, selectedCharID } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { setupSendChatContext } from '../sendChatContext'
 import { seedCloneCostDb, withCloneInstrumentation } from '../../__tests__/cloneCostHarness'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -82,7 +92,7 @@ function seedDb(extra: Partial<Database> = {}) {
   // setDatabase forcibly resets `promptInfoInsideChat` in web mode; restore
   // the requested value so the helper observes what the test asked for.
   if (extra.promptInfoInsideChat !== undefined) {
-    DBState.db.promptInfoInsideChat = extra.promptInfoInsideChat
+    testDatabaseState.db.promptInfoInsideChat = extra.promptInfoInsideChat
   }
   selectedCharID.set(0)
 }
@@ -167,7 +177,7 @@ describe('setupSendChatContext - preset chain', () => {
     setupSendChatContext({ chatProcessIndex: -1 })
     // Server-backed generation uses chat.generationSettings promptPresetId instead
     // of letting presetChain retarget the global editing preset.
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
     expect(toastCalls.calls).toEqual([])
   })
 
@@ -178,7 +188,7 @@ describe('setupSendChatContext - preset chain', () => {
       botPresetsId: 0,
     })
     setupSendChatContext({ chatProcessIndex: -1 })
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
     expect(toastCalls.calls).toEqual([])
   })
 
@@ -190,7 +200,7 @@ describe('setupSendChatContext - preset chain', () => {
     })
     setupSendChatContext({ chatProcessIndex: 0 })
     // botPresetsId untouched because the preset-chain block is skipped.
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
     expect(toastCalls.calls).toEqual([])
   })
 })
@@ -199,7 +209,7 @@ describe('setupSendChatContext - DB side effects', () => {
   it('does not increment db.statics.messages locally in server-backed mode', () => {
     seedDb({ statics: { messages: 4 } as unknown as Database['statics'] })
     setupSendChatContext({ chatProcessIndex: -1 })
-    expect(DBState.db.statics.messages).toBe(4)
+    expect(testDatabaseState.db.statics.messages).toBe(4)
   })
 
   it('updates nowChatroom.lastInteraction to roughly now', () => {
@@ -207,7 +217,7 @@ describe('setupSendChatContext - DB side effects', () => {
     const before = Date.now()
     setupSendChatContext({ chatProcessIndex: -1 })
     const after = Date.now()
-    const ts = DBState.db.characters[0].lastInteraction
+    const ts = testDatabaseState.db.characters[0].lastInteraction
     expect(ts).toBeGreaterThanOrEqual(before)
     expect(ts).toBeLessThanOrEqual(after)
   })
@@ -234,7 +244,7 @@ describe('setupSendChatContext - DB side effects', () => {
       ],
     })
     setupSendChatContext({ chatProcessIndex: -1 })
-    const msgs = DBState.db.characters[0].chats[0].message
+    const msgs = testDatabaseState.db.characters[0].chats[0].message
     expect(msgs[0].chatId).toBe('kept-1')
     expect(msgs[1].chatId).toBeTruthy()
     expect(msgs[1].chatId).not.toBe(msgs[0].chatId)
@@ -269,8 +279,8 @@ describe('setupSendChatContext - DB side effects', () => {
 
     setupSendChatContext({ chatProcessIndex: -1 })
 
-    expect(DBState.db.statics.messages).toBe(4)
-    const messages = DBState.db.characters[0].chats[0].message
+    expect(testDatabaseState.db.statics.messages).toBe(4)
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[0].chatId).toBe('kept-1')
     expect(messages[1].chatId).toBeTruthy()
     await vi.waitFor(() => {
@@ -383,7 +393,7 @@ describe('setupSendChatContext - DB side effects', () => {
 
     setupSendChatContext({ chatProcessIndex: -1 })
 
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[0].chatId).toBeTruthy()
     expect(messages[1].chatId).toBe('kept-2')
     await vi.waitFor(() => {
@@ -432,7 +442,7 @@ describe('setupSendChatContext - promptInfo seed', () => {
     const ctx = setupSendChatContext({ chatProcessIndex: -1 })
     expect(ctx.promptInfo.promptName).toBe('Chat Preset')
     expect(ctx.promptInfo.promptToggles).toEqual([])
-    expect(DBState.db.promptPresetsId).toBe(0)
+    expect(testDatabaseState.db.promptPresetsId).toBe(0)
   })
 
   it('seeds chat-scoped boolean, select, text, and module toggles without global overrides', () => {
@@ -592,7 +602,7 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     const seeded = seedCloneCostDb({ characterCount: 4 })
     seedDb({ characters: seeded.characters as unknown as Database['characters'] })
     selectedCharID.set(2)
-    const originalLastInteraction = DBState.db.characters[2].lastInteraction
+    const originalLastInteraction = testDatabaseState.db.characters[2].lastInteraction
     const patchResponse = deferredResponse()
 
     const calls: CapturedFetch[] = []
@@ -612,28 +622,28 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     )
 
     setupSendChatContext({ chatProcessIndex: -1 })
-    expect(DBState.db.characters[2].lastInteraction).not.toBe(originalLastInteraction)
+    expect(testDatabaseState.db.characters[2].lastInteraction).not.toBe(originalLastInteraction)
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-2')).toBe(true)
     })
 
-    DBState.db.characters[2].name = 'Concurrent same-row edit'
-    DBState.db.characters[2].chats[0].note = 'Concurrent active-chat note'
-    DBState.db.characters[2].chats[0].message.push({
+    testDatabaseState.db.characters[2].name = 'Concurrent same-row edit'
+    testDatabaseState.db.characters[2].chats[0].note = 'Concurrent active-chat note'
+    testDatabaseState.db.characters[2].chats[0].message.push({
       role: 'user',
       data: 'Concurrent active-chat message',
       chatId: 'concurrent-message',
     })
-    DBState.db.characters[3].name = 'Concurrent sibling edit'
+    testDatabaseState.db.characters[3].name = 'Concurrent sibling edit'
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.characters[2].lastInteraction).toBe(originalLastInteraction)
+      expect(testDatabaseState.db.characters[2].lastInteraction).toBe(originalLastInteraction)
     })
-    expect(DBState.db.characters[2].name).toBe('Concurrent same-row edit')
-    expect(DBState.db.characters[2].chats[0].note).toBe('Concurrent active-chat note')
-    expect(DBState.db.characters[2].chats[0].message.at(-1)?.chatId).toBe('concurrent-message')
-    expect(DBState.db.characters[3].name).toBe('Concurrent sibling edit')
+    expect(testDatabaseState.db.characters[2].name).toBe('Concurrent same-row edit')
+    expect(testDatabaseState.db.characters[2].chats[0].note).toBe('Concurrent active-chat note')
+    expect(testDatabaseState.db.characters[2].chats[0].message.at(-1)?.chatId).toBe('concurrent-message')
+    expect(testDatabaseState.db.characters[3].name).toBe('Concurrent sibling edit')
   })
 
   it('M5: failed first-send backfill restores only active chat messages and lastInteraction', async () => {
@@ -697,18 +707,18 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
         }),
       ],
     })
-    const originalLastInteraction = DBState.db.characters[0].lastInteraction
-    const originalMessages = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message))
+    const originalLastInteraction = testDatabaseState.db.characters[0].lastInteraction
+    const originalMessages = JSON.parse(JSON.stringify(testDatabaseState.db.characters[0].chats[0].message))
 
     setupSendChatContext({ chatProcessIndex: -1 })
-    expect(DBState.db.characters[0].chats[0].message[1].chatId).toBeTruthy()
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].chatId).toBeTruthy()
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/chats/chat-active/messages/tail')).toBe(true)
     })
 
-    DBState.db.characters[0].name = 'Concurrent character edit'
-    DBState.db.characters[0].chats[0].note = 'Concurrent active note'
-    DBState.db.characters[0].chats[1].message.push({
+    testDatabaseState.db.characters[0].name = 'Concurrent character edit'
+    testDatabaseState.db.characters[0].chats[0].note = 'Concurrent active note'
+    testDatabaseState.db.characters[0].chats[1].message.push({
       role: 'char',
       data: 'Concurrent sibling chat message',
       chatId: 'sibling-concurrent',
@@ -716,12 +726,12 @@ describe('setupSendChatContext - M5 field-scoped send rollback', () => {
     replaceResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].lastInteraction).toBe(originalLastInteraction)
-      expect(DBState.db.characters[0].chats[0].message).toEqual(originalMessages)
+      expect(testDatabaseState.db.characters[0].lastInteraction).toBe(originalLastInteraction)
+      expect(testDatabaseState.db.characters[0].chats[0].message).toEqual(originalMessages)
     })
-    expect(DBState.db.characters[0].name).toBe('Concurrent character edit')
-    expect(DBState.db.characters[0].chats[0].note).toBe('Concurrent active note')
-    expect(DBState.db.characters[0].chats[1].message.at(-1)?.chatId).toBe('sibling-concurrent')
+    expect(testDatabaseState.db.characters[0].name).toBe('Concurrent character edit')
+    expect(testDatabaseState.db.characters[0].chats[0].note).toBe('Concurrent active note')
+    expect(testDatabaseState.db.characters[0].chats[1].message.at(-1)?.chatId).toBe('sibling-concurrent')
     expect(calls.find((call) => call.url === '/api/v1/commands/chats/chat-active/messages/tail')).toMatchObject({
       method: 'POST',
       body: {

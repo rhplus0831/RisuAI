@@ -17,10 +17,19 @@ vi.mock('./modules', async (importActual) => {
 })
 
 import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
-import { DBState } from '../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'
 import type { ServerChatMessagePatch, ServerChatRestoration } from './request/serverChatEvents'
 import { getRerollBuffer, getRerollId, resetRerollNavigation } from './rerollNavigation.svelte'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 function chatWith(messages: Partial<Message>[]): Chat {
   return { id: 'chat-1', message: messages as Message[] } as unknown as Chat
@@ -162,22 +171,22 @@ function seedReorderedTerminalChats(): { char: character; target: Chat; staleInd
   const target = makeTerminalChat('chat-target', [terminalMessage('target original')])
   const staleIndexChat = makeTerminalChat('chat-stale-index', [terminalMessage('stale original', 'gen-other')])
   const char = makeTerminalCharacter([staleIndexChat, target])
-  DBState.db = { characters: [char] } as typeof DBState.db
-  const liveChar = DBState.db.characters[0]
+  testDatabaseState.db = { characters: [char] } as typeof testDatabaseState.db
+  const liveChar = testDatabaseState.db.characters[0]
   return { char: liveChar, target: liveChar.chats[1], staleIndexChat: liveChar.chats[0] }
 }
 
 describe('server-backed terminal stable chat target (R-02)', () => {
-  let originalDb: typeof DBState.db
+  let originalDb: typeof testDatabaseState.db
 
   beforeEach(() => {
-    originalDb = DBState.db
+    originalDb = testDatabaseState.db
     resetRerollNavigation()
   })
 
   afterEach(() => {
     resetRerollNavigation()
-    DBState.db = originalDb
+    testDatabaseState.db = originalDb
   })
 
   it('applies terminal final text without a nested patch to the stable chat id after chat reorder', async () => {

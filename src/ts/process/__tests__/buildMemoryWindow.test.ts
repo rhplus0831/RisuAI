@@ -38,11 +38,20 @@ vi.mock('../memory/hypav3', async (importActual) => {
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { DBState } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
 import type { OpenAIChat } from '../index.svelte'
 import { buildMemoryWindow, type BuildMemoryWindowResult } from '../promptAssembly/buildMemoryWindow'
 import type { PromptItem } from '../prompt'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 type NonStop = Exclude<BuildMemoryWindowResult, { stopSending: true }>
 interface CapturedFetch {
@@ -199,7 +208,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     hypaState.next = { chats: newChats, currentTokens: 11, memory }
 
     const currentChat = makeChat()
-    DBState.db.characters[0].chats[0] = currentChat
+    testDatabaseState.db.characters[0].chats[0] = currentChat
 
     const result = await buildMemoryWindow({
       chats: original,
@@ -223,7 +232,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     expect(result.currentTokens).toBe(11)
     expect(rec.stages).toEqual([2, 1])
     expect(currentChat.hypaV3Data).toBeUndefined()
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
     expect(stageTimings.stage1Duration).toBeGreaterThanOrEqual(0)
     expect(stageTimings.stage2Start).toBeGreaterThan(0)
     expect(stageTimings.stage2Duration).toBeGreaterThanOrEqual(0)
@@ -241,7 +250,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     }
 
     const currentChat = makeChat()
-    DBState.db.characters[0].chats[0] = currentChat
+    testDatabaseState.db.characters[0].chats[0] = currentChat
 
     const result = await buildMemoryWindow({
       chats: [{ role: 'user', content: 'hi' }],
@@ -263,7 +272,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     expect(result.stopSending).toBe(true)
     expect(rec.errors).toEqual(['hypa boom'])
     expect(currentChat.hypaV3Data).toBeUndefined()
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
     // We stopped before the stage-1 set on the happy path.
     expect(rec.stages).toEqual([2])
   })
@@ -278,7 +287,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     }
 
     const currentChat = makeChat({ hypaV3Data: undefined })
-    DBState.db.characters[0].chats[0] = currentChat
+    testDatabaseState.db.characters[0].chats[0] = currentChat
 
     const result = await buildMemoryWindow({
       chats: [{ role: 'user', content: 'hi' }],
@@ -302,7 +311,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     expect(currentChat.hypaV3Data).toBeUndefined()
   })
 
-  it('does not write legacy hypaV3Data into DBState in server-backed web mode', async () => {
+  it('does not write legacy hypaV3Data into testDatabaseState in server-backed web mode', async () => {
     seedDb({ hypaV3: true })
     const rec = makeRecorder()
     const memory = { summaries: ['server-owned'] } as unknown
@@ -313,7 +322,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     }
 
     const currentChat = makeChat()
-    DBState.db.characters[0].chats[0] = currentChat
+    testDatabaseState.db.characters[0].chats[0] = currentChat
 
     const result = await buildMemoryWindow({
       chats: [{ role: 'user', content: 'hi' }],
@@ -335,7 +344,7 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
     assertNotStopped(result)
     expect(result.currentTokens).toBe(9)
     expect(currentChat.hypaV3Data).toBeUndefined()
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
     expect(rec.stages).toEqual([2, 1])
   })
 
@@ -368,12 +377,12 @@ describe('buildMemoryWindow - HypaV3 branch', () => {
 })
 
 describe('buildMemoryWindow - fallback budget trim', () => {
-  it('writes lastMemory through DBState and dispatches a chat patch when server command mode has a chat id', async () => {
+  it('writes lastMemory through testDatabaseState and dispatches a chat patch when server command mode has a chat id', async () => {
     seedDb()
     const calls = stubCommandFetch()
     const rec = makeRecorder()
     const currentChat = makeChat({ id: 'chat-1' })
-    DBState.db.characters[0].chats[0] = currentChat
+    testDatabaseState.db.characters[0].chats[0] = currentChat
     const chats: OpenAIChat[] = [
       { role: 'user', content: 'keep', memo: 'leadingMemo' },
       { role: 'assistant', content: 'reply' },
@@ -397,8 +406,8 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     })
 
     assertNotStopped(result)
-    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
-    expect(result.currentChat).toBe(DBState.db.characters[0].chats[0])
+    expect(testDatabaseState.db.characters[0].chats[0].lastMemory).toBe('leadingMemo')
+    expect(result.currentChat).toBe(testDatabaseState.db.characters[0].chats[0])
     expect(result.currentChat.lastMemory).toBe('leadingMemo')
 
     const command = await waitForCommand(
@@ -416,7 +425,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     const calls = stubCommandFetch()
     const rec = makeRecorder()
     const currentChat = makeChat({ lastMemory: 'request-original' })
-    DBState.db.characters[0].chats[0] = makeChat({ lastMemory: 'server-original' })
+    testDatabaseState.db.characters[0].chats[0] = makeChat({ lastMemory: 'server-original' })
     const chats: OpenAIChat[] = [
       { role: 'user', content: 'keep', memo: 'requestMemo' },
       { role: 'assistant', content: 'reply' },
@@ -440,8 +449,8 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     })
 
     assertNotStopped(result)
-    expect(DBState.db.characters[0].chats[0].lastMemory).toBe('server-original')
-    expect(result.currentChat).not.toBe(DBState.db.characters[0].chats[0])
+    expect(testDatabaseState.db.characters[0].chats[0].lastMemory).toBe('server-original')
+    expect(result.currentChat).not.toBe(testDatabaseState.db.characters[0].chats[0])
     expect(result.currentChat.lastMemory).toBe('requestMemo')
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/chats/'))).toEqual([])
@@ -476,7 +485,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     assertNotStopped(result)
     expect(result.chats.length).toBe(2)
     expect(result.currentChat.lastMemory).toBe('leadingMemo')
-    expect(DBState.db.characters[0].chats[0].lastMemory).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].lastMemory).toBeUndefined()
     expect(result.currentTokens).toBe(50)
   })
 
@@ -513,7 +522,7 @@ describe('buildMemoryWindow - fallback budget trim', () => {
     expect(result.currentTokens).toBe(15)
     expect(result.chats.length).toBe(2)
     expect(result.currentChat.lastMemory).toBe('middle')
-    expect(DBState.db.characters[0].chats[0].lastMemory).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].lastMemory).toBeUndefined()
   })
 
   it('returns stopSending and throws toomuchtoken when chats cannot shrink to fit', async () => {

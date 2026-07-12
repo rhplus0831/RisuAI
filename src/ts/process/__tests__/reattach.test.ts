@@ -20,7 +20,7 @@ const h = vi.hoisted(() => {
     }
   }
   return {
-    DBState: { db: {} as Record<string, unknown> },
+    database: {} as Record<string, unknown>,
     selectedCharID: makeStore(-1),
     doingChat: makeStore(false),
     createActiveGenerationAbortController: vi.fn(() => new AbortController()),
@@ -30,12 +30,11 @@ const h = vi.hoisted(() => {
 })
 
 vi.mock('../../stores.svelte', () => ({
-  DBState: h.DBState,
   selectedCharID: h.selectedCharID,
 }))
 
 vi.mock('../../storage/database.svelte', () => ({
-  getDatabase: () => h.DBState.db,
+  getDatabase: () => h.database,
 }))
 
 vi.mock('../index.svelte', () => ({
@@ -53,14 +52,14 @@ import {
 } from '../reattach'
 
 function openChat(chatId: string): void {
-  h.DBState.db = {
+  h.database = {
     characters: [{ chaId: 'char-a', chatPage: 0, chats: [{ id: chatId, message: [] }] }],
   }
   h.selectedCharID.set(0)
 }
 
 beforeEach(() => {
-  h.DBState.db = { characters: [] }
+  h.database = { characters: [] }
   h.selectedCharID.set(-1)
   h.sendChat.mockClear()
   h.createActiveGenerationAbortController.mockClear()
@@ -164,7 +163,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
       return true
     })
 
-    h.DBState.db = {
+    h.database = {
       characters: [
         { chaId: 'char-a', chatPage: 0, chats: [{ id: 'chat-1', message: [] }] },
         { chaId: 'char-b', chatPage: 0, chats: [{ id: 'chat-2', message: [] }] },
@@ -196,7 +195,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
   })
 
   it('reattaches after a queued trigger observes a same-character chat switch', async () => {
-    h.DBState.db = {
+    h.database = {
       characters: [
         {
           chaId: 'char-a',
@@ -210,7 +209,7 @@ describe('reattach open-chat generation (Phase 4)', () => {
     }
     h.selectedCharID.set(0)
     setActiveGenerationJobs([{ chatId: 'chat-2', jobId: 'job-2' }])
-    ;(h.DBState.db.characters as Array<{ chatPage: number }>)[0].chatPage = 1
+    ;(h.database.characters as Array<{ chatPage: number }>)[0].chatPage = 1
 
     triggerOpenChatGenerationReattach()
 

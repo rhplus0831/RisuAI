@@ -102,7 +102,8 @@ import { isTokenizerUrl, serveTokenizerFetch } from '../__fixtures__/mocks/token
 import { getSideEffectCalls, resetSideEffectCalls } from '../__fixtures__/sideEffects'
 import { resetProviderState } from '../__fixtures__/providerFake'
 import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtures__/snapshot'
-import { DBState, hypaV3ProgressStore } from '../../stores.svelte'
+import { hypaV3ProgressStore } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { Chat } from '../../storage/database.svelte'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
@@ -118,6 +119,15 @@ import {
   getServerCommandBaseRevision,
   setCachedServerCommandRevision,
 } from '../../server/commands'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -349,12 +359,12 @@ function readSeedGenerationSettings(database: unknown): unknown {
 }
 
 function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[number]): void {
-  const char = DBState.db.characters[0]
+  const char = testDatabaseState.db.characters[0]
   const chat = char.chats[char.chatPage ?? 0]
   chat.id = 'chat-route-backed'
-  ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
-  DBState.db.mainPrompt = defaultMainPrompt
-  DBState.db.formatingOrder = [
+  ;(testDatabaseState.db as typeof testDatabaseState.db & { currentChar: number }).currentChar = 0
+  testDatabaseState.db.mainPrompt = defaultMainPrompt
+  testDatabaseState.db.formatingOrder = [
     'main',
     'description',
     'personaPrompt',
@@ -365,13 +375,13 @@ function prepareRouteBackedFixture(name: (typeof ROUTE_BACKED_CHAT_FIXTURES)[num
     'globalNote',
     'authorNote',
   ]
-  DBState.db.promptSettings = {
+  testDatabaseState.db.promptSettings = {
     assistantPrefill: '',
     postEndInnerFormat: '',
     sendChatAsSystem: false,
     sendName: false,
     utilOverride: false,
-    ...(DBState.db.promptSettings ?? {}),
+    ...(testDatabaseState.db.promptSettings ?? {}),
   }
   if (name === 'regenerate') {
     chat.message.push({
@@ -446,7 +456,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const loaded = await loadFixture(name)
       cleanups.push(loaded.cleanup)
       prepareRouteBackedFixture(name)
-      await harness.seed(DBState.db)
+      await harness.seed(testDatabaseState.db)
       vi.stubGlobal('fetch', harness.fetch)
 
       const expected = await loadExpected(name)
@@ -515,7 +525,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // A start trigger sets `$score` during assembly. Before C-A1 the browser
       // replayed this delta as a `PATCH …/scriptstate` command; now the route
       // persists it directly, so no scriptstate command should go out.
-      DBState.db.characters[0].triggerscript = [
+      testDatabaseState.db.characters[0].triggerscript = [
         {
           comment: '',
           type: 'start',
@@ -523,7 +533,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           effect: [{ type: 'setvar', operator: '=', var: 'score', value: '9' }],
         },
       ]
-      await harness.seed(DBState.db)
+      await harness.seed(testDatabaseState.db)
       vi.stubGlobal('fetch', harness.fetch)
       harness.setDispatchText('route-backed reply')
 
@@ -581,7 +591,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // An OUTPUT trigger sets `$mood` AFTER generation — the durable derivation the
       // browser used to run in `applyOutputTrigger`. The server runs + persists it;
       // the browser must consume the terminal patch, not re-POST a scriptstate command.
-      DBState.db.characters[0].triggerscript = [
+      testDatabaseState.db.characters[0].triggerscript = [
         {
           comment: '',
           type: 'output',
@@ -589,7 +599,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           effect: [{ type: 'setvar', operator: '=', var: 'mood', value: 'happy' }],
         },
       ]
-      await harness.seed(DBState.db)
+      await harness.seed(testDatabaseState.db)
       vi.stubGlobal('fetch', harness.fetch)
       harness.setDispatchText('route-backed reply')
 
@@ -608,7 +618,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // The projection reflects the server-derived scriptstate, applied from the
       // terminal post-gen patch (not a browser `applyOutputTrigger`).
-      expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $mood: 'happy' })
+      expect(testDatabaseState.db.characters[0].chats[0].scriptstate).toMatchObject({ $mood: 'happy' })
 
       // Durable: the job persisted the post-gen scriptstate delta + the result
       // message in one bump at completion (configure = 2 → persist = 3).
@@ -640,10 +650,10 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       prepareRouteBackedFixture('simple-send')
       // A regex editoutput the SERVER (not the browser) applies post-generation:
       // 'route-backed reply' → 'route-backed REPLY'.
-      DBState.db.characters[0].customscript = [
+      testDatabaseState.db.characters[0].customscript = [
         { comment: '', in: 'reply', out: 'REPLY', type: 'editoutput', flag: '', ableFlag: false },
       ]
-      await harness.seed(DBState.db)
+      await harness.seed(testDatabaseState.db)
       vi.stubGlobal('fetch', harness.fetch)
       harness.setDispatchText('route-backed reply')
 
@@ -655,7 +665,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // The browser wrote the server-owned editoutput final text onto its projection
       // assistant message (it skipped `editoutput` itself on this path).
-      const liveChat = DBState.db.characters[0].chats[0]
+      const liveChat = testDatabaseState.db.characters[0].chats[0]
       const assistant = [...liveChat.message].reverse().find((m) => m.role === 'char')
       expect(assistant?.data).toBe('route-backed REPLY')
 
@@ -689,14 +699,14 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // local sweep dispatches through the provider fake; add them so the send
       // is server-routable, then mirror prepareRouteBackedFixture's prompt setup
       // (this fixture is not in the parametrized ROUTE_BACKED_CHAT_FIXTURES set).
-      const custom = (DBState.db.customModels as Array<Record<string, unknown>>)[0]
+      const custom = (testDatabaseState.db.customModels as Array<Record<string, unknown>>)[0]
       custom.url = 'https://vision.example.com/v1/chat/completions'
       custom.key = 'sk-vision-fixture'
-      const char = DBState.db.characters[0]
+      const char = testDatabaseState.db.characters[0]
       char.chats[char.chatPage ?? 0].id = 'chat-route-backed'
-      ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
-      DBState.db.mainPrompt = defaultMainPrompt
-      DBState.db.formatingOrder = [
+      ;(testDatabaseState.db as typeof testDatabaseState.db & { currentChar: number }).currentChar = 0
+      testDatabaseState.db.mainPrompt = defaultMainPrompt
+      testDatabaseState.db.formatingOrder = [
         'main',
         'description',
         'personaPrompt',
@@ -707,23 +717,23 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         'globalNote',
         'authorNote',
       ]
-      DBState.db.promptSettings = {
+      testDatabaseState.db.promptSettings = {
         assistantPrefill: '',
         postEndInnerFormat: '',
         sendChatAsSystem: false,
         sendName: false,
         utilOverride: false,
-        ...(DBState.db.promptSettings ?? {}),
+        ...(testDatabaseState.db.promptSettings ?? {}),
       }
       // The fixture ships `promptTemplate: null`, which the risusave import
       // coerces to `[]` — and the server then treats an empty array as an
       // (empty) active template, assembling zero rows. That null-coercion is a
       // pre-existing multimodal concern; clear it to `undefined` so the
       // format-order path runs and a real prompt (with the inlay row) assembles.
-      ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
+      ;(testDatabaseState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
       markFixtureActiveChatGenerationSettingsReady()
 
-      await harness.seed(DBState.db)
+      await harness.seed(testDatabaseState.db)
       const inlayUpload = await harness.app.inject({
         method: 'POST',
         url: '/api/v1/assets',
@@ -807,11 +817,11 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         // in the parametrized ROUTE_BACKED_CHAT_FIXTURES set). The
         // `promptTemplate: null` → `[]` import coercion is cleared to `undefined`
         // so the format-order path runs (same workaround as the multimodal test).
-        const char = DBState.db.characters[0]
+        const char = testDatabaseState.db.characters[0]
         char.chats[char.chatPage ?? 0].id = 'chat-route-backed'
-        ;(DBState.db as typeof DBState.db & { currentChar: number }).currentChar = 0
-        DBState.db.mainPrompt = defaultMainPrompt
-        DBState.db.formatingOrder = [
+        ;(testDatabaseState.db as typeof testDatabaseState.db & { currentChar: number }).currentChar = 0
+        testDatabaseState.db.mainPrompt = defaultMainPrompt
+        testDatabaseState.db.formatingOrder = [
           'main',
           'description',
           'personaPrompt',
@@ -822,18 +832,18 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
           'globalNote',
           'authorNote',
         ]
-        DBState.db.promptSettings = {
+        testDatabaseState.db.promptSettings = {
           assistantPrefill: '',
           postEndInnerFormat: '',
           sendChatAsSystem: false,
           sendName: false,
           utilOverride: false,
-          ...(DBState.db.promptSettings ?? {}),
+          ...(testDatabaseState.db.promptSettings ?? {}),
         }
-        ;(DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
+        ;(testDatabaseState.db as unknown as { promptTemplate?: unknown }).promptTemplate = undefined
         markFixtureActiveChatGenerationSettingsReady()
 
-        await harness.seed(DBState.db)
+        await harness.seed(testDatabaseState.db)
         vi.stubGlobal('fetch', harness.fetch)
         harness.setDispatchText('Hello there!')
 
@@ -885,10 +895,10 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       prepareRouteBackedFixture('simple-send')
       // A regex editinput script the server (not the browser) applies to the
       // submitted user text: "Hi there" → "Hi THERE".
-      DBState.db.characters[0].customscript = [
+      testDatabaseState.db.characters[0].customscript = [
         { comment: '', in: 'there', out: 'THERE', type: 'editinput', flag: '', ableFlag: false },
       ]
-      await harness.seed(DBState.db)
+      await harness.seed(testDatabaseState.db)
       vi.stubGlobal('fetch', harness.fetch)
       harness.setDispatchText('reply')
 
@@ -904,7 +914,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // The reconciled projection (and the route-owned persisted transcript)
       // carry the server-transformed user message.
-      const liveChat = DBState.db.characters[0].chats[0]
+      const liveChat = testDatabaseState.db.characters[0].chats[0]
       const userRow = liveChat.message.find((m) => m.role === 'user')
       expect(userRow?.data).toBe('Hi THERE')
 
@@ -997,7 +1007,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     }
     setServerChatInfo(
       expectedGenerationInfo.inputTokens ?? 0,
-      expectedGenerationInfo.outputTokens ?? DBState.db.maxResponse,
+      expectedGenerationInfo.outputTokens ?? testDatabaseState.db.maxResponse,
     )
     const assistant = [...expected.messages].reverse().find((m) => m.role === 'char')
     expect(assistant).toBeDefined()
@@ -1051,7 +1061,9 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     markFixtureActiveChatGenerationSettingsReady()
-    const originalMessages = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message)) as Chat['message']
+    const originalMessages = JSON.parse(
+      JSON.stringify(testDatabaseState.db.characters[0].chats[0].message),
+    ) as Chat['message']
     setServerChatPrompt(
       [{ role: 'user', content: 'Hi there' }],
       {},
@@ -1060,8 +1072,8 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       },
     )
     setServerChatMessagePatch({
-      chatId: DBState.db.characters[0].chats[0].id ?? '',
-      characterId: DBState.db.characters[0].chaId,
+      chatId: testDatabaseState.db.characters[0].chats[0].id ?? '',
+      characterId: testDatabaseState.db.characters[0].chaId,
       selectedCharID: 0,
       chatPage: 0,
       varChanged: false,
@@ -1085,8 +1097,8 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
         maxContext: 4000,
       },
       {
-        chatId: DBState.db.characters[0].chats[0].id ?? '',
-        characterId: DBState.db.characters[0].chaId,
+        chatId: testDatabaseState.db.characters[0].chats[0].id ?? '',
+        characterId: testDatabaseState.db.characters[0].chaId,
         selectedCharID: 0,
         chatPage: 0,
         messages: originalMessages,
@@ -1099,8 +1111,8 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     const result = await sendChat(-1, {})
 
     expect(result).toBe(false)
-    expect(DBState.db.characters[0].chats[0].message).toEqual(originalMessages)
-    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual(originalMessages)
+    expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
     expect(getSideEffectCalls()).not.toContainEqual({
       fn: 'sayTTS',
       args: expect.any(Array),
@@ -1113,7 +1125,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     const loaded = await loadFixture('simple-send')
     cleanups.push(loaded.cleanup)
     markFixtureActiveChatGenerationSettingsReady()
-    DBState.db.ttsAutoSpeech = true
+    testDatabaseState.db.ttsAutoSpeech = true
 
     setServerChatPrompt(
       [{ role: 'user', content: 'Hi there' }],

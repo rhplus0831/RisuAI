@@ -14,8 +14,18 @@ vi.mock('../modules', async (importActual) => {
 })
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
-import { selectedCharID, DBState } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { applyOutputTrigger } from '../postGeneration/outputTrigger'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 function makeChar(): character {
   return {
@@ -46,7 +56,7 @@ function seed(): character {
   const char = makeChar()
   setDatabase({ characters: [char] } as Database)
   selectedCharID.set(0)
-  return DBState.db.characters[0]
+  return testDatabaseState.db.characters[0]
 }
 
 function identityRccf(chat: Chat): Chat {
@@ -65,7 +75,7 @@ describe('applyOutputTrigger', () => {
     runTriggerSpy.mockReset()
   })
 
-  it('calls runCurrentChatFunction with the current chat slot and writes the result back to DBState', async () => {
+  it('calls runCurrentChatFunction with the current chat slot and writes the result back to testDatabaseState', async () => {
     const currentChar = seed()
     runTriggerSpy.mockResolvedValue(null)
     const rccf = vi.fn((chat: Chat) => ({ ...chat, name: 'rccf-mutated' }))
@@ -76,7 +86,7 @@ describe('applyOutputTrigger', () => {
       runCurrentChatFunction: rccf,
     })
     expect(rccf).toHaveBeenCalledTimes(1)
-    expect(DBState.db.characters[0].chats[0].name).toBe('rccf-mutated')
+    expect(testDatabaseState.db.characters[0].chats[0].name).toBe('rccf-mutated')
     expect(out.chat.name).toBe('rccf-mutated')
   })
 
@@ -93,7 +103,7 @@ describe('applyOutputTrigger', () => {
     const [charArg, modeArg, { chat }] = runTriggerSpy.mock.calls[0]
     expect(charArg).toBe(currentChar)
     expect(modeArg).toBe('output')
-    expect(chat).toBe(DBState.db.characters[0].chats[0])
+    expect(chat).toBe(testDatabaseState.db.characters[0].chats[0])
   })
 
   it('surfaces triggerResult.chat as triggerChat when the trigger returns one', async () => {

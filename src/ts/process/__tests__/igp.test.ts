@@ -25,13 +25,23 @@ import {
   type Database,
   type character,
 } from '../../storage/database.svelte'
-import { selectedCharID, DBState } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { evaluateIgp } from '../postGeneration/igp'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../../server/projectionWriteGuard.svelte'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -134,7 +144,7 @@ describe('evaluateIgp', () => {
     seed(makeChar())
     await evaluateIgp({ ...baseOpts, promptTemplate: '' })
     expect(requestChatDataSpy).not.toHaveBeenCalled()
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('hello')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('hello')
   })
 
   it('is a no-op when the parsed prompt is empty (whitespace-only after parsing)', async () => {
@@ -169,7 +179,7 @@ describe('evaluateIgp', () => {
     seed(makeChar())
     requestChatDataSpy.mockResolvedValueOnce({ type: 'success', result: 'IGP-RESULT' })
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
     const command = await waitForMessageCommand(calls)
     expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
   })
@@ -181,7 +191,7 @@ describe('evaluateIgp', () => {
 
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
 
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('hello{"label":"joy"}')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('hello{"label":"joy"}')
   })
 
   it('appends to the last message regardless of position', async () => {
@@ -194,7 +204,7 @@ describe('evaluateIgp', () => {
     ]
     seed(char)
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[0].data).toBe('first')
     expect(messages[1].data).toBe('second')
     expect(messages[2].data).toBe('thirdIGP-RESULT')
@@ -205,17 +215,17 @@ describe('evaluateIgp', () => {
     seed(makeChar())
     setServerProjectionWriteGuardEnabled(true)
     expect(() => {
-      DBState.db.characters[0].chats[0].message[0].data += 'raw'
-    }).toThrow(/read-only server projection/)
+      testDatabaseState.db.characters[0].chats[0].message[0].data += 'raw'
+    }).toThrow(/resource database compatibility view is read-only/)
 
     await evaluateIgp({ ...baseOpts, promptTemplate: CHATML_PROMPT })
 
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
     const command = await waitForMessageCommand(calls)
     expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message[0].data = 'stale'
+      testDatabaseState.db.characters[0].chats[0].message[0].data = 'stale'
     })
     applyServerProjectionDatabase({
       characters: [
@@ -230,6 +240,6 @@ describe('evaluateIgp', () => {
         },
       ],
     } as Database)
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('helloIGP-RESULT')
   })
 })

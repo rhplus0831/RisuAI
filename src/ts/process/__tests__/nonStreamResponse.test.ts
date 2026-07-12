@@ -31,9 +31,19 @@ import {
   type MessagePresetInfo,
   type character,
 } from '../../storage/database.svelte'
-import { selectedCharID, DBState } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { requestDataResponse } from '../request/request'
 import { applyNonStreamResponse } from '../postGeneration/nonStreamResponse'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 const REFORMAT = (s: string) => s.trim()
 
@@ -67,7 +77,7 @@ function seed(): character {
   const char = makeChar()
   setDatabase({ characters: [char] } as Database)
   selectedCharID.set(0)
-  return DBState.db.characters[0]
+  return testDatabaseState.db.characters[0]
 }
 
 function callArgs(
@@ -109,7 +119,7 @@ describe('applyNonStreamResponse', () => {
     const currentChar = seed()
     const req: requestDataResponse = { type: 'success', result: 'hello there' }
     const out = await applyNonStreamResponse(callArgs(req, currentChar))
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].role).toBe('char')
     expect(messages[1].data).toBe('hello there')
@@ -129,7 +139,7 @@ describe('applyNonStreamResponse', () => {
       ],
     }
     const out = await applyNonStreamResponse(callArgs(req, currentChar))
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].role).toBe('char')
     expect(messages[1].data).toBe('first')
@@ -140,7 +150,7 @@ describe('applyNonStreamResponse', () => {
     const currentChar = seed()
     const req: requestDataResponse = { type: 'fail', result: 'oops' }
     const out = await applyNonStreamResponse(callArgs(req, currentChar))
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(1)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(1)
     expect(out.result).toBe('')
     expect(out.emoChanged).toBe(false)
     expect(out.mrerolls).toEqual([])
@@ -148,10 +158,10 @@ describe('applyNonStreamResponse', () => {
 
   it('arg.continue: overwrites the previous slot instead of pushing', async () => {
     const currentChar = seed()
-    DBState.db.characters[0].chats[0].message.push({ role: 'char', data: 'partial' })
+    testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'partial' })
     const req: requestDataResponse = { type: 'success', result: 'continued' }
     const out = await applyNonStreamResponse(callArgs(req, currentChar, { arg: { continue: true } }))
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].data).toBe('partialcontinued')
     expect(out.mrerolls).toEqual([])
@@ -167,7 +177,7 @@ describe('applyNonStreamResponse', () => {
     })
     const req: requestDataResponse = { type: 'success', result: 'placeholder' }
     await applyNonStreamResponse(callArgs(req, currentChar))
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('final image markup')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('final image markup')
   })
 
   it('removeIncompleteResponse → routes data through trimUntilPunctuation (real impl)', async () => {
@@ -175,23 +185,23 @@ describe('applyNonStreamResponse', () => {
     // punctuation; 'noPunct' has none so it strips to ''. Asserting the
     // observable effect avoids cross-file module-mock fragility.
     const currentChar = seed()
-    DBState.db.removeIncompleteResponse = true
+    testDatabaseState.db.removeIncompleteResponse = true
     const req: requestDataResponse = { type: 'success', result: 'noPunct' }
     await applyNonStreamResponse(callArgs(req, currentChar))
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
   })
 
   it('removeIncompleteResponse=false: leaves processed data unmodified', async () => {
     const currentChar = seed()
-    DBState.db.removeIncompleteResponse = false
+    testDatabaseState.db.removeIncompleteResponse = false
     const req: requestDataResponse = { type: 'success', result: 'noPunct' }
     await applyNonStreamResponse(callArgs(req, currentChar))
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('noPunct')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('noPunct')
   })
 
   it('ttsAutoSpeech: calls sayTTS once per iter with the post-inlay result', async () => {
     const currentChar = seed()
-    DBState.db.ttsAutoSpeech = true
+    testDatabaseState.db.ttsAutoSpeech = true
     runInlayScreenSpy.mockImplementation((_c: unknown, data: string) => ({
       text: data + '!',
     }))
@@ -242,7 +252,7 @@ describe('applyNonStreamResponse', () => {
 
   it('bumps reloadKeys once per iter', async () => {
     const currentChar = seed()
-    DBState.db.characters[0].reloadKeys = 0
+    testDatabaseState.db.characters[0].reloadKeys = 0
     const req: requestDataResponse = {
       type: 'multiline',
       result: [
@@ -251,6 +261,6 @@ describe('applyNonStreamResponse', () => {
       ],
     }
     await applyNonStreamResponse(callArgs(req, currentChar))
-    expect(DBState.db.characters[0].reloadKeys).toBe(2)
+    expect(testDatabaseState.db.characters[0].reloadKeys).toBe(2)
   })
 })

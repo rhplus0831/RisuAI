@@ -21,9 +21,19 @@ import {
   type MessagePresetInfo,
   type character,
 } from '../../storage/database.svelte'
-import { selectedCharID, DBState } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { consumeStreamResponse } from '../postGeneration/streamResponse'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 const REFORMAT = (s: string) => s.trim()
 
@@ -56,7 +66,7 @@ function makeChar(): character {
 function seed(): character {
   setDatabase({ characters: [makeChar()] } as Database)
   selectedCharID.set(0)
-  return DBState.db.characters[0]
+  return testDatabaseState.db.characters[0]
 }
 
 interface StreamHandle {
@@ -148,7 +158,7 @@ describe('consumeStreamResponse', () => {
     expect(out.lastResponseChunk).toEqual({ msgKey: 'hello' })
     expect(out.streamAborted).toBe(false)
     expect(out.msgIndex).toBe(1)
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages).toHaveLength(2)
     expect(messages[1].data).toBe('hello')
     expect(messages[1].role).toBe('char')
@@ -166,7 +176,7 @@ describe('consumeStreamResponse', () => {
     close()
     const out = await promise
     expect(out.result).toBe('abc')
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('abc')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('abc')
     // Render coalescing: the microtask-paced chunks share one full-fidelity
     // apply at settle time instead of one editoutput parse per chunk.
     expect(processScriptFullSpy).toHaveBeenCalledTimes(1)
@@ -175,7 +185,7 @@ describe('consumeStreamResponse', () => {
 
   it('continue mode: decrements msgIndex, prepends prefix from prior message', async () => {
     const currentChar = seed()
-    DBState.db.characters[0].chats[0].message.push({ role: 'char', data: 'partial' })
+    testDatabaseState.db.characters[0].chats[0].message.push({ role: 'char', data: 'partial' })
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(
@@ -186,7 +196,7 @@ describe('consumeStreamResponse', () => {
     const out = await promise
     expect(out.msgIndex).toBe(1)
     expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'partialextra', 'editoutput', 1)
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(2)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
   })
 
   it('empty/falsy chunk value: coerces to empty string instead of throwing', async () => {
@@ -203,7 +213,7 @@ describe('consumeStreamResponse', () => {
 
   it('removeIncompleteResponse=true: routes the chunk through trimUntilPunctuation (real impl)', async () => {
     const currentChar = seed()
-    DBState.db.removeIncompleteResponse = true
+    testDatabaseState.db.removeIncompleteResponse = true
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
@@ -239,7 +249,7 @@ describe('consumeStreamResponse', () => {
     close()
     const out = await promise
     expect(out.streamAborted).toBe(true)
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('first')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('first')
   })
 
   it('mid-stream abort before tokens removes the empty generated message', async () => {
@@ -247,8 +257,8 @@ describe('consumeStreamResponse', () => {
     const { stream, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(2)
-    expect(DBState.db.characters[0].chats[0].message[1]).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
+    expect(testDatabaseState.db.characters[0].chats[0].message[1]).toMatchObject({
       role: 'char',
       data: '',
       chatId: 'gen-1',
@@ -259,8 +269,8 @@ describe('consumeStreamResponse', () => {
 
     const out = await promise
     expect(out.streamAborted).toBe(true)
-    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
-    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi' }])
+    expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
   })
 
   it('mid-stream abort keeps a non-empty generated message for server reconciliation', async () => {
@@ -277,8 +287,8 @@ describe('consumeStreamResponse', () => {
 
     const out = await promise
     expect(out.streamAborted).toBe(true)
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(2)
-    expect(DBState.db.characters[0].chats[0].message[1]).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(2)
+    expect(testDatabaseState.db.characters[0].chats[0].message[1]).toMatchObject({
       role: 'char',
       data: 'partial',
       chatId: 'gen-1',
@@ -307,16 +317,16 @@ describe('consumeStreamResponse', () => {
 
   it('finally always runs: isStreaming flipped on then off, reloadKeys bumped each stage', async () => {
     const currentChar = seed()
-    DBState.db.characters[0].reloadKeys = 0
+    testDatabaseState.db.characters[0].reloadKeys = 0
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
     push({ msgKey: 'hi' })
     close()
     await promise
-    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+    expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
     // setup (+1) + per-chunk (+1) + finally (+1) = 3
-    expect(DBState.db.characters[0].reloadKeys).toBe(3)
+    expect(testDatabaseState.db.characters[0].reloadKeys).toBe(3)
   })
 
   it('removes the abort listener in finally (later abort has no effect on result)', async () => {
@@ -330,7 +340,7 @@ describe('consumeStreamResponse', () => {
     expect(out.streamAborted).toBe(false)
     ctrl.abort()
     // No throw, no late mutation: the listener was removed in finally.
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('done')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('done')
   })
 })
 
@@ -348,7 +358,7 @@ describe('H3 streaming render coalescing', () => {
 
   it('bounds parse work for an N-token stream: applies are O(flushes), not O(N)', async () => {
     const currentChar = seed()
-    DBState.db.characters[0].reloadKeys = 0
+    testDatabaseState.db.characters[0].reloadKeys = 0
     const { stream, push, close } = makeControlledStream()
     const ctrl = new AbortController()
     const promise = consumeStreamResponse(callArgs(streamingReq(stream), currentChar, ctrl.signal))
@@ -364,14 +374,14 @@ describe('H3 streaming render coalescing', () => {
     // Final text identical to the per-chunk behavior: newest payload, reformat
     // (trim) + editoutput applied once at full fidelity.
     expect(out.result).toBe(accumulated)
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe(accumulated.trim())
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe(accumulated.trim())
     // Old behavior: 200 editoutput parses + 200 display writes. Coalesced: the
     // microtask-paced chunks drain before any animation frame elapses, so the
     // settle apply is the only one (bound generously to tolerate one frame).
     expect(processScriptFullSpy.mock.calls.length).toBeLessThanOrEqual(2)
     // reloadKeys bumps == display reparses: setup (+1) + applies (<=2) +
     // finally (+1) — bounded, instead of 202.
-    expect(DBState.db.characters[0].reloadKeys).toBeLessThanOrEqual(4)
+    expect(testDatabaseState.db.characters[0].reloadKeys).toBeLessThanOrEqual(4)
   })
 
   it('flushes on the frame scheduler so the display progresses mid-stream', async () => {
@@ -392,7 +402,7 @@ describe('H3 streaming render coalescing', () => {
     push({ msgKey: 'Hello' })
     await vi.waitFor(() => expect(frames.length).toBe(1))
     frames.shift()!()
-    await vi.waitFor(() => expect(DBState.db.characters[0].chats[0].message[1].data).toBe('Hello'))
+    await vi.waitFor(() => expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('Hello'))
 
     // Later chunks re-arm at most one further frame; without running it, the
     // terminal settle still applies the newest payload at full fidelity.
@@ -401,7 +411,7 @@ describe('H3 streaming render coalescing', () => {
     close()
     const out = await promise
     expect(out.result).toBe('Hello world')
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('Hello world')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('Hello world')
     // One frame apply + one settle apply.
     expect(processScriptFullSpy).toHaveBeenCalledTimes(2)
   })
@@ -422,7 +432,7 @@ describe('H3 streaming render coalescing', () => {
     push({ msgKey: 'server stream' })
     await vi.waitFor(() => expect(frames.length).toBe(1))
 
-    DBState.db.characters[0].chats[0].message = [
+    testDatabaseState.db.characters[0].chats[0].message = [
       {
         role: 'char',
         data: 'projection final',
@@ -434,8 +444,8 @@ describe('H3 streaming render coalescing', () => {
 
     const out = await promise
     expect(out.msgIndex).toBe(0)
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(1)
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('server stream')
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(1)
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('server stream')
     expect(processScriptFullSpy).toHaveBeenCalledWith(currentChar, 'server stream', 'editoutput', 0)
   })
 
@@ -448,8 +458,8 @@ describe('H3 streaming render coalescing', () => {
     push({ msgKey: 'boom' })
     close()
     await expect(promise).rejects.toThrow('script-broke')
-    expect(DBState.db.characters[0].chats[0].isStreaming).toBe(false)
+    expect(testDatabaseState.db.characters[0].chats[0].isStreaming).toBe(false)
     // The apply never succeeded, so the message slot keeps its initial value.
-    expect(DBState.db.characters[0].chats[0].message[1].data).toBe('')
+    expect(testDatabaseState.db.characters[0].chats[0].message[1].data).toBe('')
   })
 })

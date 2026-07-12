@@ -27,10 +27,19 @@ vi.mock('../scriptings', () => ({
 }))
 
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import type { PromptItem } from '../prompt'
 import { renderFinalPrompt, type UnformatedPromptSlots, type FormatOrderKey } from '../promptAssembly/renderFinalPrompt'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: ReturnType<typeof getResourceDatabase>) {
+    replaceResourceDatabase(value)
+  },
+}
 
 function makeChar(overrides: Partial<character> = {}): character {
   return {
@@ -562,8 +571,8 @@ describe('renderFinalPrompt - editRequest trigger', () => {
 describe('renderFinalPrompt - prompt-info text capture', () => {
   it('captures innerFormat for persona/description/authornote and rendered text for plain', async () => {
     seedDb({ promptInfoInsideChat: true, promptTextInfoInsideChat: true })
-    DBState.db.promptInfoInsideChat = true
-    DBState.db.promptTextInfoInsideChat = true
+    testDatabaseState.db.promptInfoInsideChat = true
+    testDatabaseState.db.promptTextInfoInsideChat = true
 
     const unformated = emptyUnformated()
     unformated.personaPrompt.push({ role: 'system', content: 'I am curious.' })
@@ -604,8 +613,8 @@ describe('renderFinalPrompt - prompt-info text capture', () => {
 
   it('does not set promptText when either flag is off', async () => {
     seedDb({ promptInfoInsideChat: true, promptTextInfoInsideChat: false })
-    DBState.db.promptInfoInsideChat = true
-    DBState.db.promptTextInfoInsideChat = false
+    testDatabaseState.db.promptInfoInsideChat = true
+    testDatabaseState.db.promptTextInfoInsideChat = false
 
     const unformated = emptyUnformated()
     unformated.personaPrompt.push({ role: 'system', content: 'I am curious.' })
@@ -630,8 +639,8 @@ describe('renderFinalPrompt - prompt-info text capture', () => {
 
   it('plain card with type2=globalNote does NOT push into promptText', async () => {
     seedDb({ promptInfoInsideChat: true, promptTextInfoInsideChat: true })
-    DBState.db.promptInfoInsideChat = true
-    DBState.db.promptTextInfoInsideChat = true
+    testDatabaseState.db.promptInfoInsideChat = true
+    testDatabaseState.db.promptTextInfoInsideChat = true
 
     const unformated = emptyUnformated()
     const template: PromptItem[] = [
