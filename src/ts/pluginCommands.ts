@@ -18,8 +18,8 @@ import {
   type SettingsGroup,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
-import { DBState } from './stores.svelte'
 
 export interface PluginStateSnapshot {
   plugins: RisuPlugin[]
@@ -142,18 +142,18 @@ export function cloneJsonValue<T>(value: T): T {
 
 export function currentPluginStateSnapshot(): PluginStateSnapshot {
   return {
-    plugins: cloneJsonValue(DBState.db.plugins ?? []),
-    currentPluginProvider: DBState.db.currentPluginProvider ?? '',
-    pluginCustomStorage: cloneJsonValue(DBState.db.pluginCustomStorage ?? {}),
+    plugins: cloneJsonValue(getDatabase().plugins ?? []),
+    currentPluginProvider: getDatabase().currentPluginProvider ?? '',
+    pluginCustomStorage: cloneJsonValue(getDatabase().pluginCustomStorage ?? {}),
   }
 }
 
 export function restorePluginState(snapshot: PluginStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     pluginWatchSuppressionVersion += 1
-    DBState.db.plugins = cloneJsonValue(snapshot.plugins)
-    DBState.db.currentPluginProvider = snapshot.currentPluginProvider
-    DBState.db.pluginCustomStorage = cloneJsonValue(snapshot.pluginCustomStorage)
+    getDatabase().plugins = cloneJsonValue(snapshot.plugins)
+    getDatabase().currentPluginProvider = snapshot.currentPluginProvider
+    getDatabase().pluginCustomStorage = cloneJsonValue(snapshot.pluginCustomStorage)
   })
 }
 
@@ -286,7 +286,7 @@ export function dispatchEnablePlugin(pluginId: string, enabled: boolean, previou
 }
 
 function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
-  const plugins = DBState.db.plugins ?? []
+  const plugins = getDatabase().plugins ?? []
   const index = plugins.findIndex((plugin) => plugin.name === pluginName)
   if (index === -1) return null
   return { plugin: plugins[index], index }
@@ -306,7 +306,7 @@ export function setPluginArgument(pluginName: string, arg: string, value: number
   withTrustedServerProjectionWrite(() => {
     const target = findPluginByName(pluginName)
     if (!target) return
-    DBState.db.plugins[target.index] = {
+    getDatabase().plugins[target.index] = {
       ...target.plugin,
       realArg: nextRealArg,
     }
@@ -326,7 +326,7 @@ export function togglePluginEnabled(pluginName: string): boolean {
   withTrustedServerProjectionWrite(() => {
     const target = findPluginByName(pluginName)
     if (!target) return
-    DBState.db.plugins[target.index] = {
+    getDatabase().plugins[target.index] = {
       ...target.plugin,
       enabled,
     }
@@ -343,10 +343,10 @@ export function deletePlugin(pluginName: string): boolean {
   const previous = currentPluginStateSnapshot()
 
   withTrustedServerProjectionWrite(() => {
-    if (DBState.db.currentPluginProvider === plugin.name) {
-      DBState.db.currentPluginProvider = ''
+    if (getDatabase().currentPluginProvider === plugin.name) {
+      getDatabase().currentPluginProvider = ''
     }
-    DBState.db.plugins = (DBState.db.plugins ?? []).filter((candidate) => candidate.name !== plugin.name)
+    getDatabase().plugins = (getDatabase().plugins ?? []).filter((candidate) => candidate.name !== plugin.name)
   })
   dispatchDeletePlugin(plugin.name, previous)
   return true
@@ -373,7 +373,7 @@ export function dispatchSelectPluginProvider(provider: string, previous: PluginS
 
 export function dispatchReorderPlugins(previous: PluginStateSnapshot): void {
   if (!canUseServerCommands()) return
-  const attemptedPluginIds = (DBState.db.plugins ?? []).map((plugin) => plugin.name)
+  const attemptedPluginIds = (getDatabase().plugins ?? []).map((plugin) => plugin.name)
   const rollbackEntry = pluginOrderRollbackEntry(previous, attemptedPluginIds)
   const operation = issuePluginNonStorageOperation([rollbackEntry])
   runPluginCommand(
@@ -660,16 +660,16 @@ function rollbackPluginNonStorageEntryIfLiveMatches(entry: PluginNonStorageRollb
 }
 
 function rollbackPluginCreateIfLiveMatches(entry: PluginCreateRollbackEntry): boolean {
-  const plugins = DBState.db.plugins ?? []
+  const plugins = getDatabase().plugins ?? []
   const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
   if (index === -1 || !isJsonValueEqual(plugins[index], entry.attemptedPlugin)) return false
 
-  DBState.db.plugins = plugins.filter((_, pluginIndex) => pluginIndex !== index)
+  getDatabase().plugins = plugins.filter((_, pluginIndex) => pluginIndex !== index)
   return true
 }
 
 function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): boolean {
-  const plugins = DBState.db.plugins ?? []
+  const plugins = getDatabase().plugins ?? []
   const index = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
   if (index === -1) return false
 
@@ -691,25 +691,25 @@ function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): bool
     delete nextPlugin[entry.field]
   }
 
-  DBState.db.plugins[index] = nextPlugin
+  getDatabase().plugins[index] = nextPlugin
   return true
 }
 
 function rollbackPluginDeleteIfLiveMatches(entry: PluginDeleteRollbackEntry): boolean {
   let changed = false
-  const plugins = DBState.db.plugins ?? []
+  const plugins = getDatabase().plugins ?? []
   const liveIndex = plugins.findIndex((plugin) => plugin.name === entry.pluginId)
 
   if (liveIndex === -1) {
     const nextPlugins = [...plugins]
     const insertIndex = boundedInsertIndex(entry.previousIndex, nextPlugins.length)
     nextPlugins.splice(insertIndex, 0, cloneJsonValue(entry.previousPlugin))
-    DBState.db.plugins = nextPlugins
+    getDatabase().plugins = nextPlugins
     changed = true
   }
 
-  if (entry.providerChanged && (DBState.db.currentPluginProvider ?? '') === entry.attemptedProvider) {
-    DBState.db.currentPluginProvider = entry.previousProvider
+  if (entry.providerChanged && (getDatabase().currentPluginProvider ?? '') === entry.attemptedProvider) {
+    getDatabase().currentPluginProvider = entry.previousProvider
     changed = true
   }
 
@@ -717,13 +717,13 @@ function rollbackPluginDeleteIfLiveMatches(entry: PluginDeleteRollbackEntry): bo
 }
 
 function rollbackPluginProviderIfLiveMatches(entry: PluginProviderRollbackEntry): boolean {
-  if ((DBState.db.currentPluginProvider ?? '') !== entry.attemptedProvider) return false
-  DBState.db.currentPluginProvider = entry.previousProvider
+  if ((getDatabase().currentPluginProvider ?? '') !== entry.attemptedProvider) return false
+  getDatabase().currentPluginProvider = entry.previousProvider
   return true
 }
 
 function rollbackPluginOrderIfLiveMatches(entry: PluginOrderRollbackEntry): boolean {
-  const plugins = DBState.db.plugins ?? []
+  const plugins = getDatabase().plugins ?? []
   const livePluginIds = plugins.map((plugin) => plugin.name)
   if (!isStringArrayEqual(livePluginIds, entry.attemptedPluginIds)) return false
 
@@ -750,7 +750,7 @@ function rollbackPluginOrderIfLiveMatches(entry: PluginOrderRollbackEntry): bool
     )
   )
     return false
-  DBState.db.plugins = reorderedPlugins
+  getDatabase().plugins = reorderedPlugins
   return true
 }
 
@@ -807,13 +807,13 @@ function boundedInsertIndex(index: number, length: number): number {
 }
 
 export function currentPluginStorageSnapshot(): PluginStorageSnapshot {
-  return cloneJsonValue(DBState.db.pluginCustomStorage ?? {})
+  return cloneJsonValue(getDatabase().pluginCustomStorage ?? {})
 }
 
 export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
   withTrustedServerProjectionWrite(() => {
     pluginWatchSuppressionVersion += 1
-    DBState.db.pluginCustomStorage = cloneJsonValue(snapshot)
+    getDatabase().pluginCustomStorage = cloneJsonValue(snapshot)
   })
 }
 
@@ -998,10 +998,10 @@ function rollbackPluginStorageEntries(
 }
 
 function ensureLivePluginStorage(): Record<string, unknown> {
-  if (!DBState.db.pluginCustomStorage || typeof DBState.db.pluginCustomStorage !== 'object') {
-    DBState.db.pluginCustomStorage = {}
+  if (!getDatabase().pluginCustomStorage || typeof getDatabase().pluginCustomStorage !== 'object') {
+    getDatabase().pluginCustomStorage = {}
   }
-  return DBState.db.pluginCustomStorage as Record<string, unknown>
+  return getDatabase().pluginCustomStorage as Record<string, unknown>
 }
 
 function issuePluginStorageOperation(entries: PluginStorageRollbackEntry[]): PluginStorageOperationToken {
@@ -1094,7 +1094,10 @@ function clearPluginStorageOperation(operation: PluginStorageOperationToken): vo
 }
 
 function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key)
+  // Svelte's deep-state proxy can retain a descriptor for a deleted key even
+  // after excluding it from enumeration. Plugin storage follows JSON object
+  // semantics, so enumerable membership is the authoritative existence check.
+  return Object.keys(record).includes(key)
 }
 
 function isJsonValueEqual(left: unknown, right: unknown): boolean {
@@ -1167,7 +1170,7 @@ function captureCurrentPluginSettingsPatchRollbackEntries(
   snapshot: PluginSettingsPatchRollbackSnapshot,
   patch: Record<string, unknown>,
 ): void {
-  const currentSettings = DBState.db as unknown as Record<string, unknown>
+  const currentSettings = getDatabase() as unknown as Record<string, unknown>
 
   for (const [key, value] of Object.entries(patch)) {
     if (!settingsGroupForKey(key) || value === undefined) continue
@@ -1180,7 +1183,7 @@ function rollbackPluginSettingsPatch(snapshot: PluginSettingsPatchRollbackSnapsh
   if (Object.keys(snapshot.attempted).length === 0) return
 
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db as unknown as Record<string, unknown>
+    const target = getDatabase() as unknown as Record<string, unknown>
     applyAttemptedFieldRollback({
       target,
       previous: snapshot.previous,

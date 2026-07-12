@@ -9,7 +9,11 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
-import { DBState } from './stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from './server/resourceState.svelte'
+import type { Database } from './storage/database.svelte'
 import {
   currentPluginSettingsPatchRollbackSnapshot,
   currentPluginStateSnapshot,
@@ -49,12 +53,12 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
-function customModelRows(rows: Array<{ id: string; name: string }>): typeof DBState.db.customModels {
-  return rows as unknown as typeof DBState.db.customModels
+function customModelRows(rows: Array<{ id: string; name: string }>): Database['customModels'] {
+  return rows as unknown as Database['customModels']
 }
 
 function dbRecord(): Record<string, unknown> {
-  return DBState.db as unknown as Record<string, unknown>
+  return getDatabase() as unknown as Record<string, unknown>
 }
 
 function seedPlugin(name: string, overrides: Partial<RisuPlugin> = {}): RisuPlugin {
@@ -72,7 +76,7 @@ function seedPlugin(name: string, overrides: Partial<RisuPlugin> = {}): RisuPlug
 }
 
 function seedPluginState(): void {
-  DBState.db = {
+  setDatabaseLite({
     currentPluginProvider: 'plugin-a',
     pluginCustomStorage: {
       retained: { value: 1 },
@@ -88,7 +92,7 @@ function seedPluginState(): void {
         enabled: false,
       }),
     ],
-  } as any
+  } as Database)
 }
 
 function stubCommandFetch(options: { failCommands?: boolean; failCommandUrls?: string[] } = {}): CapturedFetch[] {
@@ -190,7 +194,7 @@ async function flushCommandEffects(): Promise<void> {
 
 function writePluginStorage(storage: Record<string, unknown>): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.pluginCustomStorage = cloneJsonValue(storage)
+    getDatabase().pluginCustomStorage = cloneJsonValue(storage)
   })
 }
 
@@ -209,16 +213,16 @@ afterEach(() => {
 describe('plugin projection command helpers', () => {
   it('updates plugin arguments, dispatches the update command, and rolls back on failure', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    const previousPlugins = cloneJsonValue(DBState.db.plugins)
-    const previousStorage = cloneJsonValue(DBState.db.pluginCustomStorage)
+    const previousPlugins = cloneJsonValue(getDatabase().plugins)
+    const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.plugins[0].realArg.mode = 'raw'
-    }).toThrow(/read-only server projection/)
+      getDatabase().plugins[0].realArg.mode = 'raw'
+    }).toThrow(/resource database compatibility view is read-only/)
 
     expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBe(true)
-    expect(DBState.db.plugins[0].realArg).toEqual({ mode: 'slow', token: 'abc' })
+    expect(getDatabase().plugins[0].realArg).toEqual({ mode: 'slow', token: 'abc' })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
@@ -242,9 +246,9 @@ describe('plugin projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.plugins).toEqual(previousPlugins)
-    expect(DBState.db.currentPluginProvider).toBe('plugin-a')
-    expect(DBState.db.pluginCustomStorage).toEqual(previousStorage)
+    expect(getDatabase().plugins).toEqual(previousPlugins)
+    expect(getDatabase().currentPluginProvider).toBe('plugin-a')
+    expect(getDatabase().pluginCustomStorage).toEqual(previousStorage)
   })
 
   it('failed setPluginArgument preserves newer storage keys and sibling plugin edits', async () => {
@@ -253,18 +257,18 @@ describe('plugin projection command helpers', () => {
 
     expect(setPluginArgument('plugin-a', 'mode', 'slow')).toBe(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins[1] = {
-        ...DBState.db.plugins[1],
+      getDatabase().plugins[1] = {
+        ...getDatabase().plugins[1],
         realArg: { mode: 'newer-sibling-edit' },
         enabled: true,
       }
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a', {
         arguments: { mode: ['fast', 'slow'] },
         realArg: { mode: 'fast', token: 'abc' },
@@ -275,8 +279,8 @@ describe('plugin projection command helpers', () => {
         enabled: true,
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-a')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-a')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -306,7 +310,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
-    expect(DBState.db.plugins[0].realArg).toEqual({ mode: 'second', token: 'abc' })
+    expect(getDatabase().plugins[0].realArg).toEqual({ mode: 'second', token: 'abc' })
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/plugins/plugin-a',
       method: 'PATCH',
@@ -321,17 +325,17 @@ describe('plugin projection command helpers', () => {
     commandResponses[1].resolve(jsonResponse({ error: 'forced newer failure' }, 500))
     await flushCommandEffects()
 
-    expect(DBState.db.plugins[0].realArg).toEqual({ mode: 'fast', token: 'abc' })
+    expect(getDatabase().plugins[0].realArg).toEqual({ mode: 'fast', token: 'abc' })
   })
 
   it('toggles enabled state, dispatches the enable command, and rolls back on failure', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    const previousPlugins = cloneJsonValue(DBState.db.plugins)
-    const previousStorage = cloneJsonValue(DBState.db.pluginCustomStorage)
+    const previousPlugins = cloneJsonValue(getDatabase().plugins)
+    const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(togglePluginEnabled('plugin-a')).toBe(true)
-    expect(DBState.db.plugins[0].enabled).toBe(false)
+    expect(getDatabase().plugins[0].enabled).toBe(false)
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
@@ -353,9 +357,9 @@ describe('plugin projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.plugins).toEqual(previousPlugins)
-    expect(DBState.db.currentPluginProvider).toBe('plugin-a')
-    expect(DBState.db.pluginCustomStorage).toEqual(previousStorage)
+    expect(getDatabase().plugins).toEqual(previousPlugins)
+    expect(getDatabase().currentPluginProvider).toBe('plugin-a')
+    expect(getDatabase().pluginCustomStorage).toEqual(previousStorage)
   })
 
   it('failed togglePluginEnabled rolls back only enabled and preserves newer same-row fields', async () => {
@@ -364,18 +368,18 @@ describe('plugin projection command helpers', () => {
 
     expect(togglePluginEnabled('plugin-a')).toBe(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins[0] = {
-        ...DBState.db.plugins[0],
+      getDatabase().plugins[0] = {
+        ...getDatabase().plugins[0],
         script: 'Risuai.log("newer same-row edit")',
         realArg: { mode: 'newer-mode', token: 'newer-token' },
       }
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.plugins[0]).toEqual(
+    expect(getDatabase().plugins[0]).toEqual(
       seedPlugin('plugin-a', {
         script: 'Risuai.log("newer same-row edit")',
         arguments: { mode: ['fast', 'slow'] },
@@ -383,14 +387,14 @@ describe('plugin projection command helpers', () => {
         enabled: true,
       }),
     )
-    expect(DBState.db.plugins[1]).toEqual(
+    expect(getDatabase().plugins[1]).toEqual(
       seedPlugin('plugin-b', {
         realArg: { mode: 'standby' },
         enabled: false,
       }),
     )
-    expect(DBState.db.currentPluginProvider).toBe('plugin-a')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-a')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -398,14 +402,14 @@ describe('plugin projection command helpers', () => {
 
   it('deletes plugins, clears the current provider, dispatches delete, and rolls back on failure', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    const previousPlugins = cloneJsonValue(DBState.db.plugins)
-    const previousProvider = DBState.db.currentPluginProvider
-    const previousStorage = cloneJsonValue(DBState.db.pluginCustomStorage)
+    const previousPlugins = cloneJsonValue(getDatabase().plugins)
+    const previousProvider = getDatabase().currentPluginProvider
+    const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(deletePlugin('plugin-a')).toBe(true)
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-b'])
-    expect(DBState.db.currentPluginProvider).toBe('')
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b'])
+    expect(getDatabase().currentPluginProvider).toBe('')
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
@@ -426,9 +430,9 @@ describe('plugin projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.plugins).toEqual(previousPlugins)
-    expect(DBState.db.currentPluginProvider).toBe(previousProvider)
-    expect(DBState.db.pluginCustomStorage).toEqual(previousStorage)
+    expect(getDatabase().plugins).toEqual(previousPlugins)
+    expect(getDatabase().currentPluginProvider).toBe(previousProvider)
+    expect(getDatabase().pluginCustomStorage).toEqual(previousStorage)
   })
 
   it('failed active-provider deletePlugin restores only the missing plugin and preserves newer siblings and provider', async () => {
@@ -437,20 +441,20 @@ describe('plugin projection command helpers', () => {
 
     expect(deletePlugin('plugin-a')).toBe(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(
+      getDatabase().plugins.push(
         seedPlugin('plugin-c', {
           realArg: { mode: 'newer-plugin' },
           enabled: true,
         }),
       )
-      DBState.db.currentPluginProvider = 'plugin-b'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-b'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a', {
         arguments: { mode: ['fast', 'slow'] },
         realArg: { mode: 'fast', token: 'abc' },
@@ -465,8 +469,8 @@ describe('plugin projection command helpers', () => {
         enabled: true,
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-b')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-b')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -478,22 +482,22 @@ describe('plugin projection command helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.currentPluginProvider = 'plugin-b'
+      getDatabase().currentPluginProvider = 'plugin-b'
     })
     dispatchSelectPluginProvider('plugin-b', previous)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.currentPluginProvider = 'plugin-c'
-      DBState.db.plugins.push(
+      getDatabase().currentPluginProvider = 'plugin-c'
+      getDatabase().plugins.push(
         seedPlugin('plugin-c', {
           realArg: { mode: 'newer-plugin' },
           enabled: true,
         }),
       )
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
-    const expectedPlugins = cloneJsonValue(DBState.db.plugins)
-    const expectedStorage = cloneJsonValue(DBState.db.pluginCustomStorage)
+    const expectedPlugins = cloneJsonValue(getDatabase().plugins)
+    const expectedStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
@@ -506,9 +510,9 @@ describe('plugin projection command helpers', () => {
         provider: 'plugin-b',
       },
     })
-    expect(DBState.db.currentPluginProvider).toBe('plugin-c')
-    expect(DBState.db.plugins).toEqual(expectedPlugins)
-    expect(DBState.db.pluginCustomStorage).toEqual(expectedStorage)
+    expect(getDatabase().currentPluginProvider).toBe('plugin-c')
+    expect(getDatabase().plugins).toEqual(expectedPlugins)
+    expect(getDatabase().pluginCustomStorage).toEqual(expectedStorage)
   })
 
   it('failed dispatchCreatePlugin removes only the attempted new plugin and preserves newer siblings, provider, and storage', async () => {
@@ -521,17 +525,17 @@ describe('plugin projection command helpers', () => {
     })
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(attemptedPlugin)
+      getDatabase().plugins.push(attemptedPlugin)
     })
     dispatchCreatePlugin(attemptedPlugin, previous)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(
+      getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer' },
         }),
       )
-      DBState.db.currentPluginProvider = 'plugin-newer'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-newer'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
@@ -548,7 +552,7 @@ describe('plugin projection command helpers', () => {
         }),
       },
     })
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a', {
         arguments: { mode: ['fast', 'slow'] },
         realArg: { mode: 'fast', token: 'abc' },
@@ -562,8 +566,8 @@ describe('plugin projection command helpers', () => {
         realArg: { mode: 'newer' },
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-newer')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-newer')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -580,7 +584,7 @@ describe('plugin projection command helpers', () => {
     })
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(attemptedPlugin)
+      getDatabase().plugins.push(attemptedPlugin)
     })
     dispatchCreatePlugin(attemptedPlugin, previous)
     await waitForCallCount(calls, 1)
@@ -616,16 +620,16 @@ describe('plugin projection command helpers', () => {
     })
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(attemptedPlugin)
+      getDatabase().plugins.push(attemptedPlugin)
     })
     dispatchCreatePlugin(attemptedPlugin, createPrevious)
     await waitForCallCount(calls, 2)
 
     const updatePrevious = currentPluginStateSnapshot()
     withTrustedServerProjectionWrite(() => {
-      const index = DBState.db.plugins.findIndex((plugin) => plugin.name === 'plugin-created')
-      DBState.db.plugins[index] = {
-        ...DBState.db.plugins[index],
+      const index = getDatabase().plugins.findIndex((plugin) => plugin.name === 'plugin-created')
+      getDatabase().plugins[index] = {
+        ...getDatabase().plugins[index],
         displayName: 'Updated Create',
         realArg: { mode: 'updated' },
       }
@@ -644,7 +648,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
-    expect(DBState.db.plugins.find((plugin) => plugin.name === 'plugin-created')).toEqual(
+    expect(getDatabase().plugins.find((plugin) => plugin.name === 'plugin-created')).toEqual(
       seedPlugin('plugin-created', {
         displayName: 'Updated Create',
         realArg: { mode: 'updated' },
@@ -654,7 +658,7 @@ describe('plugin projection command helpers', () => {
     commandResponses[1].resolve(jsonResponse({ error: 'forced update failure' }, 500))
     await flushCommandEffects()
 
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-b'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-b'])
   })
 
   it('failed full plugin update restores only fields still equal to attempted values', async () => {
@@ -670,16 +674,16 @@ describe('plugin projection command helpers', () => {
     })
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins[0] = attemptedPlugin
+      getDatabase().plugins[0] = attemptedPlugin
     })
     dispatchUpdatePlugin('plugin-a', attemptedPlugin as unknown as PluginSnapshot, previous)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins[0] = {
-        ...DBState.db.plugins[0],
+      getDatabase().plugins[0] = {
+        ...getDatabase().plugins[0],
         script: 'Risuai.log("newer same-row script")',
       }
-      DBState.db.currentPluginProvider = 'plugin-b'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-b'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
@@ -703,7 +707,7 @@ describe('plugin projection command helpers', () => {
         patch: expect.not.objectContaining({ name: 'plugin-a' }),
       }),
     )
-    expect(DBState.db.plugins[0]).toEqual(
+    expect(getDatabase().plugins[0]).toEqual(
       seedPlugin('plugin-a', {
         script: 'Risuai.log("newer same-row script")',
         arguments: { mode: ['fast', 'slow'] },
@@ -711,14 +715,14 @@ describe('plugin projection command helpers', () => {
         enabled: true,
       }),
     )
-    expect(DBState.db.plugins[1]).toEqual(
+    expect(getDatabase().plugins[1]).toEqual(
       seedPlugin('plugin-b', {
         realArg: { mode: 'standby' },
         enabled: false,
       }),
     )
-    expect(DBState.db.currentPluginProvider).toBe('plugin-b')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-b')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -734,8 +738,8 @@ describe('plugin projection command helpers', () => {
     }
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins[0] = {
-        ...DBState.db.plugins[0],
+      getDatabase().plugins[0] = {
+        ...getDatabase().plugins[0],
         ...patch,
       }
     })
@@ -763,12 +767,12 @@ describe('plugin projection command helpers', () => {
   it('failed delete followed by queued failed same-name create restores the original plugin', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
-    const originalPlugins = cloneJsonValue(DBState.db.plugins)
+    const originalPlugins = cloneJsonValue(getDatabase().plugins)
     const deletePrevious = currentPluginStateSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins = DBState.db.plugins.filter((plugin) => plugin.name !== 'plugin-a')
-      DBState.db.currentPluginProvider = ''
+      getDatabase().plugins = getDatabase().plugins.filter((plugin) => plugin.name !== 'plugin-a')
+      getDatabase().currentPluginProvider = ''
     })
     dispatchDeletePlugin('plugin-a', deletePrevious)
     await waitForCallCount(calls, 2)
@@ -779,7 +783,7 @@ describe('plugin projection command helpers', () => {
       realArg: { mode: 'replacement' },
     })
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(newPlugin)
+      getDatabase().plugins.push(newPlugin)
     })
     dispatchCreatePlugin(newPlugin, createPrevious)
     expect(calls).toHaveLength(2)
@@ -788,32 +792,32 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
-    expect(DBState.db.plugins.find((plugin) => plugin.name === 'plugin-a')).toEqual(newPlugin)
-    expect(DBState.db.currentPluginProvider).toBe('')
+    expect(getDatabase().plugins.find((plugin) => plugin.name === 'plugin-a')).toEqual(newPlugin)
+    expect(getDatabase().currentPluginProvider).toBe('')
 
     commandResponses[1].resolve(jsonResponse({ error: 'forced create failure' }, 500))
     await flushCommandEffects()
 
-    expect(DBState.db.plugins).toEqual(originalPlugins)
-    expect(DBState.db.currentPluginProvider).toBe('plugin-a')
+    expect(getDatabase().plugins).toEqual(originalPlugins)
+    expect(getDatabase().currentPluginProvider).toBe('plugin-a')
   })
 
   it('failed dispatchReorderPlugins preserves a newer reorder and uses the captured attempted order', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     setServerProjectionWriteGuardEnabled(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
+      getDatabase().plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
     })
     const previous = currentPluginStateSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins = [seedPlugin('plugin-c'), seedPlugin('plugin-b'), seedPlugin('plugin-a')]
+      getDatabase().plugins = [seedPlugin('plugin-c'), seedPlugin('plugin-b'), seedPlugin('plugin-a')]
     })
     dispatchReorderPlugins(previous)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins = [seedPlugin('plugin-b'), seedPlugin('plugin-c'), seedPlugin('plugin-a')]
-      DBState.db.currentPluginProvider = 'plugin-c'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().plugins = [seedPlugin('plugin-b'), seedPlugin('plugin-c'), seedPlugin('plugin-a')]
+      getDatabase().currentPluginProvider = 'plugin-c'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
@@ -827,9 +831,9 @@ describe('plugin projection command helpers', () => {
         pluginIds: ['plugin-c', 'plugin-b', 'plugin-a'],
       },
     })
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-c', 'plugin-a'])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-c')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-c', 'plugin-a'])
+    expect(getDatabase().currentPluginProvider).toBe('plugin-c')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -837,9 +841,9 @@ describe('plugin projection command helpers', () => {
 
   it('returns false for missing plugin names without commands or projection changes', () => {
     const calls = stubCommandFetch()
-    const previousPlugins = cloneJsonValue(DBState.db.plugins)
-    const previousProvider = DBState.db.currentPluginProvider
-    const previousStorage = cloneJsonValue(DBState.db.pluginCustomStorage)
+    const previousPlugins = cloneJsonValue(getDatabase().plugins)
+    const previousProvider = getDatabase().currentPluginProvider
+    const previousStorage = cloneJsonValue(getDatabase().pluginCustomStorage)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(setPluginArgument('missing-plugin', 'mode', 'slow')).toBe(false)
@@ -847,17 +851,17 @@ describe('plugin projection command helpers', () => {
     expect(deletePlugin('missing-plugin')).toBe(false)
 
     expect(calls).toHaveLength(0)
-    expect(DBState.db.plugins).toEqual(previousPlugins)
-    expect(DBState.db.currentPluginProvider).toBe(previousProvider)
-    expect(DBState.db.pluginCustomStorage).toEqual(previousStorage)
+    expect(getDatabase().plugins).toEqual(previousPlugins)
+    expect(getDatabase().currentPluginProvider).toBe(previousProvider)
+    expect(getDatabase().pluginCustomStorage).toEqual(previousStorage)
   })
 
   it('failed settings patch restores only attempted settings keys and preserves newer plugin state', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     setServerProjectionWriteGuardEnabled(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = 'old-modules'
-      DBState.db.pluginDevelopMode = false
+      getDatabase().moduleIntergration = 'old-modules'
+      getDatabase().pluginDevelopMode = false
     })
     const patch = {
       moduleIntergration: 'attempted-modules',
@@ -866,19 +870,19 @@ describe('plugin projection command helpers', () => {
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = patch.moduleIntergration
-      DBState.db.pluginDevelopMode = patch.pluginDevelopMode
+      getDatabase().moduleIntergration = patch.moduleIntergration
+      getDatabase().pluginDevelopMode = patch.pluginDevelopMode
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(
+      getDatabase().plugins.push(
         seedPlugin('plugin-c', {
           realArg: { mode: 'newer-plugin' },
           enabled: true,
         }),
       )
-      DBState.db.currentPluginProvider = 'plugin-c'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-c'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
 
     await waitForCallCount(calls, 2)
@@ -892,9 +896,9 @@ describe('plugin projection command helpers', () => {
         patch,
       },
     })
-    expect(DBState.db.moduleIntergration).toBe('old-modules')
-    expect(DBState.db.pluginDevelopMode).toBe(false)
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().moduleIntergration).toBe('old-modules')
+    expect(getDatabase().pluginDevelopMode).toBe(false)
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a', {
         arguments: { mode: ['fast', 'slow'] },
         realArg: { mode: 'fast', token: 'abc' },
@@ -909,8 +913,8 @@ describe('plugin projection command helpers', () => {
         enabled: true,
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-c')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-c')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -922,8 +926,8 @@ describe('plugin projection command helpers', () => {
     const oldCustomModels = customModelRows([{ id: 'old-model', name: 'Old Model' }])
     const attemptedCustomModels = customModelRows([{ id: 'attempted-model', name: 'Attempted Model' }])
     withTrustedServerProjectionWrite(() => {
-      DBState.db.customModels = oldCustomModels
-      DBState.db.moduleIntergration = 'old-modules'
+      getDatabase().customModels = oldCustomModels
+      getDatabase().moduleIntergration = 'old-modules'
     })
     const patch = {
       customModels: attemptedCustomModels,
@@ -932,8 +936,8 @@ describe('plugin projection command helpers', () => {
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.customModels = cloneJsonValue(patch.customModels)
-      DBState.db.moduleIntergration = patch.moduleIntergration
+      getDatabase().customModels = cloneJsonValue(patch.customModels)
+      getDatabase().moduleIntergration = patch.moduleIntergration
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
 
@@ -960,8 +964,8 @@ describe('plugin projection command helpers', () => {
         },
       },
     })
-    expect(DBState.db.customModels).toEqual(attemptedCustomModels)
-    expect(DBState.db.moduleIntergration).toBe('old-modules')
+    expect(getDatabase().customModels).toEqual(attemptedCustomModels)
+    expect(getDatabase().moduleIntergration).toBe('old-modules')
   })
 
   it('failed first settings group rolls back later unaccepted attempted settings keys', async () => {
@@ -970,8 +974,8 @@ describe('plugin projection command helpers', () => {
     const oldCustomModels = customModelRows([{ id: 'old-model', name: 'Old Model' }])
     const attemptedCustomModels = customModelRows([{ id: 'attempted-model', name: 'Attempted Model' }])
     withTrustedServerProjectionWrite(() => {
-      DBState.db.customModels = oldCustomModels
-      DBState.db.moduleIntergration = 'old-modules'
+      getDatabase().customModels = oldCustomModels
+      getDatabase().moduleIntergration = 'old-modules'
     })
     const patch = {
       customModels: attemptedCustomModels,
@@ -980,8 +984,8 @@ describe('plugin projection command helpers', () => {
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.customModels = cloneJsonValue(patch.customModels)
-      DBState.db.moduleIntergration = patch.moduleIntergration
+      getDatabase().customModels = cloneJsonValue(patch.customModels)
+      getDatabase().moduleIntergration = patch.moduleIntergration
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
 
@@ -999,15 +1003,15 @@ describe('plugin projection command helpers', () => {
       },
     })
     expect(calls.some((call) => call.url === '/api/v1/commands/settings/advanced')).toBe(false)
-    expect(DBState.db.customModels).toEqual(oldCustomModels)
-    expect(DBState.db.moduleIntergration).toBe('old-modules')
+    expect(getDatabase().customModels).toEqual(oldCustomModels)
+    expect(getDatabase().moduleIntergration).toBe('old-modules')
   })
 
   it('failed settings patch skips rollback when the same settings key changed again', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     setServerProjectionWriteGuardEnabled(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = 'old-modules'
+      getDatabase().moduleIntergration = 'old-modules'
     })
     const patch = {
       moduleIntergration: 'attempted-modules',
@@ -1015,24 +1019,24 @@ describe('plugin projection command helpers', () => {
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = patch.moduleIntergration
+      getDatabase().moduleIntergration = patch.moduleIntergration
     })
     dispatchPluginSettingsPatch(patch, rollbackSnapshot)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = 'newer-modules'
+      getDatabase().moduleIntergration = 'newer-modules'
     })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.moduleIntergration).toBe('newer-modules')
+    expect(getDatabase().moduleIntergration).toBe('newer-modules')
   })
 
   it('failed settings patch ignores unsupported and undefined keys for command dispatch and rollback', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     setServerProjectionWriteGuardEnabled(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = 'old-modules'
+      getDatabase().moduleIntergration = 'old-modules'
       dbRecord().notServerBackedSetting = 'old-unsupported'
       dbRecord().maxContext = 4096
     })
@@ -1044,7 +1048,7 @@ describe('plugin projection command helpers', () => {
     const rollbackSnapshot = currentPluginSettingsPatchRollbackSnapshot(patch)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = patch.moduleIntergration
+      getDatabase().moduleIntergration = patch.moduleIntergration
       dbRecord().notServerBackedSetting = patch.notServerBackedSetting
       dbRecord().maxContext = undefined
     })
@@ -1063,7 +1067,7 @@ describe('plugin projection command helpers', () => {
         },
       },
     })
-    expect(DBState.db.moduleIntergration).toBe('old-modules')
+    expect(getDatabase().moduleIntergration).toBe('old-modules')
     expect(dbRecord().notServerBackedSetting).toBe('attempted-unsupported')
     expect(dbRecord().maxContext).toBeUndefined()
   })
@@ -1078,11 +1082,11 @@ describe('plugin projection command helpers', () => {
     const previous = currentPluginStorageSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'attempted' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'attempted' }
     })
     dispatchPutPluginStorage('attempted', { value: 'attempted' }, previous)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.newerSibling = { value: 'newer' }
+      getDatabase().pluginCustomStorage.newerSibling = { value: 'newer' }
     })
 
     await waitForCallCount(calls, 2)
@@ -1096,7 +1100,7 @@ describe('plugin projection command helpers', () => {
         value: { value: 'attempted' },
       },
     })
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
       newerSibling: { value: 'newer' },
@@ -1110,7 +1114,7 @@ describe('plugin projection command helpers', () => {
     const previous = currentPluginStorageSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'newer local' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'newer local' }
     })
     dispatchPutPluginStorage('attempted', { value: 'newer local' }, previous)
     await waitForCallCount(calls, 2)
@@ -1151,7 +1155,7 @@ describe('plugin projection command helpers', () => {
     const previous = currentPluginStorageSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      delete DBState.db.pluginCustomStorage.deleted
+      delete getDatabase().pluginCustomStorage.deleted
     })
     dispatchDeletePluginStorage('deleted', previous)
     await waitForCallCount(calls, 2)
@@ -1162,7 +1166,7 @@ describe('plugin projection command helpers', () => {
 
     commandResponses[0].resolve(jsonResponse({ error: 'forced failure' }, 500))
     await flushCommandEffects()
-    expect(DBState.db.pluginCustomStorage.deleted).toEqual({ value: 'old' })
+    expect(getDatabase().pluginCustomStorage.deleted).toEqual({ value: 'old' })
   })
 
   it('failed PUT skips rollback if the same key changed again', async () => {
@@ -1175,17 +1179,17 @@ describe('plugin projection command helpers', () => {
     const previous = currentPluginStorageSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'attempted' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'attempted' }
     })
     dispatchPutPluginStorage('attempted', { value: 'attempted' }, previous)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'newer' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'newer' }
     })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       attempted: { value: 'newer' },
       sibling: { value: 'kept' },
     })
@@ -1201,7 +1205,7 @@ describe('plugin projection command helpers', () => {
 
     const firstPrevious = currentPluginStorageSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'A' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'A' }
     })
     dispatchPutPluginStorage('attempted', { value: 'A' }, firstPrevious)
 
@@ -1209,7 +1213,7 @@ describe('plugin projection command helpers', () => {
 
     const secondPrevious = currentPluginStorageSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'B' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'B' }
     })
     dispatchPutPluginStorage('attempted', { value: 'B' }, secondPrevious)
 
@@ -1226,7 +1230,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       attempted: { value: 'B' },
       sibling: { value: 'kept' },
     })
@@ -1242,7 +1246,7 @@ describe('plugin projection command helpers', () => {
     commandResponses[1].resolve(jsonResponse({ error: 'forced newer failure' }, 500))
     await flushCommandEffects()
 
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       attempted: { value: 'old' },
       sibling: { value: 'kept' },
     })
@@ -1258,7 +1262,7 @@ describe('plugin projection command helpers', () => {
 
     const firstPrevious = currentPluginStorageSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'A' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'A' }
     })
     dispatchPutPluginStorage('attempted', { value: 'A' }, firstPrevious)
 
@@ -1266,7 +1270,7 @@ describe('plugin projection command helpers', () => {
 
     const secondPrevious = currentPluginStorageSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.attempted = { value: 'B' }
+      getDatabase().pluginCustomStorage.attempted = { value: 'B' }
     })
     dispatchPutPluginStorage('attempted', { value: 'B' }, secondPrevious)
 
@@ -1281,7 +1285,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 3)
     await flushCommandEffects()
 
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       attempted: { value: 'B' },
       sibling: { value: 'kept' },
     })
@@ -1296,7 +1300,7 @@ describe('plugin projection command helpers', () => {
     commandResponses[1].resolve(jsonResponse({ error: 'forced newer failure' }, 500))
     await flushCommandEffects()
 
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       attempted: { value: 'A' },
       sibling: { value: 'kept' },
     })
@@ -1312,11 +1316,11 @@ describe('plugin projection command helpers', () => {
     const previous = currentPluginStorageSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      delete DBState.db.pluginCustomStorage.deleted
+      delete getDatabase().pluginCustomStorage.deleted
     })
     dispatchDeletePluginStorage('deleted', previous)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.newerSibling = { value: 'newer' }
+      getDatabase().pluginCustomStorage.newerSibling = { value: 'newer' }
     })
 
     await waitForCallCount(calls, 2)
@@ -1329,7 +1333,7 @@ describe('plugin projection command helpers', () => {
         baseRevision: 10,
       },
     })
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       deleted: { value: 'old' },
       sibling: { value: 'kept' },
       newerSibling: { value: 'newer' },
@@ -1348,7 +1352,7 @@ describe('plugin projection command helpers', () => {
     const previous = currentPluginStorageSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage = {
+      getDatabase().pluginCustomStorage = {
         restoreReplaced: { value: 'bulk-replaced' },
         changedAfterReplace: { value: 'bulk-replaced-again' },
       }
@@ -1364,9 +1368,9 @@ describe('plugin projection command helpers', () => {
       previous,
     )
     withTrustedServerProjectionWrite(() => {
-      DBState.db.pluginCustomStorage.changedAfterClear = { value: 'newer-same-key' }
-      DBState.db.pluginCustomStorage.changedAfterReplace = { value: 'newer-replacement' }
-      DBState.db.pluginCustomStorage.laterAdded = { value: 'newer-sibling' }
+      getDatabase().pluginCustomStorage.changedAfterClear = { value: 'newer-same-key' }
+      getDatabase().pluginCustomStorage.changedAfterReplace = { value: 'newer-replacement' }
+      getDatabase().pluginCustomStorage.laterAdded = { value: 'newer-sibling' }
     })
 
     await waitForCallCount(calls, 2)
@@ -1385,7 +1389,7 @@ describe('plugin projection command helpers', () => {
         clear: true,
       },
     })
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().pluginCustomStorage).toEqual({
       restoreReplaced: { value: 'old-replaced' },
       changedAfterReplace: { value: 'newer-replacement' },
       changedAfterClear: { value: 'newer-same-key' },

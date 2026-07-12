@@ -22,9 +22,10 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
-import { getDatabase, type character } from './storage/database.svelte'
+import type { character } from './storage/database.svelte'
 import { get } from 'svelte/store'
 import {
   fillMissingActiveChatSidebarToggleDefaults,

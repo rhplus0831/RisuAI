@@ -15,9 +15,10 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { selectedCharID } from './stores.svelte'
-import { getDatabase, type character, type folder } from './storage/database.svelte'
+import type { character, folder } from './storage/database.svelte'
 
 export interface CharacterStateSnapshot {
   characters: character[]
