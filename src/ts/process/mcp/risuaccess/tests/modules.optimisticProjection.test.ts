@@ -21,10 +21,7 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from 'src/ts/server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -202,7 +199,7 @@ beforeEach(() => {
   alertConfirmSpy.mockReset()
   alertConfirmSpy.mockResolvedValue(true)
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
   setDatabaseLite({
     characters: [],
     enabledModules: [],
@@ -215,7 +212,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
   vi.unstubAllGlobals()
 })
@@ -238,7 +235,7 @@ describe('MCP module writes optimistic projection', () => {
     })
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules = []
     })
     acceptPrompt(true)
@@ -266,7 +263,7 @@ describe('MCP module writes optimistic projection', () => {
     })
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[0] = replacement
     })
     acceptPrompt(true)
@@ -320,7 +317,7 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back only attempted module-info fields and unattempted enable when a held PATCH fails', async () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules = [
         makeModule(),
         makeModule({
@@ -348,7 +345,7 @@ describe('MCP module writes optimistic projection', () => {
     expect(getDatabase().enabledModules).toEqual(['module-a'])
 
     await waitForCallCount(calls, 2)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[0] = {
         ...getDatabase().modules[0],
         description: 'Newer description',
@@ -458,7 +455,7 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back failed module lorebook replacement without restoring unrelated lorebook state', async () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters = [
         {
           chaId: 'character-a',
@@ -499,7 +496,7 @@ describe('MCP module writes optimistic projection', () => {
     expect(getDatabase().modules[0].lorebook?.[0]?.content).toBe('attempted module')
     await waitForCallCount(calls, 2)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[1].lorebook![0].content = 'newer sibling'
       const characterLore = (getDatabase().characters[0] as any).globalLore[0] as loreBook
       characterLore.content = 'newer character'
@@ -564,7 +561,7 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back failed held module regex replacement without restoring triggers, sibling modules, or characters', async () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters = [{ chaId: 'character-a', name: 'Character A' }] as any
       getDatabase().modules = [
         makeModule({
@@ -593,7 +590,7 @@ describe('MCP module writes optimistic projection', () => {
     expect(getDatabase().modules[0].regex?.[0]?.out).toBe('attempted-out')
     await waitForCallCount(calls, 2)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       setModuleLuaCode(0, 'print("newer trigger")')
       getDatabase().modules[1].regex![0].out = 'newer sibling'
       const character = getDatabase().characters[0] as any
@@ -611,7 +608,7 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('skips failed held module regex rollback when the same module regex changed again', async () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules = [
         makeModule({
           regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
@@ -633,7 +630,7 @@ describe('MCP module writes optimistic projection', () => {
     expect(getDatabase().modules[0].regex?.[0]?.out).toBe('attempted-out')
     await waitForCallCount(calls, 2)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[0].regex![0].out = 'newer-out'
     })
 
@@ -646,7 +643,7 @@ describe('MCP module writes optimistic projection', () => {
   it('setModuleLuaScript is immediately visible through resource state and the Lua read tool', async () => {
     const { calls } = stubCommandFetch()
     const handler = new ModuleHandler()
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules = [makeModule({ trigger: [makeLuaTrigger('print("old")')] })]
     })
 
@@ -666,7 +663,7 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back failed held module Lua trigger replacement without restoring regex, sibling modules, or characters', async () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters = [{ chaId: 'character-a', name: 'Character A' }] as any
       getDatabase().modules = [
         makeModule({
@@ -694,7 +691,7 @@ describe('MCP module writes optimistic projection', () => {
     expect(moduleLuaCode(0)).toBe('print("attempted lua")')
     await waitForCallCount(calls, 2)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[0].regex![0].out = 'newer regex'
       setModuleLuaCode(1, 'print("newer sibling lua")')
       const character = getDatabase().characters[0] as any
@@ -712,7 +709,7 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('skips failed held module Lua trigger rollback when the same trigger changed again', async () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules = [makeModule({ trigger: [makeLuaTrigger('print("old lua")')] })]
     })
     const { calls, releaseHeldResponses } = stubCommandFetch({
@@ -729,7 +726,7 @@ describe('MCP module writes optimistic projection', () => {
     expect(moduleLuaCode(0)).toBe('print("attempted lua")')
     await waitForCallCount(calls, 2)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       setModuleLuaCode(0, 'print("newer lua")')
     })
 

@@ -191,10 +191,7 @@ import {
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from '../../ts/server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
 import { dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
 
 chatParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
@@ -335,7 +332,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
     useChatCopy: false,
     zoomsize: 100,
   } as unknown as Database)
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
 }
 
 async function settle() {
@@ -369,7 +366,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
@@ -392,7 +389,7 @@ describe('Chat parser dependencies', () => {
     expect(chatParserMocks.risuChatParser.mock.calls.map((call) => call[0])).toEqual(rows.map((row) => row.data))
     const callsAfterMount = chatParserMocks.risuChatParser.mock.calls.length
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].chats[0].note = 'unrelated guarded projection write'
     })
     await settle()
@@ -476,7 +473,7 @@ describe('Chat parser dependencies', () => {
   it('re-runs only synthetic greeting display parsing when the active chat changes', async () => {
     const rows = makeRows(4)
     seedDatabase(rows)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].chats.push({
         id: 'parser-dependency-other-chat',
         name: 'Other Parser Dependency Chat',
@@ -494,7 +491,7 @@ describe('Chat parser dependencies', () => {
     await settle()
     chatParserMocks.risuChatParser.mockClear()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].chatPage = 1
     })
     await settle()
@@ -583,7 +580,7 @@ describe('Chat parser dependencies', () => {
     const rows = makeRows(1)
     chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
     seedDatabase(rows)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().enableBlockPartialEdit = true
     })
     mountHarness(rows)
@@ -615,7 +612,7 @@ describe('Chat parser dependencies', () => {
     await tick()
 
     vi.mocked(dispatchUpdateMessageScoped).mockClear()
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'newer live data'
     })
 

@@ -43,10 +43,7 @@
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
-  import {
-    getServerProjectionApplyEpoch,
-    withTrustedServerProjectionWrite,
-  } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     canUseServerCommands,
     enablePromptItemsCommand,
@@ -257,7 +254,7 @@
     if (provider === previousPluginProvider) return
     const previous = currentPluginStateSnapshot()
     previous.currentPluginProvider = previousPluginProvider
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().currentPluginProvider = provider
     })
     const mirroredToPreset = mirrorTopLevelPresetField('currentPluginProvider', provider)
@@ -430,13 +427,13 @@
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
     let previousDraftDispatchSnapshot = snapshotJson(initialValue)
-    let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+    let previousResourceApplyEpoch = getServerResourceApplyEpoch()
     let previousOwnerSignature = promptFieldOwnerSignature()
     let dirty = false
 
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
+      const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
       const ownerSignature = promptFieldOwnerSignature()
       const serverValue = currentPromptFieldValue(key, fallback)
       const serverSnapshot = snapshotJson(serverValue)
@@ -451,13 +448,13 @@
           suppressDraftDispatch = false
         })
       } else {
-        if (projectionApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+        if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
           dirty = false
         }
 
         if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
           suppressDraftDispatch = true
-          if (projectionApplyChanged && dirty) {
+          if (resourceApplyChanged && dirty) {
             reassertDirtyPromptFieldDraftValue(key, draft.value)
           } else {
             dirty = false
@@ -470,7 +467,7 @@
         }
       }
 
-      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousResourceApplyEpoch = resourceApplyEpoch
       previousOwnerSignature = ownerSignature
       previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
     })
@@ -493,7 +490,7 @@
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
         const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           // Re-read inside the trusted write to get the mutable projection.
           const target = getDatabase() as unknown as Record<string, unknown>
           target[key] = attempted
@@ -519,7 +516,7 @@
   }
 
   function reassertDirtyPromptFieldDraftValue<T>(key: string, value: T): void {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       target[key] = cloneJsonValue(value)
       const selectedIndex = getDatabase().promptPresetsId
@@ -586,7 +583,7 @@
   }
 
   function rollbackPromptFields(previous: SettingsPatch, attempted: SettingsPatch): void {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       for (const [key, previousValue] of Object.entries(previous)) {
         if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
@@ -642,7 +639,7 @@
   }
 
   function setSelectedPromptPresetTemplateProjection(enabled: boolean, template: unknown = []): void {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
       if (preset) {
         if (enabled) {

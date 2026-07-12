@@ -2,7 +2,7 @@ import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps } from '../modules'
 import { canUseServerCommands, patchServerBackedSettings } from '../../server/commands'
-import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
 import type { MCPClientLike } from './internalmcp'
@@ -320,7 +320,7 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   let attemptedIndex = previous.length
   // The optimistic local write must run inside a trusted write scope so it
   // does not throw against the read-only server projection in Fastify mode.
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().authRefreshes ??= []
     attemptedIndex = getDatabase().authRefreshes.length
     getDatabase().authRefreshes.push(cloneJsonValue(attemptedToken))
@@ -332,7 +332,7 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   void patchServerBackedSettings({
     patch: { authRefreshes: attemptedNext },
     rollback: () => {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const rolledBack = applyAttemptedFieldRollback({
           target: getDatabase() as unknown as Record<string, unknown>,
           previous: { authRefreshes: previous },

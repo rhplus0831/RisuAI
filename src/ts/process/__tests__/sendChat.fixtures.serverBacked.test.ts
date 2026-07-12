@@ -105,7 +105,7 @@ import { type FixtureSnapshot, captureSnapshot, recordStages } from '../__fixtur
 import { hypaV3ProgressStore } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import type { Chat } from '../../storage/database.svelte'
-import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
 import { defaultMainPrompt } from '../../storage/defaultPrompts'
 import { abortChat, chatProcessStage, doingChat, previewBody, previewFormated, sendChat } from '../index.svelte'
 import { buildApp } from '../../../../server/fastify/src/app'
@@ -440,12 +440,12 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
     vi.unstubAllGlobals()
   })
@@ -475,7 +475,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       const stageRecorder = recordStages()
       clearCachedServerCommandRevision()
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, args)
       const stages = stageRecorder.stop()
       const captured = captureSnapshot(stages)
@@ -543,7 +543,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       clearCachedServerCommandRevision()
       setCachedServerCommandRevision(1)
 
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
 
@@ -607,7 +607,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       // bumped revision is the SSE reconcile on the post-gen `done` frame.
       clearCachedServerCommandRevision()
       setCachedServerCommandRevision(1)
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
@@ -658,7 +658,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('route-backed reply')
 
       clearCachedServerCommandRevision()
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       await drainRouteBackedCommands()
       expect(ok).toBe(true)
@@ -748,7 +748,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('I see a small image.')
 
       clearCachedServerCommandRevision()
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
@@ -848,7 +848,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
         harness.setDispatchText('Hello there!')
 
         clearCachedServerCommandRevision()
-        setServerProjectionWriteGuardEnabled(true)
+        setResourceWriteGuardEnabled(true)
         const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
         expect(ok).toBe(true)
 
@@ -903,7 +903,7 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       harness.setDispatchText('reply')
 
       clearCachedServerCommandRevision()
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const ok = await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
       expect(ok).toBe(true)
 
@@ -968,12 +968,12 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     abortChat.set(false)
     chatProcessStage.set(0)
     uuidState.counter = 0
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
   })
 
   let cleanups: (() => void)[] = []
   afterEach(() => {
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     while (cleanups.length > 0) cleanups.pop()!()
   })
 
@@ -1031,7 +1031,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
     ])
 
     const stageRecorder = recordStages()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     await sendChat(-1, { ...(loaded.fixture.sendChatArgs ?? {}) })
     const stages = stageRecorder.stop()
     const captured = captureSnapshot(stages)
@@ -1107,7 +1107,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       'uuid-0',
     )
 
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
 
     expect(result).toBe(false)
@@ -1147,7 +1147,7 @@ describe('sendChat fixtures (/chat adapter replay)', () => {
       { emitTtsSideEffect: true },
     )
 
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const result = await sendChat(-1, {})
 
     expect(result).toBe(true)

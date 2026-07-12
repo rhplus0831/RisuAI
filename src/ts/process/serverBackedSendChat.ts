@@ -7,7 +7,7 @@ import {
   type MessagePresetInfo,
 } from '../storage/database.svelte'
 import { safeStructuredClone } from '../polyfill'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
 import { runInlayScreen } from './inlayScreen'
 import { applyServerHypaV3Progress } from './request/serverMemory'
@@ -190,7 +190,7 @@ function applyServerMessagePatches(args: {
   const contextTarget = { characterId: args.targetCharacterId, chatId: args.targetChatId }
   for (const patch of patches) {
     const target = targetFromPayloadOrContext(patch, contextTarget)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const resolution = resolveServerBackedLiveChat({
         selectedChar,
         selectedChat,
@@ -510,7 +510,7 @@ export async function applyServerBackedTerminal(args: {
   if (args.terminal.status === 'error') {
     const target = targetFromPayloadOrContext(args.terminal.restoration, contextTarget)
     if (args.terminal.restoration) {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const resolution = resolveServerBackedLiveChat({
           selectedChar: args.selectedChar,
           selectedChat: args.selectedChat,
@@ -564,7 +564,7 @@ export async function applyServerBackedTerminal(args: {
   const generationId = args.generationInfo.generationId ?? ''
   const terminalTarget = targetFromPayloadOrContext(postGen?.messagePatch, contextTarget)
   let inlayPromise: Promise<string> | undefined
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const resolution = resolveServerBackedLiveChat({
       selectedChar: args.selectedChar,
       selectedChat: args.selectedChat,
@@ -590,7 +590,7 @@ export async function applyServerBackedTerminal(args: {
   })
   if (inlayPromise) {
     const resolved = await inlayPromise
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const resolution = resolveServerBackedLiveChat({
         selectedChar: args.selectedChar,
         selectedChat: args.selectedChat,
@@ -612,7 +612,7 @@ export async function applyServerBackedTerminal(args: {
 
   const providerAlternates = args.terminal.done?.alternates
   if (Array.isArray(providerAlternates) && providerAlternates.length > 0) {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const resolution = resolveServerBackedLiveChat({
         selectedChar: args.selectedChar,
         selectedChat: args.selectedChat,

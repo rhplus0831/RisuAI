@@ -7,7 +7,7 @@ import {
   type character,
 } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
-import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import type { StreamResponseChunk, requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
 import { createStreamRenderCoalescer, type RenderFlushScheduler } from './streamCoalescer'
@@ -92,7 +92,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     prefix = continueTarget?.data ?? ''
     streamTargetMessageId = continueTarget?.chatId
   } else {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const targetChat = currentLiveChat()
       if (!targetChat) {
         throw new Error('Active chat is unavailable for the streaming response')
@@ -135,7 +135,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     return { chat, index, message }
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetChat = currentLiveChat()
     if (targetChat) targetChat.isStreaming = true
     bumpReloadKey()
@@ -163,7 +163,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
       nextData = result2.data
       emoChanged = result2.emoChanged
     }
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const target = resolveStreamMessage()
       if (!target) return
       msgIndex = target.index
@@ -224,7 +224,7 @@ export async function consumeStreamResponse(opts: ConsumeStreamResponseOptions):
     // When the loop threw (reader error), still apply the last received chunk;
     // swallow apply errors here so they cannot mask the propagating one.
     await renderCoalescer.settle().catch(() => {})
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       removeEmptyGeneratedMessageOnAbort()
       const targetChat = currentLiveChat()
       if (targetChat) targetChat.isStreaming = false

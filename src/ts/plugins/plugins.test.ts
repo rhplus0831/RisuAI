@@ -74,10 +74,7 @@ vi.mock('./pluginSafety', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
@@ -350,7 +347,7 @@ beforeEach(() => {
   pluginImportMocks.sleep.mockReset()
   pluginImportMocks.sleep.mockResolvedValue(undefined)
   vi.mocked(loadV3Plugins).mockClear()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     currentPluginProvider: 'old-provider',
     pluginCustomStorage: {},
@@ -362,7 +359,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 })
 
 describe('plugin import/update freshness', () => {
@@ -665,7 +662,7 @@ describe('plugin database command bridge', () => {
   it('setArg updates plugin realArg through a command without throwing under the resource write guard', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     // Baseline: the guard is active, so a raw projection write throws.
     expect(() => {
@@ -893,8 +890,8 @@ describe('plugin database command bridge', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setServerProjectionWriteGuardEnabled(true)
-    withTrustedServerProjectionWrite(() => {
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().plugins = [seedPlugin('plugin-a')]
       getDatabase().currentPluginProvider = 'plugin-a'
@@ -911,7 +908,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
@@ -975,10 +972,10 @@ describe('plugin database command bridge', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }] as unknown as Database['customModels']
     const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().customModels = oldCustomModels
       getDatabase().moduleIntergration = 'old-modules'
       getDatabase().plugins = [seedPlugin('plugin-a')]
@@ -1001,7 +998,7 @@ describe('plugin database command bridge', () => {
     expect(getDatabase().customModels).toEqual(attemptedCustomModels)
     expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
@@ -1215,7 +1212,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().modules[0].description).toBe('attempted description')
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[0] = {
         ...getDatabase().modules[0],
         description: 'newer description',
@@ -1466,7 +1463,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-d', 'plugin-a'])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const pluginDIndex = getDatabase().plugins.findIndex((plugin) => plugin.name === 'plugin-d')
       getDatabase().plugins[pluginDIndex] = {
         ...getDatabase().plugins[pluginDIndex],
@@ -1558,7 +1555,7 @@ describe('plugin database command bridge', () => {
     })
     expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d', 'plugin-b'])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().currentPluginProvider = 'plugin-d'
       getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })

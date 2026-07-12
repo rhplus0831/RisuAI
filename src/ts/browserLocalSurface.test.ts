@@ -81,7 +81,7 @@ describe('Fastify-only browser local surface policy', () => {
     const devTool = readWorkspaceFile('src/lib/SideBars/DevTool.svelte')
 
     expect(devTool).toContain('setChatScriptstateValue')
-    expect(devTool).not.toContain('withTrustedServerProjectionWrite')
+    expect(devTool).not.toContain('withTrustedResourceWrite')
     expect(devTool).not.toContain('currentChatStateSnapshot')
     expect(devTool).not.toContain('dispatchPatchChatScriptstate')
     expect(devTool).not.toContain('canUseServerCommands')

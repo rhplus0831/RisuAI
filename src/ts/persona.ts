@@ -17,7 +17,7 @@ import {
   type PersonaSnapshot,
   type ServerCommandResult,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   beginPersonaIconUpload,
   capturePersonaIconUploadTarget,
@@ -161,7 +161,7 @@ function withSuppressedPersonaSettingsWatcher<T>(callback: () => T): T {
 
 export function applyPersonaStateSnapshotLocally(snapshot: PersonaStateSnapshot): void {
   suppressPersonaSettingsWatcherUntilNextTask()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas = cloneJsonValue(snapshot.personas)
     getDatabase().selectedPersona = snapshot.selectedPersona
     getDatabase().username = snapshot.username
@@ -175,7 +175,7 @@ export function restorePersonaStateSnapshot(snapshot: PersonaStateSnapshot): voi
   const token = ++personaSettingsWatcherSuppressionToken
   personaSettingsWatcherSuppressed = true
   try {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().personas = cloneJsonValue(snapshot.personas)
       getDatabase().selectedPersona = snapshot.selectedPersona
       getDatabase().username = snapshot.username
@@ -312,7 +312,7 @@ function applyCreatePersonaRollback(input: {
   attemptedProfile: PersonaProfileMirrorRollbackSnapshot
 }): void {
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const matches = captureProfileMirrorRollbackMatches(input.attemptedProfile)
       applyAttemptedKeyedListRollback<Persona, string>({
         list: getDatabase().personas,
@@ -338,7 +338,7 @@ function applyDeletePersonaRollback(input: {
   attemptedProfile: PersonaProfileMirrorRollbackSnapshot
 }): void {
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const matches = captureProfileMirrorRollbackMatches(input.attemptedProfile)
       const existingIndex = findPersonaIndexById(getDatabase().personas ?? [], input.deletedPersonaId)
       if (existingIndex === -1) {
@@ -352,7 +352,7 @@ function applyDeletePersonaRollback(input: {
 
 function applyReorderPersonaRollback(input: { previousPersonaIds: string[]; attemptedPersonaIds: string[] }): void {
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       if (!stringArraysEqual(personaCommandIdList(), input.attemptedPersonaIds)) return
 
       const liveSelectedPersonaId = selectedPersonaId()
@@ -454,7 +454,7 @@ function applyPersonaProfileCommandRollback(input: {
   legacyKeys?: readonly PersonaProfileMirrorField[]
 }): void {
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       applyPersonaRowFieldRollback({
         personaId: input.personaId,
         previous: personaRowFromSnapshot(input.previous, input.personaId),
@@ -480,7 +480,7 @@ function applySelectPersonaRollback(input: {
   saveCurrent: boolean
 }): void {
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       if (input.saveCurrent) {
         const savedPersonaId = uniquePersonaIdAt(input.previous.personas, input.previous.selectedPersona)
         if (savedPersonaId) {
@@ -511,7 +511,7 @@ function applySelectPersonaRollback(input: {
 
 function applyImportPersonaRollback(input: { createdPersonaId: string; attemptedPersona: Persona }): void {
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveSelectedPersonaId = selectedPersonaId()
       const rolledBack = applyAttemptedKeyedListRollback<Persona, string>({
         list: getDatabase().personas,
@@ -628,7 +628,7 @@ export function reconcileSelectedPersonaProjectionEpoch(): void {
   }
 
   withSuppressedPersonaSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       if (getDatabase().selectedPersona !== selectedIndex) return
       const persona = getDatabase().personas[selectedIndex]
       if (nonBlankPersonaId(persona) !== personaId) return
@@ -833,7 +833,7 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
 
 export function updateSelectedPersonaField(field: SelectedPersonaProfileField, value: string): void {
   markSelectedPersonaFieldDirty(field, value)
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase()[field] = value
     const persona = getDatabase().personas[getDatabase().selectedPersona]
     if (!persona) return
@@ -851,7 +851,7 @@ export function updateSelectedPersonaLargePortrait(value: boolean): void {
   const persona = getDatabase().personas[getDatabase().selectedPersona]
   if (!persona) return
   markSelectedPersonaFieldDirty('largePortrait', value)
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas[getDatabase().selectedPersona].largePortrait = value
   })
 }
@@ -860,7 +860,7 @@ export function updateSelectedPersonaDisplayName(value: string): void {
   const persona = getDatabase().personas[getDatabase().selectedPersona]
   if (!persona) return
   markSelectedPersonaFieldDirty('displayName', value)
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas[getDatabase().selectedPersona].displayName = value
   })
 }
@@ -877,7 +877,7 @@ export function createNewUserPersona(): Persona {
   } as Persona
 
   suppressPersonaSettingsWatcherUntilNextTask()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas.push(persona)
     getDatabase().selectedPersona = getDatabase().personas.length - 1
     getDatabase().username = persona.name
@@ -906,7 +906,7 @@ export function reorderUserPersonasByIndices(indices: number[], selectedPersonaI
   if (!personaCommandIdList(personas)) return false
 
   suppressPersonaSettingsWatcherUntilNextTask()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas = personas
     const selectedPersona = getDatabase().personas.findIndex((persona) => persona.id === selectedPersonaId)
     getDatabase().selectedPersona = selectedPersona !== -1 ? selectedPersona : 0
@@ -928,7 +928,7 @@ export function deleteSelectedUserPersona(): boolean {
   const selectedId = uniquePersonaIdAt(personas, 0) ?? undefined
 
   suppressPersonaSettingsWatcherUntilNextTask()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas = personas
     getDatabase().selectedPersona = 0
     const selected = getDatabase().personas[0]
@@ -983,7 +983,7 @@ export async function selectUserImg() {
     const previous = currentPersonaStateSnapshot()
     let attempted: PersonaStateSnapshot | null = null
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const freshIndex = resolveFreshPersonaIconUploadIndex(operation, {
         selectedPersona: getDatabase().selectedPersona,
         userIcon: getDatabase().userIcon,
@@ -1037,7 +1037,7 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
   const dispatch = options.dispatch ?? true
   const previous = currentPersonaStateSnapshot()
   if (!getDatabase().personas[getDatabase().selectedPersona]) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personas[getDatabase().selectedPersona].name = getDatabase().username
     getDatabase().personas[getDatabase().selectedPersona].icon = getDatabase().userIcon
     getDatabase().personas[getDatabase().selectedPersona].personaPrompt = getDatabase().personaPrompt
@@ -1075,7 +1075,7 @@ export function setSelectedPersonaPromptFromTrigger(value: string): void {
   if (!personaId) return
   const previous = currentPersonaStateSnapshot()
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const selectedPersona = getDatabase().personas[getDatabase().selectedPersona]
     if (!selectedPersona) return
     getDatabase().personaPrompt = value
@@ -1117,7 +1117,7 @@ export function selectUserPersonaLocally(id: number, save: 'save' | 'noSave' = '
     saveUserPersona({ dispatch: false })
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().personaPrompt = target.personaPrompt
     getDatabase().username = target.name
     getDatabase().userIcon = target.icon
@@ -1242,7 +1242,7 @@ export async function importUserPersona() {
         id: v4(),
       }
       const attemptedPersona = cloneJsonValue(persona)
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().personas.push(persona)
       })
       runPersonaCommand(

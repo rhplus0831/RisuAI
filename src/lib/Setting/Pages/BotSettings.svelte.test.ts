@@ -27,9 +27,9 @@ describe('BotSettings prompt edit persistence contracts', () => {
   it('preserves dirty prompt-field drafts across stale projection applies', () => {
     const source = botSettingsSource()
 
-    expect(source).toContain('let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()')
+    expect(source).toContain('let previousResourceApplyEpoch = getServerResourceApplyEpoch()')
     expect(source).toContain('let previousOwnerSignature = promptFieldOwnerSignature()')
-    expect(source).toContain('if (projectionApplyChanged && dirty)')
+    expect(source).toContain('if (resourceApplyChanged && dirty)')
     expect(source).toContain('reassertDirtyPromptFieldDraftValue(key, draft.value)')
     expect(source).toContain("return selectedId ? `preset:${selectedId}` : 'root'")
     expect(source).toContain('if (ownerSignature !== previousOwnerSignature)')

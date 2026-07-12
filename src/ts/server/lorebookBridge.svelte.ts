@@ -34,10 +34,10 @@ import {
   type ServerCommandTransportOptions,
 } from './commands'
 import {
-  getServerProjectionApplyEpoch,
-  withServerProjectionApply,
-  withTrustedServerProjectionWrite,
-} from './projectionWriteGuard.svelte'
+  getServerResourceApplyEpoch,
+  withServerResourceApply,
+  withTrustedResourceWrite,
+} from './resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   applyAttemptedFieldRollback,
@@ -194,7 +194,7 @@ export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
     return
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().loreBook = cloneJsonValue(snapshot.loreBook) as Database['loreBook']
     getDatabase().loreBookPage = snapshot.loreBookPage
     getDatabase().characters = cloneJsonValue(snapshot.characters)
@@ -248,7 +248,7 @@ export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapsho
 }
 
 export function restoreGlobalLorebookState(snapshot: GlobalLorebookStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().loreBook = cloneJsonValue(snapshot.loreBook) as Database['loreBook']
     getDatabase().loreBookPage = snapshot.loreBookPage
   })
@@ -257,7 +257,7 @@ export function restoreGlobalLorebookState(snapshot: GlobalLorebookStateSnapshot
 export function ensureClientLorebookEntryIds(entries: loreBook[]): loreBook[] {
   for (const entry of entries ?? []) {
     // Only write when an id is actually missing. An unconditional assignment
-    // would trip the read-only projection guard's set trap even when the value
+    // would trip the read-only resource guard's set trap even when the value
     // is unchanged, which breaks dispatch paths that pass projection-owned
     // entry arrays.
     if (typeof entry.id !== 'string' || !entry.id.trim()) {
@@ -274,7 +274,7 @@ function lorebookEntryIdsNeedNormalization(entries: loreBook[] | undefined): boo
 export function ensureAllClientLorebookIds(): void {
   if (!allClientLorebookIdsNeedNormalization()) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     assignGlobalLorebookListIds()
     for (const character of getDatabase().characters ?? []) {
       // Only touch a HYDRATED character's globalLore — assigning ids to a stubbed
@@ -349,7 +349,7 @@ function assignGlobalLorebookListIds(): void {
 export function ensureGlobalLorebookListIds(): void {
   if (!globalLorebookListIdsNeedNormalization()) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     assignGlobalLorebookListIds()
   })
 }
@@ -486,7 +486,7 @@ export function applyLorebookEntryDraftEdit(
   const previous = entryDraftRollbackSnapshot(scope, existing, index)
 
   let entries: loreBook[] | null = null
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = resolveLorebookCollection(scope)
     if (!target) return
     entries = target.entries
@@ -541,7 +541,7 @@ function getCurrentChatFromResources(): Chat | undefined {
 }
 
 export function applyServerCharacterLorebookResource(characterId: string, globalLore: unknown[]): boolean {
-  return withServerProjectionApply(() => {
+  return withServerResourceApply(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character) return false
     character.globalLore = globalLore as typeof character.globalLore
@@ -555,7 +555,7 @@ export function setActiveChatLorebookLocalActivation(book: loreBook, active: boo
   if (!chatId || !previous) return false
 
   let entries: loreBook[] | null = null
-  const applied = withTrustedServerProjectionWrite(() => {
+  const applied = withTrustedResourceWrite(() => {
     const chat = getCurrentChatFromResources()
     if (!chat || chat.id !== chatId) return false
 
@@ -615,7 +615,7 @@ export function replaceModuleLorebookCollectionDraft(
   ensureClientLorebookEntryIds(cloned)
   const commandEntries = cloneJsonValue(cloned)
 
-  const applied = withTrustedServerProjectionWrite(() => {
+  const applied = withTrustedResourceWrite(() => {
     const liveModule = findModule(moduleId)
     const draftModule = currentModule?.id === moduleId ? currentModule : null
     if (!liveModule && !draftModule) return false
@@ -643,7 +643,7 @@ function replaceLorebookCollection(
 ): boolean {
   const previous = currentLorebookCollectionScopedSnapshot(scope)
   const cloned = cloneJsonValue(entries ?? [])
-  const applied = withTrustedServerProjectionWrite(() => assignLorebookCollection(scope, cloned))
+  const applied = withTrustedResourceWrite(() => assignLorebookCollection(scope, cloned))
   if (!applied) return false
 
   switch (scope.kind) {
@@ -690,7 +690,7 @@ function assignLorebookCollection(scope: ReplaceableLorebookCollectionScope, ent
 function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
   if (!scopedClientLorebookIdsNeedNormalization(scope)) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     switch (scope.kind) {
       case 'character': {
         const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
@@ -769,7 +769,7 @@ function scopedClientLorebookIdsNeedNormalization(scope: DiscreteLorebookEditSco
 }
 
 function ensureScopedClientLorebookEntryId(scope: DiscreteLorebookEditScope, index: number): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     if (
       scope.kind === 'character' &&
       getDatabase()?.enableLorebookStubs &&
@@ -833,7 +833,7 @@ export function selectGlobalLorebook(index: number): boolean {
   const previous = currentGlobalLorebookStateSnapshot()
   const lorebookId = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]?.id
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().loreBookPage = index
   })
   if (canUseServerCommands() && lorebookId) {
@@ -850,7 +850,7 @@ export function createGlobalLorebook(): boolean {
     data: [],
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const loreBooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
     loreBooks.push(lorebook)
     getDatabase().loreBook = loreBooks as Database['loreBook']
@@ -863,7 +863,7 @@ export function createGlobalLorebook(): boolean {
 export function renameGlobalLorebook(index: number, name: string): boolean {
   if (!((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]) return false
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]
     if (lorebook) lorebook.name = name
   })
@@ -877,7 +877,7 @@ export function deleteGlobalLorebook(index: number): boolean {
 
   const previous = currentGlobalLorebookStateSnapshot()
   const lorebookId = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]?.id
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const current = (getDatabase().loreBook ?? []) as GlobalLorebook[]
     if (current.length <= 1 || !current[index]) return
     current.splice(index, 1)
@@ -1469,7 +1469,7 @@ export function watchServerBackedLorebooks(options: WatchServerBackedLorebooksOp
   const scope: LorebookWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
   let previousSnapshots = new Map<string, string>()
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   // A character-scoped watcher must re-run when the selected character changes,
   // so mirror the store into the $state the collector reads. Other scopes do not
@@ -1483,12 +1483,12 @@ export function watchServerBackedLorebooks(options: WatchServerBackedLorebooksOp
 
   const stop = $effect.root(() => {
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
       const currentSnapshots = collectLorebookCollectionSnapshots(scope)
 
-      if (suppressRollbackDispatch || !initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
+      if (suppressRollbackDispatch || !initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
         initialized = true
-        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousResourceApplyEpoch = resourceApplyEpoch
         previousSnapshots = currentSnapshots
         reconcileFlushedEntrySuppressions(currentSnapshots)
         return
@@ -1876,7 +1876,7 @@ function rollbackGlobalLorebookListEntry(rollbackEntry: GlobalLorebookListRollba
   const selectedLorebookId = currentSelectedGlobalLorebookId()
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       if (!canApplyGlobalLorebookListRollback(rollbackEntry, lorebooks)) return
       const rolledBack = applyAttemptedKeyedListRollback<GlobalLorebook, string>({
@@ -1903,7 +1903,7 @@ function rollbackDeletedGlobalLorebook(
   let restoredRow = false
 
   if (shouldRestoreRow && rollbackEntry) {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       const canRestoreRow = rollbackEntry ? canApplyGlobalLorebookListRollback(rollbackEntry, lorebooks) : false
       if (!canRestoreRow) return
@@ -1920,7 +1920,7 @@ function rollbackDeletedGlobalLorebook(
     })
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const canRestoreSelection = canApplyGlobalLorebookSelectionRollback(selectionRollback)
     if (canRestoreSelection) {
       restoreGlobalLorebookSelection(selectionRollback)
@@ -1943,7 +1943,7 @@ function rollbackGlobalLorebookName(rollback: GlobalLorebookNameRollback): void 
   if (!canApplyGlobalLorebookNameRollback(rollback)) return
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       if (!canApplyGlobalLorebookNameRollback(rollback, lorebooks)) return
       const lorebook = lorebooks.find((candidate) => candidate.id === rollback.lorebookId)
@@ -1974,7 +1974,7 @@ function rollbackGlobalLorebookOrder(rollback: GlobalLorebookOrderRollback): voi
   const selectedLorebookId = currentSelectedGlobalLorebookId()
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const lorebooks = mutableGlobalLorebookList()
       const currentIds = globalLorebookStableIds(lorebooks)
       if (!currentIds || !sameStringArray(currentIds, rollback.attemptedIds)) return
@@ -1995,7 +1995,7 @@ function rollbackGlobalLorebookSelection(rollback: GlobalLorebookSelectionRollba
   if (!canApplyGlobalLorebookSelectionRollback(rollback)) return
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       if (!canApplyGlobalLorebookSelectionRollback(rollback)) return
       restoreGlobalLorebookSelection(rollback)
     })
@@ -2197,7 +2197,7 @@ function applyScopedLorebookKeyedRollback(scopeKey: string, rollbackEntry: Loreb
   if (!target || !canApplyLorebookKeyedRollback(target.entries, rollbackEntry)) return
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
       if (!liveTarget) return
       applyAttemptedKeyedListRollback<loreBook, string>({
@@ -2227,7 +2227,7 @@ function rollbackLorebookCollectionReorder(
   if (!liveIds || !sameStringArray(liveIds, attemptedIds)) return
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
       if (!liveTarget) return
       const currentIds = lorebookEntryIds(liveTarget.entries)
@@ -2253,7 +2253,7 @@ function rollbackLorebookCollectionFullReplace(
   if (!target || snapshotJson(target.entries) !== snapshotJson(attemptedEntries)) return
 
   withSuppressedLorebookWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveTarget = resolveLorebookCollectionFromKey(scopeKey)
       if (!liveTarget || snapshotJson(liveTarget.entries) !== snapshotJson(attemptedEntries)) return
       assignScopedLorebookCollection(scope, cloneJsonValue(previousEntries))
@@ -2388,7 +2388,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
   const key = snapshot.scopeKey
   if (!key) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     if (key.startsWith('global:')) {
       const lorebookId = key.slice('global:'.length)
       const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
@@ -2447,7 +2447,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
 }
 
 export function restoreLorebookEntryState(snapshot: LorebookEntryStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = resolveLorebookCollectionFromKey(snapshot.scopeKey)
     if (!target) return
 

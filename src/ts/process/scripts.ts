@@ -22,7 +22,7 @@ import { HypaProcesser } from './memory/hypamemory'
 import { runLuaEditTrigger } from './scriptings'
 import { pluginV2 } from '../plugins/plugins.svelte'
 import { runTrigger } from './triggers'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { canUseServerCommands } from '../server/commands'
 import { currentChatScopedSnapshot, dispatchUpdateMessageScoped } from '../chatCommands'
 import { getActivePromptPresetRegexScripts } from './promptPresetRegex'
@@ -237,7 +237,7 @@ function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
 
     const previous = currentChatScopedSnapshot()
     let updated = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const message = selectedChatMessage(chatID)
       if (!message || message.chatId !== messageId) return
       message.data = data
@@ -250,7 +250,7 @@ function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
     return
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const message = selectedChatMessage(chatID)
     if (message) {
       message.data = data

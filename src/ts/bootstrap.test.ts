@@ -133,7 +133,7 @@ import {
   peekAppliedServerProjectionRevision,
   peekCachedServerCommandRevision,
 } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './storage/database.svelte'
+import { setResourceWriteGuardEnabled } from './storage/database.svelte'
 import { replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 
@@ -182,7 +182,7 @@ function seedResourceDatabase() {
 
 beforeEach(() => {
   stopServerResourceEvents()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   seedResourceDatabase()
   selectedCharID.set(-1)

@@ -123,7 +123,7 @@ vi.mock('./util', () => {
 })
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
@@ -288,7 +288,7 @@ function baseCharacter(overrides: Partial<character> = {}): character {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   selectedFileState.singleQueue.length = 0
   selectedFileState.multipleQueue.length = 0
@@ -299,7 +299,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

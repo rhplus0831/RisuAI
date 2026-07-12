@@ -61,7 +61,7 @@ import {
   type AfterTTSResult,
   type TTSHookFn,
 } from 'src/ts/process/ttsHooks'
-import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
 import { applyAttemptedFieldRollback } from 'src/ts/server/staleStateGuards'
 
@@ -77,7 +77,7 @@ function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous
   void patchServerBackedSettings({
     patch: attempted,
     rollback: () => {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const rolledBack = applyAttemptedFieldRollback({
           target: getDatabase() as unknown as Record<string, unknown>,
           previous: rollbackPrevious,
@@ -1129,7 +1129,7 @@ const makeRisuaiAPIV3 = (
         colorScheme: cloneJsonValue(getDatabase().colorScheme),
         colorSchemeName: getDatabase().colorSchemeName,
       }
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().colorSchemeName = 'custom'
         getDatabase().colorScheme = scheme
       })
@@ -1158,7 +1158,7 @@ const makeRisuaiAPIV3 = (
       const previous = {
         textTheme: getDatabase().textTheme,
       }
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().textTheme = name
       })
       updateTextThemeAndCSS()
@@ -1189,7 +1189,7 @@ const makeRisuaiAPIV3 = (
         textTheme: getDatabase().textTheme,
         customTextTheme: cloneJsonValue(getDatabase().customTextTheme),
       }
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().textTheme = 'custom'
         getDatabase().customTextTheme = theme
       })
@@ -1227,7 +1227,7 @@ const makeRisuaiAPIV3 = (
     setArgument: async (key: string, value: string) => {
       const previous = currentPluginStateSnapshot()
       let matched = false
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const db = getDatabase()
         for (const p of db.plugins) {
           if (p.name === plugin.name) {
@@ -1258,7 +1258,7 @@ const makeRisuaiAPIV3 = (
       const charId = charIds[index]
       if (charId) {
         if (!canUseServerCommands()) {
-          withTrustedServerProjectionWrite(() => {
+          withTrustedResourceWrite(() => {
             getDatabase().characters[charId] = char
           })
           return
@@ -1276,7 +1276,7 @@ const makeRisuaiAPIV3 = (
           previous,
         )
         if (!optimisticCharacter || factories.length === 0) return
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           getDatabase().characters[charId] = optimisticCharacter
         })
         runOptimisticCommandSequence(factories, rollback)
@@ -1312,7 +1312,7 @@ const makeRisuaiAPIV3 = (
             chatId: previousChatSnapshot.id,
             chat: previousChatSnapshot,
           }
-          withTrustedServerProjectionWrite(() => {
+          withTrustedResourceWrite(() => {
             getDatabase().characters[charId].chats[chatIndex] = chat
           })
           // Route through the sequencer so this call shares one advancing revision

@@ -14,7 +14,7 @@ import {
   dispatchPatchChatScriptstateScoped,
   isActiveChatTargetFresh,
 } from '../chatCommands'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import type { Chat } from '../storage/database.svelte'
 
 export async function processMultiCommand(command: string) {
@@ -203,7 +203,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       // trusted scope plus the scoped dispatch below already persist the change
       // (mirroring `setChatVar`). The full normalizer re-filtered every character
       // and re-cloned the language pack on every var write for nothing.
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const db = getDatabase()
         const char = db.characters[selectedChar]
         const chat = char.chats[char.chatPage]
@@ -223,7 +223,7 @@ async function processCommand(command: string, pipe: string): Promise<false | st
       let chatId: string | undefined
       let newValue = ''
       // No `setDatabase(db)` here either; see the `setvar` note above.
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const db = getDatabase()
         const char = db.characters[selectedChar]
         const chat = char.chats[char.chatPage]

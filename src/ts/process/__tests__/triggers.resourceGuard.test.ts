@@ -26,7 +26,7 @@ import { safeStructuredClone } from '../../polyfill'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { runTrigger } from '../triggers'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import type { character } from '../../storage/database.svelte'
 
@@ -142,16 +142,16 @@ beforeEach(() => {
   // vi.unstubAllGlobals() clears it between tests.
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedDatabase()
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('trigger durable writes under the projection guard', () => {
+describe('trigger durable writes under the resource guard', () => {
   it('keeps readonly display trigger rows immutable while attaching low-level metadata', async () => {
     const trigger = Object.freeze({
       comment: 'readonly display',
@@ -174,9 +174,9 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('routes v2SetCharacterDesc through a character command instead of a guarded direct write', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
-    // Baseline: the guard is active, so a raw projection write throws.
+    // Baseline: the guard is active, so a raw resource write throws.
     expect(() => {
       testDatabaseState.db.characters[0].desc = 'raw'
     }).toThrow()
@@ -203,7 +203,7 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('routes v2SetPersonaDesc through a persona command instead of a guarded direct write', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -231,7 +231,7 @@ describe('trigger durable writes under the projection guard', () => {
     testDatabaseState.db.personas[0].personaPrompt = 'saved prompt before trigger'
     const selectedPersona = testDatabaseState.db.selectedPersona
     const calls = stubCommandFetch({ failPersonaPatch: true })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     // Baseline: the guard is active, so a raw legacy prompt write throws.
     expect(() => {
@@ -271,7 +271,7 @@ describe('trigger durable writes under the projection guard', () => {
   it('routes v2ModifyLorebook through a lorebook command instead of a guarded direct write', async () => {
     testDatabaseState.db.characters[0].globalLore = [['lore-key', 'old content']] as any
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -304,7 +304,7 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('routes v2CreateLorebook through a lorebook command instead of a guarded direct write', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -348,7 +348,7 @@ describe('trigger durable writes under the projection guard', () => {
       { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 },
     ] as any
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -383,7 +383,7 @@ describe('trigger durable writes under the projection guard', () => {
       { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100, alwaysActive: false },
     ] as any
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -420,7 +420,7 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('routes v2SetAuthorNote through a chat command instead of a guarded direct write', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -444,9 +444,9 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('routes v2SetVar scriptstate through a chat command instead of a guarded direct write', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
-    // Baseline: the guard is active, so a raw scriptstate projection write throws.
+    // Baseline: the guard is active, so a raw scriptstate resource write throws.
     expect(() => {
       testDatabaseState.db.characters[0].chats[0].scriptstate = { $raw: '1' } as never
     }).toThrow()
@@ -460,7 +460,7 @@ describe('trigger durable writes under the projection guard', () => {
       },
     ])
 
-    // The fix: setVar's optimistic live write goes through the projection guard, so
+    // The fix: setVar's optimistic live write goes through the resource guard, so
     // the pass resolves instead of throwing on the read-only projection.
     await expect(
       runTrigger(char, 'manual', { chat: char.chats[char.chatPage], manualName: 'set' }),
@@ -479,7 +479,7 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('keeps guarded deferred var and author-note side effects on the returned chat', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -509,7 +509,7 @@ describe('trigger durable writes under the projection guard', () => {
 
   it('stops guarded trigger effects once the target is stale', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {
@@ -580,7 +580,7 @@ describe('Phase 2 trigger lorebook scoped rollback', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const char = characterWithTriggers([
       {

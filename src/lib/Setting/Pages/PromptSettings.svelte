@@ -24,10 +24,7 @@
   import { defaultAutoSuggestPrompt } from '../../../ts/storage/defaultPrompts'
   import { normalizePromptTemplateIds, promptTemplateIdsNeedNormalization } from 'src/ts/storage/database.svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
-  import {
-    getServerProjectionApplyEpoch,
-    withTrustedServerProjectionWrite,
-  } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     dropPendingPromptSettingsProjectionPatchKeys,
     flushPendingPromptTemplatePatches,
@@ -226,7 +223,7 @@
 
   function syncSelectedPromptPresetTemplateProjection(templates: PromptItem[]): void {
     const nextTemplate = cloneJsonValue(templates)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const selectedIndex = selectedPromptPresetIndex()
       const preset =
         selectedIndex >= 0 ? (getResourceDatabase().promptPresets?.[selectedIndex] as Record<string, unknown>) : null
@@ -238,7 +235,7 @@
   }
 
   function syncSelectedPromptPresetItemProjection(itemId: string, promptItem: PromptItem): void {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const preset = selectedPromptPreset()
       if (!preset || !Array.isArray(preset.promptTemplate)) return
       const template = preset.promptTemplate as PromptItem[]
@@ -254,7 +251,7 @@
   function alignCompatibilityProjectionFromSelectedPromptPreset(): void {
     const preset = selectedPromptPreset()
     if (!preset) return
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       if (Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
         getResourceDatabase().promptTemplate = cloneJsonValue(
           Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [],
@@ -525,19 +522,19 @@
     let initialized = false
     let suppressDraftDispatch = false
     let previousServerSnapshot = snapshotJson(initialValue)
-    let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+    let previousResourceApplyEpoch = getServerResourceApplyEpoch()
     let previousDraftDispatchSnapshot = snapshotJson(initialValue)
     const dirtyStates = new Map<string, PromptSettingDirtyState<T>>()
 
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
+      const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
       let serverValue = currentPromptSettingValue(key, fallback)
       let serverSnapshot = snapshotJson(serverValue)
       const draftSnapshot = snapshotJson(draft.value)
       const currentOwnerKey = promptSettingOwnerStateKey(resolvePromptSettingOwnerForEdit(key))
 
-      if (projectionApplyChanged && dirtyStates.size > 0) {
+      if (resourceApplyChanged && dirtyStates.size > 0) {
         suppressDraftDispatch = true
         reconcileDirtyPromptSettingProjection(key, fallback, dirtyStates)
 
@@ -554,7 +551,7 @@
         queueMicrotask(() => {
           suppressDraftDispatch = false
         })
-        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousResourceApplyEpoch = resourceApplyEpoch
         previousServerSnapshot = currentDirty ? snapshotJson(currentDirty.attempted) : serverSnapshot
         return
       }
@@ -569,7 +566,7 @@
         })
       }
 
-      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousResourceApplyEpoch = resourceApplyEpoch
       previousServerSnapshot = serverSnapshot
     })
 
@@ -597,7 +594,7 @@
           attempted,
           dirtyFields: dirtyPromptSettingObjectFields(previousSetting, attempted),
         })
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           // Re-read inside the trusted write to get the mutable projection.
           const target = getResourceDatabase() as unknown as Record<string, unknown>
           target[key] = attempted
@@ -734,7 +731,7 @@
 
   function reassertPromptSettingOwnerValue<T>(key: string, value: T, owner: PromptSettingOwnerContext): boolean {
     let reasserted = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const target = getResourceDatabase() as unknown as Record<string, unknown>
       if (owner.kind === 'top-level') {
         target[key] = cloneJsonValue(value)
@@ -846,7 +843,7 @@
   $effect(() => {
     if (!promptTemplateHydrated) return
     if (!promptTemplateIdsNeedNormalization(getResourceDatabase())) return
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       normalizePromptTemplateIds(getResourceDatabase())
     })
   })

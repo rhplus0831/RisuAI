@@ -4,21 +4,21 @@ import {
   withResourceDatabaseWrite,
 } from './resourceState.svelte'
 
-let serverProjectionWriteGuardEnabled = false
-let serverProjectionApplyEpoch = $state(0)
+let serverResourceWriteGuardEnabled = false
+let serverResourceApplyEpoch = $state(0)
 
 /**
- * @deprecated The client is migrating away from projection-backed state. This
+ * @deprecated The client is migrating away from aggregate database state. This
  * compatibility switch now controls the resource database facade's scoped
  * write policy instead of wrapping or swapping a whole Database object.
  */
-export function setServerProjectionWriteGuardEnabled(enabled: boolean): void {
-  serverProjectionWriteGuardEnabled = enabled
+export function setResourceWriteGuardEnabled(enabled: boolean): void {
+  serverResourceWriteGuardEnabled = enabled
   setResourceDatabaseWriteGuardEnabled(enabled)
 }
 
-export function isServerProjectionWriteGuardEnabled(): boolean {
-  return serverProjectionWriteGuardEnabled && !isResourceDatabaseWriteActive()
+export function isResourceWriteGuardEnabled(): boolean {
+  return serverResourceWriteGuardEnabled && !isResourceDatabaseWriteActive()
 }
 
 /**
@@ -26,21 +26,21 @@ export function isServerProjectionWriteGuardEnabled(): boolean {
  * The callback writes directly to the owning settings, collections, or
  * characters resource slice through the resource database compatibility view.
  */
-export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
+export function withTrustedResourceWrite<T>(callback: () => T): T {
   return withResourceDatabaseWrite(() => callback())
 }
 
-export function withServerProjectionApply<T>(callback: () => T): T {
-  const result = withTrustedServerProjectionWrite(callback)
+export function withServerResourceApply<T>(callback: () => T): T {
+  const result = withTrustedResourceWrite(callback)
   if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
     return Promise.resolve(result).finally(() => {
-      serverProjectionApplyEpoch += 1
+      serverResourceApplyEpoch += 1
     }) as T
   }
-  serverProjectionApplyEpoch += 1
+  serverResourceApplyEpoch += 1
   return result
 }
 
-export function getServerProjectionApplyEpoch(): number {
-  return serverProjectionApplyEpoch
+export function getServerResourceApplyEpoch(): number {
+  return serverResourceApplyEpoch
 }

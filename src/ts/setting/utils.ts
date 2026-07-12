@@ -18,7 +18,7 @@ import {
   settingsGroupForKey,
   type ServerCommandTransportOptions,
 } from '../server/commands'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
 import {
   currentTopLevelPresetFieldMirrorValue,
@@ -189,7 +189,7 @@ export function clearDeferredSettingWrites(): void {
 }
 
 function writeLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     setLocalSettingValue(item, newValue, ctx)
   })
 
@@ -344,7 +344,7 @@ function rollbackDeferredServerSetting(
   }
 
   if (!changed) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     ;(getDatabase() as unknown as Record<string, unknown>)[target.rootKey] = restoredRoot
   })
 }
@@ -495,7 +495,7 @@ function rollbackLocalSetting(
   ctx: SettingContext,
 ): void {
   if (getSettingValue(item, ctx) !== attemptedValue) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     setLocalSettingValue(item, previousValue, ctx)
   })
 }

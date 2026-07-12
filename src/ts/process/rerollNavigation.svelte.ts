@@ -8,7 +8,7 @@ import {
   ensureMessageId,
 } from '../chatCommands'
 import { safeStructuredClone } from '../polyfill'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { createLatestOperationGuard } from '../server/staleStateGuards'
 import { getDatabase, type Chat, type Message } from '../storage/database.svelte'
 import { clearPrererolls, PreUnreroll, Prereroll } from './prereroll'
@@ -126,7 +126,7 @@ export function markRerollChar(): void {
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────
 // In the live Fastify runtime the resource database is guarded against direct writes;
 // a `message.data = …` / `record.message = …` outside a trusted scope throws. The
-// optimistic local edit must run inside `withTrustedServerProjectionWrite` and
+// optimistic local edit must run inside `withTrustedResourceWrite` and
 // re-read the record there, then persist via the dispatch command. Before the guard
 // is enabled (startup and focused tests), the wrapper is a pass-through.
 
@@ -134,7 +134,7 @@ export function markRerollChar(): void {
 function applyTailDataSwap(data: string, operation: RerollOperation): boolean {
   if (!isCurrentRerollOperation(operation)) return false
   const previous = currentChatScopedSnapshot()
-  const messageId = withTrustedServerProjectionWrite(() => {
+  const messageId = withTrustedResourceWrite(() => {
     const record = activeChatRecord()
     const message = record.message[record.message.length - 1]
     const id = ensureMessageId(message)
@@ -149,7 +149,7 @@ function applyTailDataSwap(data: string, operation: RerollOperation): boolean {
 function applyTailSlice(slice: Message[], operation: RerollOperation): boolean {
   if (!isCurrentRerollOperation(operation)) return false
   const previous = currentChatScopedSnapshot()
-  const tail = withTrustedServerProjectionWrite(() => {
+  const tail = withTrustedResourceWrite(() => {
     const msgs = activeChatRecord().message
     const start = msgs.length - slice.length
     const afterMessageId = start > 0 ? ensureMessageId(msgs[start - 1]) : null
@@ -181,7 +181,7 @@ function applyTailSlice(slice: Message[], operation: RerollOperation): boolean {
 async function applyRerollTruncate(keepLength: number, operation: RerollOperation): Promise<boolean> {
   if (!isCurrentRerollOperation(operation)) return false
   const previous = currentChatScopedSnapshot()
-  const afterMessageId = withTrustedServerProjectionWrite(() => {
+  const afterMessageId = withTrustedResourceWrite(() => {
     const msgs = activeChatRecord().message
     msgs.length = keepLength
     return msgs.length > 0 ? ensureMessageId(msgs[msgs.length - 1]) : null

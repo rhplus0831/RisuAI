@@ -60,7 +60,7 @@ import {
 import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './characterCommands'
 import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
 import { forceServerResourceRefresh } from './server/resourceRefresh'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 
 export const hubURL = '/api/v1/hub'
 
@@ -75,7 +75,7 @@ function appendImportedCharacter(
   previous: ReturnType<typeof currentCharacterStateSnapshot>,
 ): string | undefined {
   const characterId = character.chaId
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const db = getDatabase()
     db.characters ??= []
     if (characterId && db.characters.some((candidate) => candidate?.chaId === characterId)) {

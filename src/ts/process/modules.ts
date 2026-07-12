@@ -32,7 +32,7 @@ import {
   ensureClientTriggerDefinitionIds,
   rollbackScopedScriptDefinitionReplacement,
 } from '../server/scriptDefinitionBridge.svelte'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { runOptimisticCommandSequence } from '../chatCommands'
 import {
   replaceCharacterLorebooksCommand,
@@ -793,7 +793,7 @@ export async function applyModule() {
     ? ensureClientTriggerDefinitionIds([...(currentChar.triggerscript ?? []), ...safeStructuredClone(module.trigger)])
     : undefined
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().characters.find((character) => character.chaId === characterId)
     if (!target) return
     if (nextLorebooks) target.globalLore = safeStructuredClone(nextLorebooks)

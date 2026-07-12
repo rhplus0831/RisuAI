@@ -33,7 +33,7 @@ vi.mock('./characterCards', () => ({
 import { alertAddCharacter } from './alert'
 import { clearCachedServerCommandRevision } from './server/commands'
 import { stopSelectedCharacterShellHydration } from './server/characterShellHydration.svelte'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type character, type Database } from './storage/database.svelte'
@@ -160,7 +160,7 @@ beforeEach(() => {
   characterCardsState.importCharacter.mockReset()
   clearCachedServerCommandRevision()
   stopSelectedCharacterShellHydration()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
   testDatabaseState.db = {
     currentChar: -1,
@@ -171,7 +171,7 @@ beforeEach(() => {
 
 afterEach(() => {
   stopSelectedCharacterShellHydration()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

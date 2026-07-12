@@ -1,4 +1,4 @@
-import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { getDatabase, type MessageGenerationInfo } from '../../storage/database.svelte'
 
 export interface StageTimings {
@@ -31,7 +31,7 @@ export function finalizeStage4(opts: FinalizeStage4Options): void {
   const messages = getDatabase().characters[selectedChar].chats[selectedChat].message
   const lastMessageIndex = messages.length - 1
   if (lastMessageIndex >= 0 && messages[lastMessageIndex].generationInfo) {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[selectedChar].chats[selectedChat].message[lastMessageIndex].generationInfo =
         generationInfo
     })

@@ -28,9 +28,9 @@ describe('PersonaSettings persistence contracts', () => {
 
   it('reconciles projection epoch changes before queuing normal selected-persona edits', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/PersonaSettings.svelte'), 'utf8')
-    const projectionBranch = source.match(/if \(projectionApplyChanged\) \{[\s\S]*?\n    \}/)?.[0] ?? ''
+    const projectionBranch = source.match(/if \(resourceApplyChanged\) \{[\s\S]*?\n    \}/)?.[0] ?? ''
 
-    expect(source).toContain('getServerProjectionApplyEpoch')
+    expect(source).toContain('getServerResourceApplyEpoch')
     expect(source).toContain('reconcileSelectedPersonaProjectionEpoch')
     expect(projectionBranch).toContain('untrack(() => reconcileSelectedPersonaProjectionEpoch())')
     expect(projectionBranch).toContain(
@@ -38,7 +38,7 @@ describe('PersonaSettings persistence contracts', () => {
     )
     expect(projectionBranch).toContain('previousPersonaState = currentPersonaStateSnapshot()')
     expect(projectionBranch).toMatch(/return\s*\n\s*\}$/)
-    expect(source.indexOf('if (projectionApplyChanged)')).toBeLessThan(
+    expect(source.indexOf('if (resourceApplyChanged)')).toBeLessThan(
       source.indexOf('untrack(() => queueSelectedPersonaUpdate(previous, attempted))'),
     )
   })

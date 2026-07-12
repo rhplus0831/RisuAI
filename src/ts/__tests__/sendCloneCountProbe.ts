@@ -8,7 +8,7 @@ import {
   setServerChatPrompt,
 } from '../process/__fixtures__/mocks/serverChatFetch'
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setDatabase, type Database, type character } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
@@ -333,7 +333,7 @@ export async function runSendCloneCountProbe(
   doingChat.set(false)
   abortChat.set(false)
   chatProcessStage.set(0)
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   const fixture = seedProbeDb(resolved)
   globalThis.fetch = createProbeFetch(commandCalls)
 
@@ -374,7 +374,7 @@ export async function runSendCloneCountProbe(
     }
   } finally {
     globalThis.fetch = originalFetch
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     doingChat.set(false)
     abortChat.set(false)
     chatProcessStage.set(0)

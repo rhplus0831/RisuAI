@@ -12,7 +12,7 @@ import '../stores.svelte'
 import { getCompiledRegex, resetScriptCache } from './scripts'
 import { runTrigger } from './triggers'
 import { safeStructuredClone } from '../polyfill'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
@@ -67,7 +67,7 @@ async function countRegexCompiles<T>(
 
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   resetScriptCache()
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)

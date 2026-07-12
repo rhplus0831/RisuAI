@@ -17,7 +17,7 @@ import {
   type AgentPresetStepSnapshot,
   type ServerCommandResult,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 import { getDatabase } from './storage/database.svelte'
 
@@ -249,10 +249,10 @@ function optimisticallyReorderAgentPresetSteps(presetId: string, stepIds: string
 function withAgentPresetRollback(keys: string[], mutate: () => void): (() => void) | undefined {
   const target = getDatabase() as unknown as DatabaseRecord
   const previous = snapshotKeys(target, keys)
-  withTrustedServerProjectionWrite(mutate)
+  withTrustedResourceWrite(mutate)
   const attempted = snapshotKeys(target, keys)
   return () => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       applyAttemptedFieldRollback({
         target,
         previous,

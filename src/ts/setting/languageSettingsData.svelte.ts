@@ -12,7 +12,7 @@ import { sleep } from '../util'
 import { alertNormal, alertSelect, alertConfirm, alertError, alertWait } from '../alert'
 import { downloadFile } from '../globalApi.svelte'
 import { selectFileByDom } from '../util'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { exportLLMCacheAsJSON, importLLMCacheFromJSON, clearLLMCache } from '../translator/translator'
 
 export const langState = $state({ changed: false })
@@ -65,7 +65,7 @@ export const languageSettingsItems: SettingItem[] = [
         // onChange runs outside the trusted projection-write scope of the
         // generic settings wrapper, so this reset must wrap the write itself
         // or it throws against the read-only server projection in Fastify mode.
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           ctx.db.language = 'en'
         })
       }

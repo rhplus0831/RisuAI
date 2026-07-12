@@ -45,7 +45,7 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../../server/resourceWriteGuard.svelte'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -224,7 +224,7 @@ beforeEach(() => {
   alertMocks.alertInput.mockReset()
   alertMocks.alertNormal.mockReset()
   clearMCPRuntimeState()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     authRefreshes: [],
   } as any)
@@ -232,7 +232,7 @@ beforeEach(() => {
 
 afterEach(() => {
   clearMCPRuntimeState()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 })
 
 describe('MCP request discovery', () => {
@@ -376,9 +376,9 @@ describe('MCP runtime persistence', () => {
     })
   })
 
-  it('does not throw and still dispatches the command when the projection guard is active', async () => {
+  it('does not throw and still dispatches the command when the resource guard is active', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     // Baseline: the guard is active, so a raw projection write throws.
     expect(() => {

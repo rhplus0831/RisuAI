@@ -8,7 +8,7 @@ vi.mock('./fastifyStorage', () => ({
 
 // Resource-state effects fire moduleUpdate when the database is seeded;
 // neutralize it so the import-order TDZ between modules.ts and this module
-// graph cannot crash the run (same pattern as command.projectionGuard.test.ts).
+// graph cannot crash the run (same pattern as command.resourceGuard.test.ts).
 vi.mock('../process/modules', async (importActual) => {
   const actual = await importActual<typeof import('../process/modules')>()
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
@@ -20,7 +20,7 @@ import { encryptBuffer } from '../util'
 import { importPreset, presetTemplate } from './database.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 
 interface CapturedFetch {
   url: string
@@ -133,7 +133,7 @@ async function buildRisupresetFile(preset: Record<string, unknown>): Promise<Uin
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({
     modelPresets: [],
     modelPresetsId: -1,

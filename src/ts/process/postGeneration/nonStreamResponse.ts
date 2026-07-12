@@ -6,7 +6,7 @@ import {
   type character,
 } from '../../storage/database.svelte'
 import { trimUntilPunctuation } from '../../util'
-import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { runInlayScreen } from '../inlayScreen'
 import type { requestDataResponse } from '../request/request'
 import { processScriptFull } from '../scripts'
@@ -86,7 +86,7 @@ export async function applyNonStreamResponse(
     result = inlayResult.text
     emoChanged = result2.emoChanged
     if (i === 0 && arg.continue) {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         messagesAt()[msgIndex] = {
           role: 'char',
           data: result,
@@ -99,12 +99,12 @@ export async function applyNonStreamResponse(
       })
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           messagesAt()[msgIndex].data = p
         })
       }
     } else if (i === 0) {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         messagesAt().push({
           role: msg[0],
           data: result,
@@ -118,7 +118,7 @@ export async function applyNonStreamResponse(
       const ind = messagesAt().length - 1
       if (inlayResult.promise) {
         const p = await inlayResult.promise
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           messagesAt()[ind].data = p
         })
       }
@@ -126,7 +126,7 @@ export async function applyNonStreamResponse(
     } else {
       mrerolls.push(result)
     }
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[selectedChar].reloadKeys += 1
     })
     if (getDatabase().ttsAutoSpeech) {

@@ -53,13 +53,13 @@ interface GateEntry {
 // rollback.
 const NARROWED_HOT_PATHS: GateEntry[] = [
   {
-    area: 'Projection write guard (copy-on-write unwrap/refreeze)',
+    area: 'Resource write guard (copy-on-write unwrap/refreeze)',
     phase: 1,
     severity: 'critical',
     kind: 'guard',
-    helper: 'withTrustedServerProjectionWrite',
-    cloneCostGates: ['ts/server/projectionWriteGuard.test.ts'],
-    rollbackGates: ['ts/server/projectionWriteGuard.test.ts'],
+    helper: 'withTrustedResourceWrite',
+    cloneCostGates: ['ts/server/resourceWriteGuard.test.ts'],
+    rollbackGates: ['ts/server/resourceWriteGuard.test.ts'],
   },
   {
     area: 'Chat-scoped message/metadata/scriptstate snapshots',
@@ -104,7 +104,7 @@ const NARROWED_HOT_PATHS: GateEntry[] = [
     kind: 'snapshot',
     helper: 'materializeChar',
     cloneCostGates: ['ts/process/triggers.cloneCost.test.ts'],
-    rollbackGates: ['ts/process/__tests__/triggers.projectionGuard.test.ts'],
+    rollbackGates: ['ts/process/__tests__/triggers.resourceGuard.test.ts'],
   },
   {
     area: 'Reroll / swipe tail-clone and rollback',

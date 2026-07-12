@@ -52,7 +52,7 @@
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
 
@@ -157,7 +157,7 @@
 
   function applyOptimisticChatMetadata(chatId: string, mutate: (chat: Chat) => void): boolean {
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
       if (liveChat) {
         mutate(liveChat)
@@ -169,7 +169,7 @@
 
   function applyOptimisticFolderMetadata(folderId: string, mutate: (folder: ChatFolder) => void): boolean {
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveFolder = currentSidebarCharacter()?.chatFolders?.find((candidate) => candidate.id === folderId)
       if (liveFolder) {
         mutate(liveFolder)
@@ -238,7 +238,7 @@
     if (!persona) return
     const bindedPersona = persona.id || v4()
     if (!persona.id) {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         if (getDatabase().selectedPersona !== selectedPersona) return
         const livePersona = getDatabase().personas?.[selectedPersona]
         if (livePersona && !livePersona.id) {

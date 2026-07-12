@@ -20,7 +20,7 @@ vi.mock('../process/modules', async (importActual) => {
 
 import { clearCachedServerCommandRevision, settingsGroupForKey } from '../server/commands'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
-import { setServerProjectionWriteGuardEnabled, withServerProjectionApply } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withServerResourceApply } from '../server/resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
@@ -149,7 +149,7 @@ function serverCommandKeyForSetting(item: SettingItem): string | null {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({ notification: false } as any)
 })
 
@@ -157,7 +157,7 @@ afterEach(() => {
   clearDeferredSettingWrites()
   vi.unstubAllGlobals()
   vi.useRealTimers()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 })
 
 describe('server-backed data-driven settings', () => {
@@ -304,7 +304,7 @@ describe('server-backed data-driven settings', () => {
     expect(getResourceDatabase().guiHTML).toBe('local final')
     expect(calls).toEqual([])
 
-    withServerProjectionApply(() => {
+    withServerResourceApply(() => {
       getResourceDatabase().guiHTML = 'server intermediate'
     })
     flushSync()

@@ -13,7 +13,7 @@ const commandState = vi.hoisted(() => ({
   beforeBuild: null as (() => void) | null,
 }))
 
-const projectionGuardState = vi.hoisted(() => ({
+const resourceGuardState = vi.hoisted(() => ({
   epoch: 0,
 }))
 
@@ -112,23 +112,23 @@ const hydrationState = vi.hoisted(() => {
 vi.mock('./commands', () => commandMocks)
 vi.mock('src/ts/server/commands', () => commandMocks)
 
-vi.mock('./projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withServerProjectionApply: (fn: () => unknown) => {
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withServerResourceApply: (fn: () => unknown) => {
     const result = fn()
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     return result
   },
-  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
-vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withServerProjectionApply: (fn: () => unknown) => {
+vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withServerResourceApply: (fn: () => unknown) => {
     const result = fn()
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     return result
   },
-  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
@@ -326,7 +326,7 @@ async function editPromptSettingsTextInput(target: HTMLElement, value: string, i
 async function applyPromptSettingsProjection(apply: () => void): Promise<void> {
   apply()
   resourceDatabase.current = { ...(getResourceDatabase() as unknown as Record<string, unknown>) }
-  projectionGuardState.epoch += 1
+  resourceGuardState.epoch += 1
   await tick()
   await flushMicrotasks()
   await tick()
@@ -334,7 +334,7 @@ async function applyPromptSettingsProjection(apply: () => void): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  projectionGuardState.epoch = 0
+  resourceGuardState.epoch = 0
   commandState.revision = 1
   commandState.commands.length = 0
   commandState.beforeBuild = null

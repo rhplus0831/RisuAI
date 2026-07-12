@@ -7,10 +7,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
@@ -389,12 +386,12 @@ async function flushCommandEffects(): Promise<void> {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedLoadouts()
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -403,7 +400,7 @@ describe('LoadoutModal projection write cleanup', () => {
   it('routes modal favorite and delete operations through loadout domain helpers', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/lib/Others/LoadoutModal.svelte'), 'utf8')
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentLoadoutStateSnapshot')
     expect(source).not.toContain('dispatchDeleteLoadout')
     expect(source).not.toContain('dispatchFavoriteLoadout')
@@ -437,7 +434,7 @@ describe('loadout projection command helpers', () => {
     testDatabaseState.db.characters[0].chatPage = 0
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const loadout = saveCurrentLoadout('Fresh Split Loadout')
 
@@ -531,7 +528,7 @@ describe('loadout projection command helpers', () => {
     } as any
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
@@ -598,7 +595,7 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout)
 
@@ -694,7 +691,7 @@ describe('loadout projection command helpers', () => {
     const loadout = seedSplitPresetLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
@@ -767,7 +764,7 @@ describe('loadout projection command helpers', () => {
     const loadout = seedSplitPresetLoadoutState()
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 2 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
@@ -828,7 +825,7 @@ describe('loadout projection command helpers', () => {
     const previousGlobalVariables = cloneJsonValue(testDatabaseState.db.globalChatVariables)
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 5 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout)
     expect(testDatabaseState.db.selectedPersona).toBe(1)
@@ -886,7 +883,7 @@ describe('loadout projection command helpers', () => {
     delete testDatabaseState.db.botPresets[1].id
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 1 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
@@ -899,7 +896,7 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
     expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.botPresets.push({
         id: 'preset-later',
         name: 'Later Preset',
@@ -949,7 +946,7 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['modules'])
 
@@ -1018,7 +1015,7 @@ describe('loadout projection command helpers', () => {
       },
     })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
@@ -1039,7 +1036,7 @@ describe('loadout projection command helpers', () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const previousPersona = currentPersonaStateSnapshot()
     applyLoadout(loadout, ['persona'])
@@ -1060,7 +1057,7 @@ describe('loadout projection command helpers', () => {
 
   it('failed favorite preserves newer sibling edits/appends and newer same-row changes', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.loadouts[0].favorite = true
@@ -1068,7 +1065,7 @@ describe('loadout projection command helpers', () => {
 
     expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
     expect(testDatabaseState.db.loadouts[0].favorite).toBe(true)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Newer Loadout A'
       testDatabaseState.db.loadouts[0].favorite = false
       testDatabaseState.db.loadouts[1].name = 'Edited Loadout B'
@@ -1116,11 +1113,11 @@ describe('loadout projection command helpers', () => {
   it('failed create removes only the unchanged attempted loadout and preserves later rows', async () => {
     seedApplyLoadoutState()
     const calls = stubCommandFetch({ failCommands: true })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const created = saveCurrentLoadout('Created Loadout')
     expect(testDatabaseState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', created.id])
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Existing Loadout'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-later', name: 'Later Loadout' }))
     })
@@ -1147,11 +1144,11 @@ describe('loadout projection command helpers', () => {
   it('failed delete reinserts only a still-missing loadout and preserves sibling edits/appends', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     const deletedLoadout = cloneJsonValue(testDatabaseState.db.loadouts[1])
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(deleteLoadout('loadout-b')).toBe(true)
     expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a'])
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
     })
@@ -1187,10 +1184,10 @@ describe('loadout projection command helpers', () => {
 
   it('failed delete skips rollback when the same loadout id was recreated', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(deleteLoadout('loadout-b')).toBe(true)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
       testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-b', name: 'Recreated Loadout B', lastUsed: 999 }))
     })
@@ -1211,7 +1208,7 @@ describe('loadout projection command helpers', () => {
   it('returns false for missing ids without dispatching commands or mutating loadouts', () => {
     const calls = stubCommandFetch()
     const previousLoadouts = cloneJsonValue(testDatabaseState.db.loadouts)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(toggleLoadoutFavorite('missing-loadout')).toBe(false)
     expect(deleteLoadout('missing-loadout')).toBe(false)

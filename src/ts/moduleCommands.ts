@@ -21,7 +21,7 @@ import {
   type ModuleSnapshot,
   type ServerCommandResult,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { reloadGuiAfterDefinitionChange, selectedCharID } from './stores.svelte'
 import type { RisuModule } from './process/modules'
@@ -174,7 +174,7 @@ export function currentGlobalModuleStateSnapshot(moduleIdForReferences?: string)
 }
 
 export function restoreGlobalModuleState(snapshot: GlobalModuleStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().modules = cloneJsonValue(snapshot.modules)
     getDatabase().enabledModules = cloneJsonValue(snapshot.enabledModules)
     if (snapshot.moduleReferences) {
@@ -292,7 +292,7 @@ export function currentCharacterModuleStateSnapshot(characterId: string): Charac
 }
 
 export function restoreCharacterModuleState(snapshot: CharacterModuleStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = findCharacterById(snapshot.characterId)
     if (!character) return
     if (snapshot.hasModulesField) {
@@ -471,7 +471,7 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
     const previous = currentGlobalModuleStateSnapshot()
     const nextModule = cloneJsonValue(module)
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
       if (index !== -1) {
         getDatabase().modules[index] = nextModule
@@ -505,7 +505,7 @@ export function deleteGlobalModule(moduleId: string): void {
 }
 
 function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const enabledModules = new Set(getDatabase().enabledModules ?? [])
     if (enabled) {
       enabledModules.add(moduleId)
@@ -518,14 +518,14 @@ function applyOptimisticGlobalModuleEnabled(moduleId: string, enabled: boolean):
 }
 
 function applyOptimisticCreatedGlobalModule(module: RisuModule): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().modules = [...(getDatabase().modules ?? []), cloneJsonValue(module)]
   })
   reloadGuiAfterDefinitionChange()
 }
 
 function applyOptimisticDeletedGlobalModule(moduleId: string): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().enabledModules = (getDatabase().enabledModules ?? []).filter((id) => id !== moduleId)
     getDatabase().modules = (getDatabase().modules ?? []).filter((module) => module.id !== moduleId)
     removeProjectedModuleReferences(moduleId)
@@ -880,7 +880,7 @@ function rollbackGlobalModuleEntries(
 ): void {
   let changed = false
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     void entries
     for (const target of operation.targets) {
       const pendingOperations = pendingGlobalModuleOperationsByTarget.get(target)
@@ -1155,7 +1155,7 @@ function applyMissingActiveChatSidebarToggleDefaults(): ActiveChatSidebarToggleD
 
   const commandSettings = cloneJsonValue(generationSettings)
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.[state.identity.selectedCharIndex]
     const chat =
       state.identity.chatIndex >= 0 && Number.isInteger(state.identity.chatIndex)
@@ -1285,7 +1285,7 @@ export function toggleSelectedChatModule(moduleId: string): void {
   const enabling = !(chat.modules ?? []).includes(moduleId)
   const nextModules = toggledModuleIds(chat.modules, moduleId)
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetCharacter = getDatabase().characters?.[selectedIndex]
     const targetChat = Number.isInteger(chatIndex) ? targetCharacter?.chats?.[chatIndex] : undefined
     if (!targetChat || targetChat.id !== chat.id) return
@@ -1311,7 +1311,7 @@ export function toggleSelectedCharacterModule(moduleId: string): void {
   const enabling = !(character.modules ?? []).includes(moduleId)
   const nextModules = toggledModuleIds(character.modules, moduleId)
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetCharacter = getDatabase().characters?.[selectedIndex]
     if (!targetCharacter || targetCharacter.chaId !== character.chaId) return
     targetCharacter.modules = cloneJsonValue(nextModules)

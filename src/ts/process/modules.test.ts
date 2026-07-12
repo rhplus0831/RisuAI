@@ -134,8 +134,8 @@ vi.mock('../server/commands', () => ({
   replaceCharacterTriggersCommand,
 }))
 
-vi.mock('../server/projectionWriteGuard.svelte', () => ({
-  withTrustedServerProjectionWrite: (fn: () => void) => fn(),
+vi.mock('../server/resourceWriteGuard.svelte', () => ({
+  withTrustedResourceWrite: (fn: () => void) => fn(),
 }))
 
 import {

@@ -329,7 +329,7 @@ vi.mock('./Toggles.svelte', async () => {
 
 import SideChatListHarness from './SideChatList.testHarness.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -524,7 +524,7 @@ describe('SideChatList DOM contract harness', () => {
   })
 
   afterEach(() => {
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     if (component) {
       unmount(component)
       component = undefined
@@ -835,7 +835,7 @@ describe('SideChatList DOM contract harness', () => {
   it('keeps rapid chat and folder name input in the debounced bridge pipeline', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     component = mount(SideChatListHarness, { target })
     await tick()
@@ -865,7 +865,7 @@ describe('SideChatList DOM contract harness', () => {
   it('paints folder folded toggles before dispatching with the folder stable id', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     sidebarMocks.dispatchUpdateChatFolder.mockImplementationOnce(() => {
       expect(selectedCharacter().chatFolders[0].folded).toBe(true)
     })
@@ -885,7 +885,7 @@ describe('SideChatList DOM contract harness', () => {
   it('paints a selected folder color before dispatch', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertSelect.mockResolvedValueOnce('0').mockResolvedValueOnce('0')
     sidebarMocks.dispatchUpdateChatFolder.mockImplementationOnce(() => {
       expect(selectedCharacter().chatFolders[0].color).toBe('red')
@@ -906,7 +906,7 @@ describe('SideChatList DOM contract harness', () => {
     const chara = seedSidebarDatabase()
     chara.chats[1].bindedPersona = 'persona-a'
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
     sidebarMocks.dispatchUpdateChat.mockImplementationOnce(() => {
@@ -932,7 +932,7 @@ describe('SideChatList DOM contract harness', () => {
     seedSidebarDatabase()
     getDatabase().personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
     sidebarMocks.dispatchUpdateChat.mockImplementationOnce(() => {
@@ -1073,7 +1073,7 @@ describe('SideChatList DOM contract harness', () => {
   it('shows a newly created sidebar folder before the command resolves', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const command = sidebarMocks.createDeferredCreateFolderCommand()
 
     component = mount(SideChatListHarness, { target })
@@ -1103,7 +1103,7 @@ describe('SideChatList DOM contract harness', () => {
   it('rolls back a failed optimistic sidebar folder create in state and DOM', async () => {
     seedSidebarDatabase()
     sidebarMocks.setServerCommandsEnabled(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const command = sidebarMocks.createDeferredCreateFolderCommand()
 
     component = mount(SideChatListHarness, { target })

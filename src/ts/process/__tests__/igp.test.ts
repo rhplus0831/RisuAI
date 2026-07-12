@@ -29,10 +29,7 @@ import { selectedCharID } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { evaluateIgp } from '../postGeneration/igp'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from '../../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -129,14 +126,14 @@ const baseOpts = {
 describe('evaluateIgp', () => {
   beforeEach(() => {
     clearCachedServerCommandRevision()
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
     requestChatDataSpy.mockReset()
     requestChatDataSpy.mockResolvedValue({ type: 'success', result: 'IGP-RESULT' })
   })
 
   afterEach(() => {
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
   })
 
@@ -210,10 +207,10 @@ describe('evaluateIgp', () => {
     expect(messages[2].data).toBe('thirdIGP-RESULT')
   })
 
-  it('L34: appends and persists under the enabled projection guard', async () => {
+  it('L34: appends and persists under the enabled resource guard', async () => {
     const calls = stubCommandFetch()
     seed(makeChar())
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     expect(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data += 'raw'
     }).toThrow(/resource database compatibility view is read-only/)
@@ -224,7 +221,7 @@ describe('evaluateIgp', () => {
     const command = await waitForMessageCommand(calls)
     expect(command.body.messages.at(-1).data).toBe('helloIGP-RESULT')
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'stale'
     })
     applyServerProjectionDatabase({

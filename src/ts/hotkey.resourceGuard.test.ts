@@ -3,8 +3,8 @@ import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
 // Regression coverage: ordinary keydown matching must not mutate
 // `testDatabaseState.db.hotkeys`, and hotkey settings edits must route through a
-// server-backed settings patch instead of a raw projection write. Both throw
-// under the read-only server projection guard otherwise.
+// server-backed settings patch instead of a raw resource write. Both throw
+// under the read-only server resource guard otherwise.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 
@@ -33,7 +33,7 @@ vi.mock('./process/modules', async (importActual) => {
 import { changeToPreset, hotkeyMatches } from './hotkey'
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { selectedCharID } from './stores.svelte'
 
 interface CapturedFetch {
@@ -120,24 +120,24 @@ beforeEach(() => {
   platformState.isFastifyServer = true
   selectedCharID.set(-1)
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedDatabase()
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('hotkey handling under the projection guard', () => {
+describe('hotkey handling under the resource guard', () => {
   it('maps hotkeys to sidebar settings group', () => {
     expect(settingsGroupForKey('hotkeys')).toBe('sidebar')
   })
 
   it('matches hotkeys without mutating the read-only projection', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
-    // Baseline: the guard is active, so a raw projection write throws.
+    // Baseline: the guard is active, so a raw resource write throws.
     expect(() => {
       ;(testDatabaseState.db.hotkeys[0] as any).ctrl = true
     }).toThrow()
@@ -158,7 +158,7 @@ describe('hotkey handling under the projection guard', () => {
   })
 
   it('rejects mismatched modifiers without mutation', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const hotkey = testDatabaseState.db.hotkeys[0]
     const event = new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })
@@ -229,7 +229,7 @@ describe('hotkey handling under the projection guard', () => {
 
   it('routes a hotkey settings edit through a sidebar settings patch', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     // Mirror HotkeySettings.svelte: build a fresh array and apply it.
     const next = testDatabaseState.db.hotkeys.map((hotkey, i) => (i === 0 ? { ...hotkey, ctrl: true } : { ...hotkey }))

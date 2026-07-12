@@ -10,7 +10,7 @@ import {
 } from '../characterCommands'
 import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTransportOptions } from './commands'
 import { selectedCharID } from '../stores.svelte'
-import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
@@ -46,7 +46,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   let previousServerSnapshot = ''
   let previousSeedSelected = Number.NaN
   let previousSeedCharacterId: string | null = null
-  let previousSeedProjectionApplyEpoch = -1
+  let previousSeedResourceApplyEpoch = -1
   const dirtyFields = new Set<keyof CharacterDraftValue & string>()
   const selectedCharMirror = $state({ value: get(selectedCharID) })
 
@@ -59,24 +59,24 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
   $effect(() => {
     const selected = selectedCharMirror.value
-    const projectionApplyEpoch = getServerProjectionApplyEpoch()
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
     const selectedCharacter = getDatabase().characters?.[selected]
     const characterId =
       selectedCharacter && !isServerCharacterShell(selectedCharacter) ? (selectedCharacter.chaId ?? null) : null
     const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
-    const projectionApplyChanged = projectionApplyEpoch !== previousSeedProjectionApplyEpoch
+    const resourceApplyChanged = resourceApplyEpoch !== previousSeedResourceApplyEpoch
 
-    if (!identityChanged && !projectionApplyChanged) return
+    if (!identityChanged && !resourceApplyChanged) return
 
     previousSeedSelected = selected
     previousSeedCharacterId = characterId
-    previousSeedProjectionApplyEpoch = projectionApplyEpoch
+    previousSeedResourceApplyEpoch = resourceApplyEpoch
 
     const { serverSnapshot, serverValue } = untrack(() => currentCharacterDraftSeed(selected, characterId, keys))
 
     if (identityChanged || !characterId) {
       dirtyFields.clear()
-    } else if (projectionApplyChanged) {
+    } else if (resourceApplyChanged) {
       clearDirtyFieldsMatchingProjection(dirtyFields, draft.value, serverValue)
     }
 
@@ -92,7 +92,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     if (shouldSeedDraft) {
       suppressDraftDispatch = true
-      if (!identityChanged && projectionApplyChanged && dirtyFields.size > 0) {
+      if (!identityChanged && resourceApplyChanged && dirtyFields.size > 0) {
         draft.characterId = characterId
         mergeProjectionIntoDirtyDraft({
           draft: draft.value,
@@ -137,7 +137,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
 
     untrack(() => {
       const patch = sanitizeCharacterPatch(cloneJsonValue(draft.value))
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
         if (!character) return
         Object.assign(character, patch)
@@ -195,7 +195,7 @@ function reassertDirtyDraftFields(
   const sanitized = sanitizeCharacterPatch(patch)
   if (Object.keys(sanitized).length === 0) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.[selected]
     if (!character || character.chaId !== characterId || isServerCharacterShell(character)) return
     Object.assign(character, sanitized)
@@ -230,11 +230,11 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
   let initialized = false
   let previousSelected = -1
   let previousProfileSnapshot = ''
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   const stop = $effect.root(() => {
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
       const index = get(selectedCharID)
       const character = getDatabase().characters?.[index]
       const isShell = isServerCharacterShell(character)
@@ -247,11 +247,11 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
         index !== previousSelected ||
         !character?.chaId ||
         isShell ||
-        projectionApplyEpoch !== previousProjectionApplyEpoch
+        resourceApplyEpoch !== previousResourceApplyEpoch
       ) {
         initialized = true
         previousSelected = index
-        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousResourceApplyEpoch = resourceApplyEpoch
         previousProfileSnapshot = currentProfileSnapshot
         return
       }
@@ -505,7 +505,7 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
   suppressRollbackDispatch = true
   try {
     if (profileSnapshot.profileCharacterId && profileSnapshot.profile) {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const character = getDatabase().characters?.find(
           (candidate) => candidate.chaId === profileSnapshot.profileCharacterId,
         )

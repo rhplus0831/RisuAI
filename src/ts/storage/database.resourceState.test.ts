@@ -14,10 +14,7 @@ import {
   replaceResourceDatabase,
   settingsResourceState,
 } from '../server/resourceState.svelte'
-import {
-  getServerProjectionApplyEpoch,
-  setServerProjectionWriteGuardEnabled,
-} from '../server/projectionWriteGuard.svelte'
+import { getServerResourceApplyEpoch, setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import {
   applyServerProjectionDatabase,
   getDatabase,
@@ -51,12 +48,12 @@ function databaseFixture(name = 'Ada'): Database {
 }
 
 beforeEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
 })
 
@@ -89,7 +86,7 @@ describe('database compatibility accessors over resource state', () => {
 
   it('seeds resource revisions and apply epochs on an authoritative replacement', () => {
     const beforeFacadeEpoch = getResourceDatabaseFacadeEpoch()
-    const beforeApplyEpoch = getServerProjectionApplyEpoch()
+    const beforeApplyEpoch = getServerResourceApplyEpoch()
 
     applyServerProjectionDatabase(databaseFixture('Projected'), 17)
 
@@ -98,6 +95,6 @@ describe('database compatibility accessors over resource state', () => {
     expect(collectionsResourceState.fullRevision).toBe(17)
     expect(charactersResourceState.listRevision).toBe(17)
     expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeFacadeEpoch)
-    expect(getServerProjectionApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
+    expect(getServerResourceApplyEpoch()).toBeGreaterThan(beforeApplyEpoch)
   })
 })

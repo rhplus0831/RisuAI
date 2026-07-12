@@ -5,7 +5,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import './stores.svelte'
 import { getDatabase, setDatabaseLite } from './storage/database.svelte'
 import {
@@ -109,7 +109,7 @@ function mockNextDeferredCommandFailure(error = 'persona command failed') {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => {
@@ -121,7 +121,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

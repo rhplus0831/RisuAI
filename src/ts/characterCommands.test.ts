@@ -59,10 +59,7 @@ import {
 } from './characterCommands'
 import { setCharacterByIndex, type Database, type folder } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
 import { removeChar } from './characters'
@@ -305,7 +302,7 @@ async function withMockedNow<T>(now: number, fn: () => Promise<T>): Promise<T> {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   alertConfirmState.messages = []
   alertConfirmState.responses = [true, true]
@@ -316,7 +313,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -403,7 +400,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
       onCreate: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           testDatabaseState.db.characters[0].name = 'Sibling newer edit'
           testDatabaseState.db.characterOrder = [
             'char-created',
@@ -420,11 +417,11 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-created', name: 'Created', chats: [] } as any
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters.push(attempted)
     })
     repairCharacterOrderOptimistically({ dispatchReorder: false })
@@ -450,11 +447,11 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const attempted = { chaId: 'char-selected', name: 'Selected', chats: [], lastInteraction: 1234 } as any
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters.push(attempted)
       ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
@@ -475,7 +472,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
       onCreate: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           testDatabaseState.db.characters[0].name = 'Local edit after import dispatch'
           testDatabaseState.db.characterOrder = [
             { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
@@ -490,7 +487,7 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
     const imported = { chaId: 'char-imported', name: 'Imported', chats: [] } as any
 
@@ -511,7 +508,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failDelete: true,
       onDelete: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           testDatabaseState.db.characters[0].name = 'A newer edit'
           testDatabaseState.db.characters.push({ chaId: 'char-d', name: 'D appended', chats: [] } as any)
           const folder = testDatabaseState.db.characterOrder.find(
@@ -535,15 +532,15 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       ;(testDatabaseState.db as any).currentChar = undefined
       selectedCharID.set(-1)
     })
@@ -576,7 +573,7 @@ describe('character list create/delete rollback', () => {
     const calls = stubCharacterCollectionCommandFetch({
       failDelete: true,
       onDelete: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           ;(testDatabaseState.db as any).currentChar = 1
           selectedCharID.set(1)
         })
@@ -592,10 +589,10 @@ describe('character list create/delete rollback', () => {
       currentChar: 1,
     } as any
     selectedCharID.set(1)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
@@ -625,15 +622,15 @@ describe('character list create/delete rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const previous = currentCharacterStateSnapshot()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters.push({ chaId: 'char-b', name: 'Replacement B', chats: [] } as any)
       testDatabaseState.db.characterOrder.push('char-b')
     })
@@ -680,7 +677,7 @@ describe('character select command rollback', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
   })
 
   it('restores the previous selection when the failed attempted selection is still live', async () => {
@@ -688,7 +685,7 @@ describe('character select command rollback', () => {
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
     const previous = currentCharacterSelectionSnapshot('char-b')
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2000
       ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
@@ -721,7 +718,7 @@ describe('character select command rollback', () => {
     const calls = stubDelayedSelectCommandFetch(selectResponse.promise)
     const previous = currentCharacterSelectionSnapshot('char-b')
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[1].lastInteraction = 2000
       ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
@@ -729,7 +726,7 @@ describe('character select command rollback', () => {
     dispatchSelectCharacter('char-b', previous, 2000)
     await waitForCallCount(calls, 2)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[2].lastInteraction = 3000
       ;(testDatabaseState.db as any).currentChar = 2
       selectedCharID.set(2)
@@ -761,10 +758,10 @@ describe('Sidebar character order projection cleanup', () => {
     const createFolderBody = source.slice(createFolderStart, dragTypeStart)
 
     expect(inserterBody).toContain('moveCharacterOrderItem')
-    expect(inserterBody).not.toContain('withTrustedServerProjectionWrite')
+    expect(inserterBody).not.toContain('withTrustedResourceWrite')
     expect(inserterBody).not.toContain('dispatchReorderCharacters')
     expect(createFolderBody).toContain('createCharacterOrderFolder')
-    expect(createFolderBody).not.toContain('withTrustedServerProjectionWrite')
+    expect(createFolderBody).not.toContain('withTrustedResourceWrite')
     expect(createFolderBody).not.toContain('dispatchReorderCharacters')
   })
 
@@ -786,7 +783,7 @@ describe('Sidebar character order projection cleanup', () => {
     const selectedImageGuardStart = uploadBody.indexOf('if (!folderImage || !folderImageUpload)', selectImageStart)
     const selectImageCallbackBody = uploadBody.slice(selectImageStart, selectedImageGuardStart)
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentCharacterStateSnapshot')
     expect(source).not.toContain('dispatchReorderCharacters')
     expect(source.match(/updateCharacterOrderFolder\(/g) ?? []).toHaveLength(4)
@@ -864,7 +861,7 @@ describe('character order command helpers', () => {
       '§playground',
       'char-c',
     ]
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(repairCharacterOrderOptimistically()).toBe(true)
 
@@ -890,7 +887,7 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a'],
     } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(repairCharacterOrderOptimistically({ dispatchReorder: false })).toBe(true)
 
@@ -909,7 +906,7 @@ describe('character order command helpers', () => {
 
     const checkCharOrderSource = source.slice(start, end)
     expect(checkCharOrderSource).toContain('normalizeCharacterOrder')
-    expect(checkCharOrderSource).not.toContain('withTrustedServerProjectionWrite')
+    expect(checkCharOrderSource).not.toContain('withTrustedResourceWrite')
   })
 
   it('moves a root character into a folder, dispatches reorder, normalizes order, and rolls back on failure', async () => {
@@ -930,7 +927,7 @@ describe('character order command helpers', () => {
       'char-c',
       'char-d',
     ]
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
@@ -954,7 +951,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           ;(testDatabaseState.db as any).currentChar = 1
           selectedCharID.set(1)
         })
@@ -977,7 +974,7 @@ describe('character order command helpers', () => {
       'char-c',
       'char-d',
     ]
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
@@ -1005,7 +1002,7 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
     const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
@@ -1025,7 +1022,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           testDatabaseState.db.characterOrder = cloneForExpect(newerOrder)
         })
       },
@@ -1038,7 +1035,7 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
@@ -1056,7 +1053,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           const folder = testDatabaseState.db.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-1',
           )
@@ -1081,7 +1078,7 @@ describe('character order command helpers', () => {
         'char-c',
       ],
     } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 1 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
@@ -1115,7 +1112,7 @@ describe('character order command helpers', () => {
       ],
     } as any
     const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-b', index: 0 })).toBe(false)
 
@@ -1137,7 +1134,7 @@ describe('character order command helpers', () => {
     } as any
     const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     const expectedOrder = [{ id: 'folder-new', name: 'New Folder', color: '', data: ['char-a', 'char-b'] }, 'char-c']
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(createCharacterOrderFolder({ index: 0 }, { index: 1 }, () => 'folder-new')).toBe(true)
 
@@ -1167,7 +1164,7 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 0 }, { index: 0 })).toBe(false)
     expect(createCharacterOrderFolder({ index: 0 }, { index: 0 }, () => 'unused')).toBe(false)
@@ -1222,7 +1219,7 @@ describe('character order command helpers', () => {
       } as any
       const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
       const expectedOrder = [previousOrder[0], expectedFolder]
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
 
       expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, patch)).toBe(true)
 
@@ -1247,7 +1244,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           const folder = testDatabaseState.db.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-b',
           )
@@ -1265,7 +1262,7 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: 'blue', data: ['char-b'] },
       ],
     } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Attempted Folder B' })).toBe(true)
 
@@ -1286,7 +1283,7 @@ describe('character order command helpers', () => {
     const calls = stubReorderCommandFetch({
       failReorder: true,
       onReorder: () => {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           ;(testDatabaseState.db as any).currentChar = 1
           selectedCharID.set(1)
         })
@@ -1301,7 +1298,7 @@ describe('character order command helpers', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { color: 'PURPLE' })).toBe(true)
 
@@ -1321,7 +1318,7 @@ describe('character order command helpers', () => {
       characterOrder: [{ id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] }],
     } as any
     const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(updateCharacterOrderFolder({ id: 'missing-folder', index: 0 }, { name: 'Wrong' })).toBe(false)
     expect(updateCharacterOrderFolder({}, { name: 'Wrong' })).toBe(false)
@@ -1343,7 +1340,7 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: '', data: ['char-b'] },
       ],
     } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Updated B' })).toBe(true)
 
@@ -1365,7 +1362,7 @@ describe('character order command helpers', () => {
 describe('character command projection helpers', () => {
   it('L34: setCharacterSupaMemory applies one-field optimistic command patch', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.characters[0].supaMemory = true

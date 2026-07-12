@@ -27,7 +27,7 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
 import {
@@ -118,7 +118,7 @@ export function currentChatStateSnapshot(): ChatStateSnapshot {
 }
 
 export function restoreChatState(snapshot: ChatStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().characters = cloneJsonValue(snapshot.characters)
     selectedCharID.set(snapshot.selectedCharID)
     reloadGuiDisplay()
@@ -131,7 +131,7 @@ export function applyOptimisticCreatedChat(
   snapshot: ChatStateSnapshot,
 ): boolean {
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
     if (!character?.chats) return
     const existingIndex = chat.id ? character.chats.findIndex((candidate) => candidate.id === chat.id) : -1
@@ -154,7 +154,7 @@ export function applyOptimisticCreatedChatFolder(
   snapshot: ChatStateSnapshot,
 ): boolean {
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
     if (!character) return
     character.chatFolders ??= []
@@ -186,7 +186,7 @@ export function applyOptimisticDeletedChat(
   }
   if (!chatId) return result
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(characterId, snapshot.selectedCharID)
     const chats = character?.chats
     if (!character || !chats || chats.length <= 1) return
@@ -222,7 +222,7 @@ export function currentChatSelectionSnapshot(): ChatSelectionSnapshot {
 }
 
 export function restoreChatSelection(snapshot: ChatSelectionSnapshot, attemptedChatId?: string): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     if (!character) return
     if (attemptedChatId !== undefined && selectedChatIdForCharacter(character) !== attemptedChatId) return
@@ -235,7 +235,7 @@ function applyOptimisticChatSelection(chatId: string, snapshot: ChatSelectionSna
   const chatIndex = character?.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
   if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveCharacter = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     const liveChatIndex = liveCharacter?.chats?.findIndex((candidate) => candidate.id === chatId) ?? -1
     if (!liveCharacter || liveChatIndex < 0) return
@@ -326,7 +326,7 @@ export function isActiveChatTargetFresh(target: ActiveChatTarget | null | undefi
 
 export function restoreChatScopedState(snapshot: ChatScopedSnapshot): void {
   if (!snapshot.chat) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const chat = locateChatScopedSnapshot(snapshot)
     if (!chat) return
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
@@ -357,7 +357,7 @@ export function currentChatGenerationSettingsSnapshot(chatId: string): ChatGener
 }
 
 export function restoreChatGenerationSettings(snapshot: ChatGenerationSettingsSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const location = locateChatById(snapshot.chatId, snapshot.characterId)
     if (!location) return
     const row = location.chat as unknown as Record<string, unknown>
@@ -412,7 +412,7 @@ export function currentChatScriptstateSnapshot(includeNote = false): ChatScripts
 }
 
 export function restoreChatScriptstate(snapshot: ChatScriptstateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const chat = locateScriptstateChat(snapshot)
     if (!chat) return
     chat.scriptstate = snapshot.scriptstate ? { ...snapshot.scriptstate } : undefined
@@ -425,7 +425,7 @@ function restoreChatScriptstateAttempt(
   attemptedPatch: ChatScriptstatePatch,
   attemptedDeleteKeys: readonly string[],
 ): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const chat = locateScriptstateChat(snapshot)
     if (!chat) return
 
@@ -462,7 +462,7 @@ function restoreChatScriptstateAttempt(
 
 function restoreChatNoteAttempt(snapshot: ChatScriptstateSnapshot, attemptedNote: string): void {
   if (snapshot.note === undefined) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const chat = locateScriptstateChat(snapshot)
     if (!chat) return
     applyAttemptedFieldRollback({
@@ -550,7 +550,7 @@ export interface ChatRowMetadataSnapshot {
 type ChatRowMetadataRollback = (snapshot: ChatRowMetadataSnapshot) => void
 
 export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     const chat = character?.chats?.find((candidate) => candidate.id === snapshot.chatId)
     if (!chat) return
@@ -586,7 +586,7 @@ export interface ChatFolderRowMetadataSnapshot {
 }
 
 export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(snapshot.characterId, snapshot.selectedCharID)
     const folder = character?.chatFolders?.find((candidate) => candidate.id === snapshot.folderId)
     if (!folder) return
@@ -807,7 +807,7 @@ function importedChatCreateRollbackFromState(
 
 function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
     const chats = character?.chats
     if (!character || !chats) return
@@ -835,7 +835,7 @@ function restoreCreatedChatAttempt(rollback: ChatCreateRollback | null): void {
 
 function restoreImportedCreatedChatAttempt(rollback: ChatImportedCreateRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
     const chats = character?.chats
     if (!character || !chats) return
@@ -942,7 +942,7 @@ function chatFolderMetadataRollbackFromPatch(
 function restoreCreatedChatFolderAttempt(characterId: string, folder: ChatFolder, previous: ChatStateSnapshot): void {
   if (!folder.id) return
   const attempted = cloneJsonValue(folder)
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
     const folders = character?.chatFolders
     if (!folders) return
@@ -980,7 +980,7 @@ function chatCreatedFolderRollbackFromState(
 
 function restoreCreatedChatFolderAttemptIfUnreferenced(rollback: ChatCreatedFolderRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
     const folders = character?.chatFolders
     if (!character || !folders) return
@@ -1057,7 +1057,7 @@ function chatDeleteRollbackFromState(chatId: string, previous: ChatStateSnapshot
 
 function restoreDeletedChatAttempt(rollback: ChatDeleteRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
     const chats = character?.chats
     if (!character || !chats) return
@@ -1123,7 +1123,7 @@ function chatFolderDeleteRollbackFromState(
 
 function restoreDeletedChatFolderAttempt(rollback: ChatFolderDeleteRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
     const folders = character?.chatFolders
     if (!character || !folders) return
@@ -1212,7 +1212,7 @@ function liveChatFolderAssignmentsMatch(
 
 function restoreChatOrderAttempt(rollback: ChatReorderRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(rollback.characterId, rollback.selectedCharID)
     const chats = character?.chats
     if (!character || !chats) return
@@ -1245,7 +1245,7 @@ function restoreChatFolderOrderAttempt(
   attemptedIds: string[],
   previous: ChatStateSnapshot,
 ): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(characterId, previous.selectedCharID)
     const folders = character?.chatFolders
     if (!character || !folders) return
@@ -1545,7 +1545,7 @@ export function setCurrentChatGreetingIndex(
   const shouldDispatch = options.dispatch !== false
   const previous = shouldDispatch && chatId ? currentChatStateSnapshot() : null
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveChat || (chatId && liveChat.id !== chatId)) return
@@ -1574,7 +1574,7 @@ export function dispatchSaveChatGenerationSettings(
   }
 
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const location = locateChatById(chatId, rollback.characterId)
     if (!location) return
     location.chat.generationSettings = cloneJsonValue(commandSettings)
@@ -1690,7 +1690,7 @@ export function mutateChatWithScopedCommand(
   }
 
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveCharacter || !liveChat) return
@@ -1725,7 +1725,7 @@ export async function mutateChatWithScopedCommandAsync(
   }
 
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveCharacter || !liveChat) return
@@ -2439,7 +2439,7 @@ export function appendCurrentChatEmptyCharMessage(): void {
   let characterId: string | undefined
   let applied = false
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
     if (!liveChat) return
@@ -2501,7 +2501,7 @@ export async function appendCurrentChatUserMessageForSend(
   let characterId: string | undefined
   let applied = false
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.[selectedChar]
     const chat = character?.chats?.[character.chatPage]
     if (!chat) return
@@ -2566,7 +2566,7 @@ function removeOptimisticCurrentChatMessage(input: {
   chatId: string | undefined
   messageId: string
 }): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSnapshotCharacter(input.characterId, input.selectedCharID)
     if (!character?.chats) return
     const chatIndex = locateChatIndex(character, input.chatId)
@@ -2586,7 +2586,7 @@ function restoreScopedMessagePatchAttempt(
   attemptedPatch: MessageSnapshot,
 ): void {
   if (!previous.chat) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveChat = locateChatScopedSnapshot(previous)
     const liveMessages = liveChat?.message
     if (!liveMessages) return
@@ -2614,7 +2614,7 @@ function restoreScopedMessagePatchAttempt(
 function restoreScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
   if (!previous.chat || !attemptedMessages) return
   const previousMessages = cloneJsonValue(previous.chat.message ?? [])
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveChat = locateChatScopedSnapshot(previous)
     if (!liveChat) return
     if (snapshotJson(liveChat.message ?? []) !== snapshotJson(attemptedMessages)) return
@@ -2945,7 +2945,7 @@ export function patchChatScriptstateValue(
   if (!previous) return false
 
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveLocation = locateChatById(chatId)
     if (!liveLocation) return
     applyScriptstatePatchToChat(liveLocation.chat, commandPatch, commandDeleteKeys)
@@ -2984,7 +2984,7 @@ export function setChatNoteValue(chatId: string | undefined, note: string): bool
   if (!previous) return false
 
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveLocation = locateChatById(chatId)
     if (!liveLocation) return
     liveLocation.chat.note = note

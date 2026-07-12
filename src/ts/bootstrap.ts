@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { getDatabase, setServerProjectionWriteGuardEnabled, type Database } from './storage/database.svelte'
+import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertTOS, waitAlert } from './alert'
@@ -141,7 +141,7 @@ export async function loadWebInitialDatabase() {
   setServerCommandSuccessReconciler((event, coalescedEvents) =>
     enqueueServerResourceSync(() => processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event])),
   )
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
   setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
   startActiveMessageTranslationRefresh()

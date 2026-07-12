@@ -1,5 +1,5 @@
 import { untrack } from 'svelte'
-import { getServerProjectionApplyEpoch } from '../server/projectionWriteGuard.svelte'
+import { getServerResourceApplyEpoch } from '../server/resourceWriteGuard.svelte'
 import type { SettingContext, SettingItem } from './types'
 import {
   UNINITIALIZED,
@@ -35,15 +35,15 @@ export function createSettingInputDraft<T>(
   let previousDraftDispatchSnapshot = snapshotJson(initialValue)
   let previousServerSnapshot = snapshotJson(initialValue)
   let previousOwnerKey = untrack(() => getSettingWriteOwnerKey(getItem(), getContext()))
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
-  let dirtyProjectionEpoch: number | null = null
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let dirtyResourceEpoch: number | null = null
 
   $effect(() => {
     const item = getItem()
     const context = getContext()
     const ownerKey = getSettingWriteOwnerKey(item, context)
-    const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
     const ownerChanged = ownerKey !== previousOwnerKey
     const serverValue = getSettingValue(item, context) as T
     const serverSnapshot = snapshotJson(serverValue)
@@ -51,28 +51,28 @@ export function createSettingInputDraft<T>(
 
     if (ownerChanged) {
       dirty = false
-      dirtyProjectionEpoch = null
+      dirtyResourceEpoch = null
       if (serverSnapshot !== draftSnapshot) replaceDraftValue(serverValue)
     } else if (serverSnapshot === draftSnapshot) {
       // A projection carrying the draft is authoritative confirmation. A
       // non-projection match is the optimistic local/preset mirror catching up.
-      if (projectionApplyChanged && dirty) dirty = false
-      dirtyProjectionEpoch = null
-    } else if (projectionApplyChanged && dirty) {
-      dirtyProjectionEpoch = projectionApplyEpoch
+      if (resourceApplyChanged && dirty) dirty = false
+      dirtyResourceEpoch = null
+    } else if (resourceApplyChanged && dirty) {
+      dirtyResourceEpoch = resourceApplyEpoch
       untrack(() => reassertSettingValue(item, draft.value, context))
-    } else if (dirty && dirtyProjectionEpoch === projectionApplyEpoch) {
+    } else if (dirty && dirtyResourceEpoch === resourceApplyEpoch) {
       // Some effective values live in a selected preset row. Reasserting their
       // DB fallback does not change that getter, so keep the control draft until
       // the preset mirror or a newer projection settles it.
     } else if (serverSnapshot !== previousServerSnapshot) {
       dirty = false
-      dirtyProjectionEpoch = null
+      dirtyResourceEpoch = null
       replaceDraftValue(serverValue)
     }
 
     previousOwnerKey = ownerKey
-    previousProjectionApplyEpoch = projectionApplyEpoch
+    previousResourceApplyEpoch = resourceApplyEpoch
     previousServerSnapshot = serverSnapshot
   })
 

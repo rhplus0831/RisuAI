@@ -14,7 +14,7 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { selectedCharID } from './stores.svelte'
@@ -146,7 +146,7 @@ export function currentCharacterStateSnapshot(): CharacterStateSnapshot {
 }
 
 export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().characters = cloneJsonValue(snapshot.characters)
     getDatabase().characterOrder = cloneJsonValue(snapshot.characterOrder)
     ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
@@ -169,7 +169,7 @@ export function currentCharacterSelectionSnapshot(characterId: string): Characte
 }
 
 export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (character) {
       character.lastInteraction = snapshot.lastInteraction
@@ -195,7 +195,7 @@ function restoreCharacterSelectionAttempt(
   previous: CharacterSelectionSnapshot,
   attempted: CharacterSelectionAttempt,
 ): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveSelectedCharID = get(selectedCharID)
     const liveCurrentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
     const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
@@ -311,7 +311,7 @@ export function currentCharacterInputTranslationHookSnapshot(
 }
 
 export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characters = getDatabase().characters
     if (snapshot.character && characters) {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
@@ -335,7 +335,7 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
 
 function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): void {
   if (!snapshot.character || !snapshot.attempted) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characters = getDatabase().characters
     if (!characters) return
     const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
@@ -350,7 +350,7 @@ function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): v
 }
 
 export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characters = getDatabase().characters
     if (characters) {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
@@ -370,7 +370,7 @@ export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot):
 }
 
 export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (!character) return
     if (snapshot.hadSupaMemory) {
@@ -382,7 +382,7 @@ export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot
 }
 
 export function restoreCharacterInputTranslationHook(snapshot: CharacterInputTranslationHookSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (!character) return
     if (snapshot.hadUseInputTranslationHook) {
@@ -486,7 +486,7 @@ function characterCreateRollbackFromState(
 function restoreCreatedCharacterAttempt(rollback: CharacterCreateRollback | null): void {
   if (!rollback) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characters = getDatabase().characters
     if (!characters) return
 
@@ -534,7 +534,7 @@ function characterDeleteRollbackFromState(
 function restoreDeletedCharacterAttempt(rollback: CharacterDeleteRollback | null): void {
   if (!rollback) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characters = getDatabase().characters
     if (!characters) return
 
@@ -813,7 +813,7 @@ export function applyCharacterRowMutationScoped(
 ): boolean {
   const previous = currentCharacterRowSnapshot(index)
   let applied = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().characters?.[index]
     if (!target || target.chaId !== characterId) return
     mutate(target)
@@ -966,7 +966,7 @@ function characterOrderRollbackFromOrders(
 }
 
 function restoreCharacterOrderAttempt(rollback: CharacterOrderRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveOrder = getDatabase().characterOrder ?? []
     if (!characterOrderStructureEquals(liveOrder, rollback.attemptedOrder)) return
 
@@ -1071,7 +1071,7 @@ export function repairCharacterOrderOptimistically(
 
   const shouldDispatchReorder = options.dispatchReorder ?? true
   const previousOrder = shouldDispatchReorder ? currentCharacterOrderSnapshot() : null
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().characterOrder = normalized.characterOrder
   })
   if (previousOrder) {
@@ -1088,7 +1088,7 @@ export function moveCharacterOrderItem(
 
   const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characterOrder = ensureCharacterOrder()
     let mainFolderIndex = mainIndex.folder ? getCharacterOrderFolderIndex(mainIndex.folder) : null
     const targetFolderIndex = targetIndex.folder ? getCharacterOrderFolderIndex(targetIndex.folder) : null
@@ -1176,7 +1176,7 @@ export function createCharacterOrderFolder(
 
   const previousOrder = currentCharacterOrderSnapshot()
   let changed = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characterOrder = ensureCharacterOrder()
     const mainFolderIndex = mainIndex.folder ? getCharacterOrderFolderIndex(mainIndex.folder) : null
     const mainFolder = mainFolderIndex === null ? null : characterOrder[mainFolderIndex]
@@ -1239,7 +1239,7 @@ export function updateCharacterOrderFolder(
 
   let rollback: CharacterOrderFolderMetadataRollback | null = null
   let changed = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characterOrder = ensureCharacterOrder()
     const folderIndex = resolveCharacterOrderFolderIndex(characterOrder, folderIdOrIndex)
     if (folderIndex === -1) return
@@ -1314,7 +1314,7 @@ function captureCharacterOrderFolderMetadata(
 }
 
 function restoreCharacterOrderFolderMetadataAttempt(rollback: CharacterOrderFolderMetadataRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const characterOrder = getDatabase().characterOrder ?? []
     const folderIndex = findCharacterOrderFolderIndex(characterOrder, rollback.folderId)
     if (folderIndex === -1) return
@@ -1406,7 +1406,7 @@ function characterOrderEquals(
 
 export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {
   if (!characterId) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character || Boolean(character.supaMemory) === enabled) return
 
@@ -1420,7 +1420,7 @@ export function setCharacterSupaMemory(characterId: string, enabled: boolean): v
 
 export function setCharacterInputTranslationHook(characterId: string, enabled: boolean): void {
   if (!characterId) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character || Boolean(character.useInputTranslationHook) === enabled) return
 

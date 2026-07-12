@@ -39,7 +39,7 @@ import {
   dispatchUpdateCharacterTrashTime,
   repairCharacterOrderOptimistically,
 } from './characterCommands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { ensureAllChatsHydrated, hydrateChatMessages } from './server/chatMessageHydration.svelte'
 import { hydrateCharacterShell, hydrateSelectedCharacterShell } from './server/characterShellHydration.svelte'
 import { createLatestOperationGuard, type LatestOperationToken } from './server/staleStateGuards'
@@ -117,7 +117,7 @@ export function createNewCharacter(
   const select = options.select ?? false
   const lastInteraction = Date.now()
   let index = -1
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().characters.push(character)
     index = getDatabase().characters.length - 1
     if (select) {
@@ -245,7 +245,7 @@ export async function selectCharImg(charIndex: number) {
     }
 
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       if (!isFreshAvatarUpload(token)) {
         return
       }
@@ -278,7 +278,7 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
   const dispatch = options.dispatch ?? true
   const previous = dispatch ? currentCharacterRowSnapshot(charIndex) : null
   const previousCharacter = previous?.character ?? null
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const char = getDatabase().characters[charIndex] as character
     if (!char.image || char.image === '') {
       return
@@ -301,7 +301,7 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
 export function changeCharImage(charIndex: number, changeIndex: number) {
   const previous = currentCharacterRowSnapshot(charIndex)
   const previousCharacter = previous.character
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const char = getDatabase().characters[charIndex] as character
     const image = char.ccAssets[changeIndex].uri
     char.ccAssets.splice(changeIndex, 1)
@@ -372,7 +372,7 @@ export async function addCharEmotion(charId: number) {
       }
 
       let applied = false
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const dbChar = getDatabase().characters[charId]
         const emotionImages = appendFreshCharacterEmotionImages({
           operation: activeOperation,
@@ -404,7 +404,7 @@ export async function addCharEmotion(charId: number) {
 export function rmCharEmotion(charId: number, emotionId: number) {
   const previous = currentCharacterRowSnapshot(charId)
   const previousCharacter = previous.character
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     let dbChar = getDatabase().characters[charId]
     dbChar.emotionImages.splice(emotionId, 1)
     getDatabase().characters[charId] = dbChar
@@ -792,7 +792,7 @@ export async function importChat() {
         newChat.folderId = null
       }
 
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const character = getDatabase().characters[selectedID]
         character.chats.unshift(newChat)
         character.chatPage = 0
@@ -818,7 +818,7 @@ export async function importChat() {
           rekeyImportedChat(chat)
           normalizeImportedChatGenerationSettings(chat)
         })
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           if (getDatabase().characters[selectedID].chatFolders === undefined) {
             getDatabase().characters[selectedID].chatFolders = []
           }
@@ -846,7 +846,7 @@ export async function importChat() {
             normalizeImportedChatGenerationSettings(v)
             return v
           })
-          withTrustedServerProjectionWrite(() => {
+          withTrustedResourceWrite(() => {
             getDatabase().characters[selectedID].chats.unshift(...normalizedChats)
           })
           const result = await dispatchCreateImportedChats(characterId, [], normalizedChats, previous)
@@ -872,7 +872,7 @@ export async function importChat() {
           clearUnknownImportedFolder(das, getDatabase().characters[selectedID])
           rekeyImportedChat(das)
           normalizeImportedChatGenerationSettings(das)
-          withTrustedServerProjectionWrite(() => {
+          withTrustedResourceWrite(() => {
             getDatabase().characters[selectedID].chats.unshift(das)
           })
           if (characterId) {
@@ -908,7 +908,7 @@ export async function importChat() {
         clearUnknownImportedFolder(json, getDatabase().characters[selectedID])
         rekeyImportedChat(json)
         normalizeImportedChatGenerationSettings(json)
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           getDatabase().characters[selectedID].chats.unshift(json)
         })
         if (characterId) {
@@ -1265,7 +1265,7 @@ export async function removeChar(
     const previous = currentCharacterTrashTimeSnapshot(index)
     const characterId = previous.characterId
     const trashTime = Date.now()
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[index].trashTime = trashTime
       chars = getDatabase().characters
     })
@@ -1275,7 +1275,7 @@ export async function removeChar(
   } else {
     const previous = currentCharacterStateSnapshot()
     const characterId = chars[index]?.chaId
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters.splice(index, 1)
       chars = getDatabase().characters
     })
@@ -1402,7 +1402,7 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   if (liveIndex < 0 || isServerCharacterShell(getDatabase().characters?.[liveIndex])) return
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters?.[liveIndex]
     if (character) {
       character.lastInteraction = lastInteraction

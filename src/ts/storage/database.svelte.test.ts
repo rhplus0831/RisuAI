@@ -39,7 +39,7 @@ import {
   setDatabase,
   setDatabaseLite,
   setPreset,
-  setServerProjectionWriteGuardEnabled,
+  setResourceWriteGuardEnabled,
   selectModelPreset,
   selectPromptPreset,
   updatePreset,
@@ -650,11 +650,11 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   setDatabaseLite({
     characters: [],
     modules: [],
@@ -963,7 +963,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [preset],
       botPresetsId: 0,
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const before = getDatabase()
 
     expect(botPresetIdsNeedNormalization(getDatabase())).toBe(false)
@@ -992,7 +992,7 @@ describe('preset command rollback (L21)', () => {
         botPresets: scenario.botPresets,
         botPresetsId: 0,
       })
-      setServerProjectionWriteGuardEnabled(true)
+      setResourceWriteGuardEnabled(true)
       const fetchSpy = vi.fn(async () => {
         throw new Error(`unexpected preset hydration fetch for ${scenario.name}`)
       })
@@ -1007,7 +1007,7 @@ describe('preset command rollback (L21)', () => {
       expect(getDatabase()).toBe(before)
       expect(JSON.stringify(getDatabase())).toBe(beforeJson)
 
-      setServerProjectionWriteGuardEnabled(false)
+      setResourceWriteGuardEnabled(false)
       vi.unstubAllGlobals()
     }
   })
@@ -1017,7 +1017,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const fetchSpy = vi.fn(async () => {
       throw new Error('unexpected preset hydration fetch for invalid index')
     })
@@ -1037,7 +1037,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
@@ -1066,7 +1066,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(5)
     const response = deferred<Response>()
     const fetchSpy = vi.fn((input: RequestInfo | URL) => {
@@ -1101,7 +1101,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(5)
     const response = deferred<Response>()
     const fetchSpy = vi.fn(() => response.promise)
@@ -1139,7 +1139,7 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 0,
     })
     delete (getDatabase() as unknown as { promptTemplate?: unknown }).promptTemplate
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
     saveCurrentPreset()
@@ -1158,7 +1158,7 @@ describe('preset command rollback (L21)', () => {
       promptTemplate: [{ id: 'live-only-prompt', type: 'plain', text: 'live only prompt row' }] as any,
     })
     const beforePresetTemplate = clonePlain(getDatabase().botPresets[0].promptTemplate)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
     saveCurrentPreset()
@@ -1173,7 +1173,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     setCachedServerCommandRevision(9)
     vi.stubGlobal(
       'fetch',

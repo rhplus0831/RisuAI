@@ -7,7 +7,7 @@ import {
   sanitizeCharacterPatch,
 } from 'src/ts/characterCommands'
 import { canUseServerCommands } from 'src/ts/server/commands'
-import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 import {
   ensureClientLorebookEntryIds,
@@ -1186,7 +1186,7 @@ function characterAccessName(char: character): string {
 
 function applyCharacterInfoPatchOptimistically(characterId: string, patch: Record<string, unknown>): void {
   if (Object.keys(patch).length === 0) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!target) return
     const mutableTarget = target as unknown as Record<string, unknown>
@@ -1197,14 +1197,14 @@ function applyCharacterInfoPatchOptimistically(characterId: string, patch: Recor
 }
 
 function replaceCharacterRegexScriptsOptimistically(characterId: string, scripts: character['customscript']): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (target) target.customscript = scripts
   })
 }
 
 function replaceCharacterTriggersOptimistically(characterId: string, triggers: character['triggerscript']): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (target) target.triggerscript = triggers
   })

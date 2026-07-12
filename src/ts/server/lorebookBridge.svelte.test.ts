@@ -8,13 +8,13 @@ import path from 'node:path'
 // `globalLore` makes a `[real]`→`[]` (hydrated→stub) transition possible, which —
 // without the hydrated registry — the watcher would persist as a DELETION. Per the
 // handover, keep the resource-backed database real (it is the live $state the watcher reads)
-// and mock only the command layer + the projection guard. Drive the reactive effect
+// and mock only the command layer + the resource guard. Drive the reactive effect
 // with flushSync() and the debounce with fake timers.
 
 const recorded = vi.hoisted(() => ({
   commands: [] as Array<Record<string, unknown> & { rollback?: () => void }>,
 }))
-const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   runServerCommand: vi.fn(
@@ -59,14 +59,14 @@ vi.mock('./commands', () => ({
   upsertGlobalLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertGlobalEntry', a }),
   upsertModuleLorebookEntryCommand: async (a: unknown) => ({ kind: 'upsertModuleEntry', a }),
 }))
-vi.mock('./projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withServerProjectionApply: (fn: () => unknown) => {
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withServerResourceApply: (fn: () => unknown) => {
     const result = fn()
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     return result
   },
-  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
 import { selectedCharID } from '../stores.svelte'
@@ -210,7 +210,7 @@ function localFunctionSource(source: string, name: string): string {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  projectionGuardState.epoch = 0
+  resourceGuardState.epoch = 0
   resetLorebookHydration()
   recorded.commands.length = 0
 })
@@ -743,7 +743,7 @@ describe('global lorebook modal bridge helpers', () => {
   it('routes lorepreset create, rename, and delete writes through bridge helpers', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/Setting/lorepreset.svelte'), 'utf8')
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentGlobalLorebookStateSnapshot')
     expect(source).not.toContain('dispatchCreateGlobalLorebook')
     expect(source).not.toContain('dispatchDeleteGlobalLorebook')
@@ -1501,7 +1501,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(source).toContain("applyLorebookEntryDraftEdit({ kind: 'module', moduleId }, index, value)")
     expect(source).toContain("flushPendingLorebookEntryDraftEdit({ kind: 'module', moduleId })")
     expect(source).toContain('replaceModuleLorebookCollectionDraft(moduleId, currentModule, entries)')
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
     expect(source).not.toContain('dispatchReplaceModuleLorebooks')
     expect(lorebookList).toContain('onEntryChange={updateModuleLorebookValue}')
@@ -1514,7 +1514,7 @@ describe('K4 lorebook editor entry draft scope', () => {
     const list = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookList.svelte'), 'utf8')
 
     for (const source of [setting, list]) {
-      expect(source).not.toContain('withTrustedServerProjectionWrite')
+      expect(source).not.toContain('withTrustedResourceWrite')
       expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
       expect(source).not.toContain('dispatchReplaceCharacterLorebooks')
       expect(source).not.toContain('dispatchReplaceChatLorebooks')
@@ -1530,7 +1530,7 @@ describe('K4 lorebook editor entry draft scope', () => {
   it('Batch 5: LoreBookData local activation delegates trusted writes to the bridge', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentLorebookCollectionScopedSnapshot')
     expect(source).not.toContain('dispatchReplaceChatLorebooks')
     expect(source).toContain('setActiveChatLorebookLocalActivation')

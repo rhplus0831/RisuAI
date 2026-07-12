@@ -17,7 +17,7 @@ import {
   type ServerCommandResult,
   type SettingsGroup,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 
@@ -149,7 +149,7 @@ export function currentPluginStateSnapshot(): PluginStateSnapshot {
 }
 
 export function restorePluginState(snapshot: PluginStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     pluginWatchSuppressionVersion += 1
     getDatabase().plugins = cloneJsonValue(snapshot.plugins)
     getDatabase().currentPluginProvider = snapshot.currentPluginProvider
@@ -303,7 +303,7 @@ export function setPluginArgument(pluginName: string, arg: string, value: number
     [arg]: value,
   })
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = findPluginByName(pluginName)
     if (!target) return
     getDatabase().plugins[target.index] = {
@@ -323,7 +323,7 @@ export function togglePluginEnabled(pluginName: string): boolean {
   const previous = currentPluginStateSnapshot()
   const enabled = !plugin.enabled
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = findPluginByName(pluginName)
     if (!target) return
     getDatabase().plugins[target.index] = {
@@ -342,7 +342,7 @@ export function deletePlugin(pluginName: string): boolean {
   const { plugin } = current
   const previous = currentPluginStateSnapshot()
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     if (getDatabase().currentPluginProvider === plugin.name) {
       getDatabase().currentPluginProvider = ''
     }
@@ -593,7 +593,7 @@ function rollbackPluginNonStorageEntries(
 ): void {
   let changed = false
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     void entries
     for (const target of operation.targets) {
       const pendingOperations = pendingPluginNonStorageOperationsByTarget.get(target)
@@ -811,7 +811,7 @@ export function currentPluginStorageSnapshot(): PluginStorageSnapshot {
 }
 
 export function restorePluginStorage(snapshot: PluginStorageSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     pluginWatchSuppressionVersion += 1
     getDatabase().pluginCustomStorage = cloneJsonValue(snapshot)
   })
@@ -973,7 +973,7 @@ function rollbackPluginStorageEntries(
 ): void {
   let changed = false
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveStorage = ensureLivePluginStorage()
 
     for (const entry of entries) {
@@ -1182,7 +1182,7 @@ function captureCurrentPluginSettingsPatchRollbackEntries(
 function rollbackPluginSettingsPatch(snapshot: PluginSettingsPatchRollbackSnapshot): void {
   if (Object.keys(snapshot.attempted).length === 0) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase() as unknown as Record<string, unknown>
     applyAttemptedFieldRollback({
       target,

@@ -16,7 +16,7 @@ vi.mock('../process/modules', async (importActual) => {
   return { ...actual, moduleUpdate: vi.fn() }
 })
 
-import { mergeServerProjectionFields, setServerProjectionWriteGuardEnabled } from '../storage/database.svelte'
+import { mergeServerProjectionFields, setResourceWriteGuardEnabled } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
   peekCachedServerCommandRevision,
@@ -41,7 +41,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 beforeEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   ;(testDatabaseState as { db: unknown }).db = { characters: [], modules: [], enabledModules: [] }
   clearCachedServerCommandRevision()
   resetPromptTemplateHydration()
@@ -51,7 +51,7 @@ beforeEach(() => {
 
 afterEach(() => {
   const database = JSON.parse(JSON.stringify(testDatabaseState.db))
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   testDatabaseState.db = database
 })
 
@@ -113,7 +113,7 @@ describe('promptTemplate hydration', () => {
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
     setCachedServerCommandRevision(5)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -149,7 +149,7 @@ describe('promptTemplate hydration', () => {
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -294,7 +294,7 @@ describe('promptTemplate hydration', () => {
       promptTemplate: null,
     })
 
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     try {
       await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
 
@@ -307,7 +307,7 @@ describe('promptTemplate hydration', () => {
         delete testDatabaseState.db.promptTemplate
       }).toThrow('The resource database compatibility view is read-only')
     } finally {
-      setServerProjectionWriteGuardEnabled(false)
+      setResourceWriteGuardEnabled(false)
     }
   })
 })

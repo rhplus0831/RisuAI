@@ -15,7 +15,7 @@ import {
   type ServerCommandTransportOptions,
   type TriggerDefinitionSnapshot,
 } from './commands'
-import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
@@ -98,7 +98,7 @@ export function currentScriptDefinitionStateSnapshot(): ScriptDefinitionStateSna
 }
 
 export function restoreScriptDefinitionState(snapshot: ScriptDefinitionStateSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().characters = cloneJsonValue(snapshot.characters)
     getDatabase().modules = cloneJsonValue(snapshot.modules) as Database['modules']
   })
@@ -125,7 +125,7 @@ export function applyCharacterScriptDefinitionDraft(
   let applied = false
 
   suppressRollbackDispatch = true
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!target) return
     if (scriptsChanged || hadScriptsField) {
@@ -197,7 +197,7 @@ export function applyModuleScriptDefinitionDraft(
   let applied = false
 
   suppressRollbackDispatch = true
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetLiveModule = findModule(moduleId)
     const targetDraftModule = currentModule?.id === moduleId ? currentModule : null
     if (!targetLiveModule && !targetDraftModule) return
@@ -419,7 +419,7 @@ export function watchServerBackedScriptDefinitions(
   const scope: ScriptDefinitionWatchScope = options.scope ?? { kind: 'all' }
   let initialized = false
   let previousSnapshots = new Map<string, string>()
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   // A character-scoped watcher must re-run when the selected character changes,
   // so mirror the store into the $state the collector reads. Other scopes do not
@@ -433,15 +433,15 @@ export function watchServerBackedScriptDefinitions(
 
   const stop = $effect.root(() => {
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
       // The per-key stringify map is the only change-detection input and the only
       // per-fire clone: each value is one row's small scripts/triggers array, not
       // the whole characters+modules graph (which carries hydrated histories).
       const currentSnapshots = collectScriptDefinitionCollectionSnapshots(scope)
 
-      if (suppressRollbackDispatch || !initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
+      if (suppressRollbackDispatch || !initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
         initialized = true
-        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousResourceApplyEpoch = resourceApplyEpoch
         previousSnapshots = currentSnapshots
         return
       }
@@ -959,7 +959,7 @@ function restoreScopedScriptDefinition(
   rollback: ScopedScriptDefinitionRollback,
   attempted?: ScopedScriptDefinitionAttempt,
 ): boolean {
-  return withTrustedServerProjectionWrite(() => {
+  return withTrustedResourceWrite(() => {
     switch (rollback.kind) {
       case 'characterScripts': {
         const character = getDatabase().characters?.find((candidate) => candidate.chaId === rollback.characterId)

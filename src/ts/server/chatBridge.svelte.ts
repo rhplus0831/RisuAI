@@ -19,7 +19,7 @@ import {
 } from './commands'
 import { selectedCharID } from '../stores.svelte'
 import type { Chat, ChatFolder } from '../storage/database.svelte'
-import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 
 interface PendingChatPatch {
@@ -92,7 +92,7 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
   let previousFolders = new Map<string, ChatFolderSnapshot>()
   let previousSelectedChar = get(selectedCharID)
   let previousCharacterId = getDatabase().characters?.[previousSelectedChar]?.chaId
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   resetActiveChatMetadataBaselines = () => {
     const current = currentChatMetadataBaselines()
@@ -100,15 +100,15 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
     previousFolders = current.folders
     previousSelectedChar = current.selectedChar
     previousCharacterId = current.characterId
-    previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+    previousResourceApplyEpoch = getServerResourceApplyEpoch()
     initialized = true
   }
 
   activeStop = $effect.root(() => {
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
-      const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
-      if (projectionApplyChanged) {
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
+      const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
+      if (resourceApplyChanged) {
         untrack(reassertPendingChatMetadataPatches)
       }
       const current = currentChatMetadataBaselines({
@@ -118,9 +118,9 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
         folders: previousFolders,
       })
 
-      if (suppressRollbackDispatch || !initialized || projectionApplyChanged) {
+      if (suppressRollbackDispatch || !initialized || resourceApplyChanged) {
         initialized = true
-        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousResourceApplyEpoch = resourceApplyEpoch
         previousChats = current.chats
         previousFolders = current.folders
         previousSelectedChar = current.selectedChar
@@ -353,7 +353,7 @@ function reassertPendingChatMetadataPatches(): void {
     return
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     for (const [chatId, patches] of inFlightChatPatches) {
       for (const pending of patches) {
         applyChatMetadataPatch(chatId, pending.characterId, pending.selectedCharID, pending.patch)

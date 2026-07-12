@@ -65,7 +65,7 @@
   import { parseMultilangString } from 'src/ts/util'
   import MobileCharacters from '../Mobile/MobileCharacters.svelte'
   import { currentCharacterRowSnapshot, dispatchUpdateCharacterScoped } from 'src/ts/characterCommands'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
   interface Props {
     endGrid?: any
@@ -96,7 +96,7 @@
     const characterId = character.chaId
     const previous = currentCharacterRowSnapshot(index)
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveIndex = characterId
         ? getDatabase().characters.findIndex((candidate) => candidate.chaId === characterId)
         : index

@@ -16,7 +16,7 @@ const recorded = vi.hoisted(() => ({
   }>,
   folderResult: null as Promise<{ status: 'ok' }> | null,
 }))
-const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const chatCommandState = vi.hoisted(() => ({
   getDb: null as null | (() => Record<string, unknown>),
   getSelectedCharId: null as null | (() => number),
@@ -27,9 +27,9 @@ vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
 }))
 
-vi.mock('./projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withTrustedServerProjectionWrite: (callback: () => unknown) => callback(),
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withTrustedResourceWrite: (callback: () => unknown) => callback(),
 }))
 
 vi.mock('../chatCommands', () => {
@@ -178,7 +178,7 @@ function setupChat(name = 'Initial'): void {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  projectionGuardState.epoch = 0
+  resourceGuardState.epoch = 0
   chatCommandState.getDb = () => getDatabase() as unknown as Record<string, unknown>
   chatCommandState.getSelectedCharId = () => {
     let selected = -1
@@ -208,7 +208,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().characters[0].chats[0].name = 'Server'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -226,7 +226,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().characters[0].chatFolders[0].name = 'Server Folder'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -256,7 +256,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     getDatabase().characters[0].chatFolders[0].name = 'folder'
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().characters[0].chats[0].name = 'Server Old Chat'
     getDatabase().characters[0].chatFolders[0].name = 'Server Old Folder'
     flushSync()
@@ -268,7 +268,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { name: 'hello' } }])
     expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { name: 'folder' } }])
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().characters[0].chats[0].name = 'Older In-Flight Chat'
     getDatabase().characters[0].chatFolders[0].name = 'Older In-Flight Folder'
     flushSync()
@@ -459,7 +459,7 @@ describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().characters[0].chats[0].name = 'Server Renamed'
 
     const instrumented = withCloneInstrumentation(() => flushSync())

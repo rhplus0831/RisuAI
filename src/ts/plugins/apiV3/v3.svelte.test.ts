@@ -249,8 +249,8 @@ vi.mock('src/ts/process/ttsHooks', () => ({
   unregisterTTSPostprocessor: vi.fn(),
 }))
 
-vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
-  withTrustedServerProjectionWrite: (fn: () => void) => fn(),
+vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
+  withTrustedResourceWrite: (fn: () => void) => fn(),
 }))
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'

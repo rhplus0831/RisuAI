@@ -22,7 +22,7 @@ import {
   type ServerCollectionName,
   type ServerCollectionsResourcePayload,
 } from './resourceState.svelte'
-import { withServerProjectionApply as withServerResourceApply } from './projectionWriteGuard.svelte'
+import { withServerResourceApply } from './resourceWriteGuard.svelte'
 
 export const FULL_RESOURCE_REFRESH_MAX_ATTEMPTS = 3
 

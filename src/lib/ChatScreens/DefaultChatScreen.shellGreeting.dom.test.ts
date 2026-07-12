@@ -151,8 +151,8 @@ vi.mock('src/ts/activeChatGenerationSettings', async (importActual) => {
 })
 
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({ applyServerBackedSetting: vi.fn() }))
-vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
-  withTrustedServerProjectionWrite: (callback: () => void) => callback(),
+vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
+  withTrustedResourceWrite: (callback: () => void) => callback(),
 }))
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesProjection: vi.fn(),

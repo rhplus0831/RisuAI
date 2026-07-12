@@ -1,6 +1,6 @@
 import { language } from '../../../lang'
 import { canUseServerCommands } from '../../server/commands'
-import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { currentChatStateSnapshot, dispatchUpdateChat } from '../../chatCommands'
 import { getDatabase, type Chat, type character } from '../../storage/database.svelte'
 import type { ChatTokenizer } from '../../tokenizer'
@@ -125,7 +125,7 @@ export async function buildMemoryWindow(args: BuildMemoryWindowArgs): Promise<Bu
     const lastMemory = chats[0].memo
     if (canUseServerCommands() && currentChat.id) {
       const previous = currentChatStateSnapshot()
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().characters[selectedChar].chats[selectedChat].lastMemory = lastMemory
       })
       dispatchUpdateChat(currentChat.id, { lastMemory }, previous)

@@ -22,7 +22,7 @@ import {
   type ServerCommandResult,
 } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getModuleToggles } from './modules'
 
 export interface SendChatContextResult {
@@ -65,7 +65,7 @@ function currentSendRollbackSnapshot(input: {
 }
 
 function restoreSendRollbackSnapshot(snapshot: SendRollbackSnapshot): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = locateSendSnapshotCharacter(snapshot)
     if (!character) return
 
@@ -159,7 +159,7 @@ export function setupSendChatContext(args: {
     const factories: Array<(baseRevision: number) => Promise<ServerCommandResult>> = []
     let rollbackSnapshot: SendRollbackSnapshot | null = null
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const nowChatroom = getDatabase().characters[selectedChar]
       const characterId = nowChatroom.chaId
       const selectedChat = nowChatroom.chatPage

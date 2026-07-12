@@ -23,7 +23,7 @@ vi.mock('./process/coldstorage.svelte', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type CommandEvent } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import {
   currentCharacterSelectionSnapshot,
   currentCharacterStateSnapshot,
@@ -148,7 +148,7 @@ function seedCharacter(): character {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(0)
   testDatabaseState.db = {
@@ -159,7 +159,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 })
 
 describe('Phase 9-3f compatibility adapters', () => {
@@ -370,7 +370,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('keeps character asset helper writes behind trusted projection updates', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.characters[0].image = 'direct'
@@ -392,7 +392,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('creates characters through trusted optimistic projection writes under the guard', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
@@ -422,7 +422,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('creates and selects scratch characters with one server command under the guard', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const index = createNewCharacter({ select: true })
 
@@ -456,7 +456,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       ...testDatabaseState.db.characters[0],
       triggerscript: undefined,
     } as character
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await changeChar(0)
 
@@ -527,7 +527,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await changeChar(1)
 
@@ -584,7 +584,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       characterOrder: ['char-a', 'char-b'],
     } as any
     selectedCharID.set(0)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await changeChar(1)
 
@@ -619,7 +619,7 @@ describe('Phase 9-3f compatibility adapters', () => {
   it('routes MCP character lorebook writes through lorebook commands in server-backed web mode', async () => {
     const calls = stubCommandFetch()
     const handler = new CharacterHandler()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.characters[0].globalLore = []
@@ -660,7 +660,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     ]
     const handler = new CharacterHandler()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.characters[0].customscript = []
@@ -729,7 +729,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       },
     ]
     const handler = new ModuleHandler()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.modules[0].regex = []
@@ -784,7 +784,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     testDatabaseState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
     testDatabaseState.db.enabledModules = []
     const handler = new ModuleHandler()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.enabledModules.push('mod-a')

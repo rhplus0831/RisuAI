@@ -107,7 +107,7 @@
     mergeScriptDefinitionProjectionRows,
     watchServerBackedScriptDefinitions,
   } from 'src/ts/server/scriptDefinitionBridge.svelte'
-  import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
@@ -194,7 +194,7 @@
   let characterTriggersDraft = $state<triggerscript[]>([])
   let scriptDraftCharacterId = $state<string | null>(null)
   let scriptDraftSnapshot = ''
-  let previousScriptDraftProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousScriptDraftResourceApplyEpoch = getServerResourceApplyEpoch()
   let suppressScriptDraftDispatch = false
   const scriptDirtyFieldsById = new Map<string, Set<string>>()
   const triggerDirtyFieldsById = new Map<string, Set<string>>()
@@ -215,9 +215,9 @@
   })
 
   $effect(() => {
-    const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    const projectionApplyChanged = projectionApplyEpoch !== previousScriptDraftProjectionApplyEpoch
-    previousScriptDraftProjectionApplyEpoch = projectionApplyEpoch
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    const resourceApplyChanged = resourceApplyEpoch !== previousScriptDraftResourceApplyEpoch
+    previousScriptDraftResourceApplyEpoch = resourceApplyEpoch
     const character = getDatabase().characters?.[$selectedCharID]
     const characterId = character?.chaId ?? null
     const snapshot = snapshotJson({
@@ -231,7 +231,7 @@
       clearScriptDraftDirtyState()
     }
 
-    if (!targetChanged && projectionApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
+    if (!targetChanged && resourceApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
       clearDirtyScriptDefinitionFieldsMatchingProjection(
         scriptDirtyFieldsById,
         characterScriptsDraft,
@@ -248,7 +248,7 @@
       suppressScriptDraftDispatch = true
       scriptDraftCharacterId = characterId
 
-      if (!targetChanged && projectionApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
+      if (!targetChanged && resourceApplyChanged && hasDirtyScriptDefinitionDraftFields()) {
         const nextScripts = reconcileScriptDefinitionDraftRows(
           characterScriptsDraft,
           character?.customscript ?? [],
@@ -275,7 +275,7 @@
           scriptDraftSnapshot = snapshot
         }
       } else {
-        if (!projectionApplyChanged) {
+        if (!resourceApplyChanged) {
           clearScriptDraftDirtyState()
         }
         characterScriptsDraft = cloneJsonValue(character?.customscript ?? [])

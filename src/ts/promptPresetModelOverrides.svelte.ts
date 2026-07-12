@@ -7,7 +7,7 @@ import {
   promptPresetOverridesModelParameters,
 } from './presetSplit'
 import { getDatabase, updatePromptPreset, type PromptPreset } from './storage/database.svelte'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 
 type OverrideGroup = 'parameters'
 
@@ -106,7 +106,7 @@ export function createPromptPresetModelOverrideDraft<T>(
 
     untrack(() => {
       const attempted = cloneJsonValue(draft.value)
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const target = getDatabase() as unknown as Record<string, unknown>
         target[databaseKey] = attempted
       })

@@ -88,7 +88,7 @@ describe('PluginSettings', () => {
   it('routes optimistic plugin writes through plugin command helpers', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/PluginSettings.svelte'), 'utf8')
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).not.toContain('currentPluginStateSnapshot')
     expect(source).not.toContain('dispatchDeletePlugin')
     expect(source).not.toContain('dispatchEnablePlugin')

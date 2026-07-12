@@ -14,7 +14,7 @@ vi.mock('src/ts/platform', async (importActual) => {
 })
 
 vi.mock('src/ts/storage/fastifyStorage', () => ({
-  getNodeServerProxyAuth: async () => 'projection-guard-ui-token',
+  getNodeServerProxyAuth: async () => 'resource-guard-ui-token',
 }))
 
 vi.mock('src/ts/process/modules', async (importActual) => {
@@ -40,7 +40,7 @@ import BookmarkList from './BookmarkList.svelte'
 import HypaV3Modal from './HypaV3Modal.svelte'
 import { alertInput } from 'src/ts/alert'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
-import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
 import { listServerMemorySummaries, patchServerMemorySummary } from 'src/ts/process/request/serverMemory'
 import { bookmarkListOpen, hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
@@ -124,14 +124,14 @@ function seedDatabase(): void {
   } as any)
 }
 
-describe('server projection guarded UI paths', () => {
+describe('server resource guarded UI paths', () => {
   let target: HTMLElement
   let component: Record<string, never> | undefined
 
   beforeEach(() => {
     platformState.isFastifyServer = true
     clearCachedServerCommandRevision()
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     seedDatabase()
     vi.mocked(listServerMemorySummaries).mockResolvedValue({ status: 'ok', summaries: [] })
     vi.mocked(patchServerMemorySummary).mockResolvedValue({ status: 'error', error: 'not configured' })
@@ -144,14 +144,14 @@ describe('server projection guarded UI paths', () => {
       unmount(component)
       component = undefined
     }
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     vi.unstubAllGlobals()
     document.body.innerHTML = ''
   })
 
   it('mounts Hypa V3 server memory without initializing guarded chat state', async () => {
     hypaV3ModalOpen.set(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       component = mount(HypaV3Modal, { target })
@@ -196,7 +196,7 @@ describe('server projection guarded UI paths', () => {
       },
     })
     hypaV3ModalOpen.set(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     component = mount(HypaV3Modal, { target })
     let summaryTextarea: HTMLTextAreaElement | undefined
@@ -247,7 +247,7 @@ describe('server projection guarded UI paths', () => {
     const calls = stubCommandFetch()
     vi.mocked(alertInput).mockResolvedValue('New name')
     bookmarkListOpen.set(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     component = mount(BookmarkList, { target })
     await tick()
@@ -266,7 +266,7 @@ describe('server projection guarded UI paths', () => {
   it('removes bookmarks through a command patch without mutating guarded chat state', async () => {
     const calls = stubCommandFetch()
     bookmarkListOpen.set(true)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     component = mount(BookmarkList, { target })
     await tick()

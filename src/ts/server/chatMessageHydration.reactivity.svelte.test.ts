@@ -10,7 +10,7 @@ vi.mock('./resourceReads', () => ({
 
 import { selectedCharID } from '../stores.svelte'
 import { hydrateServerChatMessages } from '../storage/database.svelte'
-import { setServerProjectionWriteGuardEnabled } from './projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './resourceWriteGuard.svelte'
 import { isChatMessageHydrationPending } from './chatMessageHydration.svelte'
 
 function seedStubChat() {
@@ -25,7 +25,7 @@ function seedStubChat() {
   }
   selectedCharID.set(0)
   // Mirror bootstrap: wrap testDatabaseState.db in the read-only server projection.
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
 }
 
 beforeEach(() => {
@@ -33,12 +33,12 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
   ;(testDatabaseState as { db: unknown }).db = {}
 })
 
-describe('active-chat loading flag reactivity (real projection guard)', () => {
+describe('active-chat loading flag reactivity (real resource guard)', () => {
   it('flips from loading to loaded when hydrated messages are applied', () => {
     const seen: boolean[] = []
     const stop = $effect.root(() => {

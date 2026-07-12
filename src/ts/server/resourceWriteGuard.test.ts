@@ -1,28 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
-import { setServerProjectionWriteGuardEnabled, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { getResourceDatabaseFacadeEpoch } from './resourceState.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 beforeEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   testDatabaseState.db = seedCloneCostDb() as any
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   testDatabaseState.db = {} as any
 })
 
-describe('resource-backed projection write compatibility guard', () => {
+describe('resource-backed write compatibility guard', () => {
   it('performs zero whole-Database clones for a guarded one-field write', () => {
     // Baseline size of the hydrated characters array (char-0 has a 40-message chat).
     const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const instrumented = withCloneInstrumentation(() =>
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         testDatabaseState.db.characters[0].name = 'Renamed'
       }),
     )
@@ -35,9 +35,9 @@ describe('resource-backed projection write compatibility guard', () => {
   })
 
   it('keeps testDatabaseState.db read-only after the write (out-of-guard writes throw)', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'Renamed'
     })
 
@@ -51,11 +51,11 @@ describe('resource-backed projection write compatibility guard', () => {
   })
 
   it('keeps a stable testDatabaseState.db facade and advances its reactive resource epoch', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const before = testDatabaseState.db
     const beforeEpoch = getResourceDatabaseFacadeEpoch()
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'One'
     })
     const afterFirst = testDatabaseState.db
@@ -63,7 +63,7 @@ describe('resource-backed projection write compatibility guard', () => {
     expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeEpoch)
 
     const afterFirstEpoch = getResourceDatabaseFacadeEpoch()
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'Two'
     })
     expect(testDatabaseState.db).toBe(afterFirst)
@@ -72,15 +72,15 @@ describe('resource-backed projection write compatibility guard', () => {
   })
 
   it('keeps a nested guarded write writable mid-scope and refreezes once at the outer exit', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const before = testDatabaseState.db
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'Outer'
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         testDatabaseState.db.characters[1].name = 'Inner'
       })
-      // Still in the outer scope: the projection is not refrozen yet, so it is
+      // Still in the outer scope: the resource facade is not refrozen yet, so it is
       // writable and reflects both writes.
       testDatabaseState.db.characters[0].chats[0].note = 'still-writable'
       expect(testDatabaseState.db.characters[1].name).toBe('Inner')
@@ -96,9 +96,9 @@ describe('resource-backed projection write compatibility guard', () => {
   })
 
   it('preserves unrelated sibling rows and hydrated history across a guarded one-row write', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].name = 'Edited'
     })
 
@@ -106,14 +106,14 @@ describe('resource-backed projection write compatibility guard', () => {
     expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(40)
   })
 
-  it('supports a full-projection replacement inside a guarded write (apply path)', () => {
-    setServerProjectionWriteGuardEnabled(true)
+  it('supports a full-resource replacement inside a guarded write (apply path)', () => {
+    setResourceWriteGuardEnabled(true)
     const replacement = {
       characters: [{ chaId: 'fresh', name: 'Fresh', chats: [] }],
       loreBookPage: 3,
     }
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       // Mirrors setDatabaseLite's in-guard behavior: replace testDatabaseState.db wholesale.
       testDatabaseState.db = replacement as any
     })
@@ -127,12 +127,12 @@ describe('resource-backed projection write compatibility guard', () => {
   })
 
   it('runs the guarded write source in place so the optimistic write is visible immediately', () => {
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     // The optimistic-write gap regression: a guarded write that reads back the
     // value it just set inside the same scope must see it.
     let observedInside = ''
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].chats[0].scriptstate = { $score: '42' }
       observedInside = String(testDatabaseState.db.characters[0].chats[0].scriptstate.$score)
     })
@@ -141,24 +141,24 @@ describe('resource-backed projection write compatibility guard', () => {
     expect(testDatabaseState.db.characters[0].chats[0].scriptstate.$score).toBe('42')
   })
 
-  it('unwraps read-only nested projection values assigned during trusted writes', () => {
+  it('unwraps read-only nested resource values assigned during trusted writes', () => {
     testDatabaseState.db.personas = [
       { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
       { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
     ]
     testDatabaseState.db.selectedPersona = 0
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const reordered = [testDatabaseState.db.personas[1], testDatabaseState.db.personas[0]]
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.personas = reordered
       testDatabaseState.db.selectedPersona = 1
     })
 
     expect(testDatabaseState.db.personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-a'])
     expect(() => {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         testDatabaseState.db.personas[0].id = 'persona-b-edited'
       })
     }).not.toThrow()

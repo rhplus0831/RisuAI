@@ -1,7 +1,7 @@
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
 import { canUseServerCommands, type ModuleSnapshot } from 'src/ts/server/commands'
-import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 import {
   currentLorebookCollectionScopedSnapshot,
@@ -976,7 +976,7 @@ function cloneJsonValue<T>(value: T): T {
 function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, enabled: boolean | null): void {
   if (Object.keys(patch).length === 0 && enabled === null) return
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
     if (!target) return
 
@@ -998,21 +998,21 @@ function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, 
 }
 
 function replaceModuleLorebooksOptimistically(moduleId: string, entries: loreBook[]): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
     if (target) target.lorebook = entries
   })
 }
 
 function replaceModuleRegexScriptsOptimistically(moduleId: string, scripts: customscript[]): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
     if (target) target.regex = scripts
   })
 }
 
 function replaceModuleTriggersOptimistically(moduleId: string, triggers: triggerscript[]): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
     if (target) target.trigger = triggers
   })

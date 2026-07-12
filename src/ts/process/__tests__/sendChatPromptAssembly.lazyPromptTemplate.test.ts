@@ -80,7 +80,7 @@ vi.mock('../promptBudget/finalizeRequestBudget', () => ({
 }))
 
 import { language } from 'src/lang'
-import { getDatabase, setDatabaseLite, setServerProjectionWriteGuardEnabled } from '../../storage/database.svelte'
+import { getDatabase, setDatabaseLite, setResourceWriteGuardEnabled } from '../../storage/database.svelte'
 import type { Chat, character } from '../../storage/database.svelte'
 import { assembleLocalSendChatPrompt, type SendChatPromptStageTimings } from '../sendChatPromptAssembly'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../../server/commands'
@@ -137,7 +137,7 @@ function stageTimings(): SendChatPromptStageTimings {
 
 describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
   beforeEach(() => {
-    setServerProjectionWriteGuardEnabled(false)
+    setResourceWriteGuardEnabled(false)
     ;(testDatabaseState as { db: unknown }).db = {}
     clearCachedServerCommandRevision()
     resetPromptTemplateHydration()

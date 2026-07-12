@@ -32,7 +32,7 @@
   import { onDestroy, onMount, untrack } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
   import { getDatabase } from 'src/ts/storage/database.svelte'
-  import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getServerResourceApplyEpoch } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
 
   let stb: Sortable = null
@@ -42,28 +42,28 @@
   let personaWatcherInitialized = false
   let previousPersonaSnapshot = ''
   let previousPersonaState: PersonaStateSnapshot | null = null
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   $effect(() => {
-    const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
     const current = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
     if (!personaWatcherInitialized) {
       personaWatcherInitialized = true
-      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousResourceApplyEpoch = resourceApplyEpoch
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
     if (isPersonaSettingsWatcherSuppressed()) {
-      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousResourceApplyEpoch = resourceApplyEpoch
       previousPersonaSnapshot = current
       previousPersonaState = currentPersonaStateSnapshot()
       return
     }
-    if (projectionApplyChanged) {
+    if (resourceApplyChanged) {
       untrack(() => reconcileSelectedPersonaProjectionEpoch())
-      previousProjectionApplyEpoch = projectionApplyEpoch
+      previousResourceApplyEpoch = resourceApplyEpoch
       previousPersonaSnapshot = snapshotPersonaJson(currentSelectedPersonaProjectionSnapshot())
       previousPersonaState = currentPersonaStateSnapshot()
       return

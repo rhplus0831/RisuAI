@@ -9,7 +9,7 @@ import {
   type SettingsPatch,
   type ServerCommandTransportOptions,
 } from './commands'
-import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './staleStateGuards'
 
 interface PendingSettingsPatch {
@@ -62,23 +62,23 @@ export function createServerBackedSettingDraft<T>(
   let initialized = false
   let suppressDraftDispatch = false
   let previousServerSnapshot = snapshotJson(initialValue)
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
   let dirty = false
 
   $effect(() => {
-    const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    const projectionApplyChanged = projectionApplyEpoch !== previousProjectionApplyEpoch
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
     const serverValue = currentSettingValue(key, fallback)
     const serverSnapshot = snapshotJson(serverValue)
     const draftSnapshot = snapshotJson(draft.value)
 
-    if (projectionApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+    if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
       dirty = false
     }
 
     if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
       suppressDraftDispatch = true
-      if (projectionApplyChanged && dirty) {
+      if (resourceApplyChanged && dirty) {
         reassertDirtySettingDraftValue(key, draft.value)
       } else {
         dirty = false
@@ -89,7 +89,7 @@ export function createServerBackedSettingDraft<T>(
       })
     }
 
-    previousProjectionApplyEpoch = projectionApplyEpoch
+    previousResourceApplyEpoch = resourceApplyEpoch
     previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
   })
 
@@ -114,7 +114,7 @@ export function createServerBackedSettingDraft<T>(
       if (!settingsGroupForKey(key)) return
       const attempted = cloneJsonValue(draft.value)
       const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         // Re-read the resource database inside the callback: the trusted write opens a
         // copy-on-write working proxy, so an alias captured earlier still points
         // at the read-only projection and would throw on write.
@@ -136,7 +136,7 @@ function reassertDirtySettingDraftValue<T>(key: string, value: T): void {
   if (!settingsGroupForKey(key)) return
 
   withSuppressedSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       target[key] = cloneJsonValue(value)
     })
@@ -163,7 +163,7 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   dropPendingSettingsPatchKeys(Object.keys(commandPatch))
 
   withSuppressedSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       for (const [key, value] of Object.entries(commandPatch)) {
         target[key] = cloneJsonValue(value)
@@ -182,7 +182,7 @@ export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServ
   let attempted: SettingsPatch = {}
 
   withSuppressedSettingsWatcher(() => {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       setPreset(getDatabase(), prebuiltPresets.OAI2)
       Object.assign(getDatabase() as unknown as Record<string, unknown>, patch)
 
@@ -222,11 +222,11 @@ export function watchServerBackedSettings(
   const previousSnapshots = new Map<string, string>()
   const previousValues = new Map<string, unknown>()
   let initialized = false
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   const stop = $effect.root(() => {
     $effect(() => {
-      const projectionApplyEpoch = getServerProjectionApplyEpoch()
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
       const changed: SettingsPatch = {}
       const before: SettingsPatch = {}
 
@@ -244,9 +244,9 @@ export function watchServerBackedSettings(
         previousValues.set(key, cloneJsonValue(value))
       }
 
-      if (!initialized || projectionApplyEpoch !== previousProjectionApplyEpoch) {
+      if (!initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
         initialized = true
-        previousProjectionApplyEpoch = projectionApplyEpoch
+        previousResourceApplyEpoch = resourceApplyEpoch
         return
       }
       if (suppressRollbackDispatch || Object.keys(changed).length === 0) return
@@ -351,7 +351,7 @@ function withSuppressedSettingsWatcher(fn: () => void): void {
 }
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase() as unknown as Record<string, unknown>
     const genericPrevious: SettingsPatch = { ...previous }
     const genericAttempted: SettingsPatch = { ...attempted }

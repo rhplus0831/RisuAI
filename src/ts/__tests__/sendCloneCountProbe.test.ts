@@ -53,7 +53,7 @@ vi.mock('@mlc-ai/web-tokenizers', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { safeStructuredClone } from '../polyfill'
 import { resetServerChatState } from '../process/__fixtures__/mocks/serverChatFetch'
 import { abortChat, chatProcessStage, doingChat } from '../process/index.svelte'
@@ -67,7 +67,7 @@ function resetProbeState(): void {
   doingChat.set(false)
   abortChat.set(false)
   chatProcessStage.set(0)
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 }
 
 beforeEach(() => {

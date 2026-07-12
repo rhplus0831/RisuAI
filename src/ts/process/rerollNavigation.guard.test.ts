@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Prove the extracted swipe machine is safe under the Fastify read-only
-// projection guard. `isFastifyServer` is forced on so the real
-// `withTrustedServerProjectionWrite` actually freezes/snapshots (the unit suite
+// resource guard. `isFastifyServer` is forced on so the real
+// `withTrustedResourceWrite` actually freezes/snapshots (the unit suite
 // otherwise runs off-Fastify, where it is a pass-through).
 
 vi.mock('../platform', async (importActual) => ({
@@ -33,7 +33,7 @@ vi.mock('./prereroll', () => prerollSpies)
 
 import { selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import {
   getRerollId,
   reroll,
@@ -58,11 +58,11 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
 })
 
-describe('reroll swipe under the read-only projection guard', () => {
+describe('reroll swipe under the read-only resource guard', () => {
   function seedAndFreeze(): void {
     const active: Msg[] = [
       { role: 'user', data: 'hi', chatId: 'u1' },
@@ -75,7 +75,7 @@ describe('reroll swipe under the read-only projection guard', () => {
       { role: 'char', data: 'c1', chatId: 'g1' },
     ])
     // Freeze the projection AFTER seeding (mirrors the live order: hydrate → guard).
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
   }
 
   it('unReroll swaps the active tail without throwing on the frozen projection', async () => {

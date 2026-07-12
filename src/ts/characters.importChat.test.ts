@@ -53,10 +53,7 @@ vi.mock('./alert', async (importActual) => {
 })
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { Database } from './storage/database.svelte'
@@ -217,7 +214,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   platformState.isFastifyServer = true
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   selectedFileState.file = null
   selectedFileState.beforeResolve = null
@@ -254,7 +251,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -266,7 +263,7 @@ describe('chat import projection helpers', () => {
       ver: 1,
       data: importedChat({ note: '' }),
     })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       testDatabaseState.db.characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
@@ -492,7 +489,7 @@ describe('chat import projection helpers', () => {
       failCommandNumber: 1,
       onCommand: ({ commandNumber }) => {
         if (commandNumber !== 1) return
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           const character = testDatabaseState.db.characters[0]
           const importedFolder = character.chatFolders.find((folder) => folder.name === 'Folder A')
           const importedChatRow = character.chats.find((chat) => chat.name === 'Imported One')
@@ -673,7 +670,7 @@ describe('chat import projection helpers', () => {
       failCommandNumber: 1,
       onCommand: ({ commandNumber }) => {
         if (commandNumber !== 1) return
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           const importedChatRow = testDatabaseState.db.characters[0].chats[0]
           if (importedChatRow?.name === 'Imported Duplicate') {
             importedChatRow.name = 'Imported Duplicate edited'

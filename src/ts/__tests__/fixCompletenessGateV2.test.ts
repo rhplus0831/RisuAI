@@ -367,14 +367,14 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     6,
     'Apply-epoch gate for the lorebook watcher (+ epoch-bumping apply).',
     'src/ts/server/lorebookBridge.svelte.test.ts',
-    'M11: foreign character-lorebook projection apply refreshes baseline without echoing, then local edits dispatch',
+    'M11: foreign character-lorebook resource apply refreshes baseline without echoing, then local edits dispatch',
   ),
   done(
     'M12',
     6,
     'Apply-epoch gate for the character-profile watcher.',
     'src/ts/server/characterBridge.svelte.test.ts',
-    'M12: foreign character-row projection apply refreshes baseline without echoing, then local profile edits dispatch',
+    'M12: foreign character-row resource apply refreshes baseline without echoing, then local profile edits dispatch',
   ),
   done(
     'M13',
@@ -1022,43 +1022,43 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'L32',
     4,
     'Drop `setDatabase` from `/send`-family + `mutateCurrentChatMessages`.',
-    'src/ts/process/__tests__/command.projectionGuard.test.ts',
+    'src/ts/process/__tests__/command.resourceGuard.test.ts',
     'L32: /send appends a user message without setDatabase or whole-db clone churn',
     [
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /sendas appends a character message without setDatabase',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /comment appends the legacy comment block to the last message',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /cut range keeps the legacy sliced transcript bytes',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /cut index keeps the legacy spliced row bytes',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /cut id removes the matching chatId without setDatabase',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /del keeps the legacy last-N truncation without setDatabase',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /multisend appends each segment in order and sends after each one',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: /multisend clear resets before each segment and still sends each segment',
       },
       {
-        testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+        testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
         testName: 'L32: forced message-command failure restores only the active chat',
       },
     ],

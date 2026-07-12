@@ -63,7 +63,7 @@ vi.mock('src/ts/process/modules', () => moduleSpies)
 import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
-import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
@@ -295,7 +295,7 @@ beforeEach(() => {
   document.body.appendChild(target)
   vi.clearAllMocks()
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
@@ -306,7 +306,7 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 

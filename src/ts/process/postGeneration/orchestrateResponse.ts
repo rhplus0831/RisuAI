@@ -5,7 +5,7 @@ import { evaluateIgp } from './igp'
 import { applyOutputTrigger } from './outputTrigger'
 import { applyNonStreamResponse } from './nonStreamResponse'
 import { consumeStreamResponse } from './streamResponse'
-import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import {
   getDatabase,
   type Chat,
@@ -133,14 +133,14 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
         resendChat = true
       }
       const inlayr = runInlayScreen(currentChar, currentChat.message[stream.msgIndex].data)
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         currentChat = streamTrigger.triggerChat ?? getDatabase().characters[selectedChar].chats[selectedChat]
         currentChat.message[stream.msgIndex].data = inlayr.text
         getDatabase().characters[selectedChar].chats[selectedChat] = currentChat
       })
       if (inlayr.promise) {
         const t = await inlayr.promise
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           currentChat = getDatabase().characters[selectedChar].chats[selectedChat]
           currentChat.message[stream.msgIndex].data = t
           getDatabase().characters[selectedChar].chats[selectedChat] = currentChat
@@ -181,7 +181,7 @@ export async function orchestrateResponse(args: OrchestrateResponseArgs): Promis
         runCurrentChatFunction,
       })
       if (nonStreamTrigger.triggerChat) {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           getDatabase().characters[selectedChar].chats[selectedChat] = nonStreamTrigger.triggerChat!
         })
       }

@@ -10,7 +10,7 @@ import {
   type ServerCommandTransportOptions,
   type SettingsPatch,
 } from './commands'
-import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { currentPromptTemplateOwnerId, isPromptTemplateHydrated } from './promptTemplateHydration'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
@@ -110,7 +110,7 @@ export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId:
   const draftItem = (draftItems ?? []).find((item) => item.id === itemId)
   if (!draftItem) return null
   const snapshot = cloneJsonValue(draftItem)
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const template = getDatabase().promptTemplate
     if (!Array.isArray(template)) {
       getDatabase().promptTemplate = cloneJsonValue(draftItems)
@@ -132,7 +132,7 @@ export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId:
  * the whole `promptTemplate` array.
  */
 export function restorePromptItemProjectionWrite(itemId: string, previousItem: PromptItem): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const template = getDatabase().promptTemplate
     if (!Array.isArray(template)) return
     const index = template.findIndex((item) => item.id === itemId)
@@ -399,7 +399,7 @@ function rollbackPendingPromptItemUpdate(
 }
 
 function rollbackPromptSettingsPatch(previous: SettingsPatch, attempted: SettingsPatch): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const target = getDatabase() as unknown as Record<string, unknown>
     for (const [key, previousValue] of Object.entries(previous)) {
       if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
@@ -649,7 +649,7 @@ function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
 
 function applyPromptTemplateCollectionRollback(binding: PromptTemplateDraftBinding, nextItems: PromptItem[]): void {
   binding.setItems(nextItems)
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().promptTemplate = cloneJsonValue(nextItems)
   })
 }

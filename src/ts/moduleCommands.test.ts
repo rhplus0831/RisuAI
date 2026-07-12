@@ -13,10 +13,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision } from './server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -161,7 +158,7 @@ function moduleNames(): Record<string, string | undefined> {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
   setDatabaseLite({
     characters: [
@@ -183,7 +180,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -196,9 +193,9 @@ describe('module command projection helpers', () => {
     expect(current).toEqual(['mod-a'])
   })
 
-  it('routes selected-chat module toggles through a chat command under the projection guard', async () => {
+  it('routes selected-chat module toggles through a chat command under the resource guard', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       getDatabase().characters[0].chats[0].modules.push('direct')
@@ -256,7 +253,7 @@ describe('module command projection helpers', () => {
         mode: '1',
       },
     }
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     toggleSelectedChatModule('mod-b')
 
@@ -309,7 +306,7 @@ describe('module command projection helpers', () => {
 
   it('routes selected-character module toggles through the character-module command', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       getDatabase().characters[0].modules.push('direct')
@@ -367,7 +364,7 @@ describe('module command projection helpers', () => {
         mode: '1',
       },
     }
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     toggleSelectedCharacterModule('mod-b')
 
@@ -417,9 +414,9 @@ describe('module command projection helpers', () => {
     ])
   })
 
-  it('routes global module edits through commands under the projection guard', async () => {
+  it('routes global module edits through commands under the resource guard', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       getDatabase().enabledModules.push('direct')
@@ -499,7 +496,7 @@ describe('module command projection helpers', () => {
       description: '',
       backgroundEmbedding: 'old background',
     } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(() => {
       getDatabase().modules[0].backgroundEmbedding = 'direct'
@@ -534,7 +531,7 @@ describe('module command projection helpers', () => {
 
   it('optimistically applies global module create and rolls back on command failure', async () => {
     const calls = stubFailingCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
 
@@ -558,7 +555,7 @@ describe('module command projection helpers', () => {
         modules: ['mod-a', 'character-module'],
       },
     ] as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     deleteGlobalModule('mod-a')
 
@@ -567,7 +564,7 @@ describe('module command projection helpers', () => {
     expect(getDatabase().characters[0].modules).toEqual(['character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['chat-module'])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[0].name = 'Concurrent character edit'
     })
 
@@ -584,7 +581,7 @@ describe('module command projection helpers', () => {
   it('failed module update preserves newer same-module field edit', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().modules[0] = { id: 'mod-a', name: 'Module A', description: 'old description' } as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted A', description: 'attempted description' })
     expect(getDatabase().modules[0]).toMatchObject({
@@ -592,7 +589,7 @@ describe('module command projection helpers', () => {
       description: 'attempted description',
     })
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[0] = {
         ...getDatabase().modules[0],
         name: 'Newer A',
@@ -610,10 +607,10 @@ describe('module command projection helpers', () => {
 
   it('failed module update preserves sibling module edit, create, and delete', async () => {
     const calls = stubFailingCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted A', description: 'attempted description' })
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules[1] = {
         ...getDatabase().modules[1],
         name: 'Sibling B newer',
@@ -633,10 +630,10 @@ describe('module command projection helpers', () => {
 
   it('failed create removes only the attempted created module, not later-created modules', async () => {
     const calls = stubFailingCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules.push({ id: 'mod-d', name: 'Module D newer' } as any)
     })
 
@@ -649,12 +646,12 @@ describe('module command projection helpers', () => {
   it('failed enable restores only that module id and preserves newer enabled sibling changes', async () => {
     const calls = stubFailingCommandFetch()
     getDatabase().enabledModules = ['mod-b']
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     setGlobalModuleEnabled('mod-a', true)
     expect(getDatabase().enabledModules).toEqual(['mod-b', 'mod-a'])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().enabledModules = getDatabase().enabledModules.filter((id) => id !== 'mod-b')
       getDatabase().enabledModules.push('mod-c')
     })
@@ -691,7 +688,7 @@ describe('module command projection helpers', () => {
       { id: 'loadout-a', name: 'Loadout A', modules: ['mod-a', 'loadout-module'] },
       { id: 'loadout-b', name: 'Loadout B', modules: ['mod-a', 'changed-loadout'] },
     ] as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     deleteGlobalModule('mod-a')
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-b'])
@@ -700,7 +697,7 @@ describe('module command projection helpers', () => {
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['chat-module'])
     expect(getDatabase().loadouts[0].modules).toEqual(['loadout-module'])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().modules.push({ id: 'mod-c', name: 'Newer Module C' } as any)
       getDatabase().enabledModules.push('mod-c')
       getDatabase().characters[1].modules = ['newer-character-ref']
@@ -747,7 +744,7 @@ describe('module command projection helpers', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted One', description: '' })
     updateGlobalModule('mod-a', { id: 'mod-a', name: 'Attempted Two', description: '' })

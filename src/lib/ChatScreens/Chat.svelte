@@ -101,7 +101,7 @@
     updateMessageCommand,
   } from 'src/ts/server/commands'
   import { activeMessageTranslations } from 'src/ts/server/messageTranslationJobs'
-  import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     captureChatButtonTriggerFreshness,
     chatButtonTriggerChatSignature,
@@ -420,7 +420,7 @@
     options: { expectedCurrentTranslation?: MessageTranslation | null } = {},
   ): boolean {
     let applied = false
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveMessage = findLiveMessageByTarget(target)
       if (!liveMessage) return
       if (
@@ -915,7 +915,7 @@
     const nextChatSnapshot = cloneJsonValue(nextChat) as Chat
     let applied = false
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const characters = getDatabase().characters ?? []
       const character = target.snapshot.characterId
         ? characters.find((candidate) => candidate.chaId === target.snapshot.characterId)

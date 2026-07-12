@@ -36,7 +36,7 @@ import {
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from '../characterCommands'
 import { runOptimisticCommandSequence } from '../chatCommands'
 import { canUseServerCommands } from '../server/commands'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges } from './unsupportedServerWriteGuard'
 import {
   beginPluginImport,
@@ -530,7 +530,7 @@ export async function importPlugin(
       // Re-read the live database inside the trusted write scope so the
       // optimistic update never mutates the read-only server projection
       // through a stale reference captured before the scope.
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const db = getDatabase()
         db.plugins ??= []
         db.plugins[applyTarget.index] = pluginData
@@ -538,7 +538,7 @@ export async function importPlugin(
       })
       persistenceResult = runUpdatePluginCommand(applyTarget.pluginId, toPluginSnapshot(pluginData), previous)
     } else if (applyTarget.kind === 'create') {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const db = getDatabase()
         db.plugins ??= []
         db.plugins.push(pluginData)
@@ -719,7 +719,7 @@ function pluginCustomStorage(): Record<string, unknown> {
 
 function setPluginStorageValue(key: string, value: unknown): void {
   const previous = currentPluginStorageSnapshot()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     pluginCustomStorage()[key] = cloneJsonValue(value)
   })
   if (canUseServerCommands()) {
@@ -729,7 +729,7 @@ function setPluginStorageValue(key: string, value: unknown): void {
 
 function deletePluginStorageValue(key: string): void {
   const previous = currentPluginStorageSnapshot()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     delete pluginCustomStorage()[key]
   })
   if (canUseServerCommands()) {
@@ -739,7 +739,7 @@ function deletePluginStorageValue(key: string): void {
 
 function replacePluginStorage(values: Record<string, unknown>): void {
   const previous = currentPluginStorageSnapshot()
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().pluginCustomStorage = cloneJsonValue(values)
   })
   if (canUseServerCommands()) {
@@ -763,7 +763,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
         value && typeof value === 'object' && !Array.isArray(value)
           ? cloneJsonValue(value as Record<string, unknown>)
           : {}
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().pluginCustomStorage = cloneJsonValue(replacedStorage)
       })
       continue
@@ -778,7 +778,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
     }
 
     if (allowedDbKeys.includes(key)) {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         ;(getDatabase() as any)[key] = cloneJsonValue(value)
       })
       if (key === 'currentPluginProvider' && typeof value === 'string') {
@@ -797,7 +797,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
     }
 
     storageValues[key] = cloneJsonValue(value)
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       pluginCustomStorage()[key] = cloneJsonValue(value)
     })
   }
@@ -844,7 +844,7 @@ export const getV2PluginAPIs = () => {
     setChar: (char: any) => {
       const charid = get(selectedCharID)
       if (!canUseServerCommands()) {
-        withTrustedServerProjectionWrite(() => {
+        withTrustedResourceWrite(() => {
           getDatabase().characters[charid] = char
         })
         return
@@ -860,7 +860,7 @@ export const getV2PluginAPIs = () => {
         previous,
       )
       if (!optimisticCharacter || factories.length === 0) return
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         getDatabase().characters[charid] = optimisticCharacter
       })
       runOptimisticCommandSequence(factories, rollback)
@@ -912,7 +912,7 @@ export const getV2PluginAPIs = () => {
       const [name, realArg] = arg.split('::')
       const previous = currentPluginStateSnapshot()
       let matched = false
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         const db = getDatabase()
         for (const plugin of db.plugins) {
           if (plugin.name === name) {

@@ -8,20 +8,20 @@ const recorded = vi.hoisted(() => ({
     keepalive?: boolean
   }>,
 }))
-const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
 }))
 
-vi.mock('./projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withServerProjectionApply: (fn: () => unknown) => {
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withServerResourceApply: (fn: () => unknown) => {
     const result = fn()
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     return result
   },
-  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
 vi.mock('../characterCommands', () => {
@@ -142,7 +142,7 @@ async function flushAndSettle(): Promise<void> {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  projectionGuardState.epoch = 0
+  resourceGuardState.epoch = 0
   recorded.characterUpdates.length = 0
 })
 
@@ -209,7 +209,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     stop()
   })
 
-  it('L22: server projection apply with changed fields reseeds the draft', async () => {
+  it('L22: server resource apply with changed fields reseeds the draft', async () => {
     setupCharacter()
     const { draft, stop } = await createDraft(['name', 'desc', 'newGenData'])
 
@@ -360,7 +360,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     draft.value.newGenData.prompt = 'Local prompt'
     await flushAndSettle()
 
-    expect(projectionGuardState.epoch).toBe(0)
+    expect(resourceGuardState.epoch).toBe(0)
     expect(getDatabase().characters[0].chaId).toBe('char-1')
     expect(getDatabase().characters[0].name).toBe('Local draft')
     expect(getDatabase().characters[0].newGenData.prompt).toBe('Local prompt')
@@ -486,7 +486,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     stop()
   })
 
-  it('M12: foreign character-row projection apply refreshes baseline without echoing, then local profile edits dispatch', async () => {
+  it('M12: foreign character-row resource apply refreshes baseline without echoing, then local profile edits dispatch', async () => {
     setupCharacter()
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
     flushSync()

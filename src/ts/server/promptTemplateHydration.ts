@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store'
 import { getDatabase, mergeServerProjectionFields, type Database, type PromptPreset } from '../storage/database.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerPromptPresetTemplate } from './hydrationReads'
-import { withServerProjectionApply } from './projectionWriteGuard.svelte'
+import { withServerResourceApply } from './resourceWriteGuard.svelte'
 
 export const promptTemplateHydratedStore = writable(false)
 
@@ -135,7 +135,7 @@ export function applyPromptTemplateProjectionFields(
   const promptTemplate = (fields as Record<string, unknown>).promptTemplate
   if (hasPromptTemplate && promptTemplate !== null && !Array.isArray(promptTemplate)) return false
 
-  return withServerProjectionApply(() => {
+  return withServerResourceApply(() => {
     const database = getDatabase()
     const presets = database.promptPresets
     if (!Array.isArray(presets)) return false

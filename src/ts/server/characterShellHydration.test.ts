@@ -22,7 +22,7 @@ import {
   isServerCharacterShell,
   mergeServerProjectionCharacterRow,
   mergeServerProjectionFields,
-  setServerProjectionWriteGuardEnabled,
+  setResourceWriteGuardEnabled,
 } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
@@ -66,7 +66,7 @@ function hydratedCharacter(name = 'Hydrated') {
 }
 
 beforeEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   clearCachedServerCommandRevision()
   stopSelectedCharacterShellHydration()
   selectedCharID.set(0)
@@ -80,7 +80,7 @@ beforeEach(() => {
 
 afterEach(() => {
   const database = JSON.parse(JSON.stringify(testDatabaseState.db))
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   testDatabaseState.db = database
 })
 
@@ -105,7 +105,7 @@ describe('character shell hydration', () => {
 
   it('accepts a character row response after an unrelated projection advances the known revision', async () => {
     setCachedServerCommandRevision(5)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
@@ -136,7 +136,7 @@ describe('character shell hydration', () => {
 
   it('rejects a response after the target character row changes during hydration', async () => {
     setCachedServerCommandRevision(5)
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number

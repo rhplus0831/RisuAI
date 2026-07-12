@@ -9,7 +9,7 @@ const recorded = vi.hoisted(() => ({
     keepalive?: boolean
   }>,
 }))
-const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const presetMocks = vi.hoisted(() => ({
   OAI: {
     mainPrompt: 'default main prompt',
@@ -67,9 +67,9 @@ vi.mock('./commands', () => ({
       : null,
 }))
 
-vi.mock('./projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
 vi.mock('../process/templates/templates', () => ({
@@ -140,7 +140,7 @@ async function flushAndSettle(): Promise<void> {
 }
 
 async function applyProjectionSetting(key: string, value: unknown): Promise<void> {
-  projectionGuardState.epoch += 1
+  resourceGuardState.epoch += 1
   ;(testDatabaseState.db as unknown as Record<string, unknown>)[key] = value
   await flushAndSettle()
 }
@@ -148,7 +148,7 @@ async function applyProjectionSetting(key: string, value: unknown): Promise<void
 beforeEach(() => {
   vi.useFakeTimers()
   recorded.patches.length = 0
-  projectionGuardState.epoch = 0
+  resourceGuardState.epoch = 0
   presetMocks.setPreset.mockClear()
 })
 
@@ -246,7 +246,7 @@ describe('settingsBridge coalescing', () => {
     const source = readFileSync('src/lib/Others/WelcomeRisu.svelte', 'utf8')
 
     expect(source).toContain('applyOnboardingServerBackedSettings')
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
   })
 
   it('skips immediate patches whose values already match the projection', async () => {
@@ -639,7 +639,7 @@ describe('settingsBridge coalescing', () => {
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     testDatabaseState.db.notification = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)

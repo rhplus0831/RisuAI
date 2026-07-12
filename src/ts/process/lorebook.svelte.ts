@@ -20,7 +20,7 @@ import {
   ensureGlobalLorebookListIds,
   type LorebookStateSnapshot,
 } from '../server/lorebookBridge.svelte'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
 // Snapshot only the one collection the action edits (`type`/`mode`
@@ -151,7 +151,7 @@ export function addLorebook(type: number) {
   const selectedID = get(selectedCharID)
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   if (type === 0) {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[selectedID].globalLore.push({
         id: v4(),
         key: '',
@@ -192,14 +192,14 @@ export function addLorebook(type: number) {
         selective: false,
       },
     ]
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const lorebook = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
     if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
     const page = getDatabase().characters[selectedID].chatPage
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[selectedID].chats[page].localLore.push({
         id: v4(),
         key: '',
@@ -222,7 +222,7 @@ export function addLorebookFolder(type: number) {
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   const id = v4()
   if (type === 0) {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[selectedID].globalLore.push({
         id: v4(),
         key: '\uf000folder:' + id,
@@ -262,14 +262,14 @@ export function addLorebookFolder(type: number) {
         selective: false,
       },
     ]
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const lorebook = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
     if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
     const page = getDatabase().characters[selectedID].chatPage
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().characters[selectedID].chats[page].localLore.push({
         id: v4(),
         key: '\uf000folder:' + id,
@@ -913,7 +913,7 @@ export async function importLoreBook(mode: 'global' | 'local' | 'sglobal') {
       lore.push(...convertExternalLorebook(entries))
     }
     ensureClientLorebookEntryIds(lore)
-    const applied = withTrustedServerProjectionWrite(() => assignLorebookImportEntries(target, lore))
+    const applied = withTrustedResourceWrite(() => assignLorebookImportEntries(target, lore))
     if (applied) dispatchImportedLorebookEntries(target, lore, previous)
   } catch (error) {
     alertError(error)

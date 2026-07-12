@@ -24,7 +24,7 @@ const prerollSpies = vi.hoisted(() => ({
 vi.mock('./prereroll', () => prerollSpies)
 
 import { clearCachedServerCommandRevision } from '../server/commands'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
@@ -111,12 +111,12 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 beforeEach(() => {
   resetRerollNavigation()
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.clearAllMocks()
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
 })

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // Regression coverage: slash-command handlers (`/send`, `/setvar`, `/cut`, ...)
 // apply an optimistic local update before dispatching a command. That update
 // must run inside a trusted write scope so it does not throw against the
-// server-backed read-only projection guard, and it must still dispatch the
+// server-backed read-only resource guard, and it must still dispatch the
 // matching chat command.
 
 vi.mock('../../platform', async (importActual) => {
@@ -48,10 +48,7 @@ import { safeStructuredClone } from '../../polyfill'
 import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { processMultiCommand } from '../command'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from '../../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../../stores.svelte'
 
 interface CapturedFetch {
@@ -180,7 +177,7 @@ async function runMessageCommand(
 ): Promise<MessageCommandRun> {
   seedDatabase(messages)
   const calls = stubCommandFetch()
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
 
   await expect(processMultiCommand(command)).resolves.not.toBe(false)
 
@@ -323,7 +320,7 @@ function seedLargeSiblingDatabase(): void {
 beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedDatabase()
   setDatabaseSpy.count = 0
   sendChatMock.mockClear()
@@ -331,13 +328,13 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
-describe('slash-command durable writes under the projection guard', () => {
-  it('baseline: a raw projection write throws while the guard is active', () => {
-    setServerProjectionWriteGuardEnabled(true)
+describe('slash-command durable writes under the resource guard', () => {
+  it('baseline: a raw resource write throws while the guard is active', () => {
+    setResourceWriteGuardEnabled(true)
     expect(() => {
       testDatabaseState.db.characters[0].chats[0].message.push({ role: 'user', data: 'raw' })
     }).toThrow(/resource database compatibility view is read-only/)
@@ -347,7 +344,7 @@ describe('slash-command durable writes under the projection guard', () => {
     seedLargeSiblingDatabase()
     const wholeCharactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const instrumented = await withAsyncCloneInstrumentation(() => processMultiCommand('/send hello world'))
 
@@ -369,7 +366,7 @@ describe('slash-command durable writes under the projection guard', () => {
 
   it('L32: /send preserves pipe return behavior while appending the piped text', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/pass piped text|/send {{pipe}}')).resolves.toBe('piped text')
 
@@ -485,7 +482,7 @@ describe('slash-command durable writes under the projection guard', () => {
   it('L32: /multisend appends each segment in order and sends after each one', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/multisend first|||second')).resolves.toBe('')
 
@@ -509,9 +506,9 @@ describe('slash-command durable writes under the projection guard', () => {
   it('L32: /multisend stops after the active chat changes during the first send', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     sendChatMock.mockImplementationOnce(async () => {
-      withTrustedServerProjectionWrite(() => {
+      withTrustedResourceWrite(() => {
         testDatabaseState.db.characters[0].chatPage = 1
       })
       return true
@@ -545,7 +542,7 @@ describe('slash-command durable writes under the projection guard', () => {
   it('L32: /multisend clear resets before each segment and still sends each segment', async () => {
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }])
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/multisend clear|||first|||second')).resolves.toBe('')
 
@@ -587,7 +584,7 @@ describe('slash-command durable writes under the projection guard', () => {
       }) as unknown as typeof fetch,
     )
     seedDatabase([{ role: 'char', data: 'base', chatId: 'm-base' }], { includeSiblings: true })
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/send optimistic')).resolves.toBe('')
     await waitForCommand(
@@ -599,7 +596,7 @@ describe('slash-command durable writes under the projection guard', () => {
       'optimistic',
     ])
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].chats[1].name = 'active sibling edit'
       testDatabaseState.db.characters[1].name = 'sibling character edit'
       testDatabaseState.db.characters[1].chats[0].message.push({
@@ -631,7 +628,7 @@ describe('slash-command durable writes under the projection guard', () => {
 
   it('/setvar updates chat scriptstate via the scriptstate command', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/setvar key=hp 100')).resolves.not.toThrow()
 
@@ -644,7 +641,7 @@ describe('slash-command durable writes under the projection guard', () => {
 
   it('M12: /setvar persists scriptstate without re-running the setDatabase normalizer', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/setvar key=hp 100')).resolves.not.toThrow()
 
@@ -664,7 +661,7 @@ describe('slash-command durable writes under the projection guard', () => {
     seedDatabase()
     testDatabaseState.db.characters[0].chats[0].scriptstate = { $damage: '5' }
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/addvar key=damage 10')).resolves.not.toThrow()
 
@@ -683,7 +680,7 @@ describe('slash-command durable writes under the projection guard', () => {
       { role: 'char', data: 'two', chatId: 'm2' },
     ])
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/del 1')).resolves.not.toThrow()
 
@@ -698,7 +695,7 @@ describe('slash-command durable writes under the projection guard', () => {
 
   it('L37: command processing logs nothing to console.log on the warm path', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     const logSpy = vi.spyOn(console, 'log')
 
     try {

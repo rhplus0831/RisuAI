@@ -28,7 +28,7 @@ import { safeStructuredClone } from '../polyfill'
 import { selectedCharID } from '../stores.svelte'
 import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
-import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
 
 interface CapturedFetch {
@@ -134,13 +134,13 @@ beforeEach(() => {
   ;(globalThis as Record<string, unknown>).safeStructuredClone = safeStructuredClone
   clearCachedServerCommandRevision()
   resetScriptCache()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
 })
 
 afterEach(() => {
   vi.unstubAllGlobals()
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
 })
 
@@ -160,7 +160,7 @@ describe('editdisplay render path logging (L38)', () => {
     }
   })
 
-  it('I20: @@inject display action runs under the projection guard without durable persistence', async () => {
+  it('I20: @@inject display action runs under the resource guard without durable persistence', async () => {
     const char = seedDb()
     char.customscript = [
       {
@@ -172,7 +172,7 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
     expect(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'raw'
     }).toThrow(/resource database compatibility view is read-only/)
@@ -216,7 +216,7 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
 
@@ -247,7 +247,7 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ] as any
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
     await new Promise((resolve) => setTimeout(resolve, 0))

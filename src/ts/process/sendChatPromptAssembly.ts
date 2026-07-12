@@ -18,7 +18,7 @@ import { buildMemoryWindow } from './promptAssembly/buildMemoryWindow'
 import { renderFinalPrompt } from './promptAssembly/renderFinalPrompt'
 import { preflightTemplateTokens } from './promptBudget/preflightTemplateTokens'
 import { finalizeRequestBudget } from './promptBudget/finalizeRequestBudget'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
   currentPromptTemplateOwnerId,
   ensurePromptTemplateHydrated,
@@ -87,7 +87,7 @@ export async function assembleLocalSendChatPrompt(args: {
   setProcessStage: (stage: number) => void
 }): Promise<LocalSendChatPromptResult> {
   let currentChat = args.currentChat
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveChat = getDatabase().characters[args.selectedChar].chats[args.selectedChat]
     currentChat = runSendChatMessageVariables(liveChat, args.currentChar)
     getDatabase().characters[args.selectedChar].chats[args.selectedChat] = currentChat

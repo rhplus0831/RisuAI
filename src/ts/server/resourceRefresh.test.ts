@@ -58,7 +58,7 @@ import {
   peekCachedServerCommandRevision,
 } from './commands'
 import { replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
-import { setServerProjectionWriteGuardEnabled } from '../storage/database.svelte'
+import { setResourceWriteGuardEnabled } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 
 function database(characters: Array<{ chaId: string; name: string }>, currentChar = 0) {
@@ -79,7 +79,7 @@ function database(characters: Array<{ chaId: string; name: string }>, currentCha
 
 beforeEach(() => {
   vi.clearAllMocks()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   replaceResourceDatabase(
     database(

@@ -56,10 +56,7 @@ import {
   selIdState,
   selectedCharID,
 } from '../../ts/stores.svelte'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from '../../ts/server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
 
 backgroundParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
@@ -117,7 +114,7 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
     moduleIntergration: '',
     modules: [],
   } as unknown as Database)
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
 }
 
 async function settle() {
@@ -149,7 +146,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
@@ -167,7 +164,7 @@ describe('BackgroundDom parser dependencies', () => {
     await waitForParserCalls(1)
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame'
     })
     await settle()
@@ -188,7 +185,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].personality = 'updated background personality'
     })
     await waitForParserCalls(1)
@@ -202,7 +199,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame after signature'
     })
     await settle()
@@ -218,7 +215,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.risuChatParser.mockClear()
     backgroundParserMocks.ParseMarkdown.mockClear()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getResourceDatabase().characters[0].backgroundHTML = '<section>background two</section>'
     })
     await waitForParserCalls(1)

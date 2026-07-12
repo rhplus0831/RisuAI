@@ -10,7 +10,7 @@ import {
   type character,
 } from '../storage/database.svelte'
 import { setSelectedPersonaPromptFromTrigger } from '../persona'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { tokenize } from '../tokenizer'
 import { getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
@@ -1547,7 +1547,7 @@ export async function runTrigger(
   }
 
   // Optimistically reflect the pass's accumulated scriptstate on the live active
-  // chat. The write MUST run inside the projection guard and re-read the chat
+  // chat. The write MUST run inside the resource guard and re-read the chat
   // there: in the live Fastify runtime the projection rows are read-only, so a
   // direct `currentChat.scriptstate = …` throws. Before the guard is enabled, the
   // wrapper is a pass-through. This remains the same single live write the former
@@ -1558,7 +1558,7 @@ export async function runTrigger(
     if (!shouldApplyLiveChatSideEffects()) {
       return
     }
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const liveChat = getCurrentChat()
       if (liveChat) {
         liveChat.scriptstate = chat.scriptstate
@@ -3329,7 +3329,7 @@ export async function runTrigger(
             // setVar snapshot).
             const noteRollback = captureScriptstateRollback()
             let chatId: string | undefined
-            withTrustedServerProjectionWrite(() => {
+            withTrustedResourceWrite(() => {
               const currentCharacter = getCurrentCharacter()
               const chatSlot = currentCharacter.chats?.[currentCharacter.chatPage]
               if (chatSlot) {

@@ -4,7 +4,7 @@ import { characterFormatUpdate, createBlankChar } from './characters'
 import { getDatabase, setCharacterByIndex, type character } from './storage/database.svelte'
 import { PlaygroundStore, selectedCharID } from './stores.svelte'
 import { currentCharacterSelectionSnapshot, dispatchSelectCharacter, toCharacterSnapshot } from './characterCommands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { canUseServerCommands, createAndSelectCharacterCommand, runServerCommand } from './server/commands'
 import { fetchServerCharacters } from './server/resourceReads'
 import { applyCharactersResource } from './server/resourceState.svelte'
@@ -63,7 +63,7 @@ export async function openPlaygroundChat(): Promise<void> {
     return
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const database = getDatabase()
     database.characters.push(formattedChar)
     const index = database.characters.length - 1

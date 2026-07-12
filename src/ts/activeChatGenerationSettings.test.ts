@@ -13,7 +13,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import { clearCachedServerCommandRevision, type ServerCommandResult } from './server/commands'
-import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
@@ -180,12 +180,12 @@ function seedDb(): void {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedDb()
 })
 
 afterEach(() => {
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -389,7 +389,7 @@ describe('active chat generation settings helper', () => {
 
   it('saves first-time persona/preset selections with an explicit jailbreak toggle off', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-a',
@@ -432,7 +432,7 @@ describe('active chat generation settings helper', () => {
       toggle_global: '1',
     } as any
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       promptPresetId: 'preset-a',
@@ -571,7 +571,7 @@ describe('active chat generation settings helper', () => {
       'newMemo=New memo=textarea',
     ].join('\n')
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const state = resolveActiveChatGenerationSettings()
     expect(state.readiness.missing.map((reason) => reason.code)).toContain('sidebar_toggle_missing')
@@ -628,7 +628,7 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const nextSettings = createActiveChatGenerationSettingsDefaultValuesPatch()
     expect(nextSettings).toEqual({
@@ -665,7 +665,7 @@ describe('active chat generation settings helper', () => {
 
   it('normalizes direct full saves with an explicit jailbreak toggle off', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(
       saveActiveChatGenerationSettings({
@@ -711,7 +711,7 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const nextSettings = createActiveChatGenerationSettingsSelectionPatch({
       personaId: 'persona-b',
@@ -776,7 +776,7 @@ describe('active chat generation settings helper', () => {
       },
     }
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const before = resolveActiveChatGenerationSettings()
     expect(before.staleSidebarToggleKeys).toEqual(['stale'])
@@ -859,7 +859,7 @@ describe('active chat generation settings helper', () => {
   it('does not dispatch or save when the active chat has no id', () => {
     delete testDatabaseState.db.characters[0].chats[0].id
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(
       saveActiveChatGenerationSettingsPatch({
@@ -902,7 +902,7 @@ describe('active chat generation settings helper', () => {
     const calls = stubCommandFetch()
 
     testDatabaseState.db.characters[0].chatPage = 1
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     expect(
       saveActiveChatGenerationSettingsSelection(

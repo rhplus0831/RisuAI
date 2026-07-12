@@ -138,7 +138,7 @@ const chatListMocks = vi.hoisted(() => {
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
     watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
-    withTrustedServerProjectionWrite: vi.fn((callback: () => void) => callback()),
+    withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
 })
 
@@ -218,8 +218,8 @@ vi.mock('src/ts/server/commands', () => ({
   updateMessageCommand: chatListMocks.updateMessageCommand,
 }))
 
-vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
-  withTrustedServerProjectionWrite: chatListMocks.withTrustedServerProjectionWrite,
+vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
+  withTrustedResourceWrite: chatListMocks.withTrustedResourceWrite,
 }))
 
 import ChatList from './ChatList.svelte'
@@ -400,7 +400,7 @@ describe('ChatList DOM contract harness', () => {
   it('does not own trusted projection writes in component source', () => {
     const source = readFileSync('src/lib/Others/ChatList.svelte', 'utf8')
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
   })
 
   it('dispatches chat rename through the update command helper without local fallback mutation', async () => {
@@ -422,7 +422,7 @@ describe('ChatList DOM contract harness', () => {
     await tick()
 
     expect(chatListMocks.canUseServerCommands).not.toHaveBeenCalled()
-    expect(chatListMocks.withTrustedServerProjectionWrite).not.toHaveBeenCalled()
+    expect(chatListMocks.withTrustedResourceWrite).not.toHaveBeenCalled()
     expect(chatListMocks.dispatchUpdateChat).toHaveBeenCalledOnce()
     const [chatId, patch, previous] = chatListMocks.dispatchUpdateChat.mock.calls[0]
     expect(chatId).toBe('chat-b')

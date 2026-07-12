@@ -16,10 +16,7 @@
     type ServerCommandResult,
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
-  import {
-    getServerProjectionApplyEpoch,
-    withTrustedServerProjectionWrite,
-  } from 'src/ts/server/projectionWriteGuard.svelte'
+  import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
     createTranslatorPreset,
@@ -66,7 +63,7 @@
     return preset as unknown as TranslatorPreset
   }
   let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
-  let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
+  let previousResourceApplyEpoch = getServerResourceApplyEpoch()
 
   function cloneJsonValue<T>(value: T): T {
     if (value === undefined) return value
@@ -185,7 +182,7 @@
   ): void {
     if (dirtyFields.size === 0) return
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) {
@@ -252,7 +249,7 @@
     const rollbackFields = translatorPresetDirtyRollbackFields(presetId, attemptedPreset, patch)
     if (rollbackFields.length === 0) return
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const presetIndex = getDatabase().translatorPresets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
 
@@ -294,7 +291,7 @@
   }
 
   function applyTranslatorPresetPatchToDatabase(presetId: string, patch: TranslatorPresetSnapshot): void {
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) return
@@ -423,10 +420,10 @@
   }
 
   $effect(() => {
-    const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    if (projectionApplyEpoch === previousProjectionApplyEpoch) return
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    if (resourceApplyEpoch === previousResourceApplyEpoch) return
 
-    previousProjectionApplyEpoch = projectionApplyEpoch
+    previousResourceApplyEpoch = resourceApplyEpoch
     untrack(() => reconcileTranslatorPresetProjectionEpoch())
   })
 

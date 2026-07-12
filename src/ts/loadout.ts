@@ -19,7 +19,7 @@ import {
   type LoadoutSnapshot,
   type ServerCommandResult,
 } from './server/commands'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
@@ -366,7 +366,7 @@ function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>
 }
 
 function rollbackLoadoutListEntry(entry: LoadoutListRollbackEntry): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const list = getDatabase().loadouts ?? []
     const rolledBack = applyAttemptedKeyedListRollback<Loadout, string>({
       list,
@@ -397,7 +397,7 @@ function rollbackDeletedLoadout(previousLoadout: Loadout, previousIndex: number)
 }
 
 function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
     if (!loadout) return
     applyAttemptedFieldRollback({
@@ -410,7 +410,7 @@ function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
 }
 
 function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
     if (loadout) {
       applyAttemptedFieldRollback({
@@ -454,7 +454,7 @@ function insertModuleAtPreviousPosition(liveModules: string[], moduleId: string,
 }
 
 function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const liveModules = Array.isArray(getDatabase().enabledModules) ? getDatabase().enabledModules : []
     const liveEnabled = liveModules.includes(rollback.moduleId)
     if (liveEnabled !== rollback.attemptedEnabled) return
@@ -472,7 +472,7 @@ function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): vo
 }
 
 function rollbackGlobalChatVariables(rollback: LoadoutGlobalVariablesRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     applyAttemptedFieldRollback({
       target: getDatabase() as unknown as Record<string, unknown>,
       previous: { globalChatVariables: rollback.previous },
@@ -529,7 +529,7 @@ function personaSelectionRollback(
 }
 
 function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     for (const row of rollback.rows) {
       const persona = getDatabase().personas?.find((item) => item?.id === row.personaId)
       if (!persona) continue
@@ -614,7 +614,7 @@ function presetFieldRollbackFromPatch(
 
 function rollbackPresetFields(rollback: PresetFieldRollback | null): void {
   if (!rollback) return
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const preset = getDatabase().botPresets?.find((item) => item?.id === rollback.presetId)
     if (!preset) return
     applyAttemptedFieldRollback({
@@ -636,7 +636,7 @@ function rollbackPresetSettings(rollback: PresetSettingsRollback): void {
 }
 
 function rollbackLegacyPresetSelection(rollback: LegacyPresetSelectionRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     rollbackPresetFields(rollback.saveCurrentRollback)
     if (!rollback.attemptedSelectedId || currentBotPresetSelectedId() !== rollback.attemptedSelectedId) return
     rollbackPresetSettings(rollback)
@@ -645,7 +645,7 @@ function rollbackLegacyPresetSelection(rollback: LegacyPresetSelectionRollback):
 }
 
 function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     if (!rollback.attemptedSelectedId || currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) {
       return
     }
@@ -655,7 +655,7 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
 }
 
 function rollbackAgentPresetSelection(rollback: AgentPresetSelectionRollback): void {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const chat = findChatById(rollback.chatId, rollback.characterId)
     if (!chat) return
     const target = chat as { generationSettings?: ChatGenerationSettings }
@@ -750,7 +750,7 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
 
   const previousFavorite = loadout.favorite
   const favorite = !loadout.favorite
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadoutId)
     if (!targetLoadout) return
     targetLoadout.favorite = favorite
@@ -768,7 +768,7 @@ export function deleteLoadout(loadoutId: string): boolean {
   if (index === -1) return false
 
   const previousLoadout = cloneJsonValue(getDatabase().loadouts[index])
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetIndex = getDatabase().loadouts.findIndex((loadout) => loadout.id === loadoutId)
     if (targetIndex !== -1) {
       getDatabase().loadouts.splice(targetIndex, 1)
@@ -1053,7 +1053,7 @@ export function applyLoadout(
     personaRollback = personaSelectionRollback(previousPersona, currentPersonaStateSnapshot())
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadout.id) ?? loadout
     targetLoadout.lastUsed = lastUsed
     if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
@@ -1081,7 +1081,7 @@ export function applyLoadout(
           const targetPresetId = selectedLegacyPresetId
           void ensureBotPresetHydrated(presetIndex).then((hydrated) => {
             if (!hydrated || !targetPresetId) return
-            withTrustedServerProjectionWrite(() => {
+            withTrustedResourceWrite(() => {
               const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === targetPresetId)
               if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
               setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
@@ -1277,7 +1277,7 @@ export function applyLoadout(
 
 export function saveCurrentLoadout(name: string) {
   const loadout = makeLoadout({ name })
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().loadouts.push(loadout)
   })
   dispatchCreateLoadout(loadout)

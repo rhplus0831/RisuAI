@@ -106,10 +106,7 @@ vi.mock('pdfjs-dist/build/pdf.worker?worker&url', () => ({
 
 import { postChatFile } from './multisend'
 import { clearCachedServerCommandRevision } from '../../server/commands'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from '../../server/projectionWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>
 
@@ -212,10 +209,10 @@ function mockPdfDocument(pageTexts: string[] = ['pdf extracted text']) {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   stubCommandFetch()
-  testState.setRunTrustedWrite(withTrustedServerProjectionWrite)
+  testState.setRunTrustedWrite(withTrustedResourceWrite)
   resetChatState()
   testState.sendChatSpy.mockClear()
   testState.downloadFileSpy.mockReset()
@@ -231,7 +228,7 @@ beforeEach(() => {
 
 afterEach(() => {
   consoleLogSpy.mockRestore()
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
 })
 
@@ -344,7 +341,7 @@ describe('postChatFile file-send handling', () => {
 
   it('L36: .po transcript writes persist through scoped commands under the guard', async () => {
     const calls = stubCommandFetch()
-    setServerProjectionWriteGuardEnabled(true)
+    setResourceWriteGuardEnabled(true)
 
     const results = await postChatFile({
       name: 'dialogue.po',

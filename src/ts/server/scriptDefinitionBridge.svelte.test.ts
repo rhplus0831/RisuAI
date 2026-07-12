@@ -10,7 +10,7 @@ const recorded = vi.hoisted(() => ({
     keepalive?: boolean
   }>,
 }))
-const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('../stores.svelte', async () => {
   const { writable } = await import('svelte/store')
@@ -55,9 +55,9 @@ vi.mock('./commands', () => ({
   ),
 }))
 
-vi.mock('./projectionWriteGuard.svelte', () => ({
-  getServerProjectionApplyEpoch: () => projectionGuardState.epoch,
-  withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
+vi.mock('./resourceWriteGuard.svelte', () => ({
+  getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
@@ -356,7 +356,7 @@ describe('Phase 2 script definition dirty projection merge', () => {
 
 beforeEach(() => {
   vi.useFakeTimers()
-  projectionGuardState.epoch = 0
+  resourceGuardState.epoch = 0
   recorded.commands.length = 0
 })
 
@@ -476,9 +476,9 @@ describe('character script definition draft bridge', () => {
   it('routes CharConfig script draft writes through the bridge helper', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
 
-    expect(source).not.toContain('withTrustedServerProjectionWrite')
+    expect(source).not.toContain('withTrustedResourceWrite')
     expect(source).toContain('applyCharacterScriptDefinitionDraft(')
-    expect(source).toContain('getServerProjectionApplyEpoch')
+    expect(source).toContain('getServerResourceApplyEpoch')
     expect(source).toContain('markDirtyScriptDefinitionRowFields')
     expect(source).toContain('clearDirtyScriptDefinitionFieldsMatchingProjection')
     expect(source).toContain('mergeScriptDefinitionProjectionRows')
@@ -487,7 +487,7 @@ describe('character script definition draft bridge', () => {
 
   it('clears matching script dirty fields before the snapshot mismatch branch', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
-    const projectionChangedIndex = source.indexOf('const projectionApplyChanged')
+    const projectionChangedIndex = source.indexOf('const resourceApplyChanged')
     const mismatchBranchIndex = source.indexOf(
       'if (targetChanged || snapshot !== scriptDraftSnapshot)',
       projectionChangedIndex,
@@ -499,7 +499,7 @@ describe('character script definition draft bridge', () => {
     expect(mismatchBranchIndex).toBeGreaterThan(projectionChangedIndex)
     expect(clearIndex).toBeGreaterThan(projectionChangedIndex)
     expect(clearIndex).toBeLessThan(mismatchBranchIndex)
-    expect(preMismatchSource).toContain('projectionApplyChanged')
+    expect(preMismatchSource).toContain('resourceApplyChanged')
     expect(preMismatchSource).toContain('!targetChanged')
   })
 
@@ -773,7 +773,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().characters[0].customscript = [script('script-1', 'server')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -800,7 +800,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    projectionGuardState.epoch += 1
+    resourceGuardState.epoch += 1
     getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'server')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)

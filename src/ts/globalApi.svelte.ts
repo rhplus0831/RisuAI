@@ -48,7 +48,7 @@ import {
   type ServerBackupProgress,
   type ServerBackupProgressCallback,
 } from './server/backups'
-import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { normalizeCharacterOrder } from './characterCommands'
 
 export const forageStorage = new AutoStorage()
@@ -1883,7 +1883,7 @@ export function changeChatTo(IdOrIndex: string | number) {
     return
   }
 
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().characters[selIdState.selId].chatPage = index
   })
   const chatId = currentCharacter.chats[index]?.id

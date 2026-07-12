@@ -192,7 +192,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     phase: 3,
     fix: 'Drop redundant setDatabase(db) in /setvar and /addvar',
     status: 'DONE',
-    testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+    testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
     testName: 'M12: /setvar persists scriptstate without re-running the setDatabase normalizer',
   },
   {
@@ -543,7 +543,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     phase: 7,
     fix: 'Remove logs of full command/preset objects',
     status: 'DONE',
-    testPath: 'src/ts/process/__tests__/command.projectionGuard.test.ts',
+    testPath: 'src/ts/process/__tests__/command.resourceGuard.test.ts',
     testName: 'L37: command processing logs nothing to console.log on the warm path',
     extraTests: [
       {

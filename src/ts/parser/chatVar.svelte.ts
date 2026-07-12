@@ -4,7 +4,7 @@ import { parseKeyValue } from '../util'
 import { setChatVarBackend } from './chatVarBackend'
 import { setParserStateBackend } from './parserStateBackend'
 import { currentChatScriptstateSnapshot, dispatchCurrentChatScriptstatePatch } from '../chatCommands'
-import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { getDatabase } from '../storage/database.svelte'
 
 export function getChatVar(key: string): string {
@@ -34,7 +34,7 @@ export function setChatVar(key: string, value: string): void {
   const selectedChar = get(selectedCharID)
   const previous = currentChatScriptstateSnapshot()
   let updated = false
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     const character = getDatabase().characters[selectedChar]
     const chat = character?.chats?.[character.chatPage]
     if (!chat) return

@@ -703,7 +703,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/server/characterBridge.svelte.test.ts',
-        testName: 'L22: server projection apply with changed fields reseeds the draft',
+        testName: 'L22: server resource apply with changed fields reseeds the draft',
       },
       {
         testPath: 'src/ts/server/characterBridge.svelte.test.ts',
@@ -849,7 +849,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     5,
     'Wrap the IGP append in the trusted write + persist via a scoped chat command (fix the I11 `[object Object]` coercion in the same change).',
     'src/ts/process/__tests__/igp.test.ts',
-    'L34: appends and persists under the enabled projection guard',
+    'L34: appends and persists under the enabled resource guard',
     [
       {
         testPath: 'src/ts/process/__tests__/igp.test.ts',
@@ -875,7 +875,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     5,
     'Wrap + dispatch a scoped command for the inlay error bubble; add a guard-enabled test.',
     'src/ts/process/__tests__/sendChatErrors.test.ts',
-    'L35: writes and persists the inlay bubble under the enabled projection guard',
+    'L35: writes and persists the inlay bubble under the enabled resource guard',
     [
       {
         testPath: 'src/ts/process/__tests__/sendChatErrors.test.ts',
@@ -883,7 +883,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/process/scripts.editdisplay.test.ts',
-        testName: 'I20: @@inject display action runs under the projection guard without durable persistence',
+        testName: 'I20: @@inject display action runs under the resource guard without durable persistence',
       },
     ],
   ),
@@ -2202,7 +2202,7 @@ describe('v3 fix-completeness gate routing registry', () => {
     }
 
     const proofText = GUARD_REPAIR_INVENTORY_PROOF.map((entry) => entry.proof).join('\n')
-    expect(proofText).toContain('trusted projection writes')
+    expect(proofText).toContain('trusted resource writes')
     expect(proofText).toContain('getDatabase({ snapshot: true })')
     expect(proofText).toContain('scoped current-chat message commands')
     expect(proofText).toContain('display-only semantics')

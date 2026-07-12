@@ -26,7 +26,7 @@ export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUN
 
 // The bootstrap ships chat *stubs* (empty message[]). This bridge hydrates a
 // chat's messages when it is opened and re-hydrates the open chat after a
-// projection apply re-stubs it. Bulk readers that need every chat call
+// resource apply re-stubs it. Bulk readers that need every chat call
 // `ensureAllChatsHydrated`.
 
 // Chat ids whose messages this client has already hydrated this session, so

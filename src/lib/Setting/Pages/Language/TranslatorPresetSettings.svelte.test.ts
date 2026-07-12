@@ -185,10 +185,10 @@ import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { alertConfirm, alertInput } from 'src/ts/alert'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
-  setServerProjectionWriteGuardEnabled,
-  withServerProjectionApply,
-  withTrustedServerProjectionWrite,
-} from 'src/ts/server/projectionWriteGuard.svelte'
+  setResourceWriteGuardEnabled,
+  withServerResourceApply,
+  withTrustedResourceWrite,
+} from 'src/ts/server/resourceWriteGuard.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -294,7 +294,7 @@ async function selectTranslatorPreset(index: number): Promise<void> {
 }
 
 async function switchProjectedPreset(index: number): Promise<void> {
-  withTrustedServerProjectionWrite(() => {
+  withTrustedResourceWrite(() => {
     getDatabase().translatorPresetId = index
     getDatabase().translatorPrompt = getDatabase().translatorPresets[index].prompt
     getDatabase().translatorMaxResponse = getDatabase().translatorPresets[index].maxResponse
@@ -306,7 +306,7 @@ async function applyTranslatorPresetProjection(input: {
   presets: Array<{ id: string; name: string; prompt: string; maxResponse: number }>
   selectedIndex?: number
 }): Promise<void> {
-  withServerProjectionApply(() => {
+  withServerResourceApply(() => {
     const selectedIndex = input.selectedIndex ?? getDatabase().translatorPresetId
     getDatabase().translatorPresets = input.presets.map((preset) => ({ ...preset }))
     getDatabase().translatorPresetId = selectedIndex
@@ -362,9 +362,9 @@ beforeEach(() => {
   vi.mocked(alertConfirm).mockClear()
   vi.mocked(alertInput).mockClear()
 
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   seedTranslatorPresets()
-  setServerProjectionWriteGuardEnabled(true)
+  setResourceWriteGuardEnabled(true)
 
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -377,7 +377,7 @@ afterEach(async () => {
     unmount(component)
     component = undefined
   }
-  setServerProjectionWriteGuardEnabled(false)
+  setResourceWriteGuardEnabled(false)
   setDatabaseLite({} as any)
   target.remove()
   document.body.innerHTML = ''
@@ -456,7 +456,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     })
     expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0], name: 'Preset A Edited', prompt: 'newer prompt A' },
         { ...getDatabase().translatorPresets[1] },
@@ -487,7 +487,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.selectInputs).toEqual([{ baseRevision: 100, presetId: 'preset-b' }])
     expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().translatorPresets = [
         { ...getDatabase().translatorPresets[0] },
         {
@@ -522,7 +522,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.deleteInputs).toEqual([{ baseRevision: 100, presetId: 'preset-a', selectPresetId: 'preset-b' }])
     expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
 
-    withTrustedServerProjectionWrite(() => {
+    withTrustedResourceWrite(() => {
       getDatabase().translatorPresets = [
         {
           ...getDatabase().translatorPresets[0],
