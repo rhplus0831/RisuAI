@@ -17,7 +17,8 @@ import {
 import { dispatchSaveChatGenerationSettings, isActiveChatTargetFresh, type ActiveChatTarget } from './chatCommands'
 import { language } from '../lang'
 import type { ServerCommandTransportOptions } from './server/commands'
-import { DBState, selectedCharID } from './stores.svelte'
+import { getResourceDatabase } from './server/resourceState.svelte'
+import { selectedCharID } from './stores.svelte'
 import type { Chat, Database, character } from './storage/database.svelte'
 
 type ActiveChatGenerationPromptPresetReference = ChatGenerationPromptPresetReference & {
@@ -71,7 +72,7 @@ export type ActiveChatGenerationSettingsSaveOptions = ServerCommandTransportOpti
 export function resolveActiveChatGenerationSettings(
   options: ResolveActiveChatGenerationSettingsOptions = {},
 ): ActiveChatGenerationSettingsState {
-  const db = options.db ?? DBState.db
+  const db = options.db ?? getResourceDatabase()
   const selectedCharIndex = options.selectedCharIndex ?? get(selectedCharID)
   const characters = safeArray<character>(db.characters)
   const character = characters[selectedCharIndex]

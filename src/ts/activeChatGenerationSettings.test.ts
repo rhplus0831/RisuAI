@@ -14,7 +14,9 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import { clearCachedServerCommandRevision, type ServerCommandResult } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import type { Database } from './storage/database.svelte'
+import { selectedCharID } from './stores.svelte'
 import {
   createActiveChatGenerationSettingsPatch,
   createActiveChatGenerationSettingsDefaultValuesPatch,
@@ -28,6 +30,15 @@ import {
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
 import { captureActiveChatTarget } from './chatCommands'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -91,7 +102,7 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     personas: [
       { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
       { id: 'persona-b', name: 'Persona B', personaPrompt: '', icon: '', note: '' },
@@ -180,7 +191,7 @@ afterEach(() => {
 
 describe('active chat generation settings helper', () => {
   it('resolves unconfigured active-chat state, required toggles, and missing labels', () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
       promptPresetId: 'preset-a',
@@ -218,8 +229,8 @@ describe('active chat generation settings helper', () => {
   })
 
   it('resolves preset toggles from bootstrap-shaped preset stubs without global fallback', () => {
-    DBState.db.customPromptTemplateToggle = 'fallback=Fallback'
-    DBState.db.promptPresets = [
+    testDatabaseState.db.customPromptTemplateToggle = 'fallback=Fallback'
+    testDatabaseState.db.promptPresets = [
       {
         id: 'preset-a',
         name: 'Preset A',
@@ -228,7 +239,7 @@ describe('active chat generation settings helper', () => {
         moduleIntergration: 'preset-integrated-space',
       },
     ] as any
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -258,7 +269,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('returns a stable guard error with active-chat missing labels', () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
       promptPresetId: 'preset-a',
@@ -276,9 +287,9 @@ describe('active chat generation settings helper', () => {
   })
 
   it('blocks send when deleted preset and persona ids remain on the active chat', () => {
-    DBState.db.selectedPersona = 0
-    DBState.db.promptPresetsId = 0
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.selectedPersona = 0
+    testDatabaseState.db.promptPresetsId = 0
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'deleted-persona',
       modelPresetId: 'deleted-model',
@@ -329,18 +340,18 @@ describe('active chat generation settings helper', () => {
         'Chat generation settings are incomplete. Missing: Persona, Model preset, Prompt preset, Agent preset.',
       )
     }
-    expect(DBState.db.characters[0].chats[0].generationSettings).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toMatchObject({
       personaId: 'deleted-persona',
       modelPresetId: 'deleted-model',
       promptPresetId: 'deleted-preset',
       agentPresetId: 'deleted-agent-preset',
     })
-    expect(DBState.db.selectedPersona).toBe(0)
-    expect(DBState.db.promptPresetsId).toBe(0)
+    expect(testDatabaseState.db.selectedPersona).toBe(0)
+    expect(testDatabaseState.db.promptPresetsId).toBe(0)
   })
 
   it('ignores global moduleIntergration when the selected preset does not link integrated modules', () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -358,7 +369,7 @@ describe('active chat generation settings helper', () => {
     const state = resolveActiveChatGenerationSettings()
     const requiredKeys = state.requiredSidebarToggles.map((toggle) => toggle.key)
 
-    expect(DBState.db.moduleIntergration).toBe('global-integrated-space')
+    expect(testDatabaseState.db.moduleIntergration).toBe('global-integrated-space')
     expect(requiredKeys).toEqual(['global', 'chat', 'character'])
     expect(requiredKeys).not.toContain('globalIntegrated')
     expect(state.staleSidebarToggleKeys).toEqual(['integrated', 'globalIntegrated'])
@@ -404,7 +415,7 @@ describe('active chat generation settings helper', () => {
     ).toBe(true)
 
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -416,7 +427,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('prefills missing sidebar toggle defaults when selecting a preset', async () => {
-    DBState.db.globalChatVariables = {
+    testDatabaseState.db.globalChatVariables = {
       toggle_mode: '1',
       toggle_global: '1',
     } as any
@@ -441,13 +452,13 @@ describe('active chat generation settings helper', () => {
     expect(
       resolveActiveChatGenerationSettings({
         db: {
-          ...DBState.db,
+          ...testDatabaseState.db,
           characters: [
             {
-              ...DBState.db.characters[0],
+              ...testDatabaseState.db.characters[0],
               chats: [
                 {
-                  ...DBState.db.characters[0].chats[0],
+                  ...testDatabaseState.db.characters[0].chats[0],
                   generationSettings: nextSettings,
                 },
               ],
@@ -465,7 +476,7 @@ describe('active chat generation settings helper', () => {
     ).toBe(true)
 
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -477,7 +488,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('fills missing active sidebar toggle defaults without resetting existing values', () => {
-    DBState.db.modules.push({
+    testDatabaseState.db.modules.push({
       id: 'new-chat-module',
       customModuleToggle: [
         'newFlag=New flag',
@@ -486,8 +497,8 @@ describe('active chat generation settings helper', () => {
         'newMemo=New memo=textarea',
       ].join('\n'),
     } as any)
-    DBState.db.characters[0].chats[0].modules = ['chat-module', 'new-chat-module']
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].modules = ['chat-module', 'new-chat-module']
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -522,13 +533,13 @@ describe('active chat generation settings helper', () => {
 
     const state = resolveActiveChatGenerationSettings({
       db: {
-        ...DBState.db,
+        ...testDatabaseState.db,
         characters: [
           {
-            ...DBState.db.characters[0],
+            ...testDatabaseState.db.characters[0],
             chats: [
               {
-                ...DBState.db.characters[0].chats[0],
+                ...testDatabaseState.db.characters[0].chats[0],
                 generationSettings: nextSettings,
               },
             ],
@@ -541,7 +552,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('automatically saves defaults when active toggle requirements gain new keys', async () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -553,7 +564,7 @@ describe('active chat generation settings helper', () => {
         character: '0',
       },
     }
-    DBState.db.promptPresets[1].customPromptTemplateToggle = [
+    testDatabaseState.db.promptPresets[1].customPromptTemplateToggle = [
       'newFlag=New flag',
       'newMode=New mode=select=alpha,beta',
       'newNote=New note=text',
@@ -582,7 +593,7 @@ describe('active chat generation settings helper', () => {
         newMemo: '',
       },
     }
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(expectedSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(expectedSettings)
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -596,9 +607,9 @@ describe('active chat generation settings helper', () => {
   })
 
   it('resets active-chat toggle values to defaults', async () => {
-    DBState.db.promptPresets[0].customPromptTemplateToggle =
+    testDatabaseState.db.promptPresets[0].customPromptTemplateToggle =
       'mode=Mode=select=warm,cold\nflag=Flag\nnote=Note=text\nmemo=Memo=textarea'
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -641,7 +652,7 @@ describe('active chat generation settings helper', () => {
     expect(saveActiveChatGenerationSettingsDefaultValues()).toBe(true)
 
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -677,7 +688,7 @@ describe('active chat generation settings helper', () => {
         character: '0',
       },
     }
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -689,7 +700,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('creates and saves configured persona/preset selections by id', async () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       jailbreakToggle: false,
       sidebarToggles: {
         mode: 'warm',
@@ -728,7 +739,7 @@ describe('active chat generation settings helper', () => {
     ).toBe(true)
 
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls).toEqual([
       {
         url: '/api/v1/bootstrap',
@@ -749,7 +760,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('preserves existing fields and prunes stale sidebar toggle keys on toggle saves', async () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -801,7 +812,7 @@ describe('active chat generation settings helper', () => {
     ).toBe(true)
 
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(nextSettings)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -813,7 +824,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('resolves different settings when the active chat switches', () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -835,7 +846,7 @@ describe('active chat generation settings helper', () => {
       promptPreset: { id: 'preset-a' },
     })
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
 
     expect(resolveActiveChatGenerationSettings()).toMatchObject({
       identity: { chatId: 'chat-b' },
@@ -846,7 +857,7 @@ describe('active chat generation settings helper', () => {
   })
 
   it('does not dispatch or save when the active chat has no id', () => {
-    delete DBState.db.characters[0].chats[0].id
+    delete testDatabaseState.db.characters[0].chats[0].id
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
@@ -867,11 +878,11 @@ describe('active chat generation settings helper', () => {
     ).toBe(false)
 
     expect(calls).toEqual([])
-    expect(DBState.db.characters[0].chats[0].generationSettings).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toBeUndefined()
   })
 
   it('returns false without resolving, mutating, or fetching when expected target is stale', () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState.db.characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -886,11 +897,11 @@ describe('active chat generation settings helper', () => {
       },
     }
     const target = captureActiveChatTarget()
-    const chatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
-    const chatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const chatASettings = clonePlain(testDatabaseState.db.characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(testDatabaseState.db.characters[0].chats[1].generationSettings)
     const calls = stubCommandFetch()
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     setServerProjectionWriteGuardEnabled(true)
 
     expect(
@@ -922,7 +933,7 @@ describe('active chat generation settings helper', () => {
     expect(saveActiveChatGenerationSettingsDefaultValues({ expectedTarget: target })).toBe(false)
 
     expect(calls).toEqual([])
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(testDatabaseState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
   })
 })
