@@ -38,11 +38,21 @@ import {
 } from './chatCommands'
 import { CharacterHandler } from './process/mcp/risuaccess/characters'
 import { ModuleHandler } from './process/mcp/risuaccess/modules'
-import { DBState, selectedCharID } from './stores.svelte'
-import { isServerCharacterShell, type Chat, type character } from './storage/database.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { selectedCharID } from './stores.svelte'
+import { isServerCharacterShell, type Chat, type character, type Database } from './storage/database.svelte'
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { getColdStorageItem } from './process/coldstorage.svelte'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -141,7 +151,7 @@ beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     currentChar: 0,
     characters: [seedCharacter()],
     characterOrder: ['char-a'],
@@ -155,21 +165,21 @@ afterEach(() => {
 describe('Phase 9-3f compatibility adapters', () => {
   it('routes whole-character compatibility setters through character scalar commands', async () => {
     const calls = stubCommandFetch()
-    const previousCharacter = snapshot(DBState.db.characters[0])
+    const previousCharacter = snapshot(testDatabaseState.db.characters[0])
     const previous = currentCharacterStateSnapshot()
-    DBState.db.characters[0] = {
-      ...DBState.db.characters[0],
+    testDatabaseState.db.characters[0] = {
+      ...testDatabaseState.db.characters[0],
       name: 'New name',
       desc: 'New desc',
       chats: [
         {
-          ...DBState.db.characters[0].chats[0],
+          ...testDatabaseState.db.characters[0].chats[0],
           name: 'child change stays out of character scalar patch',
         },
       ],
     }
 
-    dispatchCompatibleCharacterUpdate(previousCharacter, DBState.db.characters[0], previous)
+    dispatchCompatibleCharacterUpdate(previousCharacter, testDatabaseState.db.characters[0], previous)
 
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a')).toBe(true)
@@ -189,7 +199,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('routes whole-chat compatibility setters through chat, message, and scriptstate commands', async () => {
     const calls = stubCommandFetch()
-    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previousChat = snapshot(testDatabaseState.db.characters[0].chats[0]) as Chat
     const previous = currentChatStateSnapshot()
     const nextChat: Chat = {
       ...previousChat,
@@ -200,7 +210,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       ],
       scriptstate: { $old: '2' },
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    testDatabaseState.db.characters[0].chats[0] = nextChat
 
     dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
 
@@ -234,7 +244,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('serializes whole-chat compatibility command fan-out against the latest revision', async () => {
     const calls = stubRevisionCheckedCommandFetch()
-    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previousChat = snapshot(testDatabaseState.db.characters[0].chats[0]) as Chat
     const previous = currentChatStateSnapshot()
     const nextChat: Chat = {
       ...previousChat,
@@ -245,7 +255,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       ],
       scriptstate: { $old: '3' },
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    testDatabaseState.db.characters[0].chats[0] = nextChat
 
     dispatchCompatibleChatUpdate(previousChat, nextChat, previous)
 
@@ -259,7 +269,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       { baseRevision: 11, messages: nextChat.message },
       { baseRevision: 12, patch: { $old: '3' }, deleteKeys: ['$gone'] },
     ])
-    expect(DBState.db.characters[0].chats[0]).toEqual(nextChat)
+    expect(testDatabaseState.db.characters[0].chats[0]).toEqual(nextChat)
   })
 
   it('prepareCompatibleCharacterUpdate returns one update factory routed through the sequencer', async () => {
@@ -267,10 +277,10 @@ describe('Phase 9-3f compatibility adapters', () => {
     // runOptimisticCommandSequence so dispatch sits inside the allowed-sequencer
     // scope. Verify factories build the update and rollback restores the snapshot.
     const calls = stubCommandFetch()
-    const previousCharacter = snapshot(DBState.db.characters[0])
+    const previousCharacter = snapshot(testDatabaseState.db.characters[0])
     const previous = currentCharacterStateSnapshot()
     const next = { ...previousCharacter, name: 'Prepared name' } as character
-    DBState.db.characters[0] = next
+    testDatabaseState.db.characters[0] = next
 
     const { factories, rollback } = prepareCompatibleCharacterUpdate(previousCharacter, next, previous)
     expect(factories).toHaveLength(1)
@@ -287,7 +297,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('prepareCompatibleChatUpdate returns the three child factories in their sequenced order', async () => {
     const calls = stubRevisionCheckedCommandFetch()
-    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previousChat = snapshot(testDatabaseState.db.characters[0].chats[0]) as Chat
     const previous = currentChatStateSnapshot()
     const nextChat: Chat = {
       ...previousChat,
@@ -298,7 +308,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       ],
       scriptstate: { $old: '4' },
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    testDatabaseState.db.characters[0].chats[0] = nextChat
 
     const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
     expect(factories).toHaveLength(3)
@@ -318,7 +328,7 @@ describe('Phase 9-3f compatibility adapters', () => {
   })
 
   it('prepareCompatibleChatUpdate returns an empty factory list when nothing changed', () => {
-    const previousChat = snapshot(DBState.db.characters[0].chats[0]) as Chat
+    const previousChat = snapshot(testDatabaseState.db.characters[0].chats[0]) as Chat
     const previous = currentChatStateSnapshot()
     const nextChat = snapshot(previousChat)
     const { factories, rollback } = prepareCompatibleChatUpdate(previousChat, nextChat, previous)
@@ -363,16 +373,16 @@ describe('Phase 9-3f compatibility adapters', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].image = 'direct'
+      testDatabaseState.db.characters[0].image = 'direct'
     }).toThrow()
 
     changeCharImage(0, 0)
     rmCharEmotion(0, 0)
 
-    expect(DBState.db.characters[0].image).toBe('asset-old')
-    expect(DBState.db.characters[0].emotionImages).toEqual([])
+    expect(testDatabaseState.db.characters[0].image).toBe('asset-old')
+    expect(testDatabaseState.db.characters[0].emotionImages).toEqual([])
     expect(() => {
-      DBState.db.characters[0].image = 'direct'
+      testDatabaseState.db.characters[0].image = 'direct'
     }).toThrow()
 
     await vi.waitFor(() => {
@@ -385,15 +395,15 @@ describe('Phase 9-3f compatibility adapters', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
+      testDatabaseState.db.characters.push({ chaId: 'direct', name: 'Direct', chats: [] } as any)
     }).toThrow()
 
     const index = createNewCharacter()
 
     expect(index).toBe(1)
-    expect(DBState.db.characters[1].name).toBe('')
+    expect(testDatabaseState.db.characters[1].name).toBe('')
     expect(() => {
-      DBState.db.characters.push({ chaId: 'direct-2', name: 'Direct', chats: [] } as any)
+      testDatabaseState.db.characters.push({ chaId: 'direct-2', name: 'Direct', chats: [] } as any)
     }).toThrow()
 
     await vi.waitFor(() => {
@@ -418,9 +428,9 @@ describe('Phase 9-3f compatibility adapters', () => {
 
     expect(index).toBe(1)
     expect(get(selectedCharID)).toBe(1)
-    expect(DBState.db.characters[1].lastInteraction).toEqual(expect.any(Number))
+    expect(testDatabaseState.db.characters[1].lastInteraction).toEqual(expect.any(Number))
     expect(() => {
-      DBState.db.characters[1].lastInteraction = 1
+      testDatabaseState.db.characters[1].lastInteraction = 1
     }).toThrow()
 
     await vi.waitFor(() => {
@@ -432,18 +442,18 @@ describe('Phase 9-3f compatibility adapters', () => {
       body: {
         baseRevision: 10,
         character: expect.objectContaining({
-          chaId: DBState.db.characters[1].chaId,
-          lastInteraction: DBState.db.characters[1].lastInteraction,
+          chaId: testDatabaseState.db.characters[1].chaId,
+          lastInteraction: testDatabaseState.db.characters[1].lastInteraction,
         }),
-        lastInteraction: DBState.db.characters[1].lastInteraction,
+        lastInteraction: testDatabaseState.db.characters[1].lastInteraction,
       },
     })
   })
 
   it('selects characters without formatting the guarded server projection', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters[0] = {
-      ...DBState.db.characters[0],
+    testDatabaseState.db.characters[0] = {
+      ...testDatabaseState.db.characters[0],
       triggerscript: undefined,
     } as character
     setServerProjectionWriteGuardEnabled(true)
@@ -451,8 +461,8 @@ describe('Phase 9-3f compatibility adapters', () => {
     await changeChar(0)
 
     expect(get(selectedCharID)).toBe(0)
-    expect(DBState.db.characters[0].triggerscript).toBeUndefined()
-    expect(DBState.db.characters[0].lastInteraction).toEqual(expect.any(Number))
+    expect(testDatabaseState.db.characters[0].triggerscript).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].lastInteraction).toEqual(expect.any(Number))
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/select')).toBe(true)
     })
@@ -461,7 +471,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       body: {
         baseRevision: 10,
         characterId: 'char-a',
-        lastInteraction: DBState.db.characters[0].lastInteraction,
+        lastInteraction: testDatabaseState.db.characters[0].lastInteraction,
       },
     })
   })
@@ -501,7 +511,7 @@ describe('Phase 9-3f compatibility adapters', () => {
         return jsonResponse({ revision: 11 })
       }) as unknown as typeof fetch,
     )
-    DBState.db = {
+    testDatabaseState.db = {
       currentChar: 0,
       characters: [
         seedCharacter(),
@@ -522,8 +532,8 @@ describe('Phase 9-3f compatibility adapters', () => {
     await changeChar(1)
 
     expect(get(selectedCharID)).toBe(1)
-    expect(isServerCharacterShell(DBState.db.characters[1])).toBe(false)
-    expect(DBState.db.characters[1].name).toBe('Hydrated B')
+    expect(isServerCharacterShell(testDatabaseState.db.characters[1])).toBe(false)
+    expect(testDatabaseState.db.characters[1].name).toBe('Hydrated B')
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/select')).toBe(true)
     })
@@ -568,7 +578,7 @@ describe('Phase 9-3f compatibility adapters', () => {
       name: 'Char B',
       lastInteraction: 1234,
     } as character
-    DBState.db = {
+    testDatabaseState.db = {
       currentChar: 0,
       characters: [seedCharacter(), otherChar],
       characterOrder: ['char-a', 'char-b'],
@@ -586,14 +596,14 @@ describe('Phase 9-3f compatibility adapters', () => {
     await vi.waitFor(() => {
       expect(get(selectedCharID)).toBe(0)
     })
-    expect((DBState.db as any).currentChar).toBe(0)
-    expect(DBState.db.characters[1].lastInteraction).toBe(1234)
-    expect(DBState.db.characters[1].name).toBe('Char B')
+    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(testDatabaseState.db.characters[1].lastInteraction).toBe(1234)
+    expect(testDatabaseState.db.characters[1].name).toBe('Char B')
   })
 
   it('rejects cold-storage character hydration in server-backed web mode', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters[0].coldstorage = 'cold-char-a'
+    testDatabaseState.db.characters[0].coldstorage = 'cold-char-a'
     selectedCharID.set(-1)
 
     await changeChar(0)
@@ -612,7 +622,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].globalLore = []
+      testDatabaseState.db.characters[0].globalLore = []
     }).toThrow()
 
     const result = await handler.setCharacterLorebook('char-a', 'Lore', 'content', ['key'])
@@ -641,7 +651,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('routes MCP character regex and Lua writes through script definition commands', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters[0].triggerscript = [
+    testDatabaseState.db.characters[0].triggerscript = [
       {
         comment: '',
         type: 'start',
@@ -653,7 +663,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].customscript = []
+      testDatabaseState.db.characters[0].customscript = []
     }).toThrow()
 
     const regexResult = await handler.setCharacterRegexScripts('char-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
@@ -702,7 +712,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('routes MCP module regex and Lua writes through script definition commands', async () => {
     const calls = stubCommandFetch()
-    DBState.db.modules = [
+    testDatabaseState.db.modules = [
       {
         id: 'mod-a',
         name: 'Module',
@@ -722,7 +732,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.modules[0].regex = []
+      testDatabaseState.db.modules[0].regex = []
     }).toThrow()
 
     const regexResult = await handler.setModuleRegexScript('mod-a', 'Regex', undefined, 'in', 'out', 'editdisplay')
@@ -771,13 +781,13 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('routes MCP module info and enablement writes through module commands', async () => {
     const calls = stubCommandFetch()
-    DBState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
-    DBState.db.enabledModules = []
+    testDatabaseState.db.modules = [{ id: 'mod-a', name: 'Module', description: '' }]
+    testDatabaseState.db.enabledModules = []
     const handler = new ModuleHandler()
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.enabledModules.push('mod-a')
+      testDatabaseState.db.enabledModules.push('mod-a')
     }).toThrow()
 
     const result = await handler.setModuleInfo('mod-a', {
