@@ -25,7 +25,8 @@ vi.mock('./modules', async (importActual) => {
 import '../stores.svelte'
 import { processScriptFull, resetScriptCache } from './scripts'
 import { safeStructuredClone } from '../polyfill'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
@@ -83,7 +84,7 @@ function seedDb(messageChatId: string | null = 'm-0'): character {
     data: 'rendered body',
     ...(messageChatId !== null ? { chatId: messageChatId } : {}),
   }
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [
       {
         chaId: 'char-a',
@@ -126,7 +127,7 @@ function seedDb(messageChatId: string | null = 'm-0'): character {
     presetRegex: [],
     templateDefaultVariables: '',
   } as any
-  return DBState.db.characters[0] as unknown as character
+  return testDatabaseState.db.characters[0] as unknown as character
 }
 
 beforeEach(() => {
@@ -173,18 +174,18 @@ describe('editdisplay render path logging (L38)', () => {
     ] as any
     setServerProjectionWriteGuardEnabled(true)
     expect(() => {
-      DBState.db.characters[0].chats[0].message[0].data = 'raw'
-    }).toThrow(/read-only server projection/)
+      testDatabaseState.db.characters[0].chats[0].message[0].data = 'raw'
+    }).toThrow(/resource database compatibility view is read-only/)
 
     const result = await processScriptFull(char, 'keep REMOVE after', 'editdisplay', 0)
 
     expect(result.data).toBe('keep  after')
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
   })
 
   it('does not reuse editdisplay script cache across chat variable changes', async () => {
     const char = seedDb()
-    const chat = DBState.db.characters[0].chats[0]
+    const chat = testDatabaseState.db.characters[0].chats[0]
     chat.scriptstate = { $choice: 'first' }
     char.customscript = [
       {
@@ -220,7 +221,7 @@ describe('editdisplay render path logging (L38)', () => {
     const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
 
     expect(result.data).toBe('keep  after')
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('keep REMOVE after')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('keep REMOVE after')
     await waitForCallCount(calls, 2)
     expect(calls.map((call) => call.url)).toEqual(['/api/v1/bootstrap', '/api/v1/commands/messages/m-0'])
     expect(calls[1]).toMatchObject({
@@ -252,13 +253,13 @@ describe('editdisplay render path logging (L38)', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(result.data).toBe('keep  after')
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
     expect(calls).toHaveLength(0)
   })
 
   it('skips missing and malformed regex script entries during edit-display processing', async () => {
     const char = seedDb()
-    ;(DBState.db as any).presetRegex = [undefined]
+    ;(testDatabaseState.db as any).presetRegex = [undefined]
     char.customscript = [
       undefined,
       null,
@@ -280,7 +281,7 @@ describe('editdisplay render path logging (L38)', () => {
 
   it('uses regex from the active chat selected prompt preset', async () => {
     const char = seedDb()
-    ;(DBState.db as any).presetRegex = [
+    ;(testDatabaseState.db as any).presetRegex = [
       {
         comment: 'global-regex',
         type: 'editdisplay',
@@ -290,7 +291,7 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ]
-    ;(DBState.db as any).promptPresets = [
+    ;(testDatabaseState.db as any).promptPresets = [
       {
         id: 'chat-preset',
         presetRegex: [
@@ -305,7 +306,7 @@ describe('editdisplay render path logging (L38)', () => {
         ],
       },
     ]
-    ;(DBState.db.characters[0].chats[0] as any).generationSettings = {
+    ;(testDatabaseState.db.characters[0].chats[0] as any).generationSettings = {
       promptPresetId: 'chat-preset',
     }
 
@@ -316,7 +317,7 @@ describe('editdisplay render path logging (L38)', () => {
 
   it('does not fall back to global regex when the active chat selected prompt has none', async () => {
     const char = seedDb()
-    ;(DBState.db as any).presetRegex = [
+    ;(testDatabaseState.db as any).presetRegex = [
       {
         comment: 'global-regex',
         type: 'editdisplay',
@@ -326,8 +327,8 @@ describe('editdisplay render path logging (L38)', () => {
         ableFlag: true,
       },
     ]
-    ;(DBState.db as any).promptPresets = [{ id: 'plain-preset' }]
-    ;(DBState.db.characters[0].chats[0] as any).generationSettings = {
+    ;(testDatabaseState.db as any).promptPresets = [{ id: 'plain-preset' }]
+    ;(testDatabaseState.db.characters[0].chats[0] as any).generationSettings = {
       promptPresetId: 'plain-preset',
     }
 
@@ -339,7 +340,7 @@ describe('editdisplay render path logging (L38)', () => {
   it('treats absent character regex scripts as an empty script list', async () => {
     const char = seedDb()
     ;(char as any).customscript = undefined
-    ;(DBState.db as any).presetRegex = undefined
+    ;(testDatabaseState.db as any).presetRegex = undefined
 
     const result = await processScriptFull(char, 'rendered body', 'editdisplay', 0)
 

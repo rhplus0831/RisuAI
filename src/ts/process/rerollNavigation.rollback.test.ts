@@ -25,8 +25,9 @@ vi.mock('./prereroll', () => prerollSpies)
 
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import {
   getRerollId,
   reroll,
@@ -60,7 +61,7 @@ function seedDb(activeChatId: string | undefined): { siblingSize: number } {
     { role: 'user', data: 'hi', chatId: 'u1' },
     { role: 'char', data: 'c2', chatId: 'g2' },
   ]
-  ;(DBState as { db: unknown }).db = {
+  testDatabaseState.db = {
     characters: [
       {
         chaId: 'active',
@@ -85,13 +86,13 @@ function seedDb(activeChatId: string | undefined): { siblingSize: number } {
 }
 
 function activeTailUid(): string {
-  const character = (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[0]
+  const character = testDatabaseState.db.characters[0] as unknown as { chats: { message: Msg[] }[] }
   const message = character.chats[0].message
   return message[message.length - 1].chatId
 }
 
 function siblingMessageCount(): number {
-  return (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[1].chats[0].message.length
+  return testDatabaseState.db.characters[1].chats[0].message.length
 }
 
 async function waitForCallCount(calls: CapturedFetch[], expected: number): Promise<void> {

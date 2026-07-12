@@ -20,8 +20,9 @@ import { safeStructuredClone } from '../polyfill'
 import { runTrigger } from './triggers'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -59,7 +60,7 @@ function seedDb(): { activeChat: unknown; siblingSize: number } {
     chatId: `sib-${index}`,
   }))
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [
       {
         chaId: 'char-a',
@@ -80,13 +81,13 @@ function seedDb(): { activeChat: unknown; siblingSize: number } {
     templateDefaultVariables: '',
   } as any
   return {
-    activeChat: DBState.db.characters[0].chats[0],
+    activeChat: testDatabaseState.db.characters[0].chats[0],
     siblingSize: JSON.stringify(siblingMessages).length,
   }
 }
 
 function characterWithTriggers(triggerscript: unknown[]): character {
-  return { ...DBState.db.characters[0], triggerscript } as unknown as character
+  return { ...testDatabaseState.db.characters[0], triggerscript } as unknown as character
 }
 
 beforeEach(() => {

@@ -6,7 +6,7 @@ vi.mock('../modules', async (importActual) => {
 })
 
 import { setDatabase, type Database, type character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import type { PromptItem } from '../prompt'
 import { normalizeTemplate } from '../promptAssembly/normalizeTemplate'
 
@@ -89,9 +89,9 @@ describe('normalizeTemplate', () => {
     const original: PromptItem[] = [{ type: 'description' }]
     seedDb({ promptPresetsId: -1, promptTemplate: original })
     const result = normalizeTemplate(makeChar())
-    expect(result.promptTemplate).not.toBe(DBState.db.promptTemplate)
+    expect(result.promptTemplate).not.toBe(testDatabaseState.db.promptTemplate)
     // implicit postEverything must not leak back into db state
-    expect(DBState.db.promptTemplate).toEqual([{ type: 'description' }])
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ type: 'description' }])
   })
 
   it('forces the utility-bot template when utilityBot=true and utilOverride defaults to false', () => {
@@ -266,6 +266,6 @@ describe('normalizeTemplate', () => {
     const result = normalizeTemplate(makeChar())
 
     expect(result.promptTemplate).toEqual([{ type: 'description' }, { type: 'postEverything' }])
-    expect(DBState.db.promptPresets[0].promptTemplate).toEqual([{ type: 'description' }])
+    expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([{ type: 'description' }])
   })
 })

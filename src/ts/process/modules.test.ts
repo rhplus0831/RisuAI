@@ -37,6 +37,9 @@ const replaceCharacterLorebooksCommand = vi.hoisted(() => vi.fn(async () => ({ s
 const replaceCharacterScriptsCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })))
 const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })))
 const runOptimisticCommandSequence = vi.hoisted(() => vi.fn())
+const testDatabaseState: { db: Record<string, any> } = {
+  db: { modules: [], characters: [] },
+}
 
 vi.mock('../platform', () => ({
   isFastifyServer: true,
@@ -91,7 +94,6 @@ vi.mock('../rpack/rpack_js', () => ({
 }))
 
 vi.mock('../stores.svelte', () => ({
-  DBState: { db: { modules: [] } },
   HideIconStore: { set: vi.fn() },
   moduleBackgroundEmbedding: { set: vi.fn() },
   ReloadGUIPointer: { set: vi.fn() },
@@ -144,7 +146,7 @@ import {
   moduleUpdate,
   refreshModules,
 } from './modules'
-import { DBState, moduleBackgroundEmbedding } from '../stores.svelte'
+import { moduleBackgroundEmbedding } from '../stores.svelte'
 import type { character } from '../storage/database.svelte'
 import { language } from 'src/lang'
 
@@ -180,7 +182,7 @@ function snapshotJson(value: unknown): string {
 }
 
 function characterById(characterId: string): Record<string, unknown> | undefined {
-  return (DBState.db.characters as unknown as Array<Record<string, unknown>> | undefined)?.find(
+  return (testDatabaseState.db.characters as unknown as Array<Record<string, unknown>> | undefined)?.find(
     (candidate) => candidate.chaId === characterId,
   )
 }
@@ -191,10 +193,10 @@ function installAttemptAwareRollbackMocks(): void {
     return {
       scopeKey: `character:${characterId}`,
       scopedValue: cloneJsonValue((character?.globalLore as unknown[]) ?? []),
-      loreBook: cloneJsonValue(DBState.db.loreBook ?? []),
-      loreBookPage: DBState.db.loreBookPage ?? 0,
-      characters: cloneJsonValue(DBState.db.characters ?? []),
-      modules: cloneJsonValue(DBState.db.modules ?? []),
+      loreBook: cloneJsonValue(testDatabaseState.db.loreBook ?? []),
+      loreBookPage: testDatabaseState.db.loreBookPage ?? 0,
+      characters: cloneJsonValue(testDatabaseState.db.characters ?? []),
+      modules: cloneJsonValue(testDatabaseState.db.modules ?? []),
       selectedCharID: 0,
     }
   })
@@ -250,7 +252,7 @@ function installAttemptAwareRollbackMocks(): void {
 describe('module imports', () => {
   beforeEach(() => {
     selectedFileState.file = null
-    ;(DBState as unknown as { db: Record<string, unknown> }).db = { modules: [], characters: [] }
+    testDatabaseState.db = { modules: [], characters: [] }
     alertError.mockClear()
     saveAsset.mockClear()
     saveAssets.mockReset()
@@ -466,7 +468,7 @@ describe('module imports', () => {
       customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
       triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
     } as unknown as character
-    DBState.db.characters = [character]
+    testDatabaseState.db.characters = [character]
     getCurrentCharacter.mockReturnValue(character)
     getDatabase.mockReturnValue({
       characters: [character],
@@ -535,7 +537,7 @@ describe('module imports', () => {
       customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
       triggerscript: [{ comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] }],
     } as unknown as character
-    DBState.db.characters = [character]
+    testDatabaseState.db.characters = [character]
     getCurrentCharacter.mockReturnValue(character)
     getDatabase.mockReturnValue({
       characters: [character],
@@ -595,8 +597,8 @@ describe('module imports', () => {
       customscript: [{ comment: 'Sibling regex', in: 'sib', out: 'sib' }],
       triggerscript: [{ comment: 'Sibling trigger', type: 'manual', conditions: [], effect: [] }],
     } as unknown as character
-    DBState.db.characters = [target, sibling]
-    DBState.db.modules = [
+    testDatabaseState.db.characters = [target, sibling]
+    testDatabaseState.db.modules = [
       {
         id: 'unrelated-module',
         name: 'Unrelated module',
@@ -604,7 +606,7 @@ describe('module imports', () => {
         regex: [{ comment: 'Unrelated module regex', in: 'module', out: 'module', type: 'regex' }],
       },
     ]
-    DBState.db.loreBook = [
+    testDatabaseState.db.loreBook = [
       { id: 'global-lore', name: 'Global lore', data: [{ comment: 'Global', content: 'g' }] },
     ] as never
     getCurrentCharacter.mockReturnValue(target)
@@ -630,10 +632,10 @@ describe('module imports', () => {
     ]
     replaceCharacterLorebooksCommand.mockResolvedValueOnce({ status: 'conflict', revision: 1, data: {} })
     sibling.customscript = [{ comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib', type: 'regex' }]
-    ;(DBState.db.modules as unknown as Array<Record<string, unknown>>)[0].regex = [
+    ;(testDatabaseState.db.modules as unknown as Array<Record<string, unknown>>)[0].regex = [
       { comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module', type: 'regex' },
     ]
-    ;(DBState.db.loreBook as Array<Record<string, unknown>>)[0].name = 'Global lore newer'
+    ;(testDatabaseState.db.loreBook as Array<Record<string, unknown>>)[0].name = 'Global lore newer'
 
     await factories[0](10)
     rollback()
@@ -646,7 +648,7 @@ describe('module imports', () => {
     expect(sibling.customscript).toEqual([
       { comment: 'Sibling newer regex', in: 'new-sib', out: 'new-sib', type: 'regex' },
     ])
-    expect(DBState.db.modules).toEqual([
+    expect(testDatabaseState.db.modules).toEqual([
       {
         id: 'unrelated-module',
         name: 'Unrelated module',
@@ -654,7 +656,7 @@ describe('module imports', () => {
         regex: [{ comment: 'Unrelated module newer regex', in: 'new-module', out: 'new-module', type: 'regex' }],
       },
     ])
-    expect(DBState.db.loreBook).toEqual([
+    expect(testDatabaseState.db.loreBook).toEqual([
       { id: 'global-lore', name: 'Global lore newer', data: [{ comment: 'Global', content: 'g' }] },
     ])
   })

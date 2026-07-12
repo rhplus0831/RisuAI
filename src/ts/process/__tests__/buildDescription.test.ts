@@ -6,7 +6,7 @@ vi.mock('../modules', async (importActual) => {
 })
 
 import { setDatabase, type Chat, type Database, type character } from '../../storage/database.svelte'
-import { DBState } from '../../stores.svelte'
+import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { buildDescription } from '../promptAssembly/buildDescription'
 
 function makeChar(overrides: Partial<character> = {}): character {
@@ -100,10 +100,10 @@ describe('buildDescription', () => {
     expect(r2.role).toBe('system')
   })
 
-  it('reads descriptionPrefix from DBState at call time', async () => {
+  it('reads descriptionPrefix from the resource database at call time', async () => {
     seedDb({ promptPreprocess: true, descriptionPrefix: 'first:' })
     const r1 = await buildDescription(makeChar(), makeChat())
-    DBState.db.descriptionPrefix = 'second:'
+    testDatabaseState.db.descriptionPrefix = 'second:'
     const r2 = await buildDescription(makeChar(), makeChat())
     expect(r1.content).toBe('first:a quiet librarian')
     expect(r2.content).toBe('second:a quiet librarian')

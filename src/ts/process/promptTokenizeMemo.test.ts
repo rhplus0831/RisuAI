@@ -22,10 +22,6 @@ vi.mock('../alert', () => ({
   alertNormal: vi.fn(),
 }))
 
-vi.mock('../stores.svelte', () => ({
-  DBState: { db: {} },
-}))
-
 import { createPromptTokenizeDebouncer, createPromptTokenizeMemo, tokenizePreset, type PromptItem } from './prompt'
 
 function plainPrompt(id: string | undefined, text: string): PromptItem {

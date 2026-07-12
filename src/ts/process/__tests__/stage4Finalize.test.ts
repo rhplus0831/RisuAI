@@ -6,7 +6,8 @@ vi.mock('../modules', async (importActual) => {
 })
 
 import { setDatabase, type Database, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
-import { selectedCharID, DBState } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
+import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { finalizeStage4, type StageTimings } from '../postGeneration/stage4Finalize'
 
 function makeTimings(): StageTimings {
@@ -93,7 +94,7 @@ describe('finalizeStage4', () => {
     const generationInfo: MessageGenerationInfo = { model: 'test-model' }
     seed(makeChar(true))
     finalizeStage4({ stageTimings, generationInfo, selectedChar: 0, selectedChat: 0 })
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[messages.length - 1].generationInfo).toEqual({ model: 'test-model' })
   })
 
@@ -102,7 +103,7 @@ describe('finalizeStage4', () => {
     const generationInfo: MessageGenerationInfo = { model: 'test-model' }
     seed(makeChar(false))
     finalizeStage4({ stageTimings, generationInfo, selectedChar: 0, selectedChat: 0 })
-    const messages = DBState.db.characters[0].chats[0].message
+    const messages = testDatabaseState.db.characters[0].chats[0].message
     expect(messages[messages.length - 1].generationInfo).toBeUndefined()
   })
 
@@ -113,6 +114,6 @@ describe('finalizeStage4', () => {
     char.chats[0].message = []
     seed(char)
     finalizeStage4({ stageTimings, generationInfo, selectedChar: 0, selectedChat: 0 })
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(0)
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(0)
   })
 })

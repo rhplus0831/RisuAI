@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Unit-drive the extracted reroll swipe state machine. Keep `stores.svelte` real
-// (DBState is the live state the machine reads/writes) and mock only the command
+// (the resource database is the live state the machine reads/writes) and mock only the command
 // layer plus the prefetch buffer.
 
 const commandSpies = vi.hoisted(() => ({
@@ -25,8 +25,9 @@ const prerollSpies = vi.hoisted(() => ({
 }))
 vi.mock('./prereroll', () => prerollSpies)
 
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import {
   clearRerollBuffer,
   getRerollBuffer,
@@ -54,7 +55,7 @@ function deferred<T>() {
 }
 
 function setupChat(message: Msg[], charIndex = 0): void {
-  ;(DBState as { db: unknown }).db = {
+  testDatabaseState.db = {
     characters: [
       { chaId: 'c1', chatPage: 0, chats: [{ id: 'chat-1', message }] },
       { chaId: 'c2', chatPage: 0, chats: [{ id: 'chat-2', message: [] }] },
@@ -64,7 +65,7 @@ function setupChat(message: Msg[], charIndex = 0): void {
 }
 
 function tailUids(): string[] {
-  const character = (DBState as { db: { characters: { chats: { message: Msg[] }[] }[] } }).db.characters[0]
+  const character = testDatabaseState.db.characters[0] as unknown as { chats: { message: Msg[] }[] }
   return character.chats[0].message.map((m) => m.chatId)
 }
 
@@ -294,7 +295,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
 
   it('newReroll skips generation when the active chat changes during truncate persistence', async () => {
     seedThreeCandidates()
-    DBState.db.characters[0].chats.push({
+    testDatabaseState.db.characters[0].chats.push({
       id: 'chat-1b',
       message: [{ role: 'user', data: 'other chat', chatId: 'other-u1' }],
     } as never)
@@ -309,7 +310,7 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     const rerollPromise = newReroll({ sendChatMain, closeMenu: vi.fn() })
 
     expect(commandSpies.dispatchTruncateMessagesScoped).toHaveBeenCalledTimes(1)
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     truncate.resolve({
       status: 'ok',
       revision: 13,
@@ -348,7 +349,7 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
   it('records a newly generated tail as the newest candidate', () => {
     setupChat([{ role: 'user', data: 'hi', chatId: 'u1' }])
     markRerollChar()
-    DBState.db.characters[0].chats[0].message.push({
+    testDatabaseState.db.characters[0].chats[0].message.push({
       role: 'char',
       data: 'A1',
       chatId: 'g1',
@@ -398,7 +399,7 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
       { role: 'char', data: 'c2', chatId: 'g2' },
     ]
     setupChat(active)
-    DBState.db.characters[0].chats.push({
+    testDatabaseState.db.characters[0].chats.push({
       id: 'chat-1b',
       message: [{ role: 'char', data: 'other', chatId: 'other-g1' }],
     } as never)
@@ -408,7 +409,7 @@ describe('reroll buffer lifecycle (generation + confirm boundary)', () => {
     ])
     expect(getRerollBuffer().length).toBe(2)
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     resetRerollOnCharChange()
 
     expect(getRerollBuffer()).toEqual([])
@@ -437,7 +438,7 @@ describe('reroll clone cost (Phase 3 cheap wins)', () => {
     const fullSize = JSON.stringify(transcript).length
     expect(fullSize).toBeGreaterThan(50_000)
     // Simulate a generation appending one assistant row to the existing tail.
-    DBState.db.characters[0].chats[0].message.push({
+    testDatabaseState.db.characters[0].chats[0].message.push({
       role: 'char',
       data: 'fresh reply',
       chatId: 'g-fresh',

@@ -9,13 +9,14 @@ vi.mock('./modules', async (importActual) => {
 import '../stores.svelte'
 import { safeStructuredClone } from '../polyfill'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { CurrentTriggerIdStore, DBState, selectedCharID } from '../stores.svelte'
+import { CurrentTriggerIdStore, selectedCharID } from '../stores.svelte'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 import { createTriggerExecutionBudget, runTrigger } from './triggers'
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [
       {
         chaId: 'char-a',
@@ -35,7 +36,7 @@ function seedDb(): void {
 }
 
 function characterWithTriggers(triggerscript: unknown[]): character {
-  return { ...DBState.db.characters[0], triggerscript } as unknown as character
+  return { ...testDatabaseState.db.characters[0], triggerscript } as unknown as character
 }
 
 beforeEach(() => {

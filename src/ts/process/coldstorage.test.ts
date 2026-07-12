@@ -4,7 +4,7 @@ const alertState = vi.hoisted(() => ({
   alertError: vi.fn(),
 }))
 const storeState = vi.hoisted(() => ({
-  DBState: {
+  databaseState: {
     db: {
       characters: [],
     },
@@ -47,7 +47,7 @@ vi.mock('../globalApi.svelte', () => ({
 vi.mock('../stores.svelte', () => storeState)
 
 vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => storeState.DBState.db,
+  getDatabase: () => storeState.databaseState.db,
 }))
 
 import {
@@ -61,7 +61,7 @@ import {
 
 beforeEach(() => {
   alertState.alertError.mockClear()
-  storeState.DBState.db = {
+  storeState.databaseState.db = {
     characters: [],
   } as any
   vi.stubGlobal('navigator', {
@@ -84,7 +84,7 @@ describe('Fastify cold-storage gates', () => {
   })
 
   it('does not hydrate cold-storage chat pointers in server-backed web mode', async () => {
-    storeState.DBState.db = {
+    storeState.databaseState.db = {
       characters: [
         {
           chats: [

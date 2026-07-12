@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const testState = vi.hoisted(() => {
-  const DBState = {
+  const databaseState = {
     db: {
       characters: [] as any[],
     },
@@ -16,7 +16,7 @@ const testState = vi.hoisted(() => {
 
   const sendChatSpy = vi.fn(async () => {
     runTrustedWrite(() => {
-      const currentChar = DBState.db.characters[0]
+      const currentChar = databaseState.db.characters[0]
       const currentChat = currentChar.chats[currentChar.chatPage]
       const latestMessage = currentChat.message.at(-1)
       currentChat.message.push({
@@ -29,7 +29,7 @@ const testState = vi.hoisted(() => {
   let runTrustedWrite = <T>(callback: () => T): T => callback()
 
   return {
-    DBState,
+    databaseState,
     selectedCharID,
     sendChatSpy,
     downloadFileSpy: vi.fn(),
@@ -45,8 +45,18 @@ const testState = vi.hoisted(() => {
 })
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => testState.DBState.db,
+  getDatabase: () => testState.databaseState.db,
   setDatabase: vi.fn(),
+}))
+
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  getResourceDatabase: () => testState.databaseState.db,
+  isResourceDatabaseWriteActive: () => false,
+  replaceResourceDatabase: (value: typeof testState.databaseState.db) => {
+    testState.databaseState.db = value
+  },
+  setResourceDatabaseWriteGuardEnabled: vi.fn(),
+  withResourceDatabaseWrite: <T>(callback: () => T): T => callback(),
 }))
 
 vi.mock('src/ts/storage/fastifyStorage', () => ({
@@ -54,7 +64,6 @@ vi.mock('src/ts/storage/fastifyStorage', () => ({
 }))
 
 vi.mock('src/ts/stores.svelte', () => ({
-  DBState: testState.DBState,
   selectedCharID: testState.selectedCharID,
 }))
 
@@ -163,7 +172,7 @@ function makePoFile(entryCount: number): string {
 }
 
 function resetChatState() {
-  testState.DBState.db = {
+  testState.databaseState.db = {
     characters: [
       {
         chaId: 'char-1',
@@ -351,12 +360,12 @@ describe('postChatFile file-send handling', () => {
   })
 
   it('L36: .po translation stops without a result when send switches the active chat', async () => {
-    testState.DBState.db.characters[0].chats.push({
+    testState.databaseState.db.characters[0].chats.push({
       id: 'chat-2',
       message: [],
     })
     testState.sendChatSpy.mockImplementationOnce(async () => {
-      const currentChar = testState.DBState.db.characters[0]
+      const currentChar = testState.databaseState.db.characters[0]
       const currentChat = currentChar.chats[currentChar.chatPage]
       const latestMessage = currentChat.message.at(-1)
       currentChat.message.push({
@@ -373,11 +382,11 @@ describe('postChatFile file-send handling', () => {
 
     expect(results).toEqual([])
     expect(testState.sendChatSpy).toHaveBeenCalledTimes(1)
-    expect(testState.DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+    expect(testState.databaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
       'line 0',
       'translated:line 0',
     ])
-    expect(testState.DBState.db.characters[0].chats[1].message).toEqual([])
+    expect(testState.databaseState.db.characters[0].chats[1].message).toEqual([])
     expect(testState.downloadFileSpy).not.toHaveBeenCalled()
   })
 

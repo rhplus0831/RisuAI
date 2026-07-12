@@ -13,12 +13,13 @@ import { getCompiledRegex, resetScriptCache } from './scripts'
 import { runTrigger } from './triggers'
 import { safeStructuredClone } from '../polyfill'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { DBState, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../stores.svelte'
+import { ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../stores.svelte'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import type { character } from '../storage/database.svelte'
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [
       {
         chaId: 'char-a',
@@ -38,7 +39,7 @@ function seedDb(): void {
 }
 
 function characterWithTriggers(triggerscript: unknown[], overrides: Record<string, unknown> = {}): character {
-  return { ...DBState.db.characters[0], triggerscript, ...overrides } as unknown as character
+  return { ...testDatabaseState.db.characters[0], triggerscript, ...overrides } as unknown as character
 }
 
 // Awaits the worker before restoring the global so compiles that happen across
