@@ -2798,6 +2798,26 @@ describe('server command API adapter', () => {
   })
 
   it('dispatches chat generation settings through the dedicated typed helper', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const attemptedGenerationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      agentPresetId: 'agent-preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: '0',
+        notes: '',
+      },
+    }
+    const canonicalGenerationSettings = {
+      ...attemptedGenerationSettings,
+      sidebarToggles: { mode: '0' },
+    }
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/chats/chat-a/generation-settings')) {
         return {
@@ -2807,8 +2827,11 @@ describe('server command API adapter', () => {
             revision: 8,
             resource: 'characterRow',
             id: 'chat-a',
+            parentId: 'char-a',
           },
           chatId: 'chat-a',
+          characterId: 'char-a',
+          generationSettings: canonicalGenerationSettings,
         }
       }
       return jsonResponse({ error: 'unexpected' }, 500)
@@ -2819,20 +2842,25 @@ describe('server command API adapter', () => {
       saveChatGenerationSettingsCommand({
         baseRevision: 7,
         chatId: 'chat-a',
-        generationSettings: {
-          configured: true,
-          personaId: 'persona-a',
-          modelPresetId: 'model-preset-a',
-          promptPresetId: 'preset-a',
-          agentPresetId: 'agent-preset-a',
-          jailbreakToggle: false,
-          sidebarToggles: {
-            mode: '0',
-            notes: '',
-          },
-        },
+        generationSettings: attemptedGenerationSettings,
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 8, chatId: 'chat-a' })
+    ).resolves.toMatchObject({
+      status: 'ok',
+      revision: 8,
+      chatId: 'chat-a',
+      characterId: 'char-a',
+      generationSettings: canonicalGenerationSettings,
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'chatGenerationSettings',
+        chatId: 'chat-a',
+        characterId: 'char-a',
+        attemptedGenerationSettings,
+        generationSettings: canonicalGenerationSettings,
+      },
+    ])
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {

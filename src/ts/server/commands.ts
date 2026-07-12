@@ -368,6 +368,16 @@ export interface CommandEvent {
   }
 }
 
+export interface ChatGenerationSettingsLocalEffect {
+  kind: 'chatGenerationSettings'
+  chatId: string
+  characterId: string
+  attemptedGenerationSettings: ChatGenerationSettings
+  generationSettings: ChatGenerationSettings
+}
+
+export type ServerCommandLocalEffect = ChatGenerationSettingsLocalEffect
+
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
   | { status: 'conflict'; currentRevision: number }
@@ -1257,10 +1267,12 @@ let appliedServerResourceRevision: number | null = null
 type ServerCommandSuccessReconciler = (
   event: CommandEvent,
   coalescedEvents: readonly CommandEvent[],
+  localEffects: ReadonlyMap<number, ServerCommandLocalEffect>,
 ) => Promise<void> | void
 
 interface ServerCommandReconciliationBatch {
   pendingEvents: Map<number, CommandEvent>
+  pendingLocalEffects: Map<number, ServerCommandLocalEffect>
   completion: Promise<void>
   resolveCompletion: () => void
   flushScheduled: boolean
@@ -1315,6 +1327,7 @@ function getOrCreateServerCommandReconciliationBatch(): ServerCommandReconciliat
   })
   activeServerCommandReconciliationBatch = {
     pendingEvents: new Map(),
+    pendingLocalEffects: new Map(),
     completion,
     resolveCompletion,
     flushScheduled: false,
@@ -1365,9 +1378,17 @@ async function flushServerCommandReconciliationBatch(batch: ServerCommandReconci
       // accepted revisions, reconciling the latest event against the unchanged
       // applied cursor intentionally forms a gap, so bootstrap performs one
       // authoritative full resync covering every resource in server order.
-      await reconcileServerCommandSuccessEvents(latestEvent, coalescedEvents)
+      const localEffects = new Map<number, ServerCommandLocalEffect>()
+      for (const coalescedEvent of coalescedEvents) {
+        const effect = batch.pendingLocalEffects.get(coalescedEvent.revision)
+        if (effect) localEffects.set(coalescedEvent.revision, effect)
+      }
+      await reconcileServerCommandSuccessEvents(latestEvent, coalescedEvents, localEffects)
       for (const revision of batch.pendingEvents.keys()) {
-        if (revision <= latestEvent.revision) batch.pendingEvents.delete(revision)
+        if (revision <= latestEvent.revision) {
+          batch.pendingEvents.delete(revision)
+          batch.pendingLocalEffects.delete(revision)
+        }
       }
     }
   } finally {
@@ -1388,14 +1409,25 @@ function completeServerCommandReconciliationBatch(batch: ServerCommandReconcilia
   batch.resolveCompletion()
 }
 
-function recordDeferredServerCommandSuccessEvent(batch: ServerCommandReconciliationBatch, event: CommandEvent): void {
+function recordDeferredServerCommandSuccessEvent(
+  batch: ServerCommandReconciliationBatch,
+  event: CommandEvent,
+  localEffect?: ServerCommandLocalEffect,
+): void {
   batch.pendingEvents.set(event.revision, event)
+  // The SSE own echo can arrive before the command response. Upgrade the
+  // already-recorded event when the response later supplies its authoritative
+  // local effect, and never let the duplicate executeServerCommand notify drop it.
+  if (localEffect) batch.pendingLocalEffects.set(event.revision, localEffect)
 }
 
-export function deferOwnServerCommandReconciliation(event: CommandEvent): boolean {
+export function deferOwnServerCommandReconciliation(
+  event: CommandEvent,
+  localEffect?: ServerCommandLocalEffect,
+): boolean {
   const batch = activeServerCommandReconciliationBatch
   if (!batch) return false
-  recordDeferredServerCommandSuccessEvent(batch, event)
+  recordDeferredServerCommandSuccessEvent(batch, event, localEffect)
   return true
 }
 
@@ -2569,7 +2601,13 @@ export async function saveChatGenerationSettingsCommand(
   input: SaveChatGenerationSettingsCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
-): Promise<ServerCommandResult<{ chatId: string }>> {
+): Promise<
+  ServerCommandResult<{
+    chatId: string
+    characterId: string
+    generationSettings: ChatGenerationSettings
+  }>
+> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/generation-settings`, {
     method: 'PUT',
     body: {
@@ -2578,6 +2616,7 @@ export async function saveChatGenerationSettingsCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body) => readChatGenerationSettingsLocalEffect(body, input.generationSettings),
   })
 }
 
@@ -3502,6 +3541,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     signal?: AbortSignal | null
     keepalive?: boolean
     reconcileImmediately?: boolean
+    readLocalEffect?: (body: unknown, event: CommandEvent) => ServerCommandLocalEffect | undefined
   },
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
@@ -3559,7 +3599,8 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     }
     const event = readCommandEvent(body)
     if (event) {
-      await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately)
+      const localEffect = init.readLocalEffect?.(body, event)
+      await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately, localEffect)
     }
   }
 
@@ -3569,23 +3610,58 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
 async function notifyServerCommandSuccessReconciler(
   event: CommandEvent | null | undefined,
   reconcileImmediately = false,
+  localEffect?: ServerCommandLocalEffect,
 ): Promise<void> {
   // Some compatibility command factories return a minimal `{ status: 'ok' }`
   // result. They have no authoritative event to reconcile.
   if (!event) return
-  if (!reconcileImmediately && deferOwnServerCommandReconciliation(event)) return
-  await reconcileServerCommandSuccessEvents(event, [event])
+  if (!reconcileImmediately && deferOwnServerCommandReconciliation(event, localEffect)) return
+  await reconcileServerCommandSuccessEvents(
+    event,
+    [event],
+    localEffect ? new Map([[event.revision, localEffect]]) : new Map(),
+  )
 }
 
 async function reconcileServerCommandSuccessEvents(
   event: CommandEvent,
   coalescedEvents: readonly CommandEvent[],
+  localEffects: ReadonlyMap<number, ServerCommandLocalEffect> = new Map(),
 ): Promise<void> {
   try {
-    await serverCommandSuccessReconciler?.(event, coalescedEvents)
+    await serverCommandSuccessReconciler?.(event, coalescedEvents, localEffects)
   } catch (error) {
     console.warn('Server command projection reconcile failed', error)
   }
+}
+
+function readChatGenerationSettingsLocalEffect(
+  body: unknown,
+  attemptedGenerationSettings: ChatGenerationSettings,
+): ChatGenerationSettingsLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (typeof record.chatId !== 'string' || record.chatId.trim() === '') return undefined
+  if (typeof record.characterId !== 'string' || record.characterId.trim() === '') return undefined
+  if (
+    !record.generationSettings ||
+    typeof record.generationSettings !== 'object' ||
+    Array.isArray(record.generationSettings)
+  ) {
+    return undefined
+  }
+  return {
+    kind: 'chatGenerationSettings',
+    chatId: record.chatId,
+    characterId: record.characterId,
+    attemptedGenerationSettings: cloneJsonValue(attemptedGenerationSettings),
+    generationSettings: cloneJsonValue(record.generationSettings as ChatGenerationSettings),
+  }
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function readCommandEvent(body: unknown): CommandEvent | null {

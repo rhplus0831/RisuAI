@@ -23,6 +23,7 @@ import {
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
+  type ServerCommandLocalEffect,
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
@@ -39,6 +40,8 @@ import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import { enableChatCompletionPushNotifications } from './server/pushNotifications'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
+import { applyChatGenerationSettingsLocalEffect } from './server/resourceState.svelte'
+import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000
@@ -138,8 +141,10 @@ export async function loadWebInitialDatabase() {
   recordHydratedCharacterLorebooks(database.characters)
   setCachedServerCommandRevision(resources.revision)
   setAppliedServerResourceRevision(resources.revision)
-  setServerCommandSuccessReconciler((event, coalescedEvents) =>
-    enqueueServerResourceSync(() => processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event])),
+  setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
+    enqueueServerResourceSync(() =>
+      processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event], localEffects),
+    ),
   )
   setResourceWriteGuardEnabled(true)
   setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
@@ -301,8 +306,68 @@ function enqueueServerResourceSync(task: () => Promise<void>): Promise<void> {
   return serverResourceSyncChain
 }
 
-async function processServerCommandEvents(events: readonly CommandEvent[]): Promise<void> {
+async function processServerCommandEvents(
+  events: readonly CommandEvent[],
+  localEffects: ReadonlyMap<number, ServerCommandLocalEffect> = new Map(),
+): Promise<void> {
   if (events.length === 0) return
+
+  const sortedEvents = [...events].sort((left, right) => left.revision - right.revision)
+  let pendingAuthoritativeEvents: CommandEvent[] = []
+
+  const flushPendingAuthoritativeEvents = async (): Promise<boolean> => {
+    if (pendingAuthoritativeEvents.length === 0) return true
+    const pending = pendingAuthoritativeEvents
+    pendingAuthoritativeEvents = []
+    return processAuthoritativeServerCommandEvents(pending)
+  }
+
+  for (const event of sortedEvents) {
+    const localEffect = localEffects.get(event.revision)
+    if (!localEffect) {
+      pendingAuthoritativeEvents.push(event)
+      continue
+    }
+
+    if (!(await flushPendingAuthoritativeEvents())) return
+    const appliedRevision = peekAppliedServerResourceRevision()
+    if (appliedRevision !== null && event.revision <= appliedRevision) continue
+
+    if (
+      appliedRevision !== null &&
+      event.revision === appliedRevision + 1 &&
+      applyContiguousServerCommandLocalEffect(event, localEffect)
+    ) {
+      advanceKnownServerCommandRevision(event.revision)
+      setAppliedServerResourceRevision(event.revision)
+      continue
+    }
+
+    // A local acknowledgement can only advance a contiguous cursor. A gap or
+    // an effect whose target disappeared must retain the ordinary authoritative
+    // invalidation path.
+    if (!(await processAuthoritativeServerCommandEvents([event]))) return
+  }
+
+  await flushPendingAuthoritativeEvents()
+}
+
+function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
+  if (localEffect.kind !== 'chatGenerationSettings') return false
+  if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
+  return withServerResourceApply(() =>
+    applyChatGenerationSettingsLocalEffect({
+      revision: event.revision,
+      characterId: localEffect.characterId,
+      chatId: localEffect.chatId,
+      attemptedGenerationSettings: localEffect.attemptedGenerationSettings,
+      generationSettings: localEffect.generationSettings,
+    }),
+  )
+}
+
+async function processAuthoritativeServerCommandEvents(events: readonly CommandEvent[]): Promise<boolean> {
+  if (events.length === 0) return true
 
   const previousSelectedIndex = get(selectedCharID)
   const previousSelectedCharacterId =
@@ -315,9 +380,9 @@ async function processServerCommandEvents(events: readonly CommandEvent[]): Prom
   if (result.status !== 'ok') {
     if (result.status === 'error') console.warn(`Server resource invalidation failed: ${result.error}`)
     scheduleServerResourceReconnect()
-    return
+    return false
   }
-  if (result.scope === 'none') return
+  if (result.scope === 'none') return true
 
   reconcileSelectedCharacterAfterResourceRefresh(events, previousSelectedIndex, previousSelectedCharacterId)
   recordHydratedCharacterLorebooks(getDatabase().characters)
@@ -332,6 +397,7 @@ async function processServerCommandEvents(events: readonly CommandEvent[]): Prom
 
   advanceKnownServerCommandRevision(result.revision)
   setAppliedServerResourceRevision(result.revision)
+  return true
 }
 
 function reconcileSelectedCharacterAfterResourceRefresh(

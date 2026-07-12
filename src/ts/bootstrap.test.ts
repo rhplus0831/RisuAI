@@ -13,7 +13,10 @@ const resourceApi = vi.hoisted(() => ({
   hooks: { kind: 'resource-hooks' },
 }))
 
-const commandApi = vi.hoisted(() => ({ initialize: vi.fn() }))
+const commandApi = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  reconciler: null as null | ((event: any, events: any[], localEffects: ReadonlyMap<number, any>) => Promise<void>),
+}))
 
 const eventApi = vi.hoisted(() => ({
   subscriptions: [] as Array<{
@@ -100,7 +103,14 @@ vi.mock('./process/request/serverMemory', () => ({ applyServerHypaV3Progress: me
 
 vi.mock('./server/commands', async (importActual) => {
   const actual = await importActual<typeof import('./server/commands')>()
-  return { ...actual, initializeServerDatabase: commandApi.initialize }
+  return {
+    ...actual,
+    initializeServerDatabase: commandApi.initialize,
+    setServerCommandSuccessReconciler: (reconciler: typeof commandApi.reconciler) => {
+      commandApi.reconciler = reconciler
+      actual.setServerCommandSuccessReconciler(reconciler)
+    },
+  }
 })
 
 vi.mock('./plugins/plugins.svelte', () => ({ loadPlugins: vi.fn(async () => undefined) }))
@@ -139,7 +149,7 @@ import {
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
 } from './server/commands'
-import { setResourceWriteGuardEnabled } from './storage/database.svelte'
+import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
 import { replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
 
@@ -267,6 +277,83 @@ describe('API-backed client bootstrap', () => {
       hooks: resourceApi.hooks,
     })
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
+  })
+
+  it('applies contiguous generation-settings command effects without a resource read and preserves a newer edit', async () => {
+    await loadWebInitialDatabase()
+    const attemptedA = {
+      configured: true,
+      jailbreakToggle: false,
+      sidebarToggles: { mode: '0', stale: '1' },
+    }
+    const canonicalA = {
+      configured: true,
+      jailbreakToggle: false,
+      sidebarToggles: { mode: '0' },
+    }
+    const attemptedB = {
+      configured: true,
+      jailbreakToggle: true,
+      sidebarToggles: { mode: '1', stale: '1' },
+    }
+    const canonicalB = {
+      configured: true,
+      jailbreakToggle: true,
+      sidebarToggles: { mode: '1' },
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = attemptedB
+    })
+
+    const eventA = {
+      type: 'chat.updated',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'chat-a',
+      parentId: 'char-a',
+    }
+    await commandApi.reconciler?.(
+      eventA,
+      [eventA],
+      new Map([
+        [
+          6,
+          {
+            kind: 'chatGenerationSettings',
+            chatId: 'chat-a',
+            characterId: 'char-a',
+            attemptedGenerationSettings: attemptedA,
+            generationSettings: canonicalA,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(attemptedB)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+
+    const eventB = { ...eventA, revision: 7 }
+    await commandApi.reconciler?.(
+      eventB,
+      [eventB],
+      new Map([
+        [
+          7,
+          {
+            kind: 'chatGenerationSettings',
+            chatId: 'chat-a',
+            characterId: 'char-a',
+            attemptedGenerationSettings: attemptedB,
+            generationSettings: canonicalB,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(canonicalB)
+    expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
   it('uses a full resource result revision and invalidates chat hydration after a gap', async () => {

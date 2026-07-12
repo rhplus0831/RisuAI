@@ -1,4 +1,6 @@
 import type { Database, character } from '../storage/database.svelte'
+import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 
 export const SERVER_COLLECTION_NAMES = [
   'modules',
@@ -55,6 +57,14 @@ export interface ServerCharacterSelectionResourcePayload {
   characterId: string
   currentChar: number
   lastInteraction?: number
+}
+
+export interface ServerChatGenerationSettingsLocalEffectPayload {
+  revision: number
+  characterId: string
+  chatId: string
+  attemptedGenerationSettings: ChatGenerationSettings
+  generationSettings: ChatGenerationSettings
 }
 
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -341,6 +351,37 @@ export function applyCharacterSelectionResource(payload: ServerCharacterSelectio
     charactersResourceState.characters[characterIndex].lastInteraction = payload.lastInteraction
   }
   charactersResourceState.selectionRevision = payload.revision
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Apply the authoritative result of this client's accepted chat-generation
+ * settings command without re-reading the complete parent character. A newer
+ * optimistic edit may already be visible while an older command response is
+ * being reconciled; in that case keep the live overlay while still fencing the
+ * accepted row revision.
+ */
+export function applyChatGenerationSettingsLocalEffect(
+  payload: ServerChatGenerationSettingsLocalEffectPayload,
+): boolean {
+  const knownRowRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+  )
+  if (knownRowRevision >= payload.revision) return true
+
+  const character = charactersResourceState.characters.find((candidate) => candidate?.chaId === payload.characterId)
+  const chat = character?.chats?.find((candidate) => candidate?.id === payload.chatId)
+  if (!chat) return false
+
+  if (isJsonValueEqual(chat.generationSettings, payload.attemptedGenerationSettings)) {
+    chat.generationSettings = cloneJsonValue(payload.generationSettings)
+  }
   charactersResourceState.rowRevisions[payload.characterId] = payload.revision
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
@@ -666,18 +707,30 @@ function markResourceDatabaseChanged(): void {
 }
 
 function preserveResidentCharacterChatBodies(incoming: character, existing: character | undefined): character {
-  if (!existing || !Array.isArray(incoming.chats) || !Array.isArray(existing.chats)) return incoming
-  const existingChatsById = new Map(
-    existing.chats.filter((chat) => nonEmptyString(chat?.id)).map((chat) => [chat.id, chat]),
-  )
-  for (const chat of incoming.chats) {
-    if (!nonEmptyString(chat?.id)) continue
-    const resident = existingChatsById.get(chat.id)
-    if (!resident) continue
-    if (Array.isArray(resident.message)) chat.message = resident.message
-    if (Object.prototype.hasOwnProperty.call(resident, 'hypaV3Data')) {
-      chat.hypaV3Data = resident.hypaV3Data
+  if (!existing) return incoming
+  if (Array.isArray(incoming.chats) && Array.isArray(existing.chats)) {
+    const existingChatsById = new Map(
+      existing.chats.filter((chat) => nonEmptyString(chat?.id)).map((chat) => [chat.id, chat]),
+    )
+    for (const chat of incoming.chats) {
+      if (!nonEmptyString(chat?.id)) continue
+      const resident = existingChatsById.get(chat.id)
+      if (!resident) continue
+      if (Array.isArray(resident.message)) chat.message = resident.message
+      if (Object.prototype.hasOwnProperty.call(resident, 'hypaV3Data')) {
+        chat.hypaV3Data = resident.hypaV3Data
+      }
+      if (shouldPreserveLiveChatGenerationSettingsForResource(chat.id, chat.generationSettings)) {
+        if (Object.prototype.hasOwnProperty.call(resident, 'generationSettings')) {
+          chat.generationSettings = resident.generationSettings
+        } else {
+          delete chat.generationSettings
+        }
+      }
     }
+  }
+  if (incoming.globalLore === undefined && existing.globalLore !== undefined) {
+    incoming.globalLore = existing.globalLore
   }
   return incoming
 }
@@ -713,4 +766,8 @@ function nonEmptyString(value: unknown): value is string {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isJsonValueEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }

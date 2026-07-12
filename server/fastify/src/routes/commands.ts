@@ -4328,7 +4328,11 @@ export function registerCommandRoutes(
       const chatId = readChatId((req.params as { chatId?: unknown }).chatId)
       const body = (req.body ?? {}) as ChatCommandBody
       const baseRevision = readBaseRevision(body)
-      const result = applyTargetedCommandMutation<{ chatId: string }>({
+      const result = applyTargetedCommandMutation<{
+        chatId: string
+        characterId: string
+        generationSettings: ChatGenerationSettings
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -4345,7 +4349,14 @@ export function registerCommandRoutes(
           writeSingleChatRow(innerDb, chatId, chat)
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
-            extra: { chatId },
+            extra: {
+              chatId,
+              characterId: character.chaId,
+              // Return the value that was actually persisted. Validation can
+              // prune stale sidebar-toggle keys, so echoing the request would
+              // not be an authoritative command acknowledgement.
+              generationSettings: chat.generationSettings,
+            },
           }
         },
       })

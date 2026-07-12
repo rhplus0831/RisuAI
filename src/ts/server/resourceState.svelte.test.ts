@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { character } from '../storage/database.svelte'
 import {
+  clearPendingChatGenerationSettingsSave,
+  registerPendingChatGenerationSettingsSave,
+} from './chatGenerationSettingsResourceGuard'
+import {
   SERVER_COLLECTION_NAMES,
   applyCharacterResource,
   applyCharacterOrderResource,
@@ -242,5 +246,78 @@ describe('resource-scoped database state', () => {
         },
       ],
     })
+  })
+
+  it('preserves a resident lorebook when a targeted or list row refresh omits the stubbed field', () => {
+    const resident = metadataCharacter('char-a', 'Resident')
+    resident.globalLore = [{ key: 'resident', content: 'kept' }] as never
+    applyCharactersResource({
+      revision: 1,
+      characters: [resident],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(applyCharacterResource({ revision: 2, character: metadataCharacter('char-a', 'Targeted') })).toBe(true)
+    expect(getResourceDatabase().characters[0].globalLore).toEqual([{ key: 'resident', content: 'kept' }])
+
+    expect(
+      applyCharactersResource({
+        revision: 3,
+        characters: [metadataCharacter('char-a', 'Listed')],
+        characterOrder: ['char-a'],
+        currentChar: 0,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().characters[0].globalLore).toEqual([{ key: 'resident', content: 'kept' }])
+  })
+
+  it('preserves newer pending generation settings across targeted and list character refreshes', () => {
+    const pendingSettings = {
+      configured: true,
+      jailbreakToggle: true,
+      sidebarToggles: { mode: 'newer' },
+    }
+    const resident = metadataCharacter('char-a', 'Resident')
+    resident.chats = [
+      { id: 'chat-a', message: [], generationSettings: pendingSettings } as unknown as (typeof resident.chats)[number],
+    ]
+    applyCharactersResource({
+      revision: 1,
+      characters: [resident],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+    const pending = registerPendingChatGenerationSettingsSave('chat-a', pendingSettings)
+
+    try {
+      const staleSettings = {
+        configured: true,
+        jailbreakToggle: false,
+        sidebarToggles: { mode: 'older' },
+      }
+      const targeted = metadataCharacter('char-a', 'Targeted')
+      targeted.chats = [
+        { id: 'chat-a', message: [], generationSettings: staleSettings } as unknown as (typeof targeted.chats)[number],
+      ]
+      expect(applyCharacterResource({ revision: 2, character: targeted })).toBe(true)
+      expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual(pendingSettings)
+
+      const listed = metadataCharacter('char-a', 'Listed')
+      listed.chats = [
+        { id: 'chat-a', message: [], generationSettings: staleSettings } as unknown as (typeof listed.chats)[number],
+      ]
+      expect(
+        applyCharactersResource({
+          revision: 3,
+          characters: [listed],
+          characterOrder: ['char-a'],
+          currentChar: 0,
+        }),
+      ).toBe(true)
+      expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual(pendingSettings)
+    } finally {
+      clearPendingChatGenerationSettingsSave(pending)
+    }
   })
 })

@@ -6222,6 +6222,17 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(savedSettings.statusCode).toBe(200)
+    expect(savedSettings.json()).toMatchObject({
+      chatId: 'chat-a',
+      characterId: 'char-a',
+      generationSettings: chatGenerationSettings,
+      event: {
+        type: 'chat.updated',
+        resource: 'characterRow',
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+    })
 
     const persona = await harness.app.inject({
       method: 'POST',
