@@ -28,6 +28,7 @@ import {
   type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
 import {
   applyAttemptedFieldRollback,
@@ -39,7 +40,7 @@ import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
 } from './server/chatGenerationSettingsProjectionGuard'
-import { DBState, reloadGuiDisplay, selectedCharID } from './stores.svelte'
+import { reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import { v4 } from 'uuid'
@@ -111,14 +112,14 @@ function freezeJsonValue<T>(value: T): T {
 
 export function currentChatStateSnapshot(): ChatStateSnapshot {
   return {
-    characters: cloneJsonValue(DBState.db.characters ?? []),
+    characters: cloneJsonValue(getDatabase().characters ?? []),
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreChatState(snapshot: ChatStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters = cloneJsonValue(snapshot.characters)
+    getDatabase().characters = cloneJsonValue(snapshot.characters)
     selectedCharID.set(snapshot.selectedCharID)
     reloadGuiDisplay()
   })
@@ -212,7 +213,7 @@ export interface ChatSelectionSnapshot {
 
 export function currentChatSelectionSnapshot(): ChatSelectionSnapshot {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   return {
     characterId: character?.chaId,
     selectedCharID: selectedChar,
@@ -276,7 +277,7 @@ export interface SetCurrentChatGreetingIndexOptions extends MutateChatScopedOpti
 
 export function currentChatScopedSnapshot(): ChatScopedSnapshot {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   const chat = character?.chats?.[character.chatPage]
   return {
     selectedCharID: selectedChar,
@@ -288,7 +289,7 @@ export function currentChatScopedSnapshot(): ChatScopedSnapshot {
 
 export function captureActiveChatTarget(): ActiveChatTarget | null {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   const chatPage = character?.chatPage ?? 0
   const chat = character?.chats?.[chatPage]
   if (!character || !chat) return null
@@ -305,7 +306,7 @@ export function isActiveChatTargetFresh(target: ActiveChatTarget | null | undefi
   if (!target) return false
 
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   const chatPage = character?.chatPage ?? 0
   const chat = character?.chats?.[chatPage]
   if (!character || !chat) return false
@@ -399,7 +400,7 @@ export interface ChatScriptstateSnapshot {
 
 export function currentChatScriptstateSnapshot(includeNote = false): ChatScriptstateSnapshot {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   const chat = character?.chats?.[character.chatPage]
   const snapshot: ChatScriptstateSnapshot = {
     chatId: chat?.id,
@@ -476,10 +477,10 @@ function restoreChatNoteAttempt(snapshot: ChatScriptstateSnapshot, attemptedNote
 
 function locateSnapshotCharacter(characterId: string | undefined, fallbackIndex: number): character | undefined {
   if (characterId) {
-    const byId = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const byId = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (byId) return byId
   }
-  return DBState.db.characters?.[fallbackIndex]
+  return getDatabase().characters?.[fallbackIndex]
 }
 
 function locateChatIndex(character: character, chatId: string | undefined): number {
@@ -507,23 +508,23 @@ function normalizeChatPage(character: character): void {
 
 function locateScriptstateChat(snapshot: ChatScriptstateSnapshot): Chat | undefined {
   if (snapshot.chatId) {
-    for (const character of DBState.db.characters ?? []) {
+    for (const character of getDatabase().characters ?? []) {
       const chat = character.chats?.find((candidate) => candidate.id === snapshot.chatId)
       if (chat) return chat
     }
   }
-  const character = DBState.db.characters?.[snapshot.selectedCharID]
+  const character = getDatabase().characters?.[snapshot.selectedCharID]
   return character?.chats?.[character.chatPage]
 }
 
 function locateChatById(chatId: string, preferredCharacterId?: string): { character: character; chat: Chat } | null {
   if (preferredCharacterId) {
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === preferredCharacterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === preferredCharacterId)
     const chat = character?.chats?.find((candidate) => candidate.id === chatId)
     if (character && chat) return { character, chat }
   }
 
-  for (const character of DBState.db.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     const chat = character.chats?.find((candidate) => candidate.id === chatId)
     if (chat) return { character, chat }
   }
@@ -1534,7 +1535,7 @@ export function setCurrentChatGreetingIndex(
   options: SetCurrentChatGreetingIndexOptions = {},
 ): boolean {
   const selectedChar = options.selectedChar ?? get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   if (!character?.chats) return false
   const selectedChat = options.selectedChat ?? character.chatPage
   const chat = character.chats?.[selectedChat]
@@ -1545,7 +1546,7 @@ export function setCurrentChatGreetingIndex(
   const previous = shouldDispatch && chatId ? currentChatStateSnapshot() : null
   let applied = false
   withTrustedServerProjectionWrite(() => {
-    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveChat || (chatId && liveChat.id !== chatId)) return
     liveChat.fmIndex = fmIndex
@@ -1674,7 +1675,7 @@ export function mutateChatWithScopedCommand(
   options: MutateChatScopedOptions = {},
 ): boolean {
   const selectedChar = options.selectedChar ?? get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   if (!character?.chats) return false
   const selectedChat = options.selectedChat ?? character.chatPage
   const chat = character.chats?.[selectedChat]
@@ -1690,7 +1691,7 @@ export function mutateChatWithScopedCommand(
 
   let applied = false
   withTrustedServerProjectionWrite(() => {
-    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveCharacter || !liveChat) return
     mutate(liveChat, liveCharacter)
@@ -1698,7 +1699,7 @@ export function mutateChatWithScopedCommand(
   })
   if (!applied) return false
 
-  const nextChat = DBState.db.characters?.[selectedChar]?.chats?.[selectedChat]
+  const nextChat = getDatabase().characters?.[selectedChar]?.chats?.[selectedChat]
   if (!nextChat) return false
   dispatchCompatibleChatUpdateScoped(previousChat, cloneJsonValue(nextChat) as Chat, scopedRollback)
   return true
@@ -1709,7 +1710,7 @@ export async function mutateChatWithScopedCommandAsync(
   options: MutateChatScopedOptions = {},
 ): Promise<boolean> {
   const selectedChar = options.selectedChar ?? get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   if (!character?.chats) return false
   const selectedChat = options.selectedChat ?? character.chatPage
   const chat = character.chats?.[selectedChat]
@@ -1725,7 +1726,7 @@ export async function mutateChatWithScopedCommandAsync(
 
   let applied = false
   withTrustedServerProjectionWrite(() => {
-    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[selectedChat]
     if (!liveCharacter || !liveChat) return
     mutate(liveChat, liveCharacter)
@@ -1733,7 +1734,7 @@ export async function mutateChatWithScopedCommandAsync(
   })
   if (!applied) return false
 
-  const nextChat = DBState.db.characters?.[selectedChar]?.chats?.[selectedChat]
+  const nextChat = getDatabase().characters?.[selectedChar]?.chats?.[selectedChat]
   if (!nextChat) return false
   await dispatchCompatibleChatUpdateScopedAsync(previousChat, cloneJsonValue(nextChat) as Chat, scopedRollback)
   return true
@@ -2204,7 +2205,7 @@ export function dispatchForkChat(
 }
 
 export function dispatchReorderChats(characterId: string, previous: ChatStateSnapshot, selectedChatId?: string): void {
-  const character = DBState.db.characters.find((candidate) => candidate.chaId === characterId)
+  const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
   if (!character) return
   const folderByChatId: Record<string, string | null> = {}
   for (const chat of character.chats) {
@@ -2373,7 +2374,7 @@ export function dispatchReorderChatFolders(
   previous: ChatStateSnapshot,
   selectedChatId?: string,
 ): void {
-  const character = DBState.db.characters.find((candidate) => candidate.chaId === characterId)
+  const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
   if (!character) return
   dispatchReorderChatFoldersByIds(
     characterId,
@@ -2439,7 +2440,7 @@ export function appendCurrentChatEmptyCharMessage(): void {
   let applied = false
 
   withTrustedServerProjectionWrite(() => {
-    const liveCharacter = DBState.db.characters?.[selectedChar]
+    const liveCharacter = getDatabase().characters?.[selectedChar]
     const liveChat = liveCharacter?.chats?.[liveCharacter.chatPage]
     if (!liveChat) return
     liveChat.message ??= []
@@ -2501,7 +2502,7 @@ export async function appendCurrentChatUserMessageForSend(
   let applied = false
 
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.[selectedChar]
+    const character = getDatabase().characters?.[selectedChar]
     const chat = character?.chats?.[character.chatPage]
     if (!chat) return
     chat.message ??= []
@@ -2997,7 +2998,7 @@ export function setChatNoteValue(chatId: string | undefined, note: string): bool
 
 export function currentSelectedChatId(): string | undefined {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   const chat = character?.chats?.[character.chatPage]
   return chat?.id
 }
