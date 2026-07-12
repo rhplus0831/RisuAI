@@ -2531,6 +2531,58 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('distinguishes settings-only memory patches from Hypa preset collection writes', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      hypaV3: false,
+      hypaV3Presets: [],
+    })
+
+    const settingsOnly = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { hypaV3: true },
+      },
+    })
+    expect(settingsOnly.statusCode).toBe(200)
+    expect(settingsOnly.json().event).toMatchObject({
+      type: 'settings.updated',
+      resource: 'settings',
+      id: 'memory',
+    })
+
+    const withPresets = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/memory',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: settingsOnly.json().revision,
+        patch: {
+          hypaV3Presets: [
+            {
+              name: 'Cross-resource memory',
+              settings: {
+                summarizationModel: 'subModel',
+                summarizationPrompt: 'Summarize',
+                recentMemoryRatio: 0.4,
+                similarMemoryRatio: 0.5,
+              },
+            },
+          ],
+        },
+      },
+    })
+    expect(withPresets.statusCode).toBe(200)
+    expect(withPresets.json().event).toMatchObject({
+      type: 'settings.updated',
+      resource: 'settingsWithHypaV3Presets',
+      id: 'memory',
+    })
+  })
+
   it('rejects unknown setting keys without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -3045,6 +3097,89 @@ describe('Phase 9-2b bot preset commands', () => {
     })
   })
 
+  it('reports the exact resource shape for no-apply preset selection', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A', mainPrompt: 'a prompt' },
+        { id: 'preset-b', name: 'B', mainPrompt: 'b prompt' },
+      ],
+      botPresetsId: 0,
+    })
+
+    const settingsOnly = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetId: 'preset-b',
+        saveCurrent: false,
+        apply: false,
+      },
+    })
+    expect(settingsOnly.statusCode).toBe(200)
+    expect(settingsOnly.json().event).toMatchObject({
+      type: 'preset.selected',
+      resource: 'presetPointer',
+      id: 'preset-b',
+    })
+
+    const revisionOnly = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: settingsOnly.json().revision,
+        presetId: 'preset-b',
+        saveCurrent: false,
+        apply: false,
+      },
+    })
+    expect(revisionOnly.statusCode).toBe(200)
+    expect(revisionOnly.json().event).toMatchObject({
+      type: 'preset.selected',
+      resource: 'revisionOnly',
+      id: 'preset-b',
+    })
+
+    const collectionOnly = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revisionOnly.json().revision,
+        presetId: 'preset-b',
+        saveCurrent: true,
+        apply: false,
+      },
+    })
+    expect(collectionOnly.statusCode).toBe(200)
+    expect(collectionOnly.json().event).toMatchObject({
+      type: 'preset.selected',
+      resource: 'presetCollection',
+      id: 'preset-b',
+    })
+
+    const settingsAndCollection = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: collectionOnly.json().revision,
+        presetId: 'preset-a',
+        saveCurrent: true,
+        apply: false,
+      },
+    })
+    expect(settingsAndCollection.statusCode).toBe(200)
+    expect(settingsAndCollection.json().event).toMatchObject({
+      type: 'preset.selected',
+      resource: 'presetCollectionWithPointer',
+      id: 'preset-a',
+    })
+  })
+
   it('copies, deletes, and reorders presets by id', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -3084,7 +3219,10 @@ describe('Phase 9-2b bot preset commands', () => {
       },
     })
     expect(reordered.statusCode).toBe(200)
-    expect(reordered.json().event.type).toBe('preset.reordered')
+    expect(reordered.json().event).toMatchObject({
+      type: 'preset.reordered',
+      resource: 'presetCollectionWithPointer',
+    })
 
     const deleted = await harness.app.inject({
       method: 'DELETE',
@@ -3102,7 +3240,7 @@ describe('Phase 9-2b bot preset commands', () => {
       event: {
         type: 'preset.deleted',
         revision: 4,
-        resource: 'presetCollection',
+        resource: 'presetCollectionWithPointer',
         id: copiedPresetId,
       },
       presetId: copiedPresetId,

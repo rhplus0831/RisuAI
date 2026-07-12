@@ -288,6 +288,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
 
   switch (event.resource) {
     case 'asset':
+    case 'revisionOnly':
       return
     case 'settings':
     case 'modelProfile':
@@ -295,6 +296,10 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'prompt':
     case 'moduleEnabled':
       plan.settings = true
+      return
+    case 'settingsWithHypaV3Presets':
+      plan.settings = true
+      plan.collections.add('hypaV3Presets')
       return
     case 'character':
       addAllCharacters()
@@ -337,6 +342,13 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'presetRow':
     case 'presetCollection':
       plan.collections.add('botPresets')
+      return
+    case 'presetCollectionWithPointer':
+      plan.settings = true
+      plan.collections.add('botPresets')
+      return
+    case 'presetPointer':
+      plan.settings = true
       return
     case 'preset':
     case 'presetApplied':

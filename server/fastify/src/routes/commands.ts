@@ -4,6 +4,10 @@ import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import {
   COMMAND_EVENT_CATALOG,
+  PRESET_COLLECTION_WITH_POINTER_RESOURCE,
+  PRESET_POINTER_RESOURCE,
+  REVISION_ONLY_RESOURCE,
+  SETTINGS_WITH_HYPA_V3_PRESETS_RESOURCE,
   type CommandEvent,
   type CommandEventOrigin,
   type CommandEventSink,
@@ -1439,6 +1443,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as RuntimeSettingsCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readSettingsGroupPatch(group, body.patch)
+      const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')
       validateSettingsAssetRefs(db, patch)
       const result = applyTargetedCommandMutation({
         db,
@@ -1453,7 +1458,7 @@ export function registerCommandRoutes(
           // The `memory` group's `hypaV3Presets` is a collection field, not a
           // settings scalar, so co-write only that one collection table when the
           // patch carries it; every other settings group is settings-only.
-          if (Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')) {
+          if (writesHypaV3Presets) {
             writeSingleCollectionTable(
               innerDb,
               'hypaV3Presets',
@@ -1463,6 +1468,7 @@ export function registerCommandRoutes(
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.settingsUpdated,
+              ...(writesHypaV3Presets ? { resource: SETTINGS_WITH_HYPA_V3_PRESETS_RESOURCE } : {}),
               id: group,
             },
           }
@@ -2076,11 +2082,16 @@ export function registerCommandRoutes(
           if (applied || target.botPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          const pointerChanged = target.botPresetsId !== beforeSelected
 
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.presetDeleted,
-              ...(!applied ? { resource: 'presetCollection' } : {}),
+              ...(!applied
+                ? {
+                    resource: pointerChanged ? PRESET_COLLECTION_WITH_POINTER_RESOURCE : 'presetCollection',
+                  }
+                : {}),
               id: presetId,
               ...(saveCurrent && currentSelectedId && currentSelectedId !== presetId
                 ? { parentId: currentSelectedId }
@@ -2201,10 +2212,21 @@ export function registerCommandRoutes(
           if (applied || target.botPresetsId !== beforeSelected) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          const pointerChanged = target.botPresetsId !== beforeSelected
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.presetSelected,
-              ...(!applied ? { resource: 'presetCollection' } : {}),
+              ...(!applied
+                ? {
+                    resource: saveCurrent
+                      ? pointerChanged
+                        ? PRESET_COLLECTION_WITH_POINTER_RESOURCE
+                        : 'presetCollection'
+                      : pointerChanged
+                        ? PRESET_POINTER_RESOURCE
+                        : REVISION_ONLY_RESOURCE,
+                  }
+                : {}),
               id: presetId,
               ...(saveCurrent && previousSelectedId ? { parentId: previousSelectedId } : {}),
             },
@@ -2302,7 +2324,10 @@ export function registerCommandRoutes(
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
-            event: COMMAND_EVENT_CATALOG.presetReordered,
+            event: {
+              ...COMMAND_EVENT_CATALOG.presetReordered,
+              ...(target.botPresetsId !== beforeSelected ? { resource: PRESET_COLLECTION_WITH_POINTER_RESOURCE } : {}),
+            },
             extra: { selectedPresetId: selectedPresetId(target, reordered) },
           }
         },

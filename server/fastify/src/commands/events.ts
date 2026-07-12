@@ -26,6 +26,10 @@ export interface CommandEventSink {
 }
 
 export const COMMAND_EVENT_HISTORY_LIMIT = 1000
+export const SETTINGS_WITH_HYPA_V3_PRESETS_RESOURCE = 'settingsWithHypaV3Presets'
+export const PRESET_COLLECTION_WITH_POINTER_RESOURCE = 'presetCollectionWithPointer'
+export const PRESET_POINTER_RESOURCE = 'presetPointer'
+export const REVISION_ONLY_RESOURCE = 'revisionOnly'
 
 export type CommandEventReplaySelection =
   | { status: 'ok'; events: readonly CommandEvent[] }

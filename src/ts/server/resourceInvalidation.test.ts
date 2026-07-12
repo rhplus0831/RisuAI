@@ -244,6 +244,98 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
+  it('reads Hypa presets only for the cross-resource memory settings event', async () => {
+    seedResources(1)
+    api.settings
+      .mockResolvedValueOnce({ status: 'ok', revision: 2, settings: { hypaV3: true } })
+      .mockResolvedValueOnce({ status: 'ok', revision: 3, settings: { hypaV3: true } })
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      collections: { hypaV3Presets: [{ name: 'Authoritative memory' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'settings', { id: 'memory' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collection).not.toHaveBeenCalled()
+
+    await expect(
+      refreshInvalidatedServerResources(event(3, 'settingsWithHypaV3Presets', { id: 'memory' }), {
+        appliedRevision: 2,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+    expect(api.settings).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledOnce()
+    expect(api.collection).toHaveBeenCalledWith('hypaV3Presets', undefined)
+    expect(getResourceDatabase().hypaV3Presets).toEqual([{ name: 'Authoritative memory' }])
+  })
+
+  it('reads only the resource slices changed by each preset selection shape', async () => {
+    seedResources(1)
+    api.collection
+      .mockResolvedValueOnce({
+        status: 'ok',
+        revision: 2,
+        collections: { botPresets: [{ id: 'preset-a', name: 'A' }] },
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        revision: 3,
+        collections: { botPresets: [{ id: 'preset-b', name: 'B' }] },
+      })
+    api.settings
+      .mockResolvedValueOnce({ status: 'ok', revision: 3, settings: { botPresetsId: 0 } })
+      .mockResolvedValueOnce({ status: 'ok', revision: 4, settings: { botPresetsId: 1 } })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'presetCollection', { id: 'preset-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(api.collection).toHaveBeenCalledOnce()
+    expect(api.collection).toHaveBeenCalledWith('botPresets', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+
+    await expect(
+      refreshInvalidatedServerResources(event(3, 'presetCollectionWithPointer', { id: 'preset-b' }), {
+        appliedRevision: 2,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+    expect(api.collection).toHaveBeenCalledTimes(2)
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(getResourceDatabase()).toMatchObject({
+      botPresetsId: 0,
+      botPresets: [{ id: 'preset-b', name: 'B' }],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(4, 'presetPointer', { id: 'preset-a' }), {
+        appliedRevision: 3,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+    expect(api.settings).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledTimes(2)
+    expect(getResourceDatabase().botPresetsId).toBe(1)
+
+    await expect(
+      refreshInvalidatedServerResources(event(5, 'revisionOnly', { id: 'preset-a' }), {
+        appliedRevision: 4,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
+    expect(api.settings).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledTimes(2)
+  })
+
   it('uses narrow order and selection reads without fetching all characters', async () => {
     seedResources(5)
     api.characterOrder.mockResolvedValue({
