@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { type loreBook } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
-  import LoreBookData, { type LorebookDeletionTarget } from './LoreBookData.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
+  import { getDatabase, type loreBook } from 'src/ts/storage/database.svelte'
+  import LoreBookData, { type LorebookDeletionTarget } from './LoreBookData.svelte'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, tick } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
@@ -49,6 +48,28 @@
   let ele: HTMLDivElement = $state()
   let sorted = $state(0)
   let idgroup = 'a' + v4()
+
+  function selectedCharacter() {
+    return getDatabase().characters?.[$selectedCharID]
+  }
+
+  function selectedChat() {
+    const character = selectedCharacter()
+    return character?.chats?.[character.chatPage ?? 0]
+  }
+
+  function characterGlobalLore(): loreBook[] {
+    return selectedCharacter()?.globalLore ?? []
+  }
+
+  function chatLocalLore(): loreBook[] {
+    return selectedChat()?.localLore ?? []
+  }
+
+  function globalLorebookEntries(): loreBook[] {
+    const database = getDatabase()
+    return database.loreBook?.[database.loreBookPage]?.data ?? []
+  }
 
   function cloneLoreBooks(entries: loreBook[]): loreBook[] {
     return JSON.parse(JSON.stringify(entries ?? []))
@@ -153,45 +174,44 @@
   }
 
   function updateCharacterGlobalLoreValue(index: number, value: loreBook): void {
-    const characterId = DBState.db.characters[$selectedCharID]?.chaId
+    const characterId = selectedCharacter()?.chaId
     if (!characterId) return
     applyLorebookEntryDraftEdit({ kind: 'character', characterId }, index, value)
   }
 
   function flushCharacterGlobalLoreValue(): void {
-    const characterId = DBState.db.characters[$selectedCharID]?.chaId
+    const characterId = selectedCharacter()?.chaId
     if (!characterId) return
     flushPendingLorebookEntryDraftEdit({ kind: 'character', characterId })
   }
 
   function updateCharacterGlobalLoreCollection(entries: loreBook[]): void {
-    const characterId = DBState.db.characters[$selectedCharID]?.chaId
+    const characterId = selectedCharacter()?.chaId
     if (!characterId) return
     replaceCharacterLorebookCollection(characterId, entries)
   }
 
   function updateChatLoreValue(index: number, value: loreBook): void {
-    const chat = DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage ?? 0]
+    const chat = selectedChat()
     if (!chat?.id) return
     applyLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id }, index, value)
   }
 
   function flushChatLoreValue(): void {
-    const chat = DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage ?? 0]
+    const chat = selectedChat()
     if (!chat?.id) return
     flushPendingLorebookEntryDraftEdit({ kind: 'chat', chatId: chat.id })
   }
 
   function updateChatLoreCollection(entries: loreBook[]): void {
-    const character = DBState.db.characters[$selectedCharID]
-    const chatPage = character?.chatPage ?? 0
-    const chatId = character?.chats?.[chatPage]?.id
+    const chatId = selectedChat()?.id
     if (!chatId) return
     replaceChatLorebookCollection(chatId, entries)
   }
 
   function updateGlobalLorebookCollection(entries: loreBook[]): void {
-    const lorebook = DBState.db.loreBook?.[DBState.db.loreBookPage]
+    const database = getDatabase()
+    const lorebook = database.loreBook?.[database.loreBookPage]
     const lorebookId = (lorebook as { id?: string } | undefined)?.id
     if (!lorebookId) return
     replaceGlobalLorebookEntryCollection(lorebookId, entries)
@@ -215,15 +235,15 @@
         (item) => (!showFolder && !item.folder) || showFolder === item.folder,
       ).length
     } else if (submenu === 1) {
-      expectedElements = DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
-      ].localLore.filter((item) => (!showFolder && !item.folder) || showFolder === item.folder).length
+      expectedElements = chatLocalLore().filter(
+        (item) => (!showFolder && !item.folder) || showFolder === item.folder,
+      ).length
     } else if (globalMode) {
-      expectedElements = DBState.db.loreBook[DBState.db.loreBookPage].data.filter(
+      expectedElements = globalLorebookEntries().filter(
         (item) => (!showFolder && !item.folder) || showFolder === item.folder,
       ).length
     } else {
-      expectedElements = DBState.db.characters[$selectedCharID].globalLore.filter(
+      expectedElements = characterGlobalLore().filter(
         (item) => (!showFolder && !item.folder) || showFolder === item.folder,
       ).length
     }
@@ -322,12 +342,11 @@
         if (externalLoreBooks) {
           currentArray = externalLoreBooks
         } else if (submenu === 1) {
-          currentArray =
-            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore
+          currentArray = chatLocalLore()
         } else if (globalMode) {
-          currentArray = DBState.db.loreBook[DBState.db.loreBookPage].data
+          currentArray = globalLorebookEntries()
         } else {
-          currentArray = DBState.db.characters[$selectedCharID].globalLore
+          currentArray = characterGlobalLore()
         }
 
         const sourceIdx = oldIndex
@@ -495,34 +514,28 @@
         {/each}
       {/if}
     {:else if submenu === 0}
-      {@const visibleItems = DBState.db.characters[$selectedCharID].globalLore.filter(
-        (book) => (!showFolder && !book.folder) || showFolder === book.folder,
-      )}
+      {@const entries = characterGlobalLore()}
+      {@const visibleItems = entries.filter((book) => (!showFolder && !book.folder) || showFolder === book.folder)}
       {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
-      {#if DBState.db.characters[$selectedCharID].globalLore.length === 0}
+      {#if entries.length === 0}
         <span class="text-textcolor2">No Lorebook</span>
       {:else}
-        {#each DBState.db.characters[$selectedCharID].globalLore as book, i}
+        {#each entries as book, i}
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              value={DBState.db.characters[$selectedCharID].globalLore[i]}
+              value={entries[i]}
               onDraftChange={(value) => updateCharacterGlobalLoreValue(i, value)}
               onDraftSettled={flushCharacterGlobalLoreValue}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={(target) =>
-                removeLorebookTarget(
-                  DBState.db.characters[$selectedCharID].globalLore,
-                  target,
-                  updateCharacterGlobalLoreCollection,
-                )}
+              onRemove={(target) => removeLorebookTarget(entries, target, updateCharacterGlobalLoreCollection)}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
-              externalLoreBooks={DBState.db.characters[$selectedCharID].globalLore}
+              externalLoreBooks={entries}
               onCollectionChange={updateCharacterGlobalLoreCollection}
               onEntryChange={updateCharacterGlobalLoreValue}
               onEntrySettled={flushCharacterGlobalLoreValue} />
@@ -533,38 +546,28 @@
         {/each}
       {/if}
     {:else if submenu === 1}
-      {@const visibleItems = DBState.db.characters[$selectedCharID].chats[
-        DBState.db.characters[$selectedCharID].chatPage
-      ].localLore.filter((book) => (!showFolder && !book.folder) || showFolder === book.folder)}
+      {@const entries = chatLocalLore()}
+      {@const visibleItems = entries.filter((book) => (!showFolder && !book.folder) || showFolder === book.folder)}
       {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
-      {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore.length === 0}
+      {#if entries.length === 0}
         <span class="text-textcolor2">No Lorebook</span>
       {:else}
-        {#each DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore as book, i}
+        {#each entries as book, i}
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
-              value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-                .localLore[i]}
+              value={entries[i]}
               onDraftChange={(value) => updateChatLoreValue(i, value)}
               onDraftSettled={flushChatLoreValue}
               idx={i}
               isOpen={openedRefs.has(book)}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
-              onRemove={(target) =>
-                removeLorebookTarget(
-                  DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-                    .localLore,
-                  target,
-                  updateChatLoreCollection,
-                )}
+              onRemove={(target) => removeLorebookTarget(entries, target, updateChatLoreCollection)}
               onOpen={(isDetail = true) => onOpen(isDetail, book)}
               onClose={(isDetail = true) => onClose(isDetail, book)}
               {lorePlus}
-              externalLoreBooks={DBState.db.characters[$selectedCharID].chats[
-                DBState.db.characters[$selectedCharID].chatPage
-              ].localLore}
+              externalLoreBooks={entries}
               onCollectionChange={updateChatLoreCollection}
               onEntryChange={updateChatLoreValue}
               onEntrySettled={flushChatLoreValue} />

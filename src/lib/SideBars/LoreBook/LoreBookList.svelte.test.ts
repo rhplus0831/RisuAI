@@ -1,6 +1,8 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { loreBook } from 'src/ts/storage/database.svelte'
+import type { Database, loreBook } from 'src/ts/storage/database.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 const lorebookListMocks = vi.hoisted(() => {
   type Deferred<T> = {
@@ -25,6 +27,8 @@ const lorebookListMocks = vi.hoisted(() => {
   }
 
   const confirmQueue: QueuedConfirm[] = []
+  const replaceCharacterLorebookCollection = vi.fn()
+  const replaceChatLorebookCollection = vi.fn()
 
   function createDeferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void
@@ -61,6 +65,8 @@ const lorebookListMocks = vi.hoisted(() => {
       confirmQueue.splice(0)
       SortableMock.create.mockClear()
     },
+    replaceCharacterLorebookCollection,
+    replaceChatLorebookCollection,
     setActiveChatLorebookLocalActivation: vi.fn(),
     languageMock: {
       language: {
@@ -116,10 +122,13 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   changedLorebookEntryDraftFields: vi.fn(() => []),
   clearDirtyLorebookEntryFieldsMatchingProjection: vi.fn(),
   flushPendingLorebookEntryDraftEdit: vi.fn(),
+  markCharacterLorebookHydrated: vi.fn(),
   mergeLorebookEntryProjectionDraft: vi.fn((draft: loreBook) => draft),
-  replaceCharacterLorebookCollection: vi.fn(),
-  replaceChatLorebookCollection: vi.fn(),
+  recordHydratedCharacterLorebooks: vi.fn(),
+  replaceCharacterLorebookCollection: lorebookListMocks.replaceCharacterLorebookCollection,
+  replaceChatLorebookCollection: lorebookListMocks.replaceChatLorebookCollection,
   replaceGlobalLorebookEntryCollection: vi.fn(),
+  resetLorebookHydration: vi.fn(),
   setActiveChatLorebookLocalActivation: lorebookListMocks.setActiveChatLorebookLocalActivation,
 }))
 
@@ -128,7 +137,7 @@ vi.mock('src/ts/tokenizer', () => ({
 }))
 
 import LoreBookListHarness from './LoreBookList.testHarness.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import LoreBookList from './LoreBookList.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type LoreBookListHarnessComponent = MountedComponent & {
@@ -138,6 +147,7 @@ type LoreBookListHarnessComponent = MountedComponent & {
 
 let target: HTMLElement
 let component: LoreBookListHarnessComponent | undefined
+let resourceComponent: MountedComponent | undefined
 
 function makeLoreBook(overrides: Partial<loreBook>): loreBook {
   return {
@@ -194,18 +204,18 @@ async function flushAsyncWork(): Promise<void> {
   await tick()
 }
 
-describe('LoreBookList stale deletion confirmations', () => {
+describe('LoreBookList', () => {
   beforeEach(() => {
     target = document.createElement('div')
     document.body.appendChild(target)
     lorebookListMocks.reset()
     vi.clearAllMocks()
     selectedCharID.set(-1)
-    DBState.db = {
+    setDatabaseLite({
       characters: [],
       loreBook: [],
       loreBookPage: 0,
-    } as never
+    } as Database)
   })
 
   afterEach(() => {
@@ -213,10 +223,14 @@ describe('LoreBookList stale deletion confirmations', () => {
       unmount(component)
       component = undefined
     }
+    if (resourceComponent) {
+      unmount(resourceComponent)
+      resourceComponent = undefined
+    }
     target.remove()
     document.body.innerHTML = ''
     selectedCharID.set(-1)
-    DBState.db = {} as never
+    setDatabaseLite({} as Database)
   })
 
   it('deletes an id-backed row by latest id after siblings are inserted and reordered during confirm', async () => {
@@ -328,5 +342,77 @@ describe('LoreBookList stale deletion confirmations', () => {
     await flushAsyncWork()
 
     expect(component.getEntries().map((entry) => entry.comment)).toEqual(['Legacy A', 'Legacy C'])
+  })
+
+  it('reacts to resource-backed character lorebook replacement and dispatches deletion for the current character', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-resource',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'resource-entry-a', comment: 'Resource Entry A' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 0 } })
+    await tick()
+    expect(rowByEntryId('resource-entry-a')).toBeTruthy()
+
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-resource',
+          chatPage: 0,
+          chats: [],
+          globalLore: [makeLoreBook({ id: 'resource-entry-b', comment: 'Resource Entry B' })],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    await tick()
+    expect(rowByEntryId('resource-entry-b')).toBeTruthy()
+    expect(lorebookRows().some((row) => row.dataset.risuLorebookId === 'resource-entry-a')).toBe(false)
+
+    lorebookListMocks.queueConfirm(true)
+    deleteButtonForRow(rowByEntryId('resource-entry-b')).click()
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.replaceCharacterLorebookCollection).toHaveBeenCalledWith('character-resource', [])
+  })
+
+  it('dispatches a resource-backed local lorebook deletion for the selected chat', async () => {
+    setDatabaseLite({
+      characters: [
+        {
+          chaId: 'character-resource',
+          chatPage: 1,
+          chats: [
+            { id: 'chat-inactive', localLore: [] },
+            {
+              id: 'chat-resource',
+              localLore: [makeLoreBook({ id: 'chat-entry', comment: 'Chat Entry' })],
+            },
+          ],
+          globalLore: [],
+        },
+      ],
+      loreBook: [],
+      loreBookPage: 0,
+    } as Database)
+    selectedCharID.set(0)
+
+    resourceComponent = mount(LoreBookList, { target, props: { submenu: 1 } })
+    await tick()
+    lorebookListMocks.queueConfirm(true)
+    deleteButtonForRow(rowByEntryId('chat-entry')).click()
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.replaceChatLorebookCollection).toHaveBeenCalledWith('chat-resource', [])
   })
 })
