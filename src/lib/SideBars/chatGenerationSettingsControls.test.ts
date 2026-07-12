@@ -55,7 +55,6 @@ import { language } from 'src/lang'
 import {
   closePersonaListModal,
   closePresetListModal,
-  DBState,
   openPersonaList,
   openPresetList,
   personaListModalStore,
@@ -65,6 +64,7 @@ import {
 } from 'src/ts/stores.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
+import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { mergeServerProjectionCharacterRow } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -94,6 +94,10 @@ function jsonResponse(body: unknown, status = 200): Response {
 function clonePlain<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function testDatabaseState() {
+  return getResourceDatabase()
 }
 
 function stubCommandFetch(): CapturedFetch[] {
@@ -219,7 +223,7 @@ async function waitForGenerationSettingsSaveCount(calls: CapturedFetch[], expect
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  replaceResourceDatabase({
     username: 'Global User',
     selectedPersona: 0,
     modelPresetsId: 0,
@@ -321,14 +325,14 @@ function seedDb(): void {
         ],
       },
     ],
-  } as never
+  } as never)
 }
 
 function mountToggles(): void {
   component = mount(Toggles, {
     target,
     props: {
-      chara: DBState.db.characters[0],
+      chara: testDatabaseState().characters[0],
       noContainer: true,
     },
   })
@@ -459,7 +463,7 @@ function selectToggleInput(key: string): HTMLSelectElement {
 }
 
 function activeChat() {
-  const character = DBState.db.characters[0]
+  const character = testDatabaseState().characters[0]
   return character.chats[character.chatPage]
 }
 
@@ -487,13 +491,13 @@ afterEach(() => {
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
-  DBState.db = {} as never
+  replaceResourceDatabase({} as never)
 })
 
 describe('sidebar chat generation settings controls', () => {
   it('always shows chat setup controls without custom sidebar configuration', async () => {
-    DBState.db.customSidebarItems = []
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState().customSidebarItems = []
+    testDatabaseState().characters[0].chats[0].generationSettings = {
       configured: false,
       jailbreakToggle: false,
       sidebarToggles: {},
@@ -507,7 +511,7 @@ describe('sidebar chat generation settings controls', () => {
   })
 
   it('does not duplicate chat setup controls from legacy custom sidebar items', async () => {
-    const legacyDb = DBState.db as { customSidebarItems: unknown }
+    const legacyDb = testDatabaseState() as { customSidebarItems: unknown }
     legacyDb.customSidebarItems = [
       { id: 'preset-control', type: 'preset', subType: '', label: '' },
       { id: 'persona-control', type: 'persona', subType: '', label: '' },
@@ -531,7 +535,7 @@ describe('sidebar chat generation settings controls', () => {
   })
 
   it('shows clear chat setup labels when preset and persona are not configured', async () => {
-    DBState.db.characters[0].chats[0].generationSettings = {
+    testDatabaseState().characters[0].chats[0].generationSettings = {
       configured: false,
       jailbreakToggle: false,
       sidebarToggles: {},
@@ -665,8 +669,8 @@ describe('sidebar chat generation settings controls', () => {
       personaId: missingPersonaId,
       promptPresetId: missingPresetId,
     })
-    expect(DBState.db.promptPresetsId).toBe(0)
-    expect(DBState.db.selectedPersona).toBe(0)
+    expect(testDatabaseState().promptPresetsId).toBe(0)
+    expect(testDatabaseState().selectedPersona).toBe(0)
 
     pickerButton('prompt').click()
     await tick()
@@ -698,8 +702,8 @@ describe('sidebar chat generation settings controls', () => {
       personaId: missingPersonaId,
       promptPresetId: missingPresetId,
     })
-    expect(DBState.db.promptPresetsId).toBe(0)
-    expect(DBState.db.selectedPersona).toBe(0)
+    expect(testDatabaseState().promptPresetsId).toBe(0)
+    expect(testDatabaseState().selectedPersona).toBe(0)
   })
 
   it('remediates a prefilled incomplete chat through visible generation-settings controls', async () => {
@@ -849,7 +853,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('moduleFlag').dataset.risuSelected).toBe('true')
     expect(target.textContent).not.toContain('Legacy Toggle')
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState().characters[0].chatPage = 1
     await tick()
 
     expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
@@ -866,8 +870,8 @@ describe('sidebar chat generation settings controls', () => {
   })
 
   it('renders preset-owned toggles from bootstrap-shaped preset stubs', async () => {
-    DBState.db.customPromptTemplateToggle = 'fallback=Fallback'
-    DBState.db.promptPresets = [
+    testDatabaseState().customPromptTemplateToggle = 'fallback=Fallback'
+    testDatabaseState().promptPresets = [
       {
         id: 'preset-a',
         name: 'Prompt preset Alpha',
@@ -897,7 +901,7 @@ describe('sidebar chat generation settings controls', () => {
   })
 
   it('renders custom toggle group and groupEnd rows as an accordion', async () => {
-    DBState.db.promptPresets[0].customPromptTemplateToggle =
+    testDatabaseState().promptPresets[0].customPromptTemplateToggle =
       '=Prompt preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=Flag\n==groupend\nnote=Note=text'
 
     mountToggles()
@@ -938,9 +942,9 @@ describe('sidebar chat generation settings controls', () => {
     expect(jailbreakControl().dataset.risuSelected).toBe('true')
 
     const applied = mergeServerProjectionCharacterRow({
-      ...DBState.db.characters[0],
+      ...testDatabaseState().characters[0],
       name: 'Character Alpha Projected',
-      chats: DBState.db.characters[0].chats.map((chat) => ({
+      chats: testDatabaseState().characters[0].chats.map((chat) => ({
         ...chat,
         message: [],
         generationSettings:
@@ -1048,8 +1052,8 @@ describe('sidebar chat generation settings controls', () => {
     expect(get(openPresetList)).toBe(false)
     expect(activeChat().generationSettings?.promptPresetId).toBe('preset-b')
     expect(activeChat().generationSettings?.personaId).toBeUndefined()
-    expect(DBState.db.promptPresetsId).toBe(0)
-    expect(DBState.db.selectedPersona).toBe(0)
+    expect(testDatabaseState().promptPresetsId).toBe(0)
+    expect(testDatabaseState().selectedPersona).toBe(0)
     expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
     expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').textContent).toContain('Select chat persona')
@@ -1081,8 +1085,8 @@ describe('sidebar chat generation settings controls', () => {
       },
     })
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
-    expect(DBState.db.promptPresetsId).toBe(0)
-    expect(DBState.db.selectedPersona).toBe(0)
+    expect(testDatabaseState().promptPresetsId).toBe(0)
+    expect(testDatabaseState().selectedPersona).toBe(0)
     expect(pickerControl('prompt').dataset.risuPickerSelectedId).toBe('preset-b')
     expect(pickerControl('prompt').textContent).toContain('Prompt preset Beta')
     expect(pickerControl('persona').dataset.risuPickerSelectedId).toBe('persona-b')
@@ -1118,8 +1122,8 @@ describe('sidebar chat generation settings controls', () => {
 
   it('does not save preset or persona picker choices after the picker target goes stale', async () => {
     const calls = stubCommandFetch()
-    const originalChatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
-    const originalChatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const originalChatASettings = clonePlain(testDatabaseState().characters[0].chats[0].generationSettings)
+    const originalChatBSettings = clonePlain(testDatabaseState().characters[0].chats[1].generationSettings)
 
     mountGenerationSettingsPickerHost()
     await tick()
@@ -1131,7 +1135,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(presetListModalStore.target?.chatId).toBe('chat-a')
     expect(pickerRoot('prompt', 'active-chat-generation-settings')).toBeTruthy()
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState().characters[0].chatPage = 1
     await tick()
 
     pickerRow('prompt', 'preset-a').click()
@@ -1139,12 +1143,12 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(get(openPresetList)).toBe(true)
     expect(calls.filter((call) => call.url.endsWith('/generation-settings'))).toEqual([])
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(originalChatASettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(originalChatBSettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings?.promptPresetId).toBe('preset-b')
+    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(originalChatASettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(originalChatBSettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings?.promptPresetId).toBe('preset-b')
 
     closePresetListModal()
-    DBState.db.characters[0].chatPage = 0
+    testDatabaseState().characters[0].chatPage = 0
     await tick()
 
     pickerButton('persona').click()
@@ -1154,7 +1158,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(personaListModalStore.target?.chatId).toBe('chat-a')
     expect(pickerRoot('persona', 'active-chat-generation-settings')).toBeTruthy()
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState().characters[0].chatPage = 1
     await tick()
 
     pickerRow('persona', 'persona-a').click()
@@ -1162,9 +1166,9 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(get(openPersonaList)).toBe(true)
     expect(calls.filter((call) => call.url.endsWith('/generation-settings'))).toEqual([])
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(originalChatASettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(originalChatBSettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings?.personaId).toBe('persona-b')
+    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(originalChatASettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(originalChatBSettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings?.personaId).toBe('persona-b')
   })
 
   it('prefills preset toggle defaults after selecting a chat preset', async () => {
@@ -1334,8 +1338,8 @@ describe('sidebar chat generation settings controls', () => {
         stale: '1',
       },
     }
-    const chatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
-    const chatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const chatASettings = clonePlain(testDatabaseState().characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(testDatabaseState().characters[0].chats[1].generationSettings)
     const confirmation = deferred<boolean>()
     alertSpies.alertConfirm.mockReturnValueOnce(confirmation.promise)
 
@@ -1346,22 +1350,22 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
     expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Are you sure you want to reset toggle defaults?')
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState().characters[0].chatPage = 1
     await tick()
 
     confirmation.resolve(true)
     await flushAsyncWork()
 
     expect(calls).toEqual([])
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
+    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(chatBSettings)
     expect(activeChat().id).toBe('chat-b')
     expect(activeChat().generationSettings?.jailbreakToggle).toBe(false)
     expect(activeChat().generationSettings?.sidebarToggles?.note).toBe('beta-note')
   })
 
   it('renders reset toggle defaults below Toggle HypaMemory in the chat sidebar controls', async () => {
-    DBState.db.hypaV3 = true
+    testDatabaseState().hypaV3 = true
 
     mountGenerationSettingsPickerHost()
     await tick()
@@ -1385,7 +1389,7 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
     await waitForFetchCount(calls, 2)
 
-    const preset = DBState.db.chatGenerationTogglePresets[0]
+    const preset = testDatabaseState().chatGenerationTogglePresets[0]
     expect(preset).toMatchObject({
       name: 'Spicy toggles',
       jailbreakToggle: true,
@@ -1422,7 +1426,7 @@ describe('sidebar chat generation settings controls', () => {
       },
     })
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState().characters[0].chatPage = 1
     await tick()
 
     expect(jailbreakControl().dataset.risuSelected).toBe('false')
@@ -1483,7 +1487,7 @@ describe('sidebar chat generation settings controls', () => {
     await waitForFetchCount(calls, 4)
 
     expect(alertSpies.alertConfirm).toHaveBeenLastCalledWith('Delete "Spicy toggles"?')
-    expect(DBState.db.chatGenerationTogglePresets).toEqual([])
+    expect(testDatabaseState().chatGenerationTogglePresets).toEqual([])
     expect(togglePresetSelect().value).toBe('')
     expect(calls[3]).toMatchObject({
       url: '/api/v1/commands/settings/sidebar',
@@ -1500,9 +1504,9 @@ describe('sidebar chat generation settings controls', () => {
 
   it('disables saving but allows applying a selected toggle preset when the active chat has different toggle types', async () => {
     const calls = stubCommandFetch()
-    DBState.db.promptPresets[0].customPromptTemplateToggle =
+    testDatabaseState().promptPresets[0].customPromptTemplateToggle =
       'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text\ncodex=Codex\nmoduleFlag=Module Flag'
-    DBState.db.chatGenerationTogglePresets = [
+    testDatabaseState().chatGenerationTogglePresets = [
       {
         id: 'saved-alpha',
         name: 'Saved Alpha',
@@ -1572,7 +1576,7 @@ describe('sidebar chat generation settings controls', () => {
 
   it('asks whether to overwrite, create, or cancel when saving with a selected toggle preset', async () => {
     const calls = stubCommandFetch()
-    DBState.db.chatGenerationTogglePresets = [
+    testDatabaseState().chatGenerationTogglePresets = [
       {
         id: 'saved-alpha',
         name: 'Saved Alpha',
@@ -1608,7 +1612,7 @@ describe('sidebar chat generation settings controls', () => {
     )
     expect(alertSpies.alertInput).not.toHaveBeenCalled()
     expect(calls).toEqual([])
-    expect(DBState.db.chatGenerationTogglePresets).toHaveLength(1)
+    expect(testDatabaseState().chatGenerationTogglePresets).toHaveLength(1)
 
     alertSpies.alertSelect.mockResolvedValueOnce('1')
     alertSpies.alertInput.mockResolvedValueOnce('Fresh copy')
@@ -1616,8 +1620,8 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
     await waitForFetchCount(calls, 2)
 
-    expect(DBState.db.chatGenerationTogglePresets).toHaveLength(2)
-    const createdPreset = DBState.db.chatGenerationTogglePresets[1]
+    expect(testDatabaseState().chatGenerationTogglePresets).toHaveLength(2)
+    const createdPreset = testDatabaseState().chatGenerationTogglePresets[1]
     expect(createdPreset).toMatchObject({
       name: 'Fresh copy',
       jailbreakToggle: true,
@@ -1637,8 +1641,8 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
     await waitForFetchCount(calls, 3)
 
-    expect(DBState.db.chatGenerationTogglePresets).toHaveLength(2)
-    expect(DBState.db.chatGenerationTogglePresets[0]).toMatchObject({
+    expect(testDatabaseState().chatGenerationTogglePresets).toHaveLength(2)
+    expect(testDatabaseState().chatGenerationTogglePresets[0]).toMatchObject({
       id: 'saved-alpha',
       name: 'Saved Alpha',
       createdAt: 1,
@@ -1655,8 +1659,8 @@ describe('sidebar chat generation settings controls', () => {
 
   it('does not save a reusable toggle preset after the name prompt resolves for a stale active chat', async () => {
     const calls = stubCommandFetch()
-    const chatASettings = clonePlain(DBState.db.characters[0].chats[0].generationSettings)
-    const chatBSettings = clonePlain(DBState.db.characters[0].chats[1].generationSettings)
+    const chatASettings = clonePlain(testDatabaseState().characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(testDatabaseState().characters[0].chats[1].generationSettings)
     const input = deferred<string>()
     alertSpies.alertInput.mockReturnValueOnce(input.promise)
 
@@ -1667,16 +1671,16 @@ describe('sidebar chat generation settings controls', () => {
     await tick()
     expect(alertSpies.alertInput).toHaveBeenCalledWith('Name this toggle preset')
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState().characters[0].chatPage = 1
     await tick()
 
     input.resolve('Late toggles')
     await flushAsyncWork()
 
     expect(calls).toEqual([])
-    expect(DBState.db.chatGenerationTogglePresets).toEqual([])
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(chatASettings)
-    expect(DBState.db.characters[0].chats[1].generationSettings).toEqual(chatBSettings)
+    expect(testDatabaseState().chatGenerationTogglePresets).toEqual([])
+    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(chatBSettings)
     expect(togglePresetSelect().value).toBe('')
   })
 
@@ -1691,7 +1695,7 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(activeChat().generationSettings?.jailbreakToggle).toBe(false)
     expect(jailbreakControl().dataset.risuSelected).toBe('false')
-    expect(DBState.db.jailbreakToggle).toBe(true)
+    expect(testDatabaseState().jailbreakToggle).toBe(true)
 
     toggleCheckbox('flag').click()
     await tick()
@@ -1699,7 +1703,7 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(activeChat().generationSettings?.sidebarToggles?.flag).toBe('0')
     expect(toggleControl('flag').dataset.risuSelected).toBe('false')
-    expect(DBState.db.globalChatVariables.toggle_flag).toBe('global-flag')
+    expect(testDatabaseState().globalChatVariables.toggle_flag).toBe('global-flag')
 
     const moodSelect = selectToggleInput('mood')
     moodSelect.value = '0'
@@ -1708,7 +1712,7 @@ describe('sidebar chat generation settings controls', () => {
     await waitForFetchCount(calls, 4)
 
     expect(activeChat().generationSettings?.sidebarToggles?.mood).toBe('0')
-    expect(DBState.db.globalChatVariables.toggle_mood).toBe('global-mood')
+    expect(testDatabaseState().globalChatVariables.toggle_mood).toBe('global-mood')
 
     const noteInput = textToggleInput('note')
     noteInput.value = 'updated-note'
@@ -1717,6 +1721,6 @@ describe('sidebar chat generation settings controls', () => {
     await waitForFetchCount(calls, 5)
 
     expect(activeChat().generationSettings?.sidebarToggles?.note).toBe('updated-note')
-    expect(DBState.db.globalChatVariables.toggle_note).toBe('global-note')
+    expect(testDatabaseState().globalChatVariables.toggle_note).toBe('global-note')
   })
 })
