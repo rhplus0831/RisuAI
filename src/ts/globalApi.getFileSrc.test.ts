@@ -12,20 +12,25 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'proxy-auth-token',
 }))
 
-import { DBState } from './stores.svelte'
+vi.mock('./process/modules', async (importActual) => {
+  const actual = await importActual<typeof import('./process/modules')>()
+  return { ...actual, moduleUpdate: vi.fn() }
+})
+
+import { testDatabaseState } from './__tests__/resourceDatabaseState'
 import { getFileSrc } from './globalApi.svelte'
 
 beforeEach(() => {
   // Seed the minimal Database shape so the module-load $effect chain in
   // `stores.svelte → modules.ts → getDatabase()` does not throw before the
   // tests run. The test does not exercise these fields.
-  DBState.db = {
+  testDatabaseState.db = {
     usePlainFetch: false,
     requestLocation: '',
     modules: [],
     enabledModules: [],
     characters: [],
-  } as unknown as typeof DBState.db
+  }
 })
 
 describe('getFileSrc Fastify-mode shape gate (A4EC7 / B8)', () => {

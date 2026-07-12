@@ -16,7 +16,12 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'proxy-auth-token',
 }))
 
-import { DBState } from './stores.svelte'
+vi.mock('./process/modules', async (importActual) => {
+  const actual = await importActual<typeof import('./process/modules')>()
+  return { ...actual, moduleUpdate: vi.fn() }
+})
+
+import { testDatabaseState } from './__tests__/resourceDatabaseState'
 import { fetchNative, globalFetch } from './globalApi.svelte'
 
 class FakeWebSocket {
@@ -93,10 +98,10 @@ function proxyDeleteCalls() {
 
 beforeEach(() => {
   platformState.isFastifyServer = true
-  DBState.db = {
+  testDatabaseState.db = {
     usePlainFetch: false,
     requestLocation: '',
-  } as typeof DBState.db
+  }
   fetchCalls.length = 0
   fakeWebSocketUrls.length = 0
   fakeWebSockets.length = 0

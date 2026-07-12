@@ -30,7 +30,7 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { fetchNative, getFetchLogs } from './globalApi.svelte'
-import { DBState } from './stores.svelte'
+import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
 const fetchCalls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
 
@@ -38,9 +38,9 @@ beforeEach(() => {
   platformState.isFastifyServer = true
   fetchCalls.length = 0
   getFetchLogs().length = 0
-  DBState.db = {
+  testDatabaseState.db = {
     requestLocation: '',
-  } as typeof DBState.db
+  }
   delete (window as typeof window & { userScriptFetch?: typeof fetch }).userScriptFetch
   vi.spyOn(console, 'log').mockImplementation(() => {})
   vi.stubGlobal(

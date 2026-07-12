@@ -13,7 +13,12 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'proxy-auth-token',
 }))
 
-import { DBState } from './stores.svelte'
+vi.mock('./process/modules', async (importActual) => {
+  const actual = await importActual<typeof import('./process/modules')>()
+  return { ...actual, moduleUpdate: vi.fn() }
+})
+
+import { testDatabaseState } from './__tests__/resourceDatabaseState'
 import { saveAssets } from './globalApi.svelte'
 
 interface CapturedFetch {
@@ -63,13 +68,13 @@ async function readBulkBinaryBody(init?: RequestInit): Promise<{ manifest: unkno
 
 beforeEach(() => {
   fetchCalls.length = 0
-  DBState.db = {
+  testDatabaseState.db = {
     usePlainFetch: false,
     requestLocation: '',
     modules: [],
     enabledModules: [],
     characters: [],
-  } as unknown as typeof DBState.db
+  }
   vi.stubGlobal('crypto', webcrypto)
   vi.stubGlobal(
     'fetch',

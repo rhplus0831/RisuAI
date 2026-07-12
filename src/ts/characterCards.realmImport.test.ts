@@ -145,14 +145,6 @@ vi.mock('./stores.svelte', () => {
     subscribe: vi.fn(() => () => {}),
   })
   return {
-    DBState: {
-      get db() {
-        return dbState.db
-      },
-      set db(value) {
-        dbState.db = value
-      },
-    },
     selectedCharID: store(),
     SettingsMenuIndex: store(),
     settingsOpen: store(),
