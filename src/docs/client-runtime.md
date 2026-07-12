@@ -76,8 +76,9 @@ Important files:
 
 - `src/ts/server/resourceState.svelte.ts` owns settings, collections, and
   character resource state and composes the compatibility database view.
-- `src/ts/server/resourceReads.ts` reads `/api/v1/settings`,
-  `/api/v1/collections`, optional named collections, `/api/v1/characters`, and
+- `src/ts/server/resourceReads.ts` reads `/api/v1/settings`, optional settings
+  groups, `/api/v1/collections`, optional named collections,
+  `/api/v1/characters`, narrow character order/selection resources, and
   individual character rows.
 - `src/ts/server/hydrationReads.ts` reads chat-message, character-lorebook,
   legacy-preset, and prompt-preset-template bodies from concrete endpoints.
@@ -91,15 +92,17 @@ Important files:
 - `src/ts/server/commands.ts` sends revision-checked command mutations.
 - `src/ts/server/events.ts` subscribes to `/api/v1/events`.
 - Grouped `settings.updated` events identify their group in `event.id`, so a
-  contiguous reconcile refetches only the settings resource. Events from older
-  servers or retained history without a recognized group safely request a full
-  resource refresh instead.
+  contiguous reconcile refetches only `/api/v1/settings/:group`. Events from
+  older servers or retained history without a recognized group safely request
+  a full resource refresh instead.
 - `src/ts/server/chatMessageHydration.svelte.ts` hydrates active chat messages
   and transcript windows.
 - `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
   character shell rows.
-- The chat generation-settings freshness guard preserves a queued optimistic
-  value when a refetched character row differs before that save settles.
+- Accepted chat generation-settings commands return their canonical persisted
+  value and reconcile it as a local resource effect, so the normal optimistic
+  save needs no follow-up character read. The freshness guard still preserves a
+  newer queued value against foreign or in-flight character responses.
 - `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
   and preset prompt bodies with owner-keyed state for selected/requested prompt
   presets.
@@ -133,10 +136,12 @@ contiguous suffix following a persisted anchor. Other shapes remain local for
 that send.
 
 Chat generation-settings saves are serialized per chat and optimistically
-applied. While a save is queued,
-the generation-settings freshness guard prevents a differing character-row
-response from rolling the visible value back; this protection ends when the
-save settles and does not replace authoritative resource refresh semantics.
+applied. A successful response applies the server-normalized value and advances
+the affected character-row revision without another GET. While a newer save is
+queued, the generation-settings freshness guard prevents a differing
+character-row response from rolling the visible value back. Foreign events,
+replay, response loss, gaps, and missing local targets still use authoritative
+resource invalidation.
 
 Prompt template resource notes:
 

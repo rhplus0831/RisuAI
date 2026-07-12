@@ -66,14 +66,17 @@ before reconnect.
 `refreshInvalidatedServerResources()` sorts and normalizes a single event or a
 coalesced event batch, then converts each resource key into concrete reads:
 
-- Settings-like events read `/api/v1/settings`.
+- Valid grouped settings events read `/api/v1/settings/:group`; broader
+  settings-like resources still read `/api/v1/settings`.
 - Collection events read only the needed `/api/v1/collections/:name` entries.
-- Character selection/order and broad character events read
-  `/api/v1/characters`; row-scoped character, script, trigger, chat-metadata,
-  and chat-folder events read `/api/v1/characters/:id`.
-- Message, generation, and transcript events read the affected
-  `/api/v1/chats/:id/messages`. Single-chat invalidation uses this endpoint so
-  reroll alternates remain authoritative.
+- Character selection and order read their narrow resources; only broad
+  character events read `/api/v1/characters`. Row-scoped character, script,
+  trigger, chat-metadata, and chat-folder events read
+  `/api/v1/characters/:id`.
+- Message and transcript events read the affected full chat body. A single
+  `generation.persisted` event uses `generationMessageId` to read only the
+  changed suffix; ambiguous coalesced generations safely fall back to one full
+  chat read. Single-chat invalidation retains authoritative reroll alternates.
 - Character lorebook events read the single or bulk lorebook endpoint.
 - Asset events require no application-data read; the applied revision still
   advances.
@@ -85,9 +88,9 @@ Targeted responses must be at least as new as the invalidating event. Per-slice,
 per-collection, character-list, character-row, and hydrated-body revisions stop
 older responses from overwriting newer resident state. Pending plugin-storage
 operations are replayed over an incoming authoritative storage map until their
-command promises finish. A pending chat-generation-settings save likewise
-protects its newest optimistic value while an authoritative character row is in
-flight.
+command promises finish. A successful local chat-generation-settings save
+reconciles its canonical response without a GET; its pending-value guard still
+protects a newer edit while an authoritative character row is in flight.
 
 After a complete refresh, chat and lorebook hydration identities reset because
 the character endpoint intentionally carries message-free chat rows. The active
@@ -112,11 +115,14 @@ classified that way in `server/fastify/src/routeManifest.ts`.
 | Data                                      | Endpoint                                                       | Browser owner                                               |
 | ----------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
 | Scalar/settings fields                    | `GET /api/v1/settings`                                         | `resourceReads.ts`, `settingsResourceState`                 |
+| One settings group                        | `GET /api/v1/settings/:group`                                  | Event-driven targeted invalidation                          |
 | Every split collection                    | `GET /api/v1/collections`                                      | `resourceReads.ts`, `collectionsResourceState`              |
 | One split collection                      | `GET /api/v1/collections/:name`                                | Event-driven targeted invalidation                          |
 | Message-free character list/order/current | `GET /api/v1/characters`                                       | `resourceReads.ts`, `charactersResourceState`               |
+| Character order only                      | `GET /api/v1/characters/order`                                 | Character-order invalidation                                |
+| Character selection/interaction           | `GET /api/v1/characters/:id/selection`                         | Character-selection invalidation                            |
 | One character row                         | `GET /api/v1/characters/:id`                                   | Targeted invalidation and character-shell hydration         |
-| Full, tail, or ranged chat body            | `GET /api/v1/chats/:id/messages` with optional `tail` or `start`/`limit` | `hydrateActiveChat*()` and event invalidation     |
+| Full, tail, ranged, or generation-suffix chat body | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` | `hydrateActiveChat*()` and event invalidation |
 | Many chat bodies                          | `POST /api/v1/chats/messages/bulk`                              | `ensureAllChatsHydrated()`                                  |
 | One character lorebook                    | `GET /api/v1/characters/:id/lorebook`                           | `hydrateActiveCharacterLorebook()` and invalidation         |
 | Many character lorebooks                  | `POST /api/v1/characters/lorebooks/bulk`                        | `ensureAllCharacterLorebooksHydrated()`                     |

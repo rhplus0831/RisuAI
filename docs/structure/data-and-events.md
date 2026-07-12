@@ -82,22 +82,27 @@ protocol keys to concrete REST reads. Examples include `characterSelection`,
 `modelProfile`, `agentPreset`, `agentPresetDeleted`, `persona`,
 `legacyBotPreset`, `plugin`, `asset`, `generation`, and `chatTranscript`.
 
-Settings-like events reread `/api/v1/settings`; collection events reread the
-owning `/api/v1/collections/:name`; character metadata events reread the list or
-one character row; and message/generation/transcript events reread the complete
-affected chat body. Character lorebook events use the single or bulk lorebook
-endpoint. `asset` advances the applied revision without an application-data
+Grouped settings events reread `/api/v1/settings/:group`; broader settings-like
+events reread `/api/v1/settings`. Collection events reread the owning
+`/api/v1/collections/:name`. Character selection/order events use narrow pointer
+resources, while structural character events reread the list or one row.
+Message/transcript events reread the complete affected chat body; an
+unambiguous generation event rereads only its changed suffix. Character
+lorebook events use the single or bulk lorebook endpoint. `asset` and explicit
+revision-only events advance the applied revision without an application-data
 read. Broad `state`/`lorebook` events, unknown resources, missing required owner
 ids, and revision gaps fall back to a common-revision refresh of settings,
 collections, and characters. Plugin storage is always applied as a complete
 map, with pending local operations replayed over the incoming value until their
 commands settle.
 
-Character list and row responses omit message bodies. Resource application
-keeps resident chat bodies for surviving same-id rows during safe targeted
+Character list and row responses omit message bodies and, when
+`enableLorebookStubs` is true, character lorebooks. Resource application keeps
+resident chat/lorebook bodies for surviving same-id rows during safe targeted
 updates, but a complete refresh deliberately resets them to stubs and forces
-lazy rehydration. Chat-generation-settings saves have a dedicated pending-value
-guard so an in-flight row read cannot replace the newest optimistic edit.
+lazy rehydration. Successful chat-generation-settings saves apply their
+canonical command response locally without a GET; the pending-value guard keeps
+in-flight row reads from replacing a newer optimistic edit.
 
 ## Server-Owned Exceptions
 
@@ -182,11 +187,14 @@ loads the three root resources at one common revision.
 | Data                                                | Endpoint                                                       |
 | --------------------------------------------------- | -------------------------------------------------------------- |
 | Scalar/settings fields                              | `GET /api/v1/settings`                                         |
+| One settings group                                  | `GET /api/v1/settings/:group`                                  |
 | All split collections                               | `GET /api/v1/collections`                                      |
 | One named split collection                          | `GET /api/v1/collections/:name`                                |
 | Message-free character list/order/current selection | `GET /api/v1/characters`                                      |
+| Character order only                                | `GET /api/v1/characters/order`                                |
+| Character selection/interaction                     | `GET /api/v1/characters/:id/selection`                        |
 | One message-free character row                      | `GET /api/v1/characters/:id`                                  |
-| Full, tail, or ranged chat messages, per-chat memory data, and reroll alternates | `GET /api/v1/chats/:id/messages` with optional `tail` or `start`/`limit` |
+| Full, tail, ranged, or generation-suffix chat messages, per-chat memory data, and reroll alternates | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` |
 | Many chat histories                                 | `POST /api/v1/chats/messages/bulk`                              |
 | Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/characters/:id/lorebook`                           |
 | Many character lorebooks                            | `POST /api/v1/characters/lorebooks/bulk`                        |
@@ -199,11 +207,12 @@ owned by `src/ts/server/resourceState.svelte.ts`. Hydration and stale-response
 logic live in `chatMessageHydration.svelte.ts`,
 `characterShellHydration.svelte.ts`, and `promptTemplateHydration.ts`.
 
-The character list and row endpoints intentionally omit message bodies. Active
-chat messages, per-chat `hypaV3Data`, reroll alternates, character lorebooks,
-legacy preset bodies, and prompt-preset templates hydrate on demand. Bulk chat
-reads omit reroll alternates and are used only by workflows that need many
-histories; event invalidation uses the single-chat endpoint to keep alternates
+The character list and row endpoints intentionally omit message bodies and
+optionally omit character lorebooks when stubbing is enabled. Active chat
+messages, per-chat `hypaV3Data`, reroll alternates, character lorebooks, legacy
+preset bodies, and prompt-preset templates hydrate on demand. Bulk chat reads
+omit reroll alternates and are used only by workflows that need many histories;
+event invalidation uses the single-chat endpoint to keep alternates
 authoritative.
 
 ## SSE And Streaming
