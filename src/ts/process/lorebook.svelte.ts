@@ -1,8 +1,7 @@
 import { get } from 'svelte/store'
 import { getChatVar, setChatVar } from '../parser/chatVar.svelte'
 import { selectedCharID } from '../stores.svelte'
-import { type Message, type loreBook } from '../storage/database.svelte'
-import { DBState } from '../stores.svelte'
+import { getDatabase, type Message, type loreBook } from '../storage/database.svelte'
 import { tokenize } from '../tokenizer'
 import { findCharacterbyId, pickHashRand, selectSingleFile } from '../util'
 import { alertError, alertNormal } from '../alert'
@@ -32,17 +31,17 @@ import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard
 // dispatch is skipped by the same guard, so the rollback is never needed.
 function scopedLorebookEditorSnapshot(type: number, selectedID: number): LorebookStateSnapshot | null {
   if (type === 0) {
-    const characterId = DBState.db.characters[selectedID]?.chaId
+    const characterId = getDatabase().characters[selectedID]?.chaId
     return characterId ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId }) : null
   }
   if (type === -1) {
     // The open global book may predate id-assign; ensure the global list's ids
     // (only that list — not the whole DB) so the edit can be dispatched.
     ensureGlobalLorebookListIds()
-    const lorebookId = (DBState.db.loreBook?.[DBState.db.loreBookPage] as { id?: string } | undefined)?.id
+    const lorebookId = (getDatabase().loreBook?.[getDatabase().loreBookPage] as { id?: string } | undefined)?.id
     return lorebookId ? currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId }) : null
   }
-  const character = DBState.db.characters[selectedID]
+  const character = getDatabase().characters[selectedID]
   const chatId = character?.chats?.[character.chatPage]?.id
   return chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
 }
@@ -57,12 +56,12 @@ function captureLorebookImportTarget(mode: 'global' | 'local' | 'sglobal'): Stab
     // Match the global editor snapshot behavior: assign missing book ids before
     // the picker so the pending import is tied to the page that was open.
     ensureGlobalLorebookListIds()
-    const lorebook = (DBState.db.loreBook?.[DBState.db.loreBookPage] as { id?: string } | undefined) ?? null
+    const lorebook = (getDatabase().loreBook?.[getDatabase().loreBookPage] as { id?: string } | undefined) ?? null
     return lorebook?.id ? { mode: 'sglobal', lorebookId: lorebook.id } : null
   }
 
   const selectedID = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedID]
+  const character = getDatabase().characters?.[selectedID]
   if (!character?.chaId) return null
 
   if (mode === 'global') {
@@ -87,16 +86,16 @@ function lorebookImportScope(target: StableLorebookImportTarget): DiscreteLorebo
 function resolveLorebookImportEntries(target: StableLorebookImportTarget): loreBook[] | null {
   switch (target.mode) {
     case 'global': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === target.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
       return character ? (character.globalLore ?? []) : null
     }
     case 'local': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === target.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
       const chat = character?.chats?.find((candidate) => candidate.id === target.chatId)
       return chat ? (chat.localLore ?? []) : null
     }
     case 'sglobal': {
-      const lorebook = (DBState.db.loreBook as Array<{ id?: string; data?: loreBook[] }> | undefined)?.find(
+      const lorebook = (getDatabase().loreBook as Array<{ id?: string; data?: loreBook[] }> | undefined)?.find(
         (candidate) => candidate.id === target.lorebookId,
       )
       return lorebook ? (lorebook.data ?? []) : null
@@ -107,20 +106,20 @@ function resolveLorebookImportEntries(target: StableLorebookImportTarget): loreB
 function assignLorebookImportEntries(target: StableLorebookImportTarget, entries: loreBook[]): boolean {
   switch (target.mode) {
     case 'global': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === target.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
       if (!character) return false
       character.globalLore = entries
       return true
     }
     case 'local': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === target.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
       const chat = character?.chats?.find((candidate) => candidate.id === target.chatId)
       if (!chat) return false
       chat.localLore = entries
       return true
     }
     case 'sglobal': {
-      const lorebook = (DBState.db.loreBook as Array<{ id?: string; data?: loreBook[] }> | undefined)?.find(
+      const lorebook = (getDatabase().loreBook as Array<{ id?: string; data?: loreBook[] }> | undefined)?.find(
         (candidate) => candidate.id === target.lorebookId,
       )
       if (!lorebook) return false
@@ -153,10 +152,10 @@ export function addLorebook(type: number) {
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   if (type === 0) {
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedID].globalLore.push({
+      getDatabase().characters[selectedID].globalLore.push({
         id: v4(),
         key: '',
-        comment: `New Lore ${DBState.db.characters[selectedID].globalLore.length + 1}`,
+        comment: `New Lore ${getDatabase().characters[selectedID].globalLore.length + 1}`,
         content: '',
         mode: 'normal',
         insertorder: 100,
@@ -167,14 +166,14 @@ export function addLorebook(type: number) {
     })
     if (previous) {
       dispatchReplaceCharacterLorebooks(
-        DBState.db.characters[selectedID].chaId,
-        DBState.db.characters[selectedID].globalLore,
+        getDatabase().characters[selectedID].chaId,
+        getDatabase().characters[selectedID].globalLore,
         previous,
       )
     }
   } else if (type === -1) {
-    const lorePage = DBState.db.loreBookPage
-    const current = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
+    const lorePage = getDatabase().loreBookPage
+    const current = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
     if (!current) return
     // Build the next entries from a mutable snapshot and assign it inside the
     // trusted write: pushing into the array read from the projection mutates
@@ -194,17 +193,17 @@ export function addLorebook(type: number) {
       },
     ]
     withTrustedServerProjectionWrite(() => {
-      const lorebook = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] }
+      const lorebook = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
     if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
-    const page = DBState.db.characters[selectedID].chatPage
+    const page = getDatabase().characters[selectedID].chatPage
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedID].chats[page].localLore.push({
+      getDatabase().characters[selectedID].chats[page].localLore.push({
         id: v4(),
         key: '',
-        comment: `New Lore ${DBState.db.characters[selectedID].chats[page].localLore.length + 1}`,
+        comment: `New Lore ${getDatabase().characters[selectedID].chats[page].localLore.length + 1}`,
         content: '',
         mode: 'normal',
         insertorder: 100,
@@ -213,7 +212,7 @@ export function addLorebook(type: number) {
         selective: false,
       })
     })
-    const chat = DBState.db.characters[selectedID].chats[page]
+    const chat = getDatabase().characters[selectedID].chats[page]
     if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
   }
 }
@@ -224,7 +223,7 @@ export function addLorebookFolder(type: number) {
   const id = v4()
   if (type === 0) {
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedID].globalLore.push({
+      getDatabase().characters[selectedID].globalLore.push({
         id: v4(),
         key: '\uf000folder:' + id,
         comment: `New Folder`,
@@ -238,14 +237,14 @@ export function addLorebookFolder(type: number) {
     })
     if (previous) {
       dispatchReplaceCharacterLorebooks(
-        DBState.db.characters[selectedID].chaId,
-        DBState.db.characters[selectedID].globalLore,
+        getDatabase().characters[selectedID].chaId,
+        getDatabase().characters[selectedID].globalLore,
         previous,
       )
     }
   } else if (type === -1) {
-    const lorePage = DBState.db.loreBookPage
-    const current = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
+    const lorePage = getDatabase().loreBookPage
+    const current = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] } | undefined
     if (!current) return
     // Assign a freshly-built array inside the trusted write; pushing into the
     // array read from the projection mutates the read-only projection.
@@ -264,14 +263,14 @@ export function addLorebookFolder(type: number) {
       },
     ]
     withTrustedServerProjectionWrite(() => {
-      const lorebook = DBState.db.loreBook[lorePage] as { id?: string; data: loreBook[] }
+      const lorebook = getDatabase().loreBook[lorePage] as { id?: string; data: loreBook[] }
       lorebook.data = nextData
     })
     if (current.id && previous) dispatchReplaceGlobalLorebookEntries(current.id, nextData, previous)
   } else {
-    const page = DBState.db.characters[selectedID].chatPage
+    const page = getDatabase().characters[selectedID].chatPage
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[selectedID].chats[page].localLore.push({
+      getDatabase().characters[selectedID].chats[page].localLore.push({
         id: v4(),
         key: '\uf000folder:' + id,
         comment: `New Folder`,
@@ -283,22 +282,22 @@ export function addLorebookFolder(type: number) {
         selective: false,
       })
     })
-    const chat = DBState.db.characters[selectedID].chats[page]
+    const chat = getDatabase().characters[selectedID].chats[page]
     if (chat.id && previous) dispatchReplaceChatLorebooks(chat.id, chat.localLore, previous)
   }
 }
 
 export async function loadLoreBookV3Prompt() {
   const selectedID = get(selectedCharID)
-  const char = DBState.db.characters[selectedID]
+  const char = getDatabase().characters[selectedID]
   const page = char.chatPage
   const characterLore = char.globalLore ?? []
   const chatLore = char.chats[page].localLore ?? []
   const moduleLorebook = getModuleLorebooks()
   const fullLore = safeStructuredClone(characterLore.concat(chatLore).concat(moduleLorebook))
   const currentChat = char.chats[page].message
-  const loreDepth = char.loreSettings?.scanDepth ?? DBState.db.loreBookDepth
-  const loreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken
+  const loreDepth = char.loreSettings?.scanDepth ?? getDatabase().loreBookDepth
+  const loreToken = char.loreSettings?.tokenBudget ?? getDatabase().loreBookToken
   const fullWordMatchingSetting = char.loreSettings?.fullWordMatching ?? false
   const chatLength = currentChat.length + 1 //includes first message
   const recursiveScanning = char.loreSettings?.recursiveScanning ?? true
@@ -342,7 +341,7 @@ export async function loadLoreBookV3Prompt() {
         if (msg.role === 'user') {
           return {
             source: `message ${i} by user`,
-            prompt: `\x01{{${DBState.db.username}}}:` + msg.data + '\x01',
+            prompt: `\x01{{${getDatabase().username}}}:` + msg.data + '\x01',
             data: msg.data,
           }
         } else {
@@ -971,13 +970,13 @@ export function convertExternalLorebook(entries: { [key: string]: CCLorebook }) 
 export async function exportLoreBook(mode: 'global' | 'local' | 'sglobal') {
   try {
     const selectedID = get(selectedCharID)
-    const page = mode === 'sglobal' ? -1 : DBState.db.characters[selectedID].chatPage
+    const page = mode === 'sglobal' ? -1 : getDatabase().characters[selectedID].chatPage
     const lore =
       mode === 'sglobal'
-        ? DBState.db.loreBook[DBState.db.loreBookPage].data
+        ? getDatabase().loreBook[getDatabase().loreBookPage].data
         : mode === 'global'
-          ? DBState.db.characters[selectedID].globalLore
-          : DBState.db.characters[selectedID].chats[page].localLore
+          ? getDatabase().characters[selectedID].globalLore
+          : getDatabase().characters[selectedID].chats[page].localLore
     const stringl = Buffer.from(
       JSON.stringify({
         type: 'risu',

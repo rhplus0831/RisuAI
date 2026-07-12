@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Regression coverage: the global lorebook add / folder / import helpers
 // captured a `lorebook`/`lore` alias from the read-only projection before the
-// trusted write swapped DBState.db to a mutable clone, then pushed into that
+// trusted write swapped the resource-backed database to a mutable clone, then pushed into that
 // stale alias and threw. The writes must run against the freshly-cloned mutable
 // projection and still dispatch the matching global-lorebook command.
 
@@ -48,7 +48,8 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../../stores.svelte'
+import { getDatabase, setDatabaseLite } from '../../storage/database.svelte'
+import { selectedCharID } from '../../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -140,7 +141,7 @@ function entryComments(entries: Array<{ comment?: string }>): string[] {
 
 function seedDatabase(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  setDatabaseLite({
     loreBook: [
       { id: 'lore-1', name: 'Global', data: [] },
       { id: 'lore-2', name: 'Other Global', data: [] },
@@ -169,7 +170,7 @@ function seedDatabase(): void {
     ],
     modules: [],
     characterOrder: [],
-  } as any
+  } as any)
 }
 
 const isGlobalEntries = (call: CapturedFetch) =>
@@ -194,8 +195,8 @@ describe('global lorebook durable writes under the projection guard', () => {
   it('baseline: a raw global lorebook write throws while the guard is active', () => {
     setServerProjectionWriteGuardEnabled(true)
     expect(() => {
-      ;(DBState.db.loreBook[0] as { data: unknown[] }).data.push({ id: 'raw' })
-    }).toThrow(/read-only server projection/)
+      ;(getDatabase().loreBook[0] as { data: unknown[] }).data.push({ id: 'raw' })
+    }).toThrow(/resource database compatibility view is read-only/)
   })
 
   it('addLorebook(-1) appends a global entry and dispatches the entries command', async () => {
@@ -203,7 +204,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => addLorebook(-1)).not.toThrow()
-    expect((DBState.db.loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
+    expect((getDatabase().loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
 
     const cmd = await waitForCommand(calls, isGlobalEntries)
     expect(cmd.body.entry).toMatchObject({ comment: 'New Lore 1' })
@@ -214,7 +215,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => addLorebookFolder(-1)).not.toThrow()
-    const entries = (DBState.db.loreBook[0] as { data: { mode?: string }[] }).data
+    const entries = (getDatabase().loreBook[0] as { data: { mode?: string }[] }).data
     expect(entries).toHaveLength(1)
     expect(entries[0].mode).toBe('folder')
 
@@ -229,7 +230,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     await expect(importLoreBook('sglobal')).resolves.not.toThrow()
-    expect((DBState.db.loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
+    expect((getDatabase().loreBook[0] as { data: unknown[] }).data).toHaveLength(1)
 
     const cmd = await waitForCommand(calls, isGlobalEntries)
     expect(cmd.body.entry).toMatchObject({ comment: 'Imported' })
@@ -245,15 +246,15 @@ describe('global lorebook durable writes under the projection guard', () => {
     await waitForPicker()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.loreBookPage = 1
+      getDatabase().loreBookPage = 1
     })
     picker.resolve()
     await importPromise
 
-    expect(entryComments((DBState.db.loreBook[0] as { data: Array<{ comment?: string }> }).data)).toEqual([
+    expect(entryComments((getDatabase().loreBook[0] as { data: Array<{ comment?: string }> }).data)).toEqual([
       'Original Global Import',
     ])
-    expect((DBState.db.loreBook[1] as { data: unknown[] }).data).toHaveLength(0)
+    expect((getDatabase().loreBook[1] as { data: unknown[] }).data).toHaveLength(0)
 
     await waitForCommand(
       calls,
@@ -273,16 +274,17 @@ describe('global lorebook durable writes under the projection guard', () => {
 
     selectedCharID.set(1)
     withTrustedServerProjectionWrite(() => {
-      const [charA, charB] = DBState.db.characters
-      DBState.db.characters = [charB, charA] as typeof DBState.db.characters
+      const database = getDatabase()
+      const [charA, charB] = database.characters
+      database.characters = [charB, charA] as typeof database.characters
     })
     selectedCharID.set(0)
 
     picker.resolve()
     await importPromise
 
-    const charA = DBState.db.characters.find((character) => character.chaId === 'char-a')
-    const charB = DBState.db.characters.find((character) => character.chaId === 'char-b')
+    const charA = getDatabase().characters.find((character) => character.chaId === 'char-a')
+    const charB = getDatabase().characters.find((character) => character.chaId === 'char-b')
     expect(entryComments(charA?.globalLore ?? [])).toEqual(['Original Character Import'])
     expect(charB?.globalLore ?? []).toHaveLength(0)
 
@@ -304,12 +306,12 @@ describe('global lorebook durable writes under the projection guard', () => {
     await waitForPicker()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatPage = 1
+      getDatabase().characters[0].chatPage = 1
     })
     picker.resolve()
     await importPromise
 
-    const charA = DBState.db.characters.find((character) => character.chaId === 'char-a')
+    const charA = getDatabase().characters.find((character) => character.chaId === 'char-a')
     expect(entryComments(charA?.chats.find((chat) => chat.id === 'chat-1')?.localLore ?? [])).toEqual([
       'Original Chat Import',
     ])
@@ -333,7 +335,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     await waitForPicker()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].globalLore.push({
+      getDatabase().characters[0].globalLore.push({
         id: 'during-picker-entry',
         key: 'during',
         comment: 'During Picker Edit',
@@ -349,7 +351,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     picker.resolve()
     await importPromise
 
-    expect(entryComments(DBState.db.characters[0].globalLore)).toEqual(['During Picker Edit', 'Failed Import'])
+    expect(entryComments(getDatabase().characters[0].globalLore)).toEqual(['During Picker Edit', 'Failed Import'])
     await waitForCommand(
       calls,
       (call) =>
@@ -357,7 +359,7 @@ describe('global lorebook durable writes under the projection guard', () => {
     )
 
     await vi.waitFor(() => {
-      expect(entryComments(DBState.db.characters[0].globalLore)).toEqual(['During Picker Edit'])
+      expect(entryComments(getDatabase().characters[0].globalLore)).toEqual(['During Picker Edit'])
     })
   })
 })
