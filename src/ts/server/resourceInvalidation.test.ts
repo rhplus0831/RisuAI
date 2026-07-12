@@ -524,6 +524,31 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase().pluginCustomStorage).toEqual({ authoritative: true, pending: true })
   })
 
+  it('reads only the owning collection for prompt item events', async () => {
+    seedResources(1)
+    api.collection.mockImplementation(async (name: string) => ({
+      status: 'ok',
+      revision: 3,
+      collections: { [name]: [] },
+    }))
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [
+          event(2, 'promptItem', { id: 'item-a', parentId: 'prompt-preset-a' }),
+          event(3, 'promptItem', { id: 'legacy-item-a' }),
+        ],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+    expect(api.collection).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledWith('promptPresets', undefined)
+    expect(api.collection).toHaveBeenCalledWith('promptTemplate', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['a revision gap', event(4, 'settings'), 1],
     ['a state event', event(2, 'state'), 1],

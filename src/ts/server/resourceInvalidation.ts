@@ -371,8 +371,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('promptPresets')
       return
     case 'promptItem':
-      plan.collections.add('promptPresets')
-      plan.collections.add('promptTemplate')
+      plan.collections.add(nonEmptyString(event.parentId) ? 'promptPresets' : 'promptTemplate')
       return
     case 'persona':
       plan.settings = true
