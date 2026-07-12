@@ -267,7 +267,7 @@ function normalizedBotPresetsId(presetCount: number, selected: unknown): number 
 }
 
 function presetIdAt(index: number): string | null {
-  const presets = DBState.db.botPresets
+  const presets = getDatabase().botPresets
   if (!Number.isInteger(index) || index < 0 || !Array.isArray(presets) || index >= presets.length) {
     return null
   }
@@ -309,7 +309,7 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
   const presetId = presetIdAt(index)
   if (!presetId) return false
 
-  const preset = DBState.db.botPresets[index]
+  const preset = getDatabase().botPresets[index]
   if (!presetNeedsHydration(preset)) return true
   if (!canUseServerResourceReads()) return false
 
@@ -332,10 +332,10 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
       return false
     }
     return withTrustedServerProjectionWrite(() => {
-      const currentIndex = DBState.db.botPresets.findIndex((candidate) => candidate?.id === presetId)
+      const currentIndex = getDatabase().botPresets.findIndex((candidate) => candidate?.id === presetId)
       if (currentIndex < 0) return false
-      if (snapshotJson(DBState.db.botPresets[currentIndex]) !== targetSnapshot) return false
-      DBState.db.botPresets[currentIndex] = result.preset as unknown as botPreset
+      if (snapshotJson(getDatabase().botPresets[currentIndex]) !== targetSnapshot) return false
+      getDatabase().botPresets[currentIndex] = result.preset as unknown as botPreset
       return true
     })
   })().finally(() => {
@@ -358,7 +358,7 @@ function snapshotJson(value: unknown): string {
 }
 
 function getHydratedPresetIfReady(index: number): botPreset | undefined {
-  const preset = DBState.db.botPresets[index]
+  const preset = getDatabase().botPresets[index]
   if (!presetNeedsHydration(preset)) return preset
   void ensureBotPresetHydrated(index)
   return undefined
@@ -506,7 +506,7 @@ function botPresetIds(list: botPreset[]): string[] {
 }
 
 function currentBotPresetSelectedId(): string | null {
-  return botPresetSelectedId(DBState.db)
+  return botPresetSelectedId(getDatabase())
 }
 
 function botPresetSelectedId(db: Database): string | null {
@@ -516,9 +516,9 @@ function botPresetSelectedId(db: Database): string | null {
 }
 
 function restoreBotPresetSelectionToId(presetId: string | null): void {
-  const list = DBState.db.botPresets
+  const list = getDatabase().botPresets
   const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
-  DBState.db.botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
+  getDatabase().botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
 }
 
 function botPresetFieldRollbackFromPatch(
@@ -555,7 +555,7 @@ function saveCurrentPresetLocalWithRollback(): {
   savedPreset: botPreset | null
   rollback: BotPresetFieldRollback | null
 } {
-  const db = DBState.db
+  const db = getDatabase()
   normalizeBotPresetIds(db)
   const previousPreset = db.botPresets[db.botPresetsId] ? safeStructuredClone(db.botPresets[db.botPresetsId]) : null
   const savedPreset = saveCurrentPresetLocal()
@@ -575,7 +575,7 @@ function saveCurrentPresetLocalWithRollback(): {
 
 function rollbackBotPresetListEntry(entry: BotPresetListRollbackEntry): void {
   withTrustedServerProjectionWrite(() => {
-    const list = DBState.db.botPresets
+    const list = getDatabase().botPresets
     const selectedId = currentBotPresetSelectedId()
     const rolledBack = applyAttemptedKeyedListRollback<botPreset, string>({
       list,
@@ -584,7 +584,7 @@ function rollbackBotPresetListEntry(entry: BotPresetListRollbackEntry): void {
     })
     if (rolledBack.length === 0) return
 
-    DBState.db.botPresets = list
+    getDatabase().botPresets = list
     restoreBotPresetSelectionToId(selectedId)
   })
 }
@@ -613,24 +613,24 @@ function rollbackBotPresetDelete(previousPreset: botPreset, previousIndex: numbe
 function rollbackBotPresetFields(rollback: BotPresetFieldRollback | null): void {
   if (!rollback) return
   withTrustedServerProjectionWrite(() => {
-    const index = DBState.db.botPresets.findIndex((preset) => preset?.id === rollback.presetId)
+    const index = getDatabase().botPresets.findIndex((preset) => preset?.id === rollback.presetId)
     if (index < 0) return
 
     const rolledBack = applyAttemptedFieldRollback({
-      target: DBState.db.botPresets[index] as unknown as Record<string, unknown>,
+      target: getDatabase().botPresets[index] as unknown as Record<string, unknown>,
       previous: rollback.previous,
       attempted: rollback.attempted,
       deleteMissingPrevious: true,
     })
     if (rolledBack.length > 0) {
-      DBState.db.botPresets = DBState.db.botPresets
+      getDatabase().botPresets = getDatabase().botPresets
     }
   })
 }
 
 function rollbackBotPresetReorder(previousPresetIds: string[], attemptedPresetIds: string[]): void {
   withTrustedServerProjectionWrite(() => {
-    const list = DBState.db.botPresets
+    const list = getDatabase().botPresets
     if (!stringArraysEqual(botPresetIds(list), attemptedPresetIds)) return
 
     const selectedId = currentBotPresetSelectedId()
@@ -644,7 +644,7 @@ function rollbackBotPresetReorder(previousPresetIds: string[], attemptedPresetId
     const restored = previousPresetIds.map((id) => liveRowsById.get(id))
     if (restored.some((preset) => !preset)) return
 
-    DBState.db.botPresets = restored as botPreset[]
+    getDatabase().botPresets = restored as botPreset[]
     restoreBotPresetSelectionToId(selectedId)
   })
 }
@@ -656,7 +656,7 @@ function rollbackBotPresetSelection(rollback: BotPresetSelectionRollback): void 
 
     if (rollback.previousSettings && rollback.attemptedSettings) {
       applyAttemptedFieldRollback({
-        target: DBState.db as unknown as Record<string, unknown>,
+        target: getDatabase() as unknown as Record<string, unknown>,
         previous: rollback.previousSettings as Record<string, unknown>,
         attempted: rollback.attemptedSettings as Record<string, unknown>,
         keys: SET_PRESET_ROLLBACK_KEYS,
@@ -667,14 +667,14 @@ function rollbackBotPresetSelection(rollback: BotPresetSelectionRollback): void 
 }
 
 function splitPresetList(kind: SplitPresetKind): SplitPresetRow[] {
-  return (kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets) as SplitPresetRow[]
+  return (kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets) as SplitPresetRow[]
 }
 
 function assignSplitPresetList(kind: SplitPresetKind, list: SplitPresetRow[]): void {
   if (kind === 'model') {
-    DBState.db.modelPresets = list as ModelPreset[]
+    getDatabase().modelPresets = list as ModelPreset[]
   } else {
-    DBState.db.promptPresets = list as PromptPreset[]
+    getDatabase().promptPresets = list as PromptPreset[]
   }
 }
 
@@ -683,7 +683,7 @@ function splitPresetIds(list: SplitPresetRow[]): string[] {
 }
 
 function currentSplitPresetSelectedId(kind: SplitPresetKind): string | null {
-  return splitPresetSelectedId(DBState.db, kind)
+  return splitPresetSelectedId(getDatabase(), kind)
 }
 
 function splitPresetSelectedId(db: Database, kind: SplitPresetKind): string | null {
@@ -695,9 +695,9 @@ function splitPresetSelectedId(db: Database, kind: SplitPresetKind): string | nu
 
 function setSplitPresetSelectedIndex(kind: SplitPresetKind, index: number): void {
   if (kind === 'model') {
-    DBState.db.modelPresetsId = index
+    getDatabase().modelPresetsId = index
   } else {
-    DBState.db.promptPresetsId = index
+    getDatabase().promptPresetsId = index
   }
 }
 
@@ -775,7 +775,7 @@ function rollbackSplitPresetSelection(rollback: SplitPresetSelectionRollback): v
     if (currentSplitPresetSelectedId(rollback.kind) !== rollback.attemptedSelectedId) return
 
     applyAttemptedFieldRollback({
-      target: DBState.db as unknown as Record<string, unknown>,
+      target: getDatabase() as unknown as Record<string, unknown>,
       previous: rollback.previousSettings as Record<string, unknown>,
       attempted: rollback.attemptedSettings as Record<string, unknown>,
       keys: SET_PRESET_ROLLBACK_KEYS,
@@ -1541,7 +1541,7 @@ export function applyServerProjectionDatabase(data: Database, revision?: number)
  */
 export function mergeServerProjectionFields(fields: Partial<Database>) {
   return withServerProjectionApply(() => {
-    const db = DBState.db as unknown as Record<string, unknown>
+    const db = getDatabase() as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(fields)) {
       if ((key === 'promptTemplate' || key === 'agentPresetDefaultId') && value === null) {
         delete db[key]
@@ -1574,7 +1574,7 @@ export function captureServerPresetProjectionBaseline(
     presetIds.filter((presetId): presetId is string => typeof presetId === 'string' && presetId.length > 0),
   )
   const baseline = new Map<string, Record<string, unknown>>()
-  for (const preset of DBState.db.botPresets ?? []) {
+  for (const preset of getDatabase().botPresets ?? []) {
     if (!preset?.id || !requestedIds.has(preset.id)) continue
     baseline.set(preset.id, safeStructuredClone(preset as unknown as Record<string, unknown>))
   }
@@ -1588,12 +1588,12 @@ export function mergeServerProjectionPresetRow(
   baseline: ServerPresetProjectionBaseline = new Map(),
 ): boolean {
   if (preset.id !== presetId) return false
-  const index = DBState.db.botPresets.findIndex((candidate) => candidate?.id === presetId)
+  const index = getDatabase().botPresets.findIndex((candidate) => candidate?.id === presetId)
   if (index < 0) return false
-  const current = DBState.db.botPresets[index] as unknown as Record<string, unknown>
+  const current = getDatabase().botPresets[index] as unknown as Record<string, unknown>
   const next = overlayConcurrentPresetFields(preset, current, baseline.get(presetId))
   withServerProjectionApply(() => {
-    DBState.db.botPresets[index] = next as unknown as botPreset
+    getDatabase().botPresets[index] = next as unknown as botPreset
   })
   return true
 }
@@ -1612,7 +1612,7 @@ export function mergeServerProjectionPresetCollection(
   if (!Array.isArray(fields.botPresets)) return false
   const stubsById = uniquePresetRowsById(fields.botPresets)
   const changedById = uniquePresetRowsById(presetRows)
-  const currentById = uniquePresetRowsById(DBState.db.botPresets)
+  const currentById = uniquePresetRowsById(getDatabase().botPresets)
   if (!stubsById || !changedById || !currentById) return false
   for (const presetId of changedById.keys()) {
     if (!stubsById.has(presetId)) return false
@@ -1694,7 +1694,7 @@ export function isServerCharacterShell(character: unknown): boolean {
  */
 function mergeServerProjectionCharacterRowMutable(character: { chaId?: string } & Record<string, unknown>): boolean {
   delete character[SERVER_CHARACTER_SHELL_MARKER]
-  const characters = DBState.db.characters
+  const characters = getDatabase().characters
   if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
   const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
   if (index < 0) return false
@@ -1761,7 +1761,7 @@ export function mergeServerProjectionCharacterRowComposite(
   applyDependentProjection: () => boolean,
 ): boolean {
   return withServerProjectionApply(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
     const index = characters.findIndex((candidate) => candidate?.chaId === character.chaId)
     if (index < 0) return false
@@ -1785,12 +1785,12 @@ export function applyServerCharacterSelectionProjection(input: {
   lastInteraction?: number
 }): boolean {
   return withServerProjectionApply(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     const liveIndex = Array.isArray(characters)
       ? characters.findIndex((candidate) => candidate?.chaId === input.characterId)
       : -1
     if (liveIndex < 0) return false
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = liveIndex
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = liveIndex
     const character = characters[liveIndex]
     if (character && input.lastInteraction !== undefined) {
       character.lastInteraction = input.lastInteraction
@@ -1835,7 +1835,7 @@ export function hydrateServerChatMessages(
   range?: ServerChatMessagesHydrationRange,
 ): boolean {
   return withTrustedServerProjectionWrite(() => {
-    for (const character of DBState.db.characters ?? []) {
+    for (const character of getDatabase().characters ?? []) {
       const chat = character.chats?.find((candidate) => candidate.id === chatId)
       if (chat) {
         if (range) {
@@ -1897,7 +1897,7 @@ export function applyServerCharacterLorebookProjection(characterId: string, glob
 }
 
 function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
-  for (const character of DBState.db.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     if (character.chaId === characterId) {
       character.globalLore = globalLore as typeof character.globalLore
       return true
@@ -1935,12 +1935,12 @@ export function setCurrentCharacter(char: character, options: { dispatchServerCo
     const index = get(selectedCharID)
     const previousState = shouldDispatch && canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
     const previousCharacter =
-      previousState && DBState.db.characters ? $state.snapshot(DBState.db.characters[index]) : undefined
+      previousState && getDatabase().characters ? $state.snapshot(getDatabase().characters[index]) : undefined
 
-    if (!DBState.db.characters) {
-      DBState.db.characters = []
+    if (!getDatabase().characters) {
+      getDatabase().characters = []
     }
-    DBState.db.characters[index] = char
+    getDatabase().characters[index] = char
     if (previousState) {
       dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
     }
@@ -1960,12 +1960,12 @@ export function setCharacterByIndex(index: number, char: character) {
   withTrustedServerProjectionWrite(() => {
     const previousState = canUseServerCommands() ? currentCharacterRowSnapshot(index) : null
     const previousCharacter =
-      previousState && DBState.db.characters ? $state.snapshot(DBState.db.characters[index]) : undefined
+      previousState && getDatabase().characters ? $state.snapshot(getDatabase().characters[index]) : undefined
 
-    if (!DBState.db.characters) {
-      DBState.db.characters = []
+    if (!getDatabase().characters) {
+      getDatabase().characters = []
     }
-    DBState.db.characters[index] = char
+    getDatabase().characters[index] = char
     if (previousState) {
       dispatchCompatibleCharacterUpdateScoped(previousCharacter, char, previousState)
     }
@@ -3221,7 +3221,7 @@ export const defaultSdDataFunc = () => {
 }
 
 function saveCurrentPresetLocal() {
-  let db = DBState.db
+  let db = getDatabase()
   normalizeBotPresetIds(db)
   let pres = db.botPresets
 
@@ -3347,7 +3347,7 @@ export function saveCurrentPreset() {
 
 export function copyPreset(id: number) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     const { rollback: saveCurrentRollback } = saveCurrentPresetLocalWithRollback()
     normalizeBotPresetIds(db)
     let pres = db.botPresets
@@ -3385,7 +3385,7 @@ export function copyPreset(id: number) {
 
 export function changeToPreset(id = 0, savecurrent = true) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeBotPresetIds(db)
     const previousSelectedId = botPresetSelectedId(db)
     const previousSettings = snapshotSetPresetSettings(db)
@@ -3403,9 +3403,9 @@ export function changeToPreset(id = 0, savecurrent = true) {
         void ensureBotPresetHydrated(id).then((hydrated) => {
           if (!hydrated) return
           withTrustedServerProjectionWrite(() => {
-            const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === targetPresetId)
-            if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
-            setPreset(DBState.db, DBState.db.botPresets[nextIndex])
+            const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === targetPresetId)
+            if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
+            setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
           })
         })
       }
@@ -3437,7 +3437,7 @@ export function changeToPreset(id = 0, savecurrent = true) {
 
 export function createPreset(preset: botPreset) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeBotPresetIds(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
@@ -3459,7 +3459,7 @@ export function createPreset(preset: botPreset) {
 
 export function updatePreset(id: number, patch: Partial<botPreset>) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeBotPresetIds(db)
     const presetId = db.botPresets[id]?.id
     if (!presetId) return []
@@ -3486,7 +3486,7 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
 
 export function deletePreset(id: number, selectIndex = 0, apply = true) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeBotPresetIds(db)
     if (db.botPresets.length <= 1) return []
     const presetId = db.botPresets[id]?.id
@@ -3513,9 +3513,9 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
           void ensureBotPresetHydrated(selectedIndex).then((hydrated) => {
             if (!hydrated) return
             withTrustedServerProjectionWrite(() => {
-              const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === selectPresetId)
-              if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
-              setPreset(DBState.db, DBState.db.botPresets[nextIndex])
+              const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === selectPresetId)
+              if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
+              setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
             })
           })
         }
@@ -3554,7 +3554,7 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
 
 export function reorderPresets(fromIndex: number, toIndex: number) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeBotPresetIds(db)
     if (fromIndex === toIndex) return []
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.botPresets.length || toIndex > db.botPresets.length) {
@@ -3595,7 +3595,7 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
 
 export function createModelPreset(preset: ModelPreset) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
@@ -3617,7 +3617,7 @@ export function createModelPreset(preset: ModelPreset) {
 
 export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     const modelPresetId = db.modelPresets[id]?.id
     if (!modelPresetId) return
     const previous = splitPresetPatchSnapshot(
@@ -3645,7 +3645,7 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
 
 export function deleteModelPreset(id: number, selectIndex = 0) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     if (db.modelPresets.length <= 1) return
     const modelPresetId = db.modelPresets[id]?.id
@@ -3691,7 +3691,7 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
 
 export function selectModelPreset(id: number) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     const previousSelectedId = splitPresetSelectedId(db, 'model')
     const previousSettings = snapshotSetPresetSettings(db)
@@ -3721,7 +3721,7 @@ export function selectModelPreset(id: number) {
 
 export function reorderModelPresets(fromIndex: number, toIndex: number) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     if (fromIndex === toIndex) return
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.modelPresets.length || toIndex > db.modelPresets.length) {
@@ -3751,7 +3751,7 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
 
 export function createPromptPreset(preset: PromptPreset) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
@@ -3773,7 +3773,7 @@ export function createPromptPreset(preset: PromptPreset) {
 
 export function addImportedPromptPreset(preset: PromptPreset) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     const newPreset = safeStructuredClone(promptPresetExportPayload(preset)) as PromptPreset
     newPreset.id ??= createClientPresetId()
@@ -3795,7 +3795,7 @@ export function addImportedPromptPreset(preset: PromptPreset) {
 
 export function addImportedLegacyPreset(preset: botPreset) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     const importedName = typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : 'Imported'
     const modelPreset = createExtractedModelPreset(preset, {
@@ -3849,7 +3849,7 @@ export function addImportedLegacyPreset(preset: botPreset) {
 
 export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     const promptPresetId = db.promptPresets[id]?.id
     if (!promptPresetId) return
     const attempted = normalizePromptPresetPatchAliases(safeStructuredClone(patch))
@@ -3917,7 +3917,7 @@ function rollbackSplitPresetPatch(
   attempted: Record<string, unknown>,
 ): void {
   withTrustedServerProjectionWrite(() => {
-    const presets = kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets
+    const presets = kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets
     const index = presets.findIndex((preset) => preset?.id === presetId)
     if (index < 0) return
 
@@ -3936,11 +3936,11 @@ function rollbackSplitPresetPatch(
     if (!changed) return
 
     if (kind === 'model') {
-      if (DBState.db.modelPresetsId === index) {
-        applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[index])
+      if (getDatabase().modelPresetsId === index) {
+        applyModelPresetFieldsToDatabase(getDatabase(), getDatabase().modelPresets[index])
       }
-    } else if (DBState.db.promptPresetsId === index) {
-      applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[index])
+    } else if (getDatabase().promptPresetsId === index) {
+      applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[index])
     }
   })
 }
@@ -3952,7 +3952,7 @@ function jsonSnapshot(value: unknown): string {
 
 export function deletePromptPreset(id: number, selectIndex = 0) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     if (db.promptPresets.length <= 1) return
     const promptPresetId = db.promptPresets[id]?.id
@@ -3998,7 +3998,7 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
 
 export function selectPromptPreset(id: number) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     const previousSelectedId = splitPresetSelectedId(db, 'prompt')
     const previousSettings = snapshotSetPresetSettings(db)
@@ -4019,7 +4019,7 @@ export function selectPromptPreset(id: number) {
 
 export function reorderPromptPresets(fromIndex: number, toIndex: number) {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeSplitPresetIds(db)
     if (fromIndex === toIndex) return
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.promptPresets.length || toIndex > db.promptPresets.length) {
@@ -4049,7 +4049,7 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
 
 export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' | 'prompt') {
   withTrustedServerProjectionWrite(() => {
-    const db = DBState.db
+    const db = getDatabase()
     normalizeBotPresetIds(db)
     normalizeSplitPresetIds(db)
     const preset = db.botPresets[id]
@@ -4315,7 +4315,7 @@ import * as fflate from 'fflate'
 import type { OnnxModelFiles } from '../process/transformers'
 import type { RisuModule } from '../process/modules'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/modellist'
 import type { HypaModel } from '../process/memory/hypamemory'
 import type { SerializableHypaV3Data } from '../process/memory/hypav3'
@@ -4395,7 +4395,7 @@ export async function importPreset(
     importedSource = JSON.parse(Buffer.from(f.data).toString('utf-8'))
     pre = { ...presetTemplate, ...(importedSource as Record<string, unknown>) }
   }
-  let db = DBState.db
+  let db = getDatabase()
   if (pre.presetVersion && pre.presetVersion >= 3) {
     //NAI preset
     const pr = safeStructuredClone(prebuiltPresets.NAI)
