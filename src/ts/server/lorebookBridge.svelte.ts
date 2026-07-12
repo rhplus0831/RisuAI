@@ -2,8 +2,15 @@ import { untrack } from 'svelte'
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
-import { getCurrentChat, type character, type Chat, type loreBook } from '../storage/database.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import {
+  getCurrentChat,
+  getDatabase,
+  type character,
+  type Chat,
+  type Database,
+  type loreBook,
+} from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
   createGlobalLorebookCommand,
@@ -175,10 +182,10 @@ export interface WatchServerBackedLorebooksOptions {
 
 export function currentLorebookStateSnapshot(): LorebookStateSnapshot {
   return {
-    loreBook: cloneJsonValue((DBState.db.loreBook ?? []) as GlobalLorebook[]),
-    loreBookPage: DBState.db.loreBookPage ?? 0,
-    characters: cloneJsonValue(DBState.db.characters ?? []),
-    modules: cloneJsonValue((DBState.db.modules ?? []) as RisuModule[]),
+    loreBook: cloneJsonValue((getDatabase().loreBook ?? []) as GlobalLorebook[]),
+    loreBookPage: getDatabase().loreBookPage ?? 0,
+    characters: cloneJsonValue(getDatabase().characters ?? []),
+    modules: cloneJsonValue((getDatabase().modules ?? []) as RisuModule[]),
     selectedCharID: get(selectedCharID),
   }
 }
@@ -190,10 +197,10 @@ export function restoreLorebookState(snapshot: LorebookStateSnapshot): void {
   }
 
   withTrustedServerProjectionWrite(() => {
-    DBState.db.loreBook = cloneJsonValue(snapshot.loreBook) as typeof DBState.db.loreBook
-    DBState.db.loreBookPage = snapshot.loreBookPage
-    DBState.db.characters = cloneJsonValue(snapshot.characters)
-    DBState.db.modules = cloneJsonValue(snapshot.modules) as typeof DBState.db.modules
+    getDatabase().loreBook = cloneJsonValue(snapshot.loreBook) as Database['loreBook']
+    getDatabase().loreBookPage = snapshot.loreBookPage
+    getDatabase().characters = cloneJsonValue(snapshot.characters)
+    getDatabase().modules = cloneJsonValue(snapshot.modules) as Database['modules']
     selectedCharID.set(snapshot.selectedCharID)
   })
 }
@@ -236,16 +243,16 @@ type GlobalLorebookSelectionRollback = {
 
 export function currentGlobalLorebookStateSnapshot(): GlobalLorebookStateSnapshot {
   return {
-    loreBook: cloneJsonValue((DBState.db.loreBook ?? []) as GlobalLorebook[]),
-    loreBookPage: DBState.db.loreBookPage ?? 0,
+    loreBook: cloneJsonValue((getDatabase().loreBook ?? []) as GlobalLorebook[]),
+    loreBookPage: getDatabase().loreBookPage ?? 0,
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreGlobalLorebookState(snapshot: GlobalLorebookStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.loreBook = cloneJsonValue(snapshot.loreBook) as typeof DBState.db.loreBook
-    DBState.db.loreBookPage = snapshot.loreBookPage
+    getDatabase().loreBook = cloneJsonValue(snapshot.loreBook) as Database['loreBook']
+    getDatabase().loreBookPage = snapshot.loreBookPage
   })
 }
 
@@ -271,7 +278,7 @@ export function ensureAllClientLorebookIds(): void {
 
   withTrustedServerProjectionWrite(() => {
     assignGlobalLorebookListIds()
-    for (const character of DBState.db.characters ?? []) {
+    for (const character of getDatabase().characters ?? []) {
       // Only touch a HYDRATED character's globalLore — assigning ids to a stubbed
       // one would default its absent globalLore to `[]` and mask the stub.
       if (character.chaId && hydratedCharacterLorebooks.has(character.chaId)) {
@@ -290,7 +297,7 @@ export function ensureAllClientLorebookIds(): void {
         }
       }
     }
-    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+    for (const module of (getDatabase().modules ?? []) as RisuModule[]) {
       if (Array.isArray(module.lorebook)) {
         ensureClientLorebookEntryIds(module.lorebook)
       }
@@ -301,7 +308,7 @@ export function ensureAllClientLorebookIds(): void {
 function allClientLorebookIdsNeedNormalization(): boolean {
   if (globalLorebookListIdsNeedNormalization()) return true
 
-  for (const character of DBState.db.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     if (
       character.chaId &&
       hydratedCharacterLorebooks.has(character.chaId) &&
@@ -316,7 +323,7 @@ function allClientLorebookIdsNeedNormalization(): boolean {
     }
   }
 
-  for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+  for (const module of (getDatabase().modules ?? []) as RisuModule[]) {
     if (Array.isArray(module.lorebook) && lorebookEntryIdsNeedNormalization(module.lorebook)) {
       return true
     }
@@ -326,9 +333,9 @@ function allClientLorebookIdsNeedNormalization(): boolean {
 }
 
 // Shared by the whole-DB ensure above and the global-list-only ensure below.
-// Must run inside a trusted write scope (it re-reads `DBState.db` itself).
+// Must run inside a trusted write scope (it re-reads the resource-backed database itself).
 function assignGlobalLorebookListIds(): void {
-  for (const lorebook of (DBState.db.loreBook ?? []) as GlobalLorebook[]) {
+  for (const lorebook of (getDatabase().loreBook ?? []) as GlobalLorebook[]) {
     if (typeof lorebook.id !== 'string' || !lorebook.id.trim()) {
       lorebook.id = v4()
     }
@@ -350,7 +357,7 @@ export function ensureGlobalLorebookListIds(): void {
 }
 
 export function globalLorebookListIdsNeedNormalization(): boolean {
-  return ((DBState.db.loreBook ?? []) as GlobalLorebook[]).some(
+  return ((getDatabase().loreBook ?? []) as GlobalLorebook[]).some(
     (lorebook) =>
       typeof lorebook.id !== 'string' ||
       !lorebook.id.trim() ||
@@ -379,7 +386,7 @@ export function currentLorebookCollectionScopedSnapshot(scope: DiscreteLorebookE
   ensureScopedClientLorebookIds(scope)
   switch (scope.kind) {
     case 'character': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
       return scopedLorebookStateSnapshot(`character:${scope.characterId}`, snapshotJson(character?.globalLore ?? []))
     }
     case 'chat': {
@@ -387,7 +394,7 @@ export function currentLorebookCollectionScopedSnapshot(scope: DiscreteLorebookE
       return scopedLorebookStateSnapshot(`chat:${scope.chatId}`, snapshotJson(chat?.localLore ?? []))
     }
     case 'global': {
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === scope.lorebookId,
       )
       return scopedLorebookStateSnapshot(`global:${scope.lorebookId}`, snapshotJson(lorebook?.data ?? []))
@@ -470,7 +477,7 @@ export function applyLorebookEntryDraftEdit(
 ): boolean {
   if (
     scope.kind === 'character' &&
-    DBState.db?.enableLorebookStubs &&
+    getDatabase()?.enableLorebookStubs &&
     !hydratedCharacterLorebooks.has(scope.characterId)
   ) {
     return false
@@ -643,7 +650,7 @@ function replaceLorebookCollection(
 function assignLorebookCollection(scope: ReplaceableLorebookCollectionScope, entries: loreBook[]): boolean {
   switch (scope.kind) {
     case 'character': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
       if (!character) return false
       character.globalLore = entries
       return true
@@ -655,7 +662,7 @@ function assignLorebookCollection(scope: ReplaceableLorebookCollectionScope, ent
       return true
     }
     case 'global': {
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === scope.lorebookId,
       )
       if (!lorebook) return false
@@ -674,7 +681,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
   withTrustedServerProjectionWrite(() => {
     switch (scope.kind) {
       case 'character': {
-        const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+        const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
         // Mirror the whole-DB ensure's no-data-loss guard: only touch a HYDRATED
         // character's globalLore — assigning ids to a stubbed one would default
         // its absent globalLore to `[]` and mask the stub.
@@ -699,7 +706,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
         return
       }
       case 'global': {
-        const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+        const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
           (candidate) => candidate.id === scope.lorebookId,
         )
         if (lorebook) {
@@ -725,7 +732,7 @@ function ensureScopedClientLorebookIds(scope: DiscreteLorebookEditScope): void {
 function scopedClientLorebookIdsNeedNormalization(scope: DiscreteLorebookEditScope): boolean {
   switch (scope.kind) {
     case 'character': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
       return !!(
         character?.chaId &&
         hydratedCharacterLorebooks.has(character.chaId) &&
@@ -737,7 +744,7 @@ function scopedClientLorebookIdsNeedNormalization(scope: DiscreteLorebookEditSco
       return !!chat && (!Array.isArray(chat.localLore) || lorebookEntryIdsNeedNormalization(chat.localLore))
     }
     case 'global': {
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === scope.lorebookId,
       )
       return !!lorebook && (!Array.isArray(lorebook.data) || lorebookEntryIdsNeedNormalization(lorebook.data))
@@ -753,7 +760,7 @@ function ensureScopedClientLorebookEntryId(scope: DiscreteLorebookEditScope, ind
   withTrustedServerProjectionWrite(() => {
     if (
       scope.kind === 'character' &&
-      DBState.db?.enableLorebookStubs &&
+      getDatabase()?.enableLorebookStubs &&
       !hydratedCharacterLorebooks.has(scope.characterId)
     ) {
       return
@@ -781,7 +788,7 @@ function lorebookCollectionScopeKey(scope: DiscreteLorebookEditScope): string {
 function resolveLorebookCollection(scope: DiscreteLorebookEditScope): { entries: loreBook[] } | null {
   switch (scope.kind) {
     case 'character': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
       return character ? { entries: character.globalLore ?? [] } : null
     }
     case 'chat': {
@@ -789,7 +796,7 @@ function resolveLorebookCollection(scope: DiscreteLorebookEditScope): { entries:
       return chat ? { entries: chat.localLore ?? [] } : null
     }
     case 'global': {
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === scope.lorebookId,
       )
       return lorebook ? { entries: lorebook.data ?? [] } : null
@@ -812,10 +819,10 @@ function replaceLorebookEntryInPlace(target: loreBook, next: loreBook): void {
 
 export function selectGlobalLorebook(index: number): boolean {
   const previous = currentGlobalLorebookStateSnapshot()
-  const lorebookId = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]?.id
+  const lorebookId = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]?.id
 
   withTrustedServerProjectionWrite(() => {
-    DBState.db.loreBookPage = index
+    getDatabase().loreBookPage = index
   })
   if (canUseServerCommands() && lorebookId) {
     dispatchSelectGlobalLorebook(lorebookId, previous)
@@ -832,9 +839,9 @@ export function createGlobalLorebook(): boolean {
   }
 
   withTrustedServerProjectionWrite(() => {
-    const loreBooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+    const loreBooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
     loreBooks.push(lorebook)
-    DBState.db.loreBook = loreBooks as typeof DBState.db.loreBook
+    getDatabase().loreBook = loreBooks as Database['loreBook']
     dispatchCreateGlobalLorebook(lorebook, previous)
   })
 
@@ -842,10 +849,10 @@ export function createGlobalLorebook(): boolean {
 }
 
 export function renameGlobalLorebook(index: number, name: string): boolean {
-  if (!((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]) return false
+  if (!((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]) return false
 
   withTrustedServerProjectionWrite(() => {
-    const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]
+    const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]
     if (lorebook) lorebook.name = name
   })
 
@@ -853,17 +860,17 @@ export function renameGlobalLorebook(index: number, name: string): boolean {
 }
 
 export function deleteGlobalLorebook(index: number): boolean {
-  const loreBooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  const loreBooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   if (loreBooks.length <= 1 || !loreBooks[index]) return false
 
   const previous = currentGlobalLorebookStateSnapshot()
-  const lorebookId = ((DBState.db.loreBook ?? []) as GlobalLorebook[])[index]?.id
+  const lorebookId = ((getDatabase().loreBook ?? []) as GlobalLorebook[])[index]?.id
   withTrustedServerProjectionWrite(() => {
-    const current = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+    const current = (getDatabase().loreBook ?? []) as GlobalLorebook[]
     if (current.length <= 1 || !current[index]) return
     current.splice(index, 1)
-    DBState.db.loreBookPage = 0
-    DBState.db.loreBook = current as typeof DBState.db.loreBook
+    getDatabase().loreBookPage = 0
+    getDatabase().loreBook = current as Database['loreBook']
     if (lorebookId) {
       dispatchDeleteGlobalLorebook(lorebookId, previous)
     }
@@ -941,7 +948,7 @@ export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: Globa
 
 export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
-  const lorebookIds = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).map((lorebook) => lorebook.id)
+  const lorebookIds = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).map((lorebook) => lorebook.id)
   if (!hasStableUniqueCommandIds(lorebookIds)) return
   const previousIds = previous.loreBook.map((lorebook) => lorebook.id)
   if (!hasStableUniqueCommandIds(previousIds)) return
@@ -995,7 +1002,7 @@ export function dispatchReplaceCharacterLorebooks(
   // Defense in depth: when stubs are on, never persist a non-hydrated character's
   // globalLore. `entries` would be the stub `[]` and delete the real server
   // entries. A real selected-character edit is safe after hydration on open.
-  if (DBState.db?.enableLorebookStubs && !hydratedCharacterLorebooks.has(characterId)) return
+  if (getDatabase()?.enableLorebookStubs && !hydratedCharacterLorebooks.has(characterId)) return
   if (source === 'collection') ensureClientLorebookEntryIds(entries)
   queueScopedLorebookReplacement({ kind: 'character', characterId }, entries, previous, delayMs, source)
 }
@@ -1514,7 +1521,9 @@ function dispatchWatchedReplacement(key: string, previous: LorebookStateSnapshot
   if (key.startsWith('global:')) {
     const lorebookId = key.slice('global:'.length)
     if (!isStableCommandId(lorebookId)) return
-    const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find((candidate) => candidate.id === lorebookId)
+    const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
+      (candidate) => candidate.id === lorebookId,
+    )
     if (lorebook && hasStableUniqueLorebookEntryIds(lorebook.data)) {
       queueWatchedLorebookReplacement({ kind: 'global', lorebookId }, lorebook.data, previous, delayMs)
     }
@@ -1523,7 +1532,9 @@ function dispatchWatchedReplacement(key: string, previous: LorebookStateSnapshot
   if (key.startsWith('globalMeta:')) {
     const lorebookId = key.slice('globalMeta:'.length)
     if (!isStableCommandId(lorebookId)) return
-    const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find((candidate) => candidate.id === lorebookId)
+    const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
+      (candidate) => candidate.id === lorebookId,
+    )
     if (typeof lorebook?.name === 'string') dispatchUpdateGlobalLorebook(lorebookId, { name: lorebook.name }, previous)
     return
   }
@@ -1533,7 +1544,7 @@ function dispatchWatchedReplacement(key: string, previous: LorebookStateSnapshot
     // Hard guard (defence in depth): never persist a non-hydrated character's
     // globalLore, even if a snapshot somehow slipped through.
     if (!hydratedCharacterLorebooks.has(characterId)) return
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (character && hasStableUniqueLorebookEntryIds(character.globalLore)) {
       queueWatchedLorebookReplacement({ kind: 'character', characterId }, character.globalLore, previous, delayMs)
     }
@@ -1551,7 +1562,7 @@ function dispatchWatchedReplacement(key: string, previous: LorebookStateSnapshot
   if (key.startsWith('module:')) {
     const moduleId = key.slice('module:'.length)
     if (!isStableCommandId(moduleId)) return
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
+    const module = ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
     if (module && hasStableUniqueLorebookEntryIds(module.lorebook)) {
       queueWatchedLorebookReplacement({ kind: 'module', moduleId }, module.lorebook, previous, delayMs)
     }
@@ -1579,7 +1590,7 @@ export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): M
   const snapshots = new Map<string, string>()
 
   if (scope.kind === 'all' || scope.kind === 'global') {
-    const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+    const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
     const stableGlobalLorebookIds = uniqueStableGlobalLorebookIds(lorebooks)
     for (const lorebook of lorebooks) {
       if (lorebook.id && stableGlobalLorebookIds.has(lorebook.id)) {
@@ -1592,25 +1603,25 @@ export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): M
   }
 
   if (scope.kind === 'all') {
-    for (const character of DBState.db.characters ?? []) {
+    for (const character of getDatabase().characters ?? []) {
       collectCharacterLorebookSnapshots(snapshots, character)
     }
   } else if (scope.kind === 'character') {
     // Track only the selected character's lore. Reading the $state mirror (not a
     // bare get()) re-runs the effect on a character switch, so the first edit to
     // the newly selected character is never dropped.
-    const character = DBState.db.characters?.[selectedCharMirror]
+    const character = getDatabase().characters?.[selectedCharMirror]
     if (character) {
       collectCharacterLorebookSnapshots(snapshots, character, characterScopeLocalLoreSnapshots)
     }
   }
 
   if (scope.kind === 'all') {
-    for (const module of (DBState.db.modules ?? []) as RisuModule[]) {
+    for (const module of (getDatabase().modules ?? []) as RisuModule[]) {
       collectModuleLorebookSnapshot(snapshots, module)
     }
   } else if (scope.kind === 'module') {
-    const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
+    const module = ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === scope.moduleId)
     if (module) collectModuleLorebookSnapshot(snapshots, module)
   }
 
@@ -1862,7 +1873,7 @@ function rollbackGlobalLorebookListEntry(rollbackEntry: GlobalLorebookListRollba
         getKey: globalLorebookKey,
       })
       if (rolledBack.length === 0) return
-      DBState.db.loreBook = lorebooks as typeof DBState.db.loreBook
+      getDatabase().loreBook = lorebooks as Database['loreBook']
       restoreGlobalLorebookSelectionById(selectedLorebookId)
     })
   })
@@ -1892,7 +1903,7 @@ function rollbackDeletedGlobalLorebook(
             entries: [rollbackEntry],
             getKey: globalLorebookKey,
           }).length > 0
-        if (restoredRow) DBState.db.loreBook = lorebooks as typeof DBState.db.loreBook
+        if (restoredRow) getDatabase().loreBook = lorebooks as Database['loreBook']
       })
     })
   }
@@ -1909,7 +1920,7 @@ function rollbackDeletedGlobalLorebook(
 
 function canApplyGlobalLorebookListRollback(
   rollbackEntry: GlobalLorebookListRollbackEntry,
-  lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[],
+  lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[],
 ): boolean {
   const liveIndex = lorebooks.findIndex((lorebook) => globalLorebookKey(lorebook) === rollbackEntry.key)
   const liveValue = liveIndex === -1 ? null : lorebooks[liveIndex]
@@ -1937,7 +1948,7 @@ function rollbackGlobalLorebookName(rollback: GlobalLorebookNameRollback): void 
 
 function canApplyGlobalLorebookNameRollback(
   rollback: GlobalLorebookNameRollback,
-  lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[],
+  lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[],
 ): boolean {
   if (!Object.prototype.hasOwnProperty.call(rollback.attempted, 'name')) return false
   if (!Object.prototype.hasOwnProperty.call(rollback.previous, 'name')) return false
@@ -1946,7 +1957,7 @@ function canApplyGlobalLorebookNameRollback(
 }
 
 function rollbackGlobalLorebookOrder(rollback: GlobalLorebookOrderRollback): void {
-  const liveIds = globalLorebookStableIds((DBState.db.loreBook ?? []) as GlobalLorebook[])
+  const liveIds = globalLorebookStableIds((getDatabase().loreBook ?? []) as GlobalLorebook[])
   if (!liveIds || !sameStringArray(liveIds, rollback.attemptedIds)) return
   const selectedLorebookId = currentSelectedGlobalLorebookId()
 
@@ -2013,7 +2024,7 @@ function globalLorebookSelectionRollbackFromSnapshot(
 ): GlobalLorebookSelectionRollback {
   const previousPage = previous.loreBookPage ?? 0
   const previousLorebookId = stableGlobalLorebookId(previous.loreBook[previousPage]?.id)
-  const attemptedPage = DBState.db.loreBookPage ?? 0
+  const attemptedPage = getDatabase().loreBookPage ?? 0
   return {
     previousPage,
     previousLorebookId,
@@ -2026,31 +2037,31 @@ function canApplyGlobalLorebookSelectionRollback(rollback: GlobalLorebookSelecti
   if (rollback.attemptedLorebookId) {
     return currentSelectedGlobalLorebookId() === rollback.attemptedLorebookId
   }
-  return (DBState.db.loreBookPage ?? 0) === rollback.attemptedPage
+  return (getDatabase().loreBookPage ?? 0) === rollback.attemptedPage
 }
 
 function restoreGlobalLorebookSelection(rollback: GlobalLorebookSelectionRollback): void {
-  const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   if (rollback.previousLorebookId) {
     restoreGlobalLorebookSelectionById(rollback.previousLorebookId)
     return
   }
 
   if (rollback.previousPage >= 0 && rollback.previousPage < lorebooks.length) {
-    DBState.db.loreBookPage = rollback.previousPage
+    getDatabase().loreBookPage = rollback.previousPage
   }
 }
 
 function restoreGlobalLorebookSelectionById(lorebookId: string | null): void {
   if (!lorebookId) return
-  const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
+  const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   const index = lorebooks.findIndex((lorebook) => lorebook.id === lorebookId)
-  if (index >= 0) DBState.db.loreBookPage = index
+  if (index >= 0) getDatabase().loreBookPage = index
 }
 
 function currentSelectedGlobalLorebookId(): string | null {
-  const lorebooks = (DBState.db.loreBook ?? []) as GlobalLorebook[]
-  const page = DBState.db.loreBookPage ?? 0
+  const lorebooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
+  const page = getDatabase().loreBookPage ?? 0
   return stableGlobalLorebookId(lorebooks[page]?.id)
 }
 
@@ -2068,10 +2079,10 @@ function globalLorebookStableIds(lorebooks: GlobalLorebook[]): string[] | null {
 }
 
 function mutableGlobalLorebookList(): GlobalLorebook[] {
-  if (!Array.isArray(DBState.db.loreBook)) {
-    DBState.db.loreBook = [] as typeof DBState.db.loreBook
+  if (!Array.isArray(getDatabase().loreBook)) {
+    getDatabase().loreBook = [] as Database['loreBook']
   }
-  return DBState.db.loreBook as GlobalLorebook[]
+  return getDatabase().loreBook as GlobalLorebook[]
 }
 
 function rollbackServerBackedLorebookEntry(snapshot: LorebookEntryStateSnapshot, attemptedEntries?: loreBook[]): void {
@@ -2285,7 +2296,7 @@ function previousLorebookEntriesForScope(
 function assignScopedLorebookCollection(scope: DiscreteLorebookEditScope, entries: loreBook[]): boolean {
   switch (scope.kind) {
     case 'character': {
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === scope.characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === scope.characterId)
       if (!character) return false
       character.globalLore = entries as typeof character.globalLore
       return true
@@ -2297,7 +2308,7 @@ function assignScopedLorebookCollection(scope: DiscreteLorebookEditScope, entrie
       return true
     }
     case 'global': {
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === scope.lorebookId,
       )
       if (!lorebook) return false
@@ -2333,7 +2344,7 @@ function isLorebookEntryStateSnapshot(snapshot: LorebookReplacementSnapshot): sn
 }
 
 function findChat(chatId: string): Chat | null {
-  for (const character of DBState.db.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     const chat = character.chats?.find((candidate) => candidate.id === chatId)
     if (chat) return chat
   }
@@ -2341,7 +2352,7 @@ function findChat(chatId: string): Chat | null {
 }
 
 function findModule(moduleId: string): RisuModule | null {
-  return ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId) ?? null
+  return ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId) ?? null
 }
 
 function snapshotJson(value: unknown): string {
@@ -2354,7 +2365,7 @@ export function scopedLorebookStateSnapshot(key: string, previousSnapshot: strin
     scopeKey: key,
     scopedValue: parseSnapshotJson(previousSnapshot),
     loreBook: [],
-    loreBookPage: DBState.db.loreBookPage ?? 0,
+    loreBookPage: getDatabase().loreBookPage ?? 0,
     characters: [],
     modules: [],
     selectedCharID: get(selectedCharID),
@@ -2368,7 +2379,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
   withTrustedServerProjectionWrite(() => {
     if (key.startsWith('global:')) {
       const lorebookId = key.slice('global:'.length)
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === lorebookId,
       )
       if (lorebook && Array.isArray(snapshot.scopedValue)) {
@@ -2379,7 +2390,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
 
     if (key.startsWith('globalMeta:')) {
       const lorebookId = key.slice('globalMeta:'.length)
-      const lorebook = ((DBState.db.loreBook ?? []) as GlobalLorebook[]).find(
+      const lorebook = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).find(
         (candidate) => candidate.id === lorebookId,
       )
       const value = snapshot.scopedValue
@@ -2397,7 +2408,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
 
     if (key.startsWith('character:')) {
       const characterId = key.slice('character:'.length)
-      const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+      const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
       if (character && Array.isArray(snapshot.scopedValue)) {
         character.globalLore = cloneJsonValue(snapshot.scopedValue) as typeof character.globalLore
       }
@@ -2415,7 +2426,7 @@ export function restoreScopedLorebookState(snapshot: LorebookStateSnapshot): voi
 
     if (key.startsWith('module:')) {
       const moduleId = key.slice('module:'.length)
-      const module = ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
+      const module = ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
       if (module && Array.isArray(snapshot.scopedValue)) {
         module.lorebook = cloneJsonValue(snapshot.scopedValue) as typeof module.lorebook
       }

@@ -9,7 +9,8 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'lorebook-command-token',
 }))
 
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { getDatabase, setDatabaseLite } from '../storage/database.svelte'
 import { setServerProjectionWriteGuardEnabled } from './projectionWriteGuard.svelte'
 import {
   currentGlobalLorebookStateSnapshot,
@@ -50,9 +51,9 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(0)
-  DBState.db = seedCloneCostDb() as any
-  DBState.db.loreBook = [{ id: 'g1', name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
-  DBState.db.loreBookPage = 0
+  setDatabaseLite(seedCloneCostDb() as any)
+  getDatabase().loreBook = [{ id: 'g1', name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
+  getDatabase().loreBookPage = 0
 })
 
 afterEach(() => {
@@ -74,7 +75,7 @@ describe('Phase 0 global-lorebook snapshot kit', () => {
     expect(snapshot).not.toHaveProperty('modules')
     assertSnapshotOmitsCollections(snapshot)
 
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(getDatabase().characters).length
     const instrumented = withCloneInstrumentation(() => currentGlobalLorebookStateSnapshot())
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
   })
@@ -83,26 +84,26 @@ describe('Phase 0 global-lorebook snapshot kit', () => {
     assertRollbackRestoresOnly({
       capture: () => currentGlobalLorebookStateSnapshot(),
       mutate: () => {
-        DBState.db.loreBook = [
+        getDatabase().loreBook = [
           { id: 'g1', name: 'Mutated', data: [] },
           { id: 'g2', name: 'New', data: [] },
         ] as any
-        DBState.db.loreBookPage = 1
+        getDatabase().loreBookPage = 1
         // a concurrent, unrelated character edit a global-lore rollback must not wipe
-        DBState.db.characters[0].name = 'Concurrent edit'
+        getDatabase().characters[0].name = 'Concurrent edit'
       },
       expectMutated: () => {
-        expect(DBState.db.loreBook).toHaveLength(2)
+        expect(getDatabase().loreBook).toHaveLength(2)
       },
       restore: (snapshot) => restoreGlobalLorebookState(snapshot),
       expectRestored: () => {
-        expect(DBState.db.loreBook).toHaveLength(1)
-        expect(DBState.db.loreBook[0].name).toBe('Global')
-        expect(DBState.db.loreBookPage).toBe(0)
+        expect(getDatabase().loreBook).toHaveLength(1)
+        expect(getDatabase().loreBook[0].name).toBe('Global')
+        expect(getDatabase().loreBookPage).toBe(0)
       },
       expectUntouched: () => {
         // the heavy restoreLorebookState would have re-cloned the whole characters array
-        expect(DBState.db.characters[0].name).toBe('Concurrent edit')
+        expect(getDatabase().characters[0].name).toBe('Concurrent edit')
       },
     })
   })
@@ -110,28 +111,28 @@ describe('Phase 0 global-lorebook snapshot kit', () => {
 
 describe('Phase 0 exported scoped-lorebook pair', () => {
   it('restores one character globalLore by scope key, leaving siblings untouched', () => {
-    DBState.db.characters[1].globalLore = [{ key: 'sibling', content: 'sibling' }] as any
+    getDatabase().characters[1].globalLore = [{ key: 'sibling', content: 'sibling' }] as any
     const previous = JSON.stringify([{ key: 'orig', content: 'original' }])
 
     const snapshot = scopedLorebookStateSnapshot('character:char-0', previous)
     expect(snapshot.scopeKey).toBe('character:char-0')
     expect(snapshot).toMatchObject({ characters: [], modules: [], loreBook: [] })
 
-    DBState.db.characters[0].globalLore = [{ key: 'changed', content: 'changed' }] as any
+    getDatabase().characters[0].globalLore = [{ key: 'changed', content: 'changed' }] as any
     restoreScopedLorebookState(snapshot)
 
-    expect(DBState.db.characters[0].globalLore).toEqual([{ key: 'orig', content: 'original' }])
-    expect(DBState.db.characters[1].globalLore).toEqual([{ key: 'sibling', content: 'sibling' }])
+    expect(getDatabase().characters[0].globalLore).toEqual([{ key: 'orig', content: 'original' }])
+    expect(getDatabase().characters[1].globalLore).toEqual([{ key: 'sibling', content: 'sibling' }])
   })
 })
 
 describe('Phase 2 global-lorebook scoped dispatch', () => {
   it('dispatchSelectGlobalLorebook restores only the lorebook pointer on failure', async () => {
-    DBState.db.loreBook = [
+    getDatabase().loreBook = [
       { id: 'g1', name: 'Global', data: [] },
       { id: 'g2', name: 'Second', data: [] },
     ] as any
-    DBState.db.loreBookPage = 0
+    getDatabase().loreBookPage = 0
 
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -157,30 +158,30 @@ describe('Phase 2 global-lorebook scoped dispatch', () => {
 
     // optimistic local select + a concurrent, unrelated character edit a whole-array
     // rollback would have wiped
-    DBState.db.loreBookPage = 1
-    DBState.db.characters[0].name = 'Concurrent edit'
+    getDatabase().loreBookPage = 1
+    getDatabase().characters[0].name = 'Concurrent edit'
 
     dispatchSelectGlobalLorebook('g2', previous)
     await waitForCallCount(calls, 2)
 
     // only the lorebook pointer is restored; the sibling character edit survives
-    expect(DBState.db.loreBookPage).toBe(0)
-    expect(DBState.db.characters[0].name).toBe('Concurrent edit')
+    expect(getDatabase().loreBookPage).toBe(0)
+    expect(getDatabase().characters[0].name).toBe('Concurrent edit')
   })
 })
 
 describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
   function seedDiscreteDb(): void {
-    DBState.db = seedCloneCostDb() as any
-    DBState.db.loreBook = [
+    setDatabaseLite(seedCloneCostDb() as any)
+    getDatabase().loreBook = [
       { name: 'Global', data: [{ key: 'g', content: 'G' }] }, // book id missing on purpose
     ] as any
-    DBState.db.loreBookPage = 0
+    getDatabase().loreBookPage = 0
     // char-0: hydrated lore the editor edits; char-1: id-less sibling entries the
     // scoped ensure must NOT touch (the old whole-DB id-assign rewrote them all).
-    DBState.db.characters[0].globalLore = [{ key: 'a', content: 'A' }] as any
-    DBState.db.characters[1].globalLore = [{ key: 'sib', content: 'S' }] as any
-    DBState.db.characters[1].chats[0].localLore = [{ key: 'sibchat', content: 'SC' }] as any
+    getDatabase().characters[0].globalLore = [{ key: 'a', content: 'A' }] as any
+    getDatabase().characters[1].globalLore = [{ key: 'sib', content: 'S' }] as any
+    getDatabase().characters[1].chats[0].localLore = [{ key: 'sibchat', content: 'SC' }] as any
     resetLorebookHydration()
     markCharacterLorebookHydrated('char-0')
     markCharacterLorebookHydrated('char-1')
@@ -188,7 +189,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
 
   it('L32: a character-scoped editor snapshot never clones the characters or modules graph', () => {
     seedDiscreteDb()
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(getDatabase().characters).length
 
     const instrumented = withCloneInstrumentation(() =>
       currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'char-0' }),
@@ -210,14 +211,14 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'char-0' })
 
     // the edited collection got ids...
-    for (const entry of DBState.db.characters[0].globalLore as any[]) {
+    for (const entry of getDatabase().characters[0].globalLore as any[]) {
       expect(typeof entry.id).toBe('string')
       expect(entry.id.length).toBeGreaterThan(0)
     }
     // ...while the sibling collections the whole-DB ensure used to rewrite stay untouched
-    expect((DBState.db.characters[1].globalLore as any[])[0].id).toBeUndefined()
-    expect((DBState.db.characters[1].chats[0].localLore as any[])[0].id).toBeUndefined()
-    expect((DBState.db.loreBook as any[])[0].id).toBeUndefined()
+    expect((getDatabase().characters[1].globalLore as any[])[0].id).toBeUndefined()
+    expect((getDatabase().characters[1].chats[0].localLore as any[])[0].id).toBeUndefined()
+    expect((getDatabase().loreBook as any[])[0].id).toBeUndefined()
   })
 
   it('L32: the scoped ensure never touches a non-hydrated character (no-data-loss guard)', () => {
@@ -227,7 +228,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'char-0' })
 
     // entries keep their id-less stub shape; nothing was assigned or defaulted
-    expect((DBState.db.characters[0].globalLore as any[])[0].id).toBeUndefined()
+    expect((getDatabase().characters[0].globalLore as any[])[0].id).toBeUndefined()
   })
 
   it('L32: a failed discrete edit restores only the edited collection', () => {
@@ -238,26 +239,26 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     })
 
     // optimistic edit to the target + a concurrent, unrelated sibling edit
-    DBState.db.characters[0].globalLore = [{ key: 'changed', content: 'changed' }] as any
-    DBState.db.characters[1].globalLore = [{ key: 'concurrent', content: 'concurrent' }] as any
+    getDatabase().characters[0].globalLore = [{ key: 'changed', content: 'changed' }] as any
+    getDatabase().characters[1].globalLore = [{ key: 'concurrent', content: 'concurrent' }] as any
 
     restoreLorebookState(previous)
 
-    expect((DBState.db.characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['a'])
-    expect((DBState.db.characters[1].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
+    expect((getDatabase().characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['a'])
+    expect((getDatabase().characters[1].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
   })
 
   it('L32: a chat-scoped editor snapshot restores only that chat localLore', () => {
     seedDiscreteDb()
     const previous = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: 'chat-0' })
 
-    DBState.db.characters[0].chats[0].localLore = [{ key: 'changed', content: 'x' }] as any
-    DBState.db.characters[1].chats[0].localLore = [{ key: 'sibchanged', content: 'y' }] as any
+    getDatabase().characters[0].chats[0].localLore = [{ key: 'changed', content: 'x' }] as any
+    getDatabase().characters[1].chats[0].localLore = [{ key: 'sibchanged', content: 'y' }] as any
 
     restoreLorebookState(previous)
 
-    expect((DBState.db.characters[0].chats[0].localLore as any[]).map((e) => e.key)).toEqual([])
-    expect((DBState.db.characters[1].chats[0].localLore as any[]).map((e) => e.key)).toEqual(['sibchanged'])
+    expect((getDatabase().characters[0].chats[0].localLore as any[]).map((e) => e.key)).toEqual([])
+    expect((getDatabase().characters[1].chats[0].localLore as any[]).map((e) => e.key)).toEqual(['sibchanged'])
   })
 
   it('L32: ensureGlobalLorebookListIds assigns ids on the global list only', () => {
@@ -265,52 +266,54 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
 
     ensureGlobalLorebookListIds()
 
-    const book = (DBState.db.loreBook as any[])[0]
+    const book = (getDatabase().loreBook as any[])[0]
     expect(typeof book.id).toBe('string')
     expect(typeof book.data[0].id).toBe('string')
     // the global-list ensure never reaches characters or chats
-    expect((DBState.db.characters[1].globalLore as any[])[0].id).toBeUndefined()
-    expect((DBState.db.characters[1].chats[0].localLore as any[])[0].id).toBeUndefined()
+    expect((getDatabase().characters[1].globalLore as any[])[0].id).toBeUndefined()
+    expect((getDatabase().characters[1].chats[0].localLore as any[])[0].id).toBeUndefined()
   })
 
   it('skips projection refreeze when global lorebook ids are already normalized', () => {
-    DBState.db.loreBook = [{ id: 'book-1', name: 'Global', data: [{ id: 'entry-1', key: 'k', content: 'c' }] }] as any
+    getDatabase().loreBook = [
+      { id: 'book-1', name: 'Global', data: [{ id: 'entry-1', key: 'k', content: 'c' }] },
+    ] as any
     setServerProjectionWriteGuardEnabled(true)
-    const before = DBState.db
+    const before = getDatabase()
 
     expect(globalLorebookListIdsNeedNormalization()).toBe(false)
     ensureGlobalLorebookListIds()
 
-    expect(DBState.db).toBe(before)
+    expect(getDatabase()).toBe(before)
   })
 
   it('normalizes missing global lorebook ids through the stable resource facade', () => {
-    DBState.db.loreBook = [{ name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
+    getDatabase().loreBook = [{ name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
     setServerProjectionWriteGuardEnabled(true)
-    const before = DBState.db
+    const before = getDatabase()
 
     expect(globalLorebookListIdsNeedNormalization()).toBe(true)
     ensureGlobalLorebookListIds()
 
-    expect(DBState.db).toBe(before)
+    expect(getDatabase()).toBe(before)
     expect(globalLorebookListIdsNeedNormalization()).toBe(false)
-    expect((DBState.db.loreBook as any[])[0].id).toEqual(expect.any(String))
-    expect((DBState.db.loreBook as any[])[0].data[0].id).toEqual(expect.any(String))
+    expect((getDatabase().loreBook as any[])[0].id).toEqual(expect.any(String))
+    expect((getDatabase().loreBook as any[])[0].data[0].id).toEqual(expect.any(String))
   })
 
   it('L32: a global-scoped editor snapshot restores only the edited book entries', () => {
     seedDiscreteDb()
     ensureGlobalLorebookListIds()
-    const bookId = (DBState.db.loreBook as any[])[0].id as string
+    const bookId = (getDatabase().loreBook as any[])[0].id as string
 
     const previous = currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId: bookId })
 
-    ;(DBState.db.loreBook as any[])[0].data = [{ key: 'changed', content: 'x', id: 'n1' }]
-    DBState.db.characters[0].globalLore = [{ key: 'concurrent', content: 'c' }] as any
+    ;(getDatabase().loreBook as any[])[0].data = [{ key: 'changed', content: 'x', id: 'n1' }]
+    getDatabase().characters[0].globalLore = [{ key: 'concurrent', content: 'c' }] as any
 
     restoreLorebookState(previous)
 
-    expect(((DBState.db.loreBook as any[])[0].data as any[]).map((e) => e.key)).toEqual(['g'])
-    expect((DBState.db.characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
+    expect(((getDatabase().loreBook as any[])[0].data as any[]).map((e) => e.key)).toEqual(['g'])
+    expect((getDatabase().characters[0].globalLore as any[]).map((e) => e.key)).toEqual(['concurrent'])
   })
 })
