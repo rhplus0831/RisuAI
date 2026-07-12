@@ -15,7 +15,7 @@ import { language } from '../lang'
 import { checkNullish, findCharacterbyId, getUserName, selectMultipleFile, selectSingleFile } from './util'
 import { v4 as uuidv4, v4 } from 'uuid'
 import { getImageType } from './media'
-import { DBState, MobileGUIStack, OpenRealmStore, botMakerMode, selectedCharID } from './stores.svelte'
+import { MobileGUIStack, OpenRealmStore, botMakerMode, selectedCharID } from './stores.svelte'
 import { AppendableBuffer, downloadFile, getFileSrc, requiresFullEncoderReload } from './globalApi.svelte'
 import { updateInlayScreen } from './process/inlayScreen'
 import { parseMarkdownSafe } from './parser/parser.svelte'
@@ -97,7 +97,7 @@ function isCurrentCharacterAvatarUpload(input: {
   avatarSnapshot: CharacterAvatarSnapshot
   editorScope: CharacterNavigationScope
 }): boolean {
-  const character = DBState.db.characters?.[input.charIndex]
+  const character = getDatabase().characters?.[input.charIndex]
   return (
     characterAvatarUploadGuard.isLatest(input.token) &&
     changeCharSelectionAttemptId === input.editorScope.selectionAttemptId &&
@@ -118,11 +118,11 @@ export function createNewCharacter(
   const lastInteraction = Date.now()
   let index = -1
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters.push(character)
-    index = DBState.db.characters.length - 1
+    getDatabase().characters.push(character)
+    index = getDatabase().characters.length - 1
     if (select) {
       character.lastInteraction = lastInteraction
-      ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
+      ;(getDatabase() as unknown as { currentChar?: number }).currentChar = index
       selectedCharID.set(index)
     }
   })
@@ -136,7 +136,7 @@ export function createNewCharacter(
 }
 
 export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain' | 'lgcss') {
-  const db = DBState.db
+  const db = getDatabase()
 
   // Return placeholder when hideAllImages is enabled
   if (db.hideAllImages) {
@@ -197,7 +197,7 @@ export async function selectCharImg(charIndex: number) {
     const pngExif: Record<string, string> = {}
 
     try {
-      if (type === 'PNG' && DBState.db.characters[charIndex].type === 'character') {
+      if (type === 'PNG' && getDatabase().characters[charIndex].type === 'character') {
         const gen = PngChunk.readGenerator(img)
         const allowedChunk = [
           'parameters',
@@ -229,7 +229,7 @@ export async function selectCharImg(charIndex: number) {
             pngExif[chunk.key] = chunk.value
           }
         }
-        console.log(DBState.db.characters[charIndex].extentions)
+        console.log(getDatabase().characters[charIndex].extentions)
       }
     } catch (error) {
       console.error(error)
@@ -251,7 +251,7 @@ export async function selectCharImg(charIndex: number) {
       }
 
       dumpCharImage(charIndex, { dispatch: false })
-      const character = DBState.db.characters[charIndex]
+      const character = getDatabase().characters[charIndex]
       const pngExifEntries = Object.entries(pngExif)
       if (pngExifEntries.length > 0) {
         character.extentions ??= {}
@@ -265,7 +265,7 @@ export async function selectCharImg(charIndex: number) {
     })
 
     if (applied) {
-      dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
+      dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
     }
   } finally {
     if (token) {
@@ -279,7 +279,7 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
   const previous = dispatch ? currentCharacterRowSnapshot(charIndex) : null
   const previousCharacter = previous?.character ?? null
   withTrustedServerProjectionWrite(() => {
-    const char = DBState.db.characters[charIndex] as character
+    const char = getDatabase().characters[charIndex] as character
     if (!char.image || char.image === '') {
       return
     }
@@ -291,10 +291,10 @@ export function dumpCharImage(charIndex: number, options: { dispatch?: boolean }
       ext: 'png',
     })
     char.image = ''
-    DBState.db.characters[charIndex] = char
+    getDatabase().characters[charIndex] = char
   })
   if (previous && previousCharacter) {
-    dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
+    dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
   }
 }
 
@@ -302,21 +302,21 @@ export function changeCharImage(charIndex: number, changeIndex: number) {
   const previous = currentCharacterRowSnapshot(charIndex)
   const previousCharacter = previous.character
   withTrustedServerProjectionWrite(() => {
-    const char = DBState.db.characters[charIndex] as character
+    const char = getDatabase().characters[charIndex] as character
     const image = char.ccAssets[changeIndex].uri
     char.ccAssets.splice(changeIndex, 1)
     dumpCharImage(charIndex, { dispatch: false })
     char.image = image
-    DBState.db.characters[charIndex] = char
+    getDatabase().characters[charIndex] = char
   })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charIndex], previous)
+  dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
 }
 
 export const addingEmotion = writable(false)
 
 function currentCharacterEmotionUploadFreshness(charIndex: number) {
-  const selectedCharacterId = DBState.db.characters?.[get(selectedCharID)]?.chaId
-  const rowCharacter = DBState.db.characters?.[charIndex]
+  const selectedCharacterId = getDatabase().characters?.[get(selectedCharID)]?.chaId
+  const rowCharacter = getDatabase().characters?.[charIndex]
   return {
     currentCharacterId: selectedCharacterId,
     rowCharacterId: rowCharacter?.chaId,
@@ -373,7 +373,7 @@ export async function addCharEmotion(charId: number) {
 
       let applied = false
       withTrustedServerProjectionWrite(() => {
-        const dbChar = DBState.db.characters[charId]
+        const dbChar = getDatabase().characters[charId]
         const emotionImages = appendFreshCharacterEmotionImages({
           operation: activeOperation,
           freshness: currentCharacterEmotionUploadFreshness(charId),
@@ -384,12 +384,12 @@ export async function addCharEmotion(charId: number) {
         }
 
         dbChar.emotionImages = emotionImages
-        DBState.db.characters[charId] = dbChar
+        getDatabase().characters[charId] = dbChar
         applied = true
       })
 
       if (applied) {
-        dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
+        dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
       }
     } finally {
       if (operation) {
@@ -405,11 +405,11 @@ export function rmCharEmotion(charId: number, emotionId: number) {
   const previous = currentCharacterRowSnapshot(charId)
   const previousCharacter = previous.character
   withTrustedServerProjectionWrite(() => {
-    let dbChar = DBState.db.characters[charId]
+    let dbChar = getDatabase().characters[charId]
     dbChar.emotionImages.splice(emotionId, 1)
-    DBState.db.characters[charId] = dbChar
+    getDatabase().characters[charId] = dbChar
   })
-  dispatchCompatibleCharacterUpdateScoped(previousCharacter, DBState.db.characters[charId], previous)
+  dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charId], previous)
 }
 
 export async function exportChat(page: number) {
@@ -424,10 +424,10 @@ export async function exportChat(page: number) {
         ? (await alertSelect([language.includePersonaName, language.hidePersonaName])) === '1'
         : false
     const selectedID = get(selectedCharID)
-    const chatId = DBState.db.characters[selectedID]?.chats?.[page]?.id
+    const chatId = getDatabase().characters[selectedID]?.chats?.[page]?.id
     // The exported chat may not be the open (hydrated) one.
     if (chatId) await hydrateChatMessages(chatId)
-    const db = DBState.db
+    const db = getDatabase()
     const char = db.characters[selectedID]
     const chat = char?.chats?.[page]
     if (!char || !chat) {
@@ -628,18 +628,18 @@ interface CharacterNavigationScope {
 
 function captureCurrentChatImportTarget(): ChatImportTarget | null {
   const selectedIndex = get(selectedCharID)
-  const characterId = DBState.db.characters?.[selectedIndex]?.chaId
+  const characterId = getDatabase().characters?.[selectedIndex]?.chaId
   if (!characterId) return null
   return { selectedIndex, characterId }
 }
 
 function resolveChatImportTarget(target: ChatImportTarget): { selectedIndex: number; characterId: string } | null {
-  const selectedCharacter = DBState.db.characters?.[target.selectedIndex]
+  const selectedCharacter = getDatabase().characters?.[target.selectedIndex]
   if (selectedCharacter?.chaId === target.characterId) {
     return target
   }
 
-  const selectedIndex = DBState.db.characters?.findIndex((character) => character.chaId === target.characterId) ?? -1
+  const selectedIndex = getDatabase().characters?.findIndex((character) => character.chaId === target.characterId) ?? -1
   if (selectedIndex < 0) return null
   return { selectedIndex, characterId: target.characterId }
 }
@@ -770,7 +770,7 @@ export async function importChat() {
           if (!isFirst) {
             newChat.message.push({
               role: presedLine.is_user ? 'user' : 'char',
-              data: formatTavernChat(presedLine.mes, DBState.db.characters[selectedID].name),
+              data: formatTavernChat(presedLine.mes, getDatabase().characters[selectedID].name),
             })
           }
         }
@@ -786,14 +786,14 @@ export async function importChat() {
       rekeyImportedChat(newChat)
 
       if (
-        (DBState.db.characters[selectedID].chatFolders ?? []).filter((folder) => folder.id === newChat.folderId)
+        (getDatabase().characters[selectedID].chatFolders ?? []).filter((folder) => folder.id === newChat.folderId)
           .length === 0
       ) {
         newChat.folderId = null
       }
 
       withTrustedServerProjectionWrite(() => {
-        const character = DBState.db.characters[selectedID]
+        const character = getDatabase().characters[selectedID]
         character.chats.unshift(newChat)
         character.chatPage = 0
       })
@@ -813,17 +813,17 @@ export async function importChat() {
           if (importedFolderId) {
             chat.folderId = importedFolderId
           } else {
-            clearUnknownImportedFolder(chat, DBState.db.characters[selectedID])
+            clearUnknownImportedFolder(chat, getDatabase().characters[selectedID])
           }
           rekeyImportedChat(chat)
           normalizeImportedChatGenerationSettings(chat)
         })
         withTrustedServerProjectionWrite(() => {
-          if (DBState.db.characters[selectedID].chatFolders === undefined) {
-            DBState.db.characters[selectedID].chatFolders = []
+          if (getDatabase().characters[selectedID].chatFolders === undefined) {
+            getDatabase().characters[selectedID].chatFolders = []
           }
-          DBState.db.characters[selectedID].chatFolders.push(...folders)
-          DBState.db.characters[selectedID].chats.unshift(...chats)
+          getDatabase().characters[selectedID].chatFolders.push(...folders)
+          getDatabase().characters[selectedID].chats.unshift(...chats)
         })
         const result = await dispatchCreateImportedChats(characterId, folders, chats, previous)
         if (!reportChatImportCommandResult(result)) return
@@ -841,13 +841,13 @@ export async function importChat() {
               v.localLore = []
             }
             v.fmIndex ??= -1
-            clearUnknownImportedFolder(v, DBState.db.characters[selectedID])
+            clearUnknownImportedFolder(v, getDatabase().characters[selectedID])
             rekeyImportedChat(v)
             normalizeImportedChatGenerationSettings(v)
             return v
           })
           withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[selectedID].chats.unshift(...normalizedChats)
+            getDatabase().characters[selectedID].chats.unshift(...normalizedChats)
           })
           const result = await dispatchCreateImportedChats(characterId, [], normalizedChats, previous)
           if (!reportChatImportCommandResult(result)) return
@@ -869,11 +869,11 @@ export async function importChat() {
           )
         ) {
           das.fmIndex ??= -1
-          clearUnknownImportedFolder(das, DBState.db.characters[selectedID])
+          clearUnknownImportedFolder(das, getDatabase().characters[selectedID])
           rekeyImportedChat(das)
           normalizeImportedChatGenerationSettings(das)
           withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[selectedID].chats.unshift(das)
+            getDatabase().characters[selectedID].chats.unshift(das)
           })
           if (characterId) {
             const result = await dispatchCreateChatForImport(characterId, das, previous, false)
@@ -905,11 +905,11 @@ export async function importChat() {
           checkNullish(json.localLore)
         )
       ) {
-        clearUnknownImportedFolder(json, DBState.db.characters[selectedID])
+        clearUnknownImportedFolder(json, getDatabase().characters[selectedID])
         rekeyImportedChat(json)
         normalizeImportedChatGenerationSettings(json)
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[selectedID].chats.unshift(json)
+          getDatabase().characters[selectedID].chats.unshift(json)
         })
         if (characterId) {
           const result = await dispatchCreateChatForImport(characterId, json, previous, false)
@@ -995,19 +995,19 @@ function normalizeImportedGenerationSettingsValue(value: unknown): ChatGeneratio
 
 function normalizeImportedPersonaId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const personas = Array.isArray(DBState.db.personas) ? DBState.db.personas : []
+  const personas = Array.isArray(getDatabase().personas) ? getDatabase().personas : []
   return personas.some((persona) => persona?.id === value) ? value : undefined
 }
 
 function normalizeImportedModelPresetId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const presets = Array.isArray(DBState.db.modelPresets) ? DBState.db.modelPresets : []
+  const presets = Array.isArray(getDatabase().modelPresets) ? getDatabase().modelPresets : []
   return presets.some((preset) => preset?.id === value) ? value : undefined
 }
 
 function normalizeImportedPromptPresetId(value: unknown): string | undefined {
   if (!isNonEmptyString(value)) return undefined
-  const presets = Array.isArray(DBState.db.promptPresets) ? DBState.db.promptPresets : []
+  const presets = Array.isArray(getDatabase().promptPresets) ? getDatabase().promptPresets : []
   return presets.some((preset) => preset?.id === value) ? value : undefined
 }
 
@@ -1266,8 +1266,8 @@ export async function removeChar(
     const characterId = previous.characterId
     const trashTime = Date.now()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[index].trashTime = trashTime
-      chars = DBState.db.characters
+      getDatabase().characters[index].trashTime = trashTime
+      chars = getDatabase().characters
     })
     if (characterId) {
       dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
@@ -1276,8 +1276,8 @@ export async function removeChar(
     const previous = currentCharacterStateSnapshot()
     const characterId = chars[index]?.chaId
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.splice(index, 1)
-      chars = DBState.db.characters
+      getDatabase().characters.splice(index, 1)
+      chars = getDatabase().characters
     })
     if (characterId) {
       dispatchDeleteCharacter(characterId, previous)
@@ -1338,7 +1338,7 @@ export async function addCharacter(
 
 function captureCharacterNavigationScope(): CharacterNavigationScope {
   const selectedIndex = get(selectedCharID)
-  const currentChar = (DBState.db as unknown as { currentChar?: number }).currentChar
+  const currentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
   return {
     selectedCharID: selectedIndex,
     selectedCharacterId: characterIdAtIndex(selectedIndex),
@@ -1350,7 +1350,7 @@ function captureCharacterNavigationScope(): CharacterNavigationScope {
 
 function characterNavigationScopeMatches(scope: CharacterNavigationScope): boolean {
   const selectedIndex = get(selectedCharID)
-  const currentChar = (DBState.db as unknown as { currentChar?: number }).currentChar
+  const currentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
   const selectedCharacterId = characterIdAtIndex(selectedIndex)
   const currentCharacterId = characterIdAtIndex(currentChar)
 
@@ -1384,30 +1384,30 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
   const isFreshSelectionAttempt = () => selectionAttemptId === changeCharSelectionAttemptId && (arg.isFresh?.() ?? true)
   reseter()
   botMakerMode.set(false)
-  if (DBState.db.characters?.[index]?.coldstorage) {
+  if (getDatabase().characters?.[index]?.coldstorage) {
     alertError('Cold-storage character hydration is not supported in server-backed web mode yet')
     return
   }
-  const characterId = DBState.db.characters?.[index]?.chaId
+  const characterId = getDatabase().characters?.[index]?.chaId
   if (!characterId) return
-  if (isServerCharacterShell(DBState.db.characters?.[index])) {
+  if (isServerCharacterShell(getDatabase().characters?.[index])) {
     const hydrated = await hydrateCharacterShell(characterId)
     if (!isFreshSelectionAttempt()) return
     const hydratedIndex = findLiveCharacterIndex(characterId)
     if (hydratedIndex < 0) return
-    if (!hydrated && isServerCharacterShell(DBState.db.characters?.[hydratedIndex])) return
+    if (!hydrated && isServerCharacterShell(getDatabase().characters?.[hydratedIndex])) return
   }
   if (!isFreshSelectionAttempt()) return
   const liveIndex = findLiveCharacterIndex(characterId)
-  if (liveIndex < 0 || isServerCharacterShell(DBState.db.characters?.[liveIndex])) return
+  if (liveIndex < 0 || isServerCharacterShell(getDatabase().characters?.[liveIndex])) return
   const previous = currentCharacterSelectionSnapshot(characterId)
   const lastInteraction = Date.now()
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.[liveIndex]
+    const character = getDatabase().characters?.[liveIndex]
     if (character) {
       character.lastInteraction = lastInteraction
     }
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = liveIndex
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = liveIndex
     selectedCharID.set(liveIndex)
   })
   dispatchSelectCharacter(characterId, previous, lastInteraction)
@@ -1415,10 +1415,10 @@ export async function changeChar(index: number, arg: ChangeCharOptions = {}) {
 }
 
 function findLiveCharacterIndex(characterId: string): number {
-  return DBState.db.characters?.findIndex((character) => character?.chaId === characterId) ?? -1
+  return getDatabase().characters?.findIndex((character) => character?.chaId === characterId) ?? -1
 }
 
 function characterIdAtIndex(index: number | undefined): string | undefined {
   if (typeof index !== 'number' || index < 0) return undefined
-  return DBState.db.characters?.[index]?.chaId
+  return getDatabase().characters?.[index]?.chaId
 }

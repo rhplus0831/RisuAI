@@ -16,8 +16,8 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
-import { DBState, selectedCharID } from './stores.svelte'
-import type { character, folder } from './storage/database.svelte'
+import { selectedCharID } from './stores.svelte'
+import { getDatabase, type character, type folder } from './storage/database.svelte'
 
 export interface CharacterStateSnapshot {
   characters: character[]
@@ -137,43 +137,43 @@ export function cloneJsonValue<T>(value: T): T {
 
 export function currentCharacterStateSnapshot(): CharacterStateSnapshot {
   return {
-    characters: cloneJsonValue(DBState.db.characters ?? []),
-    characterOrder: cloneJsonValue(DBState.db.characterOrder ?? []),
-    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    characters: cloneJsonValue(getDatabase().characters ?? []),
+    characterOrder: cloneJsonValue(getDatabase().characterOrder ?? []),
+    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreCharacterState(snapshot: CharacterStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters = cloneJsonValue(snapshot.characters)
-    DBState.db.characterOrder = cloneJsonValue(snapshot.characterOrder)
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    getDatabase().characters = cloneJsonValue(snapshot.characters)
+    getDatabase().characterOrder = cloneJsonValue(snapshot.characterOrder)
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
   })
 }
 
 function currentCharacterOrderSnapshot(): (string | folder)[] {
-  return cloneJsonValue(DBState.db.characterOrder ?? [])
+  return cloneJsonValue(getDatabase().characterOrder ?? [])
 }
 
 export function currentCharacterSelectionSnapshot(characterId: string): CharacterSelectionSnapshot {
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
   return {
     characterId,
     lastInteraction: character?.lastInteraction,
-    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function restoreCharacterSelection(snapshot: CharacterSelectionSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === snapshot.characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (character) {
       character.lastInteraction = snapshot.lastInteraction
     }
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
   })
 }
@@ -185,7 +185,7 @@ function currentCharacterSelectionAttempt(
   return {
     characterId,
     lastInteraction,
-    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
 }
@@ -196,9 +196,9 @@ function restoreCharacterSelectionAttempt(
 ): void {
   withTrustedServerProjectionWrite(() => {
     const liveSelectedCharID = get(selectedCharID)
-    const liveCurrentChar = (DBState.db as unknown as { currentChar?: number }).currentChar
+    const liveCurrentChar = (getDatabase() as unknown as { currentChar?: number }).currentChar
     const liveSelectedCharacterId = selectedCharacterIdAt(liveSelectedCharID)
-    const attemptedCharacter = DBState.db.characters?.find((candidate) => candidate?.chaId === attempted.characterId)
+    const attemptedCharacter = getDatabase().characters?.find((candidate) => candidate?.chaId === attempted.characterId)
 
     if (
       liveSelectedCharID !== attempted.selectedCharID ||
@@ -209,11 +209,11 @@ function restoreCharacterSelectionAttempt(
       return
     }
 
-    const previousCharacter = DBState.db.characters?.find((candidate) => candidate.chaId === previous.characterId)
+    const previousCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === previous.characterId)
     if (previousCharacter) {
       previousCharacter.lastInteraction = previous.lastInteraction
     }
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = previous.currentChar
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = previous.currentChar
     selectedCharID.set(previous.selectedCharID)
   })
 }
@@ -264,31 +264,31 @@ interface CharacterOrderPlacement {
 }
 
 export function currentCharacterRowSnapshot(index: number = get(selectedCharID)): CharacterRowSnapshot {
-  const character = DBState.db.characters?.[index]
+  const character = getDatabase().characters?.[index]
   return {
     characterId: character?.chaId,
     index,
     character: character ? cloneJsonValue(character) : undefined,
-    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function currentCharacterTrashTimeSnapshot(index: number = get(selectedCharID)): CharacterTrashTimeSnapshot {
-  const character = DBState.db.characters?.[index] as (character & { trashTime?: number | null }) | undefined
+  const character = getDatabase().characters?.[index] as (character & { trashTime?: number | null }) | undefined
   return {
     characterId: character?.chaId,
     index,
     hadTrashTime: !!character && Object.prototype.hasOwnProperty.call(character, 'trashTime'),
     trashTime: character?.trashTime,
     orderPlacement: character?.chaId ? currentCharacterOrderPlacement(character.chaId) : null,
-    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
     selectedCharID: get(selectedCharID),
   }
 }
 
 export function currentCharacterSupaMemorySnapshot(characterId: string): CharacterSupaMemorySnapshot | null {
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
   if (!character) return null
   return {
     characterId,
@@ -300,7 +300,7 @@ export function currentCharacterSupaMemorySnapshot(characterId: string): Charact
 export function currentCharacterInputTranslationHookSnapshot(
   characterId: string,
 ): CharacterInputTranslationHookSnapshot | null {
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
   if (!character) return null
   return {
     characterId,
@@ -311,7 +311,7 @@ export function currentCharacterInputTranslationHookSnapshot(
 
 export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     if (snapshot.character && characters) {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
       if (index >= 0) {
@@ -327,7 +327,7 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
         }
       }
     }
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
   })
 }
@@ -335,7 +335,7 @@ export function restoreCharacterRow(snapshot: CharacterRowSnapshot): void {
 function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): void {
   if (!snapshot.character || !snapshot.attempted) return
   withTrustedServerProjectionWrite(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     if (!characters) return
     const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
     if (index < 0) return
@@ -350,7 +350,7 @@ function restoreCompatibleCharacterRowAttempt(snapshot: CharacterRowSnapshot): v
 
 export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     if (characters) {
       const index = locateCharacterIndex(characters, snapshot.characterId, snapshot.index)
       if (index >= 0) {
@@ -363,14 +363,14 @@ export function restoreCharacterTrashTime(snapshot: CharacterTrashTimeSnapshot):
       }
     }
     restoreCharacterOrderPlacement(snapshot)
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = snapshot.currentChar
     selectedCharID.set(snapshot.selectedCharID)
   })
 }
 
 export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === snapshot.characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (!character) return
     if (snapshot.hadSupaMemory) {
       character.supaMemory = snapshot.supaMemory
@@ -382,7 +382,7 @@ export function restoreCharacterSupaMemory(snapshot: CharacterSupaMemorySnapshot
 
 export function restoreCharacterInputTranslationHook(snapshot: CharacterInputTranslationHookSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === snapshot.characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === snapshot.characterId)
     if (!character) return
     if (snapshot.hadUseInputTranslationHook) {
       character.useInputTranslationHook = snapshot.useInputTranslationHook
@@ -403,7 +403,7 @@ function locateCharacterIndex(characters: character[], characterId: string | und
 }
 
 function currentCharacterOrderPlacement(characterId: string): CharacterOrderPlacement | null {
-  return characterOrderPlacementFromOrder(DBState.db.characterOrder ?? [], characterId)
+  return characterOrderPlacementFromOrder(getDatabase().characterOrder ?? [], characterId)
 }
 
 function characterOrderPlacementFromOrder(
@@ -433,7 +433,7 @@ function restoreCharacterOrderPlacement(snapshot: CharacterTrashTimeSnapshot): v
   const placement = snapshot.orderPlacement
   if (!placement?.characterId) return
 
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === placement.characterId)
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === placement.characterId)
   if (!character || character.trashTime) return
 
   if (characterOrderIncludes(ensureCharacterOrder(), placement.characterId)) return
@@ -486,7 +486,7 @@ function restoreCreatedCharacterAttempt(rollback: CharacterCreateRollback | null
   if (!rollback) return
 
   withTrustedServerProjectionWrite(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     if (!characters) return
 
     const shouldRestoreSelection =
@@ -504,7 +504,7 @@ function restoreCreatedCharacterAttempt(rollback: CharacterCreateRollback | null
     })
     if (rolledBack.length === 0) return
 
-    DBState.db.characters = characters
+    getDatabase().characters = characters
     replaceCharacterOrderWithNormalized()
     if (shouldRestoreSelection) {
       restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
@@ -534,7 +534,7 @@ function restoreDeletedCharacterAttempt(rollback: CharacterDeleteRollback | null
   if (!rollback) return
 
   withTrustedServerProjectionWrite(() => {
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     if (!characters) return
 
     const selection = currentDeletedCharacterRollbackSelection()
@@ -552,7 +552,7 @@ function restoreDeletedCharacterAttempt(rollback: CharacterDeleteRollback | null
     })
     if (rolledBack.length === 0) return
 
-    DBState.db.characters = characters
+    getDatabase().characters = characters
     restoreMissingCharacterOrderPlacement(rollback.orderPlacement)
     if (selection.restorePreviousSelection) {
       restoreCharacterSelectionScalars(rollback.previousCurrentChar, rollback.previousSelectedCharID)
@@ -588,21 +588,21 @@ function shouldRestorePreviousSelectionAfterDeletedCharacterRollback(
 }
 
 function isCharacterSelectionEmptyOrStale(index: number): boolean {
-  return index < 0 || !DBState.db.characters?.[index]
+  return index < 0 || !getDatabase().characters?.[index]
 }
 
 function selectedCharacterIdAt(index: number): string | undefined {
   if (index < 0) return undefined
-  return DBState.db.characters?.[index]?.chaId
+  return getDatabase().characters?.[index]?.chaId
 }
 
 function restoreCharacterSelectionScalars(currentChar: number | undefined, selectedCharacterIndex: number): void {
-  ;(DBState.db as unknown as { currentChar?: number }).currentChar = currentChar
+  ;(getDatabase() as unknown as { currentChar?: number }).currentChar = currentChar
   selectedCharID.set(selectedCharacterIndex)
 }
 
 function restoreCharacterSelectionById(characterId: string): void {
-  const index = DBState.db.characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
+  const index = getDatabase().characters?.findIndex((candidate) => candidate?.chaId === characterId) ?? -1
   if (index === -1) return
   restoreCharacterSelectionScalars(index, index)
 }
@@ -624,7 +624,7 @@ function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacemen
           placement.characterId,
         )
         characterOrder[folderIndex] = targetFolder
-        DBState.db.characterOrder = characterOrder
+        getDatabase().characterOrder = characterOrder
         return
       }
     }
@@ -632,12 +632,12 @@ function restoreMissingCharacterOrderPlacement(placement: CharacterOrderPlacemen
     const restoredFolder = cloneJsonValue(placement.folder)
     restoredFolder.data = [placement.characterId]
     characterOrder.splice(clampInsertionIndex(placement.folderIndex, characterOrder.length), 0, restoredFolder)
-    DBState.db.characterOrder = characterOrder
+    getDatabase().characterOrder = characterOrder
     return
   }
 
   characterOrder.splice(clampInsertionIndex(placement.rootIndex, characterOrder.length), 0, placement.characterId)
-  DBState.db.characterOrder = characterOrder
+  getDatabase().characterOrder = characterOrder
 }
 
 function removeCharacterIdFromOrder(characterOrder: (string | folder)[], characterId: string): void {
@@ -813,14 +813,14 @@ export function applyCharacterRowMutationScoped(
   const previous = currentCharacterRowSnapshot(index)
   let applied = false
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db.characters?.[index]
+    const target = getDatabase().characters?.[index]
     if (!target || target.chaId !== characterId) return
     mutate(target)
     applied = true
   })
 
   if (applied) {
-    dispatchCompatibleCharacterUpdateScoped(previous.character, DBState.db.characters?.[index], previous)
+    dispatchCompatibleCharacterUpdateScoped(previous.character, getDatabase().characters?.[index], previous)
   }
   return applied
 }
@@ -950,7 +950,7 @@ function dispatchCharacterOrderCommand(attemptedOrder: readonly (string | folder
 }
 
 export function dispatchReorderCharacters(previousOrder: (string | folder)[]): void {
-  const rollback = characterOrderRollbackFromOrders(previousOrder, DBState.db.characterOrder ?? [])
+  const rollback = characterOrderRollbackFromOrders(previousOrder, getDatabase().characterOrder ?? [])
   dispatchCharacterOrderCommand(rollback.attemptedOrder, () => restoreCharacterOrderAttempt(rollback))
 }
 
@@ -966,10 +966,10 @@ function characterOrderRollbackFromOrders(
 
 function restoreCharacterOrderAttempt(rollback: CharacterOrderRollback): void {
   withTrustedServerProjectionWrite(() => {
-    const liveOrder = DBState.db.characterOrder ?? []
+    const liveOrder = getDatabase().characterOrder ?? []
     if (!characterOrderStructureEquals(liveOrder, rollback.attemptedOrder)) return
 
-    DBState.db.characterOrder = restoreCharacterOrderStructure(rollback.previousOrder, liveOrder)
+    getDatabase().characterOrder = restoreCharacterOrderStructure(rollback.previousOrder, liveOrder)
   })
 }
 
@@ -1065,13 +1065,13 @@ export function repairCharacterOrderOptimistically(
     dispatchReorder?: boolean
   } = {},
 ): boolean {
-  const normalized = normalizeCharacterOrder(DBState.db.characterOrder, DBState.db.characters)
+  const normalized = normalizeCharacterOrder(getDatabase().characterOrder, getDatabase().characters)
   if (!normalized.changed) return false
 
   const shouldDispatchReorder = options.dispatchReorder ?? true
   const previousOrder = shouldDispatchReorder ? currentCharacterOrderSnapshot() : null
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characterOrder = normalized.characterOrder
+    getDatabase().characterOrder = normalized.characterOrder
   })
   if (previousOrder) {
     dispatchReorderCharacters(previousOrder)
@@ -1156,7 +1156,7 @@ export function moveCharacterOrderItem(
       }
     }
 
-    DBState.db.characterOrder = characterOrder
+    getDatabase().characterOrder = characterOrder
     replaceCharacterOrderWithNormalized()
     changed = true
   })
@@ -1218,7 +1218,7 @@ export function createCharacterOrderFolder(
         characterOrder.splice(mainIndex.index, 1)
       }
     }
-    DBState.db.characterOrder = characterOrder
+    getDatabase().characterOrder = characterOrder
     replaceCharacterOrderWithNormalized()
     changed = true
   })
@@ -1274,7 +1274,7 @@ export function updateCharacterOrderFolder(
       attempted: cloneJsonValue(attemptedPatch),
     }
     characterOrder[folderIndex] = mutableFolder
-    DBState.db.characterOrder = characterOrder
+    getDatabase().characterOrder = characterOrder
     changed = true
   })
 
@@ -1314,7 +1314,7 @@ function captureCharacterOrderFolderMetadata(
 
 function restoreCharacterOrderFolderMetadataAttempt(rollback: CharacterOrderFolderMetadataRollback): void {
   withTrustedServerProjectionWrite(() => {
-    const characterOrder = DBState.db.characterOrder ?? []
+    const characterOrder = getDatabase().characterOrder ?? []
     const folderIndex = findCharacterOrderFolderIndex(characterOrder, rollback.folderId)
     if (folderIndex === -1) return
 
@@ -1331,7 +1331,7 @@ function restoreCharacterOrderFolderMetadataAttempt(rollback: CharacterOrderFold
     if (rolledBack.length === 0) return
 
     characterOrder[folderIndex] = targetFolder
-    DBState.db.characterOrder = characterOrder
+    getDatabase().characterOrder = characterOrder
   })
 }
 
@@ -1343,8 +1343,8 @@ function isSameCharacterOrderPosition(
 }
 
 function ensureCharacterOrder(): (string | folder)[] {
-  DBState.db.characterOrder = DBState.db.characterOrder ?? []
-  return DBState.db.characterOrder
+  getDatabase().characterOrder = getDatabase().characterOrder ?? []
+  return getDatabase().characterOrder
 }
 
 function isCharacterOrderFolder(value: string | folder | undefined | null): value is folder {
@@ -1352,7 +1352,7 @@ function isCharacterOrderFolder(value: string | folder | undefined | null): valu
 }
 
 function getCharacterOrderFolderIndex(id: string): number {
-  return findCharacterOrderFolderIndex(DBState.db.characterOrder ?? [], id)
+  return findCharacterOrderFolderIndex(getDatabase().characterOrder ?? [], id)
 }
 
 function findCharacterOrderFolderIndex(characterOrder: (string | folder)[], id: string): number {
@@ -1388,8 +1388,8 @@ function resolveCharacterOrderFolderIndex(
 }
 
 function replaceCharacterOrderWithNormalized(): void {
-  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), DBState.db.characters)
-  DBState.db.characterOrder = normalized.characterOrder
+  const normalized = normalizeCharacterOrder(ensureCharacterOrder(), getDatabase().characters)
+  getDatabase().characterOrder = normalized.characterOrder
 }
 
 function isCharacterOrderableId(value: unknown): value is string {
@@ -1406,7 +1406,7 @@ function characterOrderEquals(
 export function setCharacterSupaMemory(characterId: string, enabled: boolean): void {
   if (!characterId) return
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character || Boolean(character.supaMemory) === enabled) return
 
     const previous = canUseServerCommands() ? currentCharacterSupaMemorySnapshot(characterId) : null
@@ -1420,7 +1420,7 @@ export function setCharacterSupaMemory(characterId: string, enabled: boolean): v
 export function setCharacterInputTranslationHook(characterId: string, enabled: boolean): void {
   if (!characterId) return
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!character || Boolean(character.useInputTranslationHook) === enabled) return
 
     const previous = canUseServerCommands() ? currentCharacterInputTranslationHookSnapshot(characterId) : null
