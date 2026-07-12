@@ -1,9 +1,9 @@
-import { DBState } from '../../stores.svelte'
+import { getDatabase } from '../../storage/database.svelte'
 import { getImageType } from '../imageType'
 import { doLossyCompression } from './lossyCompression'
 
 export async function compressImage(data: Uint8Array) {
-  if (!DBState.db.imageCompression) {
+  if (!getDatabase().imageCompression) {
     return data
   }
 

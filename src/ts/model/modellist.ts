@@ -13,7 +13,6 @@ import { OpenAIModels } from './providers/openai'
 import { AnthropicModels } from './providers/anthropic'
 import { GoogleModels } from './providers/google'
 import { fetchNative } from '../globalApi.svelte'
-import { DBState } from '../stores.svelte'
 import { customProviderStore, pluginV2 } from '../plugins/plugins.svelte'
 import { get } from 'svelte/store'
 import { customV3ProviderMetaStore } from '../plugins/apiV3/v3.svelte'
@@ -626,14 +625,15 @@ for (let i = 0; i < LLMModels.length; i++) {
 }
 
 export async function registerModelDynamic() {
-  if (!DBState.db.dynamicModelRegistry) {
+  if (!getDatabase().dynamicModelRegistry) {
     return
   }
   //google
   try {
-    if (DBState.db.google.accessToken) {
+    const googleAccessToken = getDatabase().google.accessToken
+    if (googleAccessToken) {
       const res = await fetchNative(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${DBState.db.google.accessToken}`,
+        `https://generativelanguage.googleapis.com/v1beta/models?key=${googleAccessToken}`,
         {
           method: 'GET',
         },
@@ -679,12 +679,13 @@ export async function registerModelDynamic() {
 
   //Anthropic
   try {
-    if (DBState.db.claudeAPIKey) {
+    const claudeAPIKey = getDatabase().claudeAPIKey
+    if (claudeAPIKey) {
       const res = await fetchNative('https://api.anthropic.com/v1/models', {
         method: 'GET',
         headers: {
           'anthropic-version': '2023-06-01',
-          'x-api-key': DBState.db.claudeAPIKey,
+          'x-api-key': claudeAPIKey,
         },
       })
 

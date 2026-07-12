@@ -4,7 +4,7 @@ import { downloadFile } from '../globalApi.svelte'
 import { BufferToText, selectSingleFile } from '../util'
 import { alertError } from '../alert'
 import { isLite } from '../lite'
-import { CustomCSSStore, DBState, SafeModeStore } from '../stores.svelte'
+import { CustomCSSStore, SafeModeStore } from '../stores.svelte'
 import { applyServerBackedSettingsPatch } from '../server/settingsBridge.svelte'
 import {
   beginColorSchemeImport,
@@ -202,7 +202,7 @@ export function changeColorSchemeType(type: 'light' | 'dark') {
   try {
     applyServerBackedSettingsPatch({
       colorScheme: {
-        ...DBState.db.colorScheme,
+        ...getDatabase().colorScheme,
         type,
       },
     })
@@ -212,14 +212,15 @@ export function changeColorSchemeType(type: 'light' | 'dark') {
 }
 
 export function exportColorScheme() {
-  let json = JSON.stringify(DBState.db.colorScheme)
+  const json = JSON.stringify(getDatabase().colorScheme)
   downloadFile('colorScheme.json', json)
 }
 
 function currentColorSchemeImportFreshness(): ColorSchemeImportFreshness {
+  const db = getDatabase()
   return {
-    colorSchemeName: DBState.db.colorSchemeName,
-    colorScheme: DBState.db.colorScheme,
+    colorSchemeName: db.colorSchemeName,
+    colorScheme: db.colorScheme,
   }
 }
 
@@ -274,7 +275,7 @@ export async function importColorScheme() {
 }
 
 export function updateTextThemeAndCSS() {
-  let db = DBState.db
+  const db = getDatabase()
   const root = document.querySelector(':root') as HTMLElement
   if (!root) {
     return
