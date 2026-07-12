@@ -1,37 +1,16 @@
-import { checkNullish } from './util'
-import { v4 as uuidv4 } from 'uuid'
 import { get } from 'svelte/store'
-import {
-  applyServerCharacterLorebookProjection,
-  applyServerCharacterSelectionProjection,
-  applyServerProjectionDatabase,
-  mergeServerProjectionFields,
-  mergeServerProjectionCharacterRow,
-  mergeServerProjectionCharacterRowComposite,
-  mergeServerProjectionPresetCollection,
-  mergeServerProjectionPresetRow,
-  captureServerPresetProjectionBaseline,
-  setDatabase,
-  defaultSdDataFunc,
-  getDatabase,
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-  type Database,
-} from './storage/database.svelte'
-import { botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from './stores.svelte'
+import { getDatabase, setServerProjectionWriteGuardEnabled, type Database } from './storage/database.svelte'
+import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
 import { loadPlugins } from './plugins/plugins.svelte'
-import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from './alert'
-import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from './storage/defaultPrompts'
+import { alertError, alertMd, alertTOS, waitAlert } from './alert'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { language } from 'src/lang'
 import { startObserveDom } from './observer.svelte'
 import { updateGuisize } from './gui/guisize'
-import { updateLorebooks } from './characters'
 import { moduleUpdate } from './process/modules'
-import { checkCharOrder } from './globalApi.svelte'
 import { registerModelDynamic } from './model/modellist'
-import { fetchServerBootstrapProjection, fetchServerBootstrapProjectionReadOnly } from './server/bootstrap'
+import { fetchServerBootstrap, fetchServerBootstrapReadOnly, type ServerBootstrapRuntime } from './server/bootstrap'
 import { subscribeServerCommandEvents, type ServerMemoryEvent } from './server/events'
 import { publishServerMemoryJobEvent } from './server/memoryJobEvents'
 import {
@@ -46,60 +25,33 @@ import {
   type CommandEvent,
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
-import { fetchServerProjectionResource } from './server/projection'
-import { forceServerProjectionResync } from './server/projectionResync'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
-import {
-  applyServerChatMessagesProjection,
-  hydrateActiveCharacterLorebook,
-  hydrateActiveChat,
-  invalidateChatHydration,
-  resetChatHydration,
-  startChatMessageHydration,
-} from './server/chatMessageHydration.svelte'
+import { hydrateActiveChat, resetChatHydration, startChatMessageHydration } from './server/chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
-import {
-  hydrateCharacterShell,
-  hydrateSelectedCharacterShell,
-  startSelectedCharacterShellHydration,
-  stopSelectedCharacterShellHydration,
-} from './server/characterShellHydration.svelte'
 import {
   setActiveGenerationJobs,
   startActiveGenerationReattach,
   triggerOpenChatGenerationReattach,
 } from './process/reattach'
-import {
-  clearActiveMessageTranslation,
-  setActiveMessageTranslations,
-  startActiveMessageTranslationRefresh,
-} from './server/messageTranslationJobs'
+import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
-import {
-  applyPromptTemplateProjectionFields,
-  markPromptTemplateProjectionApplied,
-  resetPromptTemplateHydration,
-  startPromptTemplateHydration,
-} from './server/promptTemplateHydration'
 import { enableChatCompletionPushNotifications } from './server/pushNotifications'
-import { mergePendingPluginStorageProjection } from './pluginCommands'
+import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
+import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
 
-const SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS = 1000
-const SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS = 30_000
-const SERVER_PROJECTION_RECONNECT_JITTER_RATIO = 0.2
+const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
+const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000
+const SERVER_RESOURCE_RECONNECT_JITTER_RATIO = 0.2
 
-let serverProjectionEventSubscription: { unsubscribe: () => void } | null = null
+let serverResourceEventSubscription: { unsubscribe: () => void } | null = null
 let stopBridgePatchLifecycleFlush: (() => void) | null = null
-// Serializes the surgical-sync decision tree so inbound command events are
-// applied strictly in arrival order (gap detection per-event, not batched).
-let serverProjectionSyncChain: Promise<void> = Promise.resolve()
-let serverProjectionEventsDesired = false
-let serverProjectionReconnectTimer: ReturnType<typeof setTimeout> | null = null
-let serverProjectionReconnectAttempt = 0
-const reconciledCommandProjectionRevisions: number[] = []
-const reconciledCommandProjectionRevisionSet = new Set<number>()
-const RECONCILED_COMMAND_PROJECTION_REVISION_LIMIT = 256
+// Serializes resource invalidation so the applied revision cursor advances in
+// command-event order.
+let serverResourceSyncChain: Promise<void> = Promise.resolve()
+let serverResourceEventsDesired = false
+let serverResourceReconnectTimer: ReturnType<typeof setTimeout> | null = null
+let serverResourceReconnectAttempt = 0
 
 function initialSelectedCharFromDatabase(db: Database): number {
   const currentChar = (db as { currentChar?: unknown }).currentChar
@@ -161,66 +113,51 @@ export async function loadData() {
 }
 
 export async function loadWebInitialDatabase() {
-  LoadingStatusState.text = 'Loading Server Projection...'
-  const bootstrap = await fetchServerBootstrapProjection()
-  if (bootstrap.status !== 'ok') {
-    throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)
+  LoadingStatusState.text = 'Loading Server Data...'
+  const firstBootstrap = await fetchServerBootstrap()
+  if (firstBootstrap.status !== 'ok') {
+    throw new Error(firstBootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : firstBootstrap.error)
   }
-  const projection =
-    bootstrap.projection.database == null ? await initializeFreshServerDatabase() : bootstrap.projection
-  applyServerProjectionDatabase(projection.database, projection.revision)
-  resetPromptTemplateHydration()
-  selectedCharID.set(initialSelectedCharFromDatabase(projection.database))
-  // Record which characters arrive with a REAL (resident) globalLore. The
-  // lorebook watcher only persists hydrated characters.
+  const runtime = firstBootstrap.bootstrap.initialized
+    ? firstBootstrap.bootstrap
+    : await initializeFreshServerDatabase()
+
+  const resources = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
+  if (resources.status !== 'ok') {
+    throw new Error(
+      resources.status === 'unavailable'
+        ? 'Server resource APIs are unavailable'
+        : `Server resource load failed: ${resources.error}`,
+    )
+  }
+
+  const database = getDatabase()
+  selectedCharID.set(initialSelectedCharFromDatabase(database))
+  resetChatHydration()
   resetLorebookHydration()
-  recordHydratedCharacterLorebooks(projection.database.characters)
-  // Seed the surgical-sync baseline: subsequent command events are decided
-  // against the revision this client has applied.
-  setCachedServerCommandRevision(projection.revision)
-  setAppliedServerProjectionRevision(projection.revision)
+  recordHydratedCharacterLorebooks(database.characters)
+  setCachedServerCommandRevision(resources.revision)
+  setAppliedServerProjectionRevision(resources.revision)
   setServerCommandSuccessReconciler((event, coalescedEvents) =>
-    enqueueServerProjectionSync(() =>
-      processServerCommandEvent(event, {
-        allowAlreadyAppliedRevision: true,
-        coalescedRevisions: coalescedEvents.map((coalescedEvent) => coalescedEvent.revision),
-        markReconciledRevision: true,
-      }),
-    ),
+    enqueueServerResourceSync(() => processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event])),
   )
   setServerProjectionWriteGuardEnabled(true)
-  // Surface any in-flight server generations so opening their chat re-attaches
-  // to the live stream.
-  setActiveGenerationJobs(projection.activeGenerationJobs ?? [])
-  setActiveMessageTranslations(projection.activeMessageTranslations ?? [])
+  setActiveGenerationJobs(runtime.activeGenerationJobs ?? [])
+  setActiveMessageTranslations(runtime.activeMessageTranslations ?? [])
   startActiveMessageTranslationRefresh()
   startActiveGenerationReattach()
-  // Inactive characters can arrive as lightweight shells; hydrate the selected
-  // row before chat/lorebook-specific hydration tries to use heavyweight fields.
-  startSelectedCharacterShellHydration()
-  await hydrateSelectedCharacterShell()
-  // Chats arrive as message-free stubs; hydrate the open chat's messages on
-  // open (and re-hydrate after a re-stub).
   startChatMessageHydration()
   void hydrateActiveChat()
-  startPromptTemplateHydration()
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = startBridgePatchLifecycleFlush()
-  await startServerProjectionEvents()
+  await startServerResourceEvents()
 }
 
 /**
- * One-time first-run seed. When bootstrap returns `database: null`, ask the
- * server to create its default database and then refetch the server-shaped
- * projection. A failed seed is fatal for this startup: the app should not enter
- * the home screen while the server still has no SQLite-backed database.
+ * One-time first-run seed. Bootstrap reports only whether SQLite has been
+ * initialized; all durable data is subsequently loaded through resource APIs.
  */
-async function initializeFreshServerDatabase(): Promise<{
-  revision: number
-  database: Database
-  activeGenerationJobs?: Array<{ chatId: string; jobId: string }>
-  activeMessageTranslations?: Array<{ chatId: string; messageId: string }>
-}> {
+async function initializeFreshServerDatabase(): Promise<ServerBootstrapRuntime> {
   if (!canUseServerCommands()) {
     throw new Error('Initial server database seed failed: server commands unavailable')
   }
@@ -228,19 +165,14 @@ async function initializeFreshServerDatabase(): Promise<{
   const result = await initializeServerDatabase()
   if (result.status === 'ok') {
     setCachedServerCommandRevision(result.revision)
-    const bootstrap = await fetchServerBootstrapProjectionReadOnly()
+    const bootstrap = await fetchServerBootstrapReadOnly()
     if (bootstrap.status !== 'ok') {
       throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)
     }
-    if (bootstrap.projection.database == null) {
-      throw new Error('Initial server database seed failed: server returned an empty projection')
+    if (!bootstrap.bootstrap.initialized) {
+      throw new Error('Initial server database seed failed: server is still uninitialized')
     }
-    return {
-      revision: bootstrap.projection.revision,
-      database: bootstrap.projection.database,
-      activeGenerationJobs: bootstrap.projection.activeGenerationJobs,
-      activeMessageTranslations: bootstrap.projection.activeMessageTranslations,
-    }
+    return bootstrap.bootstrap
   }
 
   throw new Error(`Initial server database seed failed: ${serverCommandFailureMessage(result)}`)
@@ -259,26 +191,23 @@ function serverCommandFailureMessage(
   }
 }
 
-export function stopServerProjectionEvents() {
-  serverProjectionEventsDesired = false
-  serverProjectionEventSubscription?.unsubscribe()
-  serverProjectionEventSubscription = null
+export function stopServerResourceEvents() {
+  serverResourceEventsDesired = false
+  serverResourceEventSubscription?.unsubscribe()
+  serverResourceEventSubscription = null
   stopBridgePatchLifecycleFlush?.()
   stopBridgePatchLifecycleFlush = null
-  stopSelectedCharacterShellHydration()
   setServerCommandSuccessReconciler(null)
-  reconciledCommandProjectionRevisions.length = 0
-  reconciledCommandProjectionRevisionSet.clear()
-  if (serverProjectionReconnectTimer) {
-    clearTimeout(serverProjectionReconnectTimer)
-    serverProjectionReconnectTimer = null
+  if (serverResourceReconnectTimer) {
+    clearTimeout(serverResourceReconnectTimer)
+    serverResourceReconnectTimer = null
   }
-  serverProjectionReconnectAttempt = 0
+  serverResourceReconnectAttempt = 0
 }
 
-async function startServerProjectionEvents() {
-  teardownServerProjectionSubscription()
-  serverProjectionEventsDesired = true
+async function startServerResourceEvents() {
+  teardownServerResourceSubscription()
+  serverResourceEventsDesired = true
   const subscription = await subscribeServerCommandEvents({
     sinceRevision: peekAppliedServerProjectionRevision(),
     onCommandEvent: handleServerCommandEvent,
@@ -286,64 +215,64 @@ async function startServerProjectionEvents() {
     onError: (error) => {
       console.warn(error)
       if (error.includes('Malformed command event frame')) {
-        enqueueServerProjectionSync(async () => {
-          await forceServerProjectionResync('malformed-command-event')
-          scheduleServerProjectionReconnect()
+        enqueueServerResourceSync(async () => {
+          await forceServerResourceRefresh('malformed-command-event')
+          scheduleServerResourceReconnect()
         })
         return
       }
-      scheduleServerProjectionReconnect()
+      scheduleServerResourceReconnect()
     },
     onClose: () => {
-      scheduleServerProjectionReconnect()
+      scheduleServerResourceReconnect()
     },
   })
   if (subscription.status === 'ok') {
-    serverProjectionReconnectAttempt = 0
-    serverProjectionEventSubscription = subscription
+    serverResourceReconnectAttempt = 0
+    serverResourceEventSubscription = subscription
   } else if (subscription.status === 'error') {
     console.warn(`Server event subscription failed: ${subscription.error}`)
-    scheduleServerProjectionReconnect()
+    scheduleServerResourceReconnect()
   } else if (subscription.status === 'replay-unavailable') {
-    console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing projection`)
-    enqueueServerProjectionSync(async () => {
-      await forceServerProjectionResync('event-replay-unavailable')
-      scheduleServerProjectionReconnect()
+    console.warn(`Server event replay unavailable at revision ${subscription.currentRevision}; refreshing resources`)
+    enqueueServerResourceSync(async () => {
+      await forceServerResourceRefresh('event-replay-unavailable')
+      scheduleServerResourceReconnect()
     })
   }
 }
 
-function teardownServerProjectionSubscription() {
-  serverProjectionEventSubscription?.unsubscribe()
-  serverProjectionEventSubscription = null
+function teardownServerResourceSubscription() {
+  serverResourceEventSubscription?.unsubscribe()
+  serverResourceEventSubscription = null
 }
 
-function scheduleServerProjectionReconnect() {
-  if (serverProjectionReconnectTimer || !serverProjectionEventsDesired) return
-  const delayMs = calculateServerProjectionReconnectDelayMs(serverProjectionReconnectAttempt)
-  serverProjectionReconnectAttempt += 1
-  serverProjectionReconnectTimer = setTimeout(() => {
-    serverProjectionReconnectTimer = null
-    if (!serverProjectionEventsDesired) return
+function scheduleServerResourceReconnect() {
+  if (serverResourceReconnectTimer || !serverResourceEventsDesired) return
+  const delayMs = calculateServerResourceReconnectDelayMs(serverResourceReconnectAttempt)
+  serverResourceReconnectAttempt += 1
+  serverResourceReconnectTimer = setTimeout(() => {
+    serverResourceReconnectTimer = null
+    if (!serverResourceEventsDesired) return
     void (async () => {
-      await startServerProjectionEvents()
+      await startServerResourceEvents()
     })()
   }, delayMs)
 }
 
-export function calculateServerProjectionReconnectDelayMs(attempt: number, random: () => number = Math.random): number {
+export function calculateServerResourceReconnectDelayMs(attempt: number, random: () => number = Math.random): number {
   const normalizedAttempt = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0
   const exponentialDelay = Math.min(
-    SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS,
-    SERVER_PROJECTION_RECONNECT_BASE_DELAY_MS * 2 ** normalizedAttempt,
+    SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS,
+    SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS * 2 ** normalizedAttempt,
   )
   const randomValue = random()
   const normalizedRandom = Number.isFinite(randomValue) && randomValue >= 0 && randomValue <= 1 ? randomValue : 0.5
   const jitterMultiplier =
-    1 - SERVER_PROJECTION_RECONNECT_JITTER_RATIO + normalizedRandom * SERVER_PROJECTION_RECONNECT_JITTER_RATIO * 2
+    1 - SERVER_RESOURCE_RECONNECT_JITTER_RATIO + normalizedRandom * SERVER_RESOURCE_RECONNECT_JITTER_RATIO * 2
   const jitteredDelay = Math.round(exponentialDelay * jitterMultiplier)
 
-  return Math.min(SERVER_PROJECTION_RECONNECT_MAX_DELAY_MS, Math.max(1, jitteredDelay))
+  return Math.min(SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS, Math.max(1, jitteredDelay))
 }
 
 function applyServerMemoryEvent(event: ServerMemoryEvent) {
@@ -355,363 +284,72 @@ function applyServerMemoryEvent(event: ServerMemoryEvent) {
 }
 
 /**
- * Surgical inbound sync for server projection command events. Each event is
- * decided against the last revision this client applied:
- *   - `event.revision <= appliedRevision` → own echo / already applied → skip.
- *   - `event.revision === appliedRevision + 1` → contiguous foreign event → targeted
- *     fetch of just that resource (or full bootstrap if the server cannot
- *     narrow it).
- *   - `event.revision > appliedRevision + 1` (gap) or no baseline → full bootstrap.
- * Events are processed strictly in arrival order via a serial chain so gap
- * detection is per-event rather than batched.
+ * Apply API resource invalidations in command revision order. Dedicated read
+ * endpoints own the mapping from event resources to settings, collections,
+ * character rows, transcripts, and lorebooks; revision gaps fall back to one
+ * complete resource refresh.
  */
 function handleServerCommandEvent(event: CommandEvent) {
   if (isOwnCommandEvent(event) && deferOwnServerCommandReconciliation(event)) return
-  enqueueServerProjectionSync(() => processServerCommandEvent(event))
+  enqueueServerResourceSync(() => processServerCommandEvents([event]))
 }
 
-function enqueueServerProjectionSync(task: () => Promise<void>): Promise<void> {
-  serverProjectionSyncChain = serverProjectionSyncChain
+function enqueueServerResourceSync(task: () => Promise<void>): Promise<void> {
+  serverResourceSyncChain = serverResourceSyncChain
     .then(task)
-    .catch((error) => console.warn('Server projection sync failed', error))
-  return serverProjectionSyncChain
+    .catch((error) => console.warn('Server resource sync failed', error))
+  return serverResourceSyncChain
 }
 
-interface ProcessServerCommandEventOptions {
-  allowAlreadyAppliedRevision?: boolean
-  coalescedRevisions?: readonly number[]
-  markReconciledRevision?: boolean
-}
+async function processServerCommandEvents(events: readonly CommandEvent[]): Promise<void> {
+  if (events.length === 0) return
 
-async function processServerCommandEvent(
-  event: CommandEvent,
-  options: ProcessServerCommandEventOptions = {},
-): Promise<void> {
-  const ownEvent = isOwnCommandEvent(event)
-  if ((ownEvent || options.markReconciledRevision) && reconciledCommandProjectionRevisionSet.has(event.revision)) {
-    advanceKnownServerCommandRevision(event.revision)
-    setAppliedServerProjectionRevision(event.revision)
-    markReconciledCommandProjectionEvent(event, options)
-    return
-  }
-  const appliedRevision = peekAppliedServerProjectionRevision()
-  if (appliedRevision === null) {
-    // No baseline yet: reconcile from scratch.
-    await reconcileCommandEventWithFullResync('no-baseline', event, options, 'reconciled')
-    return
-  }
-  if (event.revision <= appliedRevision && !ownEvent && !options.allowAlreadyAppliedRevision) {
-    // Own echo or an event already covered by a prior apply → nothing to do.
-    return
-  }
-  if (event.revision <= appliedRevision || event.revision === appliedRevision + 1) {
-    const presetBaseline =
-      event.resource === 'preset' && event.type !== 'preset.updated'
-        ? captureServerPresetProjectionBaseline(DBState.db.botPresets.map((preset) => preset?.id))
-        : event.resource === 'preset' ||
-            event.resource === 'presetRow' ||
-            event.resource === 'presetCollection' ||
-            event.resource === 'presetApplied'
-          ? captureServerPresetProjectionBaseline([event.id, event.parentId])
-          : undefined
-    const result = await fetchServerProjectionResource(event.resource, {
-      id: event.resource === 'preset' && event.type !== 'preset.updated' ? undefined : event.id,
-      parentId: event.parentId,
-    })
-    if (result.status === 'ok' && result.mode === 'character-selection') {
-      await hydrateCharacterShell(result.characterId)
-      if (isCommandEventOlderThanAppliedRevision(event)) {
-        markReconciledCommandProjectionEvent(event, options)
-        return
-      }
-      const applied = applyServerCharacterSelectionProjection({
-        characterId: result.characterId,
-        currentChar: result.currentChar,
-        lastInteraction: result.lastInteraction,
-      })
-      if (applied) {
-        markAppliedCommandProjectionEvent(event, options)
-        return
-      }
-      await reconcileCommandEventWithFullResync('projection-error', event, options)
-      return
-    }
-    if (result.status === 'ok' && result.mode === 'character-lorebook') {
-      // A foreign character-globalLore edit: surgically replace just that
-      // character's globalLore instead of re-shipping every character. Works
-      // whether or not lorebook stubs are on (the field is set resident).
-      const applied = applyServerCharacterLorebookProjection(result.characterId, result.globalLore)
-      if (applied) {
-        markAppliedCommandProjectionEvent(event, options)
-        return
-      }
-      // Unknown character locally → reconcile from scratch.
-      await reconcileCommandEventWithFullResync('projection-error', event, options)
-      return
-    }
-    if (result.status === 'ok' && result.mode === 'character-row') {
-      // A foreign per-character edit (character field / module-link / chat or
-      // folder metadata): surgically replace just that character row, preserving
-      // already-hydrated chat messages, instead of re-stubbing every character.
-      const chatSnapshot = captureCharacterRowChatSnapshot(result.characterId)
-      const applied = mergeServerProjectionCharacterRow(result.character)
-      if (applied) {
-        reconcileCharacterRowChatHydration(result.characterId, chatSnapshot)
-        markAppliedCommandProjectionEvent(event, options)
-        return
-      }
-      // Unknown character locally → reconcile from scratch.
-      await reconcileCommandEventWithFullResync('projection-error', event, options)
-      return
-    }
-    if (result.status === 'ok' && result.mode === 'preset') {
-      const applied = mergeServerProjectionPresetRow(result.presetId, result.preset, presetBaseline)
-      if (applied) {
-        markAppliedCommandProjectionEvent(event, options)
-        return
-      }
-      await reconcileCommandEventWithFullResync('projection-error', event, options)
-      return
-    }
-    if (result.status === 'ok' && result.mode === 'preset-collection') {
-      const applied = mergeServerProjectionPresetCollection(result.fields, result.presetRows, presetBaseline)
-      if (applied) {
-        markAppliedCommandProjectionEvent(event, options)
-        return
-      }
-      await reconcileCommandEventWithFullResync('projection-error', event, options)
-      return
-    }
-    if (result.status === 'ok' && result.mode === 'chat-transcript') {
-      // Assembly rewrites, generation with scriptstate changes, and chat
-      // create/fork can change row metadata and a transcript in one revision.
-      // Apply both as one visible projection; rollback the row if the message
-      // half cannot apply, then repair from a full bootstrap.
-      const applied = mergeServerProjectionCharacterRowComposite(result.character, () =>
-        applyServerChatMessagesProjection(result.chatId, result.message, result.hypaV3Data, result.alternates),
-      )
-      if (!applied) {
-        await reconcileCommandEventWithFullResync('projection-error', event, options)
-        return
-      }
-      triggerOpenChatGenerationReattach()
-      markAppliedCommandProjectionEvent(event, options)
-      return
-    }
-    if (result.status === 'ok' && (result.mode === 'generation-chat' || result.mode === 'chat-messages')) {
-      // Server-owned generation and ordinary message commands both change one
-      // chat's messages. Apply just that message window and re-arm the open
-      // chat generation state instead of re-stubbing every character.
-      const range =
-        typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
-          ? { start: result.messageStart, total: result.messageTotal }
-          : undefined
-      const applied = applyServerChatMessagesProjection(
-        result.chatId,
-        result.message,
-        result.hypaV3Data,
-        result.alternates,
-        range,
-      )
-      if (!applied) {
-        await reconcileCommandEventWithFullResync('projection-error', event, options)
-        return
-      }
-      triggerOpenChatGenerationReattach()
-      if (event.resource === 'message' && event.id) {
-        clearActiveMessageTranslation(event.id)
-      }
-      markAppliedCommandProjectionEvent(event, options)
-      return
-    }
-    if (result.status === 'ok' && result.mode === 'fields') {
-      const fields = preservePendingFieldEdits(result.fields)
-      const selectedCharacterBeforeMerge = captureSelectedCharacterBeforeBroadProjection(fields)
-      if (event.resource === 'preset' && Array.isArray(fields.botPresets)) {
-        const presetRows = fields.botPresets.filter(
-          (preset) => !!preset && typeof preset === 'object' && !Array.isArray(preset),
-        ) as unknown as Record<string, unknown>[]
-        if (!mergeServerProjectionPresetCollection(fields, presetRows, presetBaseline)) {
-          await reconcileCommandEventWithFullResync('projection-error', event, options)
-          return
-        }
-      } else if (event.resource === 'promptItem') {
-        if (!Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) {
-          await reconcileCommandEventWithFullResync('projection-error', event, options)
-          return
-        }
-        const ownerId = event.parentId ?? null
-        if (!applyPromptTemplateProjectionFields(fields, ownerId)) {
-          await reconcileCommandEventWithFullResync('projection-error', event, options)
-          return
-        }
-        markPromptTemplateProjectionApplied(ownerId)
-      } else {
-        mergeServerProjectionFields(fields)
-        if (Object.prototype.hasOwnProperty.call(fields, 'promptTemplate')) {
-          markPromptTemplateProjectionApplied()
-        }
-      }
-      // The `characters` fields are message-free stubs and the merge replaces
-      // the whole array, so it re-stubs EVERY chat, not just the open one.
-      // Forget cached hydration so re-open or bulk reads refetch stale chats,
-      // then re-hydrate the open chat eagerly.
-      if (Object.prototype.hasOwnProperty.call(fields, 'characters')) {
-        reconcileSelectedCharacterAfterBroadProjection(fields, selectedCharacterBeforeMerge)
-        resetChatHydration()
-        void hydrateActiveChat({ force: true })
-        // The merge re-stubs every character's globalLore too: forget hydrated
-        // marks, re-record from the freshly merged raw characters, then re-hydrate
-        // the open character's globalLore (no-op unless stubs are on).
-        resetLorebookHydration()
-        recordHydratedCharacterLorebooks(fields.characters)
-        void hydrateActiveCharacterLorebook({ force: true })
-        triggerOpenChatGenerationReattach()
-      }
-      // Advance by exactly one event; the fetch returns the resource as of the
-      // server's *current* revision, but later events for other resources must
-      // still be processed, so the cursor only moves to this event.
-      markAppliedCommandProjectionEvent(event, options)
-      return
-    }
-    // 'full' mode, error, or unavailable → fall back to a full reconcile.
-    await reconcileCommandEventWithFullResync(
-      result.status === 'ok' && result.mode === 'full' ? 'projection-full-mode' : 'projection-error',
-      event,
-      options,
-    )
-    return
-  }
-  // Gap detected (event.revision > appliedRevision + 1) → self-healing full bootstrap.
-  await reconcileCommandEventWithFullResync('revision-gap', event, options)
-}
-
-interface SelectedCharacterBeforeBroadProjection {
-  active: boolean
-  characterId?: string
-}
-
-function preservePendingFieldEdits(fields: Partial<Database>): Partial<Database> {
-  const pluginCustomStorage = (fields as { pluginCustomStorage?: unknown }).pluginCustomStorage
-  if (
-    !Object.prototype.hasOwnProperty.call(fields, 'pluginCustomStorage') ||
-    !pluginCustomStorage ||
-    typeof pluginCustomStorage !== 'object' ||
-    Array.isArray(pluginCustomStorage)
-  ) {
-    return fields
-  }
-  return {
-    ...fields,
-    pluginCustomStorage: mergePendingPluginStorageProjection(pluginCustomStorage as Record<string, unknown>),
-  }
-}
-
-interface CharacterRowChatSnapshot {
-  chatIds: Set<string>
-  activeChatId?: string
-}
-
-function currentActiveChatId(): string | undefined {
-  const selectedCharacterIndex = get(selectedCharID)
-  if (selectedCharacterIndex < 0) return undefined
-  const character = DBState.db.characters?.[selectedCharacterIndex]
-  if (!character || !Array.isArray(character.chats)) return undefined
-  const chatPage = Number.isInteger(character.chatPage) ? character.chatPage : 0
-  const chat = character.chats[chatPage]
-  return typeof chat?.id === 'string' && chat.id ? chat.id : undefined
-}
-
-function characterChatIds(characterId: string): Set<string> {
-  const character = DBState.db.characters?.find((candidate) => candidate?.chaId === characterId)
-  return new Set(
-    (character?.chats ?? [])
-      .map((chat) => chat?.id)
-      .filter((chatId): chatId is string => typeof chatId === 'string' && chatId.length > 0),
-  )
-}
-
-function captureCharacterRowChatSnapshot(characterId: string): CharacterRowChatSnapshot {
-  return {
-    chatIds: characterChatIds(characterId),
-    activeChatId: currentActiveChatId(),
-  }
-}
-
-function reconcileCharacterRowChatHydration(characterId: string, previous: CharacterRowChatSnapshot): void {
-  const nextChatIds = characterChatIds(characterId)
-  const invalidatedChatIds = new Set<string>()
-  const invalidate = (chatId: string) => {
-    if (invalidatedChatIds.has(chatId)) return
-    invalidatedChatIds.add(chatId)
-    invalidateChatHydration(chatId)
-  }
-  for (const chatId of previous.chatIds) {
-    if (!nextChatIds.has(chatId)) invalidate(chatId)
-  }
-  for (const chatId of nextChatIds) {
-    if (!previous.chatIds.has(chatId)) invalidate(chatId)
-  }
-
-  const activeChatId = currentActiveChatId()
-  if (activeChatId === previous.activeChatId) return
-  if (activeChatId) invalidate(activeChatId)
-  void hydrateActiveChat({ force: true })
-  triggerOpenChatGenerationReattach()
-}
-
-function captureSelectedCharacterBeforeBroadProjection(
-  fields: Partial<Database>,
-): SelectedCharacterBeforeBroadProjection | null {
-  if (!Object.prototype.hasOwnProperty.call(fields, 'characters')) return null
-  const selectedIndex = get(selectedCharID)
-  return {
-    active: selectedIndex >= 0,
-    characterId: selectedIndex >= 0 ? DBState.db.characters?.[selectedIndex]?.chaId : undefined,
-  }
-}
-
-function reconcileSelectedCharacterAfterBroadProjection(
-  fields: Partial<Database>,
-  previous: SelectedCharacterBeforeBroadProjection | null,
-): void {
-  if (!previous?.active || !Object.prototype.hasOwnProperty.call(fields, 'currentChar')) return
-
-  // Array replacement can move the selected row, and the user can select a
-  // different character while the targeted fetch is in flight. Keep that live
-  // identity when it survived; only adopt projected currentChar when it was
-  // removed by the server mutation.
-  const preservedIndex = previous.characterId
-    ? DBState.db.characters.findIndex((character) => character?.chaId === previous.characterId)
-    : -1
-  const nextIndex = preservedIndex >= 0 ? preservedIndex : initialSelectedCharFromDatabase(DBState.db)
-  withTrustedServerProjectionWrite(() => {
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = nextIndex
-    selectedCharID.set(nextIndex)
+  const previousSelectedIndex = get(selectedCharID)
+  const previousSelectedCharacterId =
+    previousSelectedIndex >= 0 ? getDatabase().characters?.[previousSelectedIndex]?.chaId : undefined
+  const result = await refreshInvalidatedServerResources(events, {
+    appliedRevision: peekAppliedServerProjectionRevision(),
+    hooks: serverResourceInvalidationHooks,
   })
-}
 
-async function reconcileCommandEventWithFullResync(
-  reason: string,
-  event: CommandEvent,
-  options: ProcessServerCommandEventOptions,
-  markMode: 'applied' | 'reconciled' = 'applied',
-): Promise<boolean> {
-  const resync = await forceServerProjectionResync(reason, { resource: event.resource })
-  if (resync.status === 'ok') {
-    if (markMode === 'reconciled') {
-      markReconciledCommandProjectionEvent(event, options)
-    } else {
-      markAppliedCommandProjectionEvent(event, options)
-    }
-    return true
+  if (result.status !== 'ok') {
+    if (result.status === 'error') console.warn(`Server resource invalidation failed: ${result.error}`)
+    scheduleServerResourceReconnect()
+    return
+  }
+  if (result.scope === 'none') return
+
+  reconcileSelectedCharacterAfterResourceRefresh(events, previousSelectedIndex, previousSelectedCharacterId)
+  recordHydratedCharacterLorebooks(getDatabase().characters)
+
+  if (result.scope === 'full') {
+    resetChatHydration()
+    resetLorebookHydration()
+    recordHydratedCharacterLorebooks(getDatabase().characters)
+    void hydrateActiveChat({ force: true })
+    triggerOpenChatGenerationReattach()
   }
 
-  // The event was already consumed from this stream, but its applied cursor did
-  // not advance. Reconnect from that old cursor so SQLite replay retries the
-  // event even if no later mutation arrives to expose the stale state.
-  scheduleServerProjectionReconnect()
-  return false
+  advanceKnownServerCommandRevision(result.revision)
+  setAppliedServerProjectionRevision(result.revision)
+}
+
+function reconcileSelectedCharacterAfterResourceRefresh(
+  events: readonly CommandEvent[],
+  previousIndex: number,
+  previousCharacterId: string | undefined,
+): void {
+  const database = getDatabase()
+  if (events.some((event) => event.resource === 'characterSelection')) {
+    selectedCharID.set(initialSelectedCharFromDatabase(database))
+    return
+  }
+  if (previousIndex < 0) return
+
+  const preservedIndex = previousCharacterId
+    ? database.characters.findIndex((character) => character?.chaId === previousCharacterId)
+    : -1
+  selectedCharID.set(preservedIndex >= 0 ? preservedIndex : initialSelectedCharFromDatabase(database))
 }
 
 function isOwnCommandEvent(event: CommandEvent): boolean {
@@ -723,39 +361,6 @@ function advanceKnownServerCommandRevision(revision: number): void {
   const cached = peekCachedServerCommandRevision()
   if (cached === null || revision > cached) {
     setCachedServerCommandRevision(revision)
-  }
-}
-
-function isCommandEventOlderThanAppliedRevision(event: CommandEvent): boolean {
-  const appliedRevision = peekAppliedServerProjectionRevision()
-  return appliedRevision !== null && event.revision < appliedRevision
-}
-
-function markReconciledCommandProjectionEvent(
-  event: CommandEvent,
-  options: ProcessServerCommandEventOptions = {},
-): void {
-  if (isOwnCommandEvent(event) || options.markReconciledRevision) {
-    markCommandProjectionRevisionReconciled(event.revision)
-    for (const revision of options.coalescedRevisions ?? []) {
-      markCommandProjectionRevisionReconciled(revision)
-    }
-  }
-}
-
-function markAppliedCommandProjectionEvent(event: CommandEvent, options: ProcessServerCommandEventOptions = {}): void {
-  advanceKnownServerCommandRevision(event.revision)
-  setAppliedServerProjectionRevision(event.revision)
-  markReconciledCommandProjectionEvent(event, options)
-}
-
-function markCommandProjectionRevisionReconciled(revision: number): void {
-  if (reconciledCommandProjectionRevisionSet.has(revision)) return
-  reconciledCommandProjectionRevisionSet.add(revision)
-  reconciledCommandProjectionRevisions.push(revision)
-  while (reconciledCommandProjectionRevisions.length > RECONCILED_COMMAND_PROJECTION_REVISION_LIMIT) {
-    const oldest = reconciledCommandProjectionRevisions.shift()
-    if (oldest !== undefined) reconciledCommandProjectionRevisionSet.delete(oldest)
   }
 }
 
@@ -852,223 +457,5 @@ function updateHeightMode() {
     case 'percent':
       root.style.setProperty('--risu-height-size', '100%')
       break
-  }
-}
-
-/**
- * Checks and updates the database format to the latest version.
- */
-async function checkNewFormat(): Promise<void> {
-  let db = getDatabase()
-
-  // Check data integrity
-  db.characters = db.characters
-    .map((v) => {
-      if (!v) {
-        return null
-      }
-      v.chaId ??= uuidv4()
-      v.type ??= 'character'
-      v.chatPage ??= 0
-      v.chats ??= []
-      // Chats arrive as message-free stubs; keep `message` a valid array so the
-      // active-chat UI renders before hydration fills it on open.
-      for (const chat of v.chats) {
-        if (chat && !Array.isArray(chat.message)) chat.message = []
-      }
-      v.customscript ??= []
-      v.firstMessage ??= ''
-      v.globalLore ??= []
-      v.name ??= ''
-      v.viewScreen ??= 'none'
-      v.emotionImages = v.emotionImages ?? []
-
-      if (v.type === 'character') {
-        v.bias ??= []
-        v.characterVersion ??= ''
-        v.creator ??= ''
-        v.desc ??= ''
-        v.utilityBot ??= false
-        v.tags ??= []
-        v.systemPrompt ??= ''
-        v.scenario ??= ''
-      }
-      return v
-    })
-    .filter((v) => {
-      return v !== null
-    })
-
-  db.modules = await Promise.all(
-    (db.modules ?? []).map(async (v) => {
-      if (v?.lorebook) {
-        if (!Array.isArray(v.lorebook)) {
-          console.error('Critical: Invalid lorebook format detected in module')
-          console.error('Module data:', JSON.stringify(v, null, 2))
-
-          // Alert user about corrupted data
-          alertError(language.bootstrap.dataCorruptionDetected(v.name || 'Unknown', typeof v.lorebook))
-          await waitAlert()
-
-          // Ask if user wants to report the issue
-          const shouldReport = await alertConfirm(language.bootstrap.reportErrorQuestion)
-
-          if (shouldReport) {
-            try {
-              // Collect diagnostic information (without personal data)
-              const diagnosticInfo = {
-                timestamp: new Date().toISOString(),
-                moduleName: v.name || 'Unknown',
-                lorebookType: typeof v.lorebook,
-                lorebookValue: JSON.stringify(v.lorebook).substring(0, 500), // First 500 chars only
-                isArray: Array.isArray(v.lorebook),
-                keys: v.lorebook ? Object.keys(v.lorebook).join(', ') : 'N/A',
-                formatVersion: db.formatversion || 'Unknown',
-              }
-
-              // Show the diagnostic info and allow user to copy or send
-              const reportData = JSON.stringify(diagnosticInfo, null, 2)
-              await alertMd(language.bootstrap.diagnosticInformation(reportData))
-              await waitAlert()
-
-              console.log('Diagnostic information for developers:', diagnosticInfo)
-            } catch (reportError) {
-              console.error('Failed to generate diagnostic report:', reportError)
-            }
-          }
-
-          // Ask if user wants to reset the data
-          const shouldReset = await alertConfirm(language.bootstrap.resetLorebookQuestion)
-
-          if (shouldReset) {
-            v.lorebook = []
-            console.log('Lorebook reset to empty array by user choice')
-          } else {
-            console.warn('User chose to keep corrupted lorebook data')
-          }
-        } else {
-          v.lorebook = updateLorebooks(v.lorebook)
-        }
-      }
-      return v
-    }),
-  )
-
-  db.modules = db.modules.filter((v) => {
-    return v !== null && v !== undefined
-  })
-
-  db.personas = (db.personas ?? [])
-    .map((v) => {
-      v.id ??= uuidv4()
-      return v
-    })
-    .filter((v) => {
-      return v !== null && v !== undefined
-    })
-
-  if (!db.formatversion) {
-    function checkClean(data: string) {
-      if (data.startsWith('assets') || data.length < 3) {
-        return data
-      } else {
-        const d = 'assets/' + data.replace(/\\/g, '/').split('assets/')[1]
-        if (!d) {
-          return data
-        }
-        return d
-      }
-    }
-
-    db.customBackground = checkClean(db.customBackground)
-    db.userIcon = checkClean(db.userIcon)
-
-    for (let i = 0; i < db.characters.length; i++) {
-      if (db.characters[i].image) {
-        db.characters[i].image = checkClean(db.characters[i].image)
-      }
-      if (db.characters[i].emotionImages) {
-        for (let i2 = 0; i2 < db.characters[i].emotionImages.length; i2++) {
-          if (db.characters[i].emotionImages[i2] && db.characters[i].emotionImages[i2].length >= 2) {
-            db.characters[i].emotionImages[i2][1] = checkClean(db.characters[i].emotionImages[i2][1])
-          }
-        }
-      }
-    }
-
-    db.formatversion = 2
-  }
-  if (db.formatversion < 3) {
-    for (let i = 0; i < db.characters.length; i++) {
-      let cha = db.characters[i]
-      if (cha.type === 'character') {
-        if (checkNullish(cha.sdData)) {
-          cha.sdData = defaultSdDataFunc()
-        }
-      }
-    }
-
-    db.formatversion = 3
-  }
-  if (db.formatversion < 4) {
-    // Version 4 has no remaining data transform; advance only the format marker.
-    db.formatversion = 4
-  }
-  if (db.formatversion < 5) {
-    if (db.loreBookToken < 8000) {
-      db.loreBookToken = 8000
-    }
-    db.formatversion = 5
-  }
-  if (!db.characterOrder) {
-    db.characterOrder = []
-  }
-  if (db.mainPrompt === oldMainPrompt) {
-    db.mainPrompt = defaultMainPrompt
-  }
-  if (db.mainPrompt === oldJailbreak) {
-    db.mainPrompt = defaultJailbreak
-  }
-  for (let i = 0; i < db.characters.length; i++) {
-    const trashTime = db.characters[i].trashTime
-    const targetTrashTime = trashTime ? trashTime + 1000 * 60 * 60 * 24 * 3 : 0
-    if (trashTime && targetTrashTime < Date.now()) {
-      db.characters.splice(i, 1)
-      i--
-    }
-  }
-  setDatabase(db)
-  checkCharOrder()
-}
-
-/**
- * Assigns unique IDs to characters and chats.
- */
-function assignIds() {
-  if (!DBState?.db?.characters) {
-    return
-  }
-  const assignedIds = new Set<string>()
-  for (let i = 0; i < DBState.db.characters.length; i++) {
-    const cha = DBState.db.characters[i]
-    if (!cha.chaId) {
-      cha.chaId = uuidv4()
-    }
-    if (assignedIds.has(cha.chaId)) {
-      console.warn(`Duplicate chaId found: ${cha.chaId}. Assigning new ID.`)
-      cha.chaId = uuidv4()
-    }
-    assignedIds.add(cha.chaId)
-    for (let i2 = 0; i2 < cha.chats.length; i2++) {
-      const chat = cha.chats[i2]
-      if (!chat.id) {
-        chat.id = uuidv4()
-      }
-      if (assignedIds.has(chat.id)) {
-        console.warn(`Duplicate chat ID found: ${chat.id}. Assigning new ID.`)
-        chat.id = uuidv4()
-      }
-      assignedIds.add(chat.id)
-    }
   }
 }

@@ -59,7 +59,7 @@ import {
 } from './process/modules'
 import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './characterCommands'
 import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
-import { forceServerProjectionResync } from './server/projectionResync'
+import { forceServerResourceRefresh } from './server/resourceRefresh'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 
 export const hubURL = '/api/v1/hub'
@@ -1917,18 +1917,18 @@ async function finishServerRealmImport(
     message: 'Refreshing imported character',
     percent: 96,
   })
-  let refreshResult: Awaited<ReturnType<typeof forceServerProjectionResync>>
+  let refreshResult: Awaited<ReturnType<typeof forceServerResourceRefresh>>
   try {
-    refreshResult = await forceServerProjectionResync('realm-import')
+    refreshResult = await forceServerResourceRefresh('realm-import')
   } catch (error) {
     if (isLatestRealmImportOperation(operationToken)) {
-      alertError(error instanceof Error && error.message ? error.message : 'Server projection refresh failed')
+      alertError(error instanceof Error && error.message ? error.message : 'Server resource refresh failed')
     }
     return
   }
   if (refreshResult.status !== 'ok') {
     if (isLatestRealmImportOperation(operationToken)) {
-      alertError(refreshResult.status === 'error' ? refreshResult.error : 'Server projection refresh is unavailable')
+      alertError(refreshResult.status === 'error' ? refreshResult.error : 'Server resource refresh is unavailable')
     }
     return
   }

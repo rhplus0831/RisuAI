@@ -1,14 +1,14 @@
 type HydrationKind = 'chat' | 'characterLorebook'
 
-export const EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS = [
+export const EXPECTED_FULL_RESOURCE_REFRESH_REASONS = [
   'event-replay-unavailable',
-  'no-baseline',
-  'projection-error',
-  'projection-full-mode',
-  'revision-gap',
+  'malformed-command-event',
+  'backup-restore',
+  'bundle-restore',
+  'realm-import',
 ] as const
 
-export type FullBootstrapResyncReason = (typeof EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS)[number]
+export type FullResourceRefreshReason = (typeof EXPECTED_FULL_RESOURCE_REFRESH_REASONS)[number]
 
 interface HydrationDiagnostics {
   bulkRuns: number
@@ -35,22 +35,22 @@ interface AssetByteReadDiagnostics {
 }
 
 interface ProtocolDiagnostics {
-  fullBootstrapResync: Record<string, number>
-  unexpectedFullBootstrapResync: Record<string, number>
-  // Counts which command-event `resource` triggered a full-bootstrap fallback,
+  fullResourceRefresh: Record<string, number>
+  unexpectedFullResourceRefresh: Record<string, number>
+  // Counts which command-event `resource` triggered a complete refresh,
   // so the cost of sprawling-resource (`settings`, `state`) and
   // unknown-resource fallbacks can be attributed per resource. Only populated
   // for resyncs with a known triggering resource (event-driven ones); restore
   // and replay-unavailable resyncs have no single resource and are omitted.
-  fullBootstrapResyncResources: Record<string, number>
+  fullResourceRefreshResources: Record<string, number>
   hydration: Record<HydrationKind, HydrationDiagnostics>
   assetByteReads: AssetByteReadDiagnostics
 }
 
 const diagnostics: ProtocolDiagnostics = {
-  fullBootstrapResync: {},
-  unexpectedFullBootstrapResync: {},
-  fullBootstrapResyncResources: {},
+  fullResourceRefresh: {},
+  unexpectedFullResourceRefresh: {},
+  fullResourceRefreshResources: {},
   hydration: {
     chat: emptyHydrationDiagnostics(),
     characterLorebook: emptyHydrationDiagnostics(),
@@ -68,7 +68,7 @@ const diagnostics: ProtocolDiagnostics = {
 // counters above are reported.
 const assetByteReadCounts = new Map<string, number>()
 
-const expectedFullBootstrapResyncReasons = new Set<string>(EXPECTED_FULL_BOOTSTRAP_RESYNC_REASONS)
+const expectedFullResourceRefreshReasons = new Set<string>(EXPECTED_FULL_RESOURCE_REFRESH_REASONS)
 
 function emptyHydrationDiagnostics(): HydrationDiagnostics {
   return {
@@ -81,20 +81,20 @@ function emptyHydrationDiagnostics(): HydrationDiagnostics {
   }
 }
 
-export function recordFullBootstrapResync(reason: string, resource?: string): void {
-  diagnostics.fullBootstrapResync[reason] = (diagnostics.fullBootstrapResync[reason] ?? 0) + 1
-  const expected = isExpectedFullBootstrapResyncReason(reason)
+export function recordFullResourceRefresh(reason: string, resource?: string): void {
+  diagnostics.fullResourceRefresh[reason] = (diagnostics.fullResourceRefresh[reason] ?? 0) + 1
+  const expected = isExpectedFullResourceRefreshReason(reason)
   if (!expected) {
-    diagnostics.unexpectedFullBootstrapResync[reason] = (diagnostics.unexpectedFullBootstrapResync[reason] ?? 0) + 1
+    diagnostics.unexpectedFullResourceRefresh[reason] = (diagnostics.unexpectedFullResourceRefresh[reason] ?? 0) + 1
   }
   if (resource) {
-    diagnostics.fullBootstrapResyncResources[resource] = (diagnostics.fullBootstrapResyncResources[resource] ?? 0) + 1
+    diagnostics.fullResourceRefreshResources[resource] = (diagnostics.fullResourceRefreshResources[resource] ?? 0) + 1
   }
-  debugProtocol('full-bootstrap-resync', { reason, expected, resource })
+  debugProtocol('full-resource-refresh', { reason, expected, resource })
 }
 
-export function isExpectedFullBootstrapResyncReason(reason: string): reason is FullBootstrapResyncReason {
-  return expectedFullBootstrapResyncReasons.has(reason)
+export function isExpectedFullResourceRefreshReason(reason: string): reason is FullResourceRefreshReason {
+  return expectedFullResourceRefreshReasons.has(reason)
 }
 
 export function recordBulkHydration(kind: HydrationKind, idCount: number): void {

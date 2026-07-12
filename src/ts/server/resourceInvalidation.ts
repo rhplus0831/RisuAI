@@ -114,7 +114,11 @@ export async function refreshAllServerResources(
       const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => ({
         settingsApplied: applySettingsResource(settings),
         collectionsApplied: applyCollectionsResource(mergedCollections),
-        charactersApplied: applyCharactersResource(characters),
+        // A complete refresh is used for startup, revision gaps, restores, and
+        // unknown resources. Character reads intentionally omit transcripts,
+        // so retaining same-id resident bodies here could preserve stale chat
+        // data across a restore. Leave the chats as API-hydration stubs.
+        charactersApplied: applyCharactersResource(characters, { preserveResidentChatBodies: false }),
       }))
       if (
         (!settingsApplied && !settingsAlreadyAtLeast(revision)) ||

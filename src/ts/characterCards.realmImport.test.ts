@@ -30,16 +30,8 @@ const realmImportState = vi.hoisted(() => ({
   importRealmCharacterFromServer: vi.fn(),
 }))
 
-const projectionResyncState = vi.hoisted(() => ({
-  forceServerProjectionResync: vi.fn(),
-}))
-
-const storageState = vi.hoisted(() => ({
-  applyServerProjectionDatabase: vi.fn(),
-}))
-
-const bootstrapState = vi.hoisted(() => ({
-  fetchServerBootstrapProjectionReadOnly: vi.fn(),
+const resourceRefreshState = vi.hoisted(() => ({
+  forceServerResourceRefresh: vi.fn(),
 }))
 
 const commandsState = vi.hoisted(() => ({
@@ -71,7 +63,6 @@ vi.mock('./alert', () => ({
 
 vi.mock('./storage/database.svelte', () => ({
   appVer: 'test',
-  applyServerProjectionDatabase: storageState.applyServerProjectionDatabase,
   defaultSdDataFunc: vi.fn(() => []),
   getDatabase: vi.fn(() => dbState.db),
   importPreset: vi.fn(),
@@ -203,12 +194,8 @@ vi.mock('./server/realmImport', () => ({
   importRealmCharacterFromServer: realmImportState.importRealmCharacterFromServer,
 }))
 
-vi.mock('./server/projectionResync', () => ({
-  forceServerProjectionResync: projectionResyncState.forceServerProjectionResync,
-}))
-
-vi.mock('./server/bootstrap', () => ({
-  fetchServerBootstrapProjectionReadOnly: bootstrapState.fetchServerBootstrapProjectionReadOnly,
+vi.mock('./server/resourceRefresh', () => ({
+  forceServerResourceRefresh: resourceRefreshState.forceServerResourceRefresh,
 }))
 
 vi.mock('./server/commands', () => ({
@@ -291,7 +278,7 @@ beforeEach(() => {
   alertState.alertTOS.mockResolvedValue(true)
   globalApiState.checkCharOrder.mockImplementation(() => undefined)
   realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-imported'))
-  projectionResyncState.forceServerProjectionResync.mockResolvedValue({ status: 'ok', revision: 20 })
+  resourceRefreshState.forceServerResourceRefresh.mockResolvedValue({ status: 'ok', revision: 20 })
 })
 
 afterEach(() => {
@@ -318,7 +305,7 @@ describe('Realm character import finish refresh', () => {
     ])
   })
 
-  it('uses the fenced full projection resync and navigates by imported character id', async () => {
+  it('uses the fenced full resource refresh and navigates by imported character id', async () => {
     realmImportState.importRealmCharacterFromServer.mockImplementation(async (_id, options) => {
       options.onProgress?.({
         phase: 'download',
@@ -327,7 +314,7 @@ describe('Realm character import finish refresh', () => {
       })
       return okRealmImport('char-imported', 21)
     })
-    projectionResyncState.forceServerProjectionResync.mockImplementation(async () => {
+    resourceRefreshState.forceServerResourceRefresh.mockImplementation(async () => {
       dbState.db = {
         characters: [{ chaId: 'other-char' }, { chaId: 'char-imported' }],
         characterOrder: [],
@@ -338,8 +325,8 @@ describe('Realm character import finish refresh', () => {
 
     await downloadRisuHub('realm-id', { forceRedirect: true })
 
-    expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledTimes(1)
-    expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledWith('realm-import')
+    expect(resourceRefreshState.forceServerResourceRefresh).toHaveBeenCalledTimes(1)
+    expect(resourceRefreshState.forceServerResourceRefresh).toHaveBeenCalledWith('realm-import')
     expect(characterState.changeChar).toHaveBeenCalledTimes(1)
     expect(characterState.changeChar.mock.calls[0][0]).toBe(1)
     expect(characterState.changeChar.mock.calls[0][1]).toEqual({ isFresh: expect.any(Function) })
@@ -347,8 +334,6 @@ describe('Realm character import finish refresh', () => {
     expect(alertState.alertStoreSet).toHaveBeenCalledWith({ type: 'none', msg: '' })
     expect(alertState.alertProgress).toHaveBeenCalledWith('Downloading Realm character', 25)
     expect(alertState.alertProgress).toHaveBeenCalledWith('Realm import complete', 100)
-    expect(bootstrapState.fetchServerBootstrapProjectionReadOnly).not.toHaveBeenCalled()
-    expect(storageState.applyServerProjectionDatabase).not.toHaveBeenCalled()
     expect(commandsState.setCachedServerCommandRevision).not.toHaveBeenCalled()
     expect(chatHydrationState.resetChatHydration).not.toHaveBeenCalled()
     expect(lorebookHydrationState.resetLorebookHydration).not.toHaveBeenCalled()
@@ -411,7 +396,7 @@ describe('Realm character import finish refresh', () => {
       return result.promise
     })
     let resyncCount = 0
-    projectionResyncState.forceServerProjectionResync.mockImplementation(async () => {
+    resourceRefreshState.forceServerResourceRefresh.mockImplementation(async () => {
       resyncCount += 1
       if (resyncCount === 1) {
         dbState.db = {
@@ -449,7 +434,7 @@ describe('Realm character import finish refresh', () => {
     imports[0].result.resolve(okRealmImport('old-char', 30))
     await older
 
-    expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledTimes(1)
+    expect(resourceRefreshState.forceServerResourceRefresh).toHaveBeenCalledTimes(1)
     expect(dbState.db.characters.map((character) => character.chaId)).toEqual(['new-char'])
     expect(characterState.changeChar).toHaveBeenCalledTimes(1)
     expect(characterState.changeChar.mock.calls[0][0]).toBe(0)
@@ -468,7 +453,7 @@ describe('Realm character import finish refresh', () => {
 
   it('reports latest-operation resync failures and skips navigation', async () => {
     realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-failed', 40))
-    projectionResyncState.forceServerProjectionResync.mockResolvedValue({
+    resourceRefreshState.forceServerResourceRefresh.mockResolvedValue({
       status: 'error',
       error: 'refresh failed',
     })
@@ -480,7 +465,7 @@ describe('Realm character import finish refresh', () => {
 
     await downloadRisuHub('realm-id', { forceRedirect: true })
 
-    expect(projectionResyncState.forceServerProjectionResync).toHaveBeenCalledWith('realm-import')
+    expect(resourceRefreshState.forceServerResourceRefresh).toHaveBeenCalledWith('realm-import')
     expect(alertState.alertError).toHaveBeenCalledTimes(1)
     expect(alertState.alertError).toHaveBeenCalledWith('refresh failed')
     expect(characterState.changeChar).not.toHaveBeenCalled()

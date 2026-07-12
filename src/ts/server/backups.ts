@@ -1,7 +1,7 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import type { CommandEvent } from './commands'
-import { forceServerProjectionResync } from './projectionResync'
+import { forceServerResourceRefresh } from './resourceRefresh'
 
 const BACKUPS_ENDPOINT = '/api/v1/backups'
 const BUNDLE_EXPORT_ENDPOINT = '/api/v1/export/bundle'
@@ -132,14 +132,14 @@ export async function restoreServerBackup(input: {
     message: 'Refreshing local state',
     percent: 75,
   })
-  const resync = await forceServerProjectionResync('backup-restore')
+  const resync = await forceServerResourceRefresh('backup-restore')
   if (resync.status !== 'ok') {
     return {
       status: 'error',
       error:
         resync.status === 'unavailable'
-          ? 'Backup restored, but server bootstrap is unavailable; reload to refresh projection state.'
-          : `Backup restored, but projection refresh failed: ${resync.error}`,
+          ? 'Backup restored, but server resource APIs are unavailable; reload to refresh local state.'
+          : `Backup restored, but resource refresh failed: ${resync.error}`,
     }
   }
 
@@ -316,14 +316,14 @@ export async function importServerBundle(input: {
     message: 'Refreshing local state',
     percent: 90,
   })
-  const resync = await forceServerProjectionResync('bundle-restore')
+  const resync = await forceServerResourceRefresh('bundle-restore')
   if (resync.status !== 'ok') {
     return {
       status: 'error',
       error:
         resync.status === 'unavailable'
-          ? 'Backup imported, but server bootstrap is unavailable; reload to refresh projection state.'
-          : `Backup imported, but projection refresh failed: ${resync.error}`,
+          ? 'Backup imported, but server resource APIs are unavailable; reload to refresh local state.'
+          : `Backup imported, but resource refresh failed: ${resync.error}`,
     }
   }
 

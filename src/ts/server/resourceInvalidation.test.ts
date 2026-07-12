@@ -128,7 +128,7 @@ beforeEach(() => {
 })
 
 describe('API-backed resource invalidation', () => {
-  it('loads one consistent initial resource set, preserving chat bodies and pending plugin storage', async () => {
+  it('loads one consistent initial resource set, invalidating chat bodies and preserving pending plugin storage', async () => {
     seedResources(4)
     fullReadMocks(5)
     sideEffects.mergePluginStorage.mockImplementation((value) => ({ ...value, pending: 'local' }))
@@ -146,10 +146,7 @@ describe('API-backed resource invalidation', () => {
       name: 'Ada refreshed',
       chats: [
         {
-          message: [{ role: 'user', data: 'resident-a' }],
-          hypaV3Data: {
-            summaries: [{ text: 'resident summary', chatMemos: [], isImportant: false }],
-          },
+          message: [],
         },
       ],
     })

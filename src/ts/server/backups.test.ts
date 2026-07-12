@@ -1,42 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const projectionResyncSpies = vi.hoisted(() => ({
-  hydrateActiveCharacterLorebook: vi.fn(async () => undefined),
-  hydrateActiveChat: vi.fn(async () => undefined),
-  recordHydratedCharacterLorebooks: vi.fn(),
-  resetChatHydration: vi.fn(),
-  resetLorebookHydration: vi.fn(),
-  resetPromptTemplateHydration: vi.fn(),
-  setActiveGenerationJobs: vi.fn(),
-  startPromptTemplateHydration: vi.fn(),
-  triggerOpenChatGenerationReattach: vi.fn(),
+const resourceRefreshSpies = vi.hoisted(() => ({
+  forceServerResourceRefresh: vi.fn(),
+}))
+
+vi.mock('./resourceRefresh', () => ({
+  forceServerResourceRefresh: resourceRefreshSpies.forceServerResourceRefresh,
 }))
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'backup-auth-token',
-}))
-
-vi.mock('./chatMessageHydration.svelte', () => ({
-  hydrateActiveCharacterLorebook: projectionResyncSpies.hydrateActiveCharacterLorebook,
-  hydrateActiveChat: projectionResyncSpies.hydrateActiveChat,
-  resetChatHydration: projectionResyncSpies.resetChatHydration,
-}))
-
-vi.mock('./lorebookBridge.svelte', () => ({
-  recordHydratedCharacterLorebooks: projectionResyncSpies.recordHydratedCharacterLorebooks,
-  resetLorebookHydration: projectionResyncSpies.resetLorebookHydration,
-}))
-
-vi.mock('./promptTemplateHydration', () => ({
-  resetPromptTemplateHydration: projectionResyncSpies.resetPromptTemplateHydration,
-  startPromptTemplateHydration: projectionResyncSpies.startPromptTemplateHydration,
-}))
-
-vi.mock('../process/reattach', () => ({
-  setActiveGenerationJobs: projectionResyncSpies.setActiveGenerationJobs,
-  triggerOpenChatGenerationReattach: projectionResyncSpies.triggerOpenChatGenerationReattach,
 }))
 
 vi.mock('../process/modules', () => ({
@@ -56,7 +31,6 @@ import {
   type ServerBackupProgress,
 } from './backups'
 import { clearCachedServerCommandRevision, peekCachedServerCommandRevision } from './commands'
-import { DBState } from '../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -109,16 +83,8 @@ const backupManifest = {
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
-  DBState.db = {} as any
-  projectionResyncSpies.hydrateActiveCharacterLorebook.mockClear()
-  projectionResyncSpies.hydrateActiveChat.mockClear()
-  projectionResyncSpies.recordHydratedCharacterLorebooks.mockClear()
-  projectionResyncSpies.resetChatHydration.mockClear()
-  projectionResyncSpies.resetLorebookHydration.mockClear()
-  projectionResyncSpies.resetPromptTemplateHydration.mockClear()
-  projectionResyncSpies.setActiveGenerationJobs.mockClear()
-  projectionResyncSpies.startPromptTemplateHydration.mockClear()
-  projectionResyncSpies.triggerOpenChatGenerationReattach.mockClear()
+  resourceRefreshSpies.forceServerResourceRefresh.mockReset()
+  resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValue({ status: 'ok', revision: 12 })
 })
 
 afterEach(() => {
@@ -160,23 +126,11 @@ describe('server backup helpers', () => {
     ])
   })
 
-  it('restores backups, refreshes projection, and then caches the bootstrap revision', async () => {
+  it('restores backups and refreshes API-backed resources', async () => {
     const event = { type: 'state.restored', resource: 'state', revision: 12 }
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore') {
         return { revision: 12, event }
-      }
-      if (url === '/api/v1/bootstrap') {
-        return {
-          revision: 12,
-          database: {
-            characters: [{ chaId: 'char-a', name: 'Restored', chats: [] }],
-            modules: [],
-            personas: [],
-            language: 'ko',
-          },
-          activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }],
-        }
       }
       return { revision: 13, database: { characters: [], modules: [], personas: [] } }
     })
@@ -187,35 +141,23 @@ describe('server backup helpers', () => {
       revision: 12,
       event,
     })
-    expect(peekCachedServerCommandRevision()).toBe(12)
-    expect(DBState.db).toMatchObject({
-      language: 'ko',
-      characters: [{ chaId: 'char-a', name: 'Restored', chats: [] }],
-    })
-    expect(projectionResyncSpies.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
-    expect(projectionResyncSpies.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
-    expect(projectionResyncSpies.resetChatHydration).toHaveBeenCalled()
-    expect(projectionResyncSpies.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
-    expect(backupFetch.calls).toHaveLength(2)
+    expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('backup-restore')
+    expect(backupFetch.calls).toHaveLength(1)
     expect(backupFetch.calls[0]).toMatchObject({
       url: '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore',
       method: 'POST',
       authHeader: 'backup-auth-token',
     })
-    expect(backupFetch.calls[1]).toMatchObject({
-      url: '/api/v1/bootstrap',
-      method: 'GET',
-      authHeader: 'backup-auth-token',
-    })
   })
 
-  it('does not cache the restore revision when the required projection refresh fails', async () => {
+  it('reports a failed resource refresh after the server restore succeeds', async () => {
+    resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValueOnce({
+      status: 'error',
+      error: 'settings failed',
+    })
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/backups/2026-05-26-01-02-03-abcdef/restore') {
         return { revision: 12, event: { type: 'state.restored', resource: 'state', revision: 12 } }
-      }
-      if (url === '/api/v1/bootstrap') {
-        return jsonResponse({ error: 'bootstrap failed' }, 500)
       }
       return { revision: 13 }
     })
@@ -223,10 +165,9 @@ describe('server backup helpers', () => {
 
     await expect(restoreServerBackup({ id: backupManifest.id })).resolves.toEqual({
       status: 'error',
-      error: 'Backup restored, but projection refresh failed: bootstrap failed',
+      error: 'Backup restored, but resource refresh failed: settings failed',
     })
     expect(peekCachedServerCommandRevision()).toBeNull()
-    expect(DBState.db).toEqual({})
   })
 
   it('deletes backups and reports server errors', async () => {
@@ -409,21 +350,10 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     })
   })
 
-  it('uploads a bundle file, restores it, and refreshes the projection', async () => {
+  it('uploads a bundle file, restores it, and refreshes API-backed resources', async () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/import/bundle') return { revision: 21, event }
-      if (url === '/api/v1/bootstrap') {
-        return {
-          revision: 21,
-          database: {
-            characters: [{ chaId: 'char-z', name: 'Imported', chats: [] }],
-            modules: [],
-            personas: [],
-            language: 'en',
-          },
-        }
-      }
       return { revision: 22 }
     })
     vi.stubGlobal('fetch', backupFetch.fetch)
@@ -434,13 +364,8 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       revision: 21,
       event,
     })
-    expect(peekCachedServerCommandRevision()).toBe(21)
-    expect(DBState.db).toMatchObject({
-      language: 'en',
-      characters: [{ chaId: 'char-z', name: 'Imported', chats: [] }],
-    })
-
-    expect(backupFetch.calls).toHaveLength(2)
+    expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('bundle-restore')
+    expect(backupFetch.calls).toHaveLength(1)
     // The upload carries auth but no explicit content-type (the browser sets the
     // multipart boundary for the FormData body).
     expect(backupFetch.calls[0]).toMatchObject({
@@ -449,7 +374,6 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
       authHeader: 'backup-auth-token',
       contentType: null,
     })
-    expect(backupFetch.calls[1]).toMatchObject({ url: '/api/v1/bootstrap', method: 'GET' })
   })
 
   it('reports upload progress when restoring a device backup with progress enabled', async () => {
@@ -507,20 +431,7 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
         this.onabort?.()
       }
     }
-    const backupFetch = makeBackupFetch((url) => {
-      if (url === '/api/v1/bootstrap') {
-        return {
-          revision: 21,
-          database: {
-            characters: [{ chaId: 'char-z', name: 'Imported', chats: [] }],
-            modules: [],
-            personas: [],
-            language: 'en',
-          },
-        }
-      }
-      return { revision: 22 }
-    })
+    const backupFetch = makeBackupFetch(() => ({ revision: 22 }))
     vi.stubGlobal('XMLHttpRequest', FakeXMLHttpRequest)
     vi.stubGlobal('fetch', backupFetch.fetch)
     const file = new Blob([BUNDLE_BYTES], { type: 'application/zip' })
@@ -552,16 +463,19 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     ).toBe(true)
     expect(progress.some((frame) => frame.phase === 'process' && frame.percent === 80)).toBe(true)
     expect(progress.at(-1)).toMatchObject({ phase: 'complete', percent: 100 })
-    expect(backupFetch.calls).toHaveLength(1)
-    expect(backupFetch.calls[0]).toMatchObject({ url: '/api/v1/bootstrap', method: 'GET' })
+    expect(backupFetch.calls).toHaveLength(0)
+    expect(resourceRefreshSpies.forceServerResourceRefresh).toHaveBeenCalledWith('bundle-restore')
   })
 
-  it('does not cache the import revision when the projection refresh fails', async () => {
+  it('reports a failed resource refresh after the bundle import succeeds', async () => {
+    resourceRefreshSpies.forceServerResourceRefresh.mockResolvedValueOnce({
+      status: 'error',
+      error: 'collections failed',
+    })
     const backupFetch = makeBackupFetch((url) => {
       if (url === '/api/v1/import/bundle') {
         return { revision: 21, event: { type: 'state.imported', resource: 'state', revision: 21 } }
       }
-      if (url === '/api/v1/bootstrap') return jsonResponse({ error: 'bootstrap failed' }, 500)
       return { revision: 22 }
     })
     vi.stubGlobal('fetch', backupFetch.fetch)
@@ -569,9 +483,8 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     const file = new Blob([BUNDLE_BYTES], { type: 'application/zip' })
     await expect(importServerBundle({ file })).resolves.toEqual({
       status: 'error',
-      error: 'Backup imported, but projection refresh failed: bootstrap failed',
+      error: 'Backup imported, but resource refresh failed: collections failed',
     })
     expect(peekCachedServerCommandRevision()).toBeNull()
-    expect(DBState.db).toEqual({})
   })
 })

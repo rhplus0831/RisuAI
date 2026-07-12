@@ -38,10 +38,10 @@ function scheduleActiveMessageTranslationRefresh(jobs: readonly ActiveMessageTra
 async function refreshActiveMessageTranslations(): Promise<void> {
   if (get(activeMessageTranslations).length === 0) return
   try {
-    const { fetchServerBootstrapProjectionReadOnly } = await import('./bootstrap')
-    const bootstrap = await fetchServerBootstrapProjectionReadOnly(null, { cacheRevision: false })
+    const { fetchServerBootstrapReadOnly } = await import('./bootstrap')
+    const bootstrap = await fetchServerBootstrapReadOnly(null, { cacheRevision: false })
     if (bootstrap.status === 'ok') {
-      setActiveMessageTranslations(bootstrap.projection.activeMessageTranslations ?? [])
+      setActiveMessageTranslations(bootstrap.bootstrap.activeMessageTranslations ?? [])
     }
   } catch (error) {
     console.warn('Message translation pending refresh failed', error)

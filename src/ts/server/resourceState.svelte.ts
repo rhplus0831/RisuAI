@@ -223,18 +223,27 @@ export function failCharactersResourceLoad(error: string, characterId?: string):
   charactersResourceState.error = error
 }
 
-export function applyCharactersResource(payload: ServerCharactersResourcePayload): boolean {
+export function applyCharactersResource(
+  payload: ServerCharactersResourcePayload,
+  options: { preserveResidentChatBodies?: boolean } = {},
+): boolean {
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
   if (Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)) return false
 
-  const existingById = new Map(
-    charactersResourceState.characters
-      .filter((candidate) => nonEmptyString(candidate?.chaId))
-      .map((candidate) => [candidate.chaId, candidate]),
-  )
-  charactersResourceState.characters = payload.characters.map((candidate) =>
-    preserveResidentCharacterChatBodies(cloneJsonValue(candidate), existingById.get(candidate.chaId)),
-  )
+  const preserveResidentChatBodies = options.preserveResidentChatBodies ?? true
+  const existingById = preserveResidentChatBodies
+    ? new Map(
+        charactersResourceState.characters
+          .filter((candidate) => nonEmptyString(candidate?.chaId))
+          .map((candidate) => [candidate.chaId, candidate]),
+      )
+    : null
+  charactersResourceState.characters = payload.characters.map((candidate) => {
+    const nextCharacter = cloneJsonValue(candidate)
+    return existingById
+      ? preserveResidentCharacterChatBodies(nextCharacter, existingById.get(candidate.chaId))
+      : nextCharacter
+  })
   charactersResourceState.characterOrder = cloneJsonValue(payload.characterOrder)
   charactersResourceState.currentChar = payload.currentChar
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)

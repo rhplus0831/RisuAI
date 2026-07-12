@@ -200,8 +200,8 @@ vi.mock('./server/realmImport', () => ({
   importRealmCharacterFromServer: vi.fn(),
 }))
 
-vi.mock('./server/bootstrap', () => ({
-  fetchServerBootstrapProjectionReadOnly: vi.fn(),
+vi.mock('./server/resourceRefresh', () => ({
+  forceServerResourceRefresh: vi.fn(),
 }))
 
 vi.mock('./server/commands', () => ({

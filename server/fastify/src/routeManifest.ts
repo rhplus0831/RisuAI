@@ -121,7 +121,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     path: '/api/v1/bootstrap',
     auth: {
       decision: 'required',
-      reason: 'Bootstrap returns the projected user database.',
+      reason: 'Bootstrap returns authenticated runtime and session metadata.',
     },
     activeWriter: {
       decision: 'writer-registration',

@@ -2,11 +2,11 @@ import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const bootstrapMocks = vi.hoisted(() => ({
-  fetchServerBootstrapProjectionReadOnly: vi.fn(),
+  fetchServerBootstrapReadOnly: vi.fn(),
 }))
 
 vi.mock('./bootstrap', () => ({
-  fetchServerBootstrapProjectionReadOnly: bootstrapMocks.fetchServerBootstrapProjectionReadOnly,
+  fetchServerBootstrapReadOnly: bootstrapMocks.fetchServerBootstrapReadOnly,
 }))
 
 import {
@@ -18,7 +18,7 @@ import {
 describe('active message translation refresh', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    bootstrapMocks.fetchServerBootstrapProjectionReadOnly.mockReset()
+    bootstrapMocks.fetchServerBootstrapReadOnly.mockReset()
     setActiveMessageTranslations([])
   })
 
@@ -28,11 +28,11 @@ describe('active message translation refresh', () => {
   })
 
   it('refreshes bootstrap active translations so failed detached jobs do not stay busy forever', async () => {
-    bootstrapMocks.fetchServerBootstrapProjectionReadOnly.mockResolvedValue({
+    bootstrapMocks.fetchServerBootstrapReadOnly.mockResolvedValue({
       status: 'ok',
-      projection: {
+      bootstrap: {
+        initialized: true,
         revision: 1,
-        database: {},
         activeMessageTranslations: [],
       },
     })
@@ -42,7 +42,7 @@ describe('active message translation refresh', () => {
 
     await vi.advanceTimersByTimeAsync(5_000)
 
-    expect(bootstrapMocks.fetchServerBootstrapProjectionReadOnly).toHaveBeenCalledWith(null, {
+    expect(bootstrapMocks.fetchServerBootstrapReadOnly).toHaveBeenCalledWith(null, {
       cacheRevision: false,
     })
     expect(get(activeMessageTranslations)).toEqual([])
