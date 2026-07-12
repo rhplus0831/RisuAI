@@ -57,13 +57,14 @@ import {
   setCharacterSupaMemory,
   updateCharacterOrderFolder,
 } from './characterCommands'
-import { setCharacterByIndex, type folder } from './storage/database.svelte'
+import { setCharacterByIndex, type Database, type folder } from './storage/database.svelte'
 import { clearCachedServerCommandRevision } from './server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID, selIdState } from './stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { selectedCharID, selIdState } from './stores.svelte'
 import { removeChar } from './characters'
 import {
   assertRollbackRestoresOnly,
@@ -73,6 +74,15 @@ import {
   withAsyncCloneInstrumentation,
   withCloneInstrumentation,
 } from './__tests__/cloneCostHarness'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -299,7 +309,7 @@ beforeEach(() => {
   selectedCharID.set(0)
   alertConfirmState.messages = []
   alertConfirmState.responses = [true, true]
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [{ chaId: 'char-a', name: 'Character', chats: [], supaMemory: false }],
     characterOrder: [],
   } as any
@@ -394,17 +404,17 @@ describe('character list create/delete rollback', () => {
       failCreate: true,
       onCreate: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].name = 'Sibling newer edit'
-          DBState.db.characterOrder = [
+          testDatabaseState.db.characters[0].name = 'Sibling newer edit'
+          testDatabaseState.db.characterOrder = [
             'char-created',
             { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
           ] as any
-          ;(DBState.db as any).currentChar = 0
+          ;(testDatabaseState.db as any).currentChar = 0
           selectedCharID.set(0)
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: ['char-a'],
       currentChar: 0,
@@ -415,26 +425,26 @@ describe('character list create/delete rollback', () => {
     const attempted = { chaId: 'char-created', name: 'Created', chats: [] } as any
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push(attempted)
+      testDatabaseState.db.characters.push(attempted)
     })
     repairCharacterOrderOptimistically({ dispatchReorder: false })
     dispatchCreateCharacter(attempted, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
+      expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
     })
-    expect(DBState.db.characters[0].name).toBe('Sibling newer edit')
-    expect(DBState.db.characterOrder).toEqual([
+    expect(testDatabaseState.db.characters[0].name).toBe('Sibling newer edit')
+    expect(testDatabaseState.db.characterOrder).toEqual([
       { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-a'], imgFile: 'asset-newer' },
     ])
     expect(get(selectedCharID)).toBe(0)
-    expect((DBState.db as any).currentChar).toBe(0)
+    expect((testDatabaseState.db as any).currentChar).toBe(0)
   })
 
   it('failed create-and-select removes attempted row and restores previous selection only when attempted row is still selected', async () => {
     const calls = stubCharacterCollectionCommandFetch({ failCreateAndSelect: true })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: ['char-a'],
       currentChar: 0,
@@ -445,8 +455,8 @@ describe('character list create/delete rollback', () => {
     const attempted = { chaId: 'char-selected', name: 'Selected', chats: [], lastInteraction: 1234 } as any
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push(attempted)
-      ;(DBState.db as any).currentChar = 1
+      testDatabaseState.db.characters.push(attempted)
+      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
     repairCharacterOrderOptimistically({ dispatchReorder: false })
@@ -454,11 +464,11 @@ describe('character list create/delete rollback', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
+      expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a'])
     })
-    expect(DBState.db.characterOrder).toEqual(['char-a'])
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-a'])
     expect(get(selectedCharID)).toBe(0)
-    expect((DBState.db as any).currentChar).toBe(0)
+    expect((testDatabaseState.db as any).currentChar).toBe(0)
   })
 
   it('failed import-style create with no optimistic local row is a no-op rollback and preserves newer local edits', async () => {
@@ -466,15 +476,15 @@ describe('character list create/delete rollback', () => {
       failCreate: true,
       onCreate: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].name = 'Local edit after import dispatch'
-          DBState.db.characterOrder = [
+          testDatabaseState.db.characters[0].name = 'Local edit after import dispatch'
+          testDatabaseState.db.characterOrder = [
             { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
           ] as any
           selectedCharID.set(0)
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: ['char-a'],
       currentChar: 0,
@@ -488,8 +498,10 @@ describe('character list create/delete rollback', () => {
 
     await waitForCallCount(calls, 2)
     await flushAsyncWork()
-    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Local edit after import dispatch', chats: [] }])
-    expect(DBState.db.characterOrder).toEqual([
+    expect(testDatabaseState.db.characters).toEqual([
+      { chaId: 'char-a', name: 'Local edit after import dispatch', chats: [] },
+    ])
+    expect(testDatabaseState.db.characterOrder).toEqual([
       { id: 'folder-1', name: 'Local Folder', color: 'purple', data: ['char-a'] },
     ])
     expect(get(selectedCharID)).toBe(0)
@@ -500,20 +512,20 @@ describe('character list create/delete rollback', () => {
       failDelete: true,
       onDelete: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].name = 'A newer edit'
-          DBState.db.characters.push({ chaId: 'char-d', name: 'D appended', chats: [] } as any)
-          const folder = DBState.db.characterOrder.find(
+          testDatabaseState.db.characters[0].name = 'A newer edit'
+          testDatabaseState.db.characters.push({ chaId: 'char-d', name: 'D appended', chats: [] } as any)
+          const folder = testDatabaseState.db.characterOrder.find(
             (entry: any) => typeof entry !== 'string' && entry.id === 'folder-1',
           )
           if (folder && typeof folder !== 'string') {
             folder.name = 'Newer Folder'
             folder.color = 'green'
           }
-          DBState.db.characterOrder.push('char-d')
+          testDatabaseState.db.characterOrder.push('char-d')
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B deleted', chats: [] },
@@ -527,37 +539,37 @@ describe('character list create/delete rollback', () => {
     const previous = currentCharacterStateSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.splice(1, 1)
+      testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
     withTrustedServerProjectionWrite(() => {
-      ;(DBState.db as any).currentChar = undefined
+      ;(testDatabaseState.db as any).currentChar = undefined
       selectedCharID.set(-1)
     })
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual([
+      expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual([
         'char-a',
         'char-b',
         'char-c',
         'char-d',
       ])
     })
-    expect(DBState.db.characters.map((character: any) => character.name)).toEqual([
+    expect(testDatabaseState.db.characters.map((character: any) => character.name)).toEqual([
       'A newer edit',
       'B deleted',
       'C',
       'D appended',
     ])
-    expect(DBState.db.characterOrder).toEqual([
+    expect(testDatabaseState.db.characterOrder).toEqual([
       'char-a',
       { id: 'folder-1', name: 'Newer Folder', color: 'green', data: ['char-b', 'char-c'] },
       'char-d',
     ])
     expect(get(selectedCharID)).toBe(1)
-    expect((DBState.db as any).currentChar).toBe(1)
+    expect((testDatabaseState.db as any).currentChar).toBe(1)
   })
 
   it('failed permanent delete preserves a newer selection of the shifted next character after rollback', async () => {
@@ -565,12 +577,12 @@ describe('character list create/delete rollback', () => {
       failDelete: true,
       onDelete: () => {
         withTrustedServerProjectionWrite(() => {
-          ;(DBState.db as any).currentChar = 1
+          ;(testDatabaseState.db as any).currentChar = 1
           selectedCharID.set(1)
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B deleted', chats: [] },
@@ -584,22 +596,26 @@ describe('character list create/delete rollback', () => {
     const previous = currentCharacterStateSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.splice(1, 1)
+      testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters.map((character: any) => character.chaId)).toEqual(['char-a', 'char-b', 'char-c'])
+      expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual([
+        'char-a',
+        'char-b',
+        'char-c',
+      ])
       expect(get(selectedCharID)).toBe(2)
-      expect((DBState.db as any).currentChar).toBe(2)
+      expect((testDatabaseState.db as any).currentChar).toBe(2)
     })
   })
 
   it('failed permanent delete skips rollback overwrite when a same-id row already exists again', async () => {
     const calls = stubCharacterCollectionCommandFetch({ failDelete: true })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B deleted', chats: [] },
@@ -613,20 +629,20 @@ describe('character list create/delete rollback', () => {
     const previous = currentCharacterStateSnapshot()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.splice(1, 1)
+      testDatabaseState.db.characters.splice(1, 1)
     })
     dispatchDeleteCharacter('char-b', previous)
     repairCharacterOrderOptimistically({ dispatchReorder: false })
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push({ chaId: 'char-b', name: 'Replacement B', chats: [] } as any)
-      DBState.db.characterOrder.push('char-b')
+      testDatabaseState.db.characters.push({ chaId: 'char-b', name: 'Replacement B', chats: [] } as any)
+      testDatabaseState.db.characterOrder.push('char-b')
     })
 
     await waitForCallCount(calls, 2)
     await flushAsyncWork()
-    const charBRows = DBState.db.characters.filter((character: any) => character.chaId === 'char-b')
+    const charBRows = testDatabaseState.db.characters.filter((character: any) => character.chaId === 'char-b')
     expect(charBRows).toEqual([{ chaId: 'char-b', name: 'Replacement B', chats: [] }])
-    expect(DBState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
   })
 })
 
@@ -654,7 +670,7 @@ describe('character select command rollback', () => {
   }
 
   beforeEach(() => {
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [], lastInteraction: 100 },
         { chaId: 'char-b', name: 'B', chats: [], lastInteraction: 200 },
@@ -673,8 +689,8 @@ describe('character select command rollback', () => {
     const previous = currentCharacterSelectionSnapshot('char-b')
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1].lastInteraction = 2000
-      ;(DBState.db as any).currentChar = 1
+      testDatabaseState.db.characters[1].lastInteraction = 2000
+      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
     dispatchSelectCharacter('char-b', previous, 2000)
@@ -696,8 +712,8 @@ describe('character select command rollback', () => {
     await vi.waitFor(() => {
       expect(get(selectedCharID)).toBe(0)
     })
-    expect((DBState.db as any).currentChar).toBe(0)
-    expect(DBState.db.characters[1].lastInteraction).toBe(200)
+    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(testDatabaseState.db.characters[1].lastInteraction).toBe(200)
   })
 
   it('preserves a newer selection when an older failed select command resolves late', async () => {
@@ -706,25 +722,25 @@ describe('character select command rollback', () => {
     const previous = currentCharacterSelectionSnapshot('char-b')
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1].lastInteraction = 2000
-      ;(DBState.db as any).currentChar = 1
+      testDatabaseState.db.characters[1].lastInteraction = 2000
+      ;(testDatabaseState.db as any).currentChar = 1
       selectedCharID.set(1)
     })
     dispatchSelectCharacter('char-b', previous, 2000)
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[2].lastInteraction = 3000
-      ;(DBState.db as any).currentChar = 2
+      testDatabaseState.db.characters[2].lastInteraction = 3000
+      ;(testDatabaseState.db as any).currentChar = 2
       selectedCharID.set(2)
     })
     selectResponse.resolve(jsonResponse({ error: 'select failed' }, 500))
 
     await flushAsyncWork()
     expect(get(selectedCharID)).toBe(2)
-    expect((DBState.db as any).currentChar).toBe(2)
-    expect(DBState.db.characters[1].lastInteraction).toBe(2000)
-    expect(DBState.db.characters[2].lastInteraction).toBe(3000)
+    expect((testDatabaseState.db as any).currentChar).toBe(2)
+    expect(testDatabaseState.db.characters[1].lastInteraction).toBe(2000)
+    expect(testDatabaseState.db.characters[2].lastInteraction).toBe(3000)
   })
 })
 
@@ -829,7 +845,7 @@ describe('character order command helpers', () => {
 
   it('applies normalized character order through the character command domain and dispatches reorder', async () => {
     const calls = stubReorderCommandFetch()
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -852,7 +868,7 @@ describe('character order command helpers', () => {
 
     expect(repairCharacterOrderOptimistically()).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(expectedOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/characters/reorder',
@@ -867,7 +883,7 @@ describe('character order command helpers', () => {
 
   it('can apply a suppressed optimistic repair for character create/delete command flows', async () => {
     const calls = stubReorderCommandFetch()
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -878,7 +894,7 @@ describe('character order command helpers', () => {
 
     expect(repairCharacterOrderOptimistically({ dispatchReorder: false })).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(['char-a', 'char-b'])
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-b'])
     await flushAsyncWork()
     expect(calls).toHaveLength(0)
   })
@@ -898,7 +914,7 @@ describe('character order command helpers', () => {
 
   it('moves a root character into a folder, dispatches reorder, normalizes order, and rolls back on failure', async () => {
     const calls = stubReorderCommandFetch({ failReorder: true })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -908,7 +924,7 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: '', data: ['char-b'] }, 'char-c'],
       currentChar: 0,
     } as any
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     const expectedOrder = [
       { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'char-a'] },
       'char-c',
@@ -918,7 +934,7 @@ describe('character order command helpers', () => {
 
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(expectedOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/characters/reorder',
@@ -930,7 +946,7 @@ describe('character order command helpers', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(DBState.db.characterOrder).toEqual(previousOrder)
+      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     })
   })
 
@@ -939,12 +955,12 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          ;(DBState.db as any).currentChar = 1
+          ;(testDatabaseState.db as any).currentChar = 1
           selectedCharID.set(1)
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -955,7 +971,7 @@ describe('character order command helpers', () => {
       currentChar: 0,
     } as any
     selectedCharID.set(0)
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     const attemptedOrder = [
       { id: 'folder-1', name: 'Folder', color: '', data: ['char-b', 'char-a'] },
       'char-c',
@@ -965,22 +981,22 @@ describe('character order command helpers', () => {
 
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-1', index: 1 })).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(attemptedOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(attemptedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
       characterOrder: attemptedOrder,
     })
     await vi.waitFor(() => {
-      expect(DBState.db.characterOrder).toEqual(previousOrder)
+      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     })
     expect(get(selectedCharID)).toBe(1)
-    expect((DBState.db as any).currentChar).toBe(1)
+    expect((testDatabaseState.db as any).currentChar).toBe(1)
   })
 
   it('moves a root character to a root position with the existing index behavior and rollback', async () => {
     const calls = stubReorderCommandFetch({ failReorder: true })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -988,19 +1004,19 @@ describe('character order command helpers', () => {
       ],
       characterOrder: ['char-a', 'char-b', 'char-c'],
     } as any
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
       characterOrder: ['char-c', 'char-a', 'char-b'],
     })
     await vi.waitFor(() => {
-      expect(DBState.db.characterOrder).toEqual(previousOrder)
+      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     })
   })
 
@@ -1010,11 +1026,11 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characterOrder = cloneForExpect(newerOrder)
+          testDatabaseState.db.characterOrder = cloneForExpect(newerOrder)
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1026,14 +1042,14 @@ describe('character order command helpers', () => {
 
     expect(moveCharacterOrderItem({ index: 2 }, { index: 0 })).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-c', 'char-a', 'char-b'])
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
       characterOrder: ['char-c', 'char-a', 'char-b'],
     })
     await flushAsyncWork()
-    expect(DBState.db.characterOrder).toEqual(newerOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(newerOrder)
   })
 
   it('failed character reorder preserves newer folder metadata while restoring order structure', async () => {
@@ -1041,7 +1057,7 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characterOrder.find(
+          const folder = testDatabaseState.db.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-1',
           )
           if (folder) {
@@ -1053,7 +1069,7 @@ describe('character order command helpers', () => {
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1071,7 +1087,7 @@ describe('character order command helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characterOrder).toEqual([
+      expect(testDatabaseState.db.characterOrder).toEqual([
         {
           id: 'folder-1',
           name: 'Newer Folder',
@@ -1088,7 +1104,7 @@ describe('character order command helpers', () => {
 
   it('returns false without mutation or command when moving a folder into a folder', async () => {
     const calls = stubReorderCommandFetch()
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1098,19 +1114,19 @@ describe('character order command helpers', () => {
         { id: 'folder-b', name: 'Folder B', color: '', data: ['char-b'] },
       ],
     } as any
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 0 }, { folder: 'folder-b', index: 0 })).toBe(false)
 
     await flushAsyncWork()
-    expect(DBState.db.characterOrder).toEqual(previousOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
   })
 
   it('creates a new folder from two root characters, dispatches reorder, and rolls back on failure', async () => {
     const calls = stubReorderCommandFetch({ failReorder: true })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1119,13 +1135,13 @@ describe('character order command helpers', () => {
       characterOrder: ['char-a', 'char-b', 'char-c'],
       currentChar: 0,
     } as any
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     const expectedOrder = [{ id: 'folder-new', name: 'New Folder', color: '', data: ['char-a', 'char-b'] }, 'char-c']
     setServerProjectionWriteGuardEnabled(true)
 
     expect(createCharacterOrderFolder({ index: 0 }, { index: 1 }, () => 'folder-new')).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual(expectedOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/characters/reorder',
@@ -1137,27 +1153,27 @@ describe('character order command helpers', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(DBState.db.characterOrder).toEqual(previousOrder)
+      expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     })
   })
 
   it('returns false without mutation or command for identical drag positions', async () => {
     const calls = stubReorderCommandFetch()
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
       ],
       characterOrder: ['char-a', 'char-b'],
     } as any
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(moveCharacterOrderItem({ index: 0 }, { index: 0 })).toBe(false)
     expect(createCharacterOrderFolder({ index: 0 }, { index: 0 }, () => 'unused')).toBe(false)
 
     await flushAsyncWork()
-    expect(DBState.db.characterOrder).toEqual(previousOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
   })
 
@@ -1193,7 +1209,7 @@ describe('character order command helpers', () => {
     'updates folder metadata for %s, dispatches reorder, and rolls back on failure',
     async (_, patch, expectedFolder) => {
       const calls = stubReorderCommandFetch({ failReorder: true })
-      DBState.db = {
+      testDatabaseState.db = {
         characters: [
           { chaId: 'char-a', name: 'A', chats: [] },
           { chaId: 'char-b', name: 'B', chats: [] },
@@ -1204,13 +1220,13 @@ describe('character order command helpers', () => {
         ],
         currentChar: 0,
       } as any
-      const previousOrder = cloneForExpect(DBState.db.characterOrder)
+      const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
       const expectedOrder = [previousOrder[0], expectedFolder]
       setServerProjectionWriteGuardEnabled(true)
 
       expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, patch)).toBe(true)
 
-      expect(DBState.db.characterOrder).toEqual(expectedOrder)
+      expect(testDatabaseState.db.characterOrder).toEqual(expectedOrder)
       await waitForCallCount(calls, 2)
       expect(calls[1]).toEqual({
         url: '/api/v1/commands/characters/reorder',
@@ -1222,7 +1238,7 @@ describe('character order command helpers', () => {
         },
       })
       await vi.waitFor(() => {
-        expect(DBState.db.characterOrder).toEqual(previousOrder)
+        expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
       })
     },
   )
@@ -1232,14 +1248,14 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characterOrder.find(
+          const folder = testDatabaseState.db.characterOrder.find(
             (entry): entry is folder => typeof entry !== 'string' && entry.id === 'folder-b',
           )
           if (folder) folder.name = 'Newer Folder B'
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1253,7 +1269,7 @@ describe('character order command helpers', () => {
 
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Attempted Folder B' })).toBe(true)
 
-    expect(DBState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Attempted Folder B' })
+    expect(testDatabaseState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Attempted Folder B' })
     await waitForCallCount(calls, 2)
     expect(calls[1].body).toEqual({
       baseRevision: 10,
@@ -1263,7 +1279,7 @@ describe('character order command helpers', () => {
       ],
     })
     await flushAsyncWork()
-    expect(DBState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Newer Folder B' })
+    expect(testDatabaseState.db.characterOrder[1]).toMatchObject({ id: 'folder-b', name: 'Newer Folder B' })
   })
 
   it('failed folder metadata rollback does not restore selectedCharID or current character', async () => {
@@ -1271,12 +1287,12 @@ describe('character order command helpers', () => {
       failReorder: true,
       onReorder: () => {
         withTrustedServerProjectionWrite(() => {
-          ;(DBState.db as any).currentChar = 1
+          ;(testDatabaseState.db as any).currentChar = 1
           selectedCharID.set(1)
         })
       },
     })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1289,35 +1305,35 @@ describe('character order command helpers', () => {
 
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { color: 'PURPLE' })).toBe(true)
 
-    expect(DBState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'purple' })
+    expect(testDatabaseState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'purple' })
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'blue' })
+      expect(testDatabaseState.db.characterOrder[0]).toMatchObject({ id: 'folder-b', color: 'blue' })
     })
     expect(get(selectedCharID)).toBe(1)
-    expect((DBState.db as any).currentChar).toBe(1)
+    expect((testDatabaseState.db as any).currentChar).toBe(1)
   })
 
   it('returns false without mutation or command for a missing folder target', async () => {
     const calls = stubReorderCommandFetch()
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
       characterOrder: [{ id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] }],
     } as any
-    const previousOrder = cloneForExpect(DBState.db.characterOrder)
+    const previousOrder = cloneForExpect(testDatabaseState.db.characterOrder)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(updateCharacterOrderFolder({ id: 'missing-folder', index: 0 }, { name: 'Wrong' })).toBe(false)
     expect(updateCharacterOrderFolder({}, { name: 'Wrong' })).toBe(false)
 
     await flushAsyncWork()
-    expect(DBState.db.characterOrder).toEqual(previousOrder)
+    expect(testDatabaseState.db.characterOrder).toEqual(previousOrder)
     expect(calls).toHaveLength(0)
   })
 
   it('uses stable folder id instead of a stale fallback index', async () => {
     const calls = stubReorderCommandFetch()
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [] },
@@ -1331,7 +1347,7 @@ describe('character order command helpers', () => {
 
     expect(updateCharacterOrderFolder({ id: 'folder-b', index: 0 }, { name: 'Updated B' })).toBe(true)
 
-    expect(DBState.db.characterOrder).toEqual([
+    expect(testDatabaseState.db.characterOrder).toEqual([
       { id: 'folder-a', name: 'Folder A', color: '', data: ['char-a'] },
       { id: 'folder-b', name: 'Updated B', color: '', data: ['char-b'] },
     ])
@@ -1352,12 +1368,12 @@ describe('character command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].supaMemory = true
+      testDatabaseState.db.characters[0].supaMemory = true
     }).toThrow()
 
     setCharacterSupaMemory('char-a', true)
 
-    expect(DBState.db.characters[0].supaMemory).toBe(true)
+    expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -1382,7 +1398,7 @@ describe('character command projection helpers', () => {
 
 describe('Phase 4 select supa memory flag patch (L34)', () => {
   it('L34: supaMemory snapshots are scalar and restore only the target flag', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
     const snapshot = currentCharacterSupaMemorySnapshot('char-1')
@@ -1394,21 +1410,21 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
     })
     assertSnapshotIsScalar(snapshot)
 
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const instrumented = withCloneInstrumentation(() => currentCharacterSupaMemorySnapshot('char-1'))
     expect(instrumented.totalCloneCount).toBe(0)
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
 
-    DBState.db.characters[1].supaMemory = true
-    DBState.db.characters[1].name = 'Same row concurrent edit'
-    DBState.db.characters[0].name = 'Sibling concurrent edit'
+    testDatabaseState.db.characters[1].supaMemory = true
+    testDatabaseState.db.characters[1].name = 'Same row concurrent edit'
+    testDatabaseState.db.characters[0].name = 'Sibling concurrent edit'
     selectedCharID.set(2)
 
     restoreCharacterSupaMemory(snapshot!)
 
-    expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[1], 'supaMemory')).toBe(false)
-    expect(DBState.db.characters[1].name).toBe('Same row concurrent edit')
-    expect(DBState.db.characters[0].name).toBe('Sibling concurrent edit')
+    expect(Object.prototype.hasOwnProperty.call(testDatabaseState.db.characters[1], 'supaMemory')).toBe(false)
+    expect(testDatabaseState.db.characters[1].name).toBe('Same row concurrent edit')
+    expect(testDatabaseState.db.characters[0].name).toBe('Sibling concurrent edit')
     expect(get(selectedCharID)).toBe(2)
   })
 
@@ -1436,19 +1452,19 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    DBState.db = seedCloneCostDb({
+    testDatabaseState.db = seedCloneCostDb({
       hydratedMessageCount: 80,
       messageBodySize: 500,
     }) as any
     selectedCharID.set(1)
-    const charactersSize = JSON.stringify(DBState.db.characters).length
-    const targetRowSize = JSON.stringify(DBState.db.characters[1]).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
+    const targetRowSize = JSON.stringify(testDatabaseState.db.characters[1]).length
 
     const instrumented = withCloneInstrumentation(() => {
       setCharacterSupaMemory('char-1', true)
     })
 
-    expect(DBState.db.characters[1].supaMemory).toBe(true)
+    expect(testDatabaseState.db.characters[1].supaMemory).toBe(true)
     expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
 
@@ -1484,7 +1500,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'Character', chats: [], supaMemory: false },
         { chaId: 'char-b', name: 'Sibling', chats: [], supaMemory: false },
@@ -1496,18 +1512,18 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
 
     setCharacterSupaMemory('char-a', true)
     await waitForCharacterPatch(calls, 'char-a')
-    expect(DBState.db.characters[0].supaMemory).toBe(true)
+    expect(testDatabaseState.db.characters[0].supaMemory).toBe(true)
 
-    DBState.db.characters[0].name = 'Same row concurrent edit'
-    DBState.db.characters[1].name = 'Sibling concurrent edit'
+    testDatabaseState.db.characters[0].name = 'Same row concurrent edit'
+    testDatabaseState.db.characters[1].name = 'Sibling concurrent edit'
     selectedCharID.set(1)
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].supaMemory).toBe(false)
+      expect(testDatabaseState.db.characters[0].supaMemory).toBe(false)
     })
-    expect(DBState.db.characters[0].name).toBe('Same row concurrent edit')
-    expect(DBState.db.characters[1].name).toBe('Sibling concurrent edit')
+    expect(testDatabaseState.db.characters[0].name).toBe('Same row concurrent edit')
+    expect(testDatabaseState.db.characters[1].name).toBe('Sibling concurrent edit')
     expect(get(selectedCharID)).toBe(1)
   })
 
@@ -1536,7 +1552,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
       }) as unknown as typeof fetch,
     )
     selectedCharID.set(-1)
-    DBState.db = {
+    testDatabaseState.db = {
       ...seedCloneCostDb({
         hydratedMessageCount: 80,
         messageBodySize: 500,
@@ -1547,8 +1563,8 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
         'preset-on': { settings: { alwaysToggleOn: true } },
       },
     } as any
-    const charactersSize = JSON.stringify(DBState.db.characters).length
-    const targetRowSize = JSON.stringify(DBState.db.characters[1]).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
+    const targetRowSize = JSON.stringify(testDatabaseState.db.characters[1]).length
 
     const instrumented = await withAsyncCloneInstrumentation(async () => {
       selectedCharID.set(1)
@@ -1556,7 +1572,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
       await waitForCharacterPatch(calls, 'char-1')
     })
 
-    expect(DBState.db.characters[1].supaMemory).toBe(true)
+    expect(testDatabaseState.db.characters[1].supaMemory).toBe(true)
     expect(instrumented.maxClonedSize).toBeLessThan(targetRowSize)
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
     expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-1')).toEqual({
@@ -1652,12 +1668,12 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
       clearCachedServerCommandRevision()
       calls.length = 0
       selectedCharID.set(-1)
-      DBState.db = db as any
-      const beforeSupaMemory = DBState.db.characters?.[0]?.supaMemory
+      testDatabaseState.db = db as any
+      const beforeSupaMemory = testDatabaseState.db.characters?.[0]?.supaMemory
       selectedCharID.set(0)
       expect(selIdState.selId).toBe(0)
       await flushAsyncWork()
-      expect(DBState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
+      expect(testDatabaseState.db.characters?.[0]?.supaMemory, label).toBe(beforeSupaMemory)
       expect(calls, label).toHaveLength(0)
     }
   })
@@ -1665,7 +1681,7 @@ describe('Phase 4 select supa memory flag patch (L34)', () => {
 
 describe('Phase 0 character-row snapshot kit', () => {
   it('captures one character row plus selection scalars, never the whole array', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(2)
 
     const snapshot = currentCharacterRowSnapshot(1)
@@ -1679,73 +1695,73 @@ describe('Phase 0 character-row snapshot kit', () => {
     expect(Array.isArray((snapshot as { character?: unknown }).character)).toBe(false)
     assertSnapshotOmitsCollections(snapshot)
 
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const instrumented = withCloneInstrumentation(() => currentCharacterRowSnapshot(1))
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
   })
 
   it('restores only the targeted row and preserves concurrent edits to siblings', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
     assertRollbackRestoresOnly({
       capture: () => currentCharacterRowSnapshot(1),
       mutate: () => {
         // optimistic edit to the targeted row that the failing command will undo
-        DBState.db.characters[1].name = 'Optimistic'
+        testDatabaseState.db.characters[1].name = 'Optimistic'
         // a concurrent, unrelated edit to a sibling row
-        DBState.db.characters[0].name = 'Concurrent sibling edit'
+        testDatabaseState.db.characters[0].name = 'Concurrent sibling edit'
       },
       expectMutated: () => {
-        expect(DBState.db.characters[1].name).toBe('Optimistic')
+        expect(testDatabaseState.db.characters[1].name).toBe('Optimistic')
       },
       restore: (snapshot) => restoreCharacterRow(snapshot),
       expectRestored: () => {
-        expect(DBState.db.characters[1].name).toBe('Character 1')
+        expect(testDatabaseState.db.characters[1].name).toBe('Character 1')
       },
       expectUntouched: () => {
         // a full-array restore would have wiped the sibling's concurrent edit
-        expect(DBState.db.characters[0].name).toBe('Concurrent sibling edit')
+        expect(testDatabaseState.db.characters[0].name).toBe('Concurrent sibling edit')
       },
     })
   })
 
   it('restores the row by stable id even when its index has shifted', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(0)
     const snapshot = currentCharacterRowSnapshot(1)
 
     // Simulate a reorder/insert before the captured index so the row moves from
     // index 1 to index 2.
-    DBState.db.characters[1].name = 'Optimistic'
-    DBState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
-    expect(DBState.db.characters[2].chaId).toBe('char-1')
+    testDatabaseState.db.characters[1].name = 'Optimistic'
+    testDatabaseState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
+    expect(testDatabaseState.db.characters[2].chaId).toBe('char-1')
 
     restoreCharacterRow(snapshot)
 
     // char-1 is restored at its new id-located index, not at the stale index 1.
-    expect(DBState.db.characters.find((c: any) => c.chaId === 'char-1')?.name).toBe('Character 1')
+    expect(testDatabaseState.db.characters.find((c: any) => c.chaId === 'char-1')?.name).toBe('Character 1')
     // the stale captured index (1) now holds char-0 and must be left untouched.
-    expect(DBState.db.characters[1].chaId).toBe('char-0')
-    expect(DBState.db.characters[1].name).toBe('Character 0')
+    expect(testDatabaseState.db.characters[1].chaId).toBe('char-0')
+    expect(testDatabaseState.db.characters[1].name).toBe('Character 0')
   })
 
   it('does not restore attempted character fields after a newer same-row edit', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(0)
     const snapshot = currentCharacterRowSnapshot(1)
 
-    DBState.db.characters[1].name = 'Newer local name'
+    testDatabaseState.db.characters[1].name = 'Newer local name'
     restoreCharacterRow({
       ...snapshot,
       attempted: { name: 'Optimistic name' },
     })
 
-    expect(DBState.db.characters[1].name).toBe('Newer local name')
+    expect(testDatabaseState.db.characters[1].name).toBe('Newer local name')
   })
 
   it('deletes a row field added by a failed attempted rollback when the baseline lacked it', () => {
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'Character', chats: [] },
         { chaId: 'char-b', name: 'Sibling', chats: [] },
@@ -1756,20 +1772,20 @@ describe('Phase 0 character-row snapshot kit', () => {
     selectedCharID.set(0)
     const snapshot = currentCharacterRowSnapshot(0)
 
-    DBState.db.characters[0].creatorNotes = 'Optimistic notes'
+    testDatabaseState.db.characters[0].creatorNotes = 'Optimistic notes'
     restoreCharacterRow({
       ...snapshot,
       attempted: { creatorNotes: 'Optimistic notes' },
     })
 
-    expect(Object.hasOwn(DBState.db.characters[0], 'creatorNotes')).toBe(false)
-    expect(DBState.db.characters[1].name).toBe('Sibling')
+    expect(Object.hasOwn(testDatabaseState.db.characters[0], 'creatorNotes')).toBe(false)
+    expect(testDatabaseState.db.characters[1].name).toBe('Sibling')
   })
 
   it('sanity baseline: the selection snapshot performs zero whole-characters clones, the legacy snapshot performs one', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(0)
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
 
     const selection = withCloneInstrumentation(() => currentCharacterSelectionSnapshot('char-0'))
     expect(selection.maxClonedSize).toBeLessThan(charactersSize)
@@ -1798,7 +1814,7 @@ describe('Phase 2 character-row scoped dispatch', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'Character', chats: [] },
         { chaId: 'char-b', name: 'Sibling', chats: [] },
@@ -1808,29 +1824,29 @@ describe('Phase 2 character-row scoped dispatch', () => {
     selectedCharID.set(0)
 
     const previous = currentCharacterRowSnapshot(0)
-    const previousCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
+    const previousCharacter = JSON.parse(JSON.stringify(testDatabaseState.db.characters[0]))
 
     // optimistic edit to the target row plus an unrelated concurrent sibling edit
     const nextCharacter = { ...previousCharacter, name: 'Optimistic' }
-    DBState.db.characters[0] = nextCharacter as any
-    DBState.db.characters[1].name = 'Concurrent sibling edit'
+    testDatabaseState.db.characters[0] = nextCharacter as any
+    testDatabaseState.db.characters[1].name = 'Concurrent sibling edit'
 
     dispatchCompatibleCharacterUpdateScoped(previousCharacter as any, nextCharacter as any, previous)
     await waitForCallCount(calls, 2)
 
     // the failed update restores only the target row; the sibling edit survives a
     // whole-array restore would have wiped.
-    expect(DBState.db.characters[0].name).toBe('Character')
-    expect(DBState.db.characters[1].name).toBe('Concurrent sibling edit')
+    expect(testDatabaseState.db.characters[0].name).toBe('Character')
+    expect(testDatabaseState.db.characters[1].name).toBe('Concurrent sibling edit')
   })
 
   it('setCharacterByIndex captures a single-row rollback baseline, never the whole array', async () => {
-    DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
+    testDatabaseState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
     selectedCharID.set(1)
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
-    const target = JSON.parse(JSON.stringify(DBState.db.characters[1]))
+    const target = JSON.parse(JSON.stringify(testDatabaseState.db.characters[1]))
     target.name = 'Renamed'
 
     // The selection capture + the compatible-update diff stay bounded to the one
@@ -1848,8 +1864,8 @@ describe('Phase 2 character-row scoped dispatch', () => {
 
 describe('Phase 3 kept-key character diff (M13)', () => {
   it('M13: changedCharacterFields diffs without cloning the chats payload', () => {
-    DBState.db = seedCloneCostDb() as any // char-0 carries a 40-message hydrated chat
-    const previous = DBState.db.characters[0]
+    testDatabaseState.db = seedCloneCostDb() as any // char-0 carries a 40-message hydrated chat
+    const previous = testDatabaseState.db.characters[0]
     const next = { ...previous, name: 'Renamed' }
     const chatsSize = JSON.stringify(previous.chats).length
 
@@ -1904,8 +1920,8 @@ describe('Phase 3 kept-key character diff (M13)', () => {
   })
 
   it('M13: prepareCompatibleCharacterUpdate builds its factory without serializing the transcript', () => {
-    DBState.db = seedCloneCostDb() as any
-    const previous = DBState.db.characters[0]
+    testDatabaseState.db = seedCloneCostDb() as any
+    const previous = testDatabaseState.db.characters[0]
     const next = { ...previous, name: 'Renamed' }
     const chatsSize = JSON.stringify(previous.chats).length
     const rowSnapshot = currentCharacterStateSnapshot() // captured outside the measurement
@@ -1919,7 +1935,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
   })
 
   it('P2: prepareCompatibleCharacterUpdate builds local projection from the sanitized command patch', () => {
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         {
           chaId: 'char-a',
@@ -1934,7 +1950,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
       ],
       characterOrder: [],
     } as any
-    const previous = DBState.db.characters[0]
+    const previous = testDatabaseState.db.characters[0]
     const next = {
       chaId: 'plugin-supplied-id',
       name: 'New name',
@@ -1992,7 +2008,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
   })
 
   it('P5: prepareCompatibleCharacterUpdateScoped rolls back attempted fields without restoring selection', () => {
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         {
           chaId: 'char-a',
@@ -2011,7 +2027,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
     } as any
     selectedCharID.set(0)
 
-    const previousCharacter = DBState.db.characters[0]
+    const previousCharacter = testDatabaseState.db.characters[0]
     const previous = currentCharacterRowSnapshot(0)
     const nextCharacter = {
       ...previousCharacter,
@@ -2021,21 +2037,21 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 
     const prepared = prepareCompatibleCharacterUpdateScoped(previousCharacter, nextCharacter as any, previous)
     expect(prepared.optimisticCharacter).toBeDefined()
-    DBState.db.characters[0] = prepared.optimisticCharacter as any
+    testDatabaseState.db.characters[0] = prepared.optimisticCharacter as any
 
-    DBState.db.characters[1].name = 'Newer sibling name'
-    ;(DBState.db as any).currentChar = 1
+    testDatabaseState.db.characters[1].name = 'Newer sibling name'
+    ;(testDatabaseState.db as any).currentChar = 1
     selectedCharID.set(1)
 
     prepared.rollback()
 
-    expect(DBState.db.characters[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0]).toMatchObject({
       chaId: 'char-a',
       name: 'Old name',
       desc: 'Old desc',
     })
-    expect(DBState.db.characters[1].name).toBe('Newer sibling name')
-    expect((DBState.db as any).currentChar).toBe(1)
+    expect(testDatabaseState.db.characters[1].name).toBe('Newer sibling name')
+    expect((testDatabaseState.db as any).currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
   })
 
@@ -2068,7 +2084,7 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 
 describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
   it('L33: trashTime snapshots are scalar and restore only the target field plus order placement', () => {
-    DBState.db = seedCloneCostDb() as any
+    testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)
 
     const snapshot = currentCharacterTrashTimeSnapshot(1)
@@ -2087,29 +2103,29 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
     })
     assertSnapshotIsScalar(snapshot)
 
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const instrumented = withCloneInstrumentation(() => currentCharacterTrashTimeSnapshot(1))
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
 
-    DBState.db.characters[1].trashTime = 123
-    DBState.db.characters[1].name = 'Same row concurrent edit'
-    DBState.db.characters[0].name = 'Sibling concurrent edit'
-    DBState.db.characterOrder = ['char-0', 'char-2']
+    testDatabaseState.db.characters[1].trashTime = 123
+    testDatabaseState.db.characters[1].name = 'Same row concurrent edit'
+    testDatabaseState.db.characters[0].name = 'Sibling concurrent edit'
+    testDatabaseState.db.characterOrder = ['char-0', 'char-2']
 
     restoreCharacterTrashTime(snapshot)
 
-    expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[1], 'trashTime')).toBe(false)
-    expect(DBState.db.characters[1].name).toBe('Same row concurrent edit')
-    expect(DBState.db.characters[0].name).toBe('Sibling concurrent edit')
-    expect(DBState.db.characterOrder).toEqual(['char-0', 'char-1', 'char-2'])
+    expect(Object.prototype.hasOwnProperty.call(testDatabaseState.db.characters[1], 'trashTime')).toBe(false)
+    expect(testDatabaseState.db.characters[1].name).toBe('Same row concurrent edit')
+    expect(testDatabaseState.db.characters[0].name).toBe('Sibling concurrent edit')
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-0', 'char-1', 'char-2'])
   })
 
   it('L33: removeChar normal trash captures no whole-characters clone and reuses one timestamp', async () => {
-    DBState.db = seedCloneCostDb({
+    testDatabaseState.db = seedCloneCostDb({
       hydratedMessageCount: 80,
       messageBodySize: 500,
     }) as any
-    DBState.db.characterOrder = ['char-0', 'char-1', 'char-2']
+    testDatabaseState.db.characterOrder = ['char-0', 'char-1', 'char-2']
     selectedCharID.set(1)
     const calls: CapturedFetch[] = []
     vi.stubGlobal(
@@ -2134,14 +2150,14 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
 
     const instrumented = await withMockedNow(987654, () =>
       withAsyncCloneInstrumentation(() => removeChar(1, 'Character 1', 'normal')),
     )
 
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
-    expect(DBState.db.characters[1].trashTime).toBe(987654)
+    expect(testDatabaseState.db.characters[1].trashTime).toBe(987654)
     expect(get(selectedCharID)).toBe(-1)
     expect(alertConfirmState.messages).toHaveLength(2)
     expect(alertConfirmState.messages[0]).toContain('Character 1')
@@ -2179,7 +2195,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'Character', chats: [] },
         { chaId: 'char-b', name: 'Sibling', chats: [] },
@@ -2191,20 +2207,20 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
 
     await withMockedNow(222222, () => removeChar(0, 'Character', 'normal'))
     await waitForCharacterPatch(calls, 'char-a')
-    expect(DBState.db.characters[0].trashTime).toBe(222222)
-    expect(DBState.db.characterOrder).toEqual(['char-b'])
+    expect(testDatabaseState.db.characters[0].trashTime).toBe(222222)
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-b'])
     expect(get(selectedCharID)).toBe(-1)
 
-    DBState.db.characters[0].name = 'Same row concurrent edit'
-    DBState.db.characters[1].name = 'Sibling concurrent edit'
+    testDatabaseState.db.characters[0].name = 'Same row concurrent edit'
+    testDatabaseState.db.characters[1].name = 'Sibling concurrent edit'
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      expect(Object.prototype.hasOwnProperty.call(DBState.db.characters[0], 'trashTime')).toBe(false)
+      expect(Object.prototype.hasOwnProperty.call(testDatabaseState.db.characters[0], 'trashTime')).toBe(false)
     })
-    expect(DBState.db.characters[0].name).toBe('Same row concurrent edit')
-    expect(DBState.db.characters[1].name).toBe('Sibling concurrent edit')
-    expect(DBState.db.characterOrder).toEqual(['char-a', 'char-b'])
+    expect(testDatabaseState.db.characters[0].name).toBe('Same row concurrent edit')
+    expect(testDatabaseState.db.characters[1].name).toBe('Sibling concurrent edit')
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-b'])
     expect(get(selectedCharID)).toBe(0)
   })
 
@@ -2228,7 +2244,7 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
         { chaId: 'char-b', name: 'B', chats: [], trashTime: 111111 },
@@ -2241,17 +2257,17 @@ describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
 
     await withMockedNow(333333, () => removeChar(1, 'B', 'normal'))
     await waitForCharacterPatch(calls, 'char-b')
-    expect(DBState.db.characters[1].trashTime).toBe(333333)
+    expect(testDatabaseState.db.characters[1].trashTime).toBe(333333)
 
-    DBState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
-    DBState.db.characters[1].name = 'Stale index sibling edit'
+    testDatabaseState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
+    testDatabaseState.db.characters[1].name = 'Stale index sibling edit'
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.characters.find((c: any) => c.chaId === 'char-b')?.trashTime).toBe(111111)
+      expect(testDatabaseState.db.characters.find((c: any) => c.chaId === 'char-b')?.trashTime).toBe(111111)
     })
-    expect(DBState.db.characters[1].chaId).toBe('char-a')
-    expect(DBState.db.characters[1].name).toBe('Stale index sibling edit')
-    expect(DBState.db.characters[0].chaId).toBe('char-new')
+    expect(testDatabaseState.db.characters[1].chaId).toBe('char-a')
+    expect(testDatabaseState.db.characters[1].name).toBe('Stale index sibling edit')
+    expect(testDatabaseState.db.characters[0].chaId).toBe('char-new')
   })
 })
