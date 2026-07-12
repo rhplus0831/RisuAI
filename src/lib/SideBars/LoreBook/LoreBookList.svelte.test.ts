@@ -119,6 +119,7 @@ vi.mock('src/ts/alert', () => ({
 
 vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   applyLorebookEntryDraftEdit: vi.fn(),
+  applyServerCharacterLorebookResource: vi.fn(() => true),
   changedLorebookEntryDraftFields: vi.fn(() => []),
   clearDirtyLorebookEntryFieldsMatchingProjection: vi.fn(),
   flushPendingLorebookEntryDraftEdit: vi.fn(),

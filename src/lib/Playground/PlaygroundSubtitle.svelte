@@ -3,7 +3,7 @@
   import TextInput from '../UI/GUI/TextInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { getModelInfo, LLMFlags } from 'src/ts/model/modellist'
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
   import { requestChatData } from 'src/ts/process/request/request'
@@ -21,9 +21,9 @@
   let WhisperModePrompt =
     '```\n{{slot::data}}\n``` Translate the following WEBVTT to natural {{slot}}, with keeping the timestamp and header, inside a markdown code block. (prefix ``` / postfix ```)'
 
-  let selLang = $state(DBState.db.language)
+  let selLang = $state(getDatabase().language)
   let prompt = $state(LLMModePrompt)
-  let modelInfo = $derived(getModelInfo(resolveModelForRole(DBState.db, 'translate')))
+  let modelInfo = $derived(getModelInfo(resolveModelForRole(getDatabase(), 'translate')))
   let outputText = $state('')
   let fileB64 = $state('')
   let vttB64 = $state('')
@@ -274,7 +274,7 @@
       const d = await fetch('https://api.openai.com/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${DBState.db.openAIKey}`,
+          Authorization: `Bearer ${getDatabase().openAIKey}`,
         },
         body: formData,
       })
@@ -462,7 +462,7 @@
 {#if !(modelInfo.flags.includes(LLMFlags.hasAudioInput) && modelInfo.flags.includes(LLMFlags.hasVideoInput)) && mode === 'llm'}
   <span class="text-draculared text-lg mt-4">{language.subtitlesWarning1}</span>
 {/if}
-{#if !(modelInfo.flags.includes(LLMFlags.hasStreaming) && DBState.db.useStreaming)}
+{#if !(modelInfo.flags.includes(LLMFlags.hasStreaming) && getDatabase().useStreaming)}
   <span class="text-draculared text-lg mt-4">{language.subtitlesWarning2}</span>
 {/if}
 {#if !('gpu' in navigator) && mode === 'whisperLocal'}

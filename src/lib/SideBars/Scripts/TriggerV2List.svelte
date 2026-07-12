@@ -18,7 +18,6 @@
     type triggerV2IfAdvanced,
   } from 'src/ts/process/triggers'
   import { onDestroy, onMount } from 'svelte'
-  import { DBState } from 'src/ts/stores.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   interface Props {
@@ -474,7 +473,7 @@
   })
 
   const getFilteredTriggers = () => {
-    const allCategories = DBState.db.showDeprecatedTriggerV2
+    const allCategories = showDeprecatedTriggerV2Draft.value
       ? effectCategories
       : Object.fromEntries(Object.entries(effectCategories).filter(([key]) => key !== 'Deprecated'))
 
@@ -483,7 +482,7 @@
   }
 
   const getAvailableCategories = () => {
-    const allCategories = DBState.db.showDeprecatedTriggerV2
+    const allCategories = showDeprecatedTriggerV2Draft.value
       ? effectCategories
       : Object.fromEntries(Object.entries(effectCategories).filter(([key]) => key !== 'Deprecated'))
 

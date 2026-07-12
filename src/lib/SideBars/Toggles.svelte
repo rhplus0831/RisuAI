@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { DBState, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
+  import { MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
-  import type { character } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type character } from 'src/ts/storage/database.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
@@ -269,7 +269,7 @@
     {/if}
 
     {@render toggles(displayedSidebarToggles, true)}
-    {#if chara && DBState.db.hypaV3}
+    {#if chara && getDatabase().hypaV3}
       <div class="flex mt-2 items-center w-full" class:justify-end={$MobileGUI} data-risu-hypa-memory-toggle>
         <CheckInput check={chara.supaMemory} reverse name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
       </div>
@@ -307,7 +307,7 @@
     </div>
   {/if}
   {@render toggles(displayedSidebarToggles)}
-  {#if chara && DBState.db.hypaV3}
+  {#if chara && getDatabase().hypaV3}
     <div class="flex mt-2 items-center" data-risu-hypa-memory-toggle>
       <CheckInput check={chara.supaMemory} name={language.ToggleHypaMemory} onChange={setSupaMemoryValue} />
     </div>

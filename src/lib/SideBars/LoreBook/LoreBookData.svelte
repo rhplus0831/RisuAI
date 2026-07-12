@@ -13,7 +13,7 @@
 <script lang="ts">
   import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from '@lucide/svelte'
   import { language } from '../../../lang'
-  import { getCurrentCharacter, getCurrentChat, type loreBook } from '../../../ts/storage/database.svelte'
+  import { getCurrentCharacter, getCurrentChat, getDatabase, type loreBook } from '../../../ts/storage/database.svelte'
   import { alertConfirm, alertMd } from '../../../ts/alert'
   import Check from '../../UI/GUI/CheckInput.svelte'
   import Help from '../../Others/Help.svelte'
@@ -21,7 +21,6 @@
   import NumberInput from '../../UI/GUI/NumberInput.svelte'
   import TextAreaInput from '../../UI/GUI/TextAreaInput.svelte'
   import { tokenizeAccurate } from 'src/ts/tokenizer'
-  import { DBState } from 'src/ts/stores.svelte'
   import LoreBookList from './LoreBookList.svelte'
   import {
     changedLorebookEntryDraftFields,
@@ -450,7 +449,7 @@
         <div class="flex items-center mt-4">
           <Check bind:check={draft.alwaysActive} name={language.alwaysActive} />
         </div>
-        {#if !draft.alwaysActive && getCurrentCharacter()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && DBState.db.localActivationInGlobalLorebook}
+        {#if !draft.alwaysActive && getCurrentCharacter()?.globalLore?.some((entry) => entry.id && draft.id && entry.id === draft.id) && getDatabase().localActivationInGlobalLorebook}
           <div class="flex items-center mt-2">
             <Check
               check={isLocallyActivated(draft)}

@@ -10,7 +10,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import CustomSidebar from './CustomSidebar.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -20,12 +20,12 @@ let component: MountedComponent | undefined
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     aiModel: 'test-model',
     subModel: 'test-model',
     lastLoadedLoadoutName: '',
     customSidebarItems: [],
-  } as any
+  } as any)
 })
 
 afterEach(() => {
@@ -34,24 +34,29 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('CustomSidebar', () => {
   it('skips malformed setting rows instead of passing undefined into SettingRenderer', async () => {
-    DBState.db.customSidebarItems = [
-      {
-        id: 'missing-setting',
-        type: 'setting',
-        subType: 'not-a-real-setting',
-        label: 'Missing setting',
-      },
-      {
-        id: 'missing-subtype',
-        type: 'setting',
-        label: 'Missing subtype',
-      },
-    ] as any
+    setDatabaseLite({
+      aiModel: 'test-model',
+      subModel: 'test-model',
+      lastLoadedLoadoutName: '',
+      customSidebarItems: [
+        {
+          id: 'missing-setting',
+          type: 'setting',
+          subType: 'not-a-real-setting',
+          label: 'Missing setting',
+        },
+        {
+          id: 'missing-subtype',
+          type: 'setting',
+          label: 'Missing subtype',
+        },
+      ],
+    } as any)
 
     expect(() => {
       component = mount(CustomSidebar, { target })

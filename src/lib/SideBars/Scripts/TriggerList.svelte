@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { triggerscript } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type triggerscript } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import { alertConfirm } from 'src/ts/alert'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
@@ -7,7 +7,6 @@
   import { openURL } from 'src/ts/globalApi.svelte'
   import { hubURL } from 'src/ts/characterCards'
   import TriggerV2List from './TriggerV2List.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
 
   interface Props {
     value?: triggerscript[]
@@ -25,7 +24,7 @@
 </script>
 
 <div class="flex items-start mt-2 gap-2">
-  {#if v1Enabled || DBState.db.showDeprecatedTriggerV1}
+  {#if v1Enabled || getDatabase().showDeprecatedTriggerV1}
     <button
       class="bg-bgcolor py-1 rounded-md text-sm px-2"
       class:ring-1={v1Enabled}

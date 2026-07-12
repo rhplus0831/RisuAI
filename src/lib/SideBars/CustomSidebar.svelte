@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { DBState, loadoutModalStore } from 'src/ts/stores.svelte'
+  import { loadoutModalStore } from 'src/ts/stores.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { language } from 'src/lang'
   import { getFullSettingsData } from 'src/ts/setting/utils'
   import ModelList from '../UI/ModelList.svelte'
   import SettingRenderer from '../Setting/SettingRenderer.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
-  import type { CustomSideBarItem } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type CustomSideBarItem } from 'src/ts/storage/database.svelte'
 
   const aiModelDraft = createServerBackedSettingDraft<string>('aiModel', '')
   const settingsById = $derived.by(() => new Map(getFullSettingsData().map((setting) => [setting.id, setting])))
   const sidebarItems = $derived.by(() => {
-    const items = DBState.db.customSidebarItems
+    const items = getDatabase().customSidebarItems
     return Array.isArray(items)
       ? items.filter((item): item is CustomSideBarItem => {
           if (!item || typeof item !== 'object' || Array.isArray(item)) return false
@@ -33,7 +33,7 @@
       <Button
         onclick={() => {
           loadoutModalStore.open = !loadoutModalStore.open
-        }}>{DBState.db.lastLoadedLoadoutName || language.loadouts}</Button>
+        }}>{getDatabase().lastLoadedLoadoutName || language.loadouts}</Button>
     {:else if item.type === 'setting'}
       {@const settingItem = settingsById.get(item.subType)}
       {#if settingItem}

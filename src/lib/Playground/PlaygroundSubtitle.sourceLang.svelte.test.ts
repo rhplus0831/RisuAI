@@ -20,7 +20,7 @@ describe('PlaygroundSubtitle source language selector', () => {
     const requestModes = [...source.matchAll(/requestChatData\([\s\S]*?\n\s*'([^']+)',\s*\)/g)].map((match) => match[1])
 
     expect(source).toContain("import { resolveModelForRole } from 'src/ts/model/modelRoles'")
-    expect(source).toContain("let modelInfo = $derived(getModelInfo(resolveModelForRole(DBState.db, 'translate')))")
+    expect(source).toContain("let modelInfo = $derived(getModelInfo(resolveModelForRole(getDatabase(), 'translate')))")
     expect(requestModes).toEqual(['translate', 'translate'])
   })
 })

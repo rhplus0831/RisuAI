@@ -9,8 +9,7 @@
   import { getCharToken, getChatToken } from 'src/ts/tokenizer'
   import { tokenizePreset } from 'src/ts/process/prompt'
 
-  import { DBState } from 'src/ts/stores.svelte'
-  import { type Chat } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type Chat } from 'src/ts/storage/database.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import { HardDriveUploadIcon, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { selectSingleFile } from 'src/ts/util'
@@ -112,7 +111,7 @@
   let autopilot = $state([])
 
   function currentDevToolChat(): Chat | undefined {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     return character?.chats?.[character.chatPage]
   }
 
@@ -152,7 +151,7 @@
 
 <Accordion styled name={'Tokens'}>
   <div class="rounded-md border border-darkborderc grid grid-cols-2 gap-2 p-2">
-    {#await getCharToken(DBState.db.characters[$selectedCharID])}
+    {#await getCharToken(getDatabase().characters[$selectedCharID])}
       <span>Character Persistant</span>
       <div class="p-2 text-center">Loading...</div>
       <span>Character Dynamic</span>
@@ -163,15 +162,15 @@
       <span>Character Dynamic</span>
       <div class="p-2 text-center">{token.dynamic} Tokens</div>
     {/await}
-    {#await getChatToken(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage])}
+    {#await getChatToken(getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage])}
       <span>Current Chat</span>
       <div class="p-2 text-center">Loading...</div>
     {:then token}
       <span>Current Chat</span>
       <div class="p-2 text-center">{token} Tokens</div>
     {/await}
-    {#if DBState.db.promptTemplate}
-      {#await tokenizePreset(DBState.db.promptTemplate)}
+    {#if getDatabase().promptTemplate}
+      {#await tokenizePreset(getDatabase().promptTemplate)}
         <span>Prompt Template</span>
         <div class="p-2 text-center">Loading...</div>
       {:then token}
