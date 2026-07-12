@@ -257,7 +257,7 @@ export function reloadChatAt(index: number | string) {
 }
 
 // The modules `$effect` below used to register its dependency on the modules
-// array via `$state.snapshot(DBState.db.modules)` — a deep clone of every
+// array via a whole-value snapshot — a deep clone of every
 // module (lorebook entries, scripts, and triggers included) on every fire,
 // discarded immediately. `moduleUpdate()` only consumes each module's
 // identity plus its `hideIcon` / `backgroundEmbedding` fields, so reading
@@ -294,9 +294,10 @@ $effect.root(() => {
   selectedCharID.subscribe((v) => {
     selIdState.selId = v
 
-    if (DBState?.db?.characters?.[selIdState.selId]) {
-      if (DBState.db.hypaV3 && DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn) {
-        const char = DBState.db.characters[selIdState.selId]
+    const database = getResourceDatabase()
+    if (database.characters?.[selIdState.selId]) {
+      if (database.hypaV3 && database.hypaV3Presets?.[database.hypaV3PresetId]?.settings?.alwaysToggleOn) {
+        const char = database.characters[selIdState.selId]
         if (!isServerCharacterShellRow(char) && !char.supaMemory && char.chaId) {
           const characterId = char.chaId
           void import('./characterCommands').then(({ setCharacterSupaMemory }) => {
@@ -307,14 +308,15 @@ $effect.root(() => {
     }
   })
   $effect(() => {
-    readModuleUpdateSignals(DBState?.db?.modules)
-    DBState?.db?.enabledModules
-    DBState?.db?.enabledModules?.length
-    DBState?.db?.characters?.[selIdState.selId]?.chats?.[DBState?.db?.characters?.[selIdState.selId]?.chatPage]?.modules
-      ?.length
-    DBState?.db?.characters?.[selIdState.selId]?.hideChatIcon
-    DBState?.db?.characters?.[selIdState.selId]?.backgroundHTML
-    DBState?.db?.moduleIntergration
+    const database = getResourceDatabase()
+    const character = database.characters?.[selIdState.selId]
+    readModuleUpdateSignals(database.modules)
+    database.enabledModules
+    database.enabledModules?.length
+    character?.chats?.[character.chatPage]?.modules?.length
+    character?.hideChatIcon
+    character?.backgroundHTML
+    database.moduleIntergration
     moduleUpdate()
   })
 })
