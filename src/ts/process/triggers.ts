@@ -14,7 +14,7 @@ import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard
 import { tokenize } from '../tokenizer'
 import { getModuleTriggers } from './modules'
 import { get } from 'svelte/store'
-import { CurrentTriggerIdStore, DBState, refreshVariableOnlyGui, reloadChatAt } from '../stores.svelte'
+import { CurrentTriggerIdStore, refreshVariableOnlyGui, reloadChatAt } from '../stores.svelte'
 import { processMultiCommand } from './command'
 // Trigger effects reuse the
 // compiled-regex memo (lastIndex resets on retrieval).

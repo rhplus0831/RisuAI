@@ -4,21 +4,16 @@
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
   import { getUserDisplayName, getUserIcon } from 'src/ts/util'
-  import {
-    createSimpleCharacter,
-    bookmarkListOpen,
-    DBState,
-    selectedCharID,
-    ScrollToMessageStore,
-  } from 'src/ts/stores.svelte'
+  import { createSimpleCharacter, bookmarkListOpen, selectedCharID, ScrollToMessageStore } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { alertInput } from 'src/ts/alert'
   import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
   const close = () => ($bookmarkListOpen = false)
-  let chara = $derived(DBState.db.characters[$selectedCharID])
+  let chara = $derived(getDatabase().characters[$selectedCharID])
   const simpleChar = $derived(createSimpleCharacter(chara))
 
   const messageMap = $derived.by(() => {

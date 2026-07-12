@@ -24,7 +24,7 @@ export function isServerProjectionWriteGuardEnabled(): boolean {
 /**
  * Transitional trusted-write API used by optimistic commands and bridge code.
  * The callback writes directly to the owning settings, collections, or
- * characters resource slice through the deprecated DBState.db facade.
+ * characters resource slice through the resource database compatibility view.
  */
 export function withTrustedServerProjectionWrite<T>(callback: () => T): T {
   return withResourceDatabaseWrite(() => callback())

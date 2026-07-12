@@ -2,7 +2,6 @@ import { tokenizeAccurate } from '../tokenizer'
 import { createPreset, getDatabase, presetTemplate, setDatabase } from '../storage/database.svelte'
 import { alertError, alertNormal } from '../alert'
 import type { OobaChatCompletionRequestParams } from '../model/ooba'
-import { DBState } from '../stores.svelte'
 
 export type PromptItem =
   | PromptItemPlain

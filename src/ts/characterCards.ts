@@ -43,7 +43,7 @@ import {
 } from './globalApi.svelte'
 import { getNodeServerProxyAuth } from './storage/fastifyStorage'
 import { compressImage, getImageType } from './media'
-import { DBState, SettingsMenuIndex, selectedCharID, settingsOpen } from './stores.svelte'
+import { SettingsMenuIndex, selectedCharID, settingsOpen } from './stores.svelte'
 import { hasher } from './parser/parser.svelte'
 import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from './process/files/inlays'

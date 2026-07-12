@@ -71,14 +71,14 @@ describe('separate parameter model resolution', () => {
   it('uses chatAux role resolution when AllSeperateParameters has no explicit parameter key', () => {
     const source = allSeperateParametersSource()
 
-    expect(source).toContain("if (!paramKey) return resolveModelForRole(DBState.db, 'chatAux')")
-    expect(source).not.toContain('if (!paramKey) return DBState.db.subModel')
+    expect(source).toContain("if (!paramKey) return resolveModelForRole(getDatabase(), 'chatAux')")
+    expect(source).not.toContain('if (!paramKey) return getDatabase().subModel')
   })
 
   it('uses chatAux role resolution when Claude thinking parameters have no explicit parameter key', () => {
     const source = claudeThinkingSeparateParamsSource()
 
-    expect(source).toContain("if (!paramKey) return resolveModelForRole(DBState.db, 'chatAux')")
-    expect(source).not.toContain('if (!paramKey) return DBState.db.subModel')
+    expect(source).toContain("if (!paramKey) return resolveModelForRole(getDatabase(), 'chatAux')")
+    expect(source).not.toContain('if (!paramKey) return getDatabase().subModel')
   })
 })

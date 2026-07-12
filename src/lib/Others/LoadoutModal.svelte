@@ -1,6 +1,6 @@
 <script lang="ts">
   import { XIcon, StarIcon, ClockIcon, UserIcon, ListIcon, SaveIcon, TrashIcon } from '@lucide/svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { loadoutModalStore } from 'src/ts/stores.svelte'
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
@@ -30,7 +30,7 @@
   const RECENT_LIMIT = 3
 
   function getSortedLoadouts(): Loadout[] {
-    return [...(DBState.db.loadouts ?? [])].sort((a, b) => b.lastUsed - a.lastUsed)
+    return [...(getDatabase().loadouts ?? [])].sort((a, b) => b.lastUsed - a.lastUsed)
   }
 
   function getRecentLoadouts(): Loadout[] {

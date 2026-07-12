@@ -552,7 +552,7 @@ export function registerCBS(arg: CBSRegisterArg) {
             })
             .map((v) => {
               // Shallow-spread instead of a deep clone: only `.data` is reassigned,
-              // and the spread keeps the live `DBState` Message unmutated.
+              // and the spread keeps the live resource-backed message unmutated.
               return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
             }),
         ),
@@ -592,7 +592,7 @@ export function registerCBS(arg: CBSRegisterArg) {
             })
             .map((v) => {
               // Shallow-spread instead of a deep clone: only `.data` is reassigned,
-              // and the spread keeps the live `DBState` Message unmutated.
+              // and the spread keeps the live resource-backed message unmutated.
               return JSON.stringify({ ...v, data: risuChatParser(v.data, matcherArg) })
             }),
         ),

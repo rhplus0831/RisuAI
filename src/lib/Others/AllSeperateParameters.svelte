@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Help from './Help.svelte'
   import { language } from 'src/lang'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
@@ -37,10 +37,10 @@
   } = $props()
 
   let effectiveModel = $derived.by(() => {
-    if (!paramKey) return resolveModelForRole(DBState.db, 'chatAux')
+    if (!paramKey) return resolveModelForRole(getDatabase(), 'chatAux')
     const role = normalizeModelRole(paramKey)
     if (role) {
-      return resolveModelForRole(DBState.db, role)
+      return resolveModelForRole(getDatabase(), role)
     }
     return paramKey
   })

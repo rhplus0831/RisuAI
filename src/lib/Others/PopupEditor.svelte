@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { DBState, popUpEditorStore } from '../../ts/stores.svelte'
+  import { popUpEditorStore } from '../../ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import type MonacoEditorType from './MonacoEditor.svelte'
   import { language } from 'src/lang'
   import { ParseMarkdown, risuChatParser } from 'src/ts/parser/parser.svelte'
@@ -20,7 +21,7 @@
     }
 
     try {
-      $state.snapshot(DBState.db.globalChatVariables)
+      $state.snapshot(getDatabase().globalChatVariables)
     } catch (error) {}
     return risuChatParser(popUpEditorStore.value)
   })
