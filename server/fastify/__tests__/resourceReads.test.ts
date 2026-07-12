@@ -72,6 +72,7 @@ beforeEach(async () => {
           {
             chaId: 'char-a',
             name: 'Ada',
+            lastInteraction: 123,
             desc: 'Full character detail',
             oaiTTSConfig: { apiKey: 'tts-secret' },
             globalLore: [{ key: ['Ada'], content: 'Character lore' }],
@@ -207,6 +208,40 @@ describe('authenticated resource read routes', () => {
     const missing = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/characters/missing',
+      headers: authHeaders(),
+    })
+    expect(missing.statusCode).toBe(404)
+    expect(missing.json().error).toBe('character_not_found')
+  })
+
+  it('returns narrow character order and selection resources', async () => {
+    const order = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/order',
+      headers: authHeaders(),
+    })
+    expect(order.statusCode).toBe(200)
+    expect(order.json()).toEqual({
+      revision,
+      characterOrder: ['char-a', 'char-b'],
+    })
+
+    const selection = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a/selection',
+      headers: authHeaders(),
+    })
+    expect(selection.statusCode).toBe(200)
+    expect(selection.json()).toEqual({
+      revision,
+      characterId: 'char-a',
+      currentChar: 0,
+      lastInteraction: 123,
+    })
+
+    const missing = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/missing/selection',
       headers: authHeaders(),
     })
     expect(missing.statusCode).toBe(404)

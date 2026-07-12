@@ -3,6 +3,8 @@ import {
   SERVER_COLLECTION_NAMES,
   isServerCollectionName,
   type ServerCharacterResourcePayload,
+  type ServerCharacterOrderResourcePayload,
+  type ServerCharacterSelectionResourcePayload,
   type ServerCharactersResourcePayload,
   type ServerCollectionName,
   type ServerCollectionsResourcePayload,
@@ -14,6 +16,7 @@ import {
 const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
+const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 
 export type ServerResourceReadResult<T extends { revision: number }> =
   | ({ status: 'ok' } & T)
@@ -100,6 +103,56 @@ export async function fetchServerCharacter(
     status: 'ok',
     revision: record.revision,
     character: record.character as unknown as ServerCharacterResourcePayload['character'],
+  }
+}
+
+export async function fetchServerCharacterOrder(
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerCharacterOrderResourcePayload>> {
+  const result = await requestServerResourceJson(CHARACTER_ORDER_ENDPOINT, signal)
+  if (result.status !== 'ok') return result
+
+  const record = readRevisionEnvelope(result.body)
+  if (!record || !Array.isArray(record.characterOrder)) {
+    return { status: 'error', error: 'Invalid character order response' }
+  }
+  return {
+    status: 'ok',
+    revision: record.revision,
+    characterOrder: record.characterOrder as ServerCharacterOrderResourcePayload['characterOrder'],
+  }
+}
+
+export async function fetchServerCharacterSelection(
+  characterId: string,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerCharacterSelectionResourcePayload>> {
+  if (!nonEmptyString(characterId)) {
+    return { status: 'error', error: 'Character id is required' }
+  }
+  const result = await requestServerResourceJson(
+    `${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}/selection`,
+    signal,
+  )
+  if (result.status !== 'ok') return result
+
+  const record = readRevisionEnvelope(result.body)
+  if (
+    !record ||
+    record.characterId !== characterId ||
+    !Number.isInteger(record.currentChar) ||
+    (record.currentChar as number) < 0 ||
+    (record.lastInteraction !== undefined &&
+      (typeof record.lastInteraction !== 'number' || !Number.isFinite(record.lastInteraction)))
+  ) {
+    return { status: 'error', error: 'Invalid character selection response' }
+  }
+  return {
+    status: 'ok',
+    revision: record.revision,
+    characterId,
+    currentChar: record.currentChar as number,
+    ...(typeof record.lastInteraction === 'number' ? { lastInteraction: record.lastInteraction } : {}),
   }
 }
 

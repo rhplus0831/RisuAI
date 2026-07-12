@@ -8,6 +8,7 @@ import {
   COLLECTION_FIELDS,
   loadCharacterLorebookHydration,
   loadCharacterLorebookHydrations,
+  loadCharacterSelectionProjection,
   loadCharacterRowsForRead,
   loadChatHydration,
   loadChatHydrationRange,
@@ -86,6 +87,34 @@ export function registerResourceReadRoutes(
       currentChar: Number.isInteger(settings.currentChar) ? settings.currentChar : -1,
     }
   })
+
+  app.get('/api/v1/characters/order', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    const { revision } = getSchemaState(db)
+    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder'])
+    return {
+      revision,
+      characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
+    }
+  })
+
+  app.get<{ Params: { id: string } }>(
+    '/api/v1/characters/:id/selection',
+    { exposeHeadRoute: false },
+    async (req, reply) => {
+      if (!(await requireAuth(authState, req, reply))) return
+      const selection = loadCharacterSelectionProjection(db, req.params.id)
+      if (!selection) {
+        reply.code(404).send({
+          error: 'character_not_found',
+          reason: `Character not found: ${req.params.id}`,
+        })
+        return
+      }
+      const { revision } = getSchemaState(db)
+      return { revision, ...selection }
+    },
+  )
 
   app.get<{ Params: { id: string } }>('/api/v1/characters/:id', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return

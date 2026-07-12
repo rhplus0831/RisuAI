@@ -8,6 +8,8 @@ const api = vi.hoisted(() => ({
   collection: vi.fn(),
   characters: vi.fn(),
   character: vi.fn(),
+  characterOrder: vi.fn(),
+  characterSelection: vi.fn(),
   chat: vi.fn(),
   lorebook: vi.fn(),
   lorebooks: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock('./resourceReads', () => ({
   fetchServerCollection: api.collection,
   fetchServerCharacters: api.characters,
   fetchServerCharacter: api.character,
+  fetchServerCharacterOrder: api.characterOrder,
+  fetchServerCharacterSelection: api.characterSelection,
 }))
 
 vi.mock('./hydrationReads', () => ({
@@ -235,6 +239,38 @@ describe('API-backed resource invalidation', () => {
       chaId: 'char-a',
       name: 'Ada updated',
       chats: [{ message: [{ role: 'user', data: 'resident-a' }] }],
+    })
+  })
+
+  it('uses narrow order and selection reads without fetching all characters', async () => {
+    seedResources(5)
+    api.characterOrder.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      characterOrder: ['char-b', 'char-a'],
+    })
+    api.characterSelection.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      characterId: 'char-b',
+      currentChar: 1,
+      lastInteraction: 77,
+    })
+
+    const result = await refreshInvalidatedServerResources(
+      [event(6, 'characterOrder'), event(7, 'characterSelection', { id: 'char-b' })],
+      { appliedRevision: 5, hooks },
+    )
+
+    expect(result).toEqual({ status: 'ok', revision: 7, scope: 'targeted' })
+    expect(api.characterOrder).toHaveBeenCalledWith(undefined)
+    expect(api.characterSelection).toHaveBeenCalledWith('char-b', undefined)
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(api.character).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({
+      characterOrder: ['char-b', 'char-a'],
+      currentChar: 1,
+      characters: [{ chaId: 'char-a' }, { chaId: 'char-b', lastInteraction: 77 }],
     })
   })
 

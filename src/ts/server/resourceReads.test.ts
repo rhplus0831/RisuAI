@@ -7,6 +7,8 @@ vi.mock('../storage/fastifyStorage', () => ({
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
 import {
   fetchServerCharacter,
+  fetchServerCharacterOrder,
+  fetchServerCharacterSelection,
   fetchServerCharacters,
   fetchServerCollection,
   fetchServerCollections,
@@ -173,5 +175,35 @@ describe('server resource read clients', () => {
       status: 'error',
       error: 'Invalid character response',
     })
+  })
+
+  it('reads narrow character order and selection resources', async () => {
+    const calls = stubResourceFetch((url) =>
+      url.endsWith('/order')
+        ? { revision: 12, characterOrder: ['char-b', 'char-a'] }
+        : {
+            revision: 13,
+            characterId: 'char/one',
+            currentChar: 1,
+            lastInteraction: 456,
+          },
+    )
+
+    await expect(fetchServerCharacterOrder()).resolves.toEqual({
+      status: 'ok',
+      revision: 12,
+      characterOrder: ['char-b', 'char-a'],
+    })
+    await expect(fetchServerCharacterSelection('char/one')).resolves.toEqual({
+      status: 'ok',
+      revision: 13,
+      characterId: 'char/one',
+      currentChar: 1,
+      lastInteraction: 456,
+    })
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/characters/order',
+      '/api/v1/characters/char%2Fone/selection',
+    ])
   })
 })

@@ -6,13 +6,17 @@ import {
 } from './hydrationReads'
 import {
   fetchServerCharacter,
+  fetchServerCharacterOrder,
+  fetchServerCharacterSelection,
   fetchServerCharacters,
   fetchServerCollection,
   fetchServerCollections,
   fetchServerSettings,
 } from './resourceReads'
 import {
+  applyCharacterOrderResource,
   applyCharacterResource,
+  applyCharacterSelectionResource,
   applyCharactersResource,
   applyCollectionsResource,
   applySettingsResource,
@@ -60,6 +64,8 @@ interface RefreshPlan {
   collections: Set<ServerCollectionName>
   allCharacters: boolean
   characterIds: Set<string>
+  characterOrder: boolean
+  characterSelectionIds: Set<string>
   chatIds: Set<string>
   lorebookCharacterIds: Set<string>
   translatedMessageIds: Set<string>
@@ -70,6 +76,8 @@ type SettingsReadResult = Awaited<ReturnType<typeof fetchServerSettings>>
 type CollectionReadResult = Awaited<ReturnType<typeof fetchServerCollection>>
 type CharactersReadResult = Awaited<ReturnType<typeof fetchServerCharacters>>
 type CharacterReadResult = Awaited<ReturnType<typeof fetchServerCharacter>>
+type CharacterOrderReadResult = Awaited<ReturnType<typeof fetchServerCharacterOrder>>
+type CharacterSelectionReadResult = Awaited<ReturnType<typeof fetchServerCharacterSelection>>
 type ChatReadResult = Awaited<ReturnType<typeof fetchServerChatMessages>>
 type LorebookReadResult = Awaited<ReturnType<typeof fetchServerCharacterLorebook>>
 type BulkLorebookReadResult = Awaited<ReturnType<typeof fetchServerBulkCharacterLorebooks>>
@@ -79,6 +87,8 @@ type CompletedTargetedRead =
   | { kind: 'collection'; name: ServerCollectionName; result: CollectionReadResult }
   | { kind: 'characters'; result: CharactersReadResult }
   | { kind: 'character'; characterId: string; result: CharacterReadResult }
+  | { kind: 'characterOrder'; result: CharacterOrderReadResult }
+  | { kind: 'characterSelection'; characterId: string; result: CharacterSelectionReadResult }
   | { kind: 'chat'; chatId: string; result: ChatReadResult }
   | { kind: 'lorebook'; characterId: string; result: LorebookReadResult }
   | { kind: 'lorebooks'; characterIds: string[]; result: BulkLorebookReadResult }
@@ -219,6 +229,8 @@ function createRefreshPlan(): RefreshPlan {
     collections: new Set(),
     allCharacters: false,
     characterIds: new Set(),
+    characterOrder: false,
+    characterSelectionIds: new Set(),
     chatIds: new Set(),
     lorebookCharacterIds: new Set(),
     translatedMessageIds: new Set(),
@@ -264,9 +276,17 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.settings = true
       return
     case 'character':
-    case 'characterOrder':
-    case 'characterSelection':
       addAllCharacters()
+      return
+    case 'characterOrder':
+      plan.characterOrder = true
+      return
+    case 'characterSelection':
+      if (!nonEmptyString(event.id)) {
+        plan.full = true
+        return
+      }
+      plan.characterSelectionIds.add(event.id)
       return
     case 'characterRow':
       addCharacter(event.parentId ?? event.id)
@@ -392,6 +412,18 @@ async function runTargetedReads(
         })),
       )
     }
+    if (plan.characterOrder) {
+      reads.push(fetchServerCharacterOrder(signal).then((result) => ({ kind: 'characterOrder' as const, result })))
+    }
+    for (const characterId of plan.characterSelectionIds) {
+      reads.push(
+        fetchServerCharacterSelection(characterId, signal).then((result) => ({
+          kind: 'characterSelection' as const,
+          characterId,
+          result,
+        })),
+      )
+    }
   }
   // The bulk chat endpoint intentionally omits alternates. Invalidation must
   // retain that authoritative swipe/reroll state, so fetch each changed chat
@@ -457,6 +489,18 @@ function applyTargetedRead(
         entry.result.status !== 'ok' ||
         applyCharacterResource(entry.result) ||
         characterAlreadyAtLeast(entry.characterId, entry.result.revision)
+      )
+    case 'characterOrder':
+      return (
+        entry.result.status !== 'ok' ||
+        applyCharacterOrderResource(entry.result) ||
+        (charactersResourceState.orderRevision ?? -1) >= entry.result.revision
+      )
+    case 'characterSelection':
+      return (
+        entry.result.status !== 'ok' ||
+        applyCharacterSelectionResource(entry.result) ||
+        characterSelectionAlreadyAtLeast(entry.characterId, entry.result.revision)
       )
     case 'chat':
       return entry.result.status !== 'ok' || applyChatMessages(entry.result, hooks)
@@ -586,6 +630,10 @@ function targetedReadLabel(entry: CompletedTargetedRead): string {
       return 'characters'
     case 'character':
       return `character ${entry.characterId}`
+    case 'characterOrder':
+      return 'character order'
+    case 'characterSelection':
+      return `character ${entry.characterId} selection`
     case 'chat':
       return `chat ${entry.chatId}`
     case 'lorebook':
@@ -658,6 +706,14 @@ function characterAlreadyNewer(characterId: string, revision: number): boolean {
   return (
     Math.max(charactersResourceState.listRevision ?? -1, charactersResourceState.rowRevisions[characterId] ?? -1) >
     revision
+  )
+}
+
+function characterSelectionAlreadyAtLeast(characterId: string, revision: number): boolean {
+  return (
+    charactersResourceState.characters.some((candidate) => candidate?.chaId === characterId) &&
+    (charactersResourceState.selectionRevision ?? -1) >= revision &&
+    (charactersResourceState.rowRevisions[characterId] ?? -1) >= revision
   )
 }
 

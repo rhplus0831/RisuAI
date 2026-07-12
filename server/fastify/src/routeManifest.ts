@@ -187,6 +187,35 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'character-order-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters/order',
+    auth: {
+      decision: 'required',
+      reason: 'Character order is private user presentation state.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only character order route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'character-selection-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters/:id/selection',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Character selection returns private selection and interaction state.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only character selection route.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'character-read',
     methods: GET_ONLY,
     path: '/api/v1/characters/:id',

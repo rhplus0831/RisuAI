@@ -3,6 +3,8 @@ import type { character } from '../storage/database.svelte'
 import {
   SERVER_COLLECTION_NAMES,
   applyCharacterResource,
+  applyCharacterOrderResource,
+  applyCharacterSelectionResource,
   applyCharactersResource,
   applyCollectionsResource,
   applySettingsResource,
@@ -169,6 +171,35 @@ describe('resource-scoped database state', () => {
     expect(applyCharacterResource({ revision: 4, character: metadataCharacter('char-a', 'Stale') })).toBe(false)
 
     expect(getResourceDatabase().characters[0]?.name).toBe('New')
+  })
+
+  it('keeps narrow order and selection pointers newer than unrelated settings', () => {
+    applyCharactersResource({
+      revision: 5,
+      characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    })
+    applySettingsResource({
+      revision: 6,
+      settings: { characterOrder: ['stale-settings-order'], currentChar: 0 },
+    })
+
+    expect(applyCharacterOrderResource({ revision: 7, characterOrder: ['char-b', 'char-a'] })).toBe(true)
+    expect(
+      applyCharacterSelectionResource({
+        revision: 8,
+        characterId: 'char-a',
+        currentChar: 1,
+        lastInteraction: 88,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase()).toMatchObject({
+      characterOrder: ['char-b', 'char-a'],
+      currentChar: 1,
+      characters: [{ chaId: 'char-a', lastInteraction: 88 }, { chaId: 'char-b' }],
+    })
   })
 
   it('preserves resident transcript and hypa bodies across newer metadata lists', () => {

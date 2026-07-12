@@ -45,6 +45,18 @@ export interface ServerCharacterResourcePayload {
   character: character
 }
 
+export interface ServerCharacterOrderResourcePayload {
+  revision: number
+  characterOrder: Database['characterOrder']
+}
+
+export interface ServerCharacterSelectionResourcePayload {
+  revision: number
+  characterId: string
+  currentChar: number
+  lastInteraction?: number
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -71,6 +83,8 @@ export interface CharactersResourceState {
   currentChar: number
   revision: number | null
   listRevision: number | null
+  orderRevision: number | null
+  selectionRevision: number | null
   rowRevisions: Record<string, number>
   status: ServerResourceStatus
   rowStatuses: Record<string, ServerResourceStatus>
@@ -102,6 +116,8 @@ export const charactersResourceState = $state<CharactersResourceState>({
   currentChar: -1,
   revision: null,
   listRevision: null,
+  orderRevision: null,
+  selectionRevision: null,
   rowRevisions: {},
   status: 'idle',
   rowStatuses: {},
@@ -228,6 +244,8 @@ export function applyCharactersResource(
   options: { preserveResidentChatBodies?: boolean } = {},
 ): boolean {
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
   if (Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)) return false
 
   const preserveResidentChatBodies = options.preserveResidentChatBodies ?? true
@@ -248,6 +266,8 @@ export function applyCharactersResource(
   charactersResourceState.currentChar = payload.currentChar
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
   charactersResourceState.listRevision = payload.revision
+  charactersResourceState.orderRevision = payload.revision
+  charactersResourceState.selectionRevision = payload.revision
   charactersResourceState.rowRevisions = Object.fromEntries(
     payload.characters
       .filter((candidate) => nonEmptyString(candidate?.chaId))
@@ -289,6 +309,46 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   return true
 }
 
+export function applyCharacterOrderResource(payload: ServerCharacterOrderResourcePayload): boolean {
+  if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.orderRevision)) return false
+
+  charactersResourceState.characterOrder = cloneJsonValue(payload.characterOrder)
+  charactersResourceState.orderRevision = payload.revision
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
+export function applyCharacterSelectionResource(payload: ServerCharacterSelectionResourcePayload): boolean {
+  if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
+  if (isOlderRevision(payload.revision, charactersResourceState.rowRevisions[payload.characterId] ?? null)) return false
+
+  const characterIndex = charactersResourceState.characters.findIndex(
+    (candidate) => candidate?.chaId === payload.characterId,
+  )
+  if (
+    characterIndex < 0 ||
+    payload.currentChar < 0 ||
+    payload.currentChar >= charactersResourceState.characters.length
+  ) {
+    return false
+  }
+
+  charactersResourceState.currentChar = payload.currentChar
+  if (typeof payload.lastInteraction === 'number') {
+    charactersResourceState.characters[characterIndex].lastInteraction = payload.lastInteraction
+  }
+  charactersResourceState.selectionRevision = payload.revision
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
 export function resetServerResourceState(): void {
   settingsResourceState.value = {}
   settingsResourceState.revision = null
@@ -309,6 +369,8 @@ export function resetServerResourceState(): void {
   charactersResourceState.currentChar = -1
   charactersResourceState.revision = null
   charactersResourceState.listRevision = null
+  charactersResourceState.orderRevision = null
+  charactersResourceState.selectionRevision = null
   charactersResourceState.rowRevisions = {}
   charactersResourceState.status = 'idle'
   charactersResourceState.rowStatuses = {}
@@ -361,6 +423,8 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
     : -1
   charactersResourceState.revision = nextRevision
   charactersResourceState.listRevision = nextRevision
+  charactersResourceState.orderRevision = nextRevision
+  charactersResourceState.selectionRevision = nextRevision
   charactersResourceState.rowRevisions =
     nextRevision === null
       ? {}
@@ -475,8 +539,10 @@ function composeResourceDatabaseRecord(): Record<string, unknown> {
     ...(collectionsResourceState.values as Record<string, unknown>),
     characters: charactersResourceState.characters,
   }
-  if (shouldUseCharacterPointerResource()) {
+  if (shouldUseCharacterPointerResource('characterOrder')) {
     record.characterOrder = charactersResourceState.characterOrder
+  }
+  if (shouldUseCharacterPointerResource('currentChar')) {
     record.currentChar = charactersResourceState.currentChar
   }
   return record
@@ -485,7 +551,7 @@ function composeResourceDatabaseRecord(): Record<string, unknown> {
 function resourceDatabaseField(property: string): unknown {
   if (property === 'characters') return charactersResourceState.characters
   if (property === 'characterOrder' || property === 'currentChar') {
-    if (shouldUseCharacterPointerResource()) {
+    if (shouldUseCharacterPointerResource(property)) {
       return property === 'characterOrder'
         ? charactersResourceState.characterOrder
         : charactersResourceState.currentChar
@@ -503,10 +569,8 @@ function resourceDatabaseKeys(): string[] {
     ...Object.keys(collectionsResourceState.values),
     'characters',
   ])
-  if (shouldUseCharacterPointerResource()) {
-    keys.add('characterOrder')
-    keys.add('currentChar')
-  }
+  if (shouldUseCharacterPointerResource('characterOrder')) keys.add('characterOrder')
+  if (shouldUseCharacterPointerResource('currentChar')) keys.add('currentChar')
   return Array.from(keys)
 }
 
@@ -618,11 +682,12 @@ function preserveResidentCharacterChatBodies(incoming: character, existing: char
   return incoming
 }
 
-function shouldUseCharacterPointerResource(): boolean {
-  if (charactersResourceState.listRevision === null) return false
-  return (
-    settingsResourceState.revision === null || charactersResourceState.listRevision >= settingsResourceState.revision
-  )
+function shouldUseCharacterPointerResource(property: 'characterOrder' | 'currentChar'): boolean {
+  const targetedRevision =
+    property === 'characterOrder' ? charactersResourceState.orderRevision : charactersResourceState.selectionRevision
+  const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
+  if (pointerRevision < 0) return false
+  return settingsResourceState.revision === null || pointerRevision >= settingsResourceState.revision
 }
 
 function isOlderRevision(revision: number, current: number | null): boolean {
