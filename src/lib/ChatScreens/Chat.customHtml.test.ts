@@ -242,7 +242,6 @@ import {
   renderCustomHtmlTemplate,
 } from './ChatCustomHtmlTemplate'
 import {
-  DBState,
   HideIconStore,
   ReloadChatPointer,
   ReloadGUIPointer,
@@ -253,6 +252,7 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { getCurrentCharacter, getCurrentChat } from '../../ts/storage/database.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
   dispatchCompatibleChatUpdateScoped,
   dispatchForkChat,
@@ -261,11 +261,20 @@ import {
 } from 'src/ts/chatCommands'
 import { setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
 
-customHtmlMocks.getDatabase.mockImplementation(() => DBState.db)
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
+
+customHtmlMocks.getDatabase.mockImplementation(() => testDatabaseState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
-const previousDb = DBState.db
+const previousDb = getResourceDatabase({ snapshot: true })
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousReloadChat = get(ReloadChatPointer)
@@ -299,7 +308,7 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
   popupStore.mouseY = 0
   HideIconStore.set(false)
   SizeStore.set({ w: 900, h: 700 })
-  DBState.db = {
+  testDatabaseState.db = {
     askRemoval: false,
     characters: [
       {
@@ -491,9 +500,9 @@ beforeEach(() => {
   })
   setActiveMessageTranslations([])
   clearCustomHtmlTemplateMemo()
-  vi.mocked(getCurrentCharacter).mockImplementation(() => DBState.db.characters?.[selIdState.selId] ?? null)
+  vi.mocked(getCurrentCharacter).mockImplementation(() => testDatabaseState.db.characters?.[selIdState.selId] ?? null)
   vi.mocked(getCurrentChat).mockImplementation(() => {
-    const character = DBState.db.characters?.[selIdState.selId]
+    const character = testDatabaseState.db.characters?.[selIdState.selId]
     return character?.chats?.[character.chatPage] ?? null
   })
 })
@@ -505,7 +514,7 @@ afterEach(() => {
   components = []
   clearCustomHtmlTemplateMemo()
   vi.unstubAllGlobals()
-  DBState.db = previousDb
+  testDatabaseState.db = previousDb
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
@@ -547,7 +556,7 @@ describe('customHTML template memo', () => {
     customHtmlMocks.risuChatParser.mockClear()
     parserCalls = []
 
-    DBState.db.guiHTML = customHtmlMocks.templates.changed
+    testDatabaseState.db.guiHTML = customHtmlMocks.templates.changed
     await settle()
 
     expect(templateCalls(customHtmlMocks.templates.changed)).toHaveLength(1)
@@ -579,7 +588,7 @@ describe('customHTML template memo', () => {
 
     customHtmlMocks.risuChatParser.mockClear()
     parserCalls = []
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     await settle()
 
     expect(templateCalls(customHtmlMocks.templates.base)).toHaveLength(1)
@@ -628,12 +637,12 @@ describe('customHTML rendered button trigger freshness', () => {
     target.querySelector<HTMLButtonElement>('.manual-trigger-button')?.click()
     await tick()
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     result.resolve()
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
-    expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
     expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
   })
 
@@ -656,12 +665,12 @@ describe('customHTML rendered button trigger freshness', () => {
     target.querySelector<HTMLButtonElement>('.lua-trigger-button')?.click()
     await tick()
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     result.resolve()
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
-    expect(DBState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
     expect(dispatchCompatibleChatUpdateScoped).not.toHaveBeenCalled()
   })
 
@@ -684,7 +693,7 @@ describe('customHTML rendered button trigger freshness', () => {
     target.querySelector<HTMLButtonElement>('.lua-trigger-button')?.click()
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].scriptstate?.$choice).toBe('applied')
+    expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.$choice).toBe('applied')
     expect(get(VariableReloadGUIPointer)).toBe(previousVariableEpoch + 1)
     expect(dispatchCompatibleChatUpdateScoped).toHaveBeenCalled()
   })
@@ -695,22 +704,22 @@ describe('message action target freshness', () => {
     const pendingName = deferred<string>()
     customHtmlMocks.alertInput.mockReturnValueOnce(pendingName.promise)
     seedDatabase(1, null as unknown as string)
-    DBState.db.enableBookmark = true
+    testDatabaseState.db.enableBookmark = true
     mountPopupList()
     mountCustomHtmlRows(1)
     await settle()
 
     await openMessageActions()
     target.querySelector<HTMLButtonElement>('.button-icon-bookmark')?.click()
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     pendingName.resolve('Pinned original')
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['message-0'])
-    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({
+    expect(testDatabaseState.db.characters[0].chats[0].bookmarks).toEqual(['message-0'])
+    expect(testDatabaseState.db.characters[0].chats[0].bookmarkNames).toEqual({
       'message-0': 'Pinned original',
     })
-    expect(DBState.db.characters[0].chats[1].bookmarks).toEqual([])
+    expect(testDatabaseState.db.characters[0].chats[1].bookmarks).toEqual([])
     expect(dispatchUpdateChatScoped).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.objectContaining({
@@ -731,11 +740,13 @@ describe('message action target freshness', () => {
 
     await openMessageActions()
     buttonByText('branch')?.click()
-    const otherChatIndex = DBState.db.characters[0].chats.findIndex((chat) => chat.id === 'custom-html-other-chat')
-    DBState.db.characters[0].chatPage = otherChatIndex
+    const otherChatIndex = testDatabaseState.db.characters[0].chats.findIndex(
+      (chat) => chat.id === 'custom-html-other-chat',
+    )
+    testDatabaseState.db.characters[0].chatPage = otherChatIndex
     await settle()
 
-    const branchedChat = DBState.db.characters[0].chats.find((chat) =>
+    const branchedChat = testDatabaseState.db.characters[0].chats.find((chat) =>
       chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
     )
     expect(branchedChat?.name).toBe('Custom HTML Chat Branch')
@@ -744,7 +755,9 @@ describe('message action target freshness', () => {
     expect(branchedChat?.message.at(-1)?.data).toContain(
       '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}',
     )
-    expect(DBState.db.characters[0].chats.find((chat) => chat.id === 'custom-html-other-chat')?.message[0]).toEqual({
+    expect(
+      testDatabaseState.db.characters[0].chats.find((chat) => chat.id === 'custom-html-other-chat')?.message[0],
+    ).toEqual({
       chatId: 'other-message-0',
       data: 'other chat message',
       role: 'char',
@@ -778,11 +791,11 @@ describe('message action target freshness', () => {
 
     await openMessageActions()
     buttonByText('disableMessage')?.click()
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].message[0].disabled).toBe(true)
-    expect(DBState.db.characters[0].chats[1].message[0].disabled).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].disabled).toBe(true)
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].disabled).toBeUndefined()
     expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
       'message-0',
       {
@@ -800,11 +813,11 @@ describe('message action target freshness', () => {
 
     await openMessageActions()
     buttonByText('disableAbove')?.click()
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].message[0].disabled).toBe('allBefore')
-    expect(DBState.db.characters[0].chats[1].message[0].disabled).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].disabled).toBe('allBefore')
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].disabled).toBeUndefined()
     expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith(
       'message-0',
       {
@@ -843,8 +856,8 @@ describe('server raw translation controls', () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     customHtmlMocks.translateMessageCommand.mockReturnValue(pendingTranslation.promise)
     seedDatabase(1, null as unknown as string)
-    DBState.db.translator = 'configured'
-    DBState.db.translatorType = 'llm'
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
     const onReroll = vi.fn()
     mountCustomHtmlRows(1, 'char', { rerollIcon: true, onReroll })
     await settle()
@@ -902,7 +915,7 @@ describe('server raw translation controls', () => {
     expect(deleteButton?.disabled).toBe(false)
     expect(rerollButton?.disabled).toBe(false)
     expect(translateButton?.className).toContain('text-blue-400')
-    expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
     expect(target.textContent).toContain('translated raw')
     expect(target.textContent).toContain('retranslate')
     expect(target.textContent).toContain('editTranslation')
@@ -935,14 +948,14 @@ describe('server raw translation controls', () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     customHtmlMocks.translateMessageCommand.mockReturnValue(pendingTranslation.promise)
     seedDatabase(1, null as unknown as string)
-    DBState.db.translator = 'configured'
-    DBState.db.translatorType = 'llm'
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
     mountCustomHtmlRows(1)
     await settle()
 
     target.querySelector<HTMLButtonElement>('.button-icon-translate')?.click()
     await settle()
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
 
     pendingTranslation.resolve({
       status: 'ok',
@@ -963,8 +976,8 @@ describe('server raw translation controls', () => {
       baseRevision: 1,
       messageId: 'message-0',
     })
-    expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
-    expect(DBState.db.characters[0].chats[1].message[0].translation).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toEqual(translation)
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].translation).toBeUndefined()
     expect(target.textContent).toContain('visible message 0')
     expect(target.textContent).not.toContain('translated original chat')
   })
@@ -989,10 +1002,10 @@ describe('server raw translation controls', () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     customHtmlMocks.updateMessageCommand.mockReturnValue(pendingUpdate.promise)
     seedDatabase(1, null as unknown as string)
-    DBState.db.translator = 'configured'
-    DBState.db.translatorType = 'llm'
-    DBState.db.characters[0].chats[0].message[0].translation = existingTranslation
-    DBState.db.characters[0].chats[1].message[0].translation = otherTranslation
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
+    testDatabaseState.db.characters[0].chats[0].message[0].translation = existingTranslation
+    testDatabaseState.db.characters[0].chats[1].message[0].translation = otherTranslation
     mountCustomHtmlRows(1)
     await settle()
 
@@ -1018,14 +1031,14 @@ describe('server raw translation controls', () => {
         }),
       },
     })
-    expect(DBState.db.characters[0].chats[0].message[0].translation?.text).toBe('attempted raw translation')
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation?.text).toBe('attempted raw translation')
 
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
     pendingUpdate.reject(new Error('update failed'))
     await settle()
 
-    expect(DBState.db.characters[0].chats[0].message[0].translation).toEqual(existingTranslation)
-    expect(DBState.db.characters[0].chats[1].message[0].translation).toEqual(otherTranslation)
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].translation).toEqual(existingTranslation)
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].translation).toEqual(otherTranslation)
     expect(target.querySelector('.message-edit-area')).toBeNull()
   })
 
@@ -1042,8 +1055,8 @@ describe('server raw translation controls', () => {
     }
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
-    DBState.db.translator = 'configured'
-    DBState.db.translatorType = 'llm'
+    testDatabaseState.db.translator = 'configured'
+    testDatabaseState.db.translatorType = 'llm'
     setActiveMessageTranslations([{ chatId: 'custom-html-chat', messageId: 'message-0' }])
     mountCustomHtmlRows(1, 'char', { rerollIcon: true })
     await settle()
@@ -1058,7 +1071,7 @@ describe('server raw translation controls', () => {
     expect(deleteButton?.disabled).toBe(true)
     expect(rerollButton?.disabled).toBe(true)
 
-    DBState.db.characters[0].chats[0].message[0].translation = translation
+    testDatabaseState.db.characters[0].chats[0].message[0].translation = translation
     setActiveMessageTranslations([])
     await settle()
 
