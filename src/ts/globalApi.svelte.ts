@@ -6,7 +6,6 @@ import {
   MobileGUI,
   botMakerMode,
   loadedStore,
-  DBState,
   LoadingStatusState,
   selIdState,
   reloadGuiDisplay,
@@ -694,7 +693,7 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
         'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
       }),
       ...(nodeProxyAuth && { 'risu-auth': nodeProxyAuth }),
-      ...(DBState?.db?.requestLocation && { 'risu-location': DBState.db.requestLocation }),
+      ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
     }
 
     const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
@@ -815,7 +814,7 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * call characterCommands.repairCharacterOrderOptimistically().
  */
 export function checkCharOrder() {
-  return !normalizeCharacterOrder(DBState.db.characterOrder, DBState.db.characters).changed
+  return !normalizeCharacterOrder(getDatabase().characterOrder, getDatabase().characters).changed
 }
 
 /**
@@ -1369,7 +1368,7 @@ export async function fetchNative(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(DBState?.db?.requestLocation && { 'risu-location': DBState.db.requestLocation }),
+              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
             }
           : {
               'risu-header': encodeURIComponent(JSON.stringify(headers)),
@@ -1379,7 +1378,7 @@ export async function fetchNative(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(DBState?.db?.requestLocation && { 'risu-location': DBState.db.requestLocation }),
+              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
             },
         method: arg.method,
         signal: requestSignal,
@@ -1640,7 +1639,7 @@ export function getLanguageCodes() {
     .map((v) => {
       return {
         code: v.code.toLocaleLowerCase(),
-        name: new Intl.DisplayNames([DBState.db.language === 'cn' ? 'zh' : DBState.db.language], {
+        name: new Intl.DisplayNames([getDatabase().language === 'cn' ? 'zh' : getDatabase().language], {
           type: 'language',
           fallback: 'none',
         }).of(v.code),
@@ -1815,7 +1814,7 @@ $effect.root(() => {
     if (!chatFoldedState.data) {
       return
     }
-    const char = DBState.db.characters[selIdState.selId]
+    const char = getDatabase().characters[selIdState.selId]
     const chat = char.chats[char.chatPage]
     if (chatFoldedState.data.targetCharacterId !== char.chaId) {
       chatFoldedState.data = null
@@ -1830,7 +1829,7 @@ $effect.root(() => {
       chatFoldedStateMessageIndex.index = -1
       return
     }
-    const char = DBState.db.characters[selIdState.selId]
+    const char = getDatabase().characters[selIdState.selId]
     const chat = char.chats[char.chatPage]
     const messageIndex = chat.message.findIndex((v) => {
       return chatFoldedState.data?.targetMessageId === v.chatId
@@ -1885,7 +1884,7 @@ export function changeChatTo(IdOrIndex: string | number) {
   }
 
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters[selIdState.selId].chatPage = index
+    getDatabase().characters[selIdState.selId].chatPage = index
   })
   const chatId = currentCharacter.chats[index]?.id
   if (chatId) {

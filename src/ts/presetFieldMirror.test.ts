@@ -10,6 +10,7 @@ const dbState = vi.hoisted(() => ({
 }))
 
 vi.mock('./storage/database.svelte', () => ({
+  getDatabase: () => dbState.db,
   updateModelPreset: presetUpdateState.updateModelPreset,
   updatePromptPreset: presetUpdateState.updatePromptPreset,
 }))

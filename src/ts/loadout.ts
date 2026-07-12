@@ -28,13 +28,13 @@ import {
   botPresetHasHydratedSettings,
   ensureBotPresetHydrated,
   getCurrentCharacter,
+  getDatabase,
   setPreset,
   type Database,
   type ModelPreset,
   type PromptPreset,
   type botPreset,
 } from './storage/database.svelte'
-import { DBState } from './stores.svelte'
 
 export type Loadout = {
   name: string
@@ -57,9 +57,9 @@ export type Loadout = {
 export function makeLoadout(options: { name: string }): Loadout {
   const character = getCurrentCharacter()
   const id = crypto.randomUUID()
-  const legacyPreset = DBState.db.botPresets?.[DBState.db.botPresetsId]
-  const modelPreset = DBState.db.modelPresets?.[DBState.db.modelPresetsId]
-  const promptPreset = DBState.db.promptPresets?.[DBState.db.promptPresetsId]
+  const legacyPreset = getDatabase().botPresets?.[getDatabase().botPresetsId]
+  const modelPreset = getDatabase().modelPresets?.[getDatabase().modelPresetsId]
+  const promptPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
   const agentPreset = currentChatAgentPreset()
   const legacyPresetName = readablePresetName(legacyPreset)
   const modelPresetName = readablePresetName(modelPreset)
@@ -71,8 +71,8 @@ export function makeLoadout(options: { name: string }): Loadout {
     lastUsed: Date.now(),
     favorite: false,
     characterIds: character ? [character.chaId] : [],
-    modules: DBState.db.enabledModules,
-    globalVariables: DBState.db.globalChatVariables,
+    modules: getDatabase().enabledModules,
+    globalVariables: getDatabase().globalChatVariables,
     presetName: legacyPresetName || [modelPresetName, promptPresetName].filter(Boolean).join(' / '),
     modelPresetId: nonBlankId(modelPreset?.id) ?? '',
     modelPresetName,
@@ -80,7 +80,7 @@ export function makeLoadout(options: { name: string }): Loadout {
     promptPresetName,
     agentPresetId: nonBlankId(agentPreset?.id) ?? '',
     agentPresetName,
-    personaId: DBState.db.personas[DBState.db.selectedPersona]?.id,
+    personaId: getDatabase().personas[getDatabase().selectedPersona]?.id,
   })
 }
 
@@ -357,7 +357,7 @@ function snapshotJson(value: unknown): string {
 }
 
 function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>> {
-  const dbRecord = DBState.db as unknown as Record<SetPresetRollbackKey, unknown>
+  const dbRecord = getDatabase() as unknown as Record<SetPresetRollbackKey, unknown>
   const setPresetSettings: Partial<Record<SetPresetRollbackKey, unknown>> = {}
   for (const key of SET_PRESET_ROLLBACK_KEYS) {
     setPresetSettings[key] = cloneJsonValue(dbRecord[key])
@@ -367,14 +367,14 @@ function snapshotPresetSettings(): Partial<Record<SetPresetRollbackKey, unknown>
 
 function rollbackLoadoutListEntry(entry: LoadoutListRollbackEntry): void {
   withTrustedServerProjectionWrite(() => {
-    const list = DBState.db.loadouts ?? []
+    const list = getDatabase().loadouts ?? []
     const rolledBack = applyAttemptedKeyedListRollback<Loadout, string>({
       list,
       entries: [entry],
       getKey: (loadout) => loadout?.id,
     })
     if (rolledBack.length > 0) {
-      DBState.db.loadouts = list
+      getDatabase().loadouts = list
     }
   })
 }
@@ -398,7 +398,7 @@ function rollbackDeletedLoadout(previousLoadout: Loadout, previousIndex: number)
 
 function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
   withTrustedServerProjectionWrite(() => {
-    const loadout = DBState.db.loadouts?.find((item) => item.id === rollback.loadoutId)
+    const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
     if (!loadout) return
     applyAttemptedFieldRollback({
       target: loadout as unknown as Record<string, unknown>,
@@ -411,7 +411,7 @@ function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
 
 function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
   withTrustedServerProjectionWrite(() => {
-    const loadout = DBState.db.loadouts?.find((item) => item.id === rollback.loadoutId)
+    const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
     if (loadout) {
       applyAttemptedFieldRollback({
         target: loadout as unknown as Record<string, unknown>,
@@ -421,8 +421,8 @@ function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
       })
     }
 
-    if (snapshotJson(DBState.db.lastLoadedLoadoutName) === snapshotJson(rollback.attemptedLastLoadedLoadoutName)) {
-      DBState.db.lastLoadedLoadoutName = rollback.previousLastLoadedLoadoutName
+    if (snapshotJson(getDatabase().lastLoadedLoadoutName) === snapshotJson(rollback.attemptedLastLoadedLoadoutName)) {
+      getDatabase().lastLoadedLoadoutName = rollback.previousLastLoadedLoadoutName
     }
   })
 }
@@ -455,18 +455,18 @@ function insertModuleAtPreviousPosition(liveModules: string[], moduleId: string,
 
 function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): void {
   withTrustedServerProjectionWrite(() => {
-    const liveModules = Array.isArray(DBState.db.enabledModules) ? DBState.db.enabledModules : []
+    const liveModules = Array.isArray(getDatabase().enabledModules) ? getDatabase().enabledModules : []
     const liveEnabled = liveModules.includes(rollback.moduleId)
     if (liveEnabled !== rollback.attemptedEnabled) return
 
     if (!rollback.previousEnabled) {
-      DBState.db.enabledModules = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
+      getDatabase().enabledModules = liveModules.filter((moduleId) => moduleId !== rollback.moduleId)
       return
     }
 
     if (!liveEnabled) {
       insertModuleAtPreviousPosition(liveModules, rollback.moduleId, rollback.previousModules)
-      DBState.db.enabledModules = liveModules
+      getDatabase().enabledModules = liveModules
     }
   })
 }
@@ -474,7 +474,7 @@ function rollbackModuleMembership(rollback: LoadoutModuleMembershipRollback): vo
 function rollbackGlobalChatVariables(rollback: LoadoutGlobalVariablesRollback): void {
   withTrustedServerProjectionWrite(() => {
     applyAttemptedFieldRollback({
-      target: DBState.db as unknown as Record<string, unknown>,
+      target: getDatabase() as unknown as Record<string, unknown>,
       previous: { globalChatVariables: rollback.previous },
       attempted: { globalChatVariables: rollback.attempted },
       keys: ['globalChatVariables'],
@@ -531,7 +531,7 @@ function personaSelectionRollback(
 function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): void {
   withTrustedServerProjectionWrite(() => {
     for (const row of rollback.rows) {
-      const persona = DBState.db.personas?.find((item) => item?.id === row.personaId)
+      const persona = getDatabase().personas?.find((item) => item?.id === row.personaId)
       if (!persona) continue
       applyAttemptedFieldRollback({
         target: persona as unknown as Record<string, unknown>,
@@ -542,7 +542,7 @@ function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): vo
     }
 
     applyAttemptedFieldRollback({
-      target: DBState.db as unknown as Record<string, unknown>,
+      target: getDatabase() as unknown as Record<string, unknown>,
       previous: rollback.previousMirror as Record<string, unknown>,
       attempted: rollback.attemptedMirror as Record<string, unknown>,
       keys: Object.keys(rollback.attemptedMirror),
@@ -551,33 +551,33 @@ function rollbackPersonaSelection(rollback: LoadoutPersonaSelectionRollback): vo
 }
 
 function currentBotPresetSelectedId(): string | null {
-  const index = DBState.db.botPresetsId
-  if (!Number.isInteger(index) || index < 0 || !Array.isArray(DBState.db.botPresets)) return null
-  return DBState.db.botPresets[index]?.id ?? null
+  const index = getDatabase().botPresetsId
+  if (!Number.isInteger(index) || index < 0 || !Array.isArray(getDatabase().botPresets)) return null
+  return getDatabase().botPresets[index]?.id ?? null
 }
 
 function restoreBotPresetSelectionToId(presetId: string | null): void {
-  const list = DBState.db.botPresets ?? []
+  const list = getDatabase().botPresets ?? []
   const index = presetId ? list.findIndex((preset) => preset?.id === presetId) : -1
-  DBState.db.botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
+  getDatabase().botPresetsId = index >= 0 ? index : normalizedBotPresetsId(list.length, -1)
 }
 
 function splitPresetList(kind: SplitPresetKind): Array<ModelPreset | PromptPreset> {
-  return (kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets) ?? []
+  return (kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets) ?? []
 }
 
 function currentSplitPresetSelectedId(kind: SplitPresetKind): string | null {
   const list = splitPresetList(kind)
-  const index = kind === 'model' ? DBState.db.modelPresetsId : DBState.db.promptPresetsId
+  const index = kind === 'model' ? getDatabase().modelPresetsId : getDatabase().promptPresetsId
   if (!Number.isInteger(index) || index < 0) return null
   return list[index]?.id ?? null
 }
 
 function setSplitPresetSelectedIndex(kind: SplitPresetKind, index: number): void {
   if (kind === 'model') {
-    DBState.db.modelPresetsId = index
+    getDatabase().modelPresetsId = index
   } else {
-    DBState.db.promptPresetsId = index
+    getDatabase().promptPresetsId = index
   }
 }
 
@@ -615,7 +615,7 @@ function presetFieldRollbackFromPatch(
 function rollbackPresetFields(rollback: PresetFieldRollback | null): void {
   if (!rollback) return
   withTrustedServerProjectionWrite(() => {
-    const preset = DBState.db.botPresets?.find((item) => item?.id === rollback.presetId)
+    const preset = getDatabase().botPresets?.find((item) => item?.id === rollback.presetId)
     if (!preset) return
     applyAttemptedFieldRollback({
       target: preset as unknown as Record<string, unknown>,
@@ -628,7 +628,7 @@ function rollbackPresetFields(rollback: PresetFieldRollback | null): void {
 
 function rollbackPresetSettings(rollback: PresetSettingsRollback): void {
   applyAttemptedFieldRollback({
-    target: DBState.db as unknown as Record<string, unknown>,
+    target: getDatabase() as unknown as Record<string, unknown>,
     previous: rollback.previous as Record<string, unknown>,
     attempted: rollback.attempted as Record<string, unknown>,
     keys: SET_PRESET_ROLLBACK_KEYS,
@@ -745,13 +745,13 @@ function dispatchFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
 }
 
 export function toggleLoadoutFavorite(loadoutId: string): boolean {
-  const loadout = DBState.db.loadouts?.find((item) => item.id === loadoutId)
+  const loadout = getDatabase().loadouts?.find((item) => item.id === loadoutId)
   if (!loadout) return false
 
   const previousFavorite = loadout.favorite
   const favorite = !loadout.favorite
   withTrustedServerProjectionWrite(() => {
-    const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadoutId)
+    const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadoutId)
     if (!targetLoadout) return
     targetLoadout.favorite = favorite
   })
@@ -764,14 +764,14 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
 }
 
 export function deleteLoadout(loadoutId: string): boolean {
-  const index = DBState.db.loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
+  const index = getDatabase().loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
   if (index === -1) return false
 
-  const previousLoadout = cloneJsonValue(DBState.db.loadouts[index])
+  const previousLoadout = cloneJsonValue(getDatabase().loadouts[index])
   withTrustedServerProjectionWrite(() => {
-    const targetIndex = DBState.db.loadouts.findIndex((loadout) => loadout.id === loadoutId)
+    const targetIndex = getDatabase().loadouts.findIndex((loadout) => loadout.id === loadoutId)
     if (targetIndex !== -1) {
-      DBState.db.loadouts.splice(targetIndex, 1)
+      getDatabase().loadouts.splice(targetIndex, 1)
     }
   })
   dispatchDeleteLoadout(loadoutId, previousLoadout, index)
@@ -786,7 +786,7 @@ function findChatById(
   chatId: string,
   preferredCharacterId?: string,
 ): { id?: string; generationSettings?: ChatGenerationSettings } | null {
-  const characters = Array.isArray(DBState.db.characters) ? DBState.db.characters : []
+  const characters = Array.isArray(getDatabase().characters) ? getDatabase().characters : []
   const orderedCharacters = preferredCharacterId
     ? [
         ...characters.filter((character) => character?.chaId === preferredCharacterId),
@@ -821,7 +821,7 @@ function currentActiveChatRecord(): {
 function currentChatAgentPreset(): { id?: string; name?: string } | undefined {
   const agentPresetId = nonBlankId(currentActiveChatRecord()?.chat.generationSettings?.agentPresetId)
   if (!agentPresetId) return undefined
-  return DBState.db.agentPresets?.find((preset) => preset.id === agentPresetId)
+  return getDatabase().agentPresets?.find((preset) => preset.id === agentPresetId)
 }
 
 function loadoutHasAgentPresetReference(loadout: Loadout): boolean {
@@ -832,7 +832,7 @@ function resolveLoadoutAgentPresetId(loadout: Loadout): string | undefined {
   if (!loadoutHasAgentPresetReference(loadout)) return undefined
 
   const requestedId = nonBlankId(loadout.agentPresetId)
-  if (requestedId && DBState.db.agentPresets?.some((preset) => preset.id === requestedId)) {
+  if (requestedId && getDatabase().agentPresets?.some((preset) => preset.id === requestedId)) {
     return requestedId
   }
 
@@ -841,7 +841,7 @@ function resolveLoadoutAgentPresetId(loadout: Loadout): string | undefined {
       ? loadout.agentPresetName
       : null
   if (requestedName) {
-    const preset = DBState.db.agentPresets?.find((candidate) => candidate.name === requestedName)
+    const preset = getDatabase().agentPresets?.find((candidate) => candidate.name === requestedName)
     const presetId = nonBlankId(preset?.id)
     if (presetId) return presetId
     return undefined
@@ -864,7 +864,7 @@ function createGenerationSettingsWithAgentPreset(
 }
 
 function resolvePersonaSelection(personaId: string): { index: number; personaId: string } | null {
-  const personas = DBState.db.personas ?? []
+  const personas = getDatabase().personas ?? []
   const seen = new Set<string>()
   for (const persona of personas) {
     const id = nonBlankId(persona?.id)
@@ -907,10 +907,10 @@ function loadoutHasSplitPresetReference(loadout: Loadout): boolean {
 }
 
 function ensureBotPresetCommandIds(): void {
-  const presets = DBState.db.botPresets
+  const presets = getDatabase().botPresets
   if (!Array.isArray(presets)) {
-    DBState.db.botPresets = []
-    DBState.db.botPresetsId = -1
+    getDatabase().botPresets = []
+    getDatabase().botPresetsId = -1
     return
   }
 
@@ -923,7 +923,7 @@ function ensureBotPresetCommandIds(): void {
     seen.add(nextId)
   }
 
-  DBState.db.botPresetsId = normalizedBotPresetsId(presets.length, DBState.db.botPresetsId)
+  getDatabase().botPresetsId = normalizedBotPresetsId(presets.length, getDatabase().botPresetsId)
 }
 
 function normalizedBotPresetsId(presetCount: number, selected: unknown): number {
@@ -936,7 +936,7 @@ function normalizedBotPresetsId(presetCount: number, selected: unknown): number 
 }
 
 function saveCurrentPresetSnapshotLocal(): PresetFieldRollback | null {
-  const db = DBState.db
+  const db = getDatabase()
   const index = db.botPresetsId
   const presets = db.botPresets
   if (!Array.isArray(presets) || index < 0 || index >= presets.length) return null
@@ -1007,25 +1007,25 @@ export function applyLoadout(
   const personaSelection = requested.has('persona') ? resolvePersonaSelection(loadout.personaId) : null
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
   const modelPresetSelection = useSplitPresetSelection
-    ? resolveSplitPresetSelection(DBState.db.modelPresets, loadout.modelPresetId, loadout.modelPresetName)
+    ? resolveSplitPresetSelection(getDatabase().modelPresets, loadout.modelPresetId, loadout.modelPresetName)
     : null
   const promptPresetSelection = useSplitPresetSelection
-    ? resolveSplitPresetSelection(DBState.db.promptPresets, loadout.promptPresetId, loadout.promptPresetName)
+    ? resolveSplitPresetSelection(getDatabase().promptPresets, loadout.promptPresetId, loadout.promptPresetName)
     : null
   const activeChatAgentPresetTarget = requested.has('preset') ? currentActiveChatRecord() : null
   const resolvedAgentPresetId = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : undefined
   const presetIndex =
     requested.has('preset') && !useSplitPresetSelection
-      ? (DBState.db.botPresets?.findIndex((preset) => preset.name === loadout.presetName) ?? -1)
+      ? (getDatabase().botPresets?.findIndex((preset) => preset.name === loadout.presetName) ?? -1)
       : -1
-  const previousModules = cloneJsonValue(DBState.db.enabledModules ?? [])
+  const previousModules = cloneJsonValue(getDatabase().enabledModules ?? [])
   const nextModules = cloneJsonValue(loadout.modules ?? [])
-  const previousGlobalChatVariables = cloneJsonValue(DBState.db.globalChatVariables ?? {})
+  const previousGlobalChatVariables = cloneJsonValue(getDatabase().globalChatVariables ?? {})
   const nextGlobalChatVariables = cloneJsonValue(loadout.globalVariables ?? {})
   const globalVariablesChanged = snapshotJson(previousGlobalChatVariables) !== snapshotJson(nextGlobalChatVariables)
   const currentCharacterId = getCurrentCharacter()?.chaId
   const lastUsed = Date.now()
-  const previousLoadout = DBState.db.loadouts?.find((item) => item.id === loadout.id)
+  const previousLoadout = getDatabase().loadouts?.find((item) => item.id === loadout.id)
   const touchRollback: LoadoutTouchRollback = {
     loadoutId: loadout.id,
     previous: previousLoadout
@@ -1035,7 +1035,7 @@ export function applyLoadout(
         }
       : {},
     attempted: {},
-    previousLastLoadedLoadoutName: DBState.db.lastLoadedLoadoutName,
+    previousLastLoadedLoadoutName: getDatabase().lastLoadedLoadoutName,
     attemptedLastLoadedLoadoutName: loadout.name,
   }
   let selectedLegacyPresetId: string | null = null
@@ -1054,7 +1054,7 @@ export function applyLoadout(
   }
 
   withTrustedServerProjectionWrite(() => {
-    const targetLoadout = DBState.db.loadouts.find((item) => item.id === loadout.id) ?? loadout
+    const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadout.id) ?? loadout
     targetLoadout.lastUsed = lastUsed
     if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
       targetLoadout.characterIds.push(currentCharacterId)
@@ -1071,20 +1071,20 @@ export function applyLoadout(
       ensureBotPresetCommandIds()
       const previousSelectedId = currentBotPresetSelectedId()
       const saveCurrentRollback = saveCurrentPresetSnapshotLocal()
-      const targetPreset = DBState.db.botPresets[presetIndex]
+      const targetPreset = getDatabase().botPresets[presetIndex]
       selectedLegacyPresetId = nonBlankId(targetPreset?.id)
-      DBState.db.botPresetsId = presetIndex
+      getDatabase().botPresetsId = presetIndex
       if (targetPreset) {
         if (presetHasHydratedSettings(targetPreset)) {
-          setPreset(DBState.db, targetPreset)
+          setPreset(getDatabase(), targetPreset)
         } else {
           const targetPresetId = selectedLegacyPresetId
           void ensureBotPresetHydrated(presetIndex).then((hydrated) => {
             if (!hydrated || !targetPresetId) return
             withTrustedServerProjectionWrite(() => {
-              const nextIndex = DBState.db.botPresets.findIndex((preset) => preset?.id === targetPresetId)
-              if (nextIndex < 0 || DBState.db.botPresetsId !== nextIndex) return
-              setPreset(DBState.db, DBState.db.botPresets[nextIndex])
+              const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === targetPresetId)
+              if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
+              setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
             })
           })
         }
@@ -1102,8 +1102,8 @@ export function applyLoadout(
       const previousSelectedId = currentSplitPresetSelectedId('model')
       const previousSettings = snapshotPresetSettings()
       selectedModelPresetId = modelPresetSelection.presetId
-      DBState.db.modelPresetsId = modelPresetSelection.index
-      applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[modelPresetSelection.index])
+      getDatabase().modelPresetsId = modelPresetSelection.index
+      applyModelPresetFieldsToDatabase(getDatabase(), getDatabase().modelPresets[modelPresetSelection.index])
       modelPresetRollback = {
         kind: 'model',
         previousSelectedId,
@@ -1117,8 +1117,8 @@ export function applyLoadout(
       const previousSelectedId = currentSplitPresetSelectedId('prompt')
       const previousSettings = snapshotPresetSettings()
       selectedPromptPresetId = promptPresetSelection.presetId
-      DBState.db.promptPresetsId = promptPresetSelection.index
-      applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[promptPresetSelection.index])
+      getDatabase().promptPresetsId = promptPresetSelection.index
+      applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[promptPresetSelection.index])
       promptPresetRollback = {
         kind: 'prompt',
         previousSelectedId,
@@ -1154,14 +1154,14 @@ export function applyLoadout(
     }
 
     if (requested.has('modules')) {
-      DBState.db.enabledModules = cloneJsonValue(nextModules)
+      getDatabase().enabledModules = cloneJsonValue(nextModules)
     }
 
     if (requested.has('globalVariables')) {
-      DBState.db.globalChatVariables = cloneJsonValue(nextGlobalChatVariables)
+      getDatabase().globalChatVariables = cloneJsonValue(nextGlobalChatVariables)
     }
 
-    DBState.db.lastLoadedLoadoutName = loadout.name
+    getDatabase().lastLoadedLoadoutName = loadout.name
   })
 
   const steps: LoadoutApplyStep[] = []
@@ -1278,7 +1278,7 @@ export function applyLoadout(
 export function saveCurrentLoadout(name: string) {
   const loadout = makeLoadout({ name })
   withTrustedServerProjectionWrite(() => {
-    DBState.db.loadouts.push(loadout)
+    getDatabase().loadouts.push(loadout)
   })
   dispatchCreateLoadout(loadout)
   return loadout

@@ -1,5 +1,5 @@
 import type { SettingItem, SettingContext } from './types'
-import { DBState } from '../stores.svelte'
+import { getDatabase } from '../storage/database.svelte'
 import { language } from 'src/lang'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
@@ -104,18 +104,18 @@ export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
   if (promptOverrideValue.found) return promptOverrideValue.value
 
   if (item.getValue) {
-    return item.getValue(DBState.db, ctx)
+    return item.getValue(getDatabase(), ctx)
   }
   if (item.bindPath) {
     const parts = item.bindPath.split('.')
-    let value: any = DBState.db
+    let value: any = getDatabase()
     for (const part of parts) {
       value = value?.[part]
     }
     return value
   }
   if (item.bindKey) {
-    return (DBState.db as any)[item.bindKey]
+    return (getDatabase() as any)[item.bindKey]
   }
   return undefined
 }
@@ -233,14 +233,14 @@ function resolveDeferredServerSettingTarget(rootKey: string): DeferredServerSett
 
 function currentDeferredSettingTargetValue(target: DeferredSettingTarget): unknown {
   if (target.kind === 'server') {
-    return cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.rootKey])
+    return cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
   }
   if (target.kind === 'promptOverride') {
     return currentPromptPresetModelOverrideMirrorValue(target.target)
   }
   const value = currentTopLevelPresetFieldMirrorValue(target.target)
   return value === undefined
-    ? cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.rootKey])
+    ? cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
     : value
 }
 
@@ -259,7 +259,7 @@ function queueDeferredSettingWrite(
   if (path.length === 0) edits.clear()
   edits.set(editKey, { path, value: cloneJsonValue(value) })
 
-  let desiredRoot = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[target.rootKey])
+  let desiredRoot = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
   for (const edit of edits.values()) {
     desiredRoot = applyDeferredSettingEdit(desiredRoot, edit)
   }
@@ -330,7 +330,7 @@ function rollbackDeferredServerSetting(
   previousRoot: unknown,
   edits: Map<string, DeferredSettingEdit>,
 ): void {
-  const currentRoot = (DBState.db as unknown as Record<string, unknown>)[target.rootKey]
+  const currentRoot = (getDatabase() as unknown as Record<string, unknown>)[target.rootKey]
   let restoredRoot = cloneJsonValue(currentRoot)
   let changed = false
 
@@ -345,7 +345,7 @@ function rollbackDeferredServerSetting(
 
   if (!changed) return
   withTrustedServerProjectionWrite(() => {
-    ;(DBState.db as unknown as Record<string, unknown>)[target.rootKey] = restoredRoot
+    ;(getDatabase() as unknown as Record<string, unknown>)[target.rootKey] = restoredRoot
   })
 }
 
@@ -378,7 +378,7 @@ function mirrorSettingValueToSelectedPreset(item: SettingItem, newValue: unknown
 
   if (item.bindPath) {
     const key = item.bindPath.split('.')[0]
-    return mirrorTopLevelPresetField(key, cloneJsonValue((DBState.db as any)[key]))
+    return mirrorTopLevelPresetField(key, cloneJsonValue((getDatabase() as any)[key]))
   }
 
   const key = item.bindKey ?? serverPatchKeyForItem(item)
@@ -396,7 +396,7 @@ function getPromptPresetOverrideSettingValue(
     const parts = item.bindPath.split('.')
     const rootKey = parts[0]
     if (!promptPresetModelOverrideFieldForDatabaseKey(rootKey)) return { found: false }
-    let value: any = currentPromptPresetModelOverrideValue(rootKey, (DBState.db as any)[rootKey])
+    let value: any = currentPromptPresetModelOverrideValue(rootKey, (getDatabase() as any)[rootKey])
     for (const part of parts.slice(1)) {
       value = value?.[part]
     }
@@ -407,7 +407,7 @@ function getPromptPresetOverrideSettingValue(
   if (!key || !promptPresetModelOverrideFieldForDatabaseKey(String(key))) return { found: false }
   return {
     found: true,
-    value: currentPromptPresetModelOverrideValue(String(key), (DBState.db as any)[key]),
+    value: currentPromptPresetModelOverrideValue(String(key), (getDatabase() as any)[key]),
   }
 }
 
@@ -422,7 +422,7 @@ function mirrorPromptPresetOverrideSettingValue(
   if (item.bindPath) {
     const rootKey = item.bindPath.split('.')[0]
     if (!promptPresetModelOverrideFieldForDatabaseKey(rootKey)) return null
-    return mirrorPromptPresetModelOverrideField(rootKey, cloneJsonValue((DBState.db as any)[rootKey]))
+    return mirrorPromptPresetModelOverrideField(rootKey, cloneJsonValue((getDatabase() as any)[rootKey]))
   }
 
   const key = item.bindKey ?? serverPatchKeyForItem(item)
@@ -432,16 +432,16 @@ function mirrorPromptPresetOverrideSettingValue(
 
 function setLocalSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
   if (item.setValue) {
-    item.setValue(DBState.db, newValue, ctx)
+    item.setValue(getDatabase(), newValue, ctx)
   } else if (item.bindPath) {
     const parts = item.bindPath.split('.')
-    let obj: any = DBState.db
+    let obj: any = getDatabase()
     for (let i = 0; i < parts.length - 1; i++) {
       obj = obj[parts[i]] ??= {}
     }
     obj[parts[parts.length - 1]] = newValue
   } else if (item.bindKey) {
-    ;(DBState.db as any)[item.bindKey] = newValue
+    ;(getDatabase() as any)[item.bindKey] = newValue
   }
 }
 
@@ -454,7 +454,7 @@ function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb
     if (!group) return null
     return {
       key: rootKey,
-      valueFromDb: () => cloneJsonValue((DBState.db as any)[rootKey]),
+      valueFromDb: () => cloneJsonValue((getDatabase() as any)[rootKey]),
     }
   }
 
@@ -465,7 +465,7 @@ function buildServerSettingsPatch(item: SettingItem): { key: string; valueFromDb
 
   return {
     key: String(key),
-    valueFromDb: () => cloneJsonValue((DBState.db as any)[key]),
+    valueFromDb: () => cloneJsonValue((getDatabase() as any)[key]),
   }
 }
 

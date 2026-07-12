@@ -1,8 +1,7 @@
 import { untrack } from 'svelte'
 import { prebuiltPresets } from '../process/templates/templates'
 import { mirrorTopLevelPresetField } from '../presetFieldMirror'
-import { setPreset } from '../storage/database.svelte'
-import { DBState } from '../stores.svelte'
+import { getDatabase, setPreset } from '../storage/database.svelte'
 import {
   canUseServerCommands,
   patchServerBackedSettings,
@@ -114,12 +113,12 @@ export function createServerBackedSettingDraft<T>(
     untrack(() => {
       if (!settingsGroupForKey(key)) return
       const attempted = cloneJsonValue(draft.value)
-      const previous = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
+      const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
       withTrustedServerProjectionWrite(() => {
-        // Re-read DBState.db inside the callback: the trusted write swaps in a
+        // Re-read the resource database inside the callback: the trusted write opens a
         // copy-on-write working proxy, so an alias captured earlier still points
         // at the read-only projection and would throw on write.
-        const target = DBState.db as unknown as Record<string, unknown>
+        const target = getDatabase() as unknown as Record<string, unknown>
         target[key] = attempted
       })
       const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
@@ -138,7 +137,7 @@ function reassertDirtySettingDraftValue<T>(key: string, value: T): void {
 
   withSuppressedSettingsWatcher(() => {
     withTrustedServerProjectionWrite(() => {
-      const target = DBState.db as unknown as Record<string, unknown>
+      const target = getDatabase() as unknown as Record<string, unknown>
       target[key] = cloneJsonValue(value)
     })
   })
@@ -149,7 +148,7 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   const previous: SettingsPatch = {}
   const attempted: SettingsPatch = {}
 
-  const currentSettings = DBState.db as unknown as Record<string, unknown>
+  const currentSettings = getDatabase() as unknown as Record<string, unknown>
   for (const [key, value] of Object.entries(patch)) {
     if (!settingsGroupForKey(key) || value === undefined) continue
     const currentValue = currentSettings[key]
@@ -165,7 +164,7 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
 
   withSuppressedSettingsWatcher(() => {
     withTrustedServerProjectionWrite(() => {
-      const target = DBState.db as unknown as Record<string, unknown>
+      const target = getDatabase() as unknown as Record<string, unknown>
       for (const [key, value] of Object.entries(commandPatch)) {
         target[key] = cloneJsonValue(value)
       }
@@ -177,17 +176,17 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
 
 export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServerBackedSettingsOptions): void {
   const patch = buildOnboardingSettingsPatch(options)
-  const beforeSetup = snapshotServerBackedSettings(DBState.db as unknown as Record<string, unknown>)
+  const beforeSetup = snapshotServerBackedSettings(getDatabase() as unknown as Record<string, unknown>)
   let fullPatch: SettingsPatch = {}
   let previous: SettingsPatch = {}
   let attempted: SettingsPatch = {}
 
   withSuppressedSettingsWatcher(() => {
     withTrustedServerProjectionWrite(() => {
-      DBState.db = setPreset(DBState.db, prebuiltPresets.OAI2)
-      Object.assign(DBState.db as unknown as Record<string, unknown>, patch)
+      setPreset(getDatabase(), prebuiltPresets.OAI2)
+      Object.assign(getDatabase() as unknown as Record<string, unknown>, patch)
 
-      const diff = diffServerBackedSettingsSnapshot(beforeSetup, DBState.db as unknown as Record<string, unknown>)
+      const diff = diffServerBackedSettingsSnapshot(beforeSetup, getDatabase() as unknown as Record<string, unknown>)
       fullPatch = diff.patch
       previous = diff.previous
       attempted = diff.attempted
@@ -232,7 +231,7 @@ export function watchServerBackedSettings(
       const before: SettingsPatch = {}
 
       for (const key of trackedKeys) {
-        const value = (DBState.db as unknown as Record<string, unknown> | undefined)?.[key]
+        const value = (getDatabase() as unknown as Record<string, unknown> | undefined)?.[key]
         const snapshot = snapshotJson(value)
         const previousSnapshot = previousSnapshots.get(key)
 
@@ -353,7 +352,7 @@ function withSuppressedSettingsWatcher(fn: () => void): void {
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db as unknown as Record<string, unknown>
+    const target = getDatabase() as unknown as Record<string, unknown>
     const genericPrevious: SettingsPatch = { ...previous }
     const genericAttempted: SettingsPatch = { ...attempted }
 
@@ -576,7 +575,7 @@ function buildOnboardingSettingsPatch(options: ApplyOnboardingServerBackedSettin
   }
 
   if (options.chatLang !== 0) {
-    const translator = onboardingTranslatorForLanguage(String(DBState.db.language ?? ''))
+    const translator = onboardingTranslatorForLanguage(String(getDatabase().language ?? ''))
     if (translator) patch.translator = translator
   }
 
@@ -667,7 +666,7 @@ function hasOwnKey(value: object, key: string): boolean {
 }
 
 function currentSettingValue<T>(key: string, fallback: T): T {
-  const target = DBState.db as unknown as Record<string, unknown> | undefined
+  const target = getDatabase() as unknown as Record<string, unknown> | undefined
   const value = target?.[key]
   return value === undefined ? fallback : (value as T)
 }

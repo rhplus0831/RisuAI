@@ -19,7 +19,7 @@ import {
 } from './server/commands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
-import { DBState } from './stores.svelte'
+import { getDatabase } from './storage/database.svelte'
 
 type DatabaseRecord = Record<string, unknown>
 
@@ -28,7 +28,7 @@ interface AgentPresetCommandOptions {
 }
 
 export function getAgentPresets(): AgentPresetRecord[] {
-  return Array.isArray(DBState.db.agentPresets) ? DBState.db.agentPresets : []
+  return Array.isArray(getDatabase().agentPresets) ? getDatabase().agentPresets : []
 }
 
 export function getAgentPresetById(presetId: string): AgentPresetRecord | undefined {
@@ -36,7 +36,7 @@ export function getAgentPresetById(presetId: string): AgentPresetRecord | undefi
 }
 
 export function getAgentPresetDefaultId(): string | undefined {
-  return typeof DBState.db.agentPresetDefaultId === 'string' ? DBState.db.agentPresetDefaultId : undefined
+  return typeof getDatabase().agentPresetDefaultId === 'string' ? getDatabase().agentPresetDefaultId : undefined
 }
 
 export function createAgentPreset(
@@ -185,8 +185,8 @@ function optimisticallyDeleteAgentPreset(presetId: string): (() => void) | undef
     const presets = getAgentPresets()
     const index = presets.findIndex((preset) => preset.id === presetId)
     if (index !== -1) presets.splice(index, 1)
-    if (DBState.db.agentPresetDefaultId === presetId) {
-      delete DBState.db.agentPresetDefaultId
+    if (getDatabase().agentPresetDefaultId === presetId) {
+      delete getDatabase().agentPresetDefaultId
     }
     clearChatAgentPresetSelections(presetId)
     clearLoadoutAgentPresetSelections(presetId)
@@ -198,16 +198,16 @@ function optimisticallyReorderAgentPresets(presetIds: string[]): (() => void) | 
     const presets = getAgentPresets()
     const byId = new Map(presets.map((preset) => [preset.id, preset]))
     if (presetIds.length !== presets.length || presetIds.some((id) => !byId.has(id))) return
-    DBState.db.agentPresets = presetIds.map((id) => byId.get(id)!)
+    getDatabase().agentPresets = presetIds.map((id) => byId.get(id)!)
   })
 }
 
 function optimisticallySetAgentPresetDefault(agentPresetId: string | null): (() => void) | undefined {
   return withAgentPresetRollback(['agentPresetDefaultId'], () => {
     if (agentPresetId) {
-      DBState.db.agentPresetDefaultId = agentPresetId
+      getDatabase().agentPresetDefaultId = agentPresetId
     } else {
-      delete DBState.db.agentPresetDefaultId
+      delete getDatabase().agentPresetDefaultId
     }
   })
 }
@@ -247,7 +247,7 @@ function optimisticallyReorderAgentPresetSteps(presetId: string, stepIds: string
 }
 
 function withAgentPresetRollback(keys: string[], mutate: () => void): (() => void) | undefined {
-  const target = DBState.db as unknown as DatabaseRecord
+  const target = getDatabase() as unknown as DatabaseRecord
   const previous = snapshotKeys(target, keys)
   withTrustedServerProjectionWrite(mutate)
   const attempted = snapshotKeys(target, keys)
@@ -275,7 +275,7 @@ function snapshotKeys(target: DatabaseRecord, keys: readonly string[]): Partial<
 }
 
 function clearChatAgentPresetSelections(presetId: string): void {
-  for (const character of DBState.db.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     const chats = Array.isArray(character?.chats) ? character.chats : []
     for (const chat of chats) {
       if (chat.generationSettings?.agentPresetId === presetId) {
@@ -286,7 +286,7 @@ function clearChatAgentPresetSelections(presetId: string): void {
 }
 
 function clearLoadoutAgentPresetSelections(presetId: string): void {
-  for (const loadout of DBState.db.loadouts ?? []) {
+  for (const loadout of getDatabase().loadouts ?? []) {
     if (loadout.agentPresetId !== presetId) continue
     delete loadout.agentPresetId
     delete loadout.agentPresetName

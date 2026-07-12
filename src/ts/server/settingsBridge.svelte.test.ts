@@ -79,16 +79,6 @@ vi.mock('../process/templates/templates', () => ({
   },
 }))
 
-vi.mock('../storage/database.svelte', () => ({
-  appVer: 'test',
-  defaultSdDataFunc: () => ({}),
-  getCurrentCharacter: () => null,
-  getCurrentChat: () => null,
-  getDatabase: () => ({}),
-  setDatabase: vi.fn(),
-  setPreset: presetMocks.setPreset,
-}))
-
 import { DBState } from '../stores.svelte'
 import type { HypaV3Preset } from '../process/memory/hypav3'
 import {
@@ -175,6 +165,7 @@ describe('settingsBridge coalescing', () => {
       translatorType: 'deepl',
       useAutoTranslateInput: false,
       didFirstSetup: false,
+      NAIsettings: {},
     })
 
     applyOnboardingServerBackedSettings({
@@ -184,7 +175,6 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    expect(presetMocks.setPreset).toHaveBeenCalledWith(expect.any(Object), presetMocks.OAI2)
     expect(DBState.db).toMatchObject({
       apiType: 'preset-api',
       temperature: 0.75,

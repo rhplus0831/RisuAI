@@ -1,6 +1,11 @@
 import { MODEL_PRESET_FIELDS, PROMPT_PRESET_FIELDS } from './presetSplit'
-import { updateModelPreset, updatePromptPreset, type ModelPreset, type PromptPreset } from './storage/database.svelte'
-import { DBState } from './stores.svelte'
+import {
+  getDatabase,
+  updateModelPreset,
+  updatePromptPreset,
+  type ModelPreset,
+  type PromptPreset,
+} from './storage/database.svelte'
 
 const MODEL_DATABASE_KEY_TO_PRESET_KEY: Record<string, string> = {
   NAIsettings: 'NAISettings',
@@ -40,16 +45,16 @@ export function mirrorTopLevelPresetField(key: string, value: unknown): boolean 
 export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPresetFieldMirrorTarget | null {
   const modelPresetKey = modelPresetKeyForDatabaseKey(key)
   if (modelPresetKey) {
-    const index = DBState.db.modelPresetsId
-    const presetId = Number.isInteger(index) && index >= 0 ? DBState.db.modelPresets?.[index]?.id : undefined
+    const index = getDatabase().modelPresetsId
+    const presetId = Number.isInteger(index) && index >= 0 ? getDatabase().modelPresets?.[index]?.id : undefined
     if (!presetId) return null
     return { kind: 'model', databaseKey: key, presetKey: modelPresetKey, presetId }
   }
 
   const promptPresetKey = promptPresetKeyForDatabaseKey(key)
   if (promptPresetKey) {
-    const index = DBState.db.promptPresetsId
-    const presetId = Number.isInteger(index) && index >= 0 ? DBState.db.promptPresets?.[index]?.id : undefined
+    const index = getDatabase().promptPresetsId
+    const presetId = Number.isInteger(index) && index >= 0 ? getDatabase().promptPresets?.[index]?.id : undefined
     if (!presetId) return null
     return { kind: 'prompt', databaseKey: key, presetKey: promptPresetKey, presetId }
   }
@@ -57,7 +62,7 @@ export function resolveTopLevelPresetFieldMirrorTarget(key: string): TopLevelPre
 }
 
 export function currentTopLevelPresetFieldMirrorValue(target: TopLevelPresetFieldMirrorTarget): unknown {
-  const presets = target.kind === 'model' ? DBState.db.modelPresets : DBState.db.promptPresets
+  const presets = target.kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets
   const preset = presets?.find((candidate) => candidate?.id === target.presetId) as Record<string, unknown> | undefined
   if (!preset) return undefined
   return cloneJsonValue(preset[target.presetKey])
@@ -65,17 +70,17 @@ export function currentTopLevelPresetFieldMirrorValue(target: TopLevelPresetFiel
 
 export function mirrorTopLevelPresetFieldToTarget(target: TopLevelPresetFieldMirrorTarget, value: unknown): boolean {
   if (target.kind === 'model') {
-    const index = DBState.db.modelPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+    const index = getDatabase().modelPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
     if (index < 0) return false
-    const preset = DBState.db.modelPresets[index] as Record<string, unknown>
+    const preset = getDatabase().modelPresets[index] as Record<string, unknown>
     if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return false
     updateModelPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<ModelPreset>)
     return true
   }
 
-  const index = DBState.db.promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
+  const index = getDatabase().promptPresets?.findIndex((preset) => preset?.id === target.presetId) ?? -1
   if (index < 0) return false
-  const preset = DBState.db.promptPresets[index] as Record<string, unknown>
+  const preset = getDatabase().promptPresets[index] as Record<string, unknown>
   if (snapshotJson(preset[target.presetKey]) === snapshotJson(value)) return false
   updatePromptPreset(index, { [target.presetKey]: cloneJsonValue(value) } as Partial<PromptPreset>)
   return true
