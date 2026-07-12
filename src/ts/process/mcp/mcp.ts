@@ -1,6 +1,5 @@
-import { getDatabase } from 'src/ts/storage/database.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
-import { DBState } from 'src/ts/stores.svelte'
 import { getModuleMcps } from '../modules'
 import { canUseServerCommands, patchServerBackedSettings } from '../../server/commands'
 import { withTrustedServerProjectionWrite } from '../../server/projectionWriteGuard.svelte'
@@ -201,7 +200,7 @@ async function constructMCPClientForKey(mcp: string): Promise<void> {
   }
 
   const getRefresh: typeof MCPClient.prototype.getRefreshToken = async () => {
-    return DBState.db.authRefreshes.find((refresh) => refresh.url === mcp)
+    return getDatabase().authRefreshes.find((refresh) => refresh.url === mcp)
   }
 
   try {
@@ -313,7 +312,7 @@ async function buildMCPToolClientIndex(): Promise<Map<string, MCPToolDispatchTar
 }
 
 export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void {
-  const previous = cloneJsonValue(DBState.db.authRefreshes ?? [])
+  const previous = cloneJsonValue(getDatabase().authRefreshes ?? [])
   const attemptedToken = cloneJsonValue({
     url: mcp,
     ...arg,
@@ -322,26 +321,26 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   // The optimistic local write must run inside a trusted write scope so it
   // does not throw against the read-only server projection in Fastify mode.
   withTrustedServerProjectionWrite(() => {
-    DBState.db.authRefreshes ??= []
-    attemptedIndex = DBState.db.authRefreshes.length
-    DBState.db.authRefreshes.push(cloneJsonValue(attemptedToken))
+    getDatabase().authRefreshes ??= []
+    attemptedIndex = getDatabase().authRefreshes.length
+    getDatabase().authRefreshes.push(cloneJsonValue(attemptedToken))
   })
 
   if (!canUseServerCommands()) return
 
-  const attemptedNext = cloneJsonValue(DBState.db.authRefreshes as StoredMCPRefreshToken[])
+  const attemptedNext = cloneJsonValue(getDatabase().authRefreshes as StoredMCPRefreshToken[])
   void patchServerBackedSettings({
     patch: { authRefreshes: attemptedNext },
     rollback: () => {
       withTrustedServerProjectionWrite(() => {
         const rolledBack = applyAttemptedFieldRollback({
-          target: DBState.db as unknown as Record<string, unknown>,
+          target: getDatabase() as unknown as Record<string, unknown>,
           previous: { authRefreshes: previous },
           attempted: { authRefreshes: attemptedNext },
         })
         if (rolledBack.includes('authRefreshes')) return
 
-        const liveAuthRefreshes = DBState.db.authRefreshes
+        const liveAuthRefreshes = getDatabase().authRefreshes
         if (!Array.isArray(liveAuthRefreshes)) return
         if (JSON.stringify(liveAuthRefreshes[attemptedIndex]) !== JSON.stringify(attemptedToken)) return
 

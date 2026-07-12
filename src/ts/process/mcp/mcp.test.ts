@@ -22,10 +22,16 @@ vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'mcp-auth-token',
 }))
 
-vi.mock('../modules', async (importActual) => {
-  const actual = await importActual<typeof import('../modules')>()
-  return { ...actual, getModuleMcps: () => [...moduleMocks.mcps] }
-})
+vi.mock('../modules', () => ({
+  getModuleAssets: () => [],
+  getModuleLorebooks: () => [],
+  getModuleMcps: () => [...moduleMocks.mcps],
+  getModuleRegexScripts: () => [],
+  getModules: () => [],
+  getModuleTriggers: () => [],
+  getModuleToggles: () => '',
+  moduleUpdate: vi.fn(),
+}))
 
 vi.mock('src/ts/alert', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/alert')>()
@@ -40,7 +46,10 @@ vi.mock('src/ts/alert', async (importActual) => {
 
 import { clearCachedServerCommandRevision, type CommandEvent } from '../../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
-import { DBState } from '../../stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from '../../server/resourceState.svelte'
 import {
   callMCPTool,
   callOnlyMCPs,
@@ -82,7 +91,7 @@ function mcpServerInfoFixture(): MCPClient['serverInfo'] {
 }
 
 function configureServerCompletionDb() {
-  DBState.db = {
+  setDatabaseLite({
     authRefreshes: [],
     aiModel: 'echo_model',
     subModel: 'echo_model',
@@ -98,7 +107,7 @@ function configureServerCompletionDb() {
     banCharacterset: [],
     requestRetrys: 0,
     characters: [],
-  } as any
+  } as any)
 }
 
 function stubCommandFetch(commandStatus = 200): CapturedFetch[] {
@@ -216,9 +225,9 @@ beforeEach(() => {
   alertMocks.alertNormal.mockReset()
   clearMCPRuntimeState()
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = {
+  setDatabaseLite({
     authRefreshes: [],
-  } as any
+  } as any)
 })
 
 afterEach(() => {
@@ -342,7 +351,7 @@ describe('MCP runtime persistence', () => {
       tokenUrl: 'https://mcp.example/token',
     })
 
-    expect(DBState.db.authRefreshes).toEqual([
+    expect(getDatabase().authRefreshes).toEqual([
       {
         url: 'https://mcp.example',
         clientId: 'client-id',
@@ -361,7 +370,7 @@ describe('MCP runtime persistence', () => {
       body: {
         baseRevision: 7,
         patch: {
-          authRefreshes: DBState.db.authRefreshes,
+          authRefreshes: getDatabase().authRefreshes,
         },
       },
     })
@@ -373,8 +382,8 @@ describe('MCP runtime persistence', () => {
 
     // Baseline: the guard is active, so a raw projection write throws.
     expect(() => {
-      DBState.db.authRefreshes.push({ url: 'raw' } as any)
-    }).toThrow(/read-only server projection/)
+      getDatabase().authRefreshes.push({ url: 'raw' } as any)
+    }).toThrow(/resource database compatibility view is read-only/)
 
     expect(() =>
       persistMCPRefreshToken('https://mcp.example', {
@@ -388,7 +397,7 @@ describe('MCP runtime persistence', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
     })
-    expect(DBState.db.authRefreshes).toContainEqual({
+    expect(getDatabase().authRefreshes).toContainEqual({
       url: 'https://mcp.example',
       clientId: 'client-id',
       clientSecret: 'client-secret',
@@ -399,7 +408,7 @@ describe('MCP runtime persistence', () => {
 
   it('rolls back the optimistic refresh token write when the settings command fails', async () => {
     stubCommandFetch(500)
-    DBState.db.authRefreshes = [
+    getDatabase().authRefreshes = [
       {
         url: 'https://existing.example',
         clientId: 'old-client',
@@ -417,7 +426,7 @@ describe('MCP runtime persistence', () => {
     })
 
     await vi.waitFor(() => {
-      expect(DBState.db.authRefreshes).toEqual([
+      expect(getDatabase().authRefreshes).toEqual([
         {
           url: 'https://existing.example',
           clientId: 'old-client',
@@ -445,7 +454,7 @@ describe('MCP runtime persistence', () => {
       refreshToken: 'newer-refresh',
       tokenUrl: 'https://newer.example/token',
     }
-    DBState.db.authRefreshes = [existingToken]
+    getDatabase().authRefreshes = [existingToken]
 
     persistMCPRefreshToken('https://mcp.example', {
       clientId: 'client-a',
@@ -457,13 +466,13 @@ describe('MCP runtime persistence', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
     })
-    DBState.db.authRefreshes.push(newerToken)
-    DBState.db.authRefreshes[2].refreshToken = 'newer-refresh-mutated'
+    getDatabase().authRefreshes.push(newerToken)
+    getDatabase().authRefreshes[2].refreshToken = 'newer-refresh-mutated'
 
     failProviderSettings()
 
     await vi.waitFor(() => {
-      expect(DBState.db.authRefreshes).toEqual([
+      expect(getDatabase().authRefreshes).toEqual([
         existingToken,
         {
           ...newerToken,
