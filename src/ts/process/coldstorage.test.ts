@@ -46,6 +46,10 @@ vi.mock('../globalApi.svelte', () => ({
 
 vi.mock('../stores.svelte', () => storeState)
 
+vi.mock('../storage/database.svelte', () => ({
+  getDatabase: () => storeState.DBState.db,
+}))
+
 import {
   cleanColdStorage,
   coldStorageHeader,

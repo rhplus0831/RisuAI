@@ -1,8 +1,13 @@
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import { alertToast } from '../alert'
-import { changeToPreset, type MessagePresetInfo, type Message, type character } from '../storage/database.svelte'
-import { DBState } from '../stores.svelte'
+import {
+  changeToPreset,
+  getDatabase,
+  type MessagePresetInfo,
+  type Message,
+  type character,
+} from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { ChatTokenizer } from '../tokenizer'
 import { parseToggleSyntax } from '../util'
@@ -76,7 +81,7 @@ function restoreSendRollbackSnapshot(snapshot: SendRollbackSnapshot): void {
 }
 
 function locateSendSnapshotCharacter(snapshot: SendRollbackSnapshot): character | undefined {
-  const characters = DBState.db.characters
+  const characters = getDatabase().characters
   if (!characters) return undefined
   if (snapshot.characterId) {
     return characters.find((candidate) => candidate.chaId === snapshot.characterId)
@@ -109,7 +114,7 @@ function messageIdBackfillTail(messages: Message[]): { startIndex: number; after
  * Run the sendChat entry-context setup: retained compatibility-only preset-chain
  * and statistics handling (skipped by the live Fastify runtime), character + chat
  * lookup, lastInteraction stamp, chatId backfill, promptInfo seed (gated on
- * `promptInfoInsideChat`), and tokenizer creation. Mutates DBState
+ * `promptInfoInsideChat`), and tokenizer creation. Mutates client resource state
  * (`statics.messages`, character `lastInteraction`, message `chatId`).
  *
  * The coordinator handles the closures (`throwError`,
@@ -123,12 +128,14 @@ export function setupSendChatContext(args: {
   const { chatProcessIndex, chatAdditonalTokens: argChatAdditonalTokens } = args
   const serverBacked = canUseServerCommands()
 
-  if (!serverBacked && chatProcessIndex === -1 && DBState.db.presetChain) {
-    const names = DBState.db.presetChain.split(',').map((v) => v.trim())
+  if (!serverBacked && chatProcessIndex === -1 && getDatabase().presetChain) {
+    const names = getDatabase()
+      .presetChain.split(',')
+      .map((v) => v.trim())
     const randomSelect = Math.floor(Math.random() * names.length)
     const ele = names[randomSelect]
 
-    const findId = DBState.db.botPresets.findIndex((v) => {
+    const findId = getDatabase().botPresets.findIndex((v) => {
       return v.name === ele
     })
 
@@ -140,7 +147,7 @@ export function setupSendChatContext(args: {
   }
 
   if (!serverBacked) {
-    DBState.db.statics.messages += 1
+    getDatabase().statics.messages += 1
   }
   const selectedChar = get(selectedCharID)
   const lastInteraction = Date.now()
@@ -153,7 +160,7 @@ export function setupSendChatContext(args: {
     let rollbackSnapshot: SendRollbackSnapshot | null = null
 
     withTrustedServerProjectionWrite(() => {
-      const nowChatroom = DBState.db.characters[selectedChar]
+      const nowChatroom = getDatabase().characters[selectedChar]
       const characterId = nowChatroom.chaId
       const selectedChat = nowChatroom.chatPage
       const selectedChatRecord = nowChatroom.chats[selectedChat]
@@ -207,7 +214,7 @@ export function setupSendChatContext(args: {
       runOptimisticCommandSequence(factories, () => restoreSendRollbackSnapshot(snapshot))
     }
   } else {
-    const nowChatroom = DBState.db.characters[selectedChar]
+    const nowChatroom = getDatabase().characters[selectedChar]
     nowChatroom.lastInteraction = lastInteraction
     const selectedChatRecord = nowChatroom.chats[nowChatroom.chatPage]
     if (selectedChatRecord.message.some((v) => v.chatId == null)) {
@@ -217,21 +224,21 @@ export function setupSendChatContext(args: {
       })
     }
   }
-  const nowChatroom = DBState.db.characters[selectedChar]
+  const nowChatroom = getDatabase().characters[selectedChar]
   const selectedChat = nowChatroom.chatPage
 
   const promptInfo = createInitialPromptInfo(serverBacked)
 
   let caculatedChatTokens = 0
-  if (DBState.db.aiModel.startsWith('gpt')) {
+  if (getDatabase().aiModel.startsWith('gpt')) {
     caculatedChatTokens += 5
   } else {
     caculatedChatTokens += 3
   }
 
   const chatAdditonalTokens = argChatAdditonalTokens ?? caculatedChatTokens
-  const tokenizer = new ChatTokenizer(chatAdditonalTokens, DBState.db.aiModel.startsWith('gpt') ? 'noName' : 'name')
-  const maxContextTokens = DBState.db.maxContext
+  const tokenizer = new ChatTokenizer(chatAdditonalTokens, getDatabase().aiModel.startsWith('gpt') ? 'noName' : 'name')
+  const maxContextTokens = getDatabase().maxContext
 
   return {
     selectedChar,
@@ -244,7 +251,7 @@ export function setupSendChatContext(args: {
 }
 
 function createInitialPromptInfo(serverBacked: boolean): MessagePresetInfo {
-  if (!DBState.db.promptInfoInsideChat) return {}
+  if (!getDatabase().promptInfoInsideChat) return {}
   return serverBacked ? createServerBackedPromptInfo() : createLegacyPromptInfo()
 }
 
@@ -278,10 +285,11 @@ function formatChatScopedPromptToggle(
 }
 
 function createLegacyPromptInfo(): MessagePresetInfo {
-  const initialPresetName = DBState.db.botPresets[DBState.db.botPresetsId]?.name ?? ''
-  const initialPromptToggles = parseToggleSyntax(DBState.db.customPromptTemplateToggle + getModuleToggles()).flatMap(
+  const db = getDatabase()
+  const initialPresetName = db.botPresets[db.botPresetsId]?.name ?? ''
+  const initialPromptToggles = parseToggleSyntax(db.customPromptTemplateToggle + getModuleToggles()).flatMap(
     (toggle) => {
-      const raw = DBState.db.globalChatVariables[`toggle_${toggle.key}`]
+      const raw = db.globalChatVariables[`toggle_${toggle.key}`]
       if (toggle.type === 'select' || toggle.type === 'text') {
         return [{ key: toggle.value, value: toggle.options[raw] }]
       }

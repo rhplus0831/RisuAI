@@ -8,7 +8,7 @@ import {
   type triggerscript,
 } from '../storage/database.svelte'
 import versionInfo from '../../../version.json'
-import { CurrentTriggerIdStore, DBState, selIdState } from '../stores.svelte'
+import { CurrentTriggerIdStore, selIdState } from '../stores.svelte'
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte'
 import './chatVar.svelte' // side effect: registers the browser chatVar backend
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVarBackend'
@@ -21,6 +21,7 @@ import { safeStructuredClone } from '../polyfill'
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, pickHashRand, replaceAsync } from '../util'
 import { getInlayAssetBlob, type InlayAsset } from '../process/files/inlays'
 import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules'
+import { charactersResourceState } from '../server/resourceState.svelte'
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang'
@@ -109,7 +110,7 @@ DOMPurify.addHook('uponSanitizeElement', (node: HTMLElement, data) => {
   }
   if (data.tagName === 'img') {
     // Hide external images when hideAllImages is enabled
-    if (DBState.db?.hideAllImages) {
+    if (getDatabase().hideAllImages) {
       const src = node.getAttribute('src') || ''
       // Replace with placeholder if it's an external/loaded image
       if (src && !src.startsWith('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP')) {
@@ -134,7 +135,7 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
   switch (data.attrName) {
     case 'style': {
       // Remove background-image URLs when hideAllImages is enabled
-      if (DBState.db?.hideAllImages && data.attrValue) {
+      if (getDatabase().hideAllImages && data.attrValue) {
         // Remove background-image property from inline styles
         data.attrValue = data.attrValue.replace(/background(-image)?:\s*url\([^)]*\);?/gi, '')
         // Also remove background property if it contains url()
@@ -179,9 +180,10 @@ DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
 })
 
 function renderMarkdown(md: markdownit, data: string) {
+  const db = getDatabase()
   let quotes = ['“', '”', '‘', '’']
-  if (DBState.db?.customQuotes) {
-    quotes = DBState.db.customQuotesData ?? quotes
+  if (db.customQuotes) {
+    quotes = db.customQuotesData ?? quotes
   }
   data = data.replace(/\$\$(.*?)\$\$/gs, (match: string, content: string) => {
     try {
@@ -203,10 +205,10 @@ function renderMarkdown(md: markdownit, data: string) {
   })
   let text = risuUnescape(md.render(data.replace(/“|”/g, '"').replace(/‘|’/g, "'")))
 
-  if (DBState.db?.unformatQuotes) {
+  if (db.unformatQuotes) {
     text = text.replace(/\uE9b0/gu, quotes[0]).replace(/\uE9b1/gu, quotes[1])
     text = text.replace(/\uE9b2/gu, quotes[2]).replace(/\uE9b3/gu, quotes[3])
-  } else if (DBState.db?.blockquoteStyling) {
+  } else if (db.blockquoteStyling) {
     text = text
       .replace(/\uE9b0(.+?)\uE9b1/gmu, (full, content) => {
         content = content
@@ -497,7 +499,7 @@ export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], 
 $effect.root(() => {
   $effect(() => {
     const charId = selIdState?.selId ?? -1
-    const char = DBState?.db?.characters?.[charId]
+    const char = charactersResourceState.characters?.[charId]
     if (!char || char.type !== 'character') {
       return
     }
@@ -519,10 +521,8 @@ async function parseAdditionalAssets(
   mode: 'normal' | 'back',
   arg: { ch: number },
 ) {
-  const assetWidthString =
-    (DBState.db.assetWidth && DBState.db.assetWidth !== -1) || DBState.db.assetWidth === 0
-      ? `max-width:${DBState.db.assetWidth}rem;`
-      : ''
+  const assetWidth = getDatabase().assetWidth
+  const assetWidthString = (assetWidth && assetWidth !== -1) || assetWidth === 0 ? `max-width:${assetWidth}rem;` : ''
 
   if (char.type === 'character' && (!assetsCache || !emoAssetsCache)) {
     resetAssetsCache(char.additionalAssets ?? [], char.emotionImages, getModuleAssets())
@@ -539,7 +539,7 @@ async function parseAdditionalAssets(
 
     // Skip image-related assets when hideAllImages is enabled
     // raw and path are also included as they're used in CSS background-image
-    if (DBState.db.hideAllImages && imageCBS.includes(type)) {
+    if (getDatabase().hideAllImages && imageCBS.includes(type)) {
       return '' // Hide the image asset
     }
 
@@ -567,7 +567,7 @@ async function parseAdditionalAssets(
     let match = assetPaths?.[name]
 
     if (!match) {
-      if (DBState.db.legacyMediaFindings) {
+      if (getDatabase().legacyMediaFindings) {
         return ''
       }
 
@@ -655,7 +655,7 @@ function getClosestMatch(char: simpleCharacterArgument | character, name: string
     }
   }
 
-  if (closestDist > DBState.db.assetMaxDifference) {
+  if (closestDist > getDatabase().assetMaxDifference) {
     return null
   }
 
@@ -783,7 +783,7 @@ async function parseInlayAssets(data: string) {
       switch (cached?.type) {
         case 'image':
           // Hide inlay images when hideAllImages is enabled
-          if (DBState.db.hideAllImages) {
+          if (getDatabase().hideAllImages) {
             data = data.replace(inlay, '')
             break
           }
@@ -1135,7 +1135,7 @@ function decodeStyle(text: string) {
         compress: true,
       })}</style>`
     } catch (error) {
-      if (DBState.db.returnCSSError) {
+      if (getDatabase().returnCSSError) {
         return `CSS ERROR: ${error}`
       }
       return ''

@@ -1,14 +1,15 @@
 import { get } from 'svelte/store'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'
 import { setChatVarBackend } from './chatVarBackend'
 import { setParserStateBackend } from './parserStateBackend'
 import { currentChatScriptstateSnapshot, dispatchCurrentChatScriptstatePatch } from '../chatCommands'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
+import { getDatabase } from '../storage/database.svelte'
 
 export function getChatVar(key: string): string {
   const selectedChar = get(selectedCharID)
-  const char = DBState.db.characters[selectedChar]
+  const char = getDatabase().characters[selectedChar]
   if (!char) {
     return 'null'
   }
@@ -16,7 +17,7 @@ export function getChatVar(key: string): string {
   const state = chat.scriptstate?.['$' + key]
   if (state === undefined || state === null) {
     const defaultVariables = parseKeyValue(char.defaultVariables).concat(
-      parseKeyValue(DBState.db.templateDefaultVariables),
+      parseKeyValue(getDatabase().templateDefaultVariables),
     )
     const findResult = defaultVariables.find((f) => {
       return f[0] === key
@@ -34,7 +35,7 @@ export function setChatVar(key: string, value: string): void {
   const previous = currentChatScriptstateSnapshot()
   let updated = false
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters[selectedChar]
+    const character = getDatabase().characters[selectedChar]
     const chat = character?.chats?.[character.chatPage]
     if (!chat) return
     const stateKey = '$' + key
@@ -49,11 +50,11 @@ export function setChatVar(key: string, value: string): void {
 }
 
 export function getGlobalChatVar(key: string): string {
-  return DBState.db.globalChatVariables[key] ?? 'null'
+  return getDatabase().globalChatVariables[key] ?? 'null'
 }
 
 setChatVarBackend({ getChatVar, setChatVar, getGlobalChatVar })
 setParserStateBackend({
-  getDefaultDatabase: () => DBState.db,
+  getDefaultDatabase: () => getDatabase(),
   getDefaultSelectedCharID: () => get(selectedCharID),
 })

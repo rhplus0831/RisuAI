@@ -1,8 +1,8 @@
 import { get } from 'svelte/store'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { alertError } from '../alert'
 import { mutateChatWithScopedCommand } from '../chatCommands'
-import type { character, Message, MessageGenerationInfo } from '../storage/database.svelte'
+import { getDatabase, type character, type Message, type MessageGenerationInfo } from '../storage/database.svelte'
 
 export interface SendChatErrorContext {
   selectedChar: number
@@ -12,13 +12,13 @@ export interface SendChatErrorContext {
 }
 
 export function reportSendChatError(error: string, ctx: SendChatErrorContext): void {
-  if (!DBState?.db?.inlayErrorResponse) {
+  if (!getDatabase().inlayErrorResponse) {
     alertError(error)
     return
   }
 
   try {
-    const db = DBState.db
+    const db = getDatabase()
 
     const sc = ctx.selectedChar >= 0 ? ctx.selectedChar : get(selectedCharID)
     const charRoom = db.characters?.[sc]

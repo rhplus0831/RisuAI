@@ -1,7 +1,7 @@
 import type { Database } from '../storage/database.svelte'
 
 /**
- * DI seam for the parser's optional fallbacks against `DBState.db` /
+ * DI seam for the parser's optional fallbacks against the client database /
  * `selectedCharID`. Lifted out of `risuChatParser` so the parser can be
  * imported into the Fastify server without pulling Svelte runes.
  *
@@ -16,7 +16,7 @@ import type { Database } from '../storage/database.svelte'
  * browser tokenizer warm-up). Returning `0` on the server is fine
  * because server-side prompt assembly never sets `tokenizeAccurate`.
  *
- * The browser registers `DBState.db` / `get(selectedCharID)` at
+ * The browser registers `getDatabase()` / `get(selectedCharID)` at
  * `chatVar.svelte`'s module init (since that file already pulls both).
  */
 

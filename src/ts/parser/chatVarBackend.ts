@@ -1,8 +1,8 @@
 /**
  * DI seam for chat variable storage so the parser and `calcString` can be
- * imported on the server without pulling Svelte runes / `DBState`.
+ * imported on the server without pulling browser resource state.
  *
- * The browser registers `chatVar.svelte`'s DBState-backed functions at module
+ * The browser registers `chatVar.svelte`'s resource-backed functions at module
  * load time. The server registers a request-scoped Map-backed implementation.
  * Callers (parser, `infunctions.ts`, `cbs.ts` via `registerCBS`) use the
  * pass-through getters here.

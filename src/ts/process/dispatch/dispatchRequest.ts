@@ -1,6 +1,5 @@
 import { v4 } from 'uuid'
-import { DBState } from '../../stores.svelte'
-import type { character, MessageGenerationInfo } from '../../storage/database.svelte'
+import { getDatabase, type character, type MessageGenerationInfo } from '../../storage/database.svelte'
 import type { OpenAIChat } from '../index.svelte'
 import { getGenerationModelString } from '../models/modelString'
 import { requestChatData } from '../request/request'
@@ -79,6 +78,7 @@ export async function dispatchRequest(args: {
 
   const generationId = v4()
   const generationModel = getGenerationModelString()
+  const db = getDatabase()
 
   const generationInfo: MessageGenerationInfo = {
     model: generationModel,
@@ -104,10 +104,10 @@ export async function dispatchRequest(args: {
       bias: {},
       continue: isContinue,
       chatId: generationId,
-      imageResponse: DBState.db.outputImageModal,
+      imageResponse: db.outputImageModal,
       previewBody: isPreviewPrompt,
       escape: nowChatroom.type === 'character' && nowChatroom.escapeOutput,
-      rememberToolUsage: DBState.db.rememberToolUsage,
+      rememberToolUsage: db.rememberToolUsage,
     },
     'model',
     abortSignal,

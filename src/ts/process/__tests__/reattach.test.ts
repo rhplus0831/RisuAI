@@ -34,6 +34,10 @@ vi.mock('../../stores.svelte', () => ({
   selectedCharID: h.selectedCharID,
 }))
 
+vi.mock('../../storage/database.svelte', () => ({
+  getDatabase: () => h.DBState.db,
+}))
+
 vi.mock('../index.svelte', () => ({
   sendChat: h.sendChat,
   doingChat: h.doingChat,

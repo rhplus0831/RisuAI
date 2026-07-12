@@ -251,7 +251,7 @@ describe('reportSendChatError', () => {
     setServerProjectionWriteGuardEnabled(true)
     expect(() => {
       DBState.db.characters[0].chats[0].message.push({ role: 'char', data: 'raw' })
-    }).toThrow(/read-only server projection/)
+    }).toThrow(/read-only (server projection|outside withResourceDatabaseWrite)/)
 
     reportSendChatError('boom', { ...baseCtx, currentChar: char })
 

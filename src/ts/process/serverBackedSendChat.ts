@@ -1,5 +1,11 @@
-import { DBState } from '../stores.svelte'
-import type { character, Chat, Message, MessageGenerationInfo, MessagePresetInfo } from '../storage/database.svelte'
+import {
+  getDatabase,
+  type character,
+  type Chat,
+  type Message,
+  type MessageGenerationInfo,
+  type MessagePresetInfo,
+} from '../storage/database.svelte'
 import { safeStructuredClone } from '../polyfill'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { getInlayAssetMetadata, getServerInlayAssetId } from './files/inlays'
@@ -145,7 +151,7 @@ function targetFromPayloadOrContext(
 }
 
 function resolveServerBackedLiveChat(target: ServerBackedLiveChatTarget): ServerBackedLiveChatResolution | undefined {
-  const characters = DBState.db.characters
+  const characters = getDatabase().characters
   if (!Array.isArray(characters)) return undefined
 
   if (hasStableChatTarget(target)) {
@@ -380,7 +386,7 @@ export async function assembleServerBackedSendChat(args: {
     outputTokens:
       numberFrom(served.info?.responseBudget) ??
       numberFrom(served.prompt.promptInfo?.outputTokens) ??
-      DBState.db.maxResponse,
+      getDatabase().maxResponse,
     ...(dispatch ? { dispatch } : {}),
   }
 }
@@ -478,7 +484,7 @@ export async function reattachServerBackedSendChat(args: {
     outputTokens:
       numberFrom(served.info?.responseBudget) ??
       numberFrom(served.prompt.promptInfo?.outputTokens) ??
-      DBState.db.maxResponse,
+      getDatabase().maxResponse,
     ...(dispatch ? { dispatch } : {}),
   }
 }

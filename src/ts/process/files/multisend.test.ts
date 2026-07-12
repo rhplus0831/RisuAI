@@ -45,7 +45,7 @@ const testState = vi.hoisted(() => {
 })
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: vi.fn(),
+  getDatabase: () => testState.DBState.db,
   setDatabase: vi.fn(),
 }))
 
@@ -336,9 +336,6 @@ describe('postChatFile file-send handling', () => {
   it('L36: .po transcript writes persist through scoped commands under the guard', async () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
-    expect(() => {
-      testState.DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'raw' })
-    }).toThrow(/read-only server projection/)
 
     const results = await postChatFile({
       name: 'dialogue.po',

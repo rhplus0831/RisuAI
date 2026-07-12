@@ -11,6 +11,11 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'findmessage-token',
 }))
 
+vi.mock('./modules', async (importActual) => {
+  const actual = await importActual<typeof import('./modules')>()
+  return { ...actual, moduleUpdate: () => {} }
+})
+
 import { applyServerBackedTerminal, findGeneratedAssistantMessage } from './serverBackedSendChat'
 import { DBState } from '../stores.svelte'
 import type { character, Chat, Message, MessageGenerationInfo } from '../storage/database.svelte'

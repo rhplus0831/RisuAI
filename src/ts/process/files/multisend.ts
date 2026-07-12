@@ -1,4 +1,5 @@
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { getDatabase } from 'src/ts/storage/database.svelte'
 import { get } from 'svelte/store'
 import { sendChat } from '../index.svelte'
 import { downloadFile } from 'src/ts/globalApi.svelte'
@@ -50,7 +51,7 @@ async function sendPofile(arg: sendTextFileArg): Promise<boolean> {
       if (!isActiveChatTargetFresh(target)) return false
       await sendChat(-1)
       if (!isActiveChatTargetFresh(target)) return false
-      const currentChar = DBState.db.characters[get(selectedCharID)]
+      const currentChar = getDatabase().characters[get(selectedCharID)]
       const currentChat = currentChar?.chats?.[currentChar.chatPage]
       if (!currentChat) return false
       const res = currentChat.message[currentChat.message.length - 1]

@@ -1,5 +1,5 @@
 import { get } from 'svelte/store'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import {
   currentChatScopedSnapshot,
   dispatchReplaceTailMessagesScoped,
@@ -10,7 +10,7 @@ import {
 import { safeStructuredClone } from '../polyfill'
 import { withTrustedServerProjectionWrite } from '../server/projectionWriteGuard.svelte'
 import { createLatestOperationGuard } from '../server/staleStateGuards'
-import type { Chat, Message } from '../storage/database.svelte'
+import { getDatabase, type Chat, type Message } from '../storage/database.svelte'
 import { clearPrererolls, PreUnreroll, Prereroll } from './prereroll'
 
 // Reroll *swipe* state machine, extracted out of `DefaultChatScreen.svelte` so it
@@ -49,13 +49,13 @@ type RerollOperation = {
 }
 
 function activeChatRecord(): Chat {
-  const character = DBState.db.characters[get(selectedCharID)]
+  const character = getDatabase().characters[get(selectedCharID)]
   return character.chats[character.chatPage]
 }
 
 function currentRerollScope(): { charId: number; chatKey: string | undefined } {
   const charId = get(selectedCharID)
-  const character = DBState.db?.characters?.[charId]
+  const character = getDatabase().characters?.[charId]
   if (!character) return { charId, chatKey: undefined }
   const chatPage = character?.chatPage ?? -1
   const chat = character?.chats?.[chatPage]
@@ -124,12 +124,11 @@ export function markRerollChar(): void {
 }
 
 // ── guard-safe optimistic mutations ─────────────────────────────────────────────
-// In the live Fastify runtime `DBState.db` is a deep read-only projection proxy; a direct
-// `message.data = …` / `record.message = …` throws. The optimistic local edit must
-// run inside `withTrustedServerProjectionWrite` and RE-READ the record there (the
-// wrapper swaps `DBState.db` for a mutable snapshot for the duration), then persist
-// via the dispatch command. Before the guard is enabled (startup and focused tests),
-// the wrapper is a pass-through.
+// In the live Fastify runtime the resource database is guarded against direct writes;
+// a `message.data = …` / `record.message = …` outside a trusted scope throws. The
+// optimistic local edit must run inside `withTrustedServerProjectionWrite` and
+// re-read the record there, then persist via the dispatch command. Before the guard
+// is enabled (startup and focused tests), the wrapper is a pass-through.
 
 /** Swap just the active tail message's `data` (prefetch reroll), then persist. */
 function applyTailDataSwap(data: string, operation: RerollOperation): boolean {

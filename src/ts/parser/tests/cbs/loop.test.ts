@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
 import { resetChatVariables } from './lib'
 import { setChatVar } from '../../chatVar.svelte'
+import { DBState } from '../../../stores.svelte'
 
 //#region module mocks
 
@@ -12,7 +13,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => ({}),
+      getDatabase: () => DBState.db,
     }) as typeof import('../../../storage/database.svelte'),
 )
 

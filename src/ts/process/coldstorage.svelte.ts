@@ -1,8 +1,7 @@
-import { DBState } from '../stores.svelte'
 import { compress as fflateCompress, decompress as fflateDecompress } from 'fflate'
 import { alertClear, alertError, alertWait } from '../alert'
 import { language } from 'src/lang'
-import type { character } from '../storage/database.svelte'
+import { getDatabase, type character } from '../storage/database.svelte'
 
 export const coldStorageHeader = '\uEF01COLDSTORAGE\uEF01'
 
@@ -41,13 +40,14 @@ async function removeColdStorageItems(keys: string[]) {
 
 export async function listColdDataKeys(): Promise<string[]> {
   const keys: string[] = []
-  for (let i = 0; i < DBState.db.characters.length; i++) {
-    if (DBState.db.characters[i].coldstorage) {
-      keys.push(DBState.db.characters[i].coldstorage!)
-      keys.push(...(DBState.db.characters[i].coldStoragedChats ?? []))
+  const characters = getDatabase().characters
+  for (let i = 0; i < characters.length; i++) {
+    if (characters[i].coldstorage) {
+      keys.push(characters[i].coldstorage!)
+      keys.push(...(characters[i].coldStoragedChats ?? []))
     }
-    for (let j = 0; j < DBState.db.characters[i].chats.length; j++) {
-      const chat = DBState.db.characters[i].chats[j]
+    for (let j = 0; j < characters[i].chats.length; j++) {
+      const chat = characters[i].chats[j]
       if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
         const coldDataKey = chat.message[0].data.slice(coldStorageHeader.length)
         keys.push(coldDataKey)
@@ -58,14 +58,14 @@ export async function listColdDataKeys(): Promise<string[]> {
 }
 
 async function makeColdDataForCharacter(i: number, coldTime: number) {
-  const lastInteraction = DBState.db.characters[i].lastInteraction ?? Date.now()
-  if (lastInteraction < coldTime && !DBState.db.characters[i].coldstorage) {
+  const lastInteraction = getDatabase().characters[i].lastInteraction ?? Date.now()
+  if (lastInteraction < coldTime && !getDatabase().characters[i].coldstorage) {
     console.log(
-      `Character ${DBState.db.characters[i].name ?? i} has not been interacted with since ${new Date(lastInteraction).toLocaleDateString()}, moving to cold storage`,
+      `Character ${getDatabase().characters[i].name ?? i} has not been interacted with since ${new Date(lastInteraction).toLocaleDateString()}, moving to cold storage`,
     )
     const id = crypto.randomUUID()
     const writeSuccess = await setColdStorageItem(id, {
-      character: DBState.db.characters[i],
+      character: getDatabase().characters[i],
     })
 
     if (!writeSuccess) {
@@ -76,7 +76,7 @@ async function makeColdDataForCharacter(i: number, coldTime: number) {
     const verifyData = await getColdStorageItem(id)
     if (!verifyData || (!Array.isArray(verifyData) && !verifyData.character)) {
       console.error(
-        `Cold storage verification failed for character ${DBState.db.characters[i].chaId ?? i}, keeping original data`,
+        `Cold storage verification failed for character ${getDatabase().characters[i].chaId ?? i}, keeping original data`,
         verifyData,
       )
       return
@@ -84,8 +84,8 @@ async function makeColdDataForCharacter(i: number, coldTime: number) {
 
     //get cold storaged chats in this character
     const coldStoragedChats: string[] = []
-    for (let j = 0; j < DBState.db.characters[i].chats.length; j++) {
-      const chat = DBState.db.characters[i].chats[j]
+    for (let j = 0; j < getDatabase().characters[i].chats.length; j++) {
+      const chat = getDatabase().characters[i].chats[j]
       if (chat.message?.[0]?.data?.startsWith(coldStorageHeader)) {
         const coldDataKey = chat.message[0].data.slice(coldStorageHeader.length)
         coldStoragedChats.push(coldDataKey)
@@ -96,8 +96,8 @@ async function makeColdDataForCharacter(i: number, coldTime: number) {
     // just the data needed to show in the character list and load the chat when clicked. The rest will be loaded back when the character is opened.
     const coldCharacter: character = {
       type: 'character',
-      image: DBState.db.characters[i].image,
-      name: DBState.db.characters[i].name,
+      image: getDatabase().characters[i].image,
+      name: getDatabase().characters[i].name,
       chats: [
         {
           message: [
@@ -113,18 +113,18 @@ async function makeColdDataForCharacter(i: number, coldTime: number) {
         },
       ],
       chatPage: 0,
-      chaId: DBState.db.characters[i].chaId,
+      chaId: getDatabase().characters[i].chaId,
       firstMsgIndex: 0,
       coldstorage: id,
       coldStoragedChats: coldStoragedChats,
     } as any
 
-    DBState.db.characters[i] = coldCharacter
+    getDatabase().characters[i] = coldCharacter
   }
 }
 
 async function makeColdDataForChat(i: number, j: number, coldTime: number) {
-  const chat = DBState.db.characters[i].chats[j]
+  const chat = getDatabase().characters[i].chats[j]
   let greatestTime = chat.lastDate ?? 0
 
   if (chat.message.length < 4) {
@@ -137,7 +137,7 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
     return
   }
 
-  if (DBState.db.characters[i].coldstorage) {
+  if (getDatabase().characters[i].coldstorage) {
     //character is in cold storage, no need to cold storage individual chats
     return
   }
@@ -197,7 +197,7 @@ export async function makeColdData() {
 }
 
 export async function preLoadChat(characterIndex: number, chatIndex: number) {
-  const chat = DBState.db?.characters?.[characterIndex]?.chats?.[chatIndex]
+  const chat = getDatabase().characters?.[characterIndex]?.chats?.[chatIndex]
 
   if (!chat) {
     return

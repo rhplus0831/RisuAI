@@ -1,6 +1,5 @@
-import { DBState } from '../stores.svelte'
 import { language } from '../../lang'
-import type { character, Chat, MessagePresetInfo } from '../storage/database.svelte'
+import { getDatabase, type character, type Chat, type MessagePresetInfo } from '../storage/database.svelte'
 import type { ChatTokenizer } from '../tokenizer'
 import { findCharacterbyId } from '../util'
 import { risuChatParser } from './scripts'
@@ -89,11 +88,11 @@ export async function assembleLocalSendChatPrompt(args: {
 }): Promise<LocalSendChatPromptResult> {
   let currentChat = args.currentChat
   withTrustedServerProjectionWrite(() => {
-    const liveChat = DBState.db.characters[args.selectedChar].chats[args.selectedChat]
+    const liveChat = getDatabase().characters[args.selectedChar].chats[args.selectedChat]
     currentChat = runSendChatMessageVariables(liveChat, args.currentChar)
-    DBState.db.characters[args.selectedChar].chats[args.selectedChat] = currentChat
+    getDatabase().characters[args.selectedChar].chats[args.selectedChat] = currentChat
   })
-  currentChat = DBState.db.characters[args.selectedChar].chats[args.selectedChat]
+  currentChat = getDatabase().characters[args.selectedChar].chats[args.selectedChat]
 
   args.setProcessStage(1)
   args.stageTimings.stage1Start = Date.now()
@@ -140,7 +139,7 @@ export async function assembleLocalSendChatPrompt(args: {
   const lore = await buildLorebookContext(args.currentChar, unformated)
   const { resolvePosition, positionParser, depthPrompts } = lore
 
-  let currentTokens = DBState.db.maxResponse + 50
+  let currentTokens = getDatabase().maxResponse + 50
 
   const preflight = await preflightTemplateTokens(
     promptTemplate,
@@ -184,14 +183,16 @@ export async function assembleLocalSendChatPrompt(args: {
   if (memWindow.stopSending === true) return { status: 'stopped' }
   currentChat = memWindow.currentChat
 
-  const biases = DBState.db.bias.concat(args.currentChar.bias).map((v) => {
-    return [
-      risuChatParser(v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
-        chara: args.currentChar,
-      }),
-      v[1],
-    ] as [string, number]
-  })
+  const biases = getDatabase()
+    .bias.concat(args.currentChar.bias)
+    .map((v) => {
+      return [
+        risuChatParser(v[0].replaceAll('\\n', '\n').replaceAll('\\r', '\r').replaceAll('\\\\', '\\'), {
+          chara: args.currentChar,
+        }),
+        v[1],
+      ] as [string, number]
+    })
 
   for (const depthPrompt of depthPrompts) {
     const chat: OpenAIChat = {
@@ -224,7 +225,7 @@ export async function assembleLocalSendChatPrompt(args: {
     }
   }
 
-  const formatOrder = safeStructuredClone(DBState.db.formatingOrder)
+  const formatOrder = safeStructuredClone(getDatabase().formatingOrder)
   if (formatOrder) {
     formatOrder.push('postEverything')
   }
@@ -247,7 +248,7 @@ export async function assembleLocalSendChatPrompt(args: {
   const budget = await finalizeRequestBudget(
     render.formated,
     args.maxContextTokens,
-    DBState.db.maxResponse,
+    getDatabase().maxResponse,
     args.tokenizer,
   )
   if (!budget.ok) {

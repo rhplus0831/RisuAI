@@ -1,6 +1,7 @@
 import { get, writable } from 'svelte/store'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import type { ActiveGenerationJob } from '../server/bootstrap'
+import { getDatabase } from '../storage/database.svelte'
 
 /**
  * Durable generations still running server-side, as surfaced by the bootstrap
@@ -17,7 +18,7 @@ export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): v
 function openChatId(): string | undefined {
   const selId = get(selectedCharID)
   if (selId < 0) return undefined
-  const character = DBState.db?.characters?.[selId]
+  const character = getDatabase().characters?.[selId]
   if (!character) return undefined
   const chat = character.chats?.[character.chatPage ?? 0]
   return chat?.id

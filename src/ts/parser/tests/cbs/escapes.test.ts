@@ -2,6 +2,7 @@ import fc from 'fast-check'
 import { writable } from 'svelte/store'
 import { describe, expect, test, vi } from 'vitest'
 import { risuChatParser, risuUnescape } from '../../parser.svelte'
+import { DBState } from '../../../stores.svelte'
 import { trimVarPrefix } from './lib'
 
 //#region module mocks
@@ -12,7 +13,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => ({}),
+      getDatabase: () => DBState.db,
     }) as typeof import('../../../storage/database.svelte'),
 )
 
