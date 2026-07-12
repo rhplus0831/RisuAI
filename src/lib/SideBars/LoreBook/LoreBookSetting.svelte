@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { language } from '../../../lang'
   import { DownloadIcon, HardDriveUploadIcon, PlusIcon, SunIcon, LinkIcon, FolderPlusIcon } from '@lucide/svelte'
   import { addLorebook, addLorebookFolder, exportLoreBook, importLoreBook } from '../../../ts/process/lorebook.svelte'
@@ -34,18 +34,18 @@
   })
 
   function isAllCharacterLoreAlwaysActive() {
-    const globalLore = DBState.db.characters?.[$selectedCharID]?.globalLore
+    const globalLore = getDatabase().characters?.[$selectedCharID]?.globalLore
     return globalLore && globalLore.every((book) => book.alwaysActive)
   }
 
   function isAllChatLoreAlwaysActive() {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     const localLore = character?.chats?.[character.chatPage]?.localLore
     return localLore && localLore.every((book) => book.alwaysActive)
   }
 
   function toggleCharacterLoreAlwaysActive() {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     const globalLore = character?.globalLore
 
     if (!character?.chaId || !globalLore) return
@@ -56,7 +56,7 @@
   }
 
   function toggleChatLoreAlwaysActive() {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     const chat = character?.chats?.[character.chatPage]
     const localLore = chat?.localLore
 
@@ -102,11 +102,14 @@
       >{submenu === 0 ? language.globalLoreInfo : language.localLoreInfo}</span>
   {/if}
   {#if !globalMode && submenu === 0}
-    <LoreBookList {globalMode} {submenu} lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus} />
+    <LoreBookList {globalMode} {submenu} lorePlus={getDatabase().characters[$selectedCharID]?.lorePlus} />
   {:else if !globalMode && submenu === 1}
-    <LoreBookList {globalMode} {submenu} lorePlus={DBState.db.characters[$selectedCharID]?.lorePlus} />
+    <LoreBookList {globalMode} {submenu} lorePlus={getDatabase().characters[$selectedCharID]?.lorePlus} />
   {:else}
-    <LoreBookList {globalMode} {submenu} lorePlus={!globalMode && DBState.db.characters[$selectedCharID]?.lorePlus} />
+    <LoreBookList
+      {globalMode}
+      {submenu}
+      lorePlus={!globalMode && getDatabase().characters[$selectedCharID]?.lorePlus} />
   {/if}
 {:else}
   {#if characterLoreSettingsDraft.value.loreSettings}
@@ -139,8 +142,8 @@
         check={true}
         onChange={() => {
           characterLoreSettingsDraft.value.loreSettings = {
-            tokenBudget: DBState.db.loreBookToken,
-            scanDepth: DBState.db.loreBookDepth,
+            tokenBudget: getDatabase().loreBookToken,
+            scanDepth: getDatabase().loreBookDepth,
             recursiveScanning: false,
           }
           characterLoreSettingsDraft.value = { ...characterLoreSettingsDraft.value }
@@ -149,7 +152,7 @@
     </div>
   {/if}
   <div class="flex items-center mt-4">
-    {#if DBState.db.useExperimental}
+    {#if getDatabase().useExperimental}
       <Check bind:check={characterLoreSettingsDraft.value.lorePlus} name={language.lorePlus}
         ><Help key="lorePlus"></Help><Help key="experimental"></Help></Check>
     {/if}
@@ -185,7 +188,7 @@
       class="hover:text-textcolor ml-2 cursor-pointer">
       <HardDriveUploadIcon />
     </button>
-    {#if DBState.db.bulkEnabling}
+    {#if getDatabase().bulkEnabling}
       <button
         onclick={() => {
           toggleCharacterLoreAlwaysActive()

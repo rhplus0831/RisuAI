@@ -1521,6 +1521,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       expect(source).not.toContain('dispatchReplaceGlobalLorebookEntries')
     }
 
+    expect(setting).toContain("import { getDatabase } from 'src/ts/storage/database.svelte'")
     expect(setting).toContain('replaceCharacterLorebookCollection')
     expect(setting).toContain('replaceChatLorebookCollection')
     expect(list).toContain('replaceGlobalLorebookEntryCollection')
