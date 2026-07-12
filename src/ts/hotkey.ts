@@ -1,9 +1,8 @@
 import { get } from 'svelte/store'
 import { alertMd, alertSelect, alertToast, alertWait, doingAlert, alertRequestLogs } from './alert'
-import { getDatabase, selectModelPreset } from './storage/database.svelte'
+import { getDatabase, selectModelPreset, type Database } from './storage/database.svelte'
 import {
   alertStore,
-  DBState,
   loadoutModalStore,
   MobileGUIStack,
   MobileSideBar,
@@ -345,13 +344,13 @@ async function quickMenu() {
   }
 }
 
-export function hotkeyMatches(hotkey: (typeof DBState.db.hotkeys)[number], ev: KeyboardEvent): boolean {
+export function hotkeyMatches(hotkey: Database['hotkeys'][number], ev: KeyboardEvent): boolean {
   if (!hotkey) {
     return false
   }
 
   // Treat missing modifier fields as `false` without mutating the hotkey.
-  // `DBState.db.hotkeys` is a read-only server projection in Fastify mode, so
+  // The resource-backed hotkey list is read-only outside trusted write scopes, so
   // writing defaults back here would throw on ordinary keydown handling.
   const ctrl = hotkey.ctrl ?? false
   const alt = hotkey.alt ?? false

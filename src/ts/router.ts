@@ -3,10 +3,10 @@ import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
 import { findCharacterIndexbyId } from './util'
+import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import {
   CharEmotion,
   CustomGUISettingMenuStore,
-  DBState,
   OpenRealmStore,
   PlaygroundStore,
   SettingsMenuIndex,
@@ -390,10 +390,10 @@ async function openCharacterRoute(
   const liveIndex = findCharacterIndexbyId(characterId)
   if (liveIndex < 0) return
   const liveSelectedIndex = get(selectedCharID)
-  if (liveSelectedIndex !== liveIndex || DBState.db.characters?.[liveSelectedIndex]?.chaId !== characterId) return
+  if (liveSelectedIndex !== liveIndex || getDatabase().characters?.[liveSelectedIndex]?.chaId !== characterId) return
 
   if (!chatId) return
-  const character = DBState.db.characters?.[liveIndex]
+  const character = getDatabase().characters?.[liveIndex]
   const chatIndex = character?.chats?.findIndex((chat) => chat.id === chatId) ?? -1
   if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
   if (!isFreshRouteApplication()) return

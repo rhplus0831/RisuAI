@@ -468,6 +468,7 @@ describe('module imports', () => {
     DBState.db.characters = [character]
     getCurrentCharacter.mockReturnValue(character)
     getDatabase.mockReturnValue({
+      characters: [character],
       modules: [
         {
           id: 'mod-a',
@@ -536,6 +537,7 @@ describe('module imports', () => {
     DBState.db.characters = [character]
     getCurrentCharacter.mockReturnValue(character)
     getDatabase.mockReturnValue({
+      characters: [character],
       modules: [
         {
           id: 'mod-a',
@@ -606,6 +608,7 @@ describe('module imports', () => {
     ] as never
     getCurrentCharacter.mockReturnValue(target)
     getDatabase.mockReturnValue({
+      characters: [target, sibling],
       modules: [
         {
           id: 'mod-a',

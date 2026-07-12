@@ -1,6 +1,6 @@
 import localforage from 'localforage'
 import { toGetter } from '../globalApi.svelte'
-import { DBState } from '../stores.svelte'
+import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 
 const pluginStorage = localforage.createInstance({
   name: 'plugin',
@@ -11,7 +11,7 @@ const DEVICE_LOCAL_PLUGIN_STORAGE_ERROR =
   'Device-local plugin storage is disabled in Fastify server mode. Enable Plugin Compatibility Mode to restore this device-local, unsynced API.'
 
 export function isDeviceLocalPluginStorageEnabled(): boolean {
-  return DBState.db.pluginCompatibilityMode === true
+  return getDatabase().pluginCompatibilityMode === true
 }
 
 export function assertDeviceLocalPluginStorageEnabled(): void {

@@ -30,7 +30,6 @@ vi.mock('./stores.svelte', async () => {
   return {
     CharEmotion: writable({}),
     CustomGUISettingMenuStore: writable(false),
-    DBState: { db: { characters: [] } },
     OpenRealmStore: writable(false),
     PlaygroundStore: writable(0),
     SettingsMenuIndex: writable(1),
@@ -178,8 +177,9 @@ describe('router character route freshness', () => {
   it('does not let a stale character route clear a newer pending character route', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
-    const { DBState, selectedCharID } = stores
-    DBState.db = {
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { selectedCharID } = stores
+    replaceResourceDatabase({
       characters: [
         {
           chaId: 'char-a',
@@ -198,11 +198,11 @@ describe('router character route freshness', () => {
           ],
         },
       ],
-    } as any
+    } as any)
     selectedCharID.set(-1)
     routerMocks.findCharacterIndexbyId.mockImplementation(
       (characterId: string) =>
-        DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     const staleSelection = deferred()
     const latestSelection = deferred()
@@ -257,8 +257,9 @@ describe('router character route freshness', () => {
   it('does not let a stale delayed character route select a chat after a newer settings route wins', async () => {
     const router = await importRouterAt('/character/char-a/chat-target')
     const stores = await import('./stores.svelte')
-    const { DBState, PlaygroundStore, SettingsMenuIndex, selectedCharID, settingsOpen } = stores
-    DBState.db = {
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { PlaygroundStore, SettingsMenuIndex, selectedCharID, settingsOpen } = stores
+    replaceResourceDatabase({
       characters: [
         {
           chaId: 'char-a',
@@ -269,11 +270,11 @@ describe('router character route freshness', () => {
           ],
         },
       ],
-    } as any
+    } as any)
     selectedCharID.set(-1)
     routerMocks.findCharacterIndexbyId.mockImplementation(
       (characterId: string) =>
-        DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     const pendingSelection = deferred()
     routerMocks.changeChar.mockImplementation(async () => {
@@ -320,7 +321,9 @@ describe('router character route freshness', () => {
   it('re-resolves the live character index after character selection before selecting the routed chat', async () => {
     const router = await importRouterAt('/')
     const stores = await import('./stores.svelte')
-    const { DBState, selectedCharID } = stores
+    const { getResourceDatabase, replaceResourceDatabase, withResourceDatabaseWrite } =
+      await import('./server/resourceState.svelte')
+    const { selectedCharID } = stores
     const charA = {
       chaId: 'char-a',
       chatPage: 0,
@@ -334,16 +337,18 @@ describe('router character route freshness', () => {
       chatPage: 0,
       chats: [{ id: 'chat-b', name: 'B chat', message: [] }],
     }
-    DBState.db = {
+    replaceResourceDatabase({
       characters: [charA, charB],
-    } as any
+    } as any)
     selectedCharID.set(-1)
     routerMocks.findCharacterIndexbyId.mockImplementation(
       (characterId: string) =>
-        DBState.db.characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
     )
     routerMocks.changeChar.mockImplementation(async (_index: number) => {
-      DBState.db.characters = [charB, charA] as any
+      withResourceDatabaseWrite((database) => {
+        database.characters = [charB, charA] as any
+      })
       selectedCharID.set(1)
     })
 

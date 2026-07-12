@@ -1,6 +1,6 @@
 import { get, writable } from 'svelte/store'
 import { type character, type MessageGenerationInfo } from '../storage/database.svelte'
-import { DBState } from '../stores.svelte'
+import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 import { reportSendChatError } from './sendChatErrors'
 import { setupSendChatContext } from './sendChatContext'
 import { orchestrateResponse } from './postGeneration/orchestrateResponse'
@@ -249,7 +249,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     let formated: OpenAIChat[] = []
     let biases: [string, number][] = []
     let inputTokens = 0
-    let outputTokens = DBState.db.maxResponse
+    let outputTokens = getDatabase().maxResponse
     let assembledByServer = false
     let serverDispatch: ServerBackedDispatch | undefined
     // When the send is durable-eligible, the server runs it as a detached job and

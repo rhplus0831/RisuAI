@@ -16,7 +16,7 @@ import {
   type ChatGenerationTogglePreset,
 } from './chatGenerationTogglePresetRecords'
 import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
-import { DBState } from './stores.svelte'
+import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { isActiveChatTargetFresh } from './chatCommands'
 
 const CHAT_GENERATION_TOGGLE_PRESETS_FIELD = 'chatGenerationTogglePresets' as const
@@ -34,7 +34,7 @@ export interface ChatGenerationTogglePresetComparison {
 }
 
 export function getChatGenerationTogglePresets(): ChatGenerationTogglePreset[] {
-  return normalizeChatGenerationTogglePresets(DBState.db.chatGenerationTogglePresets)
+  return normalizeChatGenerationTogglePresets(getDatabase().chatGenerationTogglePresets)
 }
 
 export function saveCurrentChatGenerationTogglePreset(

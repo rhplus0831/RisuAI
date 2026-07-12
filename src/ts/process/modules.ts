@@ -15,7 +15,7 @@ import { v4 } from 'uuid'
 import { convertExternalLorebook } from './lorebook.svelte'
 import { compressImage } from '../media'
 import { decodeRPack, encodeRPack } from '../rpack/rpack_js'
-import { DBState, HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
+import { HideIconStore, moduleBackgroundEmbedding, reloadGuiAfterDefinitionChange } from '../stores.svelte'
 import { createGlobalModule } from '../moduleCommands'
 import { SERVER_ASSET_CONTENT_TYPES } from '../server/assets'
 import {
@@ -773,7 +773,7 @@ export async function applyModule() {
   }
 
   const canApplyLorebooks =
-    !!module.lorebook && (!DBState.db?.enableLorebookStubs || isCharacterLorebookHydrated(characterId))
+    !!module.lorebook && (!getDatabase()?.enableLorebookStubs || isCharacterLorebookHydrated(characterId))
   const lorePrevious = canApplyLorebooks
     ? currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId })
     : null
@@ -794,7 +794,7 @@ export async function applyModule() {
     : undefined
 
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db.characters.find((character) => character.chaId === characterId)
+    const target = getDatabase().characters.find((character) => character.chaId === characterId)
     if (!target) return
     if (nextLorebooks) target.globalLore = safeStructuredClone(nextLorebooks)
     if (nextScripts) target.customscript = safeStructuredClone(nextScripts)

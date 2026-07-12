@@ -1,7 +1,7 @@
 import { get, writable, type Writable } from 'svelte/store'
 import type { Database, Message } from './storage/database.svelte'
 import { getDatabase } from './storage/database.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { selectedCharID } from './stores.svelte'
 import { createBlankChar, getCharImage } from './characters'
 import {
   resolveEffectivePromptTemplate,
@@ -88,7 +88,7 @@ export const replacePlaceholders = (msg: string, name: string) => {
 
 export function checkPersonaBinded() {
   try {
-    let db = DBState.db
+    let db = getDatabase()
     const selectedChar = get(selectedCharID)
     const character = db.characters[selectedChar]
     const chat = character.chats[character.chatPage]

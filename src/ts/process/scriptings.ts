@@ -14,7 +14,7 @@ import {
   type character,
   type triggerscript,
 } from '../storage/database.svelte'
-import { DBState, reloadChatAt, reloadGuiDisplay, selectedCharID } from '../stores.svelte'
+import { reloadChatAt, reloadGuiDisplay, selectedCharID } from '../stores.svelte'
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from '../alert'
 import { HypaProcesser } from './memory/hypamemory'
 import { generateAIImage } from './stableDiff'
@@ -699,7 +699,7 @@ export async function runScripted(
           return
         }
         const selectedChar = get(selectedCharID)
-        const char = DBState.db.characters[selectedChar]
+        const char = getDatabase().characters[selectedChar]
         return char.desc
       })
 
@@ -718,7 +718,7 @@ export async function runScripted(
 
       declareAPI('getCharacterFirstMessage', (id: string) => {
         const selectedChar = get(selectedCharID)
-        const char = DBState.db.characters[selectedChar]
+        const char = getDatabase().characters[selectedChar]
         return char.firstMessage
       })
 
