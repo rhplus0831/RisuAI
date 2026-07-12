@@ -105,7 +105,8 @@
 </script>
 
 <script lang="ts">
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import { selectedCharID } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
   import { addCharacter, changeChar, getCharImage } from 'src/ts/characters'
   import { MobileSearch } from 'src/ts/stores.svelte'
@@ -122,11 +123,11 @@
 
   let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
-  let mobileCharacterRows = $derived(formatMobileCharacterRows(DBState.db.characters, { hideTrash, agoFormatter }))
+  let mobileCharacterRows = $derived(formatMobileCharacterRows(getDatabase().characters, { hideTrash, agoFormatter }))
   let visibleMobileCharacterRows = $derived(filterMobileCharacterRows(mobileCharacterRows, normalizedSearch))
 
   function openCharacterRoute(index: number) {
-    const character = DBState.db.characters?.[index]
+    const character = getDatabase().characters?.[index]
     if (!character?.chaId) {
       changeChar(index)
       endGrid()

@@ -20,7 +20,7 @@ const appRouteDomMocks = vi.hoisted(() => {
   const state = {
     applyRouteCalls: 0,
     exports: undefined as RouteMockExports | undefined,
-    readProjection: () => {},
+    readResource: () => {},
     resetSidebarTab: () => {},
   }
 
@@ -41,7 +41,7 @@ async function createRouteMock() {
     const { writable } = await import('svelte/store')
     appRouteDomMocks.state.exports = {
       applyRouteToStores: vi.fn((route: AppRoute) => {
-        appRouteDomMocks.state.readProjection()
+        appRouteDomMocks.state.readResource()
         appRouteDomMocks.state.applyRouteCalls += 1
         if (appRouteDomMocks.state.applyRouteCalls > 1) {
           appRouteDomMocks.state.resetSidebarTab()
@@ -108,17 +108,17 @@ vi.mock('./ts/characterCards', () => ({
   importCharacterProcess: appRouteDomMocks.importCharacterProcess,
 }))
 
-vi.mock('./ts/storage/database.svelte', () => ({
-  getDatabase: () => ({}),
-  importPreset: appRouteDomMocks.importPreset,
-  setDatabase: vi.fn(),
-}))
+async function createDatabaseMock() {
+  const { getResourceDatabase } = await import('./ts/server/resourceState.svelte')
+  return {
+    getDatabase: getResourceDatabase,
+    importPreset: appRouteDomMocks.importPreset,
+    setDatabase: vi.fn(),
+  }
+}
 
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({}),
-  importPreset: appRouteDomMocks.importPreset,
-  setDatabase: vi.fn(),
-}))
+vi.mock('./ts/storage/database.svelte', createDatabaseMock)
+vi.mock('src/ts/storage/database.svelte', createDatabaseMock)
 
 vi.mock('./ts/globalApi.svelte', () => ({
   checkCharOrder: appRouteDomMocks.checkCharOrder,
@@ -250,7 +250,6 @@ vi.mock('src/lib/Others/PluginDefinedIcon.svelte', async () => ({
 
 import {
   CustomGUISettingMenuStore,
-  DBState,
   DynamicGUI,
   LoadingStatusState,
   PlaygroundStore,
@@ -275,10 +274,7 @@ import {
   sideBarClosing,
   sideBarStore,
 } from './ts/stores.svelte'
-import {
-  setServerProjectionWriteGuardEnabled,
-  withTrustedServerProjectionWrite,
-} from './ts/server/projectionWriteGuard.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './ts/server/resourceState.svelte'
 
 vi.stubEnv('VITE_RISU_LEGAL_CONFIGURED', 'true')
 const { default: App } = await import('./App.svelte')
@@ -332,7 +328,7 @@ function makeCharacter(): character {
 
 function seedStores() {
   const character = makeCharacter()
-  DBState.db = {
+  replaceResourceDatabase({
     backgroundHTML: '',
     characterOrder: ['char-a'],
     characters: [character],
@@ -349,7 +345,7 @@ function seedStores() {
     roundIcons: false,
     showFolderName: true,
     showMenuChatList: false,
-  } as unknown as Database
+  } as unknown as Database)
 
   loadedStore.set(true)
   selectedCharID.set(0)
@@ -389,8 +385,8 @@ describe('App route/refreeze mounted DOM behavior', () => {
     document.body.appendChild(target)
     window.history.replaceState(null, '', routePath)
     appRouteDomMocks.state.applyRouteCalls = 0
-    appRouteDomMocks.state.readProjection = () => {
-      void DBState.db.characters?.[0]?.chatPage
+    appRouteDomMocks.state.readResource = () => {
+      void getResourceDatabase().characters?.[0]?.chatPage
     }
     appRouteDomMocks.state.resetSidebarTab = () => {
       botMakerMode.set(false)
@@ -399,7 +395,6 @@ describe('App route/refreeze mounted DOM behavior', () => {
       appRouteDomMocks.state.exports.currentRoute.set(characterRoute)
     }
     seedStores()
-    setServerProjectionWriteGuardEnabled(true)
     await mountApp()
   })
 
@@ -408,14 +403,13 @@ describe('App route/refreeze mounted DOM behavior', () => {
       unmount(component)
       component = undefined
     }
-    setServerProjectionWriteGuardEnabled(false)
-    DBState.db = {} as Database
+    replaceResourceDatabase({} as Database)
     target.remove()
     vi.unstubAllEnvs()
     vi.clearAllMocks()
   })
 
-  it('keeps the Character sidebar tab visible across a server projection refreeze', async () => {
+  it('keeps the Character sidebar tab visible across a server resource refresh', async () => {
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
     expect(target.querySelector('[data-testid="side-chat-list"]')).not.toBeNull()
 
@@ -430,8 +424,10 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(target.querySelector('[data-risu-sidebar-panel="chat"]')).toBeNull()
     expect(target.querySelector('[data-testid="side-chat-list"]')).toBeNull()
 
-    withTrustedServerProjectionWrite(() => {
-      DBState.db.characterOrder = [...DBState.db.characterOrder]
+    const database = getResourceDatabase({ snapshot: true })
+    replaceResourceDatabase({
+      ...database,
+      characterOrder: [...database.characterOrder],
     })
     await tick()
     await tick()
@@ -441,8 +437,8 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(target.querySelector('[data-risu-sidebar-panel="chat"]')).toBeNull()
     expect(target.querySelector('[data-testid="side-chat-list"]')).toBeNull()
     expect(get(botMakerMode)).toBe(true)
-    expect(DBState.db.characters[0].chatPage).toBe(0)
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage]?.id).toBe('chat-a')
+    expect(getResourceDatabase().characters[0].chatPage).toBe(0)
+    expect(getResourceDatabase().characters[0].chats[getResourceDatabase().characters[0].chatPage]?.id).toBe('chat-a')
     expect(get(selectedCharID)).toBe(0)
     expect(window.location.pathname).toBe(routePath)
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)

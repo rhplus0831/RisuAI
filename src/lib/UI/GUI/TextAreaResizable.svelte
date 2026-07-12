@@ -4,9 +4,10 @@
 
   import { language } from 'src/lang'
   import { hotkeyMatches } from 'src/ts/hotkey'
-  import { DBState, popUpEditorStore } from 'src/ts/stores.svelte'
+  import { popUpEditorStore } from 'src/ts/stores.svelte'
   import { longpress } from 'src/ts/gui/longtouch'
   import { sleep } from 'src/ts/util'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
   let textarea: HTMLTextAreaElement = $state()
   let previousScrollHeight = 0
@@ -91,7 +92,7 @@
         popupEditor &&
         (e.ctrlKey || e.shiftKey || e.altKey) &&
         hotkeyMatches(
-          DBState.db.hotkeys.find((hk) => hk.action === 'popupEditor'),
+          getDatabase().hotkeys.find((hk) => hk.action === 'popupEditor'),
           e,
         )
       ) {
@@ -108,8 +109,8 @@
     style:height={stableHeight ? '16rem' : undefined}
     style:min-height={stableHeight ? '12rem' : undefined}
     style:max-height={stableHeight ? '60vh' : undefined}
-    style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
-    style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"></textarea>
+    style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
+    style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem"></textarea>
 
   {#if popupEditor}
     <button

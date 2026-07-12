@@ -10,8 +10,9 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import TextAreaInput from './TextAreaInput.svelte'
-import { DBState, popUpEditorStore } from 'src/ts/stores.svelte'
+import { popUpEditorStore } from 'src/ts/stores.svelte'
 import { textAreaSize } from 'src/ts/gui/guisize'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -24,14 +25,19 @@ function textarea(): HTMLTextAreaElement {
   return element
 }
 
+function seedDatabase(overrides: Record<string, unknown> = {}) {
+  replaceResourceDatabase({
+    hotkeys: [{ action: 'popupEditor', key: 'e', ctrl: true }],
+    longPressToPopupEditor: false,
+    ...overrides,
+  } as any)
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
-    hotkeys: [{ action: 'popupEditor', key: 'e', ctrl: true }],
-    longPressToPopupEditor: false,
-  } as any
+  seedDatabase()
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
   popUpEditorStore.language = 'markdown'
@@ -44,7 +50,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  replaceResourceDatabase({} as any)
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
   textAreaSize.set(0)
@@ -80,7 +86,7 @@ describe('TextAreaInput popup editor finalization', () => {
   it('calls onchange after committing a context-menu popup edit', async () => {
     const onInput = vi.fn()
     const onchange = vi.fn()
-    DBState.db.longPressToPopupEditor = true
+    seedDatabase({ longPressToPopupEditor: true })
     component = mount(TextAreaInput, {
       target,
       props: {
@@ -106,7 +112,7 @@ describe('TextAreaInput popup editor finalization', () => {
   it('keeps compact fixed-height textareas out of the popup editor by default', async () => {
     const onInput = vi.fn()
     const onchange = vi.fn()
-    DBState.db.longPressToPopupEditor = true
+    seedDatabase({ longPressToPopupEditor: true })
     component = mount(TextAreaInput, {
       target,
       props: {
@@ -133,7 +139,7 @@ describe('TextAreaInput popup editor finalization', () => {
   it('keeps default-height textareas out of the popup editor when the global size is compact', async () => {
     const onInput = vi.fn()
     const onchange = vi.fn()
-    DBState.db.longPressToPopupEditor = true
+    seedDatabase({ longPressToPopupEditor: true })
     textAreaSize.set(-3)
     component = mount(TextAreaInput, {
       target,

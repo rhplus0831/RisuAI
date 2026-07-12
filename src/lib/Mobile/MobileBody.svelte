@@ -11,7 +11,7 @@
   import DevTool from '../SideBars/DevTool.svelte'
   import { isLite } from 'src/ts/lite'
 
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 </script>
 
 {#if $MobileSideBar > 0 && !$isLite}
@@ -46,7 +46,7 @@
   {#if $MobileSideBar > 0}
     <div class="w-full flex flex-col p-2 mt-2 h-full">
       {#if $MobileSideBar === 1}
-        <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
+        <SideChatList chara={getDatabase().characters[$selectedCharID]} />
       {:else if $MobileSideBar === 2}
         <CharConfig />
       {:else if $MobileSideBar === 3}

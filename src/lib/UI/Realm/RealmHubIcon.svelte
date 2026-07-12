@@ -2,7 +2,7 @@
   import { BookIcon, ImageIcon, SmileIcon } from '@lucide/svelte'
   import { alertNormal } from 'src/ts/alert'
   import { hubURL, type hubType } from 'src/ts/characterCards'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { parseMultilangString } from 'src/ts/util'
 
   interface Props {
@@ -17,7 +17,7 @@
   class="bg-darkbg rounded-lg p-4 flex flex-col hover:bg-selected transition-colors relative lg:w-96 w-full items-start"
   onclick={onClick}>
   <div class="flex gap-2 w-full">
-    {#if DBState.db.hideAllImages}
+    {#if getDatabase().hideAllImages}
       <div
         class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
         <span class="text-4xl">?</span>
@@ -33,7 +33,7 @@
         >{chara.name}</span>
       <span
         class="text-textcolor2 text-xs min-w-0 max-w-full text-ellipsis wrap-break-word max-h-8 whitespace-nowrap overflow-hidden text-start"
-        >{parseMultilangString(chara.desc)[DBState.db.language] ??
+        >{parseMultilangString(chara.desc)[getDatabase().language] ??
           parseMultilangString(chara.desc).en ??
           parseMultilangString(chara.desc).xx}</span>
       <div class="flex flex-wrap">

@@ -4,10 +4,11 @@
   import { highlighter, getNewHighlightId, removeHighlight, AllCBS } from 'src/ts/gui/highlight'
   import { sleep } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
-  import { DBState, disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte'
+  import { disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte'
   import { isMobile } from 'src/ts/platform'
   import { hotkeyMatches } from 'src/ts/hotkey'
   import { language } from 'src/lang'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
   type PopupEditorAvailability = boolean | 'auto'
 
@@ -386,7 +387,7 @@
           isPopupEditorEnabled() &&
           (e.ctrlKey || e.shiftKey || e.altKey) &&
           hotkeyMatches(
-            DBState.db.hotkeys.find((hk) => hk.action === 'popupEditor'),
+            getDatabase().hotkeys.find((hk) => hk.action === 'popupEditor'),
             e,
           )
         ) {
@@ -395,7 +396,7 @@
         }
       }}
       oncontextmenu={(e) => {
-        if (isPopupEditorEnabled() && DBState.db.longPressToPopupEditor) {
+        if (isPopupEditorEnabled() && getDatabase().longPressToPopupEditor) {
           e.preventDefault()
           void openPopupEditor()
         }

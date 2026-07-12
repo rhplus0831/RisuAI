@@ -10,7 +10,8 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import TextAreaResizable from './TextAreaResizable.svelte'
-import { DBState, popUpEditorStore } from 'src/ts/stores.svelte'
+import { popUpEditorStore } from 'src/ts/stores.svelte'
+import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -27,11 +28,11 @@ beforeEach(() => {
   vi.useFakeTimers()
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  replaceResourceDatabase({
     hotkeys: [{ action: 'popupEditor', key: 'e', ctrl: true }],
     lineHeight: 1.25,
     zoomsize: 100,
-  } as any
+  } as any)
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
   popUpEditorStore.language = 'markdown'
@@ -43,7 +44,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  replaceResourceDatabase({} as any)
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
   vi.useRealTimers()

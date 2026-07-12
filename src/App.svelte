@@ -26,7 +26,6 @@
     SettingsMenuIndex,
   } from './ts/stores.svelte'
   import Sidebar from './lib/SideBars/Sidebar.svelte'
-  import { DBState } from './ts/stores.svelte'
   import ChatScreen from './lib/ChatScreens/ChatScreen.svelte'
   import AlertComp from './lib/Others/AlertComp.svelte'
   import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte'
@@ -34,7 +33,8 @@
   import BookmarkList from './lib/Others/BookmarkList.svelte'
   import Settings from './lib/Setting/Settings.svelte'
   import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards'
-  import { importPreset, getDatabase, setDatabase } from './ts/storage/database.svelte'
+  import { importPreset } from './ts/storage/database.svelte'
+  import { getResourceDatabase as getDatabase } from './ts/server/resourceState.svelte'
   import { alertNormal } from './ts/alert'
   import { language } from './lang'
   import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte'
@@ -72,7 +72,7 @@
   let keepingSessionAlive = $state(false)
 
   function closeGridRoute() {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     if ($selectedCharID >= 0 && character?.chaId) {
       navigate(characterRoutePath(character.chaId))
       return
@@ -93,7 +93,7 @@
 
   $effect(() => {
     if (!$loadedStore || isApplyingRouteToStores() || hasPendingRouteApplication()) return
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     syncRouteFromState({
       currentRouteKind: $currentRoute.kind,
       settingsOpen: $settingsOpen,
@@ -145,7 +145,7 @@
       return
     }
 
-    const aliveMode = DBState?.db?.keepSessionAlive
+    const aliveMode = getDatabase().keepSessionAlive
     switch (aliveMode) {
       case 'sound': {
         console.log('Starting silent audio to keep session alive')

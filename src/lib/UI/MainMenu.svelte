@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Hub from './Realm/RealmMain.svelte'
   import { OpenRealmStore } from 'src/ts/stores.svelte'
   import { ArrowLeft, FolderCodeIcon } from '@lucide/svelte'
@@ -13,7 +13,7 @@
   async function openRealm() {
     if ($OpenRealmStore || realmConfirmOpen) return
 
-    if (!DBState.db.doNotWarnExternalServers) {
+    if (!getDatabase().doNotWarnExternalServers) {
       realmConfirmOpen = true
       try {
         if (!(await alertConfirm(language.sendExternalServerWarning))) return
