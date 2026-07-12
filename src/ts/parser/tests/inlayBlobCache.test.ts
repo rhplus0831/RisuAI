@@ -2,7 +2,6 @@ import { writable } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { LLMModel } from '../../model/modellist'
 import type { InlayAsset } from '../../process/files/inlays'
-import { DBState } from '../../stores.svelte'
 import { clearInlayBlobUrlCacheForTests, INLAY_BLOB_URL_CACHE_LIMIT, ParseMarkdown } from '../parser.svelte'
 
 const mocks = vi.hoisted(() => ({
@@ -41,9 +40,6 @@ vi.mock(import('../../globalApi.svelte'), () => ({
 vi.mock(import('../../stores.svelte'), () => {
   return {
     CurrentTriggerIdStore: writable(null),
-    DBState: {
-      db: mocks.db,
-    },
     selIdState: {
       selId: 0,
     },
@@ -108,7 +104,7 @@ beforeEach(() => {
   createObjectURL.mockClear()
   revokeObjectURL.mockClear()
   mocks.getInlayAssetBlob.mockReset()
-  DBState.db.hideAllImages = false
+  mocks.db.hideAllImages = false
 })
 
 afterEach(() => {
@@ -172,7 +168,7 @@ describe('inlay blob URL cache', () => {
 
     await parseInlay('{{inlay::hidden-image}}')
     mocks.getInlayAssetBlob.mockClear()
-    DBState.db.hideAllImages = true
+    mocks.db.hideAllImages = true
 
     await expect(parseInlay('{{inlay::hidden-image}}')).resolves.toBe('')
     expect(mocks.getInlayAssetBlob).not.toHaveBeenCalled()

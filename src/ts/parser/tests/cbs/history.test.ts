@@ -52,7 +52,6 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
 
 vi.mock(import('../../../stores.svelte'), () => {
   return {
-    DBState: { db: mocks.db },
     selIdState: { selId: 0 },
     selectedCharID: writable(0),
   } as unknown as typeof import('../../../stores.svelte')

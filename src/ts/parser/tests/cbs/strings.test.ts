@@ -4,7 +4,6 @@ import { expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
 import { registerRisuChatParserMatcher } from '../../risuChatParser'
 import { cbs, trimVarPrefix, validCBSArgProp } from './lib'
-import { DBState } from '../../../stores.svelte'
 
 //#region module mocks
 
@@ -14,7 +13,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => DBState.db,
+      getDatabase: () => mocks.db,
     }) as typeof import('../../../storage/database.svelte'),
 )
 
@@ -24,40 +23,41 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
 }))
 
 /** Returns accessed key as the value. */
-const varStorage = vi.hoisted(
-  () =>
-    new Proxy({} as Record<string, unknown>, {
-      get(target, prop) {
-        if (Reflect.has(target, prop)) {
-          return Reflect.get(target, prop)
-        }
-        if (prop === '$missingDefault') {
-          return undefined
-        }
-        return trimVarPrefix(prop)
-      },
-    }),
-)
+const mocks = vi.hoisted(() => {
+  const varStorage = new Proxy({} as Record<string, unknown>, {
+    get(target, prop) {
+      if (Reflect.has(target, prop)) {
+        return Reflect.get(target, prop)
+      }
+      if (prop === '$missingDefault') {
+        return undefined
+      }
+      return trimVarPrefix(prop)
+    },
+  })
+
+  return {
+    db: {
+      characters: [
+        {
+          chatPage: 0,
+          chats: [
+            {
+              scriptstate: varStorage,
+            },
+          ],
+          defaultVariables: '',
+        },
+      ],
+      globalChatVariables: varStorage,
+      templateDefaultVariables: '',
+    },
+    varStorage,
+  }
+})
 
 vi.mock(import('../../../stores.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [
-          {
-            chatPage: 0,
-            chats: [
-              {
-                scriptstate: varStorage,
-              },
-            ],
-            defaultVariables: '',
-          },
-        ],
-        globalChatVariables: varStorage,
-        templateDefaultVariables: '',
-      },
-    },
     selIdState: {
       selId: 0,
     },
@@ -180,12 +180,12 @@ test('capitalize, lower, upper', () => {
 })
 
 test('setdefaultvar installs a missing browser chat variable without replacing existing values', () => {
-  delete varStorage.$missingDefault
+  delete mocks.varStorage.$missingDefault
 
   expect(risuChatParser('{{setdefaultvar::missingDefault::fallback}}', { runVar: true })).toBe('')
-  expect(varStorage.$missingDefault).toBe('fallback')
+  expect(mocks.varStorage.$missingDefault).toBe('fallback')
   expect(risuChatParser('{{setdefaultvar::missingDefault::replacement}}', { runVar: true })).toBe('')
-  expect(varStorage.$missingDefault).toBe('fallback')
+  expect(mocks.varStorage.$missingDefault).toBe('fallback')
 })
 
 test('reverse', () => {

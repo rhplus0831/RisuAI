@@ -20,23 +20,6 @@ vi.mock(import('../../globalApi.svelte'), () => ({
 
 vi.mock(import('../../stores.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [
-          {
-            chatPage: 0,
-            chats: [
-              {
-                scriptstate: {},
-              },
-            ],
-            defaultVariables: '',
-          },
-        ],
-        globalChatVariables: {},
-        templateDefaultVariables: '',
-      },
-    },
     selIdState: {
       selId: 0,
     },

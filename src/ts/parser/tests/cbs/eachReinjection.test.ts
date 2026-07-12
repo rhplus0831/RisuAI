@@ -4,7 +4,7 @@ import { risuChatParser } from '../../parser.svelte'
 import { RISU_EACH_EXPANSION_BUDGET, RisuParserBudgetError } from '../../risuChatParser'
 import { resetChatVariables } from './lib'
 import { setChatVar } from '../../chatVar.svelte'
-import { DBState } from '../../../stores.svelte'
+import { testDatabaseState } from '../../../__tests__/resourceDatabaseState'
 
 //#region module mocks
 
@@ -14,7 +14,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => DBState.db,
+      getDatabase: () => testDatabaseState.db,
     }) as typeof import('../../../storage/database.svelte'),
 )
 
@@ -25,13 +25,6 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
 
 vi.mock(import('../../../stores.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [{ chatPage: 0, chats: [{ scriptstate: {} }], defaultVariables: '' }],
-        globalChatVariables: {},
-        templateDefaultVariables: '',
-      },
-    },
     selIdState: { selId: 0 },
     selectedCharID: writable(0),
   } as typeof import('../../../stores.svelte')
@@ -41,6 +34,11 @@ vi.mock(import('../../../stores.svelte'), () => {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  testDatabaseState.db = {
+    characters: [{ chatPage: 0, chats: [{ scriptstate: {} }], defaultVariables: '' }],
+    globalChatVariables: {},
+    templateDefaultVariables: '',
+  }
   resetChatVariables()
 })
 

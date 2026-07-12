@@ -2,7 +2,6 @@ import fc from 'fast-check'
 import { writable } from 'svelte/store'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import { risuChatParser } from '../../parser.svelte'
-import { DBState } from '../../../stores.svelte'
 import { trimVarPrefix, validCBSArgProp } from './lib'
 
 //#region module mocks
@@ -13,7 +12,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => DBState.db,
+      getDatabase: () => mocks.db,
     }) as typeof import('../../../storage/database.svelte'),
 )
 
@@ -23,37 +22,37 @@ vi.mock(import('../../../globalApi.svelte'), () => ({
 }))
 
 /** Returns accessed key as the value. */
-const varStorage = vi.hoisted(
-  () =>
-    new Proxy(
-      {},
-      {
-        get(_, prop) {
-          return trimVarPrefix(prop)
-        },
+const mocks = vi.hoisted(() => {
+  const varStorage = new Proxy(
+    {},
+    {
+      get(_, prop) {
+        return trimVarPrefix(prop)
       },
-    ),
-)
+    },
+  )
+
+  return {
+    db: {
+      characters: [
+        {
+          chatPage: 0,
+          chats: [
+            {
+              scriptstate: varStorage,
+            },
+          ],
+          defaultVariables: '',
+        },
+      ],
+      globalChatVariables: varStorage,
+      templateDefaultVariables: '',
+    },
+  }
+})
 
 vi.mock(import('../../../stores.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [
-          {
-            chatPage: 0,
-            chats: [
-              {
-                scriptstate: varStorage,
-              },
-            ],
-            defaultVariables: '',
-          },
-        ],
-        globalChatVariables: varStorage,
-        templateDefaultVariables: '',
-      },
-    },
     selIdState: {
       selId: 0,
     },
