@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 
 const projectionState = vi.hoisted(() => ({
   canUse: vi.fn(() => true),
@@ -19,7 +20,7 @@ vi.mock('./resourceReads', () => ({
   canUseServerResourceReads: projectionState.canUse,
 }))
 
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './commands'
 import { isServerChatMessagePlaceholder, type Message } from '../storage/database.svelte'
 import {
@@ -103,7 +104,7 @@ function okBulkLorebookResult(characterIds: string[]) {
 
 function seedTwoStubChats() {
   // Direct stub state: two chats with empty (stubbed) message arrays.
-  ;(DBState as { db: unknown }).db = {
+  ;(testDatabaseState as { db: unknown }).db = {
     characters: [
       {
         chaId: 'char-1',
@@ -119,7 +120,7 @@ function seedTwoStubChats() {
 }
 
 function seedManyStubChats(count: number) {
-  ;(DBState as { db: unknown }).db = {
+  ;(testDatabaseState as { db: unknown }).db = {
     characters: [
       {
         chaId: 'char-1',
@@ -135,7 +136,7 @@ function seedManyStubChats(count: number) {
 }
 
 function seedManyLorebookStubCharacters(count: number) {
-  ;(DBState as { db: unknown }).db = {
+  ;(testDatabaseState as { db: unknown }).db = {
     enableLorebookStubs: true,
     characters: Array.from({ length: count }, (_, index) => ({
       chaId: `char-${index + 1}`,
@@ -168,7 +169,8 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
-const db = () => (DBState as { db: { characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }> } }).db
+const db = () =>
+  (testDatabaseState as { db: { characters: Array<{ chats: Array<{ id: string; message: unknown[] }> }> } }).db
 
 describe('chat message hydration bridge', () => {
   it('hydrates only the active chat, and dedupes a second call', async () => {
@@ -190,7 +192,7 @@ describe('chat message hydration bridge', () => {
   })
 
   it('uses the configured active chat tail window size', async () => {
-    ;(DBState.db as { chatDisplayTailCount?: number }).chatDisplayTailCount = 12
+    ;(testDatabaseState.db as { chatDisplayTailCount?: number }).chatDisplayTailCount = 12
     projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
 
     await hydrateActiveChat()
@@ -376,7 +378,7 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchBulkChat).toHaveBeenCalledTimes(1)
 
     // Simulate a foreign `characters` event re-stubbing every chat: messages
-    // wiped in DBState AND the hydration cache cleared (bootstrap.ts does both).
+    // wiped in testDatabaseState AND the hydration cache cleared (bootstrap.ts does both).
     for (const chat of db().characters[0].chats) chat.message = []
     resetChatHydration()
     projectionState.fetchBulkChat.mockClear()
@@ -722,7 +724,7 @@ describe('isChatMessageHydrationPending', () => {
 
 describe('character globalLore hydration (Phase 5)', () => {
   it('hydrates + marks the open character globalLore when stubs are on', async () => {
-    ;(DBState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
     projectionState.fetchCharLore.mockResolvedValue({
       status: 'ok',
       revision: 1,
@@ -751,7 +753,7 @@ describe('character globalLore hydration (Phase 5)', () => {
     expect(projectionState.fetchBulkCharLore).toHaveBeenCalledTimes(1)
     expect(projectionState.fetchBulkCharLore.mock.calls[0][0]).toHaveLength(BULK_HYDRATION_CONCURRENCY * 3)
     expect(projectionState.fetchCharLore).not.toHaveBeenCalled()
-    expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
+    expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
       { key: 'char-1', content: 'lore' },
     ])
     expect(isCharacterLorebookHydrated('char-1')).toBe(true)
@@ -794,10 +796,10 @@ describe('character globalLore hydration (Phase 5)', () => {
 
     await ensureAllCharacterLorebooksHydrated()
 
-    expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
+    expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
       { key: 'char-1', content: 'lore' },
     ])
-    expect((DBState.db.characters[1] as { globalLore?: unknown[] }).globalLore).toEqual([])
+    expect((testDatabaseState.db.characters[1] as { globalLore?: unknown[] }).globalLore).toEqual([])
     expect(isCharacterLorebookHydrated('char-1')).toBe(true)
     expect(isCharacterLorebookHydrated('char-2')).toBe(false)
 
@@ -842,7 +844,7 @@ describe('character globalLore hydration (Phase 5)', () => {
 
     await ensureAllCharacterLorebooksHydrated()
 
-    expect((DBState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([])
+    expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([])
     expect(isCharacterLorebookHydrated('char-1')).toBe(false)
     projectionState.fetchBulkCharLore.mockClear()
     await ensureAllCharacterLorebooksHydrated()

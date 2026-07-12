@@ -1,29 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { DBState } from '../stores.svelte'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 import { setServerProjectionWriteGuardEnabled, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { getResourceDatabaseFacadeEpoch } from './resourceState.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = seedCloneCostDb() as any
+  testDatabaseState.db = seedCloneCostDb() as any
 })
 
 afterEach(() => {
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = {} as any
+  testDatabaseState.db = {} as any
 })
 
 describe('resource-backed projection write compatibility guard', () => {
   it('performs zero whole-Database clones for a guarded one-field write', () => {
     // Baseline size of the hydrated characters array (char-0 has a 40-message chat).
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     setServerProjectionWriteGuardEnabled(true)
 
     const instrumented = withCloneInstrumentation(() =>
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[0].name = 'Renamed'
+        testDatabaseState.db.characters[0].name = 'Renamed'
       }),
     )
 
@@ -31,67 +31,67 @@ describe('resource-backed projection write compatibility guard', () => {
     // refreeze $state.snapshot). Copy-on-write does neither.
     expect(instrumented.structuredCloneCount).toBe(0)
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
-    expect(DBState.db.characters[0].name).toBe('Renamed')
+    expect(testDatabaseState.db.characters[0].name).toBe('Renamed')
   })
 
-  it('keeps DBState.db read-only after the write (out-of-guard writes throw)', () => {
+  it('keeps testDatabaseState.db read-only after the write (out-of-guard writes throw)', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].name = 'Renamed'
+      testDatabaseState.db.characters[0].name = 'Renamed'
     })
 
     expect(() => {
-      DBState.db.characters[0].name = 'Direct'
+      testDatabaseState.db.characters[0].name = 'Direct'
     }).toThrow()
     expect(() => {
-      DBState.db.characters.push({ chaId: 'x', name: 'x', chats: [] } as any)
+      testDatabaseState.db.characters.push({ chaId: 'x', name: 'x', chats: [] } as any)
     }).toThrow()
-    expect(DBState.db.characters[0].name).toBe('Renamed')
+    expect(testDatabaseState.db.characters[0].name).toBe('Renamed')
   })
 
-  it('keeps a stable DBState.db facade and advances its reactive resource epoch', () => {
+  it('keeps a stable testDatabaseState.db facade and advances its reactive resource epoch', () => {
     setServerProjectionWriteGuardEnabled(true)
 
-    const before = DBState.db
+    const before = testDatabaseState.db
     const beforeEpoch = getResourceDatabaseFacadeEpoch()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].name = 'One'
+      testDatabaseState.db.characters[0].name = 'One'
     })
-    const afterFirst = DBState.db
+    const afterFirst = testDatabaseState.db
     expect(afterFirst).toBe(before)
     expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeEpoch)
 
     const afterFirstEpoch = getResourceDatabaseFacadeEpoch()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].name = 'Two'
+      testDatabaseState.db.characters[0].name = 'Two'
     })
-    expect(DBState.db).toBe(afterFirst)
+    expect(testDatabaseState.db).toBe(afterFirst)
     expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(afterFirstEpoch)
-    expect(DBState.db.characters[0].name).toBe('Two')
+    expect(testDatabaseState.db.characters[0].name).toBe('Two')
   })
 
   it('keeps a nested guarded write writable mid-scope and refreezes once at the outer exit', () => {
     setServerProjectionWriteGuardEnabled(true)
-    const before = DBState.db
+    const before = testDatabaseState.db
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].name = 'Outer'
+      testDatabaseState.db.characters[0].name = 'Outer'
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[1].name = 'Inner'
+        testDatabaseState.db.characters[1].name = 'Inner'
       })
       // Still in the outer scope: the projection is not refrozen yet, so it is
       // writable and reflects both writes.
-      DBState.db.characters[0].chats[0].note = 'still-writable'
-      expect(DBState.db.characters[1].name).toBe('Inner')
+      testDatabaseState.db.characters[0].chats[0].note = 'still-writable'
+      expect(testDatabaseState.db.characters[1].name).toBe('Inner')
     })
 
-    expect(DBState.db).toBe(before)
-    expect(DBState.db.characters[0].name).toBe('Outer')
-    expect(DBState.db.characters[1].name).toBe('Inner')
-    expect(DBState.db.characters[0].chats[0].note).toBe('still-writable')
+    expect(testDatabaseState.db).toBe(before)
+    expect(testDatabaseState.db.characters[0].name).toBe('Outer')
+    expect(testDatabaseState.db.characters[1].name).toBe('Inner')
+    expect(testDatabaseState.db.characters[0].chats[0].note).toBe('still-writable')
     expect(() => {
-      DBState.db.characters[0].name = 'Direct'
+      testDatabaseState.db.characters[0].name = 'Direct'
     }).toThrow()
   })
 
@@ -99,11 +99,11 @@ describe('resource-backed projection write compatibility guard', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].name = 'Edited'
+      testDatabaseState.db.characters[0].name = 'Edited'
     })
 
-    expect(DBState.db.characters[1].name).toBe('Character 1')
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(40)
+    expect(testDatabaseState.db.characters[1].name).toBe('Character 1')
+    expect(testDatabaseState.db.characters[0].chats[0].message).toHaveLength(40)
   })
 
   it('supports a full-projection replacement inside a guarded write (apply path)', () => {
@@ -114,15 +114,15 @@ describe('resource-backed projection write compatibility guard', () => {
     }
 
     withTrustedServerProjectionWrite(() => {
-      // Mirrors setDatabaseLite's in-guard behavior: replace DBState.db wholesale.
-      DBState.db = replacement as any
+      // Mirrors setDatabaseLite's in-guard behavior: replace testDatabaseState.db wholesale.
+      testDatabaseState.db = replacement as any
     })
 
-    expect(DBState.db.characters).toHaveLength(1)
-    expect(DBState.db.characters[0].chaId).toBe('fresh')
-    expect((DBState.db as any).loreBookPage).toBe(3)
+    expect(testDatabaseState.db.characters).toHaveLength(1)
+    expect(testDatabaseState.db.characters[0].chaId).toBe('fresh')
+    expect((testDatabaseState.db as any).loreBookPage).toBe(3)
     expect(() => {
-      DBState.db.characters[0].name = 'Direct'
+      testDatabaseState.db.characters[0].name = 'Direct'
     }).toThrow()
   })
 
@@ -133,35 +133,35 @@ describe('resource-backed projection write compatibility guard', () => {
     // value it just set inside the same scope must see it.
     let observedInside = ''
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].scriptstate = { $score: '42' }
-      observedInside = String(DBState.db.characters[0].chats[0].scriptstate.$score)
+      testDatabaseState.db.characters[0].chats[0].scriptstate = { $score: '42' }
+      observedInside = String(testDatabaseState.db.characters[0].chats[0].scriptstate.$score)
     })
 
     expect(observedInside).toBe('42')
-    expect(DBState.db.characters[0].chats[0].scriptstate.$score).toBe('42')
+    expect(testDatabaseState.db.characters[0].chats[0].scriptstate.$score).toBe('42')
   })
 
   it('unwraps read-only nested projection values assigned during trusted writes', () => {
-    DBState.db.personas = [
+    testDatabaseState.db.personas = [
       { id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' },
       { id: 'persona-b', name: 'B', icon: '', personaPrompt: '', note: '' },
     ]
-    DBState.db.selectedPersona = 0
+    testDatabaseState.db.selectedPersona = 0
     setServerProjectionWriteGuardEnabled(true)
 
-    const reordered = [DBState.db.personas[1], DBState.db.personas[0]]
+    const reordered = [testDatabaseState.db.personas[1], testDatabaseState.db.personas[0]]
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.personas = reordered
-      DBState.db.selectedPersona = 1
+      testDatabaseState.db.personas = reordered
+      testDatabaseState.db.selectedPersona = 1
     })
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-a'])
+    expect(testDatabaseState.db.personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-a'])
     expect(() => {
       withTrustedServerProjectionWrite(() => {
-        DBState.db.personas[0].id = 'persona-b-edited'
+        testDatabaseState.db.personas[0].id = 'persona-b-edited'
       })
     }).not.toThrow()
-    expect(DBState.db.personas[0].id).toBe('persona-b-edited')
+    expect(testDatabaseState.db.personas[0].id).toBe('persona-b-edited')
   })
 })

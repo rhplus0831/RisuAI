@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 
 const projectionState = vi.hoisted(() => ({
   fetchResource: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock('./chatMessageHydration.svelte', () => ({
   resetChatHydration: vi.fn(),
 }))
 
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import {
   isServerCharacterShell,
   mergeServerProjectionCharacterRow,
@@ -69,7 +70,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   stopSelectedCharacterShellHydration()
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [characterShell()],
     characterOrder: ['char-1'],
   } as any
@@ -78,9 +79,9 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  const database = JSON.parse(JSON.stringify(DBState.db))
+  const database = JSON.parse(JSON.stringify(testDatabaseState.db))
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = database
+  testDatabaseState.db = database
 })
 
 describe('character shell hydration', () => {
@@ -97,8 +98,8 @@ describe('character shell hydration', () => {
     await expect(hydrateCharacterShell('char-1')).resolves.toBe(true)
 
     expect(projectionState.fetchResource).toHaveBeenCalledWith('char-1')
-    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(false)
-    expect(DBState.db.characters[0].name).toBe('Hydrated')
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
+    expect(testDatabaseState.db.characters[0].name).toBe('Hydrated')
     expect(peekCachedServerCommandRevision()).toBe(5)
   })
 
@@ -127,9 +128,9 @@ describe('character shell hydration', () => {
 
     await expect(pending).resolves.toBe(true)
 
-    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(false)
-    expect(DBState.db.characters[0].name).toBe('Hydrated after settings')
-    expect(DBState.db.language).toBe('ko')
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
+    expect(testDatabaseState.db.characters[0].name).toBe('Hydrated after settings')
+    expect(testDatabaseState.db.language).toBe('ko')
     expect(peekCachedServerCommandRevision()).toBe(6)
   })
 
@@ -158,8 +159,8 @@ describe('character shell hydration', () => {
 
     await expect(pending).resolves.toBe(false)
 
-    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(false)
-    expect(DBState.db.characters[0].name).toBe('Newer projection')
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(false)
+    expect(testDatabaseState.db.characters[0].name).toBe('Newer projection')
   })
 
   it('rejects a character row response older than the request-start revision', async () => {
@@ -174,7 +175,7 @@ describe('character shell hydration', () => {
 
     await expect(hydrateCharacterShell('char-1')).resolves.toBe(false)
 
-    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(true)
-    expect(DBState.db.characters[0].name).toBe('Shell')
+    expect(isServerCharacterShell(testDatabaseState.db.characters[0])).toBe(true)
+    expect(testDatabaseState.db.characters[0].name).toBe('Shell')
   })
 })

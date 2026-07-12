@@ -45,13 +45,14 @@ vi.mock('../../storage/database.svelte', async (importActual) => {
 })
 
 import { safeStructuredClone } from '../../polyfill'
+import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { processMultiCommand } from '../command'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -186,7 +187,7 @@ async function runMessageCommand(
   const dispatched = await waitForCommand(calls, (call) => call.url === expected.url && call.method === expected.method)
   return {
     command: dispatched,
-    messages: DBState.db.characters[0].chats[0].message as unknown as Array<Record<string, unknown>>,
+    messages: testDatabaseState.db.characters[0].chats[0].message as unknown as Array<Record<string, unknown>>,
   }
 }
 
@@ -263,7 +264,7 @@ function seedDatabase(messages: unknown[] = [], options: { language?: string; in
       scriptstate: {},
     })
   }
-  DBState.db = {
+  testDatabaseState.db = {
     language: options.language ?? 'en',
     characters: [
       {
@@ -312,7 +313,7 @@ function seedLargeSiblingDatabase(): void {
     language: 'ko',
     includeSiblings: true,
   })
-  DBState.db.characters[1].chats[0].message = Array.from({ length: 120 }, (_unused, index) => ({
+  testDatabaseState.db.characters[1].chats[0].message = Array.from({ length: 120 }, (_unused, index) => ({
     role: index % 2 === 0 ? 'user' : 'char',
     data: `${'x'.repeat(500)}-${index}`,
     chatId: `m-sibling-large-${index}`,
@@ -338,20 +339,20 @@ describe('slash-command durable writes under the projection guard', () => {
   it('baseline: a raw projection write throws while the guard is active', () => {
     setServerProjectionWriteGuardEnabled(true)
     expect(() => {
-      DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'raw' })
-    }).toThrow(/read-only server projection/)
+      testDatabaseState.db.characters[0].chats[0].message.push({ role: 'user', data: 'raw' })
+    }).toThrow(/resource database compatibility view is read-only/)
   })
 
   it('L32: /send appends a user message without setDatabase or whole-db clone churn', async () => {
     seedLargeSiblingDatabase()
-    const wholeCharactersSize = JSON.stringify(DBState.db.characters).length
+    const wholeCharactersSize = JSON.stringify(testDatabaseState.db.characters).length
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
     const instrumented = await withAsyncCloneInstrumentation(() => processMultiCommand('/send hello world'))
 
     expect(instrumented.result).toBe('')
-    expect(DBState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
       role: 'user',
       data: 'hello world',
     })
@@ -390,7 +391,7 @@ describe('slash-command durable writes under the projection guard', () => {
     expect(messages).toHaveLength(2)
     expect(messages.at(-1)).toMatchObject({ role: 'char', data: 'character line' })
     expect(command.body.message).toMatchObject({ role: 'char', data: 'character line', chatId: expect.any(String) })
-    expect(DBState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)).toMatchObject({
       role: 'char',
       data: 'character line',
     })
@@ -494,7 +495,7 @@ describe('slash-command durable writes under the projection guard', () => {
       2,
     )
     expect(messageCommands.map((call) => call.body.message.data)).toEqual(['first', 'second'])
-    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+    expect(testDatabaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
       'base',
       'first',
       'second',
@@ -511,7 +512,7 @@ describe('slash-command durable writes under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
     sendChatMock.mockImplementationOnce(async () => {
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[0].chatPage = 1
+        testDatabaseState.db.characters[0].chatPage = 1
       })
       return true
     })
@@ -529,8 +530,13 @@ describe('slash-command durable writes under the projection guard', () => {
     )
     expect(messageCommands).toHaveLength(1)
     expect(messageCommands[0].body.message).toMatchObject({ data: 'first', chatId: expect.any(String) })
-    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['base', 'first'])
-    expect(DBState.db.characters[0].chats[1].message.map((message: any) => message.data)).toEqual(['active sibling'])
+    expect(testDatabaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+      'base',
+      'first',
+    ])
+    expect(testDatabaseState.db.characters[0].chats[1].message.map((message: any) => message.data)).toEqual([
+      'active sibling',
+    ])
     expect(sendChatMock).toHaveBeenCalledTimes(1)
     expect(sendChatMock).toHaveBeenCalledWith(-1)
     expect(setDatabaseSpy.count).toBe(0)
@@ -552,7 +558,7 @@ describe('slash-command durable writes under the projection guard', () => {
       ['first'],
       ['second'],
     ])
-    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['second'])
+    expect(testDatabaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual(['second'])
     expect(sendChatMock).toHaveBeenCalledTimes(2)
     expect(sendChatMock).toHaveBeenNthCalledWith(1, -1)
     expect(sendChatMock).toHaveBeenNthCalledWith(2, -1)
@@ -588,15 +594,15 @@ describe('slash-command durable writes under the projection guard', () => {
       calls,
       (call) => call.url === '/api/v1/commands/chats/chat-1/messages' && call.method === 'POST',
     )
-    expect(DBState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
+    expect(testDatabaseState.db.characters[0].chats[0].message.map((message: any) => message.data)).toEqual([
       'base',
       'optimistic',
     ])
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[1].name = 'active sibling edit'
-      DBState.db.characters[1].name = 'sibling character edit'
-      DBState.db.characters[1].chats[0].message.push({
+      testDatabaseState.db.characters[0].chats[1].name = 'active sibling edit'
+      testDatabaseState.db.characters[1].name = 'sibling character edit'
+      testDatabaseState.db.characters[1].chats[0].message.push({
         role: 'char',
         data: 'sibling message edit',
         chatId: 'm-sibling-edit',
@@ -606,7 +612,7 @@ describe('slash-command durable writes under the projection guard', () => {
     resolveMessageResponse?.(jsonResponse({ error: 'forced failure' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].message).toEqual([
+      expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
         {
           role: 'char',
           data: 'base',
@@ -614,9 +620,9 @@ describe('slash-command durable writes under the projection guard', () => {
         },
       ])
     })
-    expect(DBState.db.characters[0].chats[1].name).toBe('active sibling edit')
-    expect(DBState.db.characters[1].name).toBe('sibling character edit')
-    expect(DBState.db.characters[1].chats[0].message.map((message: any) => message.data)).toEqual([
+    expect(testDatabaseState.db.characters[0].chats[1].name).toBe('active sibling edit')
+    expect(testDatabaseState.db.characters[1].name).toBe('sibling character edit')
+    expect(testDatabaseState.db.characters[1].chats[0].message.map((message: any) => message.data)).toEqual([
       'sibling',
       'sibling message edit',
     ])
@@ -643,7 +649,7 @@ describe('slash-command durable writes under the projection guard', () => {
     await expect(processMultiCommand('/setvar key=hp 100')).resolves.not.toThrow()
 
     // The in-place write landed and the scoped command dispatched...
-    expect(DBState.db.characters[0].chats[0].scriptstate?.['$hp']).toBe('100')
+    expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.['$hp']).toBe('100')
     const cmd = await waitForCommand(
       calls,
       (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
@@ -656,13 +662,13 @@ describe('slash-command durable writes under the projection guard', () => {
 
   it('M12: /addvar persists the incremented value without the setDatabase normalizer', async () => {
     seedDatabase()
-    DBState.db.characters[0].chats[0].scriptstate = { $damage: '5' }
+    testDatabaseState.db.characters[0].chats[0].scriptstate = { $damage: '5' }
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
     await expect(processMultiCommand('/addvar key=damage 10')).resolves.not.toThrow()
 
-    expect(DBState.db.characters[0].chats[0].scriptstate?.['$damage']).toBe('15')
+    expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.['$damage']).toBe('15')
     const cmd = await waitForCommand(
       calls,
       (call) => call.url === '/api/v1/commands/chats/chat-1/scriptstate' && call.method === 'PATCH',
@@ -686,7 +692,7 @@ describe('slash-command durable writes under the projection guard', () => {
       (call) => call.url === '/api/v1/commands/messages/m1' && call.method === 'DELETE',
     )
     expect(cmd.body).toEqual({ baseRevision: 10 })
-    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'two', chatId: 'm2' }])
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'two', chatId: 'm2' }])
     expect(setDatabaseSpy.count).toBe(0)
   })
 

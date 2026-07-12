@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Regression coverage: trigger data effects that mutate durable character/persona
-// state must route through typed commands instead of writing `DBState.db`
+// state must route through typed commands instead of writing `testDatabaseState.db`
 // directly, so they do not throw under the server-backed read-only projection
 // guard.
 
@@ -23,10 +23,11 @@ vi.mock('../modules', async (importActual) => {
 })
 
 import { safeStructuredClone } from '../../polyfill'
+import { testDatabaseState } from '../../__tests__/resourceDatabaseState'
 import { runTrigger } from '../triggers'
 import { clearCachedServerCommandRevision } from '../../server/commands'
 import { setServerProjectionWriteGuardEnabled } from '../../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../../stores.svelte'
+import { selectedCharID } from '../../stores.svelte'
 import type { character } from '../../storage/database.svelte'
 
 interface CapturedFetch {
@@ -107,7 +108,7 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 
 function seedDatabase(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [
       {
         chaId: 'char-a',
@@ -133,7 +134,7 @@ function seedDatabase(): void {
 }
 
 function characterWithTriggers(triggerscript: unknown[]): character {
-  return { ...DBState.db.characters[0], triggerscript } as unknown as character
+  return { ...testDatabaseState.db.characters[0], triggerscript } as unknown as character
 }
 
 beforeEach(() => {
@@ -177,7 +178,7 @@ describe('trigger durable writes under the projection guard', () => {
 
     // Baseline: the guard is active, so a raw projection write throws.
     expect(() => {
-      DBState.db.characters[0].desc = 'raw'
+      testDatabaseState.db.characters[0].desc = 'raw'
     }).toThrow()
 
     const char = characterWithTriggers([
@@ -226,15 +227,15 @@ describe('trigger durable writes under the projection guard', () => {
   })
 
   it('rolls back v2SetPersonaDesc optimism when the persona command fails', async () => {
-    DBState.db.personaPrompt = 'legacy prompt before trigger'
-    DBState.db.personas[0].personaPrompt = 'saved prompt before trigger'
-    const selectedPersona = DBState.db.selectedPersona
+    testDatabaseState.db.personaPrompt = 'legacy prompt before trigger'
+    testDatabaseState.db.personas[0].personaPrompt = 'saved prompt before trigger'
+    const selectedPersona = testDatabaseState.db.selectedPersona
     const calls = stubCommandFetch({ failPersonaPatch: true })
     setServerProjectionWriteGuardEnabled(true)
 
     // Baseline: the guard is active, so a raw legacy prompt write throws.
     expect(() => {
-      DBState.db.personaPrompt = 'raw prompt'
+      testDatabaseState.db.personaPrompt = 'raw prompt'
     }).toThrow()
 
     const char = characterWithTriggers([
@@ -259,16 +260,16 @@ describe('trigger durable writes under the projection guard', () => {
 
     await waitFor(
       () =>
-        DBState.db.personaPrompt === 'legacy prompt before trigger' &&
-        DBState.db.personas[selectedPersona]?.personaPrompt === 'saved prompt before trigger',
+        testDatabaseState.db.personaPrompt === 'legacy prompt before trigger' &&
+        testDatabaseState.db.personas[selectedPersona]?.personaPrompt === 'saved prompt before trigger',
     )
 
-    expect(DBState.db.personaPrompt).toBe('legacy prompt before trigger')
-    expect(DBState.db.personas[selectedPersona]?.personaPrompt).toBe('saved prompt before trigger')
+    expect(testDatabaseState.db.personaPrompt).toBe('legacy prompt before trigger')
+    expect(testDatabaseState.db.personas[selectedPersona]?.personaPrompt).toBe('saved prompt before trigger')
   })
 
   it('routes v2ModifyLorebook through a lorebook command instead of a guarded direct write', async () => {
-    DBState.db.characters[0].globalLore = [['lore-key', 'old content']] as any
+    testDatabaseState.db.characters[0].globalLore = [['lore-key', 'old content']] as any
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
@@ -343,7 +344,7 @@ describe('trigger durable writes under the projection guard', () => {
   })
 
   it('routes v2DeleteLorebookByIndex through a lorebook command instead of a guarded direct write', async () => {
-    DBState.db.characters[0].globalLore = [
+    testDatabaseState.db.characters[0].globalLore = [
       { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100 },
     ] as any
     const calls = stubCommandFetch()
@@ -378,7 +379,7 @@ describe('trigger durable writes under the projection guard', () => {
   })
 
   it('routes v2SetLorebookAlwaysActive through a lorebook command instead of a guarded direct write', async () => {
-    DBState.db.characters[0].globalLore = [
+    testDatabaseState.db.characters[0].globalLore = [
       { key: 'k', comment: 'entry', content: 'c', mode: 'normal', insertorder: 100, alwaysActive: false },
     ] as any
     const calls = stubCommandFetch()
@@ -447,7 +448,7 @@ describe('trigger durable writes under the projection guard', () => {
 
     // Baseline: the guard is active, so a raw scriptstate projection write throws.
     expect(() => {
-      DBState.db.characters[0].chats[0].scriptstate = { $raw: '1' } as never
+      testDatabaseState.db.characters[0].chats[0].scriptstate = { $raw: '1' } as never
     }).toThrow()
 
     const char = characterWithTriggers([
@@ -466,7 +467,7 @@ describe('trigger durable writes under the projection guard', () => {
     ).resolves.not.toThrow()
 
     // The optimistic write landed on the live active chat's scriptstate.
-    expect((DBState.db.characters[0].chats[0].scriptstate as any).$score).toBe('7')
+    expect((testDatabaseState.db.characters[0].chats[0].scriptstate as any).$score).toBe('7')
 
     // ...and the scriptstate patch was dispatched to the chat scriptstate command.
     const cmd = await waitForCommand(
@@ -501,8 +502,8 @@ describe('trigger durable writes under the projection guard', () => {
 
     expect((result?.chat.scriptstate as any).$score).toBe('7')
     expect(result?.chat.note).toBe('deferred note')
-    expect((DBState.db.characters[0].chats[0].scriptstate as any).$score).toBeUndefined()
-    expect(DBState.db.characters[0].chats[0].note).toBe('')
+    expect((testDatabaseState.db.characters[0].chats[0].scriptstate as any).$score).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].chats[0].note).toBe('')
     expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/chats/'))).toHaveLength(0)
   })
 
@@ -530,7 +531,7 @@ describe('trigger durable writes under the projection guard', () => {
     })
 
     expect(result?.chat.scriptstate).toEqual({})
-    expect(DBState.db.characters[0].desc).toBe('')
+    expect(testDatabaseState.db.characters[0].desc).toBe('')
     expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/'))).toHaveLength(0)
   })
 })
@@ -540,7 +541,7 @@ describe('Phase 2 trigger lorebook scoped rollback', () => {
     // two characters with distinct globalLore; a whole-array rollback would clone
     // and re-write both, the scoped rollback touches only the edited character.
     selectedCharID.set(0)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         {
           chaId: 'char-a',
@@ -604,14 +605,14 @@ describe('Phase 2 trigger lorebook scoped rollback', () => {
     ).resolves.not.toThrow()
 
     // the optimistic edit is applied to the selected character's row
-    expect((DBState.db.characters[0].globalLore as any)[0][1]).toBe('new content')
+    expect((testDatabaseState.db.characters[0].globalLore as any)[0][1]).toBe('new content')
 
     // the lorebook PUT fires then fails, restoring only char-a's globalLore
     await waitForCommand(calls, (c) => c.url.includes('/lorebooks') && c.method === 'PUT')
-    await waitFor(() => (DBState.db.characters[0].globalLore as any)?.[0]?.[1] === 'old content')
+    await waitFor(() => (testDatabaseState.db.characters[0].globalLore as any)?.[0]?.[1] === 'old content')
 
-    expect((DBState.db.characters[0].globalLore as any)[0][1]).toBe('old content')
+    expect((testDatabaseState.db.characters[0].globalLore as any)[0][1]).toBe('old content')
     // the sibling character's lorebook was never part of the scoped rollback
-    expect((DBState.db.characters[1].globalLore as any)[0][1]).toBe('sibling content')
+    expect((testDatabaseState.db.characters[1].globalLore as any)[0][1]).toBe('sibling content')
   })
 })

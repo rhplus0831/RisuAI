@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { testDatabaseState } from './__tests__/resourceDatabaseState'
 
 // Regression coverage: ordinary keydown matching must not mutate
-// `DBState.db.hotkeys`, and hotkey settings edits must route through a
+// `testDatabaseState.db.hotkeys`, and hotkey settings edits must route through a
 // server-backed settings patch instead of a raw projection write. Both throw
 // under the read-only server projection guard otherwise.
 
@@ -22,7 +23,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 // stores.svelte.ts installs a root $effect that calls moduleUpdate() whenever
-// DBState.db changes; stub it so seeding the database does not trigger the
+// testDatabaseState.db changes; stub it so seeding the database does not trigger the
 // module pipeline (and its circular-import init order) under test.
 vi.mock('./process/modules', async (importActual) => {
   const actual = await importActual<typeof import('./process/modules')>()
@@ -33,7 +34,7 @@ import { changeToPreset, hotkeyMatches } from './hotkey'
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { selectedCharID } from './stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -99,7 +100,7 @@ async function waitForCommand(
 }
 
 function seedDatabase(): void {
-  DBState.db = {
+  testDatabaseState.db = {
     hotkeys: [
       { key: 'a', action: 'home' },
       { key: 'r', ctrl: true, alt: true, action: 'reroll' },
@@ -138,10 +139,10 @@ describe('hotkey handling under the projection guard', () => {
 
     // Baseline: the guard is active, so a raw projection write throws.
     expect(() => {
-      ;(DBState.db.hotkeys[0] as any).ctrl = true
+      ;(testDatabaseState.db.hotkeys[0] as any).ctrl = true
     }).toThrow()
 
-    const hotkey = DBState.db.hotkeys[0]
+    const hotkey = testDatabaseState.db.hotkeys[0]
     const event = new KeyboardEvent('keydown', { key: 'a' })
 
     // hotkeyMatches must not write default modifier fields back onto the entry.
@@ -159,7 +160,7 @@ describe('hotkey handling under the projection guard', () => {
   it('rejects mismatched modifiers without mutation', () => {
     setServerProjectionWriteGuardEnabled(true)
 
-    const hotkey = DBState.db.hotkeys[0]
+    const hotkey = testDatabaseState.db.hotkeys[0]
     const event = new KeyboardEvent('keydown', { key: 'a', ctrlKey: true })
 
     expect(hotkeyMatches(hotkey, event)).toBe(false)
@@ -168,10 +169,10 @@ describe('hotkey handling under the projection guard', () => {
 
   it('routes numbered preset shortcuts to modern model presets on a fresh split database', async () => {
     const calls = stubCommandFetch()
-    expect(DBState.db.botPresets).toEqual([])
+    expect(testDatabaseState.db.botPresets).toEqual([])
 
     expect(changeToPreset(1)).toBe(true)
-    expect(DBState.db.modelPresetsId).toBe(1)
+    expect(testDatabaseState.db.modelPresetsId).toBe(1)
     expect(changeToPreset(8)).toBe(false)
 
     const command = await waitForCommand(
@@ -183,8 +184,8 @@ describe('hotkey handling under the projection guard', () => {
 
   it('keeps Ctrl+1 functional when a fresh database has only its default modern preset', async () => {
     const calls = stubCommandFetch()
-    DBState.db.modelPresets = [{ id: 'model-default', name: 'Default Model' }]
-    DBState.db.modelPresetsId = 0
+    testDatabaseState.db.modelPresets = [{ id: 'model-default', name: 'Default Model' }]
+    testDatabaseState.db.modelPresetsId = 0
 
     expect(changeToPreset(0)).toBe(true)
 
@@ -197,7 +198,7 @@ describe('hotkey handling under the projection guard', () => {
 
   it('switches the active chat generation model preset when the chat owns preset selection', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters = [
+    testDatabaseState.db.characters = [
       {
         chaId: 'char-a',
         chatPage: 0,
@@ -219,8 +220,8 @@ describe('hotkey handling under the projection guard', () => {
     selectedCharID.set(0)
 
     expect(changeToPreset(1)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-second')
-    expect(DBState.db.modelPresetsId).toBe(0)
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.modelPresetId).toBe('model-second')
+    expect(testDatabaseState.db.modelPresetsId).toBe(0)
 
     const command = await waitForCommand(calls, (call) => call.url.endsWith('/chat-a/generation-settings'))
     expect(command.body.generationSettings.modelPresetId).toBe('model-second')
@@ -231,12 +232,12 @@ describe('hotkey handling under the projection guard', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     // Mirror HotkeySettings.svelte: build a fresh array and apply it.
-    const next = DBState.db.hotkeys.map((hotkey, i) => (i === 0 ? { ...hotkey, ctrl: true } : { ...hotkey }))
+    const next = testDatabaseState.db.hotkeys.map((hotkey, i) => (i === 0 ? { ...hotkey, ctrl: true } : { ...hotkey }))
 
     expect(() => applyServerBackedSetting('hotkeys', next)).not.toThrow()
 
     // Optimistic projection update is applied without throwing the guard.
-    expect(DBState.db.hotkeys[0].ctrl).toBe(true)
+    expect(testDatabaseState.db.hotkeys[0].ctrl).toBe(true)
 
     const patch = await waitForCommand(
       calls,

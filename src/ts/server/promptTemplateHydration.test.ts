@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PromptItem } from '../process/prompt'
+import { testDatabaseState } from '../__tests__/resourceDatabaseState'
 
 const projectionState = vi.hoisted(() => ({
   fetchResource: vi.fn(),
@@ -10,7 +11,11 @@ vi.mock('./hydrationReads', () => ({
   fetchServerPromptPresetTemplate: projectionState.fetchResource,
 }))
 
-import { DBState } from '../stores.svelte'
+vi.mock('../process/modules', async (importActual) => {
+  const actual = await importActual<typeof import('../process/modules')>()
+  return { ...actual, moduleUpdate: vi.fn() }
+})
+
 import { mergeServerProjectionFields, setServerProjectionWriteGuardEnabled } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
@@ -37,7 +42,7 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 
 beforeEach(() => {
   setServerProjectionWriteGuardEnabled(false)
-  ;(DBState as { db: unknown }).db = { characters: [], modules: [], enabledModules: [] }
+  ;(testDatabaseState as { db: unknown }).db = { characters: [], modules: [], enabledModules: [] }
   clearCachedServerCommandRevision()
   resetPromptTemplateHydration()
   projectionState.canUse = true
@@ -45,20 +50,20 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  const database = JSON.parse(JSON.stringify(DBState.db))
+  const database = JSON.parse(JSON.stringify(testDatabaseState.db))
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = database
+  testDatabaseState.db = database
 })
 
 describe('promptTemplate hydration', () => {
   it('uses the top-level prompt template already loaded with settings', async () => {
-    DBState.db.promptTemplate = [item('p-1', 'settings template')]
+    testDatabaseState.db.promptTemplate = [item('p-1', 'settings template')]
     setCachedServerCommandRevision(7)
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
     expect(projectionState.fetchResource).not.toHaveBeenCalled()
-    expect(DBState.db.promptTemplate).toEqual([item('p-1', 'settings template')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-1', 'settings template')])
     expect(isPromptTemplateHydrated()).toBe(true)
     expect(peekCachedServerCommandRevision()).toBe(7)
   })
@@ -69,12 +74,12 @@ describe('promptTemplate hydration', () => {
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(false)
 
     expect(projectionState.fetchResource).not.toHaveBeenCalled()
-    expect(DBState.db.promptTemplate).toBeUndefined()
+    expect(testDatabaseState.db.promptTemplate).toBeUndefined()
     expect(isPromptTemplateHydrated()).toBe(false)
   })
 
   it('coalesces concurrent hydration requests', async () => {
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
@@ -99,11 +104,11 @@ describe('promptTemplate hydration', () => {
     await expect(Promise.all([first, second])).resolves.toEqual([true, true])
 
     expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
-    expect(DBState.db.promptTemplate).toEqual([item('p-1', 'once')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-1', 'once')])
   })
 
   it('accepts a hydration response after an unrelated projection advances the known revision', async () => {
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
@@ -129,15 +134,15 @@ describe('promptTemplate hydration', () => {
 
     await expect(pending).resolves.toBe(true)
 
-    expect(DBState.db.promptTemplate).toEqual([item('p-current', 'current template')])
-    expect(DBState.db.language).toBe('ko')
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-current', 'current template')])
+    expect(testDatabaseState.db.language).toBe('ko')
     expect(isPromptTemplateHydrated()).toBe(true)
     expect(peekCachedServerCommandRevision()).toBe(6)
   })
 
   it('rejects a hydration response after the same prompt owner changes', async () => {
     setCachedServerCommandRevision(5)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       characters: [],
       modules: [],
       enabledModules: [],
@@ -173,12 +178,12 @@ describe('promptTemplate hydration', () => {
 
     await expect(pending).resolves.toBe(false)
 
-    expect(DBState.db.promptPresets[0].promptTemplate).toEqual([item('p-newer', 'newer owner template')])
-    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([item('p-newer', 'newer owner template')])
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
   })
 
   it('rejects a hydration response older than the request-start revision', async () => {
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
@@ -192,13 +197,13 @@ describe('promptTemplate hydration', () => {
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(false)
 
-    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
     expect(isPromptTemplateHydrated()).toBe(false)
   })
 
   it('fetches promptItem for the selected prompt preset owner', async () => {
     setCachedServerCommandRevision(7)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       promptPresetsId: 0,
       promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
     }
@@ -212,13 +217,13 @@ describe('promptTemplate hydration', () => {
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
     expect(projectionState.fetchResource).toHaveBeenCalledWith('preset-a')
-    expect(DBState.db.promptTemplate).toEqual([item('preset-row', 'preset body')])
-    expect(DBState.db.promptPresets[0].promptTemplate).toEqual([item('preset-row', 'preset body')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('preset-row', 'preset body')])
+    expect(testDatabaseState.db.promptPresets[0].promptTemplate).toEqual([item('preset-row', 'preset body')])
   })
 
   it('hydrates an explicit non-current prompt preset owner without overwriting the visible projection', async () => {
     setCachedServerCommandRevision(7)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       promptTemplate: [item('global-row', 'global visible body')],
       promptPresetsId: 0,
       promptPresets: [
@@ -238,15 +243,15 @@ describe('promptTemplate hydration', () => {
     )
 
     expect(projectionState.fetchResource).toHaveBeenCalledWith('preset-chat')
-    expect(DBState.db.promptPresets[1].promptTemplate).toEqual([item('chat-row', 'chat body')])
-    expect(DBState.db.promptTemplate).toEqual([item('global-row', 'global visible body')])
+    expect(testDatabaseState.db.promptPresets[1].promptTemplate).toEqual([item('chat-row', 'chat body')])
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('global-row', 'global visible body')])
     expect(isPromptTemplateHydrated('preset-chat')).toBe(true)
     expect(isPromptTemplateHydrated('preset-global')).toBe(false)
   })
 
   it('ignores a selected-owner hydration response after the selection changes', async () => {
     setCachedServerCommandRevision(7)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       promptPresetsId: 0,
       promptPresets: [
         { id: 'preset-a', name: 'Preset A' },
@@ -262,7 +267,7 @@ describe('promptTemplate hydration', () => {
     projectionState.fetchResource.mockReturnValue(response.promise)
 
     const pending = ensurePromptTemplateHydrated()
-    DBState.db.promptPresetsId = 1
+    testDatabaseState.db.promptPresetsId = 1
     response.resolve({
       status: 'ok',
       revision: 7,
@@ -271,12 +276,12 @@ describe('promptTemplate hydration', () => {
     })
 
     await expect(pending).resolves.toBe(false)
-    expect(DBState.db).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
   })
 
   it('clears stale compatibility promptTemplate when the selected preset has no promptTemplate', async () => {
     setCachedServerCommandRevision(7)
-    ;(DBState as { db: unknown }).db = {
+    ;(testDatabaseState as { db: unknown }).db = {
       characters: [],
       promptTemplate: [item('stale', 'stale compatibility body')],
       promptPresetsId: 0,
@@ -293,13 +298,13 @@ describe('promptTemplate hydration', () => {
     try {
       await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
 
-      expect(DBState.db.promptTemplate).toBeUndefined()
+      expect(testDatabaseState.db.promptTemplate).toBeUndefined()
       expect(isPromptTemplateHydrated()).toBe(true)
       expect(() => {
-        DBState.db.promptTemplate = []
+        testDatabaseState.db.promptTemplate = []
       }).toThrow('The resource database compatibility view is read-only')
       expect(() => {
-        delete DBState.db.promptTemplate
+        delete testDatabaseState.db.promptTemplate
       }).toThrow('The resource database compatibility view is read-only')
     } finally {
       setServerProjectionWriteGuardEnabled(false)
