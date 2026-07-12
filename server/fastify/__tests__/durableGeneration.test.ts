@@ -16,6 +16,7 @@ import {
 } from '../src/generationFinalizationRetry.js'
 import { retryQueuedGenerationFinalizations, type ChatProviderDispatcher } from '../src/routes/generationChat.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import { readResourceDatabaseFromFetch, type RuntimeBootstrap } from './helpers/resourceDatabase.js'
 
 // Durable generation lives on a detached job whose lifecycle is not tied to the
 // request connection, so these use a real listening server + `fetch`. `app.inject`
@@ -429,17 +430,18 @@ async function bootstrap(): Promise<{
 }> {
   const res = await fetch(`${harness.baseUrl}/api/v1/bootstrap`, { headers: authHeaders() })
   expect(res.status).toBe(200)
-  return (await res.json()) as never
+  const runtime = (await res.json()) as RuntimeBootstrap
+  return {
+    ...runtime,
+    database: await readResourceDatabaseFromFetch(harness.baseUrl, authHeaders(), runtime),
+  } as never
 }
 
-async function chatHydration(boot: Awaited<ReturnType<typeof bootstrap>>): Promise<{
+async function chatHydration(_boot: Awaited<ReturnType<typeof bootstrap>>): Promise<{
   message: Array<Record<string, unknown>>
   alternates: Array<Record<string, unknown>>
 }> {
-  // The bootstrap ships chat stubs; read persisted messages via per-chat hydration.
-  const chat = boot.database.characters[0]?.chats[0] as { id?: string } | undefined
-  if (!chat?.id) return { message: [], alternates: [] }
-  const res = await fetch(`${harness.baseUrl}/api/v1/projection/chatMessages?id=${encodeURIComponent(chat.id)}`, {
+  const res = await fetch(`${harness.baseUrl}/api/v1/chats/chat-1/messages`, {
     headers: authHeaders(),
   })
   expect(res.status).toBe(200)
@@ -882,7 +884,7 @@ describe('Durable generation (Milestone 1)', () => {
     })
 
     const boot = await bootstrap()
-    // The projection carries the generating mode so reload-resume renders correctly.
+    // The runtime payload carries the generating mode so reload-resume renders correctly.
     expect(boot.activeGenerationJobs).toContainEqual({ chatId: 'chat-1', jobId, mode: 'send' })
 
     // A fresh client reattaches via the discovered id.

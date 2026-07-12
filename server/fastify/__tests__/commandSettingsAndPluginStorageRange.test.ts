@@ -6,6 +6,7 @@ import type { FastifyInstance } from 'fastify'
 import { DatabaseSync } from 'node:sqlite'
 import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 
@@ -44,6 +45,7 @@ async function startHarness(): Promise<Harness> {
     assetGc: false,
     memoryWorker: false,
   })
+  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir }
 }
 

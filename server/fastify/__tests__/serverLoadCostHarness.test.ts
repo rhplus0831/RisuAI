@@ -12,16 +12,12 @@ import { openDatabase } from '../src/db.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
   insertAssetMetadataBatch,
-  loadBootstrapProjectionDatabase,
   loadPersisted,
   loadPersistedForAssembly,
   loadPersistedWithMessages,
-  loadSingleCharacterStubRow,
-  loadStubProjection,
-  loadStubbedProjectionFields,
   type PersistedAsset,
 } from '../src/repository.js'
-import { MASKED_PROVIDER_SECRET, maskProviderSecrets, maskProviderSecretsInPlace } from '../src/providerSecrets.js'
+import { MASKED_PROVIDER_SECRET, maskProviderSecrets } from '../src/providerSecrets.js'
 import { emitProtocolMetric, protocolMetricsEnabled } from '../src/protocolMetrics.js'
 import {
   appendActiveChatMessageTail,
@@ -42,7 +38,6 @@ import {
 import { getPromptAssetTableInstrumentation, resetPromptAssetTableInstrumentation } from '../src/prompt/promptAssets.js'
 import { getTriggerCloneInstrumentation, resetTriggerCloneInstrumentation } from '../src/prompt/triggers.js'
 import { createMemoryChunk, createMemoryEmbedding, createMemorySummary } from '../src/memoryRepository.js'
-import { resourceProjectionFields } from '../src/routes/projection.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import {
   assertScopedLoadOnHotPath,
@@ -316,7 +311,7 @@ function createPausedProvider(text: string): {
 function hydrationGet(chatId: string) {
   return harness.app.inject({
     method: 'GET',
-    url: `/api/v1/projection/chatMessages?id=${chatId}`,
+    url: `/api/v1/chats/${chatId}/messages`,
     headers: { 'risu-auth': assertion },
   })
 }
@@ -324,19 +319,9 @@ function hydrationGet(chatId: string) {
 function characterLorebookGet(characterId: string) {
   return harness.app.inject({
     method: 'GET',
-    url: `/api/v1/projection/characterLorebook?id=${characterId}`,
+    url: `/api/v1/characters/${characterId}/lorebook`,
     headers: { 'risu-auth': assertion },
   })
-}
-
-function selectFields(database: Record<string, unknown>, fieldKeys: readonly string[]): Record<string, unknown> {
-  const fields: Record<string, unknown> = {}
-  for (const key of fieldKeys) {
-    if (Object.prototype.hasOwnProperty.call(database, key)) {
-      fields[key] = database[key]
-    }
-  }
-  return fields
 }
 
 function asset(id: string): PersistedAsset {
@@ -580,7 +565,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const res = await assertScopedLoadOnHotPath(() =>
       harness.app.inject({
         method: 'POST',
-        url: '/api/v1/projection/chatMessages/bulk',
+        url: '/api/v1/chats/messages/bulk',
         headers: { 'risu-auth': assertion },
         payload: { ids: [fixture.hot.chatId, fixture.noHypa.chatId, 'missing-chat'] },
       }),
@@ -701,7 +686,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const bulk = await assertScopedLoadOnHotPath(() =>
       harness.app.inject({
         method: 'POST',
-        url: '/api/v1/projection/characterLorebooks/bulk',
+        url: '/api/v1/characters/lorebooks/bulk',
         headers: { 'risu-auth': assertion },
         payload: { ids: [characterId] },
       }),
@@ -715,8 +700,6 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(single.statusCode).toBe(200)
     const singleBody = single.json()
     expect(singleBody).toMatchObject({
-      resource: 'characterLorebook',
-      mode: 'character-lorebook',
       characterId,
     })
     expect(singleBody.globalLore).toEqual(bulkBody.characters[0].globalLore)
@@ -727,7 +710,6 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const missing = await assertScopedLoadOnHotPath(() => characterLorebookGet('missing-char'))
     expect(missing.statusCode).toBe(200)
     expect(missing.json()).toMatchObject({
-      mode: 'character-lorebook',
       characterId: 'missing-char',
       globalLore: [],
     })
@@ -775,7 +757,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const res = await assertScopedLoadOnHotPath(() =>
       harness.app.inject({
         method: 'POST',
-        url: '/api/v1/projection/characterLorebooks/bulk',
+        url: '/api/v1/characters/lorebooks/bulk',
         headers: { 'risu-auth': assertion },
         payload: { ids: [charA, 'missing-char', charB] },
       }),
@@ -827,7 +809,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const res = await assertScopedLoadOnHotPath(() =>
       harness.app.inject({
         method: 'POST',
-        url: '/api/v1/projection/chatMessages/bulk',
+        url: '/api/v1/chats/messages/bulk',
         headers: { 'risu-auth': assertion },
         payload: { ids: ['pre-extract-chat'] },
       }),
@@ -871,7 +853,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const { result: res, corpusLoadCount } = await withServerLoadInstrumentation(() =>
       harness.app.inject({
         method: 'POST',
-        url: '/api/v1/projection/chatMessages/bulk',
+        url: '/api/v1/chats/messages/bulk',
         headers: { 'risu-auth': assertion },
         payload: { ids: ['embedded-chat', 'missing-chat'] },
       }),
@@ -1260,7 +1242,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M4: the characterRow projection performs zero whole-corpus payload reads', async () => {
+  it('M4: the targeted character read performs zero whole-corpus payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     // The owned-row mask must still apply on the narrow path: give the target
     // character the one character-scoped secret (`oaiTTSConfig.apiKey`).
@@ -1273,18 +1255,16 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     // Audit M4 regression: the route loaded ALL characters+chats and JSON-deep-
     // cloned the whole array just to `.find()` one row. The single-row loader +
-    // in-place mask make the per-character projection a per-character read.
+    // in-place mask make the targeted endpoint a per-character read.
     const res = await assertScopedLoadOnHotPath(() =>
       harness.app.inject({
         method: 'GET',
-        url: `/api/v1/projection/characterRow?id=${fixture.hot.characterId}`,
+        url: `/api/v1/characters/${fixture.hot.characterId}`,
         headers: { 'risu-auth': assertion },
       }),
     )
     expect(res.statusCode).toBe(200)
     const body = res.json()
-    expect(body.mode).toBe('character-row')
-    expect(body.characterId).toBe(fixture.hot.characterId)
     expect(body.character.chaId).toBe(fixture.hot.characterId)
     // The stub contract holds: chats present, message-free; secrets masked.
     expect(body.character.chats).toHaveLength(3)
@@ -1292,98 +1272,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(body.character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
   })
 
-  it('M4: the single-row loader is byte-identical to the broad composition for every character', async () => {
-    const fixture = buildLargeCorpusFixture()
-    ;(fixture.characters[1] as unknown as Record<string, unknown>).oaiTTSConfig = {
-      enabled: true,
-      apiKey: 'sk-tts-secret',
-      model: 'tts-1',
-    }
-    await importDatabase(fixture.database)
-
-    const db = openDatabase(harness.dataDir)
-    try {
-      // The pre-M4 route composition: broad stubbed load + whole-array mask clone.
-      const broadRows = maskProviderSecrets(loadStubbedProjectionFields(db, harness.dataDir, ['characters']))
-        .characters as Array<Record<string, unknown>>
-      expect(broadRows).toHaveLength(fixture.characters.length)
-
-      for (const broadRow of broadRows) {
-        const scoped = await assertScopedLoadOnHotPath(() =>
-          loadSingleCharacterStubRow(db, harness.dataDir, broadRow.chaId as string),
-        )
-        expect(scoped).not.toBeNull()
-        // The route's masking shape on the owned row.
-        const masked = maskProviderSecretsInPlace({ characters: [scoped!] }).characters[0]
-        expect(JSON.stringify(masked)).toBe(JSON.stringify(broadRow))
-      }
-
-      // Unknown ids still resolve to null (the route's 404 contract).
-      expect(loadSingleCharacterStubRow(db, harness.dataDir, 'no-such-character')).toBeNull()
-    } finally {
-      db.close()
-    }
-  })
-
-  it('M4: the single-row loader respects enableLorebookStubs like the broad loader', async () => {
-    const fixture = buildLargeCorpusFixture()
-    await importDatabase({ ...fixture.database, enableLorebookStubs: true })
-
-    const db = openDatabase(harness.dataDir)
-    try {
-      const scoped = await assertScopedLoadOnHotPath(() =>
-        loadSingleCharacterStubRow(db, harness.dataDir, fixture.hot.characterId),
-      )
-      expect(scoped).not.toBeNull()
-      expect(scoped).not.toHaveProperty('globalLore')
-
-      const broadRow = (
-        maskProviderSecrets(loadStubbedProjectionFields(db, harness.dataDir, ['characters'])).characters as Array<
-          Record<string, unknown>
-        >
-      ).find((row) => row.chaId === fixture.hot.characterId)
-      const masked = maskProviderSecretsInPlace({ characters: [scoped!] }).characters[0]
-      expect(JSON.stringify(masked)).toBe(JSON.stringify(broadRow))
-    } finally {
-      db.close()
-    }
-  })
-
-  it('M4: the single-row loader keeps the embedded-characters fallback (pre-extraction settings)', async () => {
-    const fixture = buildLargeCorpusFixture()
-    await importDatabase(fixture.database)
-
-    const db = openDatabase(harness.dataDir)
-    try {
-      // Simulate the legacy pre-extraction state: characters embedded in the
-      // settings record with empty characters/chats tables. The single-row
-      // read cannot serve it, so the loader must fall back to the broad
-      // stubbed loader (which keeps the embedded array).
-      const settingsRow = db.prepare('SELECT data_json FROM settings WHERE id = 1').get() as {
-        data_json: string
-      }
-      const settings = JSON.parse(settingsRow.data_json) as Record<string, unknown>
-      settings.characters = [
-        {
-          chaId: 'embedded-char',
-          name: 'Embedded',
-          chats: [{ id: 'embedded-chat', name: 'E', message: [{ role: 'user', data: 'embedded hi' }] }],
-        },
-      ]
-      db.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
-      db.exec('DELETE FROM chats')
-      db.exec('DELETE FROM characters')
-
-      const row = loadSingleCharacterStubRow(db, harness.dataDir, 'embedded-char')
-      expect(row?.chaId).toBe('embedded-char')
-      // The fallback applies the same stub contract: message-free chats.
-      expect((row?.chats as Array<Record<string, unknown>>)[0].message).toEqual([])
-    } finally {
-      db.close()
-    }
-  })
-
-  it('M6: foreign field projections skip character and chat table payload reads', async () => {
+  it('M6: collection reads skip character and chat table payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
     const database = {
       ...fixture.database,
@@ -1399,20 +1288,18 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const broadDatabase = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
-      for (const resource of ['plugin', 'moduleEnabled'] as const) {
-        const fieldKeys = resourceProjectionFields(resource)
-        expect(fieldKeys).not.toBeNull()
+      for (const collection of ['plugins', 'modules', 'botPresets'] as const) {
         const expected = {
           revision,
-          resource,
-          mode: 'fields',
-          fields: maskProviderSecrets(selectFields(broadDatabase, fieldKeys!)),
+          collections: {
+            [collection]: maskProviderSecrets({ [collection]: broadDatabase[collection] })[collection],
+          },
         }
 
         const observed = await withServerLoadInstrumentation(() =>
           harness.app.inject({
             method: 'GET',
-            url: `/api/v1/projection/${resource}`,
+            url: `/api/v1/collections/${collection}`,
             headers: { 'risu-auth': assertion },
           }),
         )
@@ -1422,28 +1309,6 @@ describe('server load-count harness on the large-corpus fixture', () => {
         expect(observed.loadCountByTable.characters ?? 0).toBe(0)
         expect(observed.loadCountByTable.chats ?? 0).toBe(0)
       }
-      const presetFields = resourceProjectionFields('preset')
-      expect(presetFields).not.toBeNull()
-      const expectedPreset = {
-        revision,
-        resource: 'preset',
-        mode: 'fields',
-        fields: {
-          ...maskProviderSecrets(selectFields(broadDatabase, presetFields!)),
-          agentPresetDefaultId: null,
-        },
-      }
-      const observedPreset = await withServerLoadInstrumentation(() =>
-        harness.app.inject({
-          method: 'GET',
-          url: '/api/v1/projection/preset',
-          headers: { 'risu-auth': assertion },
-        }),
-      )
-      expect(observedPreset.result.statusCode).toBe(200)
-      expect(observedPreset.result.body).toBe(JSON.stringify(expectedPreset))
-      expect(observedPreset.loadCountByTable.characters ?? 0).toBe(0)
-      expect(observedPreset.loadCountByTable.chats ?? 0).toBe(0)
     } finally {
       db.close()
     }
@@ -1683,7 +1548,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     const hydration = await harness.app.inject({
       method: 'GET',
-      url: `/api/v1/projection/chatMessages?id=${fixture.hot.chatId}`,
+      url: `/api/v1/chats/${fixture.hot.chatId}/messages`,
       headers: { 'risu-auth': assertion },
     })
     expect(hydration.statusCode).toBe(200)
@@ -1742,13 +1607,13 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(loadCountByTable.chats ?? 0).toBe(0)
     expect(loadCountByTable.messages ?? 0).toBe(0)
 
-    const bootstrap = await harness.app.inject({
+    const character = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/bootstrap',
+      url: `/api/v1/characters/${fixture.hot.characterId}`,
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toMatchObject({
+    expect(character.statusCode).toBe(200)
+    expect(character.json().character.chats[0].scriptstate).toMatchObject({
       $k1flag: '1',
     })
   })
@@ -1813,53 +1678,35 @@ describe('server load-count harness on the large-corpus fixture', () => {
     }
   })
 
-  it('M4: bootstrap in-place masking matches the copying mask byte-for-byte', async () => {
+  it('M4: settings reads mask provider secrets without mutating persisted state', async () => {
     const fixture = buildLargeCorpusFixture()
-    await importDatabase({ ...fixture.database, openAIKey: 'sk-bootstrap-secret' })
+    await importDatabase({ ...fixture.database, openAIKey: 'sk-settings-secret' })
 
     const res = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/bootstrap',
+      url: '/api/v1/settings',
       headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
     const body = res.json()
-    expect(body.database.openAIKey).toBe(MASKED_PROVIDER_SECRET)
+    expect(body.settings.openAIKey).toBe(MASKED_PROVIDER_SECRET)
 
     const db = openDatabase(harness.dataDir)
     try {
-      // Same wire bytes as the copying mask over the bootstrap-specific
-      // database projection, while inactive character rows are shell-light.
-      const expected = maskProviderSecrets(loadBootstrapProjectionDatabase(db, harness.dataDir))
-      expect(JSON.stringify(body.database)).toBe(JSON.stringify(expected))
-      expect(body.database.characters[0]).not.toHaveProperty('__serverCharacterShell')
-      expect(body.database.characters[1]).toMatchObject({
-        __serverCharacterShell: true,
-        chaId: fixture.characters[1].chaId,
-        name: fixture.characters[1].name,
-      })
-      expect(body.database.characters[1]).not.toHaveProperty('desc')
-      expect(body.database.characters[1]).not.toHaveProperty('globalLore')
-      expect(JSON.stringify(body.database).length).toBeLessThan(
-        JSON.stringify(maskProviderSecrets(loadStubProjection(db, harness.dataDir).database)).length,
-      )
-      // …and the in-place mask never reaches the persisted rows.
       const onDisk = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
-      expect(onDisk.openAIKey).toBe('sk-bootstrap-secret')
+      expect(onDisk.openAIKey).toBe('sk-settings-secret')
     } finally {
       db.close()
     }
   })
 
-  it('L5: bootstrap skips asset metadata reads while preserving database bytes', async () => {
+  it('L5: runtime bootstrap skips asset and domain payload reads', async () => {
     const fixture = buildLargeCorpusFixture()
-    await importDatabase({ ...fixture.database, openAIKey: 'sk-bootstrap-secret' })
+    const revision = await importDatabase(fixture.database)
 
     const db = openDatabase(harness.dataDir)
-    let expectedDatabaseJson = ''
     try {
       insertAssetMetadataBatch(db, [asset('a'.repeat(64))])
-      expectedDatabaseJson = JSON.stringify(maskProviderSecrets(loadBootstrapProjectionDatabase(db, harness.dataDir)))
     } finally {
       db.close()
     }
@@ -1875,8 +1722,11 @@ describe('server load-count harness on the large-corpus fixture', () => {
     )
 
     expect(res.statusCode).toBe(200)
-    expect(JSON.stringify(res.json().database)).toBe(expectedDatabaseJson)
+    expect(res.json()).toMatchObject({ initialized: true, revision, assetBaseUrl: '/api/v1/assets' })
+    expect(res.json()).not.toHaveProperty('database')
     expect(loadCountByTable.assets ?? 0).toBe(0)
+    expect(loadCountByTable.characters ?? 0).toBe(0)
+    expect(loadCountByTable.chats ?? 0).toBe(0)
   })
 
   it('L10: a fresh (no-replay) SSE connect performs zero command-event history reads', async () => {
@@ -1974,7 +1824,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(logged[1]).toEqual({ metric: 'm5_probe_eager', payloadBytes: 123 })
   })
 
-  it('M5: projection and bootstrap responses are serialized once when metrics are off', async () => {
+  it('M5: resource and bootstrap reads avoid protocol-metric serialization', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1998,8 +1848,8 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const hydrationShaped = (arg: unknown): boolean =>
       !!arg &&
       typeof arg === 'object' &&
-      (arg as { resource?: unknown }).resource === 'chatMessages' &&
-      (arg as { mode?: unknown }).mode === 'chat-messages'
+      (arg as { chatId?: unknown }).chatId === fixture.hot.chatId &&
+      Array.isArray((arg as { message?: unknown }).message)
     const bootstrapShaped = (arg: unknown): boolean =>
       !!arg && typeof arg === 'object' && (arg as { assetBaseUrl?: unknown }).assetBaseUrl === '/api/v1/assets'
 
@@ -2013,11 +1863,11 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     const hydrationOff = await withProtocolMetricsEnv('', () => countResponseStringifies(hydrate, hydrationShaped))
     const hydrationOn = await withProtocolMetricsEnv('1', () => countResponseStringifies(hydrate, hydrationShaped))
-    expect(hydrationOn).toBe(hydrationOff + 1)
+    expect(hydrationOn).toBe(hydrationOff)
 
     const bootstrapOff = await withProtocolMetricsEnv('', () => countResponseStringifies(bootstrap, bootstrapShaped))
     const bootstrapOn = await withProtocolMetricsEnv('1', () => countResponseStringifies(bootstrap, bootstrapShaped))
-    expect(bootstrapOn).toBe(bootstrapOff + 1)
+    expect(bootstrapOn).toBe(bootstrapOff)
   })
 
   it('restores the statement primitives when the instrumented body throws', async () => {

@@ -8,12 +8,10 @@ import {
   createAssetMetadataTable,
   createCharacterTables,
   createCollectionTables,
-  createProjectionBodyCacheTables,
   createSettingsTable,
-  seedProjectionBodyCacheRevisions,
 } from './repository.js'
 
-export const CURRENT_SCHEMA_VERSION = 21
+export const CURRENT_SCHEMA_VERSION = 22
 
 export interface MigrationStep {
   version: number
@@ -152,9 +150,9 @@ export const MIGRATIONS: readonly MigrationStep[] = [
   {
     version: 16,
     name: 'projection-body-cache-revisions',
-    up: (db) => {
-      createProjectionBodyCacheTables(db)
-      seedProjectionBodyCacheRevisions(db)
+    up: () => {
+      // Retained as a historical version marker. The projection body-cache
+      // tables are obsolete and migration v22 removes them from older stores.
     },
   },
   {
@@ -204,6 +202,16 @@ export const MIGRATIONS: readonly MigrationStep[] = [
       createMemoryTables(db)
     },
   },
+  {
+    version: 22,
+    name: 'drop-projection-body-cache',
+    up: (db) => {
+      db.exec(`
+        DROP TABLE IF EXISTS collection_body_revisions;
+        DROP TABLE IF EXISTS projection_body_cache_state;
+      `)
+    },
+  },
 ]
 
 /** Whether `table` already has a column named `column` (PRAGMA table_info). */
@@ -244,7 +252,6 @@ export function openDatabase(dataDir: string): DatabaseSync {
       createAssetMetadataTable(db)
       createCharacterTables(db)
       createCollectionTables(db)
-      createProjectionBodyCacheTables(db)
       createSettingsTable(db)
       createPushSubscriptionsTable(db)
     }

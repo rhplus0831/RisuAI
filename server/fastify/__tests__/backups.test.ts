@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 import { assetsDir, getAllAssetMetadata, loadPersistedWithMessages } from '../src/repository.js'
 import type { FastifyInstance } from 'fastify'
+import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
 const PNG_BYTES = Buffer.from(
@@ -54,6 +55,7 @@ async function startHarness(): Promise<Harness> {
     },
     commandEvents,
   })
+  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -463,7 +465,7 @@ describe('Phase 2D backups', () => {
     // The restored chat hydrates A's message — not B's, and not empty.
     const hydration = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/chatMessages?id=chat-1',
+      url: '/api/v1/chats/chat-1/messages',
       headers: { 'risu-auth': assertion },
     })
     expect(hydration.statusCode).toBe(200)
@@ -572,7 +574,7 @@ describe('Phase 2D backups', () => {
 
     const hydration = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/chatMessages?id=legacy-chat',
+      url: '/api/v1/chats/legacy-chat/messages',
       headers: { 'risu-auth': assertion },
     })
     expect(hydration.statusCode).toBe(200)

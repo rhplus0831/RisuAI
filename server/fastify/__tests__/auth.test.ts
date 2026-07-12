@@ -120,7 +120,7 @@ describe('agent dev auth bypass', () => {
   })
 })
 
-describe('projection bulk route auth (L16)', () => {
+describe('resource bulk route auth (L16)', () => {
   it('rejects unauthenticated requests and verifies authenticated requests exactly once', async () => {
     vi.resetModules()
     let verifyCount = 0
@@ -155,7 +155,7 @@ describe('projection bulk route auth (L16)', () => {
 
       try {
         const { assertion } = await setupAuthedClient(app)
-        const routes = ['/api/v1/projection/chatMessages/bulk', '/api/v1/projection/characterLorebooks/bulk']
+        const routes = ['/api/v1/chats/messages/bulk', '/api/v1/characters/lorebooks/bulk']
 
         for (const url of routes) {
           verifyCount = 0

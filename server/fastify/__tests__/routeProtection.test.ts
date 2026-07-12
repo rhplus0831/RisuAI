@@ -226,7 +226,7 @@ describe('route protection (table-wide auth enforcement)', () => {
     const assertion = await setupPassword(harness.app)
     const urls = [
       '/api/v1/bootstrap',
-      '/api/v1/projection/chatMessages?id=chat-a',
+      '/api/v1/chats/chat-a/messages',
       '/api/v1/export/risusave',
       '/api/v1/export/bundle',
       '/api/v1/export/local-backup',

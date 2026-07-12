@@ -110,14 +110,6 @@ describe('analyzeDataDir', () => {
     expect(analysis.export.peakOutputBytes).toBe(Math.max(...analysis.export.envelopes.map((r) => r.outputBytes)))
   })
 
-  it('measures the full-bootstrap projection payload', () => {
-    const analysis = analyzeDataDir(dataDir, 'test')
-    expect(analysis.bootstrap.payloadBytes).toBeGreaterThan(0)
-    expect(analysis.bootstrap.stubLoadMs).toBeGreaterThanOrEqual(0)
-    // Message-light: far smaller than the full block export of the same corpus.
-    expect(analysis.bootstrap.payloadBytes).toBeLessThan(analysis.export.peakOutputBytes)
-  })
-
   it('reports asset inventory, references, and per-character fanout', () => {
     const analysis = analyzeDataDir(dataDir, 'test')
     expect(analysis.assets.storedCount).toBe(4)

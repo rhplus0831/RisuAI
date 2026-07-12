@@ -13,6 +13,7 @@ import { insertAssetMetadataBatch, loadPersisted } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { listMemoryChunks, listMemorySummaries } from '../src/memoryRepository.js'
+import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 interface Harness {
   app: FastifyInstance
@@ -39,6 +40,7 @@ async function startHarness(): Promise<Harness> {
     memoryWorker: false,
     commandEvents,
   })
+  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -250,7 +252,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
     // Messages are hydrated via the per-chat endpoint, not the stub.
     const hydration = await authedInject({
       method: 'GET',
-      url: '/api/v1/projection/chatMessages?id=chat-a',
+      url: '/api/v1/chats/chat-a/messages',
     })
     const messages = hydration.json().message as Array<{
       chatId?: unknown
@@ -522,7 +524,7 @@ describe('Phase 9-8a multipart .risu import route', () => {
 
     const hydration = await authedInject({
       method: 'GET',
-      url: '/api/v1/projection/chatMessages?id=chat-l28',
+      url: '/api/v1/chats/chat-l28/messages',
     })
     expect(hydration.json().message).toEqual([
       { role: 'user', data: 'hello', chatId: 'msg-l28-a' },

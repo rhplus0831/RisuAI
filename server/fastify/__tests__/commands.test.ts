@@ -16,6 +16,7 @@ import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } f
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 import { LLMFlags, LLMFormat } from '../../../src/ts/model/types.js'
+import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
 
@@ -56,6 +57,7 @@ async function startHarness(): Promise<Harness> {
     },
     commandEvents,
   })
+  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
@@ -194,7 +196,7 @@ async function persistedChatMessages(
 ): Promise<Array<Record<string, unknown>>> {
   const res = await app.inject({
     method: 'GET',
-    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode).toBe(200)
@@ -208,7 +210,7 @@ async function persistedChatAlternates(
 ): Promise<Array<Record<string, unknown>>> {
   const res = await app.inject({
     method: 'GET',
-    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode).toBe(200)
@@ -222,7 +224,7 @@ async function projectedCharacterRow(
 ): Promise<Record<string, unknown>> {
   const res = await app.inject({
     method: 'GET',
-    url: `/api/v1/projection/characterRow?id=${encodeURIComponent(characterId)}`,
+    url: `/api/v1/characters/${encodeURIComponent(characterId)}`,
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode).toBe(200)
@@ -235,19 +237,15 @@ async function projectedPromptItems(
 ): Promise<{ revision: number; promptTemplate?: Array<Record<string, unknown>> }> {
   const res = await app.inject({
     method: 'GET',
-    url: '/api/v1/projection/promptItem',
+    url: '/api/v1/collections/promptTemplate',
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode).toBe(200)
   const body = res.json() as {
     revision: number
-    resource: string
-    mode: string
-    fields: { promptTemplate?: Array<Record<string, unknown>> }
+    collections: { promptTemplate?: Array<Record<string, unknown>> }
   }
-  expect(body.resource).toBe('promptItem')
-  expect(body.mode).toBe('fields')
-  return { revision: body.revision, promptTemplate: body.fields.promptTemplate }
+  return { revision: body.revision, promptTemplate: body.collections.promptTemplate }
 }
 
 async function uploadAsset(
@@ -814,7 +812,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
-  it('accepts projection-sweep settings through grouped commands', async () => {
+  it('accepts grouped settings updates across resource families', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       notification: false,
@@ -2780,14 +2778,14 @@ describe('Phase 9-2b bot preset commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets).toEqual([
+    expect(bootstrap.json().database.botPresets).toMatchObject([
       { id: 'preset-a', name: 'A' },
       { id: 'preset-b', name: 'B renamed' },
     ])
 
     const storedPreset = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/preset?id=preset-b',
+      url: '/api/v1/legacy-presets/preset-b',
       headers: { 'risu-auth': assertion },
     })
     expect(storedPreset.statusCode).toBe(200)
@@ -2850,7 +2848,7 @@ describe('Phase 9-2b bot preset commands', () => {
       url: '/api/v1/bootstrap',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.json().database.botPresets).toEqual([
+    expect(bootstrap.json().database.botPresets).toMatchObject([
       { id: 'preset-a', name: 'A', image: '-' },
       { id: 'preset-b', name: 'B', image: uploaded.assetId },
     ])
@@ -2942,7 +2940,7 @@ describe('Phase 9-2b bot preset commands', () => {
       headers: { 'risu-auth': assertion },
     })
     expect(bootstrap.json().revision).toBe(revision)
-    expect(bootstrap.json().database.botPresets).toEqual([{ id: 'preset-a', name: 'A', image: '' }])
+    expect(bootstrap.json().database.botPresets).toMatchObject([{ id: 'preset-a', name: 'A', image: '' }])
   })
 
   it('selects and applies a preset while saving the previously selected snapshot', async () => {
@@ -3028,7 +3026,7 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(bootstrap.json().database.botPresets[0]).toMatchObject({ id: 'preset-a', name: 'A', image: '' })
     const savedPreset = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/preset?id=preset-a',
+      url: '/api/v1/legacy-presets/preset-a',
       headers: { 'risu-auth': assertion },
     })
     expect(savedPreset.statusCode).toBe(200)
@@ -3338,20 +3336,18 @@ describe('Agent Preset command surface', () => {
       resource: 'agentPreset',
     })
 
-    const projection = await harness.app.inject({
+    const settings = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/agentPreset',
+      url: '/api/v1/settings',
       headers: { 'risu-auth': assertion },
     })
-    expect(projection.statusCode).toBe(200)
-    expect(projection.json()).toMatchObject({
-      resource: 'agentPreset',
-      mode: 'fields',
-      fields: {
+    expect(settings.statusCode).toBe(200)
+    expect(settings.json()).toMatchObject({
+      settings: {
         agentPresetDefaultId: createdBody.presetId,
       },
     })
-    expect(projection.json().fields.agentPresets.map((preset: { id: string }) => preset.id)).toEqual([
+    expect(settings.json().settings.agentPresets.map((preset: { id: string }) => preset.id)).toEqual([
       secondId,
       createdBody.presetId,
     ])
@@ -3588,16 +3584,16 @@ describe('Agent Preset command surface', () => {
       clearedLoadoutCount: 1,
     })
 
-    const projection = await harness.app.inject({
+    const settings = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/agentPresetDeleted',
+      url: '/api/v1/settings',
       headers: { 'risu-auth': assertion },
     })
-    expect(projection.statusCode).toBe(200)
-    expect(projection.json().fields.agentPresets).toEqual([
+    expect(settings.statusCode).toBe(200)
+    expect(settings.json().settings.agentPresets).toEqual([
       { id: 'ap_keep', name: 'Keep Me', enabled: true, version: 1, steps: [] },
     ])
-    expect(projection.json().fields.agentPresetDefaultId).toBeNull()
+    expect(settings.json().settings.agentPresetDefaultId).toBeUndefined()
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -3888,7 +3884,7 @@ describe('Phase 9-2c prompt template and item commands', () => {
 
     const projected = await projectedPromptItems(harness.app, assertion)
     expect(projected.revision).toBe(disabled.json().revision)
-    expect(projected.promptTemplate).toBeNull()
+    expect(projected.promptTemplate).toEqual([])
   })
 
   it('returns 404 and 409 for missing prompt items and stale revisions', async () => {
@@ -4935,7 +4931,7 @@ describe('Phase 9-3a character commands', () => {
     expect(updated.statusCode).toBe(200)
     expect(updated.json().event).toMatchObject({
       type: 'character.updated',
-      // trashTime also rewrites characterOrder, so it uses the broad character projection.
+      // trashTime also rewrites characterOrder, so it invalidates the full character resource.
       resource: 'character',
       id: 'char-b',
     })
@@ -5599,7 +5595,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
     await expect(persistedChatMessages(harness.app, assertion, 'chat-b')).resolves.toEqual([])
   })
 
-  it('emits composite projections for created and forked chats with long transcripts', async () => {
+  it('serves created and forked long transcripts from the chat message endpoint', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
       currentChar: 0,
@@ -5642,16 +5638,14 @@ describe('Phase 9-3b chat record and folder commands', () => {
       id: 'chat-created',
       parentId: 'char-a',
     })
-    const createdProjection = await harness.app.inject({
+    const createdMessagesRead = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/chatTranscript?id=chat-created&parentId=char-a',
+      url: '/api/v1/chats/chat-created/messages',
       headers: { 'risu-auth': assertion },
     })
-    expect(createdProjection.statusCode).toBe(200)
-    expect(createdProjection.json()).toMatchObject({
+    expect(createdMessagesRead.statusCode).toBe(200)
+    expect(createdMessagesRead.json()).toMatchObject({
       revision: 2,
-      mode: 'chat-transcript',
-      characterId: 'char-a',
       chatId: 'chat-created',
       message: createdMessages,
     })
@@ -5683,16 +5677,14 @@ describe('Phase 9-3b chat record and folder commands', () => {
       id: 'chat-forked',
       parentId: 'char-a',
     })
-    const forkedProjection = await harness.app.inject({
+    const forkedMessagesRead = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/chatTranscript?id=chat-forked&parentId=char-a',
+      url: '/api/v1/chats/chat-forked/messages',
       headers: { 'risu-auth': assertion },
     })
-    expect(forkedProjection.statusCode).toBe(200)
-    expect(forkedProjection.json()).toMatchObject({
+    expect(forkedMessagesRead.statusCode).toBe(200)
+    expect(forkedMessagesRead.json()).toMatchObject({
       revision: 3,
-      mode: 'chat-transcript',
-      characterId: 'char-a',
       chatId: 'chat-forked',
       message: forkedMessages,
     })

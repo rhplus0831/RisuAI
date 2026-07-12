@@ -76,7 +76,7 @@ function command(method: 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, paylo
 function hydrationGet(chatId: string) {
   return harness.app.inject({
     method: 'GET',
-    url: `/api/v1/projection/chatMessages?id=${chatId}`,
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
     headers: { 'risu-auth': assertion },
   })
 }
@@ -121,17 +121,10 @@ function expectCollectionCommandReadOnlyTables(
   readCountByTable: Record<string, number>,
   collectionTables: readonly string[],
 ): void {
-  const trackedCollectionRead = collectionTables.some((table) => table === 'modules' || table === 'plugins')
   const expected: Record<string, number> = {
-    schema_version: trackedCollectionRead ? 2 : 1,
+    schema_version: 1,
     settings: 1,
     ...Object.fromEntries(collectionTables.map((table) => [table, 1])),
-  }
-  if (trackedCollectionRead) {
-    expected.collection_body_revisions = 2
-    for (const table of collectionTables) {
-      if (table === 'modules' || table === 'plugins') expected[table] = 2
-    }
   }
   expect(readCountByTable).toEqual(expected)
 }
@@ -141,9 +134,6 @@ function expectCollectionLoadOnlyTables(
   collectionTables: readonly string[],
 ): void {
   const expected = Object.fromEntries(collectionTables.map((table) => [table, 1]))
-  for (const table of collectionTables) {
-    if (table === 'modules' || table === 'plugins') expected[table] = 2
-  }
   expect(loadCountByTable).toEqual(expected)
 }
 

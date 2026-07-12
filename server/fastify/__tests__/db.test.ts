@@ -70,7 +70,6 @@ describe('schema migrations', () => {
         'characters',
         'chat_hypa_v3',
         'chats',
-        'collection_body_revisions',
         'command_events',
         'generation_finalization_retries',
         'hypa_v3_presets',
@@ -87,7 +86,6 @@ describe('schema migrations', () => {
         'personas',
         'plugin_custom_storage',
         'plugins',
-        'projection_body_cache_state',
         'prompt_presets',
         'prompt_templates',
         'push_subscriptions',
@@ -173,6 +171,40 @@ describe('schema migrations', () => {
     }
   })
 
+  it('drops retired projection body-cache tables without changing revision', () => {
+    const dataDir = makeDataDir()
+    seedSchemaVersion(dataDir, 21, 6)
+    const before = new DatabaseSync(path.join(dataDir, 'risu.db'))
+    try {
+      before.exec(`
+        CREATE TABLE projection_body_cache_state (
+          id INTEGER PRIMARY KEY,
+          epoch INTEGER NOT NULL
+        );
+        CREATE TABLE collection_body_revisions (
+          collection_name TEXT NOT NULL,
+          object_id TEXT NOT NULL,
+          revision INTEGER NOT NULL,
+          PRIMARY KEY (collection_name, object_id)
+        );
+        INSERT INTO projection_body_cache_state (id, epoch) VALUES (1, 3);
+        INSERT INTO collection_body_revisions (collection_name, object_id, revision)
+          VALUES ('modules', 'module-a', 6);
+      `)
+    } finally {
+      before.close()
+    }
+
+    const db = openDatabase(dataDir)
+    try {
+      expect(getSchemaState(db)).toEqual({ version: CURRENT_SCHEMA_VERSION, revision: 6 })
+      expect(listTables(db)).not.toContain('projection_body_cache_state')
+      expect(listTables(db)).not.toContain('collection_body_revisions')
+    } finally {
+      db.close()
+    }
+  })
+
   it('L15: opens Fastify databases with WAL synchronous NORMAL', () => {
     const db = openDatabase(makeDataDir())
     try {
@@ -199,7 +231,6 @@ describe('schema migrations', () => {
         'characters',
         'chat_hypa_v3',
         'chats',
-        'collection_body_revisions',
         'command_events',
         'generation_finalization_retries',
         'hypa_v3_presets',
@@ -216,7 +247,6 @@ describe('schema migrations', () => {
         'personas',
         'plugin_custom_storage',
         'plugins',
-        'projection_body_cache_state',
         'prompt_presets',
         'prompt_templates',
         'push_subscriptions',

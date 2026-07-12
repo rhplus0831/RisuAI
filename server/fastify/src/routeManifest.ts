@@ -130,49 +130,6 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
-    id: 'projection',
-    methods: GET_ONLY,
-    path: '/api/v1/projection/:resource',
-    match: 'pattern',
-    auth: {
-      decision: 'required',
-      reason: 'Projection returns user database slices and hydrated chat/lore data.',
-    },
-    activeWriter: {
-      decision: 'not-applicable',
-      reason: 'Read-only projection route.',
-    },
-    streaming: 'none',
-  },
-  {
-    id: 'projection-chat-messages-bulk',
-    methods: ['POST'],
-    path: '/api/v1/projection/chatMessages/bulk',
-    auth: {
-      decision: 'required',
-      reason: 'Bulk chat hydration returns user chat histories for requested chat ids.',
-    },
-    activeWriter: {
-      decision: 'read-only-post',
-      reason: 'Bulk chat hydration is read-only; POST carries a potentially large id list.',
-    },
-    streaming: 'none',
-  },
-  {
-    id: 'projection-character-lorebooks-bulk',
-    methods: ['POST'],
-    path: '/api/v1/projection/characterLorebooks/bulk',
-    auth: {
-      decision: 'required',
-      reason: 'Bulk lorebook hydration returns user character lorebooks for requested character ids.',
-    },
-    activeWriter: {
-      decision: 'read-only-post',
-      reason: 'Bulk lorebook hydration is read-only; POST carries a potentially large id list.',
-    },
-    streaming: 'none',
-  },
-  {
     id: 'settings-read',
     methods: GET_ONLY,
     path: '/api/v1/settings',

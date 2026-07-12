@@ -27,6 +27,7 @@ import { emitProviderChunks } from '../src/prompt/providerTransport.js'
 import { summarizePromptRows, type PromptRowSummary } from '../src/prompt/promptSummary.js'
 import type { PromptChatEvent } from '../src/prompt/sseEvents.js'
 import type { GenerationTraceOptions, GenerationTraceSidecarEntry } from '../src/generation/generationTraceSidecar.js'
+import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
 
@@ -54,6 +55,7 @@ async function startHarness(
     },
     generationChat,
   })
+  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir }
 }
 
@@ -277,7 +279,7 @@ async function readPersistedMessages(
 ): Promise<Array<{ role: string; data: string; chatId: string; generationInfo?: Record<string, unknown> }>> {
   const res = await harness.app.inject({
     method: 'GET',
-    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
     headers: { 'risu-auth': assertion },
   })
   expect(res.statusCode).toBe(200)
@@ -1876,7 +1878,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   ): Promise<Array<{ role: string; data: string; chatId: string; [k: string]: unknown }>> {
     const res = await harness.app.inject({
       method: 'GET',
-      url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+      url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
       headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
@@ -1890,7 +1892,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
   ): Promise<Array<{ role: string; data: string; chatId: string; [k: string]: unknown }>> {
     const res = await harness.app.inject({
       method: 'GET',
-      url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+      url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
       headers: { 'risu-auth': assertion },
     })
     expect(res.statusCode).toBe(200)
@@ -3202,7 +3204,7 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     }
   }, 8000)
 
-  it('K0: message-only generation finalization keeps the ranged generation projection', async () => {
+  it('K0: message-only generation finalization is available through a ranged message read', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, dbWithServerDispatch({}))
 
@@ -3230,21 +3232,20 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
     expect(event?.id).toEqual(expect.any(String))
 
-    const projection = await harness.app.inject({
+    const messages = await harness.app.inject({
       method: 'GET',
-      url: `/api/v1/projection/generation?id=${encodeURIComponent(event?.id ?? '')}&parentId=chat-1`,
+      url: '/api/v1/chats/chat-1/messages?start=0&limit=1',
       headers: { 'risu-auth': assertion },
     })
-    expect(projection.statusCode).toBe(200)
-    expect(projection.json()).toMatchObject({
-      mode: 'generation-chat',
+    expect(messages.statusCode).toBe(200)
+    expect(messages.json()).toMatchObject({
       chatId: 'chat-1',
       messageStart: 0,
       messageTotal: 1,
     })
   })
 
-  it('K1: chat-variable generation finalization emits a composite projection', async () => {
+  it('K1: chat-variable generation finalization refreshes character metadata and messages', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(
       harness.app,
@@ -3289,13 +3290,13 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
       expect(commandMetric?.totalMs).toBeGreaterThanOrEqual(0)
     })
 
-    const bootstrap = await harness.app.inject({
+    const character = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/bootstrap',
+      url: '/api/v1/characters/char-1',
       headers: { 'risu-auth': assertion },
     })
-    expect(bootstrap.statusCode).toBe(200)
-    expect(bootstrap.json().database.characters[0].chats[0].scriptstate).toEqual({ $mood: 'happy' })
+    expect(character.statusCode).toBe(200)
+    expect(character.json().character.chats[0].scriptstate).toEqual({ $mood: 'happy' })
 
     const db = openDatabase(harness.dataDir)
     try {
@@ -3311,19 +3312,16 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     } finally {
       db.close()
     }
-    const projection = await harness.app.inject({
+    const messages = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/chatTranscript?id=chat-1&parentId=char-1',
+      url: '/api/v1/chats/chat-1/messages',
       headers: { 'risu-auth': assertion },
     })
-    expect(projection.statusCode).toBe(200)
-    expect(projection.json()).toMatchObject({
-      mode: 'chat-transcript',
-      characterId: 'char-1',
+    expect(messages.statusCode).toBe(200)
+    expect(messages.json()).toMatchObject({
       chatId: 'chat-1',
     })
-    expect(projection.json().character.chats[0].scriptstate).toEqual({ $mood: 'happy' })
-    expect(projection.json().message).toHaveLength(1)
+    expect(messages.json().message).toHaveLength(1)
   })
 
   it('runs the pre-trigger run-var pass server-side over the completion text (A2)', async () => {

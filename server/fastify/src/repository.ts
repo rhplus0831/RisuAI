@@ -113,36 +113,6 @@ const COLLECTION_TABLE_MAP: Record<string, string> = {
   hypaV3Presets: 'hypa_v3_presets',
 }
 
-const BODY_CACHE_TRACKED_COLLECTIONS = {
-  modules: { idKey: 'id' },
-  plugins: { idKey: 'name' },
-} as const
-
-type BodyCacheTrackedCollection = keyof typeof BODY_CACHE_TRACKED_COLLECTIONS
-
-export interface BootstrapBodyCacheManifest {
-  epoch: number
-  modules: Record<string, number>
-  plugins: Record<string, number>
-}
-
-export interface BootstrapBodyCacheEntry {
-  id: string
-  revision: number
-  body?: unknown
-}
-
-export interface BootstrapBodyCachePayload {
-  epoch: number
-  modules: BootstrapBodyCacheEntry[]
-  plugins: BootstrapBodyCacheEntry[]
-}
-
-export interface BootstrapProjectionDatabasePayload {
-  database: unknown | null
-  bodyCache: BootstrapBodyCachePayload
-}
-
 export function createCollectionTables(db: DatabaseSync): void {
   for (const tableName of Object.values(COLLECTION_TABLE_MAP)) {
     db.exec(`
@@ -158,49 +128,6 @@ export function createCollectionTables(db: DatabaseSync): void {
       value_json TEXT NOT NULL CHECK (json_valid(value_json))
     )
   `)
-}
-
-export function createProjectionBodyCacheTables(db: DatabaseSync): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS projection_body_cache_state (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
-      epoch INTEGER NOT NULL DEFAULT 1 CHECK (epoch >= 1)
-    );
-
-    INSERT OR IGNORE INTO projection_body_cache_state (id, epoch) VALUES (1, 1);
-
-    CREATE TABLE IF NOT EXISTS collection_body_revisions (
-      collection_name TEXT NOT NULL,
-      object_id TEXT NOT NULL,
-      revision INTEGER NOT NULL CHECK (revision >= 0),
-      PRIMARY KEY (collection_name, object_id)
-    );
-  `)
-}
-
-export function seedProjectionBodyCacheRevisions(db: DatabaseSync, revision = getSchemaState(db).revision): void {
-  createProjectionBodyCacheTables(db)
-  for (const [field, tracker] of Object.entries(BODY_CACHE_TRACKED_COLLECTIONS)) {
-    const tableName = collectionTableForField(field)
-    const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as unknown as Array<{
-      data_json: string
-    }>
-    const seen = new Set<string>()
-    const upsert = db.prepare(
-      `INSERT INTO collection_body_revisions (collection_name, object_id, revision)
-       VALUES (?, ?, ?)
-       ON CONFLICT(collection_name, object_id) DO UPDATE SET revision = excluded.revision`,
-    )
-    for (const row of rows) {
-      const parsed = JSON.parse(row.data_json) as unknown
-      if (!isRecord(parsed)) continue
-      const id = parsed[tracker.idKey]
-      if (typeof id !== 'string' || id.trim() === '') continue
-      seen.add(id)
-      upsert.run(field, id, revision)
-    }
-    pruneCollectionBodyRevisions(db, field as BodyCacheTrackedCollection, seen)
-  }
 }
 
 function loadCollectionsFromSqlite(db: DatabaseSync, database: Record<string, unknown>): Record<string, unknown> {
@@ -234,7 +161,7 @@ export function replaceAllCollectionsInTable(db: DatabaseSync, database: unknown
   if (!isRecord(database)) return
   for (const [field, tableName] of Object.entries(COLLECTION_TABLE_MAP)) {
     const arr = database[field]
-    writeCollectionTableRows(db, field, tableName, Array.isArray(arr) ? arr : [])
+    writeCollectionTableRows(db, tableName, Array.isArray(arr) ? arr : [])
   }
   recordTableWrite('plugin_custom_storage')
   db.exec('DELETE FROM plugin_custom_storage')
@@ -671,164 +598,31 @@ function collectionTableForField(field: string): string {
   return tableName
 }
 
-function trackedCollection(field: string): (typeof BODY_CACHE_TRACKED_COLLECTIONS)[BodyCacheTrackedCollection] | null {
-  return Object.prototype.hasOwnProperty.call(BODY_CACHE_TRACKED_COLLECTIONS, field)
-    ? BODY_CACHE_TRACKED_COLLECTIONS[field as BodyCacheTrackedCollection]
-    : null
-}
-
-function collectionObjectId(field: string, value: unknown): string | null {
-  const tracker = trackedCollection(field)
-  if (!tracker || !isRecord(value)) return null
-  const id = value[tracker.idKey]
-  return typeof id === 'string' && id.trim() !== '' ? id : null
-}
-
-function loadTrackedCollectionJsonById(db: DatabaseSync, field: string, tableName: string): Map<string, string> {
-  if (!trackedCollection(field)) return new Map()
-  const rows = db.prepare(`SELECT data_json FROM ${tableName} ORDER BY position`).all() as unknown as Array<{
-    data_json: string
-  }>
-  const byId = new Map<string, string>()
-  for (const row of rows) {
-    const parsed = JSON.parse(row.data_json) as unknown
-    const id = collectionObjectId(field, parsed)
-    if (id) byId.set(id, row.data_json)
-  }
-  return byId
-}
-
-function loadCollectionBodyRevisionMap(db: DatabaseSync, field: string): Map<string, number> {
-  if (!trackedCollection(field)) return new Map()
-  const rows = db
-    .prepare('SELECT object_id, revision FROM collection_body_revisions WHERE collection_name = ?')
-    .all(field) as unknown as Array<{ object_id: string; revision: number }>
-  return new Map(rows.map((row) => [row.object_id, row.revision]))
-}
-
-function nextBodyRevision(db: DatabaseSync): number {
-  return getSchemaState(db).revision + 1
-}
-
-function upsertCollectionBodyRevision(
-  db: DatabaseSync,
-  field: BodyCacheTrackedCollection,
-  id: string,
-  revision: number,
-): void {
-  db.prepare(
-    `INSERT INTO collection_body_revisions (collection_name, object_id, revision)
-     VALUES (?, ?, ?)
-     ON CONFLICT(collection_name, object_id) DO UPDATE SET revision = excluded.revision`,
-  ).run(field, id, revision)
-}
-
-function pruneCollectionBodyRevisions(
-  db: DatabaseSync,
-  field: BodyCacheTrackedCollection | string,
-  keepIds: ReadonlySet<string>,
-): void {
-  const rows = db
-    .prepare('SELECT object_id FROM collection_body_revisions WHERE collection_name = ?')
-    .all(field) as unknown as Array<{ object_id: string }>
-  const deleteStmt = db.prepare('DELETE FROM collection_body_revisions WHERE collection_name = ? AND object_id = ?')
-  for (const row of rows) {
-    if (!keepIds.has(row.object_id)) deleteStmt.run(field, row.object_id)
-  }
-}
-
-function writeCollectionTableRows(db: DatabaseSync, field: string, tableName: string, array: readonly unknown[]): void {
-  const tracked = trackedCollection(field)
-  const previousJsonById = tracked ? loadTrackedCollectionJsonById(db, field, tableName) : new Map<string, string>()
-  const previousRevisionById = tracked ? loadCollectionBodyRevisionMap(db, field) : new Map<string, number>()
-  const nextRevision = tracked ? nextBodyRevision(db) : 0
-  const seenIds = new Set<string>()
-
+function writeCollectionTableRows(db: DatabaseSync, tableName: string, array: readonly unknown[]): void {
   recordTableWrite(tableName)
   db.exec(`DELETE FROM ${tableName}`)
   if (array.length > 0) {
     const stmt = db.prepare(`INSERT INTO ${tableName} (position, data_json) VALUES (?, ?)`)
     for (let i = 0; i < array.length; i++) {
-      const value = array[i]
-      const json = JSON.stringify(value)
-      stmt.run(i, json)
-
-      const id = collectionObjectId(field, value)
-      if (!tracked || !id) continue
-      seenIds.add(id)
-      const previousRevision = previousRevisionById.get(id)
-      const revision =
-        previousRevision !== undefined && previousJsonById.get(id) === json ? previousRevision : nextRevision
-      upsertCollectionBodyRevision(db, field as BodyCacheTrackedCollection, id, revision)
+      stmt.run(i, JSON.stringify(array[i]))
     }
   }
-
-  if (tracked) {
-    pruneCollectionBodyRevisions(db, field as BodyCacheTrackedCollection, seenIds)
-  }
-}
-
-interface TrackedCollectionRowSnapshot {
-  id: string | null
-  json: string
-}
-
-function readTrackedCollectionRowAtPosition(
-  db: DatabaseSync,
-  field: string,
-  tableName: string,
-  position: number,
-): TrackedCollectionRowSnapshot | null {
-  if (!trackedCollection(field)) return null
-  const row = db.prepare(`SELECT data_json FROM ${tableName} WHERE position = ?`).get(position) as
-    | { data_json: string }
-    | undefined
-  if (!row) return null
-  const parsed = JSON.parse(row.data_json) as unknown
-  return { id: collectionObjectId(field, parsed), json: row.data_json }
-}
-
-function syncTrackedCollectionRowRevision(
-  db: DatabaseSync,
-  field: string,
-  value: unknown,
-  json: string,
-  previous: TrackedCollectionRowSnapshot | null,
-): void {
-  if (!trackedCollection(field)) return
-  const nextId = collectionObjectId(field, value)
-  if (previous?.id && previous.id !== nextId) {
-    db.prepare('DELETE FROM collection_body_revisions WHERE collection_name = ? AND object_id = ?').run(
-      field,
-      previous.id,
-    )
-  }
-  if (!nextId) return
-
-  const existing = db
-    .prepare('SELECT revision FROM collection_body_revisions WHERE collection_name = ? AND object_id = ?')
-    .get(field, nextId) as { revision: number } | undefined
-  const revision =
-    existing && previous?.id === nextId && previous.json === json ? existing.revision : nextBodyRevision(db)
-  upsertCollectionBodyRevision(db, field as BodyCacheTrackedCollection, nextId, revision)
 }
 
 /** Rebuild one collection table (DELETE + ordered reinsert) for
  *  create/delete/reorder. Leaves the other eight tables untouched. */
 export function writeSingleCollectionTable(db: DatabaseSync, field: string, array: readonly unknown[]): void {
   const tableName = collectionTableForField(field)
-  writeCollectionTableRows(db, field, tableName, array)
+  writeCollectionTableRows(db, tableName, array)
 }
 
 /** `UPDATE <collection> WHERE position=?` for a single pure field edit. Keeps
  *  the row's rowid stable (no delete+reinsert). */
 export function writeSingleCollectionRow(db: DatabaseSync, field: string, position: number, value: unknown): void {
   const tableName = collectionTableForField(field)
-  const previousRow = readTrackedCollectionRowAtPosition(db, field, tableName, position)
   const json = JSON.stringify(value)
   recordTableWrite(tableName)
   db.prepare(`UPDATE ${tableName} SET data_json = ? WHERE position = ?`).run(json, position)
-  syncTrackedCollectionRowRevision(db, field, value, json, previousRow)
 }
 
 // The `promptTemplate` collection (`prompt_templates` table) is written through
@@ -1114,30 +908,10 @@ export function loadPersistedDatabaseFields(
   return loadDatabaseFieldsFromSqlite(db, fieldKeys).fields
 }
 
-export function loadStubbedProjectionFields(
-  db: DatabaseSync,
-  _dataDir: string,
-  fieldKeys: readonly string[],
-): Record<string, unknown> {
-  const { fields, settings } = loadDatabaseFieldsFromSqlite(db, fieldKeys)
-  // Preserve the wire projection contract for any targeted resource that ships
-  // characters: chat payloads and optional character lorebooks stay lazy.
-  eachChat(fields, (chat) => {
-    chat.message = []
-    delete chat.hypaV3Data
-  })
-  if (settings?.enableLorebookStubs === true) {
-    stripCharacterGlobalLore(fields)
-  }
-  stubBotPresets(fields)
-  return fields
-}
-
 /**
  * Full character rows for resource APIs, with chat metadata retained and the
- * separately stored chat bodies omitted. Unlike the bootstrap projection
- * loader, this does not strip character lorebooks or replace inactive
- * characters with shells.
+ * separately stored chat bodies omitted. Character lorebooks and the rest of
+ * each character row remain intact.
  */
 export function loadCharacterRowsForRead(db: DatabaseSync, dataDir: string): JsonRecord[] {
   const fields = loadPersistedDatabaseFields(db, dataDir, ['characters'])
@@ -1245,50 +1019,6 @@ function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string
 }
 
 /**
- * Single-character stub row for the `characterRow` projection (including
- * qualified legacy script/trigger/chat/folder aliases). The route ships
- * exactly one character, so it must not pay
- * `loadCharactersFromSqlite`'s whole characters+chats payload parse. Read the
- * one character row (`WHERE id = ?`, precedent: `loadCharacterSelectionRows`)
- * plus its chat rows (`WHERE character_id = ?`) and apply the same stub
- * contract as `loadStubbedProjectionFields`: message-free chats, and a
- * stripped `globalLore` when `enableLorebookStubs` is on.
- *
- * Any state the single-row read cannot serve falls back to the broad stubbed
- * loader so behavior stays identical: an uninitialized settings table, a
- * non-object character payload, or a missing SQLite row (unknown id -> the
- * same `null` 404; a pre-extraction database keeps its embedded-characters
- * fallback). The returned row is freshly parsed and owned by the caller.
- */
-export function loadSingleCharacterStubRow(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
-  const settings = loadSettingsFromSqlite(db)
-  if (settings === null) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
-
-  const charRow = db
-    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
-    .get(characterId) as unknown as CharacterRow | undefined
-  if (!charRow) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
-
-  const character = JSON.parse(charRow.data_json) as unknown
-  if (!isRecord(character)) return loadSingleCharacterStubRowBroad(db, dataDir, characterId)
-
-  const chatRows = db
-    .prepare('SELECT id, character_id, position, data_json FROM chats WHERE character_id = ? ORDER BY position')
-    .all(charRow.id) as unknown as ChatRow[]
-  character.chats = chatRows.map((row) => {
-    const chat = parseStoredChatRow(row.data_json)
-    if (isRecord(chat)) {
-      chat.message = []
-      delete chat.hypaV3Data
-    }
-    return chat
-  })
-
-  if (settings.enableLorebookStubs === true) delete character.globalLore
-  return character
-}
-
-/**
  * Scoped character detail read for resource APIs. Reads one character and its
  * chat metadata without message/hypa bodies, while retaining the full
  * character payload (including its lorebook).
@@ -1325,13 +1055,6 @@ export function loadSingleCharacterRowForRead(
 
 function loadSingleCharacterRowForReadBroad(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
   return loadCharacterRowsForRead(db, dataDir).find((candidate) => candidate.chaId === characterId) ?? null
-}
-
-function loadSingleCharacterStubRowBroad(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
-  const fields = loadStubbedProjectionFields(db, dataDir, ['characters'])
-  const characters = Array.isArray(fields.characters) ? fields.characters : []
-  const character = characters.find((candidate) => isRecord(candidate) && candidate.chaId === characterId)
-  return isRecord(character) ? character : null
 }
 
 function selectDatabaseFields(
@@ -1534,8 +1257,7 @@ export function loadPersistedForAssembly(db: DatabaseSync, dataDir: string, chat
 
 /**
  * Prompt assembly and post-generation module runtime need executable module
- * children (`trigger`, `regex`, `lorebook`, `assets`, ...). Bootstrap can replace
- * `database.modules` with body stubs for wire-size reasons, so keep generation
+ * children (`trigger`, `regex`, `lorebook`, `assets`, ...), so keep generation
  * pinned to the authoritative server collection table whenever it exists.
  */
 export function hydrateAssemblyModuleBodies(db: DatabaseSync, database: unknown): void {
@@ -1710,305 +1432,6 @@ export function ensureDbJsonImported(db: DatabaseSync, dataDir: string): void {
   if (legacyAssets.length > 0) insertAssetMetadataBatch(db, legacyAssets)
 
   fs.renameSync(file, `${file}.migrated`)
-}
-
-/**
- * The bootstrap / foreign-event projection of the database: chat *metadata* only,
- * every `chat.message[]` replaced by an empty array. The client hydrates a chat's
- * messages on open. Full-corpus consumers keep their broad loaders; only the
- * wire projection is stubbed.
- */
-export function loadStubProjection(db: DatabaseSync, dataDir: string): Persisted {
-  const persisted = loadPersisted(db, dataDir)
-  stubDatabaseProjection(persisted.database)
-  return persisted
-}
-
-/**
- * Database-only variant of {@link loadStubProjection} for wire projections that
- * never return the persisted `assets` array. Keeps the database JSON identical
- * to `loadStubProjection(...).database` without scanning asset metadata.
- */
-export function loadStubProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
-  const database = loadPersistedDatabase(db, dataDir)
-  stubDatabaseProjection(database)
-  return database
-}
-
-export function loadBootstrapProjectionDatabaseWithBodyCache(
-  db: DatabaseSync,
-  dataDir: string,
-  manifest: BootstrapBodyCacheManifest | null = null,
-): BootstrapProjectionDatabasePayload {
-  const database = loadStubProjectionDatabase(db, dataDir)
-  const bodyCache = buildBootstrapBodyCachePayload(db, database, manifest)
-  replaceInactiveCharactersWithBootstrapShells(database)
-  stripLazyBootstrapFields(database)
-  stubBotPresets(database)
-  stubModuleAndPluginBodies(database)
-  return { database, bodyCache }
-}
-
-export function loadBootstrapProjectionDatabase(db: DatabaseSync, dataDir: string): unknown | null {
-  return loadBootstrapProjectionDatabaseWithBodyCache(db, dataDir).database
-}
-
-function stubDatabaseProjection(database: unknown): void {
-  eachChat(database, (chat) => {
-    chat.message = []
-    delete chat.hypaV3Data
-  })
-  stubCharacterLorebooks(database)
-}
-
-function stripLazyBootstrapFields(database: unknown): void {
-  if (!isRecord(database)) return
-  delete database.promptTemplate
-  stripActivePresetPromptTemplate(database)
-}
-
-function stripActivePresetPromptTemplate(database: JsonRecord): void {
-  const presets = database.botPresets
-  const activeIndex = database.botPresetsId
-  if (!Array.isArray(presets) || !Number.isInteger(activeIndex)) return
-  const activePreset = presets[activeIndex as number]
-  if (!isRecord(activePreset)) return
-  delete activePreset.promptTemplate
-}
-
-export function stubBotPresets(database: unknown): void {
-  if (!isRecord(database) || !Array.isArray(database.botPresets)) return
-  database.botPresets = database.botPresets.map((preset) => {
-    if (!isRecord(preset)) return preset
-    const stub: JsonRecord = {}
-    copyFields(preset, stub, BOT_PRESET_STUB_FIELDS)
-    return stub
-  })
-}
-
-const BOT_PRESET_STUB_FIELDS = [
-  'id',
-  'name',
-  'image',
-  'metadata',
-  'customPromptTemplateToggle',
-  'moduleIntergration',
-] as const
-
-const MODULE_BODY_STUB_FIELDS = [
-  'id',
-  'name',
-  'description',
-  'lowLevelAccess',
-  'hideIcon',
-  'backgroundEmbedding',
-  'namespace',
-  'customModuleToggle',
-  'mcp',
-] as const
-
-const PLUGIN_BODY_STUB_FIELDS = [
-  'name',
-  'displayName',
-  'arguments',
-  'realArg',
-  'version',
-  'customLink',
-  'argMeta',
-  'versionOfPlugin',
-  'updateURL',
-  'enabled',
-  'allowedIPC',
-] as const
-
-function stubModuleAndPluginBodies(database: unknown): void {
-  if (!isRecord(database)) return
-  if (Array.isArray(database.modules)) {
-    database.modules = database.modules.map((module) => {
-      if (!isRecord(module)) return module
-      const stub: JsonRecord = {}
-      copyFields(module, stub, MODULE_BODY_STUB_FIELDS)
-      return stub
-    })
-  }
-  if (Array.isArray(database.plugins)) {
-    database.plugins = database.plugins.map((plugin) => {
-      if (!isRecord(plugin)) return plugin
-      const stub: JsonRecord = {}
-      copyFields(plugin, stub, PLUGIN_BODY_STUB_FIELDS)
-      return stub
-    })
-  }
-}
-
-function buildBootstrapBodyCachePayload(
-  db: DatabaseSync,
-  database: unknown,
-  manifest: BootstrapBodyCacheManifest | null,
-): BootstrapBodyCachePayload {
-  const epoch = getProjectionBodyCacheEpoch(db)
-  const manifestForEpoch = manifest?.epoch === epoch ? manifest : null
-  return {
-    epoch,
-    modules: buildBootstrapBodyCacheEntries(
-      db,
-      'modules',
-      isRecord(database) && Array.isArray(database.modules) ? database.modules : [],
-      manifestForEpoch?.modules ?? {},
-    ),
-    plugins: buildBootstrapBodyCacheEntries(
-      db,
-      'plugins',
-      isRecord(database) && Array.isArray(database.plugins) ? database.plugins : [],
-      manifestForEpoch?.plugins ?? {},
-    ),
-  }
-}
-
-function buildBootstrapBodyCacheEntries(
-  db: DatabaseSync,
-  field: BodyCacheTrackedCollection,
-  values: readonly unknown[],
-  cachedRevisions: Record<string, number>,
-): BootstrapBodyCacheEntry[] {
-  const revisionById = loadCollectionBodyRevisionMap(db, field)
-  const fallbackRevision = getSchemaState(db).revision
-  const entries: BootstrapBodyCacheEntry[] = []
-  for (const value of values) {
-    const id = collectionObjectId(field, value)
-    if (!id) continue
-    const revision = revisionById.get(id) ?? fallbackRevision
-    const entry: BootstrapBodyCacheEntry = { id, revision }
-    if (cachedRevisions[id] !== revision) {
-      entry.body = cloneJsonValue(value)
-    }
-    entries.push(entry)
-  }
-  return entries
-}
-
-function getProjectionBodyCacheEpoch(db: DatabaseSync): number {
-  const row = db.prepare('SELECT epoch FROM projection_body_cache_state WHERE id = 1').get() as
-    | { epoch: number }
-    | undefined
-  return row && Number.isInteger(row.epoch) && row.epoch >= 1 ? row.epoch : 1
-}
-
-export function bumpProjectionBodyCacheEpoch(db: DatabaseSync): number {
-  createProjectionBodyCacheTables(db)
-  const row = db
-    .prepare('UPDATE projection_body_cache_state SET epoch = epoch + 1 WHERE id = 1 RETURNING epoch')
-    .get() as { epoch: number } | undefined
-  if (row) return row.epoch
-  db.prepare('INSERT INTO projection_body_cache_state (id, epoch) VALUES (1, 1)').run()
-  return 1
-}
-
-function cloneJsonValue<T>(value: T): T {
-  if (value === undefined) return value
-  return JSON.parse(JSON.stringify(value)) as T
-}
-
-/**
- * Optional lorebook projection stubbing, enabled by `enableLorebookStubs`.
- * Strips every character's `globalLore` so the projection ships it as a stub.
- * The client hydrates a character's globalLore on character-open
- * (`GET /api/v1/projection/characterLorebook?id=`), and the lorebook watcher's
- * hydrated-character registry keeps a re-stub from being persisted as a deletion.
- *
- * Keep disabled until the full client `globalLore` reader surface is validated
- * against stubbed characters.
- */
-function stubCharacterLorebooks(database: unknown): void {
-  if (!isRecord(database) || database.enableLorebookStubs !== true) return
-  stripCharacterGlobalLore(database)
-}
-
-function stripCharacterGlobalLore(database: unknown): void {
-  const characters = isRecord(database) && Array.isArray(database.characters) ? database.characters : []
-  for (const character of characters) {
-    if (character && typeof character === 'object') delete character.globalLore
-  }
-}
-
-const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
-
-const BOOTSTRAP_CHARACTER_SHELL_FIELDS = [
-  'chaId',
-  'name',
-  'displayName',
-  'type',
-  'image',
-  'notificationImage',
-  'icon',
-  'avatar',
-  'lastInteraction',
-  'chatPage',
-  'chatFolders',
-  'trashTime',
-  'coldstorage',
-  'largePortrait',
-  'hideChatIcon',
-  'creatorNotes',
-  'tags',
-  'realmId',
-  'imported',
-  'modules',
-] as const
-
-const BOOTSTRAP_CHAT_SHELL_FIELDS = [
-  'id',
-  'name',
-  'note',
-  'fmIndex',
-  'folderId',
-  'modules',
-  'localLore',
-  'generationSettings',
-  'bookmarks',
-  'bookmarkNames',
-] as const
-
-function replaceInactiveCharactersWithBootstrapShells(database: unknown): void {
-  if (!isRecord(database) || !Array.isArray(database.characters)) return
-  const currentChar = Number.isInteger(database.currentChar) ? (database.currentChar as number) : -1
-
-  database.characters = database.characters.map((character, index) => {
-    if (index === currentChar) return character
-    if (!isRecord(character)) return character
-    return createBootstrapCharacterShell(character)
-  })
-}
-
-function createBootstrapCharacterShell(character: JsonRecord): JsonRecord {
-  const shell: JsonRecord = { [SERVER_CHARACTER_SHELL_MARKER]: true }
-  copyFields(character, shell, BOOTSTRAP_CHARACTER_SHELL_FIELDS)
-
-  const chats = Array.isArray(character.chats) ? character.chats : []
-  shell.chats = chats.map((chat) => {
-    if (!isRecord(chat)) return chat
-    const chatShell: JsonRecord = {}
-    copyFields(chat, chatShell, BOOTSTRAP_CHAT_SHELL_FIELDS)
-    chatShell.message = []
-    return chatShell
-  })
-
-  if (!Array.isArray(shell.chatFolders)) {
-    shell.chatFolders = []
-  }
-  if (!Number.isInteger(shell.chatPage)) {
-    shell.chatPage = 0
-  }
-
-  return shell
-}
-
-function copyFields(source: JsonRecord, target: JsonRecord, fields: readonly string[]): void {
-  for (const field of fields) {
-    if (Object.prototype.hasOwnProperty.call(source, field)) {
-      target[field] = source[field]
-    }
-  }
 }
 
 /**
@@ -2368,7 +1791,6 @@ export function applyImport(
     if (!cloneBeforeMessageSplit) {
       options.beforeRevision?.(db)
     }
-    bumpProjectionBodyCacheEpoch(db)
     const messageFree = splitChatMessagesIntoTable(db, {
       ...current,
       database: cloneBeforeMessageSplit ? structuredClone(database) : database,
@@ -2659,8 +2081,8 @@ export function backupDir(dataDir: string, id: string): string {
 // Implementation notes per entry:
 //   - 'assets'   : content-addressed asset bytes. Copied as a directory.
 //   - 'risu.db'  : SQLite database containing schema/revision state, domain tables,
-//                  asset metadata, command events, projection cache, chat-history
-//                  tables, and Hypa V3 memory tables. Backed up after a WAL
+//                  asset metadata, command events, chat-history tables, and Hypa
+//                  V3 memory tables. Backed up after a WAL
 //                  checkpoint; restored via ATTACH so the live `DatabaseSync` handle
 //                  stays valid. Every table that must survive restore is listed in
 //                  SQLITE_BACKUP_TABLES.
@@ -2692,8 +2114,6 @@ const SQLITE_BACKUP_TABLES = [
   'assets',
   'characters',
   'chats',
-  'projection_body_cache_state',
-  'collection_body_revisions',
   'modules',
   'plugins',
   'model_presets',
@@ -2895,7 +2315,6 @@ export function restoreBackup(
         fs.copyFileSync(legacySnapshot, dbJsonPath(dataDir))
         ensureDbJsonImported(db, dataDir)
       }
-      bumpProjectionBodyCacheEpoch(db)
       event = persistRevisionedCommandEvent(db, COMMAND_EVENT_CATALOG.stateRestored)
       fs.renameSync(tmpAssets, liveAssets)
       fs.renameSync(tmpSave, liveSave)

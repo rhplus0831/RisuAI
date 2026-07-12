@@ -231,7 +231,7 @@ describe('request trace', () => {
 
     const res = await harness.app.inject({
       method: 'GET',
-      url: '/api/v1/projection/chatMessages?id=chat-1&token=secret-token&api_key=secret-key&safe=visible',
+      url: '/api/v1/chats/chat-1/messages?token=secret-token&api_key=secret-key&safe=visible',
       headers: {
         'x-risu-caller': 'client-bootstrap?access_token=secret-caller-token&view=main',
       },
@@ -240,8 +240,8 @@ describe('request trace', () => {
     expect(res.statusCode).toBe(401)
     const [entry] = await waitForTraceEntries(harness, 'agent', 1)
     expect(entry.Method).toBe('GET')
-    expect(entry.Url).toBe('/api/v1/projection/chatMessages?id=chat-1&token=[redacted]&api_key=[redacted]&safe=visible')
-    expect(entry.Route).toBe('/api/v1/projection/:resource')
+    expect(entry.Url).toBe('/api/v1/chats/chat-1/messages?token=[redacted]&api_key=[redacted]&safe=visible')
+    expect(entry.Route).toBe('/api/v1/chats/:id/messages')
     expect(entry.Caller).toBe('x-risu-caller=client-bootstrap?access_token=[redacted]&view=main')
   })
 

@@ -16,7 +16,6 @@ import { registerAuthRoutes } from './routes/auth.js'
 import { registerBackupRoutes } from './routes/backups.js'
 import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerCommandRoutes } from './routes/commands.js'
-import { registerProjectionRoutes } from './routes/projection.js'
 import { registerResourceReadRoutes } from './routes/resourceReads.js'
 import { registerEventsRoutes } from './routes/events.js'
 import { registerGenerationRoutes } from './routes/generation.js'
@@ -252,7 +251,6 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   )
   registerActiveWriterGuard(app, activeWriterState)
   registerResourceReadRoutes(app, db, authState, config.dataDir)
-  registerProjectionRoutes(app, db, authState, config.dataDir)
   registerSaveRoutes(app, db, authState, config.dataDir, commandEventSink, {
     maxExpandedImportBytes: config.bodyLimit,
     importMaxBytes: config.importMaxBytes,

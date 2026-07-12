@@ -10,13 +10,11 @@
  * Reported here (static-DB-derivable):
  *   - Ordinary `.risu` export materialization: snapshot hydration vs encode cost
  *     and peak output bytes per envelope (Phase 5 gate).
- *   - Full-bootstrap / projection payload size: what one sprawling-resource
- *     full-bootstrap fallback ships (Phase 3 gate, cost half).
  *   - Asset inventory + per-character byte-fetch fanout (Phase 3 gate, cost half).
  *
- * NOT reported here (runtime-only): how OFTEN a fallback fires, browser cache hit
- * rate, and prompt-assembly stage timings under real sends. Get those by running
- * the real server with `RISU_PROTOCOL_METRICS=1`. See
+ * NOT reported here (runtime-only): browser cache hit rate and prompt-assembly
+ * stage timings under real sends. Get those by running the real server with
+ * `RISU_PROTOCOL_METRICS=1`. See
  * .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.
  *
  * Inputs (auto-detected):
@@ -34,12 +32,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
-import { getSchemaState, openDatabase } from '../server/fastify/src/db.js'
+import { openDatabase } from '../server/fastify/src/db.js'
 import {
   getAllAssetMetadata,
   loadPersisted,
   loadPersistedWithMessages,
-  loadStubProjection,
   writePersistedWithMessages,
   type Persisted,
   type PersistedAsset,
@@ -52,8 +49,6 @@ import {
 } from '../server/fastify/src/risuSave/exportSnapshot.js'
 import { decodeRisuSaveImportSnapshot } from '../server/fastify/src/risuSave/importSnapshot.js'
 import { buildRepositoryRisuSaveAssetReport } from '../server/fastify/src/risuSave/assetReferences.js'
-import { maskProviderSecrets } from '../server/fastify/src/providerSecrets.js'
-import { jsonPayloadBytes } from '../server/fastify/src/protocolMetrics.js'
 
 // The SQLite files a real `data/` dir carries alongside db.json.
 const DB_SIDECARS = ['risu.db', 'risu.db-wal', 'risu.db-shm']
@@ -83,12 +78,6 @@ export interface DatabaseAnalysis {
     envelopes: ExportEnvelopeResult[]
     peakOutputBytes: number
     peakEnvelope: string
-  }
-  bootstrap: {
-    stubLoadMs: number
-    payloadBytes: number
-    revision: number
-    schemaVersion: number
   }
   assets: {
     storedCount: number
@@ -272,18 +261,6 @@ export function analyzeDataDir(dataDir: string, source: string): DatabaseAnalysi
     })
     const peak = envelopes.reduce((max, row) => (row.outputBytes > max.outputBytes ? row : max))
 
-    // --- Full-bootstrap / projection payload (Phase 3 sprawling-resource gate) ---
-    const [stub, stubLoadMs] = timeMs(() => loadStubProjection(db, dataDir))
-    const { version, revision } = getSchemaState(db)
-    const bootstrapResponse = {
-      revision,
-      schemaVersion: version,
-      database: maskProviderSecrets(stub.database),
-      assetBaseUrl: '/api/v1/assets',
-      activeGenerationJobs: [],
-    }
-    const bootstrapBytes = jsonPayloadBytes(bootstrapResponse) ?? 0
-
     // --- Asset inventory + fanout (Phase 3 asset-byte gate) ---
     const storedAssets = getAllAssetMetadata(db)
     const storedBytes = storedAssets.reduce((sum, asset) => sum + (asset.size ?? 0), 0)
@@ -310,7 +287,6 @@ export function analyzeDataDir(dataDir: string, source: string): DatabaseAnalysi
         peakOutputBytes: peak.outputBytes,
         peakEnvelope: peak.envelope,
       },
-      bootstrap: { stubLoadMs, payloadBytes: bootstrapBytes, revision, schemaVersion: version },
       assets: {
         storedCount: storedAssets.length,
         storedBytes,
@@ -367,19 +343,6 @@ function printReport(analysis: DatabaseAnalysis): void {
   )
 
   lines.push('')
-  lines.push('== Full-bootstrap / projection payload (Phase 3 sprawling-resource gate) ==')
-  lines.push(`stub projection load: ${analysis.bootstrap.stubLoadMs} ms`)
-  lines.push(
-    `full-bootstrap payload: ${humanBytes(analysis.bootstrap.payloadBytes)} ` +
-      `(revision ${analysis.bootstrap.revision}, schema v${analysis.bootstrap.schemaVersion})`,
-  )
-  lines.push(
-    '  interpretation: this is the message-light payload one sprawling-resource fallback ' +
-      'ships.\n  Multiply by how often `settings`/`state`/`pluginStorage` events actually fire ' +
-      '(a runtime\n  signal) to judge whether a targeted-resource projection is worth it.',
-  )
-
-  lines.push('')
   lines.push('== Asset inventory + fanout (Phase 3 asset-byte gate) ==')
   lines.push(`stored: ${analysis.assets.storedCount} assets, ${humanBytes(analysis.assets.storedBytes)}`)
   lines.push(
@@ -406,10 +369,10 @@ function printReport(analysis: DatabaseAnalysis): void {
 
   lines.push('')
   lines.push('== Not covered here (runtime-only) ==')
-  lines.push('  - fallback FREQUENCY, browser cache hit rate, and prompt-assembly stage timings under')
-  lines.push('    real sends are session signals a static database cannot reconstruct.')
+  lines.push('  - browser cache hit rate and prompt-assembly stage timings under real sends are')
+  lines.push('    session signals a static database cannot reconstruct.')
   lines.push('  - capture them by running the real server with RISU_PROTOCOL_METRICS=1 during normal use;')
-  lines.push('    the projection_response / asset_byte_read / risusave_export lines land in the log.')
+  lines.push('    the asset_byte_read / risusave_export lines land in the log.')
   lines.push(
     '  - see docs/leftover.md and .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.',
   )

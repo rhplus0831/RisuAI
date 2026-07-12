@@ -17,6 +17,7 @@ import {
 } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 interface Harness {
   app: FastifyInstance
@@ -44,6 +45,7 @@ async function startHarness(): Promise<Harness> {
     memoryWorker: false,
     commandEvents,
   })
+  installResourceDatabaseBootstrapAdapter(app)
   return { app, dataDir, commandEvents }
 }
 
