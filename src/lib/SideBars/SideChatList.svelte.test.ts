@@ -296,7 +296,10 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  applyServerChatMessagesProjection: vi.fn(() => true),
   ensureAllChatsHydrated: vi.fn(async () => undefined),
+  hydrateActiveChat: vi.fn(async () => undefined),
+  resetChatHydration: vi.fn(),
 }))
 
 vi.mock('src/ts/server/commands', () => ({
@@ -325,8 +328,12 @@ vi.mock('./Toggles.svelte', async () => {
 })
 
 import SideChatListHarness from './SideChatList.testHarness.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
 import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -382,7 +389,7 @@ function seedSidebarDatabase(): character {
   } as character
 
   selectedCharID.set(0)
-  DBState.db = {
+  setDatabaseLite({
     characters: [chara],
     customPromptTemplateToggle: '',
     customSidebarItems: [],
@@ -394,9 +401,9 @@ function seedSidebarDatabase(): character {
     promptTemplate: [],
     selectedPersona: 0,
     username: 'User',
-  } as never
+  } as never)
 
-  return DBState.db.characters[0]
+  return getDatabase().characters[0]
 }
 
 function sidebarRoot(): HTMLElement {
@@ -494,7 +501,7 @@ async function setTextInputValue(input: HTMLInputElement, value: string): Promis
 }
 
 function selectedCharacter(): character {
-  return DBState.db.characters[0]
+  return getDatabase().characters[0]
 }
 
 function removeCharacterId(chara: character): void {
@@ -525,7 +532,7 @@ describe('SideChatList DOM contract harness', () => {
     target.remove()
     document.body.innerHTML = ''
     selectedCharID.set(-1)
-    DBState.db = {} as never
+    setDatabaseLite({} as never)
   })
 
   it('renders seeded root and folder chat rows with selected and folder selectors', async () => {
@@ -923,7 +930,7 @@ describe('SideChatList DOM contract harness', () => {
 
   it('optimistically binds a root chat persona before dispatch', async () => {
     seedSidebarDatabase()
-    DBState.db.personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
+    getDatabase().personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
     sidebarMocks.setServerCommandsEnabled(true)
     setServerProjectionWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)

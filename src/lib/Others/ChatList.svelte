@@ -3,7 +3,7 @@
   import { alertConfirm, alertError } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { DownloadIcon, SquarePenIcon, HardDriveUploadIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import { v4 } from 'uuid'
@@ -34,7 +34,7 @@
 
   $effect(() => {
     const drafts = {}
-    for (const chat of DBState.db.characters[$selectedCharID]?.chats ?? []) {
+    for (const chat of getDatabase().characters[$selectedCharID]?.chats ?? []) {
       if (chat.id) {
         drafts[chat.id] = chat.name ?? ''
       }
@@ -49,7 +49,7 @@
   }
 
   function openChatRoute(index) {
-    const character = DBState.db.characters[$selectedCharID]
+    const character = getDatabase().characters[$selectedCharID]
     const chatId = character?.chats?.[index]?.id
     if (character?.chaId && chatId) {
       navigate(characterRoutePath(character.chaId, chatId))
@@ -63,17 +63,17 @@
 
   function resolveOriginCharacter(originCharacterId, originSelectedCharIndex) {
     if (originCharacterId) {
-      const byId = DBState.db.characters?.find((candidate) => candidate.chaId === originCharacterId)
+      const byId = getDatabase().characters?.find((candidate) => candidate.chaId === originCharacterId)
       if (byId) return byId
     }
 
-    const byIndex = DBState.db.characters?.[originSelectedCharIndex]
+    const byIndex = getDatabase().characters?.[originSelectedCharIndex]
     if (originCharacterId && byIndex?.chaId && byIndex.chaId !== originCharacterId) return undefined
     return byIndex
   }
 
   function isOriginCharacterSelected(originCharacter, originCharacterId) {
-    const selectedCharacter = DBState.db.characters?.[$selectedCharID]
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
     return (
       selectedCharacter === originCharacter || (originCharacterId && selectedCharacter?.chaId === originCharacterId)
     )
@@ -81,7 +81,7 @@
 
   async function deleteModalChat(chat) {
     const originSelectedCharIndex = $selectedCharID
-    const originCharacter = DBState.db.characters?.[originSelectedCharIndex]
+    const originCharacter = getDatabase().characters?.[originSelectedCharIndex]
     const originCharacterId = originCharacter?.chaId
     const targetChatId = chat?.id
     const targetChatName = chat?.name ?? ''
@@ -136,18 +136,18 @@
         </button>
       </div>
     </div>
-    {#each DBState.db.characters[$selectedCharID].chats as chat, i}
+    {#each getDatabase().characters[$selectedCharID].chats as chat, i}
       <button
         data-risu-chat-id={chat.id ?? ''}
         data-risu-chat-idx={i}
-        data-risu-chat-selected={i === DBState.db.characters[$selectedCharID].chatPage ? 'true' : 'false'}
+        data-risu-chat-selected={i === getDatabase().characters[$selectedCharID].chatPage ? 'true' : 'false'}
         onclick={() => {
           if (!editMode) {
             openChatRoute(i)
           }
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={i === DBState.db.characters[$selectedCharID].chatPage}>
+        class:bg-selected={i === getDatabase().characters[$selectedCharID].chatPage}>
         {#if editMode}
           <TextInput
             bind:value={chatNameDrafts[chat.id]}
@@ -192,8 +192,8 @@
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           const previous = currentChatStateSnapshot()
-          const cha = DBState.db.characters[$selectedCharID]
-          const len = DBState.db.characters[$selectedCharID].chats.length
+          const cha = getDatabase().characters[$selectedCharID]
+          const len = getDatabase().characters[$selectedCharID].chats.length
           const chat = {
             message: [],
             note: '',
@@ -203,9 +203,9 @@
             id: v4(),
           }
           if (!canUseServerCommands()) {
-            let chats = DBState.db.characters[$selectedCharID].chats
+            let chats = getDatabase().characters[$selectedCharID].chats
             chats.unshift(chat)
-            DBState.db.characters[$selectedCharID].chats = chats
+            getDatabase().characters[$selectedCharID].chats = chats
             changeChatTo(0)
           } else {
             const applied = applyOptimisticCreatedChat(cha.chaId, chat, previous)

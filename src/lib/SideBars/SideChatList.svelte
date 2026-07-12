@@ -15,7 +15,8 @@
   } from '@lucide/svelte'
 
   import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
-  import { DBState, reloadGuiDisplay } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { reloadGuiDisplay } from 'src/ts/stores.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
 
   import CheckInput from '../UI/GUI/CheckInput.svelte'
@@ -149,8 +150,8 @@
 
   function currentSidebarCharacter(): character | undefined {
     return (
-      DBState.db.characters?.find((candidate) => Boolean(chara.chaId) && candidate.chaId === chara.chaId) ??
-      DBState.db.characters?.[$selectedCharID]
+      getDatabase().characters?.find((candidate) => Boolean(chara.chaId) && candidate.chaId === chara.chaId) ??
+      getDatabase().characters?.[$selectedCharID]
     )
   }
 
@@ -232,14 +233,14 @@
       return
     }
 
-    const selectedPersona = DBState.db.selectedPersona
-    const persona = DBState.db.personas?.[selectedPersona]
+    const selectedPersona = getDatabase().selectedPersona
+    const persona = getDatabase().personas?.[selectedPersona]
     if (!persona) return
     const bindedPersona = persona.id || v4()
     if (!persona.id) {
       withTrustedServerProjectionWrite(() => {
-        if (DBState.db.selectedPersona !== selectedPersona) return
-        const livePersona = DBState.db.personas?.[selectedPersona]
+        if (getDatabase().selectedPersona !== selectedPersona) return
+        const livePersona = getDatabase().personas?.[selectedPersona]
         if (livePersona && !livePersona.id) {
           livePersona.id = bindedPersona
         }
@@ -538,7 +539,7 @@
         <span>{language.goback}</span>
       </button>
 
-      {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+      {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
         <AuthorNoteEditor {chara} />
         <Toggles bind:chara />
       {/if}

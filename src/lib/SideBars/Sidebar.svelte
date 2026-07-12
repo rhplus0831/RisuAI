@@ -702,7 +702,7 @@
         <span class="text-xs text-textcolor2">Select a bot to start chatting</span>
       </div>
     {:else if getDatabase().characters[$selectedCharID]?.chaId === '§playground'}
-      <SideChatList bind:chara={getDatabase().characters[$selectedCharID]} />
+      <SideChatList chara={getDatabase().characters[$selectedCharID]} />
     {:else}
       <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button
@@ -746,7 +746,7 @@
         </div>
       {:else}
         <div class="contents" data-risu-sidebar-panel="chat">
-          <SideChatList bind:chara={getDatabase().characters[$selectedCharID]} />
+          <SideChatList chara={getDatabase().characters[$selectedCharID]} />
         </div>
       {/if}
     {/if}

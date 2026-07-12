@@ -223,8 +223,12 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 }))
 
 import ChatList from './ChatList.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
 import { currentChatSelectionSnapshot, dispatchSelectChat } from 'src/ts/chatCommands'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -275,13 +279,13 @@ function seedModalDatabase(): character {
   } as character
 
   selectedCharID.set(0)
-  DBState.db = {
+  setDatabaseLite({
     characters: [chara],
     enabledModules: [],
     modules: [],
-  } as never
+  } as never)
 
-  return DBState.db.characters[0]
+  return getDatabase().characters[0]
 }
 
 function modalRoot(): HTMLElement {
@@ -327,7 +331,7 @@ function expectRowSelected(chatId: string, selected: boolean): void {
 }
 
 function selectedCharacter(): character {
-  return DBState.db.characters[0]
+  return getDatabase().characters[0]
 }
 
 function removeCharacterId(chara: character): void {
@@ -376,7 +380,7 @@ describe('ChatList DOM contract harness', () => {
     target.remove()
     document.body.innerHTML = ''
     selectedCharID.set(-1)
-    DBState.db = {} as never
+    setDatabaseLite({} as never)
   })
 
   it('renders seeded chat rows with the selected row selector', async () => {
@@ -602,7 +606,7 @@ describe('ChatList DOM contract harness', () => {
       chats: [makeChat('other-chat-a', 'Other Chat A'), makeChat('other-chat-b', 'Other Chat B')],
       chatFolders: [],
     } as character
-    DBState.db.characters.push(charB)
+    getDatabase().characters.push(charB)
     chatListMocks.setServerCommandsEnabled(true)
     let resolveConfirm!: (confirmed: boolean) => void
     chatListMocks.alertConfirm.mockReturnValueOnce(
