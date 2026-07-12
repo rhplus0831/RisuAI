@@ -1259,7 +1259,7 @@ const NO_ACTION: RegistryReason[] = [
   ),
   noAction(
     'I19',
-    '`DBState.db` proxy re-mint per guarded write is the deliberate design; fix consumers (Phase 6), not the guard.',
+    'Resource compatibility proxy re-mint per guarded write is the deliberate design; fix consumers (Phase 6), not the guard.',
   ),
   noAction(
     'I20',
@@ -1309,7 +1309,7 @@ const GATED_CONTEXT_REASONS: GateContextReason[] = [
 ]
 
 const REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES = [
-  'DBState.db',
+  'resource database compatibility view',
   'getDatabase()',
   'translator preset getters',
   'IGP/inlay/file transcript mutation',
@@ -1319,10 +1319,10 @@ const REQUIRED_GUARD_REPAIR_INVENTORY_SURFACES = [
 
 const GUARD_REPAIR_INVENTORY_PROOF: GuardRepairInventoryProof[] = [
   {
-    surface: 'DBState.db',
+    surface: 'resource database compatibility view',
     disposition: 'fixed',
     proof:
-      'Guard-breaking DBState.db mutations in IGP, inlay bubbles, .po transcript writes, and @@inject display writes now enter trusted projection writes or scoped chat commands; ordinary projection reads and server apply/rollback writes remain no-action by design.',
+      'Guard-breaking compatibility-view mutations in IGP, inlay bubbles, .po transcript writes, and @@inject display writes now enter trusted resource writes or scoped chat commands; ordinary resource reads and server apply/rollback writes remain no-action by design.',
   },
   {
     surface: 'getDatabase()',

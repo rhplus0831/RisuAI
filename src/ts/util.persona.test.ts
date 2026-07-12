@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { DBState, selectedCharID } from './stores.svelte'
+import { selectedCharID } from './stores.svelte'
+import { testDatabaseState } from './__tests__/resourceDatabaseState'
 import {
   checkPersonaBinded,
   getPersonaPrompt,
@@ -11,7 +12,7 @@ import {
 
 function seedPersonaDisplayState(chatPatch: Record<string, unknown>): void {
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     selectedPersona: 1,
     username: 'Global Persona',
     userIcon: 'global.png',
@@ -70,7 +71,7 @@ beforeEach(() => {
 
 afterEach(() => {
   selectedCharID.set(-1)
-  DBState.db = {} as never
+  testDatabaseState.db = {}
 })
 
 describe('active chat persona display helpers', () => {

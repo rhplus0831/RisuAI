@@ -66,9 +66,9 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 import ChatBody from './ChatBody.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
 
-chatBodyMocks.getDatabase.mockImplementation(() => DBState.db)
+chatBodyMocks.getDatabase.mockImplementation(() => testDatabaseState.db)
 
 async function flushComponentPromises() {
   for (let i = 0; i < 8; i++) {
@@ -78,7 +78,7 @@ async function flushComponentPromises() {
 }
 
 function setChatBodyDatabase(overrides: Record<string, unknown> = {}) {
-  DBState.db = {
+  testDatabaseState.db = {
     autoTranslate: true,
     autoTranslateCachedOnly: false,
     legacyTranslation: false,
@@ -108,7 +108,7 @@ describe('ChatBody translation parse bounds', () => {
     }
     target.remove()
     document.body.innerHTML = ''
-    DBState.db = {} as never
+    testDatabaseState.db = {}
   })
 
   it('L59: surfaces translateHTML failure once without retrying the full pipeline', async () => {

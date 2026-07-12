@@ -46,7 +46,8 @@ vi.mock('src/ts/setting/utils', () => ({
 }))
 
 import Toggles from '../SideBars/Toggles.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { classifyDifferential, isInScopeFinding, readToggleGroupLabels } from './domStateOracle'
@@ -63,7 +64,7 @@ const GROUP_TEMPLATE = '=Preset Group=group\nmood=Mood=select=Calm,Spicy\nflag=F
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     username: 'User',
     selectedPersona: 0,
     botPresetsId: 0,
@@ -140,14 +141,14 @@ afterEach(() => {
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
-  DBState.db = {} as never
+  testDatabaseState.db = {}
 })
 
 describe('Phase 0 / Journey 4: grouped toggle rendering (DOM oracle, Tier 1)', () => {
   it('paints the preset toggle group as an accordion container in the DOM', async () => {
     component = mount(Toggles, {
       target,
-      props: { chara: DBState.db.characters[0], noContainer: true },
+      props: { chara: testDatabaseState.db.characters[0], noContainer: true },
     })
     await tick()
 

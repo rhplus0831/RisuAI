@@ -24,10 +24,11 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import { clearAgentPresetProgress, updateAgentPresetProgress } from 'src/ts/process/agentPresetProgress'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
 import AgentPresetProgress from './AgentPresetProgress.svelte'
 
-databaseMocks.getDatabase.mockImplementation(() => DBState.db)
+databaseMocks.getDatabase.mockImplementation(() => testDatabaseState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -37,7 +38,7 @@ let component: MountedComponent | undefined
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  testDatabaseState.db = {
     characters: [{ chatPage: 0, chats: [{ id: 'chat-1' }] }],
   } as never
   selectedCharID.set(0)
@@ -50,7 +51,7 @@ afterEach(() => {
   }
   clearAgentPresetProgress()
   selectedCharID.set(-1)
-  DBState.db = {} as never
+  testDatabaseState.db = {}
   target.remove()
 })
 
