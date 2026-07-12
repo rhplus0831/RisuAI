@@ -6,7 +6,8 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState } from './stores.svelte'
+import './stores.svelte'
+import { getDatabase, setDatabaseLite } from './storage/database.svelte'
 import {
   beginPersonaReorder,
   changeUserPersona,
@@ -57,7 +58,7 @@ function makePersona(patch: Record<string, unknown>): Record<string, unknown> {
 }
 
 function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPersona = 0): void {
-  DBState.db = {
+  setDatabaseLite({
     characters: [],
     personas,
     selectedPersona,
@@ -65,7 +66,7 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
     userIcon: 'unsaved-user-icon.png',
     personaPrompt: 'Unsaved persona prompt',
     userNote: 'Unsaved user note',
-  } as any
+  } as any)
 }
 
 function applySelectedPersonaProjection(
@@ -77,14 +78,14 @@ function applySelectedPersonaProjection(
     userNote: string
   }> = {},
 ): void {
-  DBState.db.personas[DBState.db.selectedPersona] = {
-    ...DBState.db.personas[DBState.db.selectedPersona],
+  getDatabase().personas[getDatabase().selectedPersona] = {
+    ...getDatabase().personas[getDatabase().selectedPersona],
     ...persona,
   } as any
-  if ('username' in legacy) DBState.db.username = legacy.username as string
-  if ('userIcon' in legacy) DBState.db.userIcon = legacy.userIcon as string
-  if ('personaPrompt' in legacy) DBState.db.personaPrompt = legacy.personaPrompt as string
-  if ('userNote' in legacy) DBState.db.userNote = legacy.userNote as string
+  if ('username' in legacy) getDatabase().username = legacy.username as string
+  if ('userIcon' in legacy) getDatabase().userIcon = legacy.userIcon as string
+  if ('personaPrompt' in legacy) getDatabase().personaPrompt = legacy.personaPrompt as string
+  if ('userNote' in legacy) getDatabase().userNote = legacy.userNote as string
 }
 
 async function flushCommandEffects(): Promise<void> {
@@ -149,17 +150,17 @@ describe('persona ID read and command preparation', () => {
     updateSelectedPersonaField('userNote', 'Fresh note')
     updateSelectedPersonaField('personaPrompt', 'Fresh prompt')
 
-    expect(DBState.db.username).toBe('Fresh Name')
-    expect(DBState.db.userNote).toBe('Fresh note')
-    expect(DBState.db.personaPrompt).toBe('Fresh prompt')
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().username).toBe('Fresh Name')
+    expect(getDatabase().userNote).toBe('Fresh note')
+    expect(getDatabase().personaPrompt).toBe('Fresh prompt')
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Fresh Name',
       icon: 'icon-a.png',
       personaPrompt: 'Fresh prompt',
       note: 'Fresh note',
     })
-    expect(DBState.db.personas[1]).toMatchObject({
+    expect(getDatabase().personas[1]).toMatchObject({
       id: 'persona-b',
       name: 'Other Name',
       personaPrompt: 'Other prompt',
@@ -180,12 +181,12 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    DBState.db.username = 'Internal Name'
+    getDatabase().username = 'Internal Name'
 
     updateSelectedPersonaDisplayName('Visible Name')
 
-    expect(DBState.db.username).toBe('Internal Name')
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().username).toBe('Internal Name')
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Internal Name',
       displayName: 'Visible Name',
@@ -251,10 +252,10 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    DBState.db.username = 'Persona A'
-    DBState.db.userIcon = 'a.png'
-    DBState.db.personaPrompt = 'Old prompt'
-    DBState.db.userNote = 'Old note'
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Old prompt'
+    getDatabase().userNote = 'Old note'
     const previous = currentPersonaStateSnapshot()
     updateSelectedPersonaField('personaPrompt', 'Attempted prompt')
     const attempted = currentPersonaStateSnapshot()
@@ -266,32 +267,32 @@ describe('persona ID read and command preparation', () => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
 
-    DBState.db.personas[0] = {
-      ...DBState.db.personas[0],
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
       name: 'Persona A edited after dispatch',
     } as any
-    DBState.db.personas[1] = {
-      ...DBState.db.personas[1],
+    getDatabase().personas[1] = {
+      ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    DBState.db.selectedPersona = 1
-    DBState.db.username = 'Persona B live name'
-    DBState.db.userIcon = 'b-live.png'
-    DBState.db.personaPrompt = 'Persona B live prompt'
-    DBState.db.userNote = 'Persona B live note'
+    getDatabase().selectedPersona = 1
+    getDatabase().username = 'Persona B live name'
+    getDatabase().userIcon = 'b-live.png'
+    getDatabase().personaPrompt = 'Persona B live prompt'
+    getDatabase().userNote = 'Persona B live note'
     failure.resolve()
 
     expect(await resultPromise).toEqual({ status: 'error', error: 'persona command failed' })
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Persona A edited after dispatch',
       personaPrompt: 'Old prompt',
     })
-    expect(DBState.db.personas[1]).toMatchObject({
+    expect(getDatabase().personas[1]).toMatchObject({
       id: 'persona-b',
       name: 'Persona B edited after dispatch',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 1,
       username: 'Persona B live name',
       userIcon: 'b-live.png',
@@ -320,10 +321,10 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    DBState.db.username = 'Persona A draft'
-    DBState.db.userIcon = 'a-draft.png'
-    DBState.db.personaPrompt = 'A draft prompt'
-    DBState.db.userNote = 'A draft note'
+    getDatabase().username = 'Persona A draft'
+    getDatabase().userIcon = 'a-draft.png'
+    getDatabase().personaPrompt = 'A draft prompt'
+    getDatabase().userNote = 'A draft note'
     const failure = mockNextDeferredCommandFailure()
 
     saveUserPersona()
@@ -331,34 +332,34 @@ describe('persona ID read and command preparation', () => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
 
-    DBState.db.personas[0] = {
-      ...DBState.db.personas[0],
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
       note: 'Persona A newer note',
     } as any
-    DBState.db.personas[1] = {
-      ...DBState.db.personas[1],
+    getDatabase().personas[1] = {
+      ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    DBState.db.selectedPersona = 1
-    DBState.db.username = 'Persona B live name'
-    DBState.db.userIcon = 'b-live.png'
-    DBState.db.personaPrompt = 'Persona B live prompt'
-    DBState.db.userNote = 'Persona B live note'
+    getDatabase().selectedPersona = 1
+    getDatabase().username = 'Persona B live name'
+    getDatabase().userIcon = 'b-live.png'
+    getDatabase().personaPrompt = 'Persona B live prompt'
+    getDatabase().userNote = 'Persona B live note'
     failure.resolve()
     await flushCommandEffects()
 
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Persona A row',
       icon: 'a-row.png',
       personaPrompt: 'A row prompt',
       note: 'Persona A newer note',
     })
-    expect(DBState.db.personas[1]).toMatchObject({
+    expect(getDatabase().personas[1]).toMatchObject({
       id: 'persona-b',
       name: 'Persona B edited after dispatch',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 1,
       username: 'Persona B live name',
       userIcon: 'b-live.png',
@@ -380,10 +381,10 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    DBState.db.username = 'Persona A'
-    DBState.db.userIcon = 'a.png'
-    DBState.db.personaPrompt = 'Old prompt'
-    DBState.db.userNote = 'Old note'
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Old prompt'
+    getDatabase().userNote = 'Old note'
     const failure = mockNextDeferredCommandFailure()
 
     setSelectedPersonaPromptFromTrigger('Trigger prompt')
@@ -395,14 +396,14 @@ describe('persona ID read and command preparation', () => {
     failure.resolve()
     await flushCommandEffects()
 
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 0,
       username: 'Newer Persona A name',
       userIcon: 'a.png',
       personaPrompt: 'Old prompt',
       userNote: 'Old note',
     })
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Newer Persona A name',
       icon: 'a.png',
@@ -438,10 +439,10 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    DBState.db.username = 'Persona A draft'
-    DBState.db.userIcon = 'a-draft.png'
-    DBState.db.personaPrompt = 'A draft prompt'
-    DBState.db.userNote = 'A draft note'
+    getDatabase().username = 'Persona A draft'
+    getDatabase().userIcon = 'a-draft.png'
+    getDatabase().personaPrompt = 'A draft prompt'
+    getDatabase().userNote = 'A draft note'
     const failure = mockNextDeferredCommandFailure()
 
     changeUserPersona(1)
@@ -449,30 +450,30 @@ describe('persona ID read and command preparation', () => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
 
-    DBState.db.personas[1] = {
-      ...DBState.db.personas[1],
+    getDatabase().personas[1] = {
+      ...getDatabase().personas[1],
       name: 'Persona B edited after dispatch',
     } as any
-    DBState.db.selectedPersona = 2
-    DBState.db.username = 'Persona C live name'
-    DBState.db.userIcon = 'c-live.png'
-    DBState.db.personaPrompt = 'Persona C live prompt'
-    DBState.db.userNote = 'Persona C live note'
+    getDatabase().selectedPersona = 2
+    getDatabase().username = 'Persona C live name'
+    getDatabase().userIcon = 'c-live.png'
+    getDatabase().personaPrompt = 'Persona C live prompt'
+    getDatabase().userNote = 'Persona C live note'
     failure.resolve()
     await flushCommandEffects()
 
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Persona A row',
       icon: 'a-row.png',
       personaPrompt: 'A row prompt',
       note: 'A row note',
     })
-    expect(DBState.db.personas[1]).toMatchObject({
+    expect(getDatabase().personas[1]).toMatchObject({
       id: 'persona-b',
       name: 'Persona B edited after dispatch',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 2,
       username: 'Persona C live name',
       userIcon: 'c-live.png',
@@ -483,10 +484,10 @@ describe('persona ID read and command preparation', () => {
 
   it('selectedPersonaId returns null for missing and duplicate IDs without mutating the projection', () => {
     seedPersonaState([makePersona({ name: 'Missing ID' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
-    const missingBefore = cloneJsonValue(DBState.db)
+    const missingBefore = cloneJsonValue(getDatabase())
 
     expect(selectedPersonaId()).toBeNull()
-    expect(DBState.db).toEqual(missingBefore)
+    expect(getDatabase({ snapshot: true })).toEqual(missingBefore)
 
     seedPersonaState(
       [
@@ -495,21 +496,21 @@ describe('persona ID read and command preparation', () => {
       ],
       1,
     )
-    const duplicateBefore = cloneJsonValue(DBState.db)
+    const duplicateBefore = cloneJsonValue(getDatabase())
 
     expect(selectedPersonaId()).toBeNull()
-    expect(DBState.db).toEqual(duplicateBefore)
+    expect(getDatabase({ snapshot: true })).toEqual(duplicateBefore)
   })
 
   it('does not assign IDs or save profile fields while preparing an invalid reorder', async () => {
     seedPersonaState([makePersona({ name: 'Missing ID' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
-    const before = cloneJsonValue(DBState.db)
+    const before = cloneJsonValue(getDatabase())
 
     expect(beginPersonaReorder()).toBeNull()
     expect(reorderUserPersonasByIndices([1, 0], null)).toBe(false)
     await flushCommandEffects()
 
-    expect(DBState.db).toEqual(before)
+    expect(getDatabase({ snapshot: true })).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -521,12 +522,12 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    const before = cloneJsonValue(DBState.db)
+    const before = cloneJsonValue(getDatabase())
 
     expect(deleteSelectedUserPersona()).toBe(false)
     await flushCommandEffects()
 
-    expect(DBState.db).toEqual(before)
+    expect(getDatabase({ snapshot: true })).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
   })
 
@@ -538,12 +539,12 @@ describe('persona ID read and command preparation', () => {
       ],
       0,
     )
-    const before = cloneJsonValue(DBState.db)
+    const before = cloneJsonValue(getDatabase())
 
     changeUserPersona(1)
     await flushCommandEffects()
 
-    expect(DBState.db).toEqual(before)
+    expect(getDatabase({ snapshot: true })).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
   })
 })
@@ -565,18 +566,18 @@ describe('persona collection rollback guards', () => {
     mockNextCommandFailure()
 
     createNewUserPersona()
-    DBState.db.personas[0] = {
-      ...DBState.db.personas[0],
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
       name: 'Persona A edited after dispatch',
     } as any
     await flushCommandEffects()
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a'])
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-a'])
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Persona A edited after dispatch',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 0,
       username: 'Unsaved User Name',
       userIcon: 'unsaved-user-icon.png',
@@ -598,15 +599,15 @@ describe('persona collection rollback guards', () => {
     mockNextCommandFailure()
 
     const created = createNewUserPersona()
-    const createdIndex = DBState.db.personas.findIndex((persona) => persona.id === created.id)
-    DBState.db.personas[createdIndex] = {
-      ...DBState.db.personas[createdIndex],
+    const createdIndex = getDatabase().personas.findIndex((persona) => persona.id === created.id)
+    getDatabase().personas[createdIndex] = {
+      ...getDatabase().personas[createdIndex],
       name: 'Edited New Persona',
     } as any
     await flushCommandEffects()
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a', created.id])
-    expect(DBState.db.personas[1]).toMatchObject({
+    expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-a', created.id])
+    expect(getDatabase().personas[1]).toMatchObject({
       id: created.id,
       name: 'Edited New Persona',
     })
@@ -639,18 +640,18 @@ describe('persona collection rollback guards', () => {
       ],
       1,
     )
-    DBState.db.username = 'Persona B'
-    DBState.db.userIcon = 'b.png'
-    DBState.db.personaPrompt = 'Prompt B'
-    DBState.db.userNote = 'Note B'
+    getDatabase().username = 'Persona B'
+    getDatabase().userIcon = 'b.png'
+    getDatabase().personaPrompt = 'Prompt B'
+    getDatabase().userNote = 'Note B'
     mockNextCommandFailure()
 
     expect(deleteSelectedUserPersona()).toBe(true)
-    DBState.db.personas[1] = {
-      ...DBState.db.personas[1],
+    getDatabase().personas[1] = {
+      ...getDatabase().personas[1],
       name: 'Persona C edited after dispatch',
     } as any
-    DBState.db.personas.push(
+    getDatabase().personas.push(
       makePersona({
         id: 'persona-d',
         name: 'Persona D appended after dispatch',
@@ -658,25 +659,25 @@ describe('persona collection rollback guards', () => {
     )
     await flushCommandEffects()
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual([
+    expect(getDatabase().personas.map((persona) => persona.id)).toEqual([
       'persona-a',
       'persona-b',
       'persona-c',
       'persona-d',
     ])
-    expect(DBState.db.personas[1]).toMatchObject({
+    expect(getDatabase().personas[1]).toMatchObject({
       id: 'persona-b',
       name: 'Persona B',
     })
-    expect(DBState.db.personas[2]).toMatchObject({
+    expect(getDatabase().personas[2]).toMatchObject({
       id: 'persona-c',
       name: 'Persona C edited after dispatch',
     })
-    expect(DBState.db.personas[3]).toMatchObject({
+    expect(getDatabase().personas[3]).toMatchObject({
       id: 'persona-d',
       name: 'Persona D appended after dispatch',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 1,
       username: 'Persona B',
       userIcon: 'b.png',
@@ -697,18 +698,18 @@ describe('persona collection rollback guards', () => {
     mockNextCommandFailure()
 
     expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
-    DBState.db.personas[0] = {
-      ...DBState.db.personas[0],
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
       name: 'Persona C edited after dispatch',
     } as any
     await flushCommandEffects()
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-c'])
-    expect(DBState.db.personas[2]).toMatchObject({
+    expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-c'])
+    expect(getDatabase().personas[2]).toMatchObject({
       id: 'persona-c',
       name: 'Persona C edited after dispatch',
     })
-    expect(DBState.db.selectedPersona).toBe(1)
+    expect(getDatabase().selectedPersona).toBe(1)
   })
 
   it('failed older reorder skips rollback when a newer reorder changed the live ID order', async () => {
@@ -723,12 +724,12 @@ describe('persona collection rollback guards', () => {
     mockNextCommandFailure()
 
     expect(reorderUserPersonasByIndices([2, 0, 1], 'persona-b')).toBe(true)
-    DBState.db.personas = [DBState.db.personas[2], DBState.db.personas[0], DBState.db.personas[1]]
-    DBState.db.selectedPersona = 0
+    getDatabase().personas = [getDatabase().personas[2], getDatabase().personas[0], getDatabase().personas[1]]
+    getDatabase().selectedPersona = 0
     await flushCommandEffects()
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-c', 'persona-a'])
-    expect(DBState.db.selectedPersona).toBe(0)
+    expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-b', 'persona-c', 'persona-a'])
+    expect(getDatabase().selectedPersona).toBe(0)
   })
 })
 
@@ -771,11 +772,11 @@ describe('selected persona dirty projection reconciliation', () => {
 
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(DBState.db.username).toBe('Local Name')
-    expect(DBState.db.personaPrompt).toBe('Local prompt')
-    expect(DBState.db.userNote).toBe('Local note')
-    expect(DBState.db.userIcon).toBe('fresh-icon.png')
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().username).toBe('Local Name')
+    expect(getDatabase().personaPrompt).toBe('Local prompt')
+    expect(getDatabase().userNote).toBe('Local note')
+    expect(getDatabase().userIcon).toBe('fresh-icon.png')
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-dirty-profile',
       name: 'Local Name',
       icon: 'fresh-icon.png',
@@ -817,12 +818,12 @@ describe('selected persona dirty projection reconciliation', () => {
 
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       username: 'Local Name',
       personaPrompt: 'Local prompt',
       userNote: 'Local note',
     })
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       name: 'Local Name',
       personaPrompt: 'Local prompt',
       note: 'Local note',
@@ -865,8 +866,8 @@ describe('selected persona dirty projection reconciliation', () => {
     )
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(DBState.db.username).toBe('Clean Server Name')
-    expect(DBState.db.personas[0].name).toBe('Clean Server Name')
+    expect(getDatabase().username).toBe('Clean Server Name')
+    expect(getDatabase().personas[0].name).toBe('Clean Server Name')
   })
 
   it('protects dirty largePortrait as a selected-row-only field and clears after projection catches up', () => {
@@ -889,7 +890,7 @@ describe('selected persona dirty projection reconciliation', () => {
     })
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       name: 'Fresh server name',
       largePortrait: true,
     })
@@ -905,6 +906,6 @@ describe('selected persona dirty projection reconciliation', () => {
     })
     reconcileSelectedPersonaProjectionEpoch()
 
-    expect(DBState.db.personas[0].largePortrait).toBe(false)
+    expect(getDatabase().personas[0].largePortrait).toBe(false)
   })
 })

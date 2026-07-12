@@ -31,7 +31,7 @@
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import { onDestroy, onMount, untrack } from 'svelte'
   import { sleep, sortableOptions } from 'src/ts/util'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { getServerProjectionApplyEpoch } from 'src/ts/server/projectionWriteGuard.svelte'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
 
@@ -120,7 +120,7 @@
   <div
     class="p-4 rounded-md border-darkborderc border mb-2 flex-wrap flex gap-2 w-full max-w-full min-w-0"
     bind:this={ele}>
-    {#each DBState.db.personas as persona, i}
+    {#each getDatabase().personas as persona, i}
       <button
         data-risu-idx={i}
         onclick={() => {
@@ -129,19 +129,19 @@
         {#if persona.icon === ''}
           <div
             class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-            class:ring-3={i === DBState.db.selectedPersona}>
+            class:ring-3={i === getDatabase().selectedPersona}>
           </div>
         {:else}
           {#await getCharImage(persona.icon, 'css')}
             <div
               class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
-              class:ring-3={i === DBState.db.selectedPersona}>
+              class:ring-3={i === getDatabase().selectedPersona}>
             </div>
           {:then im}
             <div
               class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"
               style={im}
-              class:ring-3={i === DBState.db.selectedPersona}>
+              class:ring-3={i === getDatabase().selectedPersona}>
             </div>
           {/await}
         {/if}
@@ -176,10 +176,10 @@
       onclick={() => {
         selectUserImg()
       }}>
-      {#if DBState.db.userIcon === ''}
+      {#if getDatabase().userIcon === ''}
         <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
       {:else}
-        {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona].largePortrait ? 'lgcss' : 'css')}
+        {#await getCharImage(getDatabase().userIcon, getDatabase().personas[getDatabase().selectedPersona].largePortrait ? 'lgcss' : 'css')}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500"></div>
         {:then im}
           <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-green-500" style={im}>
@@ -194,25 +194,25 @@
       marginBottom
       size="lg"
       placeholder="User"
-      bind:value={() => DBState.db.username, (value) => updateSelectedPersonaField('username', value)} />
+      bind:value={() => getDatabase().username, (value) => updateSelectedPersonaField('username', value)} />
     <span class="text-sm text-textcolor2">{language.displayName}</span>
     <TextInput
       marginBottom
       size="lg"
       placeholder={language.displayName}
       bind:value={
-        () => DBState.db.personas[DBState.db.selectedPersona]?.displayName ?? '', updateSelectedPersonaDisplayName
+        () => getDatabase().personas[getDatabase().selectedPersona]?.displayName ?? '', updateSelectedPersonaDisplayName
       } />
     <span class="text-sm text-textcolor2">{language.personaNote}</span>
     <TextAreaInput
       height="20"
       margin="bottom"
-      bind:value={() => DBState.db.userNote, (value) => updateSelectedPersonaField('userNote', value)}
+      bind:value={() => getDatabase().userNote, (value) => updateSelectedPersonaField('userNote', value)}
       placeholder={`Put unique notes for this persona here.\nExample: [Alternate Hunters persona]`} />
     <span class="text-sm text-textcolor2">{language.description}</span>
     <TextAreaInput
       autocomplete="off"
-      bind:value={() => DBState.db.personaPrompt, (value) => updateSelectedPersonaField('personaPrompt', value)}
+      bind:value={() => getDatabase().personaPrompt, (value) => updateSelectedPersonaField('personaPrompt', value)}
       placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
     <div class="flex gap-2 mt-4 max-w-full flex-wrap">
       <Button onclick={exportUserPersona}>{language.export}</Button>
@@ -221,11 +221,11 @@
       <Button
         styled="danger"
         onclick={async () => {
-          if (DBState.db.personas.length === 1) {
+          if (getDatabase().personas.length === 1) {
             return
           }
           const d = await alertConfirm(
-            `${language.removeConfirm}${getPersonaDisplayName(DBState.db.personas[DBState.db.selectedPersona])}`,
+            `${language.removeConfirm}${getPersonaDisplayName(getDatabase().personas[getDatabase().selectedPersona])}`,
           )
           if (d) {
             deleteSelectedUserPersona()
@@ -233,7 +233,7 @@
         }}>{language.remove}</Button>
       <Check
         bind:check={
-          () => DBState.db.personas[DBState.db.selectedPersona].largePortrait,
+          () => getDatabase().personas[getDatabase().selectedPersona].largePortrait,
           (value) => updateSelectedPersonaLargePortrait(value)
         }>{language.largePortrait}</Check>
     </div>

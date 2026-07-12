@@ -53,7 +53,8 @@ vi.mock('./util', () => {
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState } from './stores.svelte'
+import './stores.svelte'
+import { getDatabase, setDatabaseLite } from './storage/database.svelte'
 import { importUserPersona, selectUserImg, updateSelectedPersonaField } from './persona'
 import { PngChunk } from './pngChunk'
 
@@ -98,7 +99,7 @@ function makePersona(patch: Record<string, unknown>): Record<string, unknown> {
 
 function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPersona = 0): void {
   const selected = personas[selectedPersona]
-  DBState.db = {
+  setDatabaseLite({
     characters: [],
     personas,
     selectedPersona,
@@ -106,16 +107,16 @@ function seedPersonaState(personas: Array<Record<string, unknown>>, selectedPers
     userIcon: selected?.icon ?? '',
     personaPrompt: selected?.personaPrompt ?? '',
     userNote: selected?.note ?? '',
-  } as any
+  } as any)
 }
 
 function selectPersonaDirect(index: number): void {
-  const target = DBState.db.personas[index]
-  DBState.db.selectedPersona = index
-  DBState.db.username = target.name
-  DBState.db.userIcon = target.icon
-  DBState.db.personaPrompt = target.personaPrompt
-  DBState.db.userNote = target.note
+  const target = getDatabase().personas[index]
+  getDatabase().selectedPersona = index
+  getDatabase().username = target.name
+  getDatabase().userIcon = target.icon
+  getDatabase().personaPrompt = target.personaPrompt
+  getDatabase().userNote = target.note
 }
 
 function personaFile(name = 'persona.png') {
@@ -245,10 +246,10 @@ describe('Phase 3 persona icon upload freshness', () => {
     await operation
     await tick()
 
-    expect(DBState.db.selectedPersona).toBe(1)
-    expect(DBState.db.userIcon).toBe('icon-b')
-    expect(DBState.db.personas[0].icon).toBe('icon-a')
-    expect(DBState.db.personas[1].icon).toBe('icon-b')
+    expect(getDatabase().selectedPersona).toBe(1)
+    expect(getDatabase().userIcon).toBe('icon-b')
+    expect(getDatabase().personas[0].icon).toBe('icon-a')
+    expect(getDatabase().personas[1].icon).toBe('icon-b')
     expect(commandCalls(calls)).toHaveLength(0)
   })
 
@@ -285,13 +286,13 @@ describe('Phase 3 persona icon upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       username: 'Edited Name',
       personaPrompt: 'Edited prompt',
       userNote: 'Edited note',
       userIcon: 'fresh-icon',
     })
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-edit',
       name: 'Edited Name',
       icon: 'fresh-icon',
@@ -330,8 +331,8 @@ describe('Phase 3 persona icon upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(DBState.db.userIcon).toBe('older-icon')
-    expect(DBState.db.personas[0].icon).toBe('older-icon')
+    expect(getDatabase().userIcon).toBe('older-icon')
+    expect(getDatabase().personas[0].icon).toBe('older-icon')
   })
 
   it('failed icon save rolls back only attempted icon fields after newer profile and selection changes', async () => {
@@ -353,25 +354,25 @@ describe('Phase 3 persona icon upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    DBState.db.personas[0] = {
-      ...DBState.db.personas[0],
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
       name: 'Persona A edited after dispatch',
     } as any
     selectPersonaDirect(1)
-    DBState.db.username = 'Persona B live name'
-    DBState.db.userIcon = 'old-icon-b'
-    DBState.db.personaPrompt = 'Persona B live prompt'
-    DBState.db.userNote = 'Persona B live note'
+    getDatabase().username = 'Persona B live name'
+    getDatabase().userIcon = 'old-icon-b'
+    getDatabase().personaPrompt = 'Persona B live prompt'
+    getDatabase().userNote = 'Persona B live note'
     command.resolve(jsonResponse({ error: 'persona icon failed' }, 500))
     await operation
     await tick()
 
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Persona A edited after dispatch',
       icon: 'old-icon-a',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 1,
       username: 'Persona B live name',
       userIcon: 'old-icon-b',
@@ -405,13 +406,13 @@ describe('Phase 3 persona icon upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    const imported = DBState.db.personas.find((persona) => persona.name === 'Imported Persona')
+    const imported = getDatabase().personas.find((persona) => persona.name === 'Imported Persona')
     expect(imported?.icon).toBe('imported-icon')
-    DBState.db.personas[0] = {
-      ...DBState.db.personas[0],
+    getDatabase().personas[0] = {
+      ...getDatabase().personas[0],
       name: 'Persona A edited after dispatch',
     } as any
-    DBState.db.personas.push(
+    getDatabase().personas.push(
       makePersona({
         id: 'persona-d',
         name: 'Persona D appended after dispatch',
@@ -420,25 +421,25 @@ describe('Phase 3 persona icon upload freshness', () => {
         note: 'D note',
       }) as any,
     )
-    DBState.db.selectedPersona = 3
-    DBState.db.username = 'Persona D live name'
-    DBState.db.userIcon = 'icon-d'
-    DBState.db.personaPrompt = 'Persona D live prompt'
-    DBState.db.userNote = 'Persona D live note'
+    getDatabase().selectedPersona = 3
+    getDatabase().username = 'Persona D live name'
+    getDatabase().userIcon = 'icon-d'
+    getDatabase().personaPrompt = 'Persona D live prompt'
+    getDatabase().userNote = 'Persona D live note'
     command.resolve(jsonResponse({ error: 'persona import failed' }, 500))
     await operation
     await tick()
 
-    expect(DBState.db.personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-d'])
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(getDatabase().personas.map((persona) => persona.id)).toEqual(['persona-a', 'persona-b', 'persona-d'])
+    expect(getDatabase().personas[0]).toMatchObject({
       id: 'persona-a',
       name: 'Persona A edited after dispatch',
     })
-    expect(DBState.db.personas[2]).toMatchObject({
+    expect(getDatabase().personas[2]).toMatchObject({
       id: 'persona-d',
       name: 'Persona D appended after dispatch',
     })
-    expect(DBState.db).toMatchObject({
+    expect(getDatabase()).toMatchObject({
       selectedPersona: 2,
       username: 'Persona D live name',
       userIcon: 'icon-d',

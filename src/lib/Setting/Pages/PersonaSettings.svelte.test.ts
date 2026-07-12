@@ -14,8 +14,8 @@ describe('PersonaSettings persistence contracts', () => {
     const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/PersonaSettings.svelte'), 'utf8')
 
     expect(source).toContain('{language.personaNote}')
-    expect(source).not.toContain('DBState.db.personaNote')
-    expect(source).toMatch(/<TextAreaInput[\s\S]*bind:value=\{\(\) => DBState\.db\.userNote,/)
+    expect(source).not.toContain("from 'src/ts/stores.svelte'")
+    expect(source).toMatch(/<TextAreaInput[\s\S]*bind:value=\{\(\) => getDatabase\(\)\.userNote,/)
   })
 
   it('exposes display name as a persona row field', () => {
@@ -23,7 +23,7 @@ describe('PersonaSettings persistence contracts', () => {
 
     expect(source).toContain('{language.displayName}')
     expect(source).toContain('updateSelectedPersonaDisplayName')
-    expect(source).toContain('DBState.db.personas[DBState.db.selectedPersona]?.displayName')
+    expect(source).toContain('getDatabase().personas[getDatabase().selectedPersona]?.displayName')
   })
 
   it('reconciles projection epoch changes before queuing normal selected-persona edits', () => {
