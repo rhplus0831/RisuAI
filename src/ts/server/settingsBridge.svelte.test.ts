@@ -79,8 +79,10 @@ vi.mock('../process/templates/templates', () => ({
   },
 }))
 
-import { DBState } from '../stores.svelte'
 import type { HypaV3Preset } from '../process/memory/hypav3'
+import { getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import type { Database } from '../storage/database.svelte'
+import '../stores.svelte'
 import {
   applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
@@ -92,8 +94,17 @@ import {
 
 const DELAY = 50
 
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
+
 function setupSettings(settings: Record<string, unknown>): void {
-  ;(DBState as { db: unknown }).db = { ...settings }
+  ;(testDatabaseState as { db: unknown }).db = { ...settings }
 }
 
 function hypaPreset(name: string, settings: Record<string, unknown> = {}): HypaV3Preset {
@@ -130,7 +141,7 @@ async function flushAndSettle(): Promise<void> {
 
 async function applyProjectionSetting(key: string, value: unknown): Promise<void> {
   projectionGuardState.epoch += 1
-  ;(DBState.db as unknown as Record<string, unknown>)[key] = value
+  ;(testDatabaseState.db as unknown as Record<string, unknown>)[key] = value
   await flushAndSettle()
 }
 
@@ -143,7 +154,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
-  ;(DBState as { db: unknown }).db = {}
+  ;(testDatabaseState as { db: unknown }).db = {}
 })
 
 describe('settingsBridge coalescing', () => {
@@ -175,7 +186,7 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    expect(DBState.db).toMatchObject({
+    expect(testDatabaseState.db).toMatchObject({
       apiType: 'preset-api',
       temperature: 0.75,
       mainPrompt: 'preset prompt',
@@ -213,7 +224,7 @@ describe('settingsBridge coalescing', () => {
     expect(recorded.patches[0].patch).not.toHaveProperty('mainPrompt')
 
     recorded.patches[0].rollback?.()
-    expect(DBState.db).toMatchObject({
+    expect(testDatabaseState.db).toMatchObject({
       apiType: 'old-api',
       temperature: 0.2,
       maxContext: 4096,
@@ -251,7 +262,7 @@ describe('settingsBridge coalescing', () => {
     await Promise.resolve()
 
     expect(recorded.patches).toHaveLength(0)
-    expect(DBState.db).toMatchObject({
+    expect(testDatabaseState.db).toMatchObject({
       notification: true,
       sdConfig: { steps: 20, sampler: 'euler' },
     })
@@ -270,7 +281,7 @@ describe('settingsBridge coalescing', () => {
     await Promise.resolve()
 
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ useAutoSuggestions: true }])
-    expect(DBState.db).toMatchObject({
+    expect(testDatabaseState.db).toMatchObject({
       notification: true,
       useAutoSuggestions: true,
     })
@@ -281,7 +292,7 @@ describe('settingsBridge coalescing', () => {
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
 
     applyServerBackedSettingsPatch({ notification: false })
@@ -305,13 +316,13 @@ describe('settingsBridge coalescing', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
 
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
-    expect(DBState.db.notification).toBe(true)
+    expect(testDatabaseState.db.notification).toBe(true)
 
     recorded.patches[0].rollback?.()
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(DBState.db.notification).toBe(false)
+    expect(testDatabaseState.db.notification).toBe(false)
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
     stop()
   })
@@ -322,10 +333,10 @@ describe('settingsBridge coalescing', () => {
     applyServerBackedSettingsPatch({ textTheme: 'attempted' })
     await Promise.resolve()
 
-    DBState.db.textTheme = 'newer local'
+    testDatabaseState.db.textTheme = 'newer local'
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.textTheme).toBe('newer local')
+    expect(testDatabaseState.db.textTheme).toBe('newer local')
   })
 
   it('restores only still-attempted keys from a multi-key settings rollback', async () => {
@@ -340,11 +351,11 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.textTheme = 'newer local'
+    testDatabaseState.db.textTheme = 'newer local'
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.notification).toBe(false)
-    expect(DBState.db.textTheme).toBe('newer local')
+    expect(testDatabaseState.db.notification).toBe(false)
+    expect(testDatabaseState.db.textTheme).toBe('newer local')
   })
 
   it('preserves the existing undefined/no-delete behavior when rolling back an added setting', async () => {
@@ -353,12 +364,12 @@ describe('settingsBridge coalescing', () => {
     applyServerBackedSettingsPatch({ textTheme: 'attempted' })
     await Promise.resolve()
 
-    expect(DBState.db.textTheme).toBe('attempted')
+    expect(testDatabaseState.db.textTheme).toBe('attempted')
 
     recorded.patches[0].rollback?.()
 
-    expect(Object.hasOwn(DBState.db, 'textTheme')).toBe(true)
-    expect(DBState.db.textTheme).toBeUndefined()
+    expect(Object.hasOwn(testDatabaseState.db, 'textTheme')).toBe(true)
+    expect(testDatabaseState.db.textTheme).toBeUndefined()
   })
 
   it('removes only the failed Hypa V3 appended preset while preserving sibling edits and later appends', async () => {
@@ -371,7 +382,7 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.hypaV3Presets = [
+    testDatabaseState.db.hypaV3Presets = [
       hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
       hypaPreset('Beta'),
       hypaPreset('Imported'),
@@ -379,7 +390,7 @@ describe('settingsBridge coalescing', () => {
     ]
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3Presets).toEqual([
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([
       hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
       hypaPreset('Beta'),
       hypaPreset('Later local'),
@@ -396,14 +407,14 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.hypaV3Presets = [
+    testDatabaseState.db.hypaV3Presets = [
       hypaPreset('Alpha'),
       hypaPreset('Imported', { summarizationPrompt: 'edited after dispatch' }),
       hypaPreset('Later local'),
     ]
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3Presets).toEqual([
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([
       hypaPreset('Alpha'),
       hypaPreset('Imported', { summarizationPrompt: 'edited after dispatch' }),
       hypaPreset('Later local'),
@@ -421,14 +432,14 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.hypaV3Presets = [
+    testDatabaseState.db.hypaV3Presets = [
       renamedAlpha,
       hypaPreset('Beta', { summarizationPrompt: 'newer beta prompt' }),
       hypaPreset('Later local'),
     ]
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3Presets).toEqual([
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([
       hypaPreset('Alpha'),
       hypaPreset('Beta', { summarizationPrompt: 'newer beta prompt' }),
       hypaPreset('Later local'),
@@ -447,21 +458,21 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.hypaV3Presets = [
+    testDatabaseState.db.hypaV3Presets = [
       hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
       hypaPreset('Gamma'),
       hypaPreset('Later local'),
     ]
-    DBState.db.hypaV3PresetId = 0
+    testDatabaseState.db.hypaV3PresetId = 0
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3Presets).toEqual([
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([
       hypaPreset('Alpha', { summarizationPrompt: 'newer alpha prompt' }),
       hypaPreset('Beta'),
       hypaPreset('Gamma'),
       hypaPreset('Later local'),
     ])
-    expect(DBState.db.hypaV3PresetId).toBe(1)
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(1)
   })
 
   it('rebases newer live Hypa V3 selection when a failed delete rollback reinserts before it', async () => {
@@ -476,16 +487,16 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.hypaV3PresetId = 2
+    testDatabaseState.db.hypaV3PresetId = 2
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3Presets).toEqual([
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([
       hypaPreset('Alpha'),
       hypaPreset('Beta'),
       hypaPreset('Gamma'),
       hypaPreset('Delta'),
     ])
-    expect(DBState.db.hypaV3PresetId).toBe(3)
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(3)
   })
 
   it('does not duplicate a failed Hypa V3 deleted preset when an equivalent row is already live', async () => {
@@ -500,12 +511,12 @@ describe('settingsBridge coalescing', () => {
     })
     await Promise.resolve()
 
-    DBState.db.hypaV3Presets = [hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Beta')]
-    DBState.db.hypaV3PresetId = 0
+    testDatabaseState.db.hypaV3Presets = [hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Beta')]
+    testDatabaseState.db.hypaV3PresetId = 0
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Beta')])
-    expect(DBState.db.hypaV3PresetId).toBe(0)
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Gamma'), hypaPreset('Beta')])
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(0)
   })
 
   it('keeps selection-only Hypa V3 preset id patches on the generic rollback path', async () => {
@@ -519,8 +530,8 @@ describe('settingsBridge coalescing', () => {
 
     recorded.patches[0].rollback?.()
 
-    expect(DBState.db.hypaV3PresetId).toBe(0)
-    expect(DBState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Beta')])
+    expect(testDatabaseState.db.hypaV3PresetId).toBe(0)
+    expect(testDatabaseState.db.hypaV3Presets).toEqual([hypaPreset('Alpha'), hypaPreset('Beta')])
   })
 
   it('L23: queued settings rollback suppresses watcher echoes for debounced writes', async () => {
@@ -528,7 +539,7 @@ describe('settingsBridge coalescing', () => {
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
     flushSync()
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -538,10 +549,10 @@ describe('settingsBridge coalescing', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(DBState.db.notification).toBe(false)
+    expect(testDatabaseState.db.notification).toBe(false)
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true }])
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -559,9 +570,9 @@ describe('settingsBridge coalescing', () => {
     })
     flushSync()
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
-    DBState.db.useAutoSuggestions = true
+    testDatabaseState.db.useAutoSuggestions = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -574,7 +585,7 @@ describe('settingsBridge coalescing', () => {
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
     flushPendingServerBackedSettingsPatch({ keepalive: true })
     await Promise.resolve()
@@ -596,7 +607,7 @@ describe('settingsBridge coalescing', () => {
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
     stop()
     await Promise.resolve()
@@ -613,9 +624,9 @@ describe('settingsBridge coalescing', () => {
     const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
     flushSync()
 
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
-    DBState.db.notification = false
+    testDatabaseState.db.notification = false
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -629,12 +640,12 @@ describe('settingsBridge coalescing', () => {
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.notification = true
+    testDatabaseState.db.notification = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.patches).toHaveLength(0)
 
-    DBState.db.notification = false
+    testDatabaseState.db.notification = false
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: false }])
@@ -656,7 +667,7 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
-  it('reasserts a dirty setting draft value to DBState after a stale projection overwrites it', async () => {
+  it('reasserts a dirty setting draft value to testDatabaseState after a stale projection overwrites it', async () => {
     setupSettings({
       globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],
     })
@@ -667,7 +678,9 @@ describe('settingsBridge coalescing', () => {
 
     await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'stale server', out: '', type: 'editinput' }])
 
-    expect(DBState.db.globalscript).toEqual([{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }])
+    expect(testDatabaseState.db.globalscript).toEqual([
+      { id: 'script-a', in: 'local dirty', out: '', type: 'editinput' },
+    ])
 
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([
@@ -691,7 +704,9 @@ describe('settingsBridge coalescing', () => {
     await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
 
     expect(draft.value).toEqual([{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
-    expect(DBState.db.globalscript).toEqual([{ id: 'script-a', in: 'server later', out: '', type: 'editinput' }])
+    expect(testDatabaseState.db.globalscript).toEqual([
+      { id: 'script-a', in: 'server later', out: '', type: 'editinput' },
+    ])
     stop()
   })
 
