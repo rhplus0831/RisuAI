@@ -9,7 +9,6 @@ vi.mock('../process/modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-import { DBState } from '../stores.svelte'
 import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../server/commands'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import {
@@ -26,6 +25,7 @@ import {
   deletePreset,
   ensureBotPresetHydrated,
   extractLegacyBotPresetByIndex,
+  getDatabase,
   mergeServerProjectionCharacterRow,
   mergeServerProjectionFields,
   mergeServerProjectionPresetCollection,
@@ -37,6 +37,7 @@ import {
   reorderPresets,
   saveCurrentPreset,
   setDatabase,
+  setDatabaseLite,
   setPreset,
   setServerProjectionWriteGuardEnabled,
   selectModelPreset,
@@ -60,12 +61,12 @@ interface CapturedFetch {
 }
 
 function seedDatabase(characters: Array<Record<string, unknown>>) {
-  DBState.db = {
+  setDatabaseLite({
     characters,
     modules: [],
     personas: [],
     language: 'en',
-  } as unknown as Database
+  } as unknown as Database)
 }
 
 function clonePlain<T>(value: T): T {
@@ -263,11 +264,11 @@ describe('settings database normalization', () => {
     seedPresetDatabase({
       keepSessionAlive: 'pip' as any,
     })
-    const data = clonePlain(DBState.db)
+    const data = clonePlain(getDatabase())
 
     setDatabase(data)
 
-    expect(DBState.db.keepSessionAlive).toBe('sound')
+    expect(getDatabase().keepSessionAlive).toBe('sound')
   })
 })
 
@@ -319,11 +320,11 @@ describe('model profile database normalization', () => {
         unsupportedRuntimeField: true,
       } as any,
     })
-    const data = clonePlain(DBState.db)
+    const data = clonePlain(getDatabase())
 
     setDatabase(data)
 
-    expect(DBState.db.modelProfiles).toEqual([
+    expect(getDatabase().modelProfiles).toEqual([
       {
         id: 'profile-a',
         name: 'Primary',
@@ -354,11 +355,11 @@ describe('model profile database normalization', () => {
       { id: 'profile-b', name: 'Identity Only' },
       { id: 'profile-c', name: 'profile-c' },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual({
+    expect(getDatabase().modelRoleProfiles).toEqual({
       ...Object.fromEntries(MODEL_ROLES.map((role) => [role, { mode: 'legacy' }])),
       memory: { mode: 'profile', profileId: 'profile-a' },
     })
-    expect(DBState.db.modelRuntimeDefaults).toEqual({
+    expect(getDatabase().modelRuntimeDefaults).toEqual({
       maxContext: 8192,
       temperature: 55,
       modelTools: ['tool-a'],
@@ -407,7 +408,7 @@ describe('model profile database normalization', () => {
     })
 
     setPreset(
-      DBState.db,
+      getDatabase(),
       makePreset('preset-c', 'Gamma', {
         modelProfiles: [
           {
@@ -434,7 +435,7 @@ describe('model profile database normalization', () => {
       }),
     )
 
-    expect(DBState.db.modelProfiles).toEqual([
+    expect(getDatabase().modelProfiles).toEqual([
       {
         id: 'target-profile',
         name: 'Target Profile',
@@ -442,34 +443,34 @@ describe('model profile database normalization', () => {
         providerOptions: { requestModel: 'target-wire' },
       },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual(
+    expect(getDatabase().modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'target-profile' },
       }),
     )
-    expect(DBState.db.modelRuntimeDefaults).toEqual({
+    expect(getDatabase().modelRuntimeDefaults).toEqual({
       temperature: 66,
       modelTools: ['preset-tool'],
     })
-    expect(DBState.db.agentPresets).toEqual([
+    expect(getDatabase().agentPresets).toEqual([
       { id: 'agent-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
     ])
-    expect(DBState.db.agentPresetDefaultId).toBe('agent-target')
+    expect(getDatabase().agentPresetDefaultId).toBe('agent-target')
   })
 
   it('does not apply legacy bot preset promptTemplate into top-level promptTemplate', () => {
     seedPresetDatabase()
-    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
+    const beforePromptTemplate = clonePlain(getDatabase().promptTemplate)
 
     setPreset(
-      DBState.db,
+      getDatabase(),
       makePreset('preset-c', 'Gamma', {
         promptTemplate: [{ id: 'gamma-prompt', type: 'plain', text: 'gamma prompt item' }] as any,
       }),
     )
 
-    expect(DBState.db.mainPrompt).toBe('Gamma prompt')
-    expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+    expect(getDatabase().mainPrompt).toBe('Gamma prompt')
+    expect(getDatabase().promptTemplate).toEqual(beforePromptTemplate)
   })
 })
 
@@ -486,11 +487,11 @@ describe('agent preset database normalization', () => {
       ],
       agentPresetDefaultId: 'missing-agent-preset',
     })
-    const data = clonePlain(DBState.db)
+    const data = clonePlain(getDatabase())
 
     setDatabase(data)
 
-    expect(DBState.db.agentPresets).toEqual([
+    expect(getDatabase().agentPresets).toEqual([
       {
         id: 'ap_research',
         name: 'Research',
@@ -515,12 +516,12 @@ describe('agent preset database normalization', () => {
         ],
       },
     ])
-    expect(DBState.db.agentPresetDefaultId).toBeUndefined()
+    expect(getDatabase().agentPresetDefaultId).toBeUndefined()
   })
 })
 
 function seedPresetDatabase(patch: Partial<Database> = {}): void {
-  DBState.db = {
+  setDatabaseLite({
     characters: [],
     modules: [],
     personas: [],
@@ -643,7 +644,7 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
     dynamicOutput: null,
     customBackground: 'live background',
     ...patch,
-  } as unknown as Database
+  } as unknown as Database)
 }
 
 beforeEach(() => {
@@ -654,12 +655,12 @@ beforeEach(() => {
 
 afterEach(() => {
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = {
+  setDatabaseLite({
     characters: [],
     modules: [],
     personas: [],
     language: 'en',
-  } as unknown as Database
+  } as unknown as Database)
   vi.unstubAllGlobals()
 })
 
@@ -676,12 +677,12 @@ describe('mergeServerProjectionCharacterRow', () => {
     } as unknown as Database)
 
     expect(hasDestructiveRefreshEpochChanged(beforeFullReplace)).toBe(true)
-    expect(DBState.db.language).toBe('ko')
+    expect(getDatabase().language).toBe('ko')
 
     const afterFullReplace = captureDestructiveRefreshEpoch()
     mergeServerProjectionFields({ language: 'en' } as Partial<Database>)
 
-    expect(DBState.db.language).toBe('en')
+    expect(getDatabase().language).toBe('en')
     expect(captureDestructiveRefreshEpoch()).toBe(afterFullReplace)
   })
 
@@ -692,7 +693,7 @@ describe('mergeServerProjectionCharacterRow', () => {
 
     mergeServerProjectionFields({ language: 'ko' } as Partial<Database>)
 
-    expect(DBState.db.language).toBe('ko')
+    expect(getDatabase().language).toBe('ko')
     expect(activeLanguage.showHelp).toBe('도움말 보기')
   })
 
@@ -704,8 +705,8 @@ describe('mergeServerProjectionCharacterRow', () => {
 
     mergeServerProjectionFields({ agentPresetDefaultId: null } as unknown as Partial<Database>)
 
-    expect(DBState.db.agentPresetDefaultId).toBeUndefined()
-    expect(DBState.db.promptTemplate).toEqual([{ id: 'prompt-live', type: 'plain', text: 'keep me' }])
+    expect(getDatabase().agentPresetDefaultId).toBeUndefined()
+    expect(getDatabase().promptTemplate).toEqual([{ id: 'prompt-live', type: 'plain', text: 'keep me' }])
   })
 
   it('L35: preserves hydrated hypaV3Data on message-empty chat stubs', () => {
@@ -727,9 +728,9 @@ describe('mergeServerProjectionCharacterRow', () => {
     })
 
     expect(applied).toBe(true)
-    expect(DBState.db.characters[0].name).toBe('Ada Lovelace')
-    expect(DBState.db.characters[0].chats[0].message).toEqual([])
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toEqual(hypaV3Data)
+    expect(getDatabase().characters[0].name).toBe('Ada Lovelace')
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
+    expect(getDatabase().characters[0].chats[0].hypaV3Data).toEqual(hypaV3Data)
   })
 
   it('keeps non-empty hydrated messages on incoming chat stubs', () => {
@@ -749,9 +750,9 @@ describe('mergeServerProjectionCharacterRow', () => {
     })
 
     expect(applied).toBe(true)
-    expect(DBState.db.characters[0].name).toBe('Ada Lovelace')
-    expect(DBState.db.characters[0].chats[0].message).toEqual(priorMessages)
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(getDatabase().characters[0].name).toBe('Ada Lovelace')
+    expect(getDatabase().characters[0].chats[0].message).toEqual(priorMessages)
+    expect(getDatabase().characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 
   it('clears the bootstrap shell marker when a full character row hydrates', () => {
@@ -773,12 +774,12 @@ describe('mergeServerProjectionCharacterRow', () => {
     })
 
     expect(applied).toBe(true)
-    expect(DBState.db.characters[0]).toMatchObject({
+    expect(getDatabase().characters[0]).toMatchObject({
       chaId: 'char-a',
       name: 'Ada full',
       desc: 'Hydrated description',
     })
-    expect(DBState.db.characters[0]).not.toHaveProperty('__serverCharacterShell')
+    expect(getDatabase().characters[0]).not.toHaveProperty('__serverCharacterShell')
   })
 
   it('returns false for unknown characters without mutating the corpus', () => {
@@ -789,7 +790,7 @@ describe('mergeServerProjectionCharacterRow', () => {
         chats: [{ id: 'chat-a', message: [] }],
       },
     ])
-    const characters = DBState.db.characters
+    const characters = getDatabase().characters
     const before = JSON.stringify(characters)
 
     const applied = mergeServerProjectionCharacterRow({
@@ -799,8 +800,8 @@ describe('mergeServerProjectionCharacterRow', () => {
     })
 
     expect(applied).toBe(false)
-    expect(DBState.db.characters).toBe(characters)
-    expect(JSON.stringify(DBState.db.characters)).toBe(before)
+    expect(getDatabase().characters).toBe(characters)
+    expect(JSON.stringify(getDatabase().characters)).toBe(before)
   })
 })
 
@@ -810,9 +811,9 @@ describe('preset command rollback (L21)', () => {
       botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
       botPresetsId: 0,
     })
-    const siblingBefore = clonePlain(DBState.db.botPresets[1])
+    const siblingBefore = clonePlain(getDatabase().botPresets[1])
     const baseline = captureServerPresetProjectionBaseline(['preset-a'])
-    DBState.db.botPresets[0].name = 'Alpha edited while fetching'
+    getDatabase().botPresets[0].name = 'Alpha edited while fetching'
 
     const applied = mergeServerProjectionPresetRow(
       'preset-a',
@@ -824,13 +825,13 @@ describe('preset command rollback (L21)', () => {
     )
 
     expect(applied).toBe(true)
-    expect(DBState.db.botPresets[0]).toMatchObject({
+    expect(getDatabase().botPresets[0]).toMatchObject({
       id: 'preset-a',
       name: 'Alpha edited while fetching',
       mainPrompt: 'authoritative prompt',
       temperature: 44,
     })
-    expect(DBState.db.botPresets[1]).toEqual(siblingBefore)
+    expect(getDatabase().botPresets[1]).toEqual(siblingBefore)
   })
 
   it('merges preset membership by id while preserving hydrated and post-request fields', () => {
@@ -840,7 +841,7 @@ describe('preset command rollback (L21)', () => {
       mainPrompt: 'old root prompt',
     })
     const baseline = captureServerPresetProjectionBaseline(['preset-a', 'preset-b', 'preset-c'])
-    DBState.db.botPresets[1].name = 'Beta edited while fetching'
+    getDatabase().botPresets[1].name = 'Beta edited while fetching'
 
     const applied = mergeServerProjectionPresetCollection(
       {
@@ -870,21 +871,21 @@ describe('preset command rollback (L21)', () => {
     )
 
     expect(applied).toBe(true)
-    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a', 'preset-c'])
-    expect(DBState.db.botPresets[0]).toMatchObject({
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a', 'preset-c'])
+    expect(getDatabase().botPresets[0]).toMatchObject({
       name: 'Beta edited while fetching',
       mainPrompt: 'selected prompt',
     })
-    expect(DBState.db.botPresets[1]).toMatchObject({
+    expect(getDatabase().botPresets[1]).toMatchObject({
       name: 'Alpha snapshotted',
       mainPrompt: 'saved live prompt',
     })
-    expect(DBState.db.botPresets[2]).toMatchObject({
+    expect(getDatabase().botPresets[2]).toMatchObject({
       name: 'Gamma from server',
       mainPrompt: 'gamma prompt',
     })
-    expect(DBState.db.botPresetsId).toBe(0)
-    expect(DBState.db.mainPrompt).toBe('applied root prompt')
+    expect(getDatabase().botPresetsId).toBe(0)
+    expect(getDatabase().mainPrompt).toBe('applied root prompt')
   })
 
   it('applies a prompt preset legacy regex alias when presetRegex is empty', async () => {
@@ -917,8 +918,8 @@ describe('preset command rollback (L21)', () => {
 
     selectPromptPreset(1)
 
-    expect(DBState.db.promptPresetsId).toBe(1)
-    expect(DBState.db.presetRegex).toEqual(selectedRegex)
+    expect(getDatabase().promptPresetsId).toBe(1)
+    expect(getDatabase().presetRegex).toEqual(selectedRegex)
     await waitForState(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
   })
 
@@ -950,8 +951,8 @@ describe('preset command rollback (L21)', () => {
 
     updatePromptPreset(0, { presetRegex: [] } as any)
 
-    expect(DBState.db.promptPresets[0]).toMatchObject({ regex: [], presetRegex: [] })
-    expect(DBState.db.presetRegex).toEqual([])
+    expect(getDatabase().promptPresets[0]).toMatchObject({ regex: [], presetRegex: [] })
+    expect(getDatabase().presetRegex).toEqual([])
     await waitForState(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
   })
 
@@ -963,12 +964,12 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 0,
     })
     setServerProjectionWriteGuardEnabled(true)
-    const before = DBState.db
+    const before = getDatabase()
 
-    expect(botPresetIdsNeedNormalization(DBState.db)).toBe(false)
+    expect(botPresetIdsNeedNormalization(getDatabase())).toBe(false)
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
 
-    expect(DBState.db).toBe(before)
+    expect(getDatabase()).toBe(before)
   })
 
   it('fails closed without repairing, refreezing, or fetching when projected preset ids are invalid', async () => {
@@ -996,15 +997,15 @@ describe('preset command rollback (L21)', () => {
         throw new Error(`unexpected preset hydration fetch for ${scenario.name}`)
       })
       vi.stubGlobal('fetch', fetchSpy)
-      const before = DBState.db
-      const beforeJson = JSON.stringify(DBState.db)
+      const before = getDatabase()
+      const beforeJson = JSON.stringify(getDatabase())
 
-      expect(botPresetIdsNeedNormalization(DBState.db)).toBe(true)
+      expect(botPresetIdsNeedNormalization(getDatabase())).toBe(true)
       await expect(ensureBotPresetHydrated(0)).resolves.toBe(false)
 
       expect(fetchSpy).not.toHaveBeenCalled()
-      expect(DBState.db).toBe(before)
-      expect(JSON.stringify(DBState.db)).toBe(beforeJson)
+      expect(getDatabase()).toBe(before)
+      expect(JSON.stringify(getDatabase())).toBe(beforeJson)
 
       setServerProjectionWriteGuardEnabled(false)
       vi.unstubAllGlobals()
@@ -1021,14 +1022,14 @@ describe('preset command rollback (L21)', () => {
       throw new Error('unexpected preset hydration fetch for invalid index')
     })
     vi.stubGlobal('fetch', fetchSpy)
-    const before = DBState.db
+    const before = getDatabase()
 
     await expect(ensureBotPresetHydrated(-1)).resolves.toBe(false)
     await expect(ensureBotPresetHydrated(1)).resolves.toBe(false)
     await expect(ensureBotPresetHydrated(0.5)).resolves.toBe(false)
 
     expect(fetchSpy).not.toHaveBeenCalled()
-    expect(DBState.db).toBe(before)
+    expect(getDatabase()).toBe(before)
   })
 
   it('hydrates a stubbed preset from the server projection before full-preset consumers read it', async () => {
@@ -1052,7 +1053,7 @@ describe('preset command rollback (L21)', () => {
 
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
 
-    expect(DBState.db.botPresets[0]).toMatchObject({
+    expect(getDatabase().botPresets[0]).toMatchObject({
       id: 'preset-stub',
       name: 'Hydrated',
       mainPrompt: 'Hydrated prompt',
@@ -1087,12 +1088,12 @@ describe('preset command rollback (L21)', () => {
 
     await expect(pending).resolves.toBe(true)
 
-    expect(DBState.db.botPresets[0]).toMatchObject({
+    expect(getDatabase().botPresets[0]).toMatchObject({
       id: 'preset-stub',
       name: 'Hydrated after settings',
       mainPrompt: 'Hydrated after settings prompt',
     })
-    expect(DBState.db.language).toBe('ko')
+    expect(getDatabase().language).toBe('ko')
   })
 
   it('rejects a preset hydration response after the target preset changes', async () => {
@@ -1125,7 +1126,7 @@ describe('preset command rollback (L21)', () => {
 
     await expect(pending).resolves.toBe(false)
 
-    expect(DBState.db.botPresets[0]).toEqual({
+    expect(getDatabase().botPresets[0]).toEqual({
       id: 'preset-stub',
       name: 'Newer projection',
       image: 'img',
@@ -1137,7 +1138,7 @@ describe('preset command rollback (L21)', () => {
       botPresets: [{ id: 'preset-a', name: 'Alpha', image: 'img' } as botPreset],
       botPresetsId: 0,
     })
-    delete (DBState.db as unknown as { promptTemplate?: unknown }).promptTemplate
+    delete (getDatabase() as unknown as { promptTemplate?: unknown }).promptTemplate
     setServerProjectionWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
@@ -1156,7 +1157,7 @@ describe('preset command rollback (L21)', () => {
     seedPresetDatabase({
       promptTemplate: [{ id: 'live-only-prompt', type: 'plain', text: 'live only prompt row' }] as any,
     })
-    const beforePresetTemplate = clonePlain(DBState.db.botPresets[0].promptTemplate)
+    const beforePresetTemplate = clonePlain(getDatabase().botPresets[0].promptTemplate)
     setServerProjectionWriteGuardEnabled(true)
     const calls = stubFailedPresetCommand()
 
@@ -1164,7 +1165,7 @@ describe('preset command rollback (L21)', () => {
 
     const command = await waitForPresetCommand(calls, '/presets/preset-a')
     expect(command.body.patch).not.toHaveProperty('promptTemplate')
-    expect(DBState.db.botPresets[0].promptTemplate).toEqual(beforePresetTemplate)
+    expect(getDatabase().botPresets[0].promptTemplate).toEqual(beforePresetTemplate)
   })
 
   it('ignores stale preset hydration responses older than the applied revision', async () => {
@@ -1189,30 +1190,30 @@ describe('preset command rollback (L21)', () => {
 
     await expect(ensureBotPresetHydrated(0)).resolves.toBe(false)
 
-    expect(DBState.db.botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
+    expect(getDatabase().botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
   })
 
   it('L21: failed save restores the saved preset collection and selected index', async () => {
     seedPresetDatabase({ temperature: 91 })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.botPresets[0].name = 'Alpha edited after dispatch'
-      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
-      DBState.db.botPresetsId = 1
+      getDatabase().botPresets[0].name = 'Alpha edited after dispatch'
+      getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      getDatabase().botPresetsId = 1
     })
 
     saveCurrentPreset()
 
-    expect(DBState.db.botPresets[0].temperature).toBe(91)
+    expect(getDatabase().botPresets[0].temperature).toBe(91)
     await waitForPresetCommand(calls, '/presets/preset-a')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-      expect(DBState.db.botPresets[0]).toMatchObject({
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(getDatabase().botPresets[0]).toMatchObject({
         name: 'Alpha edited after dispatch',
         temperature: 11,
       })
-      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
-      expect(DBState.db.botPresetsId).toBe(1)
-      expect(DBState.db.temperature).toBe(91)
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(getDatabase().botPresetsId).toBe(1)
+      expect(getDatabase().temperature).toBe(91)
     })
   })
 
@@ -1226,11 +1227,11 @@ describe('preset command rollback (L21)', () => {
     updateModelPreset(0, { name: 'Alph' })
     updateModelPreset(0, { name: 'Alp' })
 
-    expect(DBState.db.modelPresets[0].name).toBe('Alp')
+    expect(getDatabase().modelPresets[0].name).toBe('Alp')
     await waitForPresetCommand(calls, '/model-presets/model-a')
     await waitForState(() => {
       expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(2)
-      expect(DBState.db.modelPresets[0].name).toBe('Alp')
+      expect(getDatabase().modelPresets[0].name).toBe('Alp')
     })
   })
 
@@ -1245,24 +1246,24 @@ describe('preset command rollback (L21)', () => {
       promptPresetsId: 0,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.modelPresets[0] = {
-        ...DBState.db.modelPresets[0],
+      getDatabase().modelPresets[0] = {
+        ...getDatabase().modelPresets[0],
         name: 'Model A edited after dispatch',
       }
-      DBState.db.promptPresets[1] = {
-        ...DBState.db.promptPresets[1],
+      getDatabase().promptPresets[1] = {
+        ...getDatabase().promptPresets[1],
         name: 'Prompt B edited after dispatch',
       }
     })
 
     createPromptPreset(makePreset('prompt-created', 'Prompt Created') as unknown as PromptPreset)
 
-    expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b', 'prompt-created'])
+    expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b', 'prompt-created'])
     await waitForPresetCommand(calls, '/prompt-presets')
     await waitForState(() => {
-      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
-      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Prompt B edited after dispatch' })
-      expect(DBState.db.modelPresets).toEqual([
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
+      expect(getDatabase().promptPresets[1]).toMatchObject({ name: 'Prompt B edited after dispatch' })
+      expect(getDatabase().modelPresets).toEqual([
         expect.objectContaining({ id: 'model-a', name: 'Model A edited after dispatch' }),
       ])
     })
@@ -1275,7 +1276,7 @@ describe('preset command rollback (L21)', () => {
     })
     let createdId: string | undefined
     const calls = stubFailedPresetCommand(() => {
-      const created = DBState.db.promptPresets.find((preset) => preset.name === 'Prompt Created')
+      const created = getDatabase().promptPresets.find((preset) => preset.name === 'Prompt Created')
       createdId = created?.id
       if (created) {
         created.name = 'Prompt Created edited after dispatch'
@@ -1287,8 +1288,8 @@ describe('preset command rollback (L21)', () => {
     await waitForPresetCommand(calls, '/prompt-presets')
     await waitForState(() => {
       expect(createdId).toBe('prompt-created')
-      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-created'])
-      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Prompt Created edited after dispatch' })
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-created'])
+      expect(getDatabase().promptPresets[1]).toMatchObject({ name: 'Prompt Created edited after dispatch' })
     })
   })
 
@@ -1302,22 +1303,29 @@ describe('preset command rollback (L21)', () => {
       modelPresetsId: 0,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.modelPresets[0] = {
-        ...DBState.db.modelPresets[0],
+      getDatabase().modelPresets[0] = {
+        ...getDatabase().modelPresets[0],
         name: 'Model A edited after dispatch',
       }
-      DBState.db.modelPresets.push(makePreset('model-d', 'Model D appended after dispatch') as unknown as ModelPreset)
+      getDatabase().modelPresets.push(
+        makePreset('model-d', 'Model D appended after dispatch') as unknown as ModelPreset,
+      )
     })
 
     deleteModelPreset(1, 0)
 
-    expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c'])
+    expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c'])
     await waitForPresetCommand(calls, '/model-presets/model-b')
     await waitForState(() => {
-      expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b', 'model-c', 'model-d'])
-      expect(DBState.db.modelPresets[0]).toMatchObject({ name: 'Model A edited after dispatch' })
-      expect(DBState.db.modelPresets[1]).toMatchObject({ name: 'Model B' })
-      expect(DBState.db.modelPresets[3]).toMatchObject({ name: 'Model D appended after dispatch' })
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual([
+        'model-a',
+        'model-b',
+        'model-c',
+        'model-d',
+      ])
+      expect(getDatabase().modelPresets[0]).toMatchObject({ name: 'Model A edited after dispatch' })
+      expect(getDatabase().modelPresets[1]).toMatchObject({ name: 'Model B' })
+      expect(getDatabase().modelPresets[3]).toMatchObject({ name: 'Model D appended after dispatch' })
     })
 
     clearCachedServerCommandRevision()
@@ -1331,15 +1339,15 @@ describe('preset command rollback (L21)', () => {
       modelPresetsId: 0,
     })
     const secondCalls = stubFailedPresetCommand(() => {
-      DBState.db.modelPresets.push(makePreset('model-b', 'Model B newer same id') as unknown as ModelPreset)
+      getDatabase().modelPresets.push(makePreset('model-b', 'Model B newer same id') as unknown as ModelPreset)
     })
 
     deleteModelPreset(1, 0)
 
     await waitForPresetCommand(secondCalls, '/model-presets/model-b')
     await waitForState(() => {
-      expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c', 'model-b'])
-      expect(DBState.db.modelPresets[2]).toMatchObject({ name: 'Model B newer same id' })
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c', 'model-b'])
+      expect(getDatabase().modelPresets[2]).toMatchObject({ name: 'Model B newer same id' })
     })
   })
 
@@ -1353,7 +1361,7 @@ describe('preset command rollback (L21)', () => {
       promptPresetsId: 1,
     })
     const calls = stubFailedPresetCommand(() => {
-      const promptC = DBState.db.promptPresets.find((preset) => preset.id === 'prompt-c')
+      const promptC = getDatabase().promptPresets.find((preset) => preset.id === 'prompt-c')
       if (promptC) {
         promptC.name = 'Prompt C edited after dispatch'
       }
@@ -1361,13 +1369,13 @@ describe('preset command rollback (L21)', () => {
 
     reorderPromptPresets(0, 3)
 
-    expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-b', 'prompt-c', 'prompt-a'])
-    expect(DBState.db.promptPresetsId).toBe(0)
+    expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-b', 'prompt-c', 'prompt-a'])
+    expect(getDatabase().promptPresetsId).toBe(0)
     await waitForPresetCommand(calls, '/prompt-presets/reorder')
     await waitForState(() => {
-      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b', 'prompt-c'])
-      expect(DBState.db.promptPresets[2]).toMatchObject({ name: 'Prompt C edited after dispatch' })
-      expect(DBState.db.promptPresetsId).toBe(1)
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b', 'prompt-c'])
+      expect(getDatabase().promptPresets[2]).toMatchObject({ name: 'Prompt C edited after dispatch' })
+      expect(getDatabase().promptPresetsId).toBe(1)
     })
   })
 
@@ -1381,16 +1389,20 @@ describe('preset command rollback (L21)', () => {
       promptPresetsId: 1,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.promptPresets = [DBState.db.promptPresets[1], DBState.db.promptPresets[2], DBState.db.promptPresets[0]]
-      DBState.db.promptPresetsId = 0
+      getDatabase().promptPresets = [
+        getDatabase().promptPresets[1],
+        getDatabase().promptPresets[2],
+        getDatabase().promptPresets[0],
+      ]
+      getDatabase().promptPresetsId = 0
     })
 
     reorderPromptPresets(0, 3)
 
     await waitForPresetCommand(calls, '/prompt-presets/reorder')
     await waitForState(() => {
-      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-c', 'prompt-a', 'prompt-b'])
-      expect(DBState.db.promptPresetsId).toBe(0)
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-c', 'prompt-a', 'prompt-b'])
+      expect(getDatabase().promptPresetsId).toBe(0)
     })
   })
 
@@ -1403,19 +1415,19 @@ describe('preset command rollback (L21)', () => {
       modelPresetsId: 0,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.temperature = 123
+      getDatabase().temperature = 123
     })
 
     selectModelPreset(1)
 
-    expect(DBState.db.modelPresetsId).toBe(1)
-    expect(DBState.db.aiModel).toBe('model-b-api')
-    expect(DBState.db.temperature).toBe(22)
+    expect(getDatabase().modelPresetsId).toBe(1)
+    expect(getDatabase().aiModel).toBe('model-b-api')
+    expect(getDatabase().temperature).toBe(22)
     await waitForPresetCommand(calls, '/model-presets/select')
     await waitForState(() => {
-      expect(DBState.db.modelPresetsId).toBe(0)
-      expect(DBState.db.aiModel).toBe('live-model')
-      expect(DBState.db.temperature).toBe(123)
+      expect(getDatabase().modelPresetsId).toBe(0)
+      expect(getDatabase().aiModel).toBe('live-model')
+      expect(getDatabase().temperature).toBe(123)
     })
   })
 
@@ -1428,19 +1440,19 @@ describe('preset command rollback (L21)', () => {
       promptPresetsId: 0,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.globalNote = 'newer note after dispatch'
+      getDatabase().globalNote = 'newer note after dispatch'
     })
 
     selectPromptPreset(1)
 
-    expect(DBState.db.promptPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('Prompt B prompt')
-    expect(DBState.db.globalNote).toBe('Prompt B note')
+    expect(getDatabase().promptPresetsId).toBe(1)
+    expect(getDatabase().mainPrompt).toBe('Prompt B prompt')
+    expect(getDatabase().globalNote).toBe('Prompt B note')
     await waitForPresetCommand(calls, '/prompt-presets/select')
     await waitForState(() => {
-      expect(DBState.db.promptPresetsId).toBe(0)
-      expect(DBState.db.mainPrompt).toBe('live main')
-      expect(DBState.db.globalNote).toBe('newer note after dispatch')
+      expect(getDatabase().promptPresetsId).toBe(0)
+      expect(getDatabase().mainPrompt).toBe('live main')
+      expect(getDatabase().globalNote).toBe('newer note after dispatch')
     })
   })
 
@@ -1555,16 +1567,16 @@ describe('preset command rollback (L21)', () => {
       promptPresetsId: 0,
     })
 
-    applyModelPresetFieldsToDatabase(DBState.db, DBState.db.modelPresets[0])
+    applyModelPresetFieldsToDatabase(getDatabase(), getDatabase().modelPresets[0])
 
-    expect(DBState.db.aiModel).toBe('model-ai')
-    expect(DBState.db.subModel).toBe('model-sub')
-    expect(DBState.db.temperature).toBe(31)
-    expect(DBState.db.modelRoles).toMatchObject({
+    expect(getDatabase().aiModel).toBe('model-ai')
+    expect(getDatabase().subModel).toBe('model-sub')
+    expect(getDatabase().temperature).toBe(31)
+    expect(getDatabase().modelRoles).toMatchObject({
       memory: 'prompt-memory',
       scriptAux: 'prompt-script-aux',
     })
-    expect(DBState.db.modelProfiles).toEqual([
+    expect(getDatabase().modelProfiles).toEqual([
       {
         id: 'model-profile',
         name: 'Model Profile',
@@ -1572,78 +1584,78 @@ describe('preset command rollback (L21)', () => {
         providerOptions: { requestModel: 'model-wire', apiKey: 'model-secret' },
       },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual(
+    expect(getDatabase().modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'prompt-profile' },
       }),
     )
-    expect(DBState.db.modelRuntimeDefaults).toEqual({
+    expect(getDatabase().modelRuntimeDefaults).toEqual({
       maxContext: 7777,
       modelTools: ['model-tool'],
     })
-    expect(DBState.db.seperateModelsForAxModels).toBe(true)
-    expect(DBState.db.seperateModels).toMatchObject({
+    expect(getDatabase().seperateModelsForAxModels).toBe(true)
+    expect(getDatabase().seperateModels).toMatchObject({
       memory: 'prompt-separate-memory',
       scriptAux: 'prompt-separate-script-aux',
     })
-    expect(DBState.db.fallbackModels).toMatchObject({
+    expect(getDatabase().fallbackModels).toMatchObject({
       model: ['prompt-fallback-main'],
       memory: ['prompt-fallback-memory'],
       scriptAux: ['prompt-fallback-script-aux'],
     })
-    expect(DBState.db.fallbackWhenBlankResponse).toBe(true)
+    expect(getDatabase().fallbackWhenBlankResponse).toBe(true)
 
-    DBState.db.promptPresets[0] = {
-      ...DBState.db.promptPresets[0],
+    getDatabase().promptPresets[0] = {
+      ...getDatabase().promptPresets[0],
       overrideModelParameters: true,
       temperature: 88,
     }
-    applyPromptPresetFieldsToDatabase(DBState.db, DBState.db.promptPresets[0])
+    applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[0])
 
-    expect(DBState.db.temperature).toBe(88)
+    expect(getDatabase().temperature).toBe(88)
   })
 
   it('L21: failed copy restores the original collection after save-current and generated copy id', async () => {
     seedPresetDatabase({ temperature: 88 })
     let generatedCopyId: string | undefined
     const calls = stubFailedPresetCommand(() => {
-      generatedCopyId = DBState.db.botPresets.find((preset) => preset.name === 'Alpha Copy')?.id
-      DBState.db.botPresets[0].name = 'Alpha source edited after dispatch'
-      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      generatedCopyId = getDatabase().botPresets.find((preset) => preset.name === 'Alpha Copy')?.id
+      getDatabase().botPresets[0].name = 'Alpha source edited after dispatch'
+      getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
     })
 
     copyPreset(0)
 
-    expect(DBState.db.botPresets).toHaveLength(3)
-    expect(DBState.db.botPresets[0].temperature).toBe(88)
+    expect(getDatabase().botPresets).toHaveLength(3)
+    expect(getDatabase().botPresets[0].temperature).toBe(88)
     await waitForPresetCommand(calls, '/presets/preset-a/copy')
     await waitForState(() => {
       expect(generatedCopyId).toBeTruthy()
-      expect(DBState.db.botPresets.some((preset) => preset.id === generatedCopyId)).toBe(false)
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-      expect(DBState.db.botPresets[0]).toMatchObject({
+      expect(getDatabase().botPresets.some((preset) => preset.id === generatedCopyId)).toBe(false)
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(getDatabase().botPresets[0]).toMatchObject({
         name: 'Alpha source edited after dispatch',
         temperature: 11,
       })
-      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
-      expect(DBState.db.botPresetsId).toBe(0)
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(getDatabase().botPresetsId).toBe(0)
     })
   })
 
   it('L21: shared preset boundary keeps copy as one rollback-safe command', async () => {
     seedPresetDatabase({ temperature: 77 })
-    const beforeSourceTemperature = DBState.db.botPresets[0].temperature
-    const beforeSelected = DBState.db.botPresetsId
+    const beforeSourceTemperature = getDatabase().botPresets[0].temperature
+    const beforeSelected = getDatabase().botPresetsId
     const calls = stubFailedPresetCommand()
 
     copyPreset(0)
 
     await waitForPresetCommand(calls, '/presets/preset-a/copy')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
-      expect(DBState.db.botPresets.some((preset) => preset.name === 'Alpha Copy')).toBe(false)
-      expect(DBState.db.botPresets[0].temperature).toBe(beforeSourceTemperature)
-      expect(DBState.db.botPresetsId).toBe(beforeSelected)
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+      expect(getDatabase().botPresets.some((preset) => preset.name === 'Alpha Copy')).toBe(false)
+      expect(getDatabase().botPresets[0].temperature).toBe(beforeSourceTemperature)
+      expect(getDatabase().botPresetsId).toBe(beforeSelected)
     })
 
     // Public preset operations currently stay one server command each; copy
@@ -1662,84 +1674,84 @@ describe('preset command rollback (L21)', () => {
     seedPresetDatabase()
     let optimisticPresetId: string | undefined
     const calls = stubFailedPresetCommand(() => {
-      optimisticPresetId = DBState.db.botPresets.find((preset) => preset.name === 'Created')?.id
-      DBState.db.botPresets[0].name = 'Alpha edited after dispatch'
-      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
-      DBState.db.botPresetsId = 1
+      optimisticPresetId = getDatabase().botPresets.find((preset) => preset.name === 'Created')?.id
+      getDatabase().botPresets[0].name = 'Alpha edited after dispatch'
+      getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      getDatabase().botPresetsId = 1
     })
     const newPreset = makePreset('preset-created', 'Created')
     delete newPreset.id
 
     createPreset(newPreset)
 
-    const optimisticPreset = DBState.db.botPresets.find((preset) => preset.name === 'Created')
+    const optimisticPreset = getDatabase().botPresets.find((preset) => preset.name === 'Created')
     expect(optimisticPreset?.id).toBeTruthy()
     await waitForPresetCommand(calls, '/presets')
     await waitForState(() => {
       expect(optimisticPresetId).toBe(optimisticPreset?.id)
-      expect(DBState.db.botPresets.some((preset) => preset.id === optimisticPreset?.id)).toBe(false)
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-      expect(DBState.db.botPresets[0]).toMatchObject({ name: 'Alpha edited after dispatch' })
-      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
-      expect(DBState.db.botPresetsId).toBe(1)
+      expect(getDatabase().botPresets.some((preset) => preset.id === optimisticPreset?.id)).toBe(false)
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Alpha edited after dispatch' })
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(getDatabase().botPresetsId).toBe(1)
     })
   })
 
   it('L21: failed update restores the patched preset row', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.botPresets[1].name = 'Newer Beta edit after dispatch'
-      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      getDatabase().botPresets[1].name = 'Newer Beta edit after dispatch'
+      getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
     })
 
     updatePreset(1, { name: 'Broken Update', temperature: 99 })
 
-    expect(DBState.db.botPresets[1]).toMatchObject({ name: 'Broken Update', temperature: 99 })
+    expect(getDatabase().botPresets[1]).toMatchObject({ name: 'Broken Update', temperature: 99 })
     await waitForPresetCommand(calls, '/presets/preset-b')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-      expect(DBState.db.botPresets[1]).toMatchObject({
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(getDatabase().botPresets[1]).toMatchObject({
         name: 'Newer Beta edit after dispatch',
         temperature: 22,
       })
-      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
-      expect(DBState.db.botPresetsId).toBe(0)
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(getDatabase().botPresetsId).toBe(0)
     })
   })
 
   it('L21: failed delete restores collection, selection, and setPreset scalars', async () => {
     seedPresetDatabase()
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
-      DBState.db.botPresetsId = 1
-      DBState.db.mainPrompt = 'newer prompt after dispatch'
+      getDatabase().botPresets.push(makePreset('preset-c', 'Gamma appended after dispatch'))
+      getDatabase().botPresetsId = 1
+      getDatabase().mainPrompt = 'newer prompt after dispatch'
     })
 
     deletePreset(0, 1, true)
 
-    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
-    expect(DBState.db.botPresetsId).toBe(0)
-    expect(DBState.db.mainPrompt).toBe('Beta prompt')
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(getDatabase().botPresetsId).toBe(0)
+    expect(getDatabase().mainPrompt).toBe('Beta prompt')
     await waitForPresetCommand(calls, '/presets/preset-a')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-      expect(DBState.db.botPresets[0]).toMatchObject({ name: 'Alpha' })
-      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
-      expect(DBState.db.botPresetsId).toBe(2)
-      expect(DBState.db.mainPrompt).toBe('newer prompt after dispatch')
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(getDatabase().botPresets[0]).toMatchObject({ name: 'Alpha' })
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma appended after dispatch' })
+      expect(getDatabase().botPresetsId).toBe(2)
+      expect(getDatabase().mainPrompt).toBe('newer prompt after dispatch')
     })
   })
 
   it('legacy delete with apply does not change top-level promptTemplate', async () => {
     seedPresetDatabase()
-    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
+    const beforePromptTemplate = clonePlain(getDatabase().promptTemplate)
     const calls = stubFailedPresetCommand()
 
     deletePreset(0, 1, true)
 
-    expect(DBState.db.botPresetsId).toBe(0)
-    expect(DBState.db.mainPrompt).toBe('Beta prompt')
-    expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+    expect(getDatabase().botPresetsId).toBe(0)
+    expect(getDatabase().mainPrompt).toBe('Beta prompt')
+    expect(getDatabase().promptTemplate).toEqual(beforePromptTemplate)
     await waitForPresetCommand(calls, '/presets/preset-a')
   })
 
@@ -1749,7 +1761,7 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 1,
     })
     const calls = stubFailedPresetCommand(() => {
-      const gamma = DBState.db.botPresets.find((preset) => preset.id === 'preset-c')
+      const gamma = getDatabase().botPresets.find((preset) => preset.id === 'preset-c')
       if (gamma) {
         gamma.name = 'Gamma edited after dispatch'
       }
@@ -1757,13 +1769,13 @@ describe('preset command rollback (L21)', () => {
 
     reorderPresets(0, 3)
 
-    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-c', 'preset-a'])
-    expect(DBState.db.botPresetsId).toBe(0)
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-c', 'preset-a'])
+    expect(getDatabase().botPresetsId).toBe(0)
     await waitForPresetCommand(calls, '/presets/reorder')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-      expect(DBState.db.botPresets[2]).toMatchObject({ name: 'Gamma edited after dispatch' })
-      expect(DBState.db.botPresetsId).toBe(1)
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+      expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma edited after dispatch' })
+      expect(getDatabase().botPresetsId).toBe(1)
     })
   })
 
@@ -1773,57 +1785,57 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 1,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.botPresets = [DBState.db.botPresets[1], DBState.db.botPresets[2], DBState.db.botPresets[0]]
-      DBState.db.botPresetsId = 0
+      getDatabase().botPresets = [getDatabase().botPresets[1], getDatabase().botPresets[2], getDatabase().botPresets[0]]
+      getDatabase().botPresetsId = 0
     })
 
     reorderPresets(0, 3)
 
     await waitForPresetCommand(calls, '/presets/reorder')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-c', 'preset-a', 'preset-b'])
-      expect(DBState.db.botPresetsId).toBe(0)
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-c', 'preset-a', 'preset-b'])
+      expect(getDatabase().botPresetsId).toBe(0)
     })
   })
 
   it('L21: failed select restores setPreset scalars without overwriting unrelated fields', async () => {
     seedPresetDatabase()
-    const beforePresets = clonePlain(DBState.db.botPresets)
-    const beforePrompt = DBState.db.mainPrompt
-    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
-    const beforeNaiSettings = clonePlain(DBState.db.NAIsettings)
+    const beforePresets = clonePlain(getDatabase().botPresets)
+    const beforePrompt = getDatabase().mainPrompt
+    const beforePromptTemplate = clonePlain(getDatabase().promptTemplate)
+    const beforeNaiSettings = clonePlain(getDatabase().NAIsettings)
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.temperature = 123
-      DBState.db.customBackground = 'changed while preset command was in flight'
+      getDatabase().temperature = 123
+      getDatabase().customBackground = 'changed while preset command was in flight'
     })
 
     changeToPreset(1, false)
 
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('Beta prompt')
-    expect(DBState.db.temperature).toBe(22)
+    expect(getDatabase().botPresetsId).toBe(1)
+    expect(getDatabase().mainPrompt).toBe('Beta prompt')
+    expect(getDatabase().temperature).toBe(22)
     await waitForPresetCommand(calls, '/presets/select')
     await waitForState(() => {
-      expect(DBState.db.botPresets).toEqual(beforePresets)
-      expect(DBState.db.botPresetsId).toBe(0)
-      expect(DBState.db.mainPrompt).toBe(beforePrompt)
-      expect(DBState.db.temperature).toBe(123)
-      expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
-      expect(DBState.db.NAIsettings).toEqual(beforeNaiSettings)
-      expect(DBState.db.customBackground).toBe('changed while preset command was in flight')
+      expect(getDatabase().botPresets).toEqual(beforePresets)
+      expect(getDatabase().botPresetsId).toBe(0)
+      expect(getDatabase().mainPrompt).toBe(beforePrompt)
+      expect(getDatabase().temperature).toBe(123)
+      expect(getDatabase().promptTemplate).toEqual(beforePromptTemplate)
+      expect(getDatabase().NAIsettings).toEqual(beforeNaiSettings)
+      expect(getDatabase().customBackground).toBe('changed while preset command was in flight')
     })
   })
 
   it('legacy select does not change top-level promptTemplate', async () => {
     seedPresetDatabase()
-    const beforePromptTemplate = clonePlain(DBState.db.promptTemplate)
+    const beforePromptTemplate = clonePlain(getDatabase().promptTemplate)
     const calls = stubFailedPresetCommand()
 
     changeToPreset(1, false)
 
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('Beta prompt')
-    expect(DBState.db.promptTemplate).toEqual(beforePromptTemplate)
+    expect(getDatabase().botPresetsId).toBe(1)
+    expect(getDatabase().mainPrompt).toBe('Beta prompt')
+    expect(getDatabase().promptTemplate).toEqual(beforePromptTemplate)
     await waitForPresetCommand(calls, '/presets/select')
   })
 
@@ -1842,36 +1854,36 @@ describe('preset command rollback (L21)', () => {
       promptPresetsId: 0,
     })
     const calls = stubFailedPresetCommand(() => {
-      DBState.db.modelPresets[0].name = 'Existing Model edited after dispatch'
-      DBState.db.modelPresets.push(
+      getDatabase().modelPresets[0].name = 'Existing Model edited after dispatch'
+      getDatabase().modelPresets.push(
         makePreset('model-newer', 'Newer Model appended after dispatch', {
           aiModel: 'newer-model-api',
         }) as unknown as ModelPreset,
       )
-      DBState.db.promptPresets[0].name = 'Existing Prompt edited after dispatch'
-      DBState.db.promptPresets.push(
+      getDatabase().promptPresets[0].name = 'Existing Prompt edited after dispatch'
+      getDatabase().promptPresets.push(
         makePreset('prompt-newer', 'Newer Prompt appended after dispatch') as unknown as PromptPreset,
       )
     })
 
     extractLegacyBotPresetByIndex(0, 'all')
 
-    expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
-    expect(DBState.db.modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
-    expect(DBState.db.promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
-    expect(DBState.db.promptPresets.find((preset) => preset.name === 'Alpha Prompt')?.promptTemplate).toEqual([
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(getDatabase().modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
+    expect(getDatabase().promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
+    expect(getDatabase().promptPresets.find((preset) => preset.name === 'Alpha Prompt')?.promptTemplate).toEqual([
       { id: 'preset-a-prompt', type: 'plain', text: 'Alpha prompt item' },
     ])
     await waitForPresetCommand(calls, '/legacy-bot-presets/preset-a/extract')
     await waitForState(() => {
-      expect(DBState.db.botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
-      expect(DBState.db.botPresetsId).toBe(0)
-      expect(DBState.db.modelPresets.map((preset) => preset.id)).toEqual(['model-existing', 'model-newer'])
-      expect(DBState.db.modelPresets[0]).toMatchObject({ name: 'Existing Model edited after dispatch' })
-      expect(DBState.db.modelPresets[1]).toMatchObject({ name: 'Newer Model appended after dispatch' })
-      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual(['prompt-existing', 'prompt-newer'])
-      expect(DBState.db.promptPresets[0]).toMatchObject({ name: 'Existing Prompt edited after dispatch' })
-      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Newer Prompt appended after dispatch' })
+      expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+      expect(getDatabase().botPresetsId).toBe(0)
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-existing', 'model-newer'])
+      expect(getDatabase().modelPresets[0]).toMatchObject({ name: 'Existing Model edited after dispatch' })
+      expect(getDatabase().modelPresets[1]).toMatchObject({ name: 'Newer Model appended after dispatch' })
+      expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['prompt-existing', 'prompt-newer'])
+      expect(getDatabase().promptPresets[0]).toMatchObject({ name: 'Existing Prompt edited after dispatch' })
+      expect(getDatabase().promptPresets[1]).toMatchObject({ name: 'Newer Prompt appended after dispatch' })
     })
   })
 })
