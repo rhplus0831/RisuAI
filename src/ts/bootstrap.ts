@@ -168,7 +168,7 @@ export async function loadWebInitialDatabase() {
   }
   const projection =
     bootstrap.projection.database == null ? await initializeFreshServerDatabase() : bootstrap.projection
-  applyServerProjectionDatabase(projection.database)
+  applyServerProjectionDatabase(projection.database, projection.revision)
   resetPromptTemplateHydration()
   selectedCharID.set(initialSelectedCharFromDatabase(projection.database))
   // Record which characters arrive with a REAL (resident) globalLore. The

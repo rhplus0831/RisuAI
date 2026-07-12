@@ -71,12 +71,12 @@ import {
   runOptimisticCommandSequence,
 } from '../chatCommands'
 import {
-  createReadOnlyServerProjection,
   isServerProjectionWriteGuardEnabled,
   setServerProjectionWriteGuardEnabled,
   withServerProjectionApply,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
@@ -1519,13 +1519,13 @@ export function setDatabase(data: Database) {
   setDatabaseLite(data)
 }
 
-export function applyServerProjectionDatabase(data: Database) {
+export function applyServerProjectionDatabase(data: Database, revision?: number) {
   const result = withServerProjectionApply(() => {
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
     normalizeAgentPresetSettings(data)
     changeLanguage(data.language)
-    setDatabaseLite(data)
+    setDatabaseLite(data, revision)
   })
   createDestructiveRefreshToken('server-projection-database-replace')
   return result
@@ -1907,8 +1907,8 @@ function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]
 
 export { isServerProjectionWriteGuardEnabled, setServerProjectionWriteGuardEnabled, withTrustedServerProjectionWrite }
 
-export function setDatabaseLite(data: Database) {
-  DBState.db = isServerProjectionWriteGuardEnabled() ? createReadOnlyServerProjection(data) : data
+export function setDatabaseLite(data: Database, revision?: number) {
+  replaceResourceDatabase(data, revision)
 }
 
 interface getDatabaseOptions {
@@ -1916,10 +1916,7 @@ interface getDatabaseOptions {
 }
 
 export function getDatabase(options: getDatabaseOptions = {}): Database {
-  if (options.snapshot) {
-    return $state.snapshot(DBState.db) as Database
-  }
-  return DBState.db as Database
+  return getResourceDatabase(options)
 }
 
 export function getCurrentCharacter(options: getDatabaseOptions = {}): character {

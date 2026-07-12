@@ -80,7 +80,7 @@ async function runServerProjectionResync(): Promise<ServerProjectionResyncResult
         continue
       }
       const database = preservePendingPluginStorageInDatabase(bootstrap.projection.database)
-      applyServerProjectionDatabase(database)
+      applyServerProjectionDatabase(database, bootstrap.projection.revision)
       resetPromptTemplateHydration()
       syncSelectedCharacterAfterResync(database)
       setCachedServerCommandRevision(bootstrap.projection.revision)

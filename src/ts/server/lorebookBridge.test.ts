@@ -284,7 +284,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect(DBState.db).toBe(before)
   })
 
-  it('normalizes missing global lorebook ids under the projection guard', () => {
+  it('normalizes missing global lorebook ids through the stable resource facade', () => {
     DBState.db.loreBook = [{ name: 'Global', data: [{ key: 'k', content: 'c' }] }] as any
     setServerProjectionWriteGuardEnabled(true)
     const before = DBState.db
@@ -292,7 +292,7 @@ describe('Phase 3 discrete-editor scoped snapshot (L32)', () => {
     expect(globalLorebookListIdsNeedNormalization()).toBe(true)
     ensureGlobalLorebookListIds()
 
-    expect(DBState.db).not.toBe(before)
+    expect(DBState.db).toBe(before)
     expect(globalLorebookListIdsNeedNormalization()).toBe(false)
     expect((DBState.db.loreBook as any[])[0].id).toEqual(expect.any(String))
     expect((DBState.db.loreBook as any[])[0].data[0].id).toEqual(expect.any(String))

@@ -112,6 +112,21 @@ export const charactersResourceState = $state<CharactersResourceState>({
 const collectionNameSet = new Set<string>(SERVER_COLLECTION_NAMES)
 const guardedResourceValueMemo = new WeakMap<object, object>()
 let resourceDatabaseWriteDepth = 0
+let resourceDatabaseWriteGuardEnabled = false
+let resourceDatabaseWriteChanged = false
+let resourceDatabaseFacadeEpoch = $state(0)
+
+export function setResourceDatabaseWriteGuardEnabled(enabled: boolean): void {
+  resourceDatabaseWriteGuardEnabled = enabled
+}
+
+export function isResourceDatabaseWriteActive(): boolean {
+  return resourceDatabaseWriteDepth > 0
+}
+
+export function getResourceDatabaseFacadeEpoch(): number {
+  return resourceDatabaseFacadeEpoch
+}
 
 export function isServerCollectionName(value: string): value is ServerCollectionName {
   return collectionNameSet.has(value)
@@ -133,6 +148,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   settingsResourceState.revision = payload.revision
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  markResourceDatabaseChanged()
   return true
 }
 
@@ -182,6 +198,7 @@ export function applyCollectionsResource(
   }
   if (applied) {
     collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    markResourceDatabaseChanged()
   }
   return applied
 }
@@ -235,6 +252,7 @@ export function applyCharactersResource(payload: ServerCharactersResourcePayload
   charactersResourceState.rowErrors = {}
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
+  markResourceDatabaseChanged()
   return true
 }
 
@@ -258,6 +276,7 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   charactersResourceState.rowStatuses[characterId] = 'ready'
   delete charactersResourceState.rowErrors[characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
   return true
 }
 
@@ -286,6 +305,7 @@ export function resetServerResourceState(): void {
   charactersResourceState.rowStatuses = {}
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  markResourceDatabaseChanged()
 }
 
 export function replaceResourceDatabase(database: Database, revision?: number): void {
@@ -346,6 +366,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   )
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  markResourceDatabaseChanged()
 }
 
 export function areServerDatabaseResourcesReady(): boolean {
@@ -361,15 +382,36 @@ export function composeResourceDatabaseSnapshot(): Database {
 }
 
 export function getResourceDatabase(options: { snapshot?: boolean } = {}): Database {
+  // A consumer that only retains the deprecated whole-database facade still
+  // tracks resource-backed writes without requiring a new proxy identity.
+  void resourceDatabaseFacadeEpoch
   return options.snapshot ? composeResourceDatabaseSnapshot() : resourceDatabaseCompatibilityProxy
 }
 
 export function withResourceDatabaseWrite<T>(callback: (database: Database) => T): T {
+  const outermost = resourceDatabaseWriteDepth === 0
+  if (outermost) resourceDatabaseWriteChanged = false
   resourceDatabaseWriteDepth += 1
-  try {
-    return callback(resourceDatabaseCompatibilityProxy)
-  } finally {
+  let finished = false
+  const finish = () => {
+    if (finished) return
     resourceDatabaseWriteDepth -= 1
+    if (resourceDatabaseWriteDepth === 0 && resourceDatabaseWriteChanged) {
+      resourceDatabaseFacadeEpoch += 1
+      resourceDatabaseWriteChanged = false
+    }
+    finished = true
+  }
+  try {
+    const result = callback(resourceDatabaseCompatibilityProxy)
+    if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      return Promise.resolve(result).finally(finish) as T
+    }
+    finish()
+    return result
+  } catch (error) {
+    finish()
+    throw error
   }
 }
 
@@ -399,18 +441,21 @@ export const resourceDatabaseCompatibilityProxy = new Proxy({} as Database, {
     assertResourceDatabaseWriteAllowed()
     if (typeof property !== 'string') return false
     setResourceDatabaseField(property, value)
+    markResourceDatabaseChanged()
     return true
   },
   deleteProperty(_target, property) {
     assertResourceDatabaseWriteAllowed()
     if (typeof property !== 'string') return false
     deleteResourceDatabaseField(property)
+    markResourceDatabaseChanged()
     return true
   },
   defineProperty(_target, property, descriptor) {
     assertResourceDatabaseWriteAllowed()
     if (typeof property !== 'string' || !Object.prototype.hasOwnProperty.call(descriptor, 'value')) return false
     setResourceDatabaseField(property, descriptor.value)
+    markResourceDatabaseChanged()
     return true
   },
 })
@@ -512,15 +557,21 @@ function guardResourceDatabaseValue<T>(value: T): T {
     },
     set(target, property, nextValue, receiver) {
       assertResourceDatabaseWriteAllowed()
-      return Reflect.set(target, property, nextValue, receiver)
+      const applied = Reflect.set(target, property, nextValue, receiver)
+      if (applied) markResourceDatabaseChanged()
+      return applied
     },
     deleteProperty(target, property) {
       assertResourceDatabaseWriteAllowed()
-      return Reflect.deleteProperty(target, property)
+      const applied = Reflect.deleteProperty(target, property)
+      if (applied) markResourceDatabaseChanged()
+      return applied
     },
     defineProperty(target, property, descriptor) {
       assertResourceDatabaseWriteAllowed()
-      return Reflect.defineProperty(target, property, descriptor)
+      const applied = Reflect.defineProperty(target, property, descriptor)
+      if (applied) markResourceDatabaseChanged()
+      return applied
     },
   })
   guardedResourceValueMemo.set(value, guarded)
@@ -528,9 +579,17 @@ function guardResourceDatabaseValue<T>(value: T): T {
 }
 
 function assertResourceDatabaseWriteAllowed(): void {
-  if (resourceDatabaseWriteDepth === 0) {
+  if (resourceDatabaseWriteGuardEnabled && resourceDatabaseWriteDepth === 0) {
     throw new TypeError('The resource database compatibility view is read-only outside withResourceDatabaseWrite')
   }
+}
+
+function markResourceDatabaseChanged(): void {
+  if (resourceDatabaseWriteDepth > 0) {
+    resourceDatabaseWriteChanged = true
+    return
+  }
+  resourceDatabaseFacadeEpoch += 1
 }
 
 function preserveResidentCharacterChatBodies(incoming: character, existing: character | undefined): character {

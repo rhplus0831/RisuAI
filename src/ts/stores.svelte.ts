@@ -7,6 +7,7 @@ import { resetScriptCache } from './process/scripts'
 import type { hubType } from './characterCards'
 import type { PluginSafetyErrors } from './plugins/pluginSafety'
 import type { ActiveChatTarget } from './chatCommands'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 
 function updateSize() {
   SizeStore.set({
@@ -111,9 +112,18 @@ export function createSimpleCharacter(char: character) {
 
 updateSize()
 window.addEventListener('resize', updateSize)
-export const DBState = $state({
-  db: {} as any as Database,
-})
+/**
+ * @deprecated Durable client data is owned by resource-scoped state. Keep this
+ * accessor facade temporarily for unmigrated UI/runtime callers.
+ */
+export const DBState: { db: Database } = {
+  get db(): Database {
+    return getResourceDatabase()
+  },
+  set db(database: Database) {
+    replaceResourceDatabase(database)
+  },
+}
 
 openPresetList.subscribe((open) => {
   if (!open) {

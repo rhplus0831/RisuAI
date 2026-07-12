@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { character } from '../storage/database.svelte'
 import {
   SERVER_COLLECTION_NAMES,
@@ -12,6 +12,7 @@ import {
   getResourceDatabase,
   replaceResourceDatabase,
   resetServerResourceState,
+  setResourceDatabaseWriteGuardEnabled,
   withResourceDatabaseWrite,
 } from './resourceState.svelte'
 
@@ -30,7 +31,13 @@ function completeCollections() {
 }
 
 beforeEach(() => {
+  setResourceDatabaseWriteGuardEnabled(false)
   resetServerResourceState()
+  setResourceDatabaseWriteGuardEnabled(true)
+})
+
+afterEach(() => {
+  setResourceDatabaseWriteGuardEnabled(false)
 })
 
 describe('resource-scoped database state', () => {

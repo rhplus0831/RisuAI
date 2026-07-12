@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { DBState } from '../stores.svelte'
 import { setServerProjectionWriteGuardEnabled, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getResourceDatabaseFacadeEpoch } from './resourceState.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 
 beforeEach(() => {
@@ -14,7 +15,7 @@ afterEach(() => {
   DBState.db = {} as any
 })
 
-describe('Phase 1 copy-on-write projection write guard', () => {
+describe('resource-backed projection write compatibility guard', () => {
   it('performs zero whole-Database clones for a guarded one-field write', () => {
     // Baseline size of the hydrated characters array (char-0 has a 40-message chat).
     const charactersSize = JSON.stringify(DBState.db.characters).length
@@ -49,20 +50,24 @@ describe('Phase 1 copy-on-write projection write guard', () => {
     expect(DBState.db.characters[0].name).toBe('Renamed')
   })
 
-  it('mints a fresh DBState.db identity per guarded write so dependent effects re-run', () => {
+  it('keeps a stable DBState.db facade and advances its reactive resource epoch', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     const before = DBState.db
+    const beforeEpoch = getResourceDatabaseFacadeEpoch()
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[0].name = 'One'
     })
     const afterFirst = DBState.db
-    expect(afterFirst).not.toBe(before)
+    expect(afterFirst).toBe(before)
+    expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(beforeEpoch)
 
+    const afterFirstEpoch = getResourceDatabaseFacadeEpoch()
     withTrustedServerProjectionWrite(() => {
       DBState.db.characters[0].name = 'Two'
     })
-    expect(DBState.db).not.toBe(afterFirst)
+    expect(DBState.db).toBe(afterFirst)
+    expect(getResourceDatabaseFacadeEpoch()).toBeGreaterThan(afterFirstEpoch)
     expect(DBState.db.characters[0].name).toBe('Two')
   })
 
@@ -81,7 +86,7 @@ describe('Phase 1 copy-on-write projection write guard', () => {
       expect(DBState.db.characters[1].name).toBe('Inner')
     })
 
-    expect(DBState.db).not.toBe(before)
+    expect(DBState.db).toBe(before)
     expect(DBState.db.characters[0].name).toBe('Outer')
     expect(DBState.db.characters[1].name).toBe('Inner')
     expect(DBState.db.characters[0].chats[0].note).toBe('still-writable')
