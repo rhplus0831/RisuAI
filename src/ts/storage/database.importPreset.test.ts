@@ -6,7 +6,7 @@ vi.mock('./fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'preset-import-token',
 }))
 
-// The stores.svelte $effect fires moduleUpdate when DBState.db is seeded;
+// Resource-state effects fire moduleUpdate when the database is seeded;
 // neutralize it so the import-order TDZ between modules.ts and this module
 // graph cannot crash the run (same pattern as command.projectionGuard.test.ts).
 vi.mock('../process/modules', async (importActual) => {
@@ -19,8 +19,8 @@ import { encode as encodeMsgpack } from 'msgpackr/index-no-eval'
 import { encryptBuffer } from '../util'
 import { importPreset, presetTemplate } from './database.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setServerProjectionWriteGuardEnabled } from '../server/projectionWriteGuard.svelte'
-import { DBState } from '../stores.svelte'
 
 interface CapturedFetch {
   url: string
@@ -134,12 +134,12 @@ async function buildRisupresetFile(preset: Record<string, unknown>): Promise<Uin
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = {
+  replaceResourceDatabase({
     modelPresets: [],
     modelPresetsId: -1,
     promptPresets: [],
     promptPresetsId: -1,
-  } as any
+  } as any)
 })
 
 afterEach(() => {
@@ -156,7 +156,7 @@ describe('importPreset warm-path logging (L37)', () => {
       await importPreset({ name: 'roundtrip.risupreset', data: file })
 
       // The decoded envelope and preset really landed (non-vacuous)...
-      const imported = DBState.db.promptPresets[DBState.db.promptPresets.length - 1]
+      const imported = getResourceDatabase().promptPresets[getResourceDatabase().promptPresets.length - 1]
       expect(imported).toMatchObject({ name: 'Risup Roundtrip', temperature: 42 })
       const cmd = await waitForImportCommand(calls)
       expect(cmd.body.preset).toMatchObject({ name: 'Risup Roundtrip', temperature: 42 })
@@ -201,7 +201,7 @@ describe('importPreset warm-path logging (L37)', () => {
 
       // The mapped preset really landed (non-vacuous): main + unknown-default
       // rows kept their text, the missing prompt contributed nothing.
-      const imported = DBState.db.promptPresets[DBState.db.promptPresets.length - 1] as any
+      const imported = getResourceDatabase().promptPresets[getResourceDatabase().promptPresets.length - 1] as any
       expect(imported.name).toBe('Imported ST Preset')
       const texts = imported.promptTemplate
         .filter((row: any) => typeof row.text === 'string')
@@ -232,8 +232,8 @@ describe('importPreset warm-path logging (L37)', () => {
 
     await importPreset({ name: 'legacy-full.risupreset', data: file })
 
-    expect(DBState.db.modelPresets).toHaveLength(1)
-    expect(DBState.db.modelPresets[0]).toMatchObject({
+    expect(getResourceDatabase().modelPresets).toHaveLength(1)
+    expect(getResourceDatabase().modelPresets[0]).toMatchObject({
       name: 'Legacy Full',
       apiType: 'openai',
       aiModel: 'gpt-4o',
@@ -241,10 +241,10 @@ describe('importPreset warm-path logging (L37)', () => {
       temperature: 42,
       maxContext: 16000,
     })
-    expect(DBState.db.modelPresets[0].id).not.toBe('legacy-source-id')
+    expect(getResourceDatabase().modelPresets[0].id).not.toBe('legacy-source-id')
 
-    expect(DBState.db.promptPresets).toHaveLength(1)
-    expect(DBState.db.promptPresets[0]).toMatchObject({
+    expect(getResourceDatabase().promptPresets).toHaveLength(1)
+    expect(getResourceDatabase().promptPresets[0]).toMatchObject({
       name: 'Legacy Full',
       mainPrompt: 'Legacy main prompt',
       jailbreak: 'Legacy jailbreak',
@@ -252,7 +252,7 @@ describe('importPreset warm-path logging (L37)', () => {
       maxContext: 16000,
       overrideModelParameters: true,
     })
-    expect(DBState.db.promptPresets[0].id).not.toBe('legacy-source-id')
+    expect(getResourceDatabase().promptPresets[0].id).not.toBe('legacy-source-id')
 
     await vi.waitFor(() => {
       expect(calls.filter((call) => call.url.endsWith('/model-presets/import'))).toHaveLength(1)
@@ -289,9 +289,9 @@ describe('importPreset warm-path logging (L37)', () => {
 
     await importPreset({ name: 'modern-prompt.risupreset', data: file })
 
-    expect(DBState.db.modelPresets).toHaveLength(0)
-    expect(DBState.db.promptPresets).toHaveLength(1)
-    expect(DBState.db.promptPresets[0]).toMatchObject({
+    expect(getResourceDatabase().modelPresets).toHaveLength(0)
+    expect(getResourceDatabase().promptPresets).toHaveLength(1)
+    expect(getResourceDatabase().promptPresets[0]).toMatchObject({
       name: 'Modern Prompt Export',
       mainPrompt: 'Modern main prompt',
       temperature: 61,
@@ -304,7 +304,7 @@ describe('importPreset warm-path logging (L37)', () => {
   })
 
   it('L21: a failed preset import rolls back the optimistic imported row', async () => {
-    DBState.db.promptPresets = [
+    getResourceDatabase().promptPresets = [
       {
         ...clonePlain(presetTemplate),
         id: 'preset-existing',
@@ -318,14 +318,14 @@ describe('importPreset warm-path logging (L37)', () => {
         temperature: 44,
       },
     ]
-    DBState.db.promptPresetsId = 0
-    const beforeSelected = DBState.db.promptPresetsId
+    getResourceDatabase().promptPresetsId = 0
+    const beforeSelected = getResourceDatabase().promptPresetsId
     const calls = stubFailedImportCommandFetch(() => {
-      DBState.db.promptPresets[1] = {
-        ...DBState.db.promptPresets[1],
+      getResourceDatabase().promptPresets[1] = {
+        ...getResourceDatabase().promptPresets[1],
         name: 'Sibling edited after dispatch',
       }
-      DBState.db.promptPresets.push({
+      getResourceDatabase().promptPresets.push({
         ...clonePlain(presetTemplate),
         id: 'preset-appended',
         name: 'Appended after dispatch',
@@ -335,17 +335,17 @@ describe('importPreset warm-path logging (L37)', () => {
 
     await importPreset({ name: 'plain-preset.json', data: file })
 
-    expect(DBState.db.promptPresets.map((preset) => preset.name)).toContain('Import Will Roll Back')
+    expect(getResourceDatabase().promptPresets.map((preset) => preset.name)).toContain('Import Will Roll Back')
     await waitForImportCommand(calls)
     await waitForState(() => {
-      expect(DBState.db.promptPresets.map((preset) => preset.id)).toEqual([
+      expect(getResourceDatabase().promptPresets.map((preset) => preset.id)).toEqual([
         'preset-existing',
         'preset-sibling',
         'preset-appended',
       ])
-      expect(DBState.db.promptPresets[1]).toMatchObject({ name: 'Sibling edited after dispatch' })
-      expect(DBState.db.promptPresets[2]).toMatchObject({ name: 'Appended after dispatch' })
-      expect(DBState.db.promptPresetsId).toBe(beforeSelected)
+      expect(getResourceDatabase().promptPresets[1]).toMatchObject({ name: 'Sibling edited after dispatch' })
+      expect(getResourceDatabase().promptPresets[2]).toMatchObject({ name: 'Appended after dispatch' })
+      expect(getResourceDatabase().promptPresetsId).toBe(beforeSelected)
     })
   })
 })

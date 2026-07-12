@@ -1,11 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { DBState } from '../stores.svelte'
+vi.mock('../process/modules', async (importActual) => {
+  const actual = await importActual<typeof import('../process/modules')>()
+  return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
+})
+
 import {
   collectionsResourceState,
   charactersResourceState,
+  getResourceDatabase,
   getResourceDatabaseFacadeEpoch,
   resetServerResourceState,
+  replaceResourceDatabase,
   settingsResourceState,
 } from '../server/resourceState.svelte'
 import {
@@ -55,15 +61,15 @@ afterEach(() => {
 })
 
 describe('database compatibility accessors over resource state', () => {
-  it('routes the deprecated DBState facade and getDatabase through resource slices', () => {
-    DBState.db = databaseFixture()
+  it('routes getDatabase through resource slices', () => {
+    replaceResourceDatabase(databaseFixture())
 
-    expect(getDatabase()).toBe(DBState.db)
+    expect(getDatabase()).toBe(getResourceDatabase())
     expect(settingsResourceState.value.language).toBe('en')
     expect(collectionsResourceState.values.modules).toEqual([])
     expect(charactersResourceState.characters[0]?.name).toBe('Ada')
 
-    DBState.db.language = 'ko'
+    getDatabase().language = 'ko'
     expect(settingsResourceState.value.language).toBe('ko')
 
     const snapshot = getDatabase({ snapshot: true })

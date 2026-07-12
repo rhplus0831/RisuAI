@@ -1,11 +1,27 @@
 import fc from 'fast-check'
 import { writable } from 'svelte/store'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { DBState } from '../../stores.svelte'
 import { getChatVar, getGlobalChatVar, setChatVar } from '../chatVar.svelte'
-import { resetChatVariables } from './cbs/lib'
 
 //#region module mocks
+
+const chatVarMocks = vi.hoisted(() => ({
+  database: {
+    characters: [
+      {
+        chatPage: 0,
+        chats: [
+          {
+            scriptstate: {},
+          },
+        ],
+        defaultVariables: '',
+      },
+    ],
+    globalChatVariables: {} as Record<string, string>,
+    templateDefaultVariables: '',
+  },
+}))
 
 vi.mock(
   import('../../storage/database.svelte'),
@@ -13,7 +29,7 @@ vi.mock(
     ({
       appVer: '1234.5.67',
       getCurrentCharacter: () => ({}),
-      getDatabase: () => DBState.db,
+      getDatabase: () => chatVarMocks.database,
     }) as typeof import('../../storage/database.svelte'),
 )
 
@@ -24,23 +40,6 @@ vi.mock(import('../../globalApi.svelte'), () => ({
 
 vi.mock(import('../../stores.svelte'), () => {
   return {
-    DBState: {
-      db: {
-        characters: [
-          {
-            chatPage: 0,
-            chats: [
-              {
-                scriptstate: {},
-              },
-            ],
-            defaultVariables: '',
-          },
-        ],
-        globalChatVariables: {},
-        templateDefaultVariables: '',
-      },
-    },
     selIdState: {
       selId: 0,
     },
@@ -58,13 +57,16 @@ const anyValidDefaultVarValue = fc
 
 beforeEach(() => {
   vi.resetAllMocks()
-  resetChatVariables()
+  chatVarMocks.database.characters[0].chats[0].scriptstate = {}
+  chatVarMocks.database.characters[0].defaultVariables = ''
+  chatVarMocks.database.globalChatVariables = {}
+  chatVarMocks.database.templateDefaultVariables = ''
 })
 
 test('can get a character default variable', () => {
   fc.assert(
     fc.property(anyValidDefaultVarKey, anyValidDefaultVarValue, (key, value) => {
-      DBState.db.characters[0].defaultVariables = `${key}=${value}`
+      chatVarMocks.database.characters[0].defaultVariables = `${key}=${value}`
       expect(getChatVar(key)).toBe(value)
     }),
   )
@@ -73,7 +75,7 @@ test('can get a character default variable', () => {
 test('can get a template default variable', () => {
   fc.assert(
     fc.property(anyValidDefaultVarKey, anyValidDefaultVarValue, (key, value) => {
-      DBState.db.templateDefaultVariables = `${key}=${value}`
+      chatVarMocks.database.templateDefaultVariables = `${key}=${value}`
       expect(getChatVar(key)).toBe(value)
     }),
   )
@@ -96,8 +98,8 @@ test('can set and get a chat variable', () => {
 })
 
 test('can set a chat variable over its default value', () => {
-  DBState.db.characters[0].defaultVariables = 'char=default'
-  DBState.db.templateDefaultVariables = 'template=default'
+  chatVarMocks.database.characters[0].defaultVariables = 'char=default'
+  chatVarMocks.database.templateDefaultVariables = 'template=default'
 
   setChatVar('char', 'overridden')
   setChatVar('template', 'overridden')
@@ -115,7 +117,7 @@ test('can get a global chat variable', () => {
         .filter((v) => v !== undefined)
         .map(JSON.stringify),
       (key, value) => {
-        DBState.db.globalChatVariables[`toggle_${key}`] = value
+        chatVarMocks.database.globalChatVariables[`toggle_${key}`] = value
 
         expect(getGlobalChatVar(`toggle_${key}`)).toBe(value)
       },

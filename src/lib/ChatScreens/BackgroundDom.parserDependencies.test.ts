@@ -48,8 +48,8 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import BackgroundDom from './BackgroundDom.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
-  DBState,
   ReloadGUIPointer,
   VariableReloadGUIPointer,
   moduleBackgroundEmbedding,
@@ -61,11 +61,11 @@ import {
   withTrustedServerProjectionWrite,
 } from '../../ts/server/projectionWriteGuard.svelte'
 
-backgroundParserMocks.getDatabase.mockImplementation(() => DBState.db)
+backgroundParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
-const previousDb = DBState.db
+const previousDb = getResourceDatabase({ snapshot: true })
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousVariableReloadGui = get(VariableReloadGUIPointer)
@@ -80,7 +80,7 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
   moduleBackgroundEmbedding.set('')
-  DBState.db = {
+  replaceResourceDatabase({
     characters: [
       {
         backgroundHTML,
@@ -116,7 +116,7 @@ function seedDatabase(backgroundHTML = '<section>background one</section>') {
     enabledModules: [],
     moduleIntergration: '',
     modules: [],
-  } as unknown as Database
+  } as unknown as Database)
   setServerProjectionWriteGuardEnabled(true)
 }
 
@@ -150,7 +150,7 @@ afterEach(() => {
     component = undefined
   }
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = previousDb
+  replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
@@ -168,7 +168,7 @@ describe('BackgroundDom parser dependencies', () => {
     expect(backgroundParserMocks.ParseMarkdown).toHaveBeenCalledTimes(1)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message[0].data = 'unrelated stream frame'
+      getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame'
     })
     await settle()
 
@@ -189,7 +189,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.ParseMarkdown.mockClear()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].personality = 'updated background personality'
+      getResourceDatabase().characters[0].personality = 'updated background personality'
     })
     await waitForParserCalls(1)
 
@@ -203,7 +203,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.ParseMarkdown.mockClear()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message[0].data = 'unrelated stream frame after signature'
+      getResourceDatabase().characters[0].chats[0].message[0].data = 'unrelated stream frame after signature'
     })
     await settle()
 
@@ -219,7 +219,7 @@ describe('BackgroundDom parser dependencies', () => {
     backgroundParserMocks.ParseMarkdown.mockClear()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].backgroundHTML = '<section>background two</section>'
+      getResourceDatabase().characters[0].backgroundHTML = '<section>background two</section>'
     })
     await waitForParserCalls(1)
 

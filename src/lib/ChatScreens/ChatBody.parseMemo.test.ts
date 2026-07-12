@@ -2,13 +2,8 @@ import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { character, Database } from '../../ts/storage/database.svelte'
-import {
-  DBState,
-  ReloadChatPointer,
-  ReloadGUIPointer,
-  VariableReloadGUIPointer,
-  selectedCharID,
-} from '../../ts/stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
+import { ReloadChatPointer, ReloadGUIPointer, VariableReloadGUIPointer, selectedCharID } from '../../ts/stores.svelte'
 
 const moduleMockState = vi.hoisted(() => ({
   modules: [] as any[],
@@ -61,7 +56,7 @@ vi.mock('../../ts/translator/translator', async (importActual) => {
   }
 })
 
-const previousDb = DBState.db
+const previousDb = getResourceDatabase({ snapshot: true })
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousVariableReloadGui = get(VariableReloadGUIPointer)
@@ -125,7 +120,7 @@ function seedDb(overrides: Partial<Database> = {}) {
   ReloadChatPointer.set({})
   ReloadGUIPointer.set(0)
   VariableReloadGUIPointer.set(0)
-  DBState.db = {
+  replaceResourceDatabase({
     characters: [char],
     characterOrder: [char.chaId],
     currentChar: 0,
@@ -159,7 +154,7 @@ function seedDb(overrides: Partial<Database> = {}) {
     legacyMediaFindings: false,
     returnCSSError: false,
     ...overrides,
-  } as unknown as Database
+  } as unknown as Database)
   return char
 }
 
@@ -232,7 +227,7 @@ afterEach(async () => {
   const translatorModule = await import('../../ts/translator/translator')
   await translatorModule.clearLLMCache()
   document.body.innerHTML = ''
-  DBState.db = previousDb
+  replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   ReloadChatPointer.set(previousReloadChat)
   ReloadGUIPointer.set(previousReloadGui)
@@ -258,7 +253,7 @@ describe('ChatBody content-keyed parse memo', () => {
       conditions: [],
       effect: [],
     })
-    const dbChar = DBState.db.characters[0]
+    const dbChar = getResourceDatabase().characters[0]
     const characterScripts = [script('character-regex-a', 'character one')]
     const characterTriggers = [trigger('character-trigger-a', 'character trigger one')]
     const characterAssets: [string, string, string][] = [['character-portrait', 'asset-character-a', 'character.png']]
@@ -269,7 +264,7 @@ describe('ChatBody content-keyed parse memo', () => {
     dbChar.customscript = characterScripts as any
     dbChar.triggerscript = characterTriggers as any
     dbChar.additionalAssets = characterAssets
-    DBState.db.presetRegex = [script('preset-regex-a', 'preset one')] as any
+    getResourceDatabase().presetRegex = [script('preset-regex-a', 'preset one')] as any
     moduleMockState.assets = moduleAssets
     moduleMockState.regexScripts = moduleRegex
     moduleMockState.modules = [
@@ -358,7 +353,7 @@ describe('ChatBody content-keyed parse memo', () => {
       settingsSignatureBuilds: 2,
     })
 
-    DBState.db.presetRegex[0].out = 'preset two'
+    getResourceDatabase().presetRegex[0].out = 'preset two'
     const presetRegexInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(presetRegexInvalidatedKey).not.toBe(moduleInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -391,7 +386,7 @@ describe('ChatBody content-keyed parse memo', () => {
       settingsSignatureBuilds: 4,
     })
 
-    DBState.db.customQuotes = true
+    getResourceDatabase().customQuotes = true
     const settingsInvalidatedKey = memoModule.getChatBodyParseMemoKey(secondInput)
     expect(settingsInvalidatedKey).not.toBe(moduleTriggerInvalidatedKey)
     expect(memoModule.getChatBodyParseMemoDebugStats()).toMatchObject({
@@ -436,14 +431,14 @@ describe('ChatBody content-keyed parse memo', () => {
       flag: '',
       ableFlag: '',
     })
-    DBState.db.presetRegex = [script('global-regex', 'global one')] as any
-    DBState.db.promptPresets = [
+    getResourceDatabase().presetRegex = [script('global-regex', 'global one')] as any
+    getResourceDatabase().promptPresets = [
       {
         id: 'chat-preset',
         presetRegex: [script('chat-regex', 'chat one')],
       },
     ] as any
-    ;(DBState.db.characters[0].chats[0] as any).generationSettings = {
+    ;(getResourceDatabase().characters[0].chats[0] as any).generationSettings = {
       promptPresetId: 'chat-preset',
     }
 
@@ -458,9 +453,9 @@ describe('ChatBody content-keyed parse memo', () => {
     }
 
     const selectedPromptKey = memoModule.getChatBodyParseMemoKey(input)
-    DBState.db.presetRegex[0].out = 'global two'
+    getResourceDatabase().presetRegex[0].out = 'global two'
     expect(memoModule.getChatBodyParseMemoKey(input)).toBe(selectedPromptKey)
-    ;(DBState.db.promptPresets[0] as any).presetRegex[0].out = 'chat two'
+    ;(getResourceDatabase().promptPresets[0] as any).presetRegex[0].out = 'chat two'
     expect(memoModule.getChatBodyParseMemoKey(input)).not.toBe(selectedPromptKey)
   })
 
@@ -476,7 +471,7 @@ describe('ChatBody content-keyed parse memo', () => {
       bookmarks: [],
       bookmarkNames: {},
     } as any)
-    DBState.db.characters[0].chats[0].scriptstate = { $choice: 'applied' }
+    getResourceDatabase().characters[0].chats[0].scriptstate = { $choice: 'applied' }
 
     const memoModule = await import('./ChatBodyParseMemo')
     memoModule.clearChatBodyParseMemo()
@@ -489,12 +484,12 @@ describe('ChatBody content-keyed parse memo', () => {
     }
 
     const populatedChatKey = memoModule.getChatBodyParseMemoKey(input)
-    DBState.db.characters[0].chatPage = 1
+    getResourceDatabase().characters[0].chatPage = 1
     const emptyChatKey = memoModule.getChatBodyParseMemoKey(input)
     expect(emptyChatKey).not.toBe(populatedChatKey)
 
-    DBState.db.characters[0].chatPage = 0
-    DBState.db.characters[0].chats[0].scriptstate = { $choice: 'changed' }
+    getResourceDatabase().characters[0].chatPage = 0
+    getResourceDatabase().characters[0].chats[0].scriptstate = { $choice: 'changed' }
     const changedVariableKey = memoModule.getChatBodyParseMemoKey(input)
     expect(changedVariableKey).not.toBe(populatedChatKey)
     expect(changedVariableKey).not.toBe(emptyChatKey)
@@ -541,9 +536,9 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(keyA).not.toContain('HEAVY_REGEX_SOURCE_A')
     expect(keyA.length).toBeLessThan(8_000)
 
-    DBState.db.characters[0].triggerscript = [
+    getResourceDatabase().characters[0].triggerscript = [
       {
-        ...(DBState.db.characters[0].triggerscript[0] as any),
+        ...(getResourceDatabase().characters[0].triggerscript[0] as any),
         effect: [{ type: 'triggerlua', code: makeHeavyLua('HEAVY_LUA_SOURCE_B') }],
       },
     ] as any
@@ -552,9 +547,9 @@ describe('ChatBody content-keyed parse memo', () => {
     expect(keyB).not.toContain('HEAVY_LUA_SOURCE_B')
     expect(keyB.length).toBeLessThan(8_000)
 
-    DBState.db.characters[0].customscript = [
+    getResourceDatabase().characters[0].customscript = [
       {
-        ...(DBState.db.characters[0].customscript[0] as any),
+        ...(getResourceDatabase().characters[0].customscript[0] as any),
         out: makeHeavyReplacement('HEAVY_REGEX_SOURCE_B'),
       },
     ] as any

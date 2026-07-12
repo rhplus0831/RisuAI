@@ -195,6 +195,7 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  applyServerChatMessagesProjection: vi.fn(),
   hydrateActiveChatFully: loadPageMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: loadPageMocks.hydrateActiveChatWindow,
   isChatMessageHydrationPending: () => false,
@@ -226,10 +227,10 @@ vi.mock('html-to-image', () => ({
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
 import * as rerollNavigation from 'src/ts/process/rerollNavigation.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import {
   additionalChatMenu,
   additionalFloatingActionButtons,
-  DBState,
   PlaygroundStore,
   ScrollToMessageStore,
   selectedCharID,
@@ -287,7 +288,7 @@ function makeCharacter(index: number, messageCount: number) {
 
 function captureActiveChatTargetForTest(): ActiveChatTarget | null {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getResourceDatabase().characters?.[selectedChar]
   const chatPage = character?.chatPage ?? 0
   const chat = character?.chats?.[chatPage]
   if (!character || !chat) return null
@@ -304,7 +305,7 @@ function isActiveChatTargetFreshForTest(target: ActiveChatTarget | null | undefi
   if (!target) return false
 
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getResourceDatabase().characters?.[selectedChar]
   const chatPage = character?.chatPage ?? 0
   const chat = character?.chats?.[chatPage]
   if (!character || !chat) return false
@@ -337,7 +338,7 @@ function seedDatabase(messageCounts: number[]) {
   additionalChatMenu.splice(0, additionalChatMenu.length)
   additionalFloatingActionButtons.splice(0, additionalFloatingActionButtons.length)
 
-  DBState.db = {
+  replaceResourceDatabase({
     aiModel: '',
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
@@ -360,7 +361,7 @@ function seedDatabase(messageCounts: number[]) {
     useChatSticker: false,
     useSayNothing: false,
     username: 'User',
-  } as unknown as Database
+  } as unknown as Database)
 }
 
 function mountScreen() {
@@ -513,7 +514,7 @@ afterEach(() => {
   ScrollToMessageStore.value = -1
   loadPageMocks.chatFoldedState.data = null
   loadPageMocks.chatFoldedStateMessageIndex.index = -1
-  DBState.db = {} as Database
+  replaceResourceDatabase({} as Database)
   target.remove()
   document.body.innerHTML = ''
 })
@@ -521,7 +522,7 @@ afterEach(() => {
 describe('DefaultChatScreen transcript window state', () => {
   it('uses the configured display tail count for the initial chat window', async () => {
     seedDatabase([80])
-    DBState.db.chatDisplayTailCount = 12
+    getResourceDatabase().chatDisplayTailCount = 12
 
     mountScreen()
 
@@ -638,7 +639,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('blocks a prefilled incomplete-chat send without clearing the composer or appending', async () => {
     seedDatabase([1])
-    DBState.db.personas = [
+    getResourceDatabase().personas = [
       {
         id: 'persona-a',
         name: 'Persona Alpha',
@@ -647,8 +648,8 @@ describe('DefaultChatScreen transcript window state', () => {
         personaPrompt: '',
       },
     ]
-    DBState.db.modelPresets = [{ id: 'model-preset-a', name: 'Model Preset Alpha' }] as any
-    DBState.db.promptPresets = [
+    getResourceDatabase().modelPresets = [{ id: 'model-preset-a', name: 'Model Preset Alpha' }] as any
+    getResourceDatabase().promptPresets = [
       {
         ...presetTemplate,
         id: 'preset-a',
@@ -657,7 +658,7 @@ describe('DefaultChatScreen transcript window state', () => {
         customPromptTemplateToggle: 'mood=Mood=select=Calm,Spicy\nflag=Flag\nnote=Note=text',
       },
     ]
-    DBState.db.characters[0].chats[0].generationSettings = {
+    getResourceDatabase().characters[0].chats[0].generationSettings = {
       configured: false,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -669,7 +670,7 @@ describe('DefaultChatScreen transcript window state', () => {
         note: 'imported-note',
       },
     }
-    const originalHistory = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0].message))
+    const originalHistory = JSON.parse(JSON.stringify(getResourceDatabase().characters[0].chats[0].message))
     loadPageMocks.guardActiveChatGenerationSettingsForSend.mockImplementation(() => {
       const state = resolveActiveChatGenerationSettings()
       if (state.readiness.ready) {
@@ -707,7 +708,7 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(guardError).toContain('Chat generation settings are incomplete')
     expect(guardError).toContain('Configuration confirmation')
     expect(textarea.value).toBe('Keep this draft')
-    expect(DBState.db.characters[0].chats[0].message).toEqual(originalHistory)
+    expect(getResourceDatabase().characters[0].chats[0].message).toEqual(originalHistory)
     expect(loadPageMocks.hydrateActiveChatFully).not.toHaveBeenCalled()
     expect(loadPageMocks.processMultiCommand).not.toHaveBeenCalled()
     expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
@@ -767,7 +768,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('translates hook-enabled input into a user message without starting generation', async () => {
     seedDatabase([1])
-    DBState.db.characters[0].useInputTranslationHook = true
+    getResourceDatabase().characters[0].useInputTranslationHook = true
     vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
     mountScreen()
 
@@ -803,7 +804,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('restores original hook input and removes the translated message from the rollback button', async () => {
     seedDatabase([1])
-    DBState.db.characters[0].useInputTranslationHook = true
+    getResourceDatabase().characters[0].useInputTranslationHook = true
     vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
     loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
       status: 'ok',
@@ -844,7 +845,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('clears stored original hook input when generation starts', async () => {
     seedDatabase([1])
-    DBState.db.characters[0].useInputTranslationHook = true
+    getResourceDatabase().characters[0].useInputTranslationHook = true
     vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated draft')
     const send = createDeferred<boolean>()
     loadPageMocks.sendChat.mockReturnValueOnce(send.promise)
@@ -1131,7 +1132,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('does not call reroll navigation when the active chat changes during reroll hydration', async () => {
     seedDatabase([2, 2])
-    DBState.db.sideMenuRerollButton = true
+    getResourceDatabase().sideMenuRerollButton = true
     const hydration = createDeferred<void>()
     loadPageMocks.hydrateActiveChatFully.mockReturnValueOnce(hydration.promise)
     mountScreen()
@@ -1159,7 +1160,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
   it('does not let a stale auto-translate result overwrite newer source or target fields', async () => {
     seedDatabase([1])
-    DBState.db.useAutoTranslateInput = true
+    getResourceDatabase().useAutoTranslateInput = true
     const firstTranslation = createDeferred<string>()
     const pendingTranslation = new Promise<string>(() => undefined)
     const translateMock = vi.mocked(translate)

@@ -66,7 +66,8 @@ vi.mock('src/ts/process/scripts', () => ({
 }))
 
 import Suggestion, { runSuggestionTranslation } from './Suggestion.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
 
 function deferred<T>() {
@@ -102,7 +103,7 @@ async function waitFor(assertion: () => void) {
 
 function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead']) {
   selectedCharID.set(0)
-  DBState.db = {
+  replaceResourceDatabase({
     autoSuggestClean: false,
     autoSuggestPrompt: '',
     autoTranslate: false,
@@ -123,12 +124,12 @@ function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead']) {
     ],
     subModel: '',
     translator: '',
-  } as unknown as Database
+  } as unknown as Database)
 }
 
 function seedSuggestionDatabaseWithTwoChats() {
   selectedCharID.set(0)
-  DBState.db = {
+  replaceResourceDatabase({
     autoSuggestClean: false,
     autoSuggestPrompt: '',
     autoTranslate: false,
@@ -155,13 +156,13 @@ function seedSuggestionDatabaseWithTwoChats() {
     ],
     subModel: '',
     translator: '',
-  } as unknown as Database
+  } as unknown as Database)
 }
 
 afterEach(() => {
   suggestionMocks.doingChat.set(false)
   selectedCharID.set(-1)
-  DBState.db = {} as Database
+  replaceResourceDatabase({} as Database)
   vi.clearAllMocks()
 })
 
@@ -264,10 +265,10 @@ describe('runSuggestionTranslation', () => {
 describe('Suggestion component persistence', () => {
   it('routes generated suggestions through otherAx and shapes prompts from the resolved otherAx model', async () => {
     seedSuggestionDatabase([])
-    DBState.db.autoSuggestPrompt = 'Suggest next lines for {{char}}'
-    DBState.db.subModel = 'openai_submodel'
-    DBState.db.seperateModelsForAxModels = true
-    DBState.db.seperateModels = {
+    getResourceDatabase().autoSuggestPrompt = 'Suggest next lines for {{char}}'
+    getResourceDatabase().subModel = 'openai_submodel'
+    getResourceDatabase().seperateModelsForAxModels = true
+    getResourceDatabase().seperateModels = {
       otherAx: 'local_test',
     } as Database['seperateModels']
     suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Try the local branch' })
@@ -376,7 +377,7 @@ describe('Suggestion component persistence', () => {
       expect(rerollButton).toBeTruthy()
       rerollButton!.click()
 
-      DBState.db.characters[0].chatPage = 1
+      getResourceDatabase().characters[0].chatPage = 1
       await settle()
       confirmation.resolve(true)
       await settle()
@@ -417,7 +418,7 @@ describe('Suggestion component persistence', () => {
       )
       expect(suggestionButton).toBeTruthy()
 
-      DBState.db.characters[0].chatPage = 1
+      getResourceDatabase().characters[0].chatPage = 1
       suggestionButton!.click()
       await settle()
 

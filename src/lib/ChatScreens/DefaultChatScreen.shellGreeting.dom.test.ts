@@ -155,6 +155,7 @@ vi.mock('src/ts/server/projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (callback: () => void) => callback(),
 }))
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  applyServerChatMessagesProjection: vi.fn(),
   hydrateActiveChatFully: shellMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: shellMocks.hydrateActiveChatWindow,
   isChatMessageHydrationPending: () => false,
@@ -183,7 +184,8 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 vi.mock('html-to-image', () => ({ toCanvas: shellMocks.toCanvas }))
 
 import DefaultChatScreen from './DefaultChatScreen.svelte'
-import { DBState, PlaygroundStore, ScrollToMessageStore, selectedCharID } from 'src/ts/stores.svelte'
+import { PlaygroundStore, ScrollToMessageStore, selectedCharID } from 'src/ts/stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type Database } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -191,7 +193,7 @@ type MountedComponent = Parameters<typeof unmount>[0]
 let target: HTMLElement
 let component: MountedComponent | undefined
 
-// A faithful bootstrap shell as the server projection ships it for an inactive
+// A faithful bootstrap shell as the server character resource ships it for an inactive
 // character: marker set, chat metadata kept with empty messages, but
 // alternateGreetings/firstMessage stripped (NOT in BOOTSTRAP_CHARACTER_SHELL_FIELDS).
 function makeBootstrapShellCharacter() {
@@ -225,7 +227,7 @@ function makeBootstrapShellCharacter() {
   }
 }
 
-// The same character after hydration completes (the full row the projection ships
+// The same character after hydration completes (the full character resource row
 // on character-row hydration): alternateGreetings/firstMessage present.
 function makeHydratedCharacter() {
   return {
@@ -246,7 +248,7 @@ function seedDatabase(character: Record<string, unknown>) {
   })
   PlaygroundStore.set(0)
   ScrollToMessageStore.value = -1
-  DBState.db = {
+  replaceResourceDatabase({
     aiModel: '',
     alwaysScrollToNewMessage: false,
     autoScrollToNewMessage: false,
@@ -269,7 +271,7 @@ function seedDatabase(character: Record<string, unknown>) {
     useChatSticker: false,
     useSayNothing: false,
     username: 'User',
-  } as unknown as Database
+  } as unknown as Database)
 }
 
 function tryMount(): unknown {
@@ -300,7 +302,7 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   selectedCharID.set(-1)
-  DBState.db = {} as never
+  replaceResourceDatabase({} as never)
 })
 
 describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)', () => {
@@ -322,8 +324,10 @@ describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)
 
     // The store is in its CORRECT lazy-shell state (not a wrong value): this is
     // what makes the divergence in-scope rather than a logic bug.
-    expect(isServerCharacterShell(DBState.db.characters[0])).toBe(true)
-    expect((DBState.db.characters[0] as unknown as Record<string, unknown>).alternateGreetings).toBeUndefined()
+    expect(isServerCharacterShell(getResourceDatabase().characters[0])).toBe(true)
+    expect(
+      (getResourceDatabase().characters[0] as unknown as Record<string, unknown>).alternateGreetings,
+    ).toBeUndefined()
 
     const error = tryMount()
     await tick()

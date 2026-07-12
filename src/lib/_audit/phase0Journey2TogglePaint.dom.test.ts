@@ -8,7 +8,7 @@
 // Drive: mount the real Toggles.svelte, click the real jailbreak checkbox while
 // the save command is still in flight (deferred fetch), and assert the rendered
 // `data-risu-selected` flips immediately — the optimistic paint must not wait
-// for the server. Classify against the projection store only after a DOM check.
+// for the server. Classify against resource state only after a DOM check.
 
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -37,7 +37,8 @@ vi.mock('src/ts/characterCommands', () => ({ setCharacterSupaMemory: vi.fn() }))
 vi.mock('src/ts/setting/utils', () => ({ getFullSettingsData: () => [] }))
 
 import Toggles from '../SideBars/Toggles.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { classifyDifferential, readJailbreakSelected, readToggleSelected } from './domStateOracle'
@@ -71,7 +72,7 @@ function stubNeverResolvingCommandFetch(): { count: () => number } {
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  replaceResourceDatabase({
     username: 'User',
     selectedPersona: 0,
     botPresetsId: 0,
@@ -123,7 +124,7 @@ function seedDb(): void {
         ],
       },
     ],
-  } as never
+  } as never)
 }
 
 beforeEach(() => {
@@ -142,7 +143,7 @@ afterEach(() => {
   document.body.innerHTML = ''
   vi.unstubAllGlobals()
   selectedCharID.set(-1)
-  DBState.db = {} as never
+  replaceResourceDatabase({} as never)
 })
 
 describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', () => {
@@ -150,7 +151,7 @@ describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', ()
     stubNeverResolvingCommandFetch()
     component = mount(Toggles, {
       target,
-      props: { chara: DBState.db.characters[0], noContainer: true },
+      props: { chara: getResourceDatabase().characters[0], noContainer: true },
     })
     await tick()
 
@@ -178,7 +179,7 @@ describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', ()
     stubNeverResolvingCommandFetch()
     component = mount(Toggles, {
       target,
-      props: { chara: DBState.db.characters[0], noContainer: true },
+      props: { chara: getResourceDatabase().characters[0], noContainer: true },
     })
     await tick()
 

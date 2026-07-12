@@ -13,10 +13,15 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'setting-auth-token',
 }))
 
+vi.mock('../process/modules', async (importActual) => {
+  const actual = await importActual<typeof import('../process/modules')>()
+  return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
+})
+
 import { clearCachedServerCommandRevision, settingsGroupForKey } from '../server/commands'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setServerProjectionWriteGuardEnabled, withServerProjectionApply } from '../server/projectionWriteGuard.svelte'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
-import { DBState } from '../stores.svelte'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
 import {
@@ -145,7 +150,7 @@ function serverCommandKeyForSetting(item: SettingItem): string | null {
 beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = { notification: false } as any
+  replaceResourceDatabase({ notification: false } as any)
 })
 
 afterEach(() => {
@@ -195,14 +200,14 @@ describe('server-backed data-driven settings', () => {
     const item: SettingItem = {
       id: 'notification',
       type: 'check',
-      bindKey: 'notification' as keyof typeof DBState.db,
+      bindKey: 'notification' as keyof ReturnType<typeof getResourceDatabase>,
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
 
     setSettingValue(item, true, ctx)
 
     await vi.waitFor(() => {
-      expect(DBState.db.notification).toBe(false)
+      expect(getResourceDatabase().notification).toBe(false)
     })
 
     expect(calls).toEqual([
@@ -217,18 +222,18 @@ describe('server-backed data-driven settings', () => {
 
   it('restores local state when a number clear would produce an undefined server patch', async () => {
     const calls = stubSettingsFetch()
-    DBState.db = { maxResponse: 100 } as any
+    replaceResourceDatabase({ maxResponse: 100 } as any)
     const item: SettingItem = {
       id: 'maxResponse',
       type: 'number',
-      bindKey: 'maxResponse' as keyof typeof DBState.db,
+      bindKey: 'maxResponse' as keyof ReturnType<typeof getResourceDatabase>,
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
 
     setSettingValue(item, undefined, ctx)
 
     await vi.waitFor(() => {
-      expect(DBState.db.maxResponse).toBe(100)
+      expect(getResourceDatabase().maxResponse).toBe(100)
     })
 
     expect(calls).toEqual([])
@@ -252,39 +257,39 @@ describe('server-backed data-driven settings', () => {
     const item: SettingItem = {
       id: 'notification',
       type: 'check',
-      bindKey: 'notification' as keyof typeof DBState.db,
+      bindKey: 'notification' as keyof ReturnType<typeof getResourceDatabase>,
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
 
     setSettingValue(item, true, ctx)
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/settings/display')).toBe(true)
     })
-    expect(DBState.db.notification).toBe(true)
+    expect(getResourceDatabase().notification).toBe(true)
 
     createDestructiveRefreshToken('setting-renderer-test-refresh')
     patchResponse.resolve(jsonResponse({ error: 'nope' }, 500))
 
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(DBState.db.notification).toBe(true)
+    expect(getResourceDatabase().notification).toBe(true)
   })
 
   it('keeps the latest rapid text draft through an intermediate projection and sends only the final value', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
-    DBState.db = {
+    replaceResourceDatabase({
       guiHTML: 'server initial',
       modelPresets: [],
       modelPresetsId: -1,
       promptPresets: [],
       promptPresetsId: -1,
-    } as any
+    } as any)
     const item: SettingItem = {
       id: 'display.guiHTML',
       type: 'textarea',
-      bindKey: 'guiHTML' as keyof typeof DBState.db,
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
     const target = document.createElement('div')
     const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'text' } })
     flushSync()
@@ -296,16 +301,16 @@ describe('server-backed data-driven settings', () => {
       flushSync()
     }
 
-    expect(DBState.db.guiHTML).toBe('local final')
+    expect(getResourceDatabase().guiHTML).toBe('local final')
     expect(calls).toEqual([])
 
     withServerProjectionApply(() => {
-      DBState.db.guiHTML = 'server intermediate'
+      getResourceDatabase().guiHTML = 'server intermediate'
     })
     flushSync()
 
     expect(input.value).toBe('local final')
-    expect(DBState.db.guiHTML).toBe('local final')
+    expect(getResourceDatabase().guiHTML).toBe('local final')
 
     await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
     await Promise.resolve()
@@ -319,19 +324,19 @@ describe('server-backed data-driven settings', () => {
   it('bounds rapid slider persistence to one dispatch with the final value', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
-    DBState.db = {
+    replaceResourceDatabase({
       modelPresets: [],
       modelPresetsId: -1,
       promptPresets: [],
       promptPresetsId: -1,
       zoomsize: 50,
-    } as any
+    } as any)
     const item: SettingItem = {
       id: 'display.zoomsize',
       type: 'slider',
-      bindKey: 'zoomsize' as keyof typeof DBState.db,
+      bindKey: 'zoomsize' as keyof ReturnType<typeof getResourceDatabase>,
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
     const target = document.createElement('div')
     const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'slider' } })
     flushSync()
@@ -343,7 +348,7 @@ describe('server-backed data-driven settings', () => {
       flushSync()
     }
 
-    expect(DBState.db.zoomsize).toBe(150)
+    expect(getResourceDatabase().zoomsize).toBe(150)
     expect(calls).toEqual([])
 
     await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
@@ -358,13 +363,13 @@ describe('server-backed data-driven settings', () => {
   it('coalesces sibling bind paths into one effective-root patch', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
-    DBState.db = {
+    replaceResourceDatabase({
       deeplOptions: { key: 'old key', proxy: 'old proxy' },
       modelPresets: [],
       modelPresetsId: -1,
       promptPresets: [],
       promptPresetsId: -1,
-    } as any
+    } as any)
     const keyItem: SettingItem = {
       id: 'language.deepl.key',
       type: 'text',
@@ -375,7 +380,7 @@ describe('server-backed data-driven settings', () => {
       type: 'text',
       bindPath: 'deeplOptions.proxy',
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
 
     setDeferredSettingValue(keyItem, 'final key', ctx)
     setDeferredSettingValue(proxyItem, 'final proxy', ctx)
@@ -393,19 +398,19 @@ describe('server-backed data-driven settings', () => {
   it('flushes the final deferred input with keepalive before its timer fires', async () => {
     vi.useFakeTimers()
     const calls = stubSuccessfulSettingsFetch()
-    DBState.db = {
+    replaceResourceDatabase({
       guiHTML: 'before',
       modelPresets: [],
       modelPresetsId: -1,
       promptPresets: [],
       promptPresetsId: -1,
-    } as any
+    } as any)
     const item: SettingItem = {
       id: 'display.guiHTML',
       type: 'textarea',
-      bindKey: 'guiHTML' as keyof typeof DBState.db,
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
     }
-    const ctx = { db: DBState.db, modelInfo: {}, subModelInfo: {} } as SettingContext
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
 
     setDeferredSettingValue(item, 'last keystroke', ctx)
     flushDeferredSettingWrites({ keepalive: true })

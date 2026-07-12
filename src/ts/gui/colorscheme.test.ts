@@ -3,9 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const colorSchemeMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   applyServerBackedSettingsPatch: vi.fn(),
-  DBState: {
-    db: {} as any,
-  },
+  database: {} as any,
   downloadFile: vi.fn(),
   selectSingleFile: vi.fn(),
   setDatabase: vi.fn(),
@@ -41,13 +39,12 @@ vi.mock('../globalApi.svelte', () => ({
 }))
 
 vi.mock('../storage/database.svelte', () => ({
-  getDatabase: () => colorSchemeMocks.DBState.db,
+  getDatabase: () => colorSchemeMocks.database,
   setDatabase: colorSchemeMocks.setDatabase,
 }))
 
 vi.mock('../stores.svelte', () => ({
   CustomCSSStore: colorSchemeMocks.stores.customCSS,
-  DBState: colorSchemeMocks.DBState,
   SafeModeStore: colorSchemeMocks.stores.safeMode,
 }))
 
@@ -56,7 +53,6 @@ vi.mock('../util', () => ({
   selectSingleFile: colorSchemeMocks.selectSingleFile,
 }))
 
-import { DBState } from '../stores.svelte'
 import { importColorScheme, type ColorScheme } from './colorscheme'
 
 type SelectedFile = {
@@ -118,7 +114,7 @@ async function flushAsync(): Promise<void> {
 }
 
 beforeEach(() => {
-  DBState.db = {
+  colorSchemeMocks.database = {
     colorSchemeName: 'default',
     colorScheme: scheme('aaa'),
   } as any
@@ -126,7 +122,7 @@ beforeEach(() => {
   colorSchemeMocks.applyServerBackedSettingsPatch.mockReset()
   colorSchemeMocks.selectSingleFile.mockReset()
   colorSchemeMocks.applyServerBackedSettingsPatch.mockImplementation((patch: Record<string, unknown>) => {
-    Object.assign(DBState.db, patch)
+    Object.assign(colorSchemeMocks.database, patch)
   })
 })
 
@@ -140,16 +136,16 @@ describe('importColorScheme freshness', () => {
       expect(colorSchemeMocks.selectSingleFile).toHaveBeenCalledWith(['json'], expect.any(Object))
     })
 
-    DBState.db.colorSchemeName = 'light'
-    DBState.db.colorScheme = scheme('bbb')
+    colorSchemeMocks.database.colorSchemeName = 'light'
+    colorSchemeMocks.database.colorScheme = scheme('bbb')
 
     picker.resolve(selectedJsonFile(scheme('ccc')))
     await importPromise
 
     expect(colorSchemeMocks.applyServerBackedSettingsPatch).not.toHaveBeenCalled()
     expect(colorSchemeMocks.alertError).not.toHaveBeenCalled()
-    expect(DBState.db.colorSchemeName).toBe('light')
-    expect(DBState.db.colorScheme).toEqual(scheme('bbb'))
+    expect(colorSchemeMocks.database.colorSchemeName).toBe('light')
+    expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
   })
 
   it('does not alert for an invalid stale file after the scheme changed while selection was pending', async () => {
@@ -161,8 +157,8 @@ describe('importColorScheme freshness', () => {
       expect(colorSchemeMocks.selectSingleFile).toHaveBeenCalledWith(['json'], expect.any(Object))
     })
 
-    DBState.db.colorSchemeName = 'custom'
-    DBState.db.colorScheme = scheme('bbb')
+    colorSchemeMocks.database.colorSchemeName = 'custom'
+    colorSchemeMocks.database.colorScheme = scheme('bbb')
 
     picker.resolve(selectedJsonFile('{'))
     await importPromise
@@ -198,7 +194,7 @@ describe('importColorScheme freshness', () => {
         },
       ],
     ])
-    expect(DBState.db.colorScheme).toEqual(scheme('bbb'))
+    expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
     expect(colorSchemeMocks.alertError).not.toHaveBeenCalled()
   })
 })

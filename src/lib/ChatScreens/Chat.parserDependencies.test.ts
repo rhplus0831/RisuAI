@@ -181,8 +181,8 @@ vi.mock('src/ts/util', () => ({
 }))
 
 import ChatParserDependenciesHarness, { type ParserDependencyRow } from './Chat.parserDependenciesHarness.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/resourceState.svelte'
 import {
-  DBState,
   HideIconStore,
   ReloadChatPointer,
   ReloadGUIPointer,
@@ -197,7 +197,7 @@ import {
 } from '../../ts/server/projectionWriteGuard.svelte'
 import { dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
 
-chatParserMocks.getDatabase.mockImplementation(() => DBState.db)
+chatParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type ChatHarnessApi = MountedComponent & {
@@ -207,7 +207,7 @@ type ChatHarnessApi = MountedComponent & {
   updateRole(index: number, role: string): void
 }
 
-const previousDb = DBState.db
+const previousDb = getResourceDatabase({ snapshot: true })
 const previousSelectedChar = get(selectedCharID)
 const previousReloadGui = get(ReloadGUIPointer)
 const previousReloadChat = get(ReloadChatPointer)
@@ -286,7 +286,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
   VariableReloadGUIPointer.set(0)
   HideIconStore.set(false)
   SizeStore.set({ w: 900, h: 700 })
-  DBState.db = {
+  replaceResourceDatabase({
     askRemoval: false,
     characters: [
       {
@@ -334,7 +334,7 @@ function seedDatabase(rows: ParserDependencyRow[]) {
     translatorType: 'none',
     useChatCopy: false,
     zoomsize: 100,
-  } as unknown as Database
+  } as unknown as Database)
   setServerProjectionWriteGuardEnabled(true)
 }
 
@@ -370,7 +370,7 @@ afterEach(() => {
     component = undefined
   }
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = previousDb
+  replaceResourceDatabase(previousDb)
   selectedCharID.set(previousSelectedChar)
   selIdState.selId = previousSelectedChar
   ReloadGUIPointer.set(previousReloadGui)
@@ -393,7 +393,7 @@ describe('Chat parser dependencies', () => {
     const callsAfterMount = chatParserMocks.risuChatParser.mock.calls.length
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].note = 'unrelated guarded projection write'
+      getResourceDatabase().characters[0].chats[0].note = 'unrelated guarded projection write'
     })
     await settle()
 
@@ -477,7 +477,7 @@ describe('Chat parser dependencies', () => {
     const rows = makeRows(4)
     seedDatabase(rows)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats.push({
+      getResourceDatabase().characters[0].chats.push({
         id: 'parser-dependency-other-chat',
         name: 'Other Parser Dependency Chat',
         message: [],
@@ -495,7 +495,7 @@ describe('Chat parser dependencies', () => {
     chatParserMocks.risuChatParser.mockClear()
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatPage = 1
+      getResourceDatabase().characters[0].chatPage = 1
     })
     await settle()
 
@@ -541,7 +541,7 @@ describe('Chat parser dependencies', () => {
     await settle()
 
     expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('visible message 0')
   })
 
   it('dispatches a message update when edited text actually changes', async () => {
@@ -565,7 +565,7 @@ describe('Chat parser dependencies', () => {
     await settle()
 
     expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith('row-0', { data: 'changed message' }, {})
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('visible message 0')
   })
 
   it('drops partial edit saves when the live source data changed while the modal was open', async () => {
@@ -584,7 +584,7 @@ describe('Chat parser dependencies', () => {
     chatParserMocks.risuChatParser.mockImplementation((message: string) => message)
     seedDatabase(rows)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.enableBlockPartialEdit = true
+      getResourceDatabase().enableBlockPartialEdit = true
     })
     mountHarness(rows)
     await settle()
@@ -616,13 +616,13 @@ describe('Chat parser dependencies', () => {
 
     vi.mocked(dispatchUpdateMessageScoped).mockClear()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message[0].data = 'newer live data'
+      getResourceDatabase().characters[0].chats[0].message[0].data = 'newer live data'
     })
 
     document.querySelector<HTMLButtonElement>('.partial-edit-save-btn')?.click()
     await settle()
 
     expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
-    expect(DBState.db.characters[0].chats[0].message[0].data).toBe('newer live data')
+    expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('newer live data')
   })
 })
