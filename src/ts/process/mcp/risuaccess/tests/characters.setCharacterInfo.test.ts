@@ -23,8 +23,12 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from 'src/ts/server/projectionWriteGuard.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 import { resetLorebookHydration } from 'src/ts/server/lorebookBridge.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
 import { seedCloneCostDb } from 'src/ts/__tests__/cloneCostHarness'
 import { CharacterHandler } from '../characters'
 
@@ -148,13 +152,13 @@ function makeLuaTrigger(code: string, id = 'lua-trigger-id') {
 }
 
 function firstTriggerCode(characterIndex: number): string {
-  return (DBState.db.characters[characterIndex].triggerscript[0].effect[0] as { code: string }).code
+  return (getDatabase().characters[characterIndex].triggerscript[0].effect[0] as { code: string }).code
 }
 
 function seedSiblingAndModuleScripts() {
-  DBState.db.characters[0].customscript = [makeRegexScript('Sibling regex', 'sibling-old-in', 'sibling-old-out')]
-  DBState.db.characters[0].triggerscript = [makeLuaTrigger('print("sibling old")', 'sibling-trigger-id') as any]
-  DBState.db.modules = [
+  getDatabase().characters[0].customscript = [makeRegexScript('Sibling regex', 'sibling-old-in', 'sibling-old-out')]
+  getDatabase().characters[0].triggerscript = [makeLuaTrigger('print("sibling old")', 'sibling-trigger-id') as any]
+  getDatabase().modules = [
     {
       id: 'module-1',
       name: 'Module 1',
@@ -183,7 +187,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   resetLorebookHydration()
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
+  setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
   selectedCharID.set(0)
 })
 
@@ -214,12 +218,12 @@ describe('MCP character writes optimistic projection', () => {
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters = DBState.db.characters.filter((candidate) => candidate.chaId !== 'char-1')
+      getDatabase().characters = getDatabase().characters.filter((candidate) => candidate.chaId !== 'char-1')
     })
     acceptPrompt(true)
 
     expect(toolText(await pending)).toBe('Error: Character with ID char-1 not found.')
-    expect(DBState.db.characters.map((candidate) => candidate.chaId)).toEqual(['char-0', 'char-2'])
+    expect(getDatabase().characters.map((candidate) => candidate.chaId)).toEqual(['char-0', 'char-2'])
     expect(calls).toEqual([])
   })
 
@@ -227,7 +231,7 @@ describe('MCP character writes optimistic projection', () => {
     setServerProjectionWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
-    const replacement = { ...DBState.db.characters[1], name: 'Replacement character' }
+    const replacement = { ...getDatabase().characters[1], name: 'Replacement character' }
     let acceptPrompt!: (accepted: boolean) => void
     alertConfirmSpy.mockImplementationOnce(
       () =>
@@ -243,18 +247,18 @@ describe('MCP character writes optimistic projection', () => {
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1] = replacement
+      getDatabase().characters[1] = replacement
     })
     acceptPrompt(true)
 
     expect(toolText(await pending)).toBe(
       'Error: Character with ID char-1 changed before access was accepted. Please retry.',
     )
-    expect(DBState.db.characters[1].name).toBe('Replacement character')
+    expect(getDatabase().characters[1].name).toBe('Replacement character')
     expect(calls).toEqual([])
   })
 
-  it('setCharacterInfo patches DBState and read-tool output before the command resolves', async () => {
+  it('setCharacterInfo patches resource state and read-tool output before the command resolves', async () => {
     setServerProjectionWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
@@ -265,7 +269,7 @@ describe('MCP character writes optimistic projection', () => {
     })
 
     expect(toolText(result)).toContain('Successfully updated')
-    expect(DBState.db.characters[1].name).toBe('Renamed via MCP')
+    expect(getDatabase().characters[1].name).toBe('Renamed via MCP')
     expect(
       parseToolJson<{ name: string }>(
         await handler.handle('risu-get-character-info', {
@@ -284,7 +288,7 @@ describe('MCP character writes optimistic projection', () => {
   })
 
   it('setCharacterInfo patches displayName and uses it for visible MCP text', async () => {
-    DBState.db.characters[1].displayName = '표시 캐릭터'
+    getDatabase().characters[1].displayName = '표시 캐릭터'
     setServerProjectionWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
@@ -296,7 +300,7 @@ describe('MCP character writes optimistic projection', () => {
 
     expect(alertConfirmSpy).toHaveBeenCalledWith(expect.stringContaining('표시 캐릭터'))
     expect(toolText(result)).toContain('새 표시 이름')
-    expect(DBState.db.characters[1]).toMatchObject({
+    expect(getDatabase().characters[1]).toMatchObject({
       name: 'Character 1',
       displayName: '새 표시 이름',
     })
@@ -331,23 +335,23 @@ describe('MCP character writes optimistic projection', () => {
       data: { name: 'Renamed via MCP' },
     })
 
-    expect(DBState.db.characters[1].name).toBe('Renamed via MCP')
+    expect(getDatabase().characters[1].name).toBe('Renamed via MCP')
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].name = 'Concurrent sibling edit'
+      getDatabase().characters[0].name = 'Concurrent sibling edit'
     })
 
     await waitForCallCount(calls, 2)
     releaseHeldResponses()
     await waitForSettledCommands()
 
-    expect(DBState.db.characters[1].name).toBe('Character 1')
-    expect(DBState.db.characters[0].name).toBe('Concurrent sibling edit')
+    expect(getDatabase().characters[1].name).toBe('Character 1')
+    expect(getDatabase().characters[0].name).toBe('Concurrent sibling edit')
   })
 
-  it('set and delete character lorebooks are immediately visible through DBState and MCP reads', async () => {
+  it('set and delete character lorebooks are immediately visible through resource state and MCP reads', async () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
-    DBState.db.characters[1].globalLore = []
+    getDatabase().characters[1].globalLore = []
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-set-character-lorebook', {
@@ -357,7 +361,7 @@ describe('MCP character writes optimistic projection', () => {
       keys: ['alpha'],
     })
 
-    expect(DBState.db.characters[1].globalLore[0]).toMatchObject({
+    expect(getDatabase().characters[1].globalLore[0]).toMatchObject({
       comment: 'Created',
       content: 'created content',
       key: 'alpha',
@@ -384,7 +388,7 @@ describe('MCP character writes optimistic projection', () => {
       keys: ['alpha', 'beta'],
     })
 
-    expect(DBState.db.characters[1].globalLore[0]).toMatchObject({
+    expect(getDatabase().characters[1].globalLore[0]).toMatchObject({
       comment: 'Created',
       content: 'updated content',
       key: 'alpha,beta',
@@ -396,7 +400,7 @@ describe('MCP character writes optimistic projection', () => {
       name: 'Created',
     })
 
-    expect(DBState.db.characters[1].globalLore).toEqual([])
+    expect(getDatabase().characters[1].globalLore).toEqual([])
     expect(
       toolText(
         await handler.handle('risu-get-character-lorebook', {
@@ -412,8 +416,8 @@ describe('MCP character writes optimistic projection', () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
     const existing = makeLorebook('Existing', 'old content')
-    DBState.db.characters[1].globalLore = [existing]
-    ;(DBState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    getDatabase().characters[1].globalLore = [existing]
+    ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
     setServerProjectionWriteGuardEnabled(true)
 
     const updateResult = await handler.handle('risu-set-character-lorebook', {
@@ -424,7 +428,7 @@ describe('MCP character writes optimistic projection', () => {
     })
 
     expect(toolText(updateResult)).toContain('not hydrated')
-    expect(DBState.db.characters[1].globalLore).toEqual([existing])
+    expect(getDatabase().characters[1].globalLore).toEqual([existing])
     expect(calls).toEqual([])
 
     const deleteResult = await handler.handle('risu-delete-character-lorebook', {
@@ -433,14 +437,14 @@ describe('MCP character writes optimistic projection', () => {
     })
 
     expect(toolText(deleteResult)).toContain('not hydrated')
-    expect(DBState.db.characters[1].globalLore).toEqual([existing])
+    expect(getDatabase().characters[1].globalLore).toEqual([existing])
     expect(calls).toEqual([])
   })
 
-  it('set and delete character regex scripts are immediately visible through DBState and MCP reads', async () => {
+  it('set and delete character regex scripts are immediately visible through resource state and MCP reads', async () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
-    DBState.db.characters[1].customscript = []
+    getDatabase().characters[1].customscript = []
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-set-character-regex-scripts', {
@@ -453,7 +457,7 @@ describe('MCP character writes optimistic projection', () => {
       ableFlag: true,
     })
 
-    expect(DBState.db.characters[1].customscript[0]).toMatchObject({
+    expect(getDatabase().characters[1].customscript[0]).toMatchObject({
       comment: 'Created script',
       flag: 'g',
       in: 'created-in',
@@ -483,7 +487,7 @@ describe('MCP character writes optimistic projection', () => {
       ableFlag: true,
     })
 
-    expect(DBState.db.characters[1].customscript[0]).toMatchObject({
+    expect(getDatabase().characters[1].customscript[0]).toMatchObject({
       comment: 'Created script',
       flag: 'im',
       in: 'updated-in',
@@ -508,7 +512,7 @@ describe('MCP character writes optimistic projection', () => {
       name: 'Created script',
     })
 
-    expect(DBState.db.characters[1].customscript).toEqual([])
+    expect(getDatabase().characters[1].customscript).toEqual([])
     expect(
       parseToolJson<unknown[]>(await handler.handle('risu-get-character-regex-scripts', { id: 'char-1' })),
     ).toEqual([])
@@ -523,8 +527,8 @@ describe('MCP character writes optimistic projection', () => {
     })
     const handler = new CharacterHandler()
     seedSiblingAndModuleScripts()
-    delete (DBState.db.characters[1] as { customscript?: unknown }).customscript
-    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
+    delete (getDatabase().characters[1] as { customscript?: unknown }).customscript
+    getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-set-character-regex-scripts', {
@@ -535,7 +539,7 @@ describe('MCP character writes optimistic projection', () => {
       type: 'editdisplay',
     })
 
-    expect(DBState.db.characters[1].customscript[0]).toMatchObject({
+    expect(getDatabase().characters[1].customscript[0]).toMatchObject({
       comment: 'Created script',
       in: 'created-in',
       out: 'created-out',
@@ -543,19 +547,19 @@ describe('MCP character writes optimistic projection', () => {
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1].triggerscript = [
+      getDatabase().characters[1].triggerscript = [
         makeLuaTrigger('print("target trigger concurrent")', 'target-trigger-concurrent-id') as any,
       ]
-      DBState.db.characters[0].customscript = [
+      getDatabase().characters[0].customscript = [
         makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
       ]
-      DBState.db.characters[0].triggerscript = [
+      getDatabase().characters[0].triggerscript = [
         makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
       ]
-      ;(DBState.db.modules[0] as any).regex = [
+      ;(getDatabase().modules[0] as any).regex = [
         makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
       ]
-      ;(DBState.db.modules[0] as any).trigger = [
+      ;(getDatabase().modules[0] as any).trigger = [
         makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
       ]
     })
@@ -563,12 +567,12 @@ describe('MCP character writes optimistic projection', () => {
     releaseHeldResponses()
     await waitForSettledCommands()
 
-    expect(DBState.db.characters[1]).not.toHaveProperty('customscript')
+    expect(getDatabase().characters[1]).not.toHaveProperty('customscript')
     expect(firstTriggerCode(1)).toBe('print("target trigger concurrent")')
-    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
     expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
-    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
-    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+    expect((getDatabase().modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((getDatabase().modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
       'print("module concurrent")',
     )
   })
@@ -581,8 +585,8 @@ describe('MCP character writes optimistic projection', () => {
     })
     const handler = new CharacterHandler()
     seedSiblingAndModuleScripts()
-    DBState.db.characters[1].customscript = [makeRegexScript('Delete me', 'delete-old-in', 'delete-old-out')]
-    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
+    getDatabase().characters[1].customscript = [makeRegexScript('Delete me', 'delete-old-in', 'delete-old-out')]
+    getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target trigger old")') as any]
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-delete-character-regex-scripts', {
@@ -590,26 +594,26 @@ describe('MCP character writes optimistic projection', () => {
       name: 'Delete me',
     })
 
-    expect(DBState.db.characters[1].customscript).toEqual([])
+    expect(getDatabase().characters[1].customscript).toEqual([])
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1].customscript = [
+      getDatabase().characters[1].customscript = [
         makeRegexScript('Concurrent target regex', 'target-new-in', 'target-new-out'),
       ]
-      DBState.db.characters[1].triggerscript = [
+      getDatabase().characters[1].triggerscript = [
         makeLuaTrigger('print("target trigger concurrent")', 'target-trigger-concurrent-id') as any,
       ]
-      DBState.db.characters[0].customscript = [
+      getDatabase().characters[0].customscript = [
         makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
       ]
-      DBState.db.characters[0].triggerscript = [
+      getDatabase().characters[0].triggerscript = [
         makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
       ]
-      ;(DBState.db.modules[0] as any).regex = [
+      ;(getDatabase().modules[0] as any).regex = [
         makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
       ]
-      ;(DBState.db.modules[0] as any).trigger = [
+      ;(getDatabase().modules[0] as any).trigger = [
         makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
       ]
     })
@@ -617,22 +621,22 @@ describe('MCP character writes optimistic projection', () => {
     releaseHeldResponses()
     await waitForSettledCommands()
 
-    expect(DBState.db.characters[1].customscript).toEqual([
+    expect(getDatabase().characters[1].customscript).toEqual([
       expect.objectContaining({ comment: 'Concurrent target regex', in: 'target-new-in', out: 'target-new-out' }),
     ])
     expect(firstTriggerCode(1)).toBe('print("target trigger concurrent")')
-    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
     expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
-    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
-    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+    expect((getDatabase().modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((getDatabase().modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
       'print("module concurrent")',
     )
   })
 
-  it('setCharacterLuaScript is immediately visible through DBState and the Lua read tool', async () => {
+  it('setCharacterLuaScript is immediately visible through resource state and the Lua read tool', async () => {
     const { calls } = stubCommandFetch()
     const handler = new CharacterHandler()
-    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("old")') as any]
+    getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("old")') as any]
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-set-character-lua-script', {
@@ -640,7 +644,7 @@ describe('MCP character writes optimistic projection', () => {
       code: 'print("new")',
     })
 
-    expect((DBState.db.characters[1].triggerscript[0].effect[0] as { code: string }).code).toBe('print("new")')
+    expect((getDatabase().characters[1].triggerscript[0].effect[0] as { code: string }).code).toBe('print("new")')
     expect(toolText(await handler.handle('risu-get-character-lua-script', { id: 'char-1' }))).toBe('print("new")')
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
@@ -657,8 +661,8 @@ describe('MCP character writes optimistic projection', () => {
     })
     const handler = new CharacterHandler()
     seedSiblingAndModuleScripts()
-    DBState.db.characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
-    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
+    getDatabase().characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
+    getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-set-character-lua-script', {
@@ -670,19 +674,19 @@ describe('MCP character writes optimistic projection', () => {
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1].customscript = [
+      getDatabase().characters[1].customscript = [
         makeRegexScript('Target regex concurrent', 'target-new-in', 'target-new-out'),
       ]
-      DBState.db.characters[0].customscript = [
+      getDatabase().characters[0].customscript = [
         makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
       ]
-      DBState.db.characters[0].triggerscript = [
+      getDatabase().characters[0].triggerscript = [
         makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
       ]
-      ;(DBState.db.modules[0] as any).regex = [
+      ;(getDatabase().modules[0] as any).regex = [
         makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
       ]
-      ;(DBState.db.modules[0] as any).trigger = [
+      ;(getDatabase().modules[0] as any).trigger = [
         makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
       ]
     })
@@ -691,11 +695,11 @@ describe('MCP character writes optimistic projection', () => {
     await waitForSettledCommands()
 
     expect(firstTriggerCode(1)).toBe('print("target old")')
-    expect(DBState.db.characters[1].customscript[0]).toMatchObject({ in: 'target-new-in', out: 'target-new-out' })
-    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(getDatabase().characters[1].customscript[0]).toMatchObject({ in: 'target-new-in', out: 'target-new-out' })
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
     expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
-    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
-    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+    expect((getDatabase().modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((getDatabase().modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
       'print("module concurrent")',
     )
   })
@@ -708,8 +712,8 @@ describe('MCP character writes optimistic projection', () => {
     })
     const handler = new CharacterHandler()
     seedSiblingAndModuleScripts()
-    DBState.db.characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
-    DBState.db.characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
+    getDatabase().characters[1].customscript = [makeRegexScript('Target regex', 'target-old-in', 'target-old-out')]
+    getDatabase().characters[1].triggerscript = [makeLuaTrigger('print("target old")') as any]
     setServerProjectionWriteGuardEnabled(true)
 
     await handler.handle('risu-set-character-lua-script', {
@@ -721,22 +725,22 @@ describe('MCP character writes optimistic projection', () => {
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[1].triggerscript = [
+      getDatabase().characters[1].triggerscript = [
         makeLuaTrigger('print("target concurrent")', 'target-trigger-concurrent-id') as any,
       ]
-      DBState.db.characters[1].customscript = [
+      getDatabase().characters[1].customscript = [
         makeRegexScript('Target regex concurrent', 'target-new-in', 'target-new-out'),
       ]
-      DBState.db.characters[0].customscript = [
+      getDatabase().characters[0].customscript = [
         makeRegexScript('Sibling regex concurrent', 'sibling-new-in', 'sibling-new-out'),
       ]
-      DBState.db.characters[0].triggerscript = [
+      getDatabase().characters[0].triggerscript = [
         makeLuaTrigger('print("sibling concurrent")', 'sibling-trigger-concurrent-id') as any,
       ]
-      ;(DBState.db.modules[0] as any).regex = [
+      ;(getDatabase().modules[0] as any).regex = [
         makeRegexScript('Module regex concurrent', 'module-new-in', 'module-new-out'),
       ]
-      ;(DBState.db.modules[0] as any).trigger = [
+      ;(getDatabase().modules[0] as any).trigger = [
         makeLuaTrigger('print("module concurrent")', 'module-trigger-concurrent-id') as any,
       ]
     })
@@ -745,11 +749,11 @@ describe('MCP character writes optimistic projection', () => {
     await waitForSettledCommands()
 
     expect(firstTriggerCode(1)).toBe('print("target concurrent")')
-    expect(DBState.db.characters[1].customscript[0]).toMatchObject({ in: 'target-new-in', out: 'target-new-out' })
-    expect(DBState.db.characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
+    expect(getDatabase().characters[1].customscript[0]).toMatchObject({ in: 'target-new-in', out: 'target-new-out' })
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({ in: 'sibling-new-in', out: 'sibling-new-out' })
     expect(firstTriggerCode(0)).toBe('print("sibling concurrent")')
-    expect((DBState.db.modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
-    expect(((DBState.db.modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
+    expect((getDatabase().modules[0] as any).regex[0]).toMatchObject({ in: 'module-new-in', out: 'module-new-out' })
+    expect(((getDatabase().modules[0] as any).trigger[0].effect[0] as { code: string }).code).toBe(
       'print("module concurrent")',
     )
   })

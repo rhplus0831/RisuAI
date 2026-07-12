@@ -8,6 +8,7 @@ import {
 } from 'src/ts/characterCommands'
 import { canUseServerCommands } from 'src/ts/server/commands'
 import { withTrustedServerProjectionWrite } from 'src/ts/server/projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 import {
   ensureClientLorebookEntryIds,
   isCharacterLorebookHydrated,
@@ -20,7 +21,6 @@ import {
   ensureClientTriggerDefinitionIds,
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
 import { type character, type loreBook } from 'src/ts/storage/database.svelte'
-import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
@@ -542,7 +542,7 @@ export class CharacterHandler extends MCPToolHandler {
       ]
     }
 
-    const liveChar = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const liveChar = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!liveChar) {
       return [
         {
@@ -587,7 +587,7 @@ export class CharacterHandler extends MCPToolHandler {
     if (canUseServerCommands()) {
       // A field patch touches one character row, so its rollback needs only
       // that row, not a deep clone of the whole characters array.
-      const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
+      const index = getDatabase().characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
       const acceptedPatch = sanitizeCharacterPatch(patch)
       if (index >= 0) {
         const previous = currentCharacterRowSnapshot(index)
@@ -1133,12 +1133,14 @@ export class CharacterHandler extends MCPToolHandler {
     if (count < 1) count = 1
     if (offset < 0) offset = 0
 
-    const characters = DBState.db.characters.slice(offset, offset + count).map((char) => ({
-      id: char.chaId,
-      name: char.name || 'Unnamed',
-      displayName: getCharacterDisplayName(char, char.name || char.chaId || 'Unnamed'),
-      type: char.type,
-    }))
+    const characters = getDatabase()
+      .characters.slice(offset, offset + count)
+      .map((char) => ({
+        id: char.chaId,
+        name: char.name || 'Unnamed',
+        displayName: getCharacterDisplayName(char, char.name || char.chaId || 'Unnamed'),
+        type: char.type,
+      }))
 
     return [
       {
@@ -1164,7 +1166,7 @@ function cloneJsonValue<T>(value: T): T {
 }
 
 function replaceCharacterLorebooksThroughServerBridge(characterId: string, entries: loreBook[]): boolean {
-  if (DBState.db?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) return false
+  if (getDatabase()?.enableLorebookStubs && !isCharacterLorebookHydrated(characterId)) return false
   ensureClientLorebookEntryIds(entries)
   return replaceCharacterLorebookCollectionFull(characterId, entries, 0)
 }
@@ -1185,7 +1187,7 @@ function characterAccessName(char: character): string {
 function applyCharacterInfoPatchOptimistically(characterId: string, patch: Record<string, unknown>): void {
   if (Object.keys(patch).length === 0) return
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!target) return
     const mutableTarget = target as unknown as Record<string, unknown>
     for (const [field, value] of Object.entries(patch)) {
@@ -1196,14 +1198,14 @@ function applyCharacterInfoPatchOptimistically(characterId: string, patch: Recor
 
 function replaceCharacterRegexScriptsOptimistically(characterId: string, scripts: character['customscript']): void {
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (target) target.customscript = scripts
   })
 }
 
 function replaceCharacterTriggersOptimistically(characterId: string, triggers: character['triggerscript']): void {
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (target) target.triggerscript = triggers
   })
 }
