@@ -11,10 +11,21 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import type { Database } from './storage/database.svelte'
+import { selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
 import { currentPersonaStateSnapshot, isPersonaSettingsWatcherSuppressed, queueSelectedPersonaUpdate } from './persona'
 import { MODEL_ROLES } from './model/modelRoles'
+
+const testDatabaseState = {
+  get db() {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -57,7 +68,7 @@ function makeLoadout(overrides: Partial<Loadout>): Loadout {
 }
 
 function seedLoadouts(): void {
-  DBState.db = {
+  testDatabaseState.db = {
     loadouts: [
       makeLoadout({ id: 'loadout-a', name: 'Loadout A', favorite: false }),
       makeLoadout({ id: 'loadout-b', name: 'Loadout B', favorite: true, lastUsed: 50 }),
@@ -79,7 +90,7 @@ function seedApplyLoadoutState(): Loadout {
   })
 
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     loadouts: [cloneJsonValue(loadout)],
     lastLoadedLoadoutName: 'Before Loadout',
     characters: [{ chaId: 'char-a', chats: [], chatPage: 0 }],
@@ -163,7 +174,7 @@ function seedApplyLoadoutState(): Loadout {
     globalChatVariables: { mood: 'calm', kept: 'yes' },
   } as any
 
-  return DBState.db.loadouts[0] as Loadout
+  return testDatabaseState.db.loadouts[0] as Loadout
 }
 
 function seedSplitPresetLoadoutState(): Loadout {
@@ -182,7 +193,7 @@ function seedSplitPresetLoadoutState(): Loadout {
   })
 
   selectedCharID.set(0)
-  DBState.db = {
+  testDatabaseState.db = {
     loadouts: [cloneJsonValue(loadout)],
     lastLoadedLoadoutName: 'Before Loadout',
     characters: [{ chaId: 'char-a', chats: [], chatPage: 0 }],
@@ -278,7 +289,7 @@ function seedSplitPresetLoadoutState(): Loadout {
     globalChatVariables: { mood: 'calm' },
   } as any
 
-  return DBState.db.loadouts[0] as Loadout
+  return testDatabaseState.db.loadouts[0] as Loadout
 }
 
 function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFetch[] {
@@ -404,11 +415,13 @@ describe('LoadoutModal projection write cleanup', () => {
 describe('loadout projection command helpers', () => {
   it('saves split model and prompt preset ids when no legacy bot preset is selected', async () => {
     seedSplitPresetLoadoutState()
-    DBState.db.loadouts = []
-    DBState.db.modelPresetsId = 1
-    DBState.db.promptPresetsId = 1
-    DBState.db.agentPresets = [{ id: 'agent-preset-a', name: 'Research Agent', enabled: true, version: 1, steps: [] }]
-    DBState.db.characters[0].chats = [
+    testDatabaseState.db.loadouts = []
+    testDatabaseState.db.modelPresetsId = 1
+    testDatabaseState.db.promptPresetsId = 1
+    testDatabaseState.db.agentPresets = [
+      { id: 'agent-preset-a', name: 'Research Agent', enabled: true, version: 1, steps: [] },
+    ]
+    testDatabaseState.db.characters[0].chats = [
       {
         id: 'chat-a',
         name: 'Chat A',
@@ -421,7 +434,7 @@ describe('loadout projection command helpers', () => {
         },
       } as any,
     ]
-    DBState.db.characters[0].chatPage = 0
+    testDatabaseState.db.characters[0].chatPage = 0
     const calls = stubApplyLoadoutFetch()
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setServerProjectionWriteGuardEnabled(true)
@@ -441,7 +454,7 @@ describe('loadout projection command helpers', () => {
       agentPresetName: 'Research Agent',
       personaId: 'persona-a',
     })
-    expect(DBState.db.loadouts[0]).toMatchObject(loadout)
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject(loadout)
 
     await waitForCallCount(calls, 2)
 
@@ -476,7 +489,7 @@ describe('loadout projection command helpers', () => {
       personaId: '',
     })
     selectedCharID.set(0)
-    DBState.db = {
+    testDatabaseState.db = {
       loadouts: [cloneJsonValue(loadout)],
       lastLoadedLoadoutName: 'Before Loadout',
       characters: [
@@ -522,7 +535,7 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(loadout, ['preset'])
 
-    expect(DBState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-preset-target')
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('agent-preset-target')
 
     await waitForCallCount(calls, 3)
 
@@ -568,7 +581,7 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(clearLoadout, ['preset'])
 
-    expect(DBState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('')
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings.agentPresetId).toBe('')
     await waitForCallCount(clearCalls, 2)
     expect(clearCalls[0]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
@@ -589,25 +602,25 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(loadout)
 
-    expect(DBState.db.selectedPersona).toBe(1)
-    expect(DBState.db.username).toBe('Persona B')
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(testDatabaseState.db.selectedPersona).toBe(1)
+    expect(testDatabaseState.db.username).toBe('Persona B')
+    expect(testDatabaseState.db.personas[0]).toMatchObject({
       name: 'Live User',
       icon: 'live-icon',
       personaPrompt: 'live persona prompt',
       note: 'live user note',
     })
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('preset-b main')
-    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
-    expect(DBState.db.botPresets[0]).not.toHaveProperty('promptTemplate')
-    expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
-    expect(DBState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
-    expect(DBState.db.loadouts[0]).toMatchObject({
+    expect(testDatabaseState.db.botPresetsId).toBe(1)
+    expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
+    expect(testDatabaseState.db.botPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
+    expect(testDatabaseState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
       lastUsed: 123456,
       characterIds: ['char-a'],
     })
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
 
     await waitForCallCount(calls, 7)
 
@@ -685,13 +698,13 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(loadout, ['preset'])
 
-    expect(DBState.db.botPresetsId).toBe(-1)
-    expect(DBState.db.modelPresetsId).toBe(1)
-    expect(DBState.db.promptPresetsId).toBe(1)
-    expect(DBState.db.apiType).toBe('kobold')
-    expect(DBState.db.temperature).toBe(0.9)
-    expect(DBState.db.maxResponse).toBe(450)
-    expect(DBState.db.modelProfiles).toEqual([
+    expect(testDatabaseState.db.botPresetsId).toBe(-1)
+    expect(testDatabaseState.db.modelPresetsId).toBe(1)
+    expect(testDatabaseState.db.promptPresetsId).toBe(1)
+    expect(testDatabaseState.db.apiType).toBe('kobold')
+    expect(testDatabaseState.db.temperature).toBe(0.9)
+    expect(testDatabaseState.db.maxResponse).toBe(450)
+    expect(testDatabaseState.db.modelProfiles).toEqual([
       {
         id: 'story-profile',
         name: 'Story Profile',
@@ -700,19 +713,19 @@ describe('loadout projection command helpers', () => {
         fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual(
+    expect(testDatabaseState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'prompt-profile' },
       }),
     )
-    expect(DBState.db.modelRuntimeDefaults).toEqual({
+    expect(testDatabaseState.db.modelRuntimeDefaults).toEqual({
       maxContext: 7777,
       modelTools: ['story-tool'],
     })
-    expect(DBState.db.mainPrompt).toBe('story main')
-    expect(DBState.db.jailbreak).toBe('story jailbreak')
-    expect(DBState.db.globalNote).toBe('story global')
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Split Loadout')
+    expect(testDatabaseState.db.mainPrompt).toBe('story main')
+    expect(testDatabaseState.db.jailbreak).toBe('story jailbreak')
+    expect(testDatabaseState.db.globalNote).toBe('story global')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Split Loadout')
 
     await waitForCallCount(calls, 4)
 
@@ -758,9 +771,9 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(loadout, ['preset'])
 
-    expect(DBState.db.modelPresetsId).toBe(1)
-    expect(DBState.db.promptPresetsId).toBe(1)
-    expect(DBState.db.modelProfiles).toEqual([
+    expect(testDatabaseState.db.modelPresetsId).toBe(1)
+    expect(testDatabaseState.db.promptPresetsId).toBe(1)
+    expect(testDatabaseState.db.modelProfiles).toEqual([
       {
         id: 'story-profile',
         name: 'Story Profile',
@@ -769,12 +782,12 @@ describe('loadout projection command helpers', () => {
         fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual(
+    expect(testDatabaseState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'prompt-profile' },
       }),
     )
-    expect(DBState.db.modelRuntimeDefaults).toEqual({
+    expect(testDatabaseState.db.modelRuntimeDefaults).toEqual({
       maxContext: 7777,
       modelTools: ['story-tool'],
     })
@@ -787,9 +800,9 @@ describe('loadout projection command helpers', () => {
       '/api/v1/commands/model-presets/select',
       '/api/v1/commands/prompt-presets/select',
     ])
-    expect(DBState.db.modelPresetsId).toBe(1)
-    expect(DBState.db.promptPresetsId).toBe(0)
-    expect(DBState.db.modelProfiles).toEqual([
+    expect(testDatabaseState.db.modelPresetsId).toBe(1)
+    expect(testDatabaseState.db.promptPresetsId).toBe(0)
+    expect(testDatabaseState.db.modelProfiles).toEqual([
       {
         id: 'story-profile',
         name: 'Story Profile',
@@ -798,30 +811,30 @@ describe('loadout projection command helpers', () => {
         fallbacks: [{ mode: 'profile', profileId: 'fallback-profile' }],
       },
     ])
-    expect(DBState.db.modelRoleProfiles).toEqual(
+    expect(testDatabaseState.db.modelRoleProfiles).toEqual(
       normalizedModelRoleProfiles({
         memory: { mode: 'profile', profileId: 'story-profile' },
       }),
     )
-    expect(DBState.db.modelRuntimeDefaults).toEqual({
+    expect(testDatabaseState.db.modelRuntimeDefaults).toEqual({
       maxContext: 7777,
       modelTools: ['story-tool'],
     })
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Before Loadout')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
   })
 
   it('keeps accepted loadout apply steps and rolls back only the failed settings/touch tail', async () => {
     const loadout = seedApplyLoadoutState()
-    const previousGlobalVariables = cloneJsonValue(DBState.db.globalChatVariables)
+    const previousGlobalVariables = cloneJsonValue(testDatabaseState.db.globalChatVariables)
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 5 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setServerProjectionWriteGuardEnabled(true)
 
     applyLoadout(loadout)
-    expect(DBState.db.selectedPersona).toBe(1)
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
-    expect(DBState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
+    expect(testDatabaseState.db.selectedPersona).toBe(1)
+    expect(testDatabaseState.db.botPresetsId).toBe(1)
+    expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
+    expect(testDatabaseState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
 
     await waitForCallCount(calls, 6)
     await flushCommandEffects()
@@ -834,23 +847,23 @@ describe('loadout projection command helpers', () => {
       '/api/v1/commands/modules/enable',
       '/api/v1/commands/settings/sidebar',
     ])
-    expect(DBState.db.loadouts[0]).toMatchObject({
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
       lastUsed: 100,
       characterIds: [],
     })
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Before Loadout')
-    expect(DBState.db.selectedPersona).toBe(1)
-    expect(DBState.db.username).toBe('Persona B')
-    expect(DBState.db.userIcon).toBe('icon-b')
-    expect(DBState.db.personaPrompt).toBe('persona-b prompt')
-    expect(DBState.db.userNote).toBe('persona-b note')
-    expect(DBState.db.personas[0]).toMatchObject({
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
+    expect(testDatabaseState.db.selectedPersona).toBe(1)
+    expect(testDatabaseState.db.username).toBe('Persona B')
+    expect(testDatabaseState.db.userIcon).toBe('icon-b')
+    expect(testDatabaseState.db.personaPrompt).toBe('persona-b prompt')
+    expect(testDatabaseState.db.userNote).toBe('persona-b note')
+    expect(testDatabaseState.db.personas[0]).toMatchObject({
       name: 'Live User',
       icon: 'live-icon',
       personaPrompt: 'live persona prompt',
       note: 'live user note',
     })
-    expect(DBState.db.botPresets[0]).toMatchObject({
+    expect(testDatabaseState.db.botPresets[0]).toMatchObject({
       id: 'preset-a',
       name: 'Preset A',
       mainPrompt: 'live main',
@@ -858,36 +871,36 @@ describe('loadout projection command helpers', () => {
       globalNote: 'live global',
       temperature: 20,
     })
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('preset-b main')
-    expect(DBState.db.temperature).toBe(66)
-    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
-    expect(DBState.db.botPresets[0]).not.toHaveProperty('promptTemplate')
-    expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
-    expect(DBState.db.globalChatVariables).toEqual(previousGlobalVariables)
+    expect(testDatabaseState.db.botPresetsId).toBe(1)
+    expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
+    expect(testDatabaseState.db.temperature).toBe(66)
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
+    expect(testDatabaseState.db.botPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
+    expect(testDatabaseState.db.globalChatVariables).toEqual(previousGlobalVariables)
   })
 
   it('restores the previously selected legacy preset row after normalizing missing ids on failed preset select', async () => {
     const loadout = seedApplyLoadoutState()
-    delete DBState.db.botPresets[0].id
-    delete DBState.db.botPresets[1].id
+    delete testDatabaseState.db.botPresets[0].id
+    delete testDatabaseState.db.botPresets[1].id
     const calls = stubApplyLoadoutFetch({ failCommandNumber: 1 })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setServerProjectionWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
-    const previousPresetId = DBState.db.botPresets[0].id
-    const attemptedPresetId = DBState.db.botPresets[1].id
+    const previousPresetId = testDatabaseState.db.botPresets[0].id
+    const attemptedPresetId = testDatabaseState.db.botPresets[1].id
     expect(previousPresetId).toEqual(expect.any(String))
     expect(attemptedPresetId).toEqual(expect.any(String))
     expect(previousPresetId).not.toBe(attemptedPresetId)
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('preset-b main')
-    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
+    expect(testDatabaseState.db.botPresetsId).toBe(1)
+    expect(testDatabaseState.db.mainPrompt).toBe('preset-b main')
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.botPresets.push({
+      testDatabaseState.db.botPresets.push({
         id: 'preset-later',
         name: 'Later Preset',
         mainPrompt: 'later main',
@@ -905,7 +918,7 @@ describe('loadout projection command helpers', () => {
         ainconfig: {} as never,
         promptTemplate: [],
       })
-      DBState.db.enabledModules = ['module-later']
+      testDatabaseState.db.enabledModules = ['module-later']
     })
 
     await waitForCallCount(calls, 2)
@@ -921,15 +934,15 @@ describe('loadout projection command helpers', () => {
         saveCurrent: true,
       },
     })
-    expect(DBState.db.botPresetsId).toBe(0)
-    expect(DBState.db.botPresets[0]).toMatchObject({
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
+    expect(testDatabaseState.db.botPresets[0]).toMatchObject({
       id: previousPresetId,
       name: 'Preset A',
       mainPrompt: 'preset-a main',
     })
-    expect(DBState.db.mainPrompt).toBe('live main')
-    expect(DBState.db.enabledModules).toEqual(['module-later'])
-    expect(DBState.db.botPresets.map((preset) => preset.name)).toContain('Later Preset')
+    expect(testDatabaseState.db.mainPrompt).toBe('live main')
+    expect(testDatabaseState.db.enabledModules).toEqual(['module-later'])
+    expect(testDatabaseState.db.botPresets.map((preset) => preset.name)).toContain('Later Preset')
   })
 
   it('applies a subset of facets without mutating or commanding skipped facets', async () => {
@@ -940,14 +953,14 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(loadout, ['modules'])
 
-    expect(DBState.db.selectedPersona).toBe(0)
-    expect(DBState.db.username).toBe('Live User')
-    expect(DBState.db.botPresetsId).toBe(0)
-    expect(DBState.db.mainPrompt).toBe('live main')
-    expect(DBState.db.globalChatVariables).toEqual({ mood: 'calm', kept: 'yes' })
-    expect(DBState.db.enabledModules).toEqual(['module-a', 'module-stay'])
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
-    expect(DBState.db.loadouts[0]).toMatchObject({
+    expect(testDatabaseState.db.selectedPersona).toBe(0)
+    expect(testDatabaseState.db.username).toBe('Live User')
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
+    expect(testDatabaseState.db.mainPrompt).toBe('live main')
+    expect(testDatabaseState.db.globalChatVariables).toEqual({ mood: 'calm', kept: 'yes' })
+    expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
       lastUsed: 123456,
       characterIds: ['char-a'],
     })
@@ -992,7 +1005,7 @@ describe('loadout projection command helpers', () => {
 
   it('does not apply stubbed preset settings until preset hydration arrives', async () => {
     const loadout = seedApplyLoadoutState()
-    DBState.db.botPresets[1] = {
+    testDatabaseState.db.botPresets[1] = {
       id: 'preset-b',
       name: 'Preset B',
     } as never
@@ -1009,8 +1022,8 @@ describe('loadout projection command helpers', () => {
 
     applyLoadout(loadout, ['preset'])
 
-    expect(DBState.db.botPresetsId).toBe(1)
-    expect(DBState.db.mainPrompt).toBe('live main')
+    expect(testDatabaseState.db.botPresetsId).toBe(1)
+    expect(testDatabaseState.db.mainPrompt).toBe('live main')
 
     await waitForCallCount(calls, 4)
     await flushCommandEffects()
@@ -1018,8 +1031,8 @@ describe('loadout projection command helpers', () => {
     expect(calls.map((call) => call.url)).toContain('/api/v1/legacy-presets/preset-b')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/presets/select')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/loadouts/loadout-a/touch')
-    expect(DBState.db.mainPrompt).toBe('hydrated preset-b main')
-    expect(DBState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
+    expect(testDatabaseState.db.mainPrompt).toBe('hydrated preset-b main')
+    expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
   })
 
   it('suppresses PersonaSettings watcher echo for loadout-driven persona selection', async () => {
@@ -1050,16 +1063,16 @@ describe('loadout projection command helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.loadouts[0].favorite = true
+      testDatabaseState.db.loadouts[0].favorite = true
     }).toThrow()
 
     expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
-    expect(DBState.db.loadouts[0].favorite).toBe(true)
+    expect(testDatabaseState.db.loadouts[0].favorite).toBe(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.loadouts[0].name = 'Newer Loadout A'
-      DBState.db.loadouts[0].favorite = false
-      DBState.db.loadouts[1].name = 'Edited Loadout B'
-      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
+      testDatabaseState.db.loadouts[0].name = 'Newer Loadout A'
+      testDatabaseState.db.loadouts[0].favorite = false
+      testDatabaseState.db.loadouts[1].name = 'Edited Loadout B'
+      testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
     })
 
     await waitForCallCount(calls, 2)
@@ -1082,22 +1095,22 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.loadouts).toHaveLength(3)
-    expect(DBState.db.loadouts[0]).toMatchObject({
+    expect(testDatabaseState.db.loadouts).toHaveLength(3)
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
       id: 'loadout-a',
       name: 'Newer Loadout A',
       favorite: false,
     })
-    expect(DBState.db.loadouts[1]).toMatchObject({
+    expect(testDatabaseState.db.loadouts[1]).toMatchObject({
       id: 'loadout-b',
       name: 'Edited Loadout B',
       favorite: true,
     })
-    expect(DBState.db.loadouts[2]).toMatchObject({
+    expect(testDatabaseState.db.loadouts[2]).toMatchObject({
       id: 'loadout-c',
       name: 'Later Loadout',
     })
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Loadout A')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
   it('failed create removes only the unchanged attempted loadout and preserves later rows', async () => {
@@ -1106,10 +1119,10 @@ describe('loadout projection command helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     const created = saveCurrentLoadout('Created Loadout')
-    expect(DBState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', created.id])
+    expect(testDatabaseState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', created.id])
     withTrustedServerProjectionWrite(() => {
-      DBState.db.loadouts[0].name = 'Edited Existing Loadout'
-      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-later', name: 'Later Loadout' }))
+      testDatabaseState.db.loadouts[0].name = 'Edited Existing Loadout'
+      testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-later', name: 'Later Loadout' }))
     })
 
     await waitForCallCount(calls, 2)
@@ -1127,20 +1140,20 @@ describe('loadout projection command helpers', () => {
         }),
       },
     })
-    expect(DBState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', 'loadout-later'])
-    expect(DBState.db.loadouts[0].name).toBe('Edited Existing Loadout')
+    expect(testDatabaseState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', 'loadout-later'])
+    expect(testDatabaseState.db.loadouts[0].name).toBe('Edited Existing Loadout')
   })
 
   it('failed delete reinserts only a still-missing loadout and preserves sibling edits/appends', async () => {
     const calls = stubCommandFetch({ failCommands: true })
-    const deletedLoadout = cloneJsonValue(DBState.db.loadouts[1])
+    const deletedLoadout = cloneJsonValue(testDatabaseState.db.loadouts[1])
     setServerProjectionWriteGuardEnabled(true)
 
     expect(deleteLoadout('loadout-b')).toBe(true)
-    expect(DBState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a'])
+    expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a'])
     withTrustedServerProjectionWrite(() => {
-      DBState.db.loadouts[0].name = 'Edited Loadout A'
-      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
+      testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
+      testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-c', name: 'Later Loadout' }))
     })
 
     await waitForCallCount(calls, 2)
@@ -1162,14 +1175,14 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
-    expect(DBState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b', 'loadout-c'])
-    expect(DBState.db.loadouts[0].name).toBe('Edited Loadout A')
-    expect(DBState.db.loadouts[1]).toEqual(deletedLoadout)
-    expect(DBState.db.loadouts[2]).toMatchObject({
+    expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b', 'loadout-c'])
+    expect(testDatabaseState.db.loadouts[0].name).toBe('Edited Loadout A')
+    expect(testDatabaseState.db.loadouts[1]).toEqual(deletedLoadout)
+    expect(testDatabaseState.db.loadouts[2]).toMatchObject({
       id: 'loadout-c',
       name: 'Later Loadout',
     })
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Loadout A')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
   it('failed delete skips rollback when the same loadout id was recreated', async () => {
@@ -1178,32 +1191,32 @@ describe('loadout projection command helpers', () => {
 
     expect(deleteLoadout('loadout-b')).toBe(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.loadouts[0].name = 'Edited Loadout A'
-      DBState.db.loadouts.push(makeLoadout({ id: 'loadout-b', name: 'Recreated Loadout B', lastUsed: 999 }))
+      testDatabaseState.db.loadouts[0].name = 'Edited Loadout A'
+      testDatabaseState.db.loadouts.push(makeLoadout({ id: 'loadout-b', name: 'Recreated Loadout B', lastUsed: 999 }))
     })
 
     await waitForCallCount(calls, 2)
     await flushCommandEffects()
 
-    expect(DBState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b'])
-    expect(DBState.db.loadouts[0].name).toBe('Edited Loadout A')
-    expect(DBState.db.loadouts[1]).toMatchObject({
+    expect(testDatabaseState.db.loadouts.map((loadout) => loadout.id)).toEqual(['loadout-a', 'loadout-b'])
+    expect(testDatabaseState.db.loadouts[0].name).toBe('Edited Loadout A')
+    expect(testDatabaseState.db.loadouts[1]).toMatchObject({
       id: 'loadout-b',
       name: 'Recreated Loadout B',
       lastUsed: 999,
     })
-    expect(DBState.db.lastLoadedLoadoutName).toBe('Loadout A')
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
   })
 
   it('returns false for missing ids without dispatching commands or mutating loadouts', () => {
     const calls = stubCommandFetch()
-    const previousLoadouts = cloneJsonValue(DBState.db.loadouts)
+    const previousLoadouts = cloneJsonValue(testDatabaseState.db.loadouts)
     setServerProjectionWriteGuardEnabled(true)
 
     expect(toggleLoadoutFavorite('missing-loadout')).toBe(false)
     expect(deleteLoadout('missing-loadout')).toBe(false)
 
     expect(calls).toHaveLength(0)
-    expect(DBState.db.loadouts).toEqual(previousLoadouts)
+    expect(testDatabaseState.db.loadouts).toEqual(previousLoadouts)
   })
 })
