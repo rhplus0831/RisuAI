@@ -1,8 +1,14 @@
 import { untrack } from 'svelte'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
-import type { character, customscript, triggerscript } from '../storage/database.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import {
+  getDatabase,
+  type Database,
+  type character,
+  type customscript,
+  type triggerscript,
+} from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
   replaceCharacterScriptsCommand,
@@ -91,15 +97,15 @@ export interface WatchServerBackedScriptDefinitionsOptions {
 
 export function currentScriptDefinitionStateSnapshot(): ScriptDefinitionStateSnapshot {
   return {
-    characters: cloneJsonValue(DBState.db.characters ?? []),
-    modules: cloneJsonValue((DBState.db.modules ?? []) as RisuModule[]),
+    characters: cloneJsonValue(getDatabase().characters ?? []),
+    modules: cloneJsonValue((getDatabase().modules ?? []) as RisuModule[]),
   }
 }
 
 export function restoreScriptDefinitionState(snapshot: ScriptDefinitionStateSnapshot): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters = cloneJsonValue(snapshot.characters)
-    DBState.db.modules = cloneJsonValue(snapshot.modules) as typeof DBState.db.modules
+    getDatabase().characters = cloneJsonValue(snapshot.characters)
+    getDatabase().modules = cloneJsonValue(snapshot.modules) as Database['modules']
   })
 }
 
@@ -110,7 +116,7 @@ export function applyCharacterScriptDefinitionDraft(
   delayMs = 250,
 ): boolean {
   if (!characterId) return false
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
   if (!character) return false
 
   const previousScripts = cloneJsonValue(character.customscript ?? [])
@@ -125,7 +131,7 @@ export function applyCharacterScriptDefinitionDraft(
 
   suppressRollbackDispatch = true
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+    const target = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
     if (!target) return
     if (scriptsChanged || hadScriptsField) {
       target.customscript = cloneJsonValue(nextScripts)
@@ -512,7 +518,7 @@ export function collectScriptDefinitionCollectionSnapshots(
     // Track only the selected character's rows. Reading the $state mirror (not a
     // bare get()) re-runs the effect on a character switch, so the first edit to
     // the newly selected character is never dropped.
-    const characters = DBState.db.characters ?? []
+    const characters = getDatabase().characters ?? []
     const stableCharacterIds = uniqueStableCharacterIds(characters)
     const character = characters[selectedCharMirror]
     if (character?.chaId && stableCharacterIds.has(character.chaId)) {
@@ -522,20 +528,20 @@ export function collectScriptDefinitionCollectionSnapshots(
   }
 
   if (scope.kind === 'module') {
-    const modules = (DBState.db.modules ?? []) as RisuModule[]
+    const modules = (getDatabase().modules ?? []) as RisuModule[]
     const stableModuleIds = uniqueStableModuleIds(modules)
     const module = modules.find((candidate) => candidate.id === scope.moduleId)
     if (module?.id && stableModuleIds.has(module.id)) collectModuleScriptDefinitionSnapshots(snapshots, module)
     return snapshots
   }
 
-  const stableCharacterIds = uniqueStableCharacterIds(DBState.db.characters ?? [])
-  for (const character of DBState.db.characters ?? []) {
+  const stableCharacterIds = uniqueStableCharacterIds(getDatabase().characters ?? [])
+  for (const character of getDatabase().characters ?? []) {
     if (character.chaId && stableCharacterIds.has(character.chaId)) {
       collectCharacterScriptDefinitionSnapshots(snapshots, character)
     }
   }
-  const modules = (DBState.db.modules ?? []) as RisuModule[]
+  const modules = (getDatabase().modules ?? []) as RisuModule[]
   const stableModuleIds = uniqueStableModuleIds(modules)
   for (const module of modules) {
     if (module.id && stableModuleIds.has(module.id)) {
@@ -961,7 +967,7 @@ function restoreScopedScriptDefinition(
   return withTrustedServerProjectionWrite(() => {
     switch (rollback.kind) {
       case 'characterScripts': {
-        const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
+        const character = getDatabase().characters?.find((candidate) => candidate.chaId === rollback.characterId)
         if (!character) return false
         if (
           attempted &&
@@ -979,7 +985,7 @@ function restoreScopedScriptDefinition(
         return true
       }
       case 'characterTriggers': {
-        const character = DBState.db.characters?.find((candidate) => candidate.chaId === rollback.characterId)
+        const character = getDatabase().characters?.find((candidate) => candidate.chaId === rollback.characterId)
         if (!character) return false
         if (
           attempted &&
@@ -997,7 +1003,7 @@ function restoreScopedScriptDefinition(
         return true
       }
       case 'moduleScripts': {
-        const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+        const module = ((getDatabase().modules ?? []) as RisuModule[]).find(
           (candidate) => candidate.id === rollback.moduleId,
         )
         if (!module) return false
@@ -1013,7 +1019,7 @@ function restoreScopedScriptDefinition(
         return true
       }
       case 'moduleTriggers': {
-        const module = ((DBState.db.modules ?? []) as RisuModule[]).find(
+        const module = ((getDatabase().modules ?? []) as RisuModule[]).find(
           (candidate) => candidate.id === rollback.moduleId,
         )
         if (!module) return false
@@ -1047,21 +1053,21 @@ function parseSnapshotArray<T>(snapshot: string): T[] {
 }
 
 function currentCharacterScriptsForWatchedCommand(characterId: string): customscript[] | null {
-  if (!uniqueStableCharacterIds(DBState.db.characters ?? []).has(characterId)) return null
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!uniqueStableCharacterIds(getDatabase().characters ?? []).has(characterId)) return null
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
   if (!character || !hasStableUniqueScriptDefinitionIds(character.customscript)) return null
   return character.customscript
 }
 
 function currentCharacterTriggersForWatchedCommand(characterId: string): triggerscript[] | null {
-  if (!uniqueStableCharacterIds(DBState.db.characters ?? []).has(characterId)) return null
-  const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+  if (!uniqueStableCharacterIds(getDatabase().characters ?? []).has(characterId)) return null
+  const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
   if (!character || !hasStableUniqueTriggerDefinitionIds(character.triggerscript)) return null
   return character.triggerscript
 }
 
 function currentModuleScriptsForWatchedCommand(moduleId: string): customscript[] | null {
-  const modules = (DBState.db.modules ?? []) as RisuModule[]
+  const modules = (getDatabase().modules ?? []) as RisuModule[]
   if (!uniqueStableModuleIds(modules).has(moduleId)) return null
   const module = modules.find((candidate) => candidate.id === moduleId)
   if (!module || !hasStableUniqueScriptDefinitionIds(module.regex)) return null
@@ -1069,7 +1075,7 @@ function currentModuleScriptsForWatchedCommand(moduleId: string): customscript[]
 }
 
 function currentModuleTriggersForWatchedCommand(moduleId: string): triggerscript[] | null {
-  const modules = (DBState.db.modules ?? []) as RisuModule[]
+  const modules = (getDatabase().modules ?? []) as RisuModule[]
   if (!uniqueStableModuleIds(modules).has(moduleId)) return null
   const module = modules.find((candidate) => candidate.id === moduleId)
   if (!module || !hasStableUniqueTriggerDefinitionIds(module.trigger)) return null
@@ -1077,7 +1083,7 @@ function currentModuleTriggersForWatchedCommand(moduleId: string): triggerscript
 }
 
 function findModule(moduleId: string): RisuModule | undefined {
-  return ((DBState.db.modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
+  return ((getDatabase().modules ?? []) as RisuModule[]).find((candidate) => candidate.id === moduleId)
 }
 
 function isStableCommandId(value: unknown): value is string {

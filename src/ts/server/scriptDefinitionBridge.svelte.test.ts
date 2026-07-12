@@ -12,6 +12,14 @@ const recorded = vi.hoisted(() => ({
 }))
 const projectionGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
+vi.mock('../stores.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    selectedCharID: writable(-1),
+    selIdState: { selId: -1 },
+  }
+})
+
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
   replaceCharacterScriptsCommand: async (args: Record<string, unknown>) => ({
@@ -52,7 +60,8 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
   withTrustedServerProjectionWrite: (fn: () => unknown) => fn(),
 }))
 
-import { DBState, selectedCharID } from '../stores.svelte'
+import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
   applyModuleScriptDefinitionDraft,
@@ -69,6 +78,12 @@ import {
 } from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
+
+const testDatabaseSetter = {
+  set database(database: Record<string, unknown>) {
+    setDatabaseLite(database as unknown as Database)
+  },
+}
 
 function script(
   id: string,
@@ -137,7 +152,7 @@ function triggerWithoutId(comment: string): {
 }
 
 function setupScriptDefinitions(): void {
-  ;(DBState as { db: unknown }).db = {
+  testDatabaseSetter.database = {
     characters: [
       {
         chaId: 'char-1',
@@ -347,12 +362,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
-  ;(DBState as { db: unknown }).db = {}
+  testDatabaseSetter.database = {}
 })
 
 describe('P1 script definition watcher purity', () => {
   it('state snapshots clone malformed script data as-is without assigning ids or stub arrays', () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [
         {
           chaId: 'snapshot-char',
@@ -369,10 +384,10 @@ describe('P1 script definition watcher purity', () => {
 
     const snapshot = currentScriptDefinitionStateSnapshot()
 
-    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
-    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
-    expect(DBState.db.modules[0].regex[0].id).toBeUndefined()
-    expect(DBState.db.modules[0]).not.toHaveProperty('trigger')
+    expect(getDatabase().characters[0].customscript[0].id).toBeUndefined()
+    expect(getDatabase().characters[0]).not.toHaveProperty('triggerscript')
+    expect(getDatabase().modules[0].regex[0].id).toBeUndefined()
+    expect(getDatabase().modules[0]).not.toHaveProperty('trigger')
 
     expect(snapshot.characters[0].customscript?.[0].id).toBeUndefined()
     expect(snapshot.characters[0]).not.toHaveProperty('triggerscript')
@@ -381,7 +396,7 @@ describe('P1 script definition watcher purity', () => {
   })
 
   it('watcher first run does not assign script or trigger ids', () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [
         {
           chaId: 'char-missing-ids',
@@ -401,16 +416,16 @@ describe('P1 script definition watcher purity', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
-    expect(DBState.db.characters[0].triggerscript[0].id).toBeUndefined()
-    expect(DBState.db.modules[0].regex[0].id).toBeUndefined()
-    expect(DBState.db.modules[0].trigger[0].id).toBeUndefined()
+    expect(getDatabase().characters[0].customscript[0].id).toBeUndefined()
+    expect(getDatabase().characters[0].triggerscript[0].id).toBeUndefined()
+    expect(getDatabase().modules[0].regex[0].id).toBeUndefined()
+    expect(getDatabase().modules[0].trigger[0].id).toBeUndefined()
     expect(recorded.commands).toEqual([])
     stop()
   })
 
   it('watcher skips malformed and duplicate ids without dispatch or mutation', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [
         {
           chaId: 'char-malformed',
@@ -424,14 +439,14 @@ describe('P1 script definition watcher purity', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript[0].out = 'changed without id'
-    DBState.db.characters[0].triggerscript[1].comment = 'changed duplicate id'
+    getDatabase().characters[0].customscript[0].out = 'changed without id'
+    getDatabase().characters[0].triggerscript[1].comment = 'changed duplicate id'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
     expect(recorded.commands).toEqual([])
-    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
-    expect(DBState.db.characters[0].triggerscript.map((entry) => entry.id)).toEqual([
+    expect(getDatabase().characters[0].customscript[0].id).toBeUndefined()
+    expect(getDatabase().characters[0].triggerscript.map((entry) => entry.id)).toEqual([
       'duplicate-trigger',
       'duplicate-trigger',
     ])
@@ -443,16 +458,16 @@ describe('P1 script definition watcher purity', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'queued while stable')]
+    getDatabase().characters[0].customscript = [script('script-1', 'queued while stable')]
     flushSync()
 
-    DBState.db.characters[0].customscript = [scriptWithoutId('malformed before flush') as never]
+    getDatabase().characters[0].customscript = [scriptWithoutId('malformed before flush') as never]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
 
     expect(recorded.commands).toEqual([])
-    expect(DBState.db.characters[0].customscript[0].id).toBeUndefined()
+    expect(getDatabase().characters[0].customscript[0].id).toBeUndefined()
     stop()
   })
 })
@@ -497,17 +512,17 @@ describe('character script definition draft bridge', () => {
     const draftTriggers = [trigger('trigger-1', 'draft trigger')]
 
     expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'draft script')])
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'draft trigger')])
-    expect(DBState.db.characters[0].customscript).not.toBe(draftScripts)
-    expect(DBState.db.characters[0].customscript[0]).not.toBe(draftScripts[0])
-    expect(DBState.db.characters[0].triggerscript).not.toBe(draftTriggers)
-    expect(DBState.db.characters[0].triggerscript[0]).not.toBe(draftTriggers[0])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'draft script')])
+    expect(getDatabase().characters[0].triggerscript).toEqual([trigger('trigger-1', 'draft trigger')])
+    expect(getDatabase().characters[0].customscript).not.toBe(draftScripts)
+    expect(getDatabase().characters[0].customscript[0]).not.toBe(draftScripts[0])
+    expect(getDatabase().characters[0].triggerscript).not.toBe(draftTriggers)
+    expect(getDatabase().characters[0].triggerscript[0]).not.toBe(draftTriggers[0])
 
     draftScripts[0].out = 'mutated draft script'
     draftTriggers[0].comment = 'mutated draft trigger'
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'draft script')])
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'draft trigger')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'draft script')])
+    expect(getDatabase().characters[0].triggerscript).toEqual([trigger('trigger-1', 'draft trigger')])
 
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -528,14 +543,14 @@ describe('character script definition draft bridge', () => {
       },
     ])
 
-    DBState.db.characters[0].customscript = [script('script-1', 'newer script')]
-    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'newer trigger')]
+    getDatabase().characters[0].customscript = [script('script-1', 'newer script')]
+    getDatabase().characters[0].triggerscript = [trigger('trigger-1', 'newer trigger')]
     for (const command of recorded.commands) {
       command.rollback?.()
     }
 
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'newer script')])
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'newer trigger')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'newer script')])
+    expect(getDatabase().characters[0].triggerscript).toEqual([trigger('trigger-1', 'newer trigger')])
     stop()
   })
 
@@ -550,11 +565,11 @@ describe('character script definition draft bridge', () => {
     expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
     expect((draftScripts[0] as { id?: string }).id).toBeUndefined()
     expect((draftTriggers[0] as { id?: string }).id).toBeUndefined()
-    expect(DBState.db.characters[0].customscript[0]).toMatchObject({
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({
       id: expect.any(String),
       out: 'new script',
     })
-    expect(DBState.db.characters[0].triggerscript[0]).toMatchObject({
+    expect(getDatabase().characters[0].triggerscript[0]).toMatchObject({
       id: expect.any(String),
       comment: 'new trigger',
     })
@@ -578,7 +593,7 @@ describe('character script definition draft bridge', () => {
   })
 
   it('persists explicit character drafts when the watcher skipped an initially absent collection', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [{ chaId: 'char-1' }],
       modules: [],
     }
@@ -607,13 +622,13 @@ describe('character script definition draft bridge', () => {
 
     scriptCommand.rollback?.()
     triggerCommand.rollback?.()
-    expect(DBState.db.characters[0]).not.toHaveProperty('customscript')
-    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    expect(getDatabase().characters[0]).not.toHaveProperty('customscript')
+    expect(getDatabase().characters[0]).not.toHaveProperty('triggerscript')
     stop()
   })
 
   it('keeps newly created character fields when absent-field rollback is stale', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [{ chaId: 'char-1' }],
       modules: [],
     }
@@ -633,19 +648,19 @@ describe('character script definition draft bridge', () => {
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(2)
 
-    DBState.db.characters[0].customscript = [script('script-newer', 'newer script')]
-    DBState.db.characters[0].triggerscript = [trigger('trigger-newer', 'newer trigger')]
+    getDatabase().characters[0].customscript = [script('script-newer', 'newer script')]
+    getDatabase().characters[0].triggerscript = [trigger('trigger-newer', 'newer trigger')]
 
     recorded.commands[0].rollback?.()
     recorded.commands[1].rollback?.()
 
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-newer', 'newer script')])
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-newer', 'newer trigger')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-newer', 'newer script')])
+    expect(getDatabase().characters[0].triggerscript).toEqual([trigger('trigger-newer', 'newer trigger')])
     stop()
   })
 
   it('does not create an absent trigger field for script-only character draft edits', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [
         {
           chaId: 'char-1',
@@ -672,11 +687,11 @@ describe('character script definition draft bridge', () => {
         scripts: [script('script-1', 'script-only edit')],
       },
     ])
-    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    expect(getDatabase().characters[0]).not.toHaveProperty('triggerscript')
 
     recorded.commands[0].rollback?.()
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
-    expect(DBState.db.characters[0]).not.toHaveProperty('triggerscript')
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'initial')])
+    expect(getDatabase().characters[0]).not.toHaveProperty('triggerscript')
     stop()
   })
 
@@ -684,7 +699,7 @@ describe('character script definition draft bridge', () => {
     setupScriptDefinitions()
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
-    const before = JSON.stringify(DBState.db.characters)
+    const before = JSON.stringify(getDatabase().characters)
 
     expect(applyCharacterScriptDefinitionDraft(null, [script('script-1', 'draft')], [])).toBe(false)
     expect(applyCharacterScriptDefinitionDraft('missing-character', [script('script-1', 'draft')], [])).toBe(false)
@@ -692,7 +707,7 @@ describe('character script definition draft bridge', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(JSON.stringify(DBState.db.characters)).toBe(before)
+    expect(JSON.stringify(getDatabase().characters)).toBe(before)
     expect(recorded.commands).toEqual([])
     stop()
   })
@@ -704,8 +719,8 @@ describe('character script definition draft bridge', () => {
     const draftTriggers = [trigger('trigger-1', 'queued trigger')]
     expect(applyCharacterScriptDefinitionDraft('char-1', draftScripts, draftTriggers, DELAY)).toBe(true)
 
-    const liveScripts = DBState.db.characters[0].customscript
-    const liveTriggers = DBState.db.characters[0].triggerscript
+    const liveScripts = getDatabase().characters[0].customscript
+    const liveTriggers = getDatabase().characters[0].triggerscript
     dispatchReplaceCharacterScripts(
       'char-1',
       liveScripts,
@@ -759,12 +774,12 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.characters[0].customscript = [script('script-1', 'server')]
+    getDatabase().characters[0].customscript = [script('script-1', 'server')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.commands).toEqual([])
 
-    DBState.db.characters[0].customscript = [script('script-1', 'local')]
+    getDatabase().characters[0].customscript = [script('script-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
@@ -786,12 +801,12 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'server')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'server')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.commands).toEqual([])
 
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'local')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
@@ -812,7 +827,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'local')]
+    getDatabase().characters[0].customscript = [script('script-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
@@ -831,7 +846,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'unload local')]
+    getDatabase().characters[0].customscript = [script('script-1', 'unload local')]
     flushSync()
     flushPendingServerBackedScriptDefinitionPatches({ keepalive: true })
     await Promise.resolve()
@@ -855,7 +870,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'teardown local')]
+    getDatabase().characters[0].customscript = [script('script-1', 'teardown local')]
     flushSync()
     stop()
     await Promise.resolve()
@@ -880,7 +895,7 @@ const BIG_BODY = 'x'.repeat(5000)
 // small customscript, so a whole-characters clone is distinguishable from the
 // per-key scripts/triggers stringify by serialized size.
 function setupHydratedScriptDefinitions(): void {
-  ;(DBState as { db: unknown }).db = {
+  testDatabaseSetter.database = {
     characters: [
       {
         chaId: 'char-1',
@@ -926,7 +941,7 @@ describe('watchServerBackedScriptDefinitions clone cost (Phase 4)', () => {
     // A local script edit must dispatch a replacement, but the effect fire that
     // detects it must stay O(scripts): no whole-characters+modules clone.
     const instrumented = withCloneInstrumentation(() => {
-      DBState.db.characters[0].customscript = [script('script-1', 'edited')]
+      getDatabase().characters[0].customscript = [script('script-1', 'edited')]
       flushSync()
     })
 
@@ -953,7 +968,7 @@ describe('watchServerBackedScriptDefinitions clone cost (Phase 4)', () => {
     // A streaming chunk only mutates message[], which the script watcher never
     // reads: it must neither clone the transcript nor queue a replacement.
     const instrumented = withCloneInstrumentation(() => {
-      DBState.db.characters[0].chats[0].message.push({
+      getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: BIG_BODY,
         chatId: 'msg-stream',
@@ -970,7 +985,7 @@ describe('watchServerBackedScriptDefinitions clone cost (Phase 4)', () => {
 
 describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
   function setupTwoCharacters(): void {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [
         {
           chaId: 'char-1',
@@ -992,18 +1007,18 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'char1-local')]
+    getDatabase().characters[0].customscript = [script('script-1', 'char1-local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.characters[1].customscript = [script('script-2', 'char2-concurrent')]
+    getDatabase().characters[1].customscript = [script('script-2', 'char2-concurrent')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
-    expect(DBState.db.characters[1].customscript).toEqual([script('script-2', 'char2-concurrent')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'initial')])
+    expect(getDatabase().characters[1].customscript).toEqual([script('script-2', 'char2-concurrent')])
     stop()
   })
 
@@ -1012,18 +1027,18 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'trigger-local')]
+    getDatabase().characters[0].triggerscript = [trigger('trigger-1', 'trigger-local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.characters[1].triggerscript = [trigger('trigger-2', 'trigger2-concurrent')]
+    getDatabase().characters[1].triggerscript = [trigger('trigger-2', 'trigger2-concurrent')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'initial trigger')])
-    expect(DBState.db.characters[1].triggerscript).toEqual([trigger('trigger-2', 'trigger2-concurrent')])
+    expect(getDatabase().characters[0].triggerscript).toEqual([trigger('trigger-1', 'initial trigger')])
+    expect(getDatabase().characters[1].triggerscript).toEqual([trigger('trigger-2', 'trigger2-concurrent')])
     stop()
   })
 
@@ -1032,19 +1047,19 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'char1-local')]
+    getDatabase().characters[0].customscript = [script('script-1', 'char1-local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.characters[1].customscript = [script('script-2', 'char2-concurrent')]
-    DBState.db.characters[0].customscript = [script('script-1', 'char1-newer')]
+    getDatabase().characters[1].customscript = [script('script-2', 'char2-concurrent')]
+    getDatabase().characters[0].customscript = [script('script-1', 'char1-newer')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'char1-newer')])
-    expect(DBState.db.characters[1].customscript).toEqual([script('script-2', 'char2-concurrent')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'char1-newer')])
+    expect(getDatabase().characters[1].customscript).toEqual([script('script-2', 'char2-concurrent')])
     stop()
   })
 
@@ -1053,23 +1068,23 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'trigger-local')]
+    getDatabase().characters[0].triggerscript = [trigger('trigger-1', 'trigger-local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.characters[0].triggerscript = [trigger('trigger-1', 'trigger-newer')]
+    getDatabase().characters[0].triggerscript = [trigger('trigger-1', 'trigger-newer')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.characters[0].triggerscript).toEqual([trigger('trigger-1', 'trigger-newer')])
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
+    expect(getDatabase().characters[0].triggerscript).toEqual([trigger('trigger-1', 'trigger-newer')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'initial')])
     stop()
   })
 
   it('restores the changed module script when live still matches the attempted payload', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [],
       modules: [
         {
@@ -1082,23 +1097,23 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.modules[0].regex = [script('module-script-1', 'local')]
+    getDatabase().modules[0].regex = [script('module-script-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'trigger-concurrent')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'trigger-concurrent')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'initial module')])
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'trigger-concurrent')])
+    expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'initial module')])
+    expect(getDatabase().modules[0].trigger).toEqual([trigger('module-trigger-1', 'trigger-concurrent')])
     stop()
   })
 
   it('skips module script rollback when the same target changed after dispatch', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [],
       modules: [
         {
@@ -1111,24 +1126,24 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.modules[0].regex = [script('module-script-1', 'local')]
+    getDatabase().modules[0].regex = [script('module-script-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'trigger-concurrent')]
-    DBState.db.modules[0].regex = [script('module-script-1', 'newer')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'trigger-concurrent')]
+    getDatabase().modules[0].regex = [script('module-script-1', 'newer')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'newer')])
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'trigger-concurrent')])
+    expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'newer')])
+    expect(getDatabase().modules[0].trigger).toEqual([trigger('module-trigger-1', 'trigger-concurrent')])
     stop()
   })
 
   it('restores the changed module trigger when live still matches the attempted payload', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [],
       modules: [
         {
@@ -1141,23 +1156,23 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'local')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.modules[0].regex = [script('module-script-1', 'regex-concurrent')]
+    getDatabase().modules[0].regex = [script('module-script-1', 'regex-concurrent')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
-    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
+    expect(getDatabase().modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
+    expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
     stop()
   })
 
   it('skips module trigger rollback when the same target changed after dispatch', async () => {
-    ;(DBState as { db: unknown }).db = {
+    testDatabaseSetter.database = {
       characters: [],
       modules: [
         {
@@ -1170,19 +1185,19 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'local')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'local')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.modules[0].regex = [script('module-script-1', 'regex-concurrent')]
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'newer')]
+    getDatabase().modules[0].regex = [script('module-script-1', 'regex-concurrent')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'newer')]
 
     recorded.commands[0].rollback?.()
 
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'newer')])
-    expect(DBState.db.modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
+    expect(getDatabase().modules[0].trigger).toEqual([trigger('module-trigger-1', 'newer')])
+    expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'regex-concurrent')])
     stop()
   })
 
@@ -1191,13 +1206,13 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-A')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-A')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
     expect(recorded.commands).toHaveLength(1)
 
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-B')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-B')]
     recorded.commands[0].rollback?.()
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -1217,7 +1232,7 @@ describe('watchServerBackedScriptDefinitions scoped rollback (Phase 4)', () => {
         scripts: [script('script-1', 'edit-B')],
       },
     ])
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'edit-B')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'edit-B')])
     stop()
   })
 })
@@ -1230,9 +1245,9 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
 
     // Edit A then edit B for the same key, both inside the debounce window so the
     // two dispatches coalesce into a single pending command.
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-A')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-A')]
     flushSync()
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-B')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-B')]
     flushSync()
 
     // No command fires until the debounce elapses: only the coalesced one runs.
@@ -1254,7 +1269,7 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     // On failure, rollback must restore the pre-first-edit baseline ('initial'),
     // not the intermediate 'edit-A' that was never durably committed.
     recorded.commands[0].rollback?.()
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'initial')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'initial')])
     stop()
   })
 
@@ -1263,9 +1278,9 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-A')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-A')]
     flushSync()
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-B')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-B')]
     flushSync()
 
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -1280,10 +1295,10 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
       },
     ])
 
-    DBState.db.characters[0].customscript = [script('script-1', 'edit-C')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edit-C')]
 
     recorded.commands[0].rollback?.()
-    expect(DBState.db.characters[0].customscript).toEqual([script('script-1', 'edit-C')])
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'edit-C')])
     stop()
   })
 
@@ -1292,9 +1307,9 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'edit-A')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'edit-A')]
     flushSync()
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'edit-B')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'edit-B')]
     flushSync()
 
     expect(recorded.commands).toEqual([])
@@ -1312,7 +1327,7 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     ])
 
     recorded.commands[0].rollback?.()
-    expect(DBState.db.modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
+    expect(getDatabase().modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
     stop()
   })
 })
@@ -1320,7 +1335,7 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
 // Scope the watcher's per-fire scan-and-stringify to the mounting panel's rows.
 
 function setupMultiCharacterScriptDb(): void {
-  ;(DBState as { db: unknown }).db = {
+  testDatabaseSetter.database = {
     characters: [
       {
         chaId: 'char-1',
@@ -1404,7 +1419,7 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     // An edit to the selected character fires a scoped scan: the sibling's
     // large script body is never serialized.
     const instrumented = withCloneInstrumentation(() => {
-      DBState.db.characters[0].customscript = [script('script-1', 'edited')]
+      getDatabase().characters[0].customscript = [script('script-1', 'edited')]
       flushSync()
     })
     expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
@@ -1432,7 +1447,7 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     flushSync()
 
     // A sibling edit is out of scope → never dispatched.
-    DBState.db.characters[1].customscript = [script('script-2', 'sibling edit')]
+    getDatabase().characters[1].customscript = [script('script-2', 'sibling edit')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.commands).toEqual([])
@@ -1444,7 +1459,7 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     expect(recorded.commands).toEqual([])
 
     // ...and an edit to the now-selected character IS dispatched.
-    DBState.db.characters[1].customscript = [script('script-2', 'tracked edit')]
+    getDatabase().characters[1].customscript = [script('script-2', 'tracked edit')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
@@ -1468,13 +1483,13 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
     flushSync()
 
     // A character edit is out of scope for a module-scoped watcher.
-    DBState.db.characters[0].customscript = [script('script-1', 'char edit')]
+    getDatabase().characters[0].customscript = [script('script-1', 'char edit')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.commands).toEqual([])
 
     // The open module's trigger edit IS dispatched.
-    DBState.db.modules[0].trigger = [trigger('module-trigger-1', 'module edit')]
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'module edit')]
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     await Promise.resolve()
@@ -1493,7 +1508,7 @@ describe('watchServerBackedScriptDefinitions — scoped change detection (L31)',
 describe('applyModuleScriptDefinitionDraft', () => {
   it('normalizes module draft ids, updates live/draft rows, and dispatches replacements', async () => {
     setupScriptDefinitions()
-    const liveModule = DBState.db.modules[0]
+    const liveModule = getDatabase().modules[0]
     const draftModule = {
       id: liveModule.id,
       regex: [...liveModule.regex, scriptWithoutId('new module script')],
@@ -1559,7 +1574,7 @@ describe('applyModuleScriptDefinitionDraft', () => {
     await Promise.resolve()
 
     expect(recorded.commands).toEqual([])
-    expect(DBState.db.modules.map((module) => module.id)).toEqual(['module-1'])
+    expect(getDatabase().modules.map((module) => module.id)).toEqual(['module-1'])
   })
 
   it('ModuleMenu wires module regex and trigger drafts through the module script bridge', () => {
