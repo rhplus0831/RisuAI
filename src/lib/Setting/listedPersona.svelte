@@ -2,7 +2,8 @@
   import { XIcon } from '@lucide/svelte'
   import { language } from '../../lang'
 
-  import { DBState, selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
+  import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { changeUserPersona, validUniquePersonaIdAt } from 'src/ts/persona'
   import { getPersonaDisplayName } from 'src/ts/personaDisplayName'
   import {
@@ -48,9 +49,9 @@
 
   function isPersonaSelected(index: number) {
     if (!isChatGenerationSelectionMode) {
-      return index === DBState.db.selectedPersona
+      return index === getDatabase().selectedPersona
     }
-    const personaId = nonEmptyId(DBState.db.personas[index]?.id)
+    const personaId = nonEmptyId(getDatabase().personas[index]?.id)
     return !!personaId && personaId === activeChatPersonaId
   }
 </script>
@@ -69,7 +70,7 @@
         </button>
       </div>
     </div>
-    {#each DBState.db.personas as persona, i}
+    {#each getDatabase().personas as persona, i}
       <button
         onclick={() => {
           selectPersona(i)

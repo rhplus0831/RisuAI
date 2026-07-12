@@ -8,7 +8,7 @@
   import CheckInput from './GUI/CheckInput.svelte'
   import { ArrowDown, ArrowUp, XIcon } from '@lucide/svelte'
   import TextInput from './GUI/TextInput.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
   interface Props {
     promptItem: PromptItem
@@ -255,7 +255,7 @@
       <OptionInput value="chatML">{'chatML'}</OptionInput>
       <OptionInput value="cache">{language.cachePoint}</OptionInput>
 
-      {#if DBState.db.promptSettings.customChainOfThought}
+      {#if getDatabase().promptSettings.customChainOfThought}
         <OptionInput value="cot">{language.cot}</OptionInput>
       {/if}
     </SelectInput>
@@ -317,7 +317,7 @@
               }
             }} />
         {/if}
-        {#if DBState.db.promptSettings.sendChatAsSystem}
+        {#if getDatabase().promptSettings.sendChatAsSystem}
           <CheckInput name={language.chatAsOriginalOnSystem} bind:check={promptItem.chatAsOriginalOnSystem} />
         {/if}
       {/if}

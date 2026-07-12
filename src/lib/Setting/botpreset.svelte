@@ -19,12 +19,8 @@
     type PromptPreset,
     type botPreset,
   } from '../../ts/storage/database.svelte'
-  import {
-    DBState,
-    selectedCharID,
-    type GenerationSettingsPickerMode,
-    type PresetPickerKind,
-  } from 'src/ts/stores.svelte'
+  import { selectedCharID, type GenerationSettingsPickerMode, type PresetPickerKind } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import {
     HardDriveUploadIcon,
     PlusIcon,
@@ -72,8 +68,8 @@
   let title = $derived(
     kind === 'model' ? language.modelPresets : kind === 'prompt' ? language.promptPresets : language.legacyBotPresets,
   )
-  let modernPresets = $derived.by(() => (kind === 'prompt' ? DBState.db.promptPresets : DBState.db.modelPresets))
-  let legacyPresets = $derived.by(() => (Array.isArray(DBState.db.botPresets) ? DBState.db.botPresets : []))
+  let modernPresets = $derived.by(() => (kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets))
+  let legacyPresets = $derived.by(() => (Array.isArray(getDatabase().botPresets) ? getDatabase().botPresets : []))
   let useModelPresetManager = $derived(kind === 'model' && mode === 'global')
   let activeChatSettings = $derived.by(() =>
     resolveActiveChatGenerationSettings({
@@ -92,7 +88,7 @@
   }
 
   function selectedIndex(): number {
-    return kind === 'prompt' ? DBState.db.promptPresetsId : DBState.db.modelPresetsId
+    return kind === 'prompt' ? getDatabase().promptPresetsId : getDatabase().modelPresetsId
   }
 
   function presetDraftKey(preset: ModernPreset | undefined, index: number) {
@@ -133,7 +129,7 @@
     pendingRenameTargets.delete(key)
     if (!target) return
 
-    const presets = target.kind === 'prompt' ? DBState.db.promptPresets : DBState.db.modelPresets
+    const presets = target.kind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
     const index = target.presetId ? presets.findIndex((preset) => preset?.id === target.presetId) : target.index
     const preset = presets[index]
     if (!preset) return

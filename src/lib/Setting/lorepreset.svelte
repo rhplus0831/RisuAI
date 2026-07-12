@@ -2,7 +2,7 @@
   import { alertConfirm } from '../../ts/alert'
   import { language } from '../../lang'
 
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import {
@@ -34,7 +34,7 @@
         </button>
       </div>
     </div>
-    {#each DBState.db.loreBook as lore, ind}
+    {#each getDatabase().loreBook as lore, ind}
       <button
         onclick={() => {
           if (!editMode) {
@@ -42,10 +42,10 @@
           }
         }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={ind === DBState.db.loreBookPage}>
+        class:bg-selected={ind === getDatabase().loreBookPage}>
         {#if editMode}
           <TextInput
-            bind:value={() => DBState.db.loreBook[ind].name, (value) => renameGlobalLorebook(ind, value)}
+            bind:value={() => getDatabase().loreBook[ind].name, (value) => renameGlobalLorebook(ind, value)}
             placeholder="string"
             padding={false} />
         {:else}
@@ -58,7 +58,7 @@
             tabindex="0"
             onclick={async (e) => {
               e.stopPropagation()
-              if (DBState.db.loreBook.length === 1) {
+              if (getDatabase().loreBook.length === 1) {
                 return
               }
               const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
