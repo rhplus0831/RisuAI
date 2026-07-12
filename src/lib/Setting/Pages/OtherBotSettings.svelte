@@ -3,7 +3,8 @@
   import { language } from 'src/lang'
   import Help from 'src/lib/Others/Help.svelte'
   import { selectSingleFile } from 'src/ts/util'
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import { selectedCharID } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { saveAsset, downloadFile, globalFetch } from 'src/ts/globalApi.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -107,7 +108,7 @@
     base64image: 'reference_base64image',
   } satisfies SettingsMediaAssetUploadFieldKeys
 
-  let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
+  let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
 
   // HypaV3
   $effect(() => {
@@ -146,14 +147,14 @@
 
   async function getMaxMemoryRatio(): Promise<number> {
     await ensurePromptTemplateHydrated()
-    const promptTemplateToken = await tokenizePreset(DBState.db.promptTemplate)
-    const char = DBState.db.characters[$selectedCharID]
+    const promptTemplateToken = await tokenizePreset(getDatabase().promptTemplate)
+    const char = getDatabase().characters[$selectedCharID]
     const charToken = await getCharToken(char)
-    const maxLoreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken
-    const maxResponse = DBState.db.maxResponse
+    const maxLoreToken = char.loreSettings?.tokenBudget ?? getDatabase().loreBookToken
+    const maxResponse = getDatabase().maxResponse
     const requiredToken =
       promptTemplateToken + charToken.persistant + Math.min(charToken.dynamic, maxLoreToken) + maxResponse * 3
-    const maxContext = DBState.db.maxContext
+    const maxContext = getDatabase().maxContext
 
     if (maxContext === 0) {
       return 0

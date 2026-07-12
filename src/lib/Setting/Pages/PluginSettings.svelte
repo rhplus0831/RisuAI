@@ -4,7 +4,8 @@
   import { alertConfirm, alertMd, alertSelect } from 'src/ts/alert'
   import { TriangleAlert } from '@lucide/svelte'
 
-  import { DBState, hotReloading } from 'src/ts/stores.svelte'
+  import { hotReloading } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import {
     checkPluginUpdate,
     createBlankPlugin,
@@ -25,7 +26,7 @@
   let expandedPluginNames = $state<string[]>([])
 
   function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
-    const plugins = DBState.db.plugins ?? []
+    const plugins = getDatabase().plugins ?? []
     const index = plugins.findIndex((candidate) => candidate.name === pluginName)
     if (index === -1) return null
     return { plugin: plugins[index], index }
@@ -59,10 +60,10 @@
 <span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
 
 <div class="border-solid border-darkborderc p-2 flex flex-col border-1">
-  {#if !DBState.db.plugins || DBState.db.plugins?.length === 0}
+  {#if !getDatabase().plugins || getDatabase().plugins?.length === 0}
     <span class="text-textcolor2">{language.noPlugins}</span>
   {/if}
-  {#each DBState.db.plugins as plugin, i (plugin.name)}
+  {#each getDatabase().plugins as plugin, i (plugin.name)}
     {#if i !== 0}
       <div class="border-darkborderc mt-2 mb-2 w-full border-solid border-b-1 seperator"></div>
     {/if}

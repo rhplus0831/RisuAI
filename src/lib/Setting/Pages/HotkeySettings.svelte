@@ -1,12 +1,12 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import type { Hotkey } from 'src/ts/defaulthotkeys'
 
   // Replace the projected array instead of mutating a hotkey row in place.
   function patchHotkey(index: number, patch: Partial<Hotkey>): void {
-    const next = DBState.db.hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
+    const next = getDatabase().hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
     applyServerBackedSetting('hotkeys', next)
   }
 </script>
@@ -23,7 +23,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each DBState.db.hotkeys as hotkey, index}
+      {#each getDatabase().hotkeys as hotkey, index}
         <tr>
           <td>{language.hotkeyDesc[hotkey.action]}</td>
           <td>

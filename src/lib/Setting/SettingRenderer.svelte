@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SettingItem, SettingContext } from 'src/ts/setting/types'
   import type { LLMModel } from 'src/ts/model/types'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { settingRegistry } from 'src/ts/setting/settingRegistry'
   import { checkCondition } from 'src/ts/setting/utils'
@@ -18,12 +18,12 @@
   let { items, modelInfo, subModelInfo, presetMirrorTarget = 'auto' }: Props = $props()
 
   // Derive modelInfo if not provided
-  let effectiveModelInfo = $derived(modelInfo ?? getModelInfo(DBState.db.aiModel))
-  let effectiveSubModelInfo = $derived(subModelInfo ?? getModelInfo(DBState.db.subModel))
+  let effectiveModelInfo = $derived(modelInfo ?? getModelInfo(getDatabase().aiModel))
+  let effectiveSubModelInfo = $derived(subModelInfo ?? getModelInfo(getDatabase().subModel))
 
   // Build context for condition checks
   let ctx: SettingContext = $derived({
-    db: DBState.db,
+    db: getDatabase(),
     modelInfo: effectiveModelInfo,
     subModelInfo: effectiveSubModelInfo,
     presetMirrorTarget,

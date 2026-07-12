@@ -26,7 +26,7 @@
   import AdvancedSettings from './Pages/AdvancedSettings.svelte'
   import AgentPresetSettings from './Pages/AgentPresetSettings.svelte'
   import { additionalSettingsMenu, easyPanelStore, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import Communities from './Pages/Communities.svelte'
   import GlobalLoreBookSettings from './Pages/GlobalLoreBookSettings.svelte'
   import Lorepreset from './lorepreset.svelte'
@@ -57,7 +57,7 @@
   async function openSupporterThanks() {
     if ($SettingsMenuIndex === 77 || supporterConfirmOpen) return
 
-    if (DBState.db.doNotWarnExternalServers) {
+    if (getDatabase().doNotWarnExternalServers) {
       navigate('/settings/supporter')
       return
     }
@@ -126,7 +126,7 @@
               <WorkflowIcon size={20} />
               <span>{language.settingsNavAgentPresets}</span>
             </button>
-            {#if DBState.db.botPresets?.length > 0}
+            {#if getDatabase().botPresets?.length > 0}
               <button
                 class={navButtonClass($SettingsMenuIndex === 1)}
                 onclick={() => {
@@ -251,7 +251,7 @@
               </button>
             {/each}
 
-            {#if DBState.db.enableRisuaiProTools}
+            {#if getDatabase().enableRisuaiProTools}
               <button
                 class={navButtonClass($SettingsMenuIndex === 16)}
                 onclick={() => {
@@ -278,7 +278,7 @@
             onclick={() => {
               navigate('/')
             }}>
-            <CircleXIcon size={DBState.db.settingsCloseButtonSize} />
+            <CircleXIcon size={getDatabase().settingsCloseButtonSize} />
           </button>
         {/if}
       </div>
@@ -294,14 +294,14 @@
               title={language.goback}
               data-risu-settings-mobile-back
               onclick={goBackToSettingsList}>
-              <ArrowLeftIcon size={DBState.db.settingsCloseButtonSize} />
+              <ArrowLeftIcon size={getDatabase().settingsCloseButtonSize} />
               <span class="sr-only">{language.goback}</span>
             </button>
           {/if}
           {#if $SettingsMenuIndex === 0}
             <UserSettings />
           {:else if $SettingsMenuIndex === 1}
-            {#if DBState.db.botPresets?.length > 0}
+            {#if getDatabase().botPresets?.length > 0}
               <BotSettings
                 settingsKind="legacy"
                 goPromptTemplate={() => {
@@ -360,7 +360,7 @@
           onclick={() => {
             navigate('/')
           }}>
-          <CircleXIcon size={DBState.db.settingsCloseButtonSize} />
+          <CircleXIcon size={getDatabase().settingsCloseButtonSize} />
         </button>
       {/if}
     {/if}

@@ -26,12 +26,13 @@ vi.mock('src/ts/plugins/plugins.svelte', () => ({
 
 vi.mock('src/ts/pluginCommands', () => ({
   deletePlugin: vi.fn(),
+  mergePendingPluginStorageProjection: vi.fn((value) => value),
   setPluginArgument: vi.fn(),
   togglePluginEnabled: vi.fn(),
 }))
 
 import PluginSettings from './PluginSettings.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 
 describe('PluginSettings', () => {
   let target: HTMLElement
@@ -40,7 +41,7 @@ describe('PluginSettings', () => {
   beforeEach(() => {
     target = document.createElement('div')
     document.body.appendChild(target)
-    DBState.db = {
+    setDatabaseLite({
       characters: [],
       currentPluginProvider: '',
       enabledModules: [],
@@ -58,7 +59,7 @@ describe('PluginSettings', () => {
           enabled: true,
         },
       ],
-    } as any
+    } as any)
   })
 
   afterEach(() => {
