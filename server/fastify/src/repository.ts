@@ -81,7 +81,7 @@ function rowToPersistedAsset(row: AssetMetadataRow): PersistedAsset {
   return { id: row.id, ext: row.ext, size: row.size, contentType: row.content_type }
 }
 
-const COLLECTION_FIELDS = [
+export const COLLECTION_FIELDS = [
   'modules',
   'plugins',
   'modelPresets',
@@ -1133,6 +1133,23 @@ export function loadStubbedProjectionFields(
   return fields
 }
 
+/**
+ * Full character rows for resource APIs, with chat metadata retained and the
+ * separately stored chat bodies omitted. Unlike the bootstrap projection
+ * loader, this does not strip character lorebooks or replace inactive
+ * characters with shells.
+ */
+export function loadCharacterRowsForRead(db: DatabaseSync, dataDir: string): JsonRecord[] {
+  const fields = loadPersistedDatabaseFields(db, dataDir, ['characters'])
+  const characters = Array.isArray(fields.characters) ? fields.characters : []
+  const result = characters.filter(isRecord)
+  eachChat({ characters: result }, (chat) => {
+    chat.message = []
+    delete chat.hypaV3Data
+  })
+  return result
+}
+
 export function loadPresetHydration(
   db: DatabaseSync,
   dataDir: string,
@@ -1269,6 +1286,45 @@ export function loadSingleCharacterStubRow(db: DatabaseSync, dataDir: string, ch
 
   if (settings.enableLorebookStubs === true) delete character.globalLore
   return character
+}
+
+/**
+ * Scoped character detail read for resource APIs. Reads one character and its
+ * chat metadata without message/hypa bodies, while retaining the full
+ * character payload (including its lorebook).
+ */
+export function loadSingleCharacterRowForRead(
+  db: DatabaseSync,
+  dataDir: string,
+  characterId: string,
+): JsonRecord | null {
+  const settings = loadSettingsFromSqlite(db)
+  if (settings === null) return loadSingleCharacterRowForReadBroad(db, dataDir, characterId)
+
+  const charRow = db
+    .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
+    .get(characterId) as unknown as CharacterRow | undefined
+  if (!charRow) return loadSingleCharacterRowForReadBroad(db, dataDir, characterId)
+
+  const character = JSON.parse(charRow.data_json) as unknown
+  if (!isRecord(character)) return loadSingleCharacterRowForReadBroad(db, dataDir, characterId)
+
+  const chatRows = db
+    .prepare('SELECT id, character_id, position, data_json FROM chats WHERE character_id = ? ORDER BY position')
+    .all(charRow.id) as unknown as ChatRow[]
+  character.chats = chatRows.map((row) => {
+    const chat = parseStoredChatRow(row.data_json)
+    if (isRecord(chat)) {
+      chat.message = []
+      delete chat.hypaV3Data
+    }
+    return chat
+  })
+  return character
+}
+
+function loadSingleCharacterRowForReadBroad(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
+  return loadCharacterRowsForRead(db, dataDir).find((candidate) => candidate.chaId === characterId) ?? null
 }
 
 function loadSingleCharacterStubRowBroad(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {

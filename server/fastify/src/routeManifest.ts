@@ -173,6 +173,166 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'settings-read',
+    methods: GET_ONLY,
+    path: '/api/v1/settings',
+    auth: {
+      decision: 'required',
+      reason: 'Settings contain private user configuration and masked provider credentials.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only settings route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'collections-read',
+    methods: GET_ONLY,
+    path: '/api/v1/collections',
+    auth: {
+      decision: 'required',
+      reason: 'Collections contain private user presets, modules, plugins, and storage.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only collection route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'collection-read',
+    methods: GET_ONLY,
+    path: '/api/v1/collections/:name',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Targeted collections contain private user presets, modules, plugins, or storage.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only targeted collection route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'characters-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters',
+    auth: {
+      decision: 'required',
+      reason: 'Character listing returns private character and chat metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only character listing route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'character-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters/:id',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Character detail returns private character and chat metadata.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only character detail route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'chat-messages-read',
+    methods: GET_ONLY,
+    path: '/api/v1/chats/:id/messages',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Chat message reads return private conversation history.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only chat message route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'chat-messages-bulk-read',
+    methods: ['POST'],
+    path: '/api/v1/chats/messages/bulk',
+    auth: {
+      decision: 'required',
+      reason: 'Bulk chat reads return private conversation histories.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Bulk chat reading is read-only; POST carries a potentially large id list.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'character-lorebook-read',
+    methods: GET_ONLY,
+    path: '/api/v1/characters/:id/lorebook',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Character lorebook reads return private prompt context.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only character lorebook route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'character-lorebooks-bulk-read',
+    methods: ['POST'],
+    path: '/api/v1/characters/lorebooks/bulk',
+    auth: {
+      decision: 'required',
+      reason: 'Bulk character lorebook reads return private prompt context.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Bulk lorebook reading is read-only; POST carries a potentially large id list.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'legacy-preset-read',
+    methods: GET_ONLY,
+    path: '/api/v1/legacy-presets/:id',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Legacy preset detail can contain private provider configuration.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only legacy preset route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'prompt-preset-template-read',
+    methods: GET_ONLY,
+    path: '/api/v1/prompt-presets/:id/template',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Prompt preset templates contain private user prompt content.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only prompt preset template route.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'risusave-import',
     methods: ['POST'],
     path: '/api/v1/import/risusave',
