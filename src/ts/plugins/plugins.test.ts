@@ -78,7 +78,8 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
@@ -350,14 +351,14 @@ beforeEach(() => {
   pluginImportMocks.sleep.mockResolvedValue(undefined)
   vi.mocked(loadV3Plugins).mockClear()
   setServerProjectionWriteGuardEnabled(false)
-  DBState.db = {
+  setDatabaseLite({
     currentPluginProvider: 'old-provider',
     pluginCustomStorage: {},
     pluginCompatibilityMode: false,
     plugins: [seedPlugin('plugin-a')],
     modules: [seedModule('mod-a')],
     enabledModules: [],
-  } as any
+  } as any)
 })
 
 afterEach(() => {
@@ -376,11 +377,11 @@ describe('plugin import/update freshness', () => {
     })
 
     picker.select(selectedPluginFile(pluginSource('plugin-b')))
-    DBState.db.plugins.push(seedPlugin('plugin-newer'))
+    getDatabase().plugins.push(seedPlugin('plugin-newer'))
     picker.resolve()
 
     await expect(importPromise).resolves.toBe(false)
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
     expect(calls).toEqual([])
   })
 
@@ -394,31 +395,31 @@ describe('plugin import/update freshness', () => {
     })
 
     picker.select(selectedPluginFile('not a plugin'))
-    DBState.db.plugins.push(seedPlugin('plugin-newer'))
+    getDatabase().plugins.push(seedPlugin('plugin-newer'))
     picker.resolve()
 
     await expect(importPromise).resolves.toBe(false)
     expect(pluginImportMocks.alertError).not.toHaveBeenCalled()
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
   })
 
   it('drops duplicate-confirm imports if plugin state changes while the confirm is open', async () => {
     const calls = stubCommandFetch()
     const confirm = createDeferred<boolean>()
     pluginImportMocks.alertConfirm.mockReturnValue(confirm.promise)
-    const originalScript = DBState.db.plugins[0].script
+    const originalScript = getDatabase().plugins[0].script
 
     const importPromise = importPlugin(pluginSource('plugin-a', { body: 'Risuai.log("updated")' }))
     await vi.waitFor(() => {
       expect(pluginImportMocks.alertConfirm).toHaveBeenCalled()
     })
 
-    DBState.db.plugins.push(seedPlugin('plugin-newer'))
+    getDatabase().plugins.push(seedPlugin('plugin-newer'))
     confirm.resolve(true)
 
     await expect(importPromise).resolves.toBe(false)
-    expect(DBState.db.plugins[0].script).toBe(originalScript)
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
+    expect(getDatabase().plugins[0].script).toBe(originalScript)
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-newer'])
     expect(calls).toEqual([])
   })
 
@@ -427,7 +428,7 @@ describe('plugin import/update freshness', () => {
 
     await expect(importPlugin(pluginSource('plugin-created'))).resolves.toBe(false)
 
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a'])
     expect(calls.find((call) => call.url === '/api/v1/commands/plugins')).toMatchObject({
       method: 'POST',
       body: {
@@ -447,7 +448,7 @@ describe('plugin import/update freshness', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/plugins')).toBe(true)
     })
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-created'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-created'])
     expect(loadV3Plugins).not.toHaveBeenCalled()
 
     commandResponses[0].resolve(
@@ -479,7 +480,7 @@ describe('plugin import/update freshness', () => {
       remoteUrl,
       remoteSource: remoteSource.promise,
     })
-    DBState.db.plugins = [
+    getDatabase().plugins = [
       seedPlugin('plugin-a', {
         script: 'Risuai.log("old")',
         updateURL: remoteUrl,
@@ -487,12 +488,12 @@ describe('plugin import/update freshness', () => {
       }),
     ]
 
-    const updatePromise = updatePlugin(DBState.db.plugins[0])
+    const updatePromise = updatePlugin(getDatabase().plugins[0])
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledWith(remoteUrl)
     })
 
-    DBState.db.plugins[0] = seedPlugin('plugin-a', {
+    getDatabase().plugins[0] = seedPlugin('plugin-a', {
       script: 'Risuai.log("reinstalled")',
       updateURL: remoteUrl,
       versionOfPlugin: '1.0.0',
@@ -506,7 +507,7 @@ describe('plugin import/update freshness', () => {
     )
 
     await expect(updatePromise).resolves.toBe(false)
-    expect(DBState.db.plugins[0].script).toBe('Risuai.log("reinstalled")')
+    expect(getDatabase().plugins[0].script).toBe('Risuai.log("reinstalled")')
     expect(calls).toEqual([])
   })
 
@@ -522,7 +523,7 @@ describe('plugin import/update freshness', () => {
       remoteSource: updatedSource,
       failCommands: true,
     })
-    DBState.db.plugins = [
+    getDatabase().plugins = [
       seedPlugin('plugin-a', {
         script: 'Risuai.log("old")',
         updateURL: remoteUrl,
@@ -530,9 +531,9 @@ describe('plugin import/update freshness', () => {
       }),
     ]
 
-    await expect(updatePlugin(DBState.db.plugins[0])).resolves.toBe(false)
+    await expect(updatePlugin(getDatabase().plugins[0])).resolves.toBe(false)
 
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a', {
         script: 'Risuai.log("old")',
         updateURL: remoteUrl,
@@ -566,7 +567,7 @@ describe('plugin import/update freshness', () => {
       remoteSource: updatedSource,
       commandResponse: commandResponse.promise,
     })
-    DBState.db.plugins = [
+    getDatabase().plugins = [
       seedPlugin('plugin-a', {
         script: 'Risuai.log("old")',
         updateURL: remoteUrl,
@@ -574,12 +575,12 @@ describe('plugin import/update freshness', () => {
       }),
     ]
 
-    const updatePromise = updatePlugin(DBState.db.plugins[0])
+    const updatePromise = updatePlugin(getDatabase().plugins[0])
 
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
     })
-    expect(DBState.db.plugins[0].script).toBe(updatedSource)
+    expect(getDatabase().plugins[0].script).toBe(updatedSource)
     expect(loadV3Plugins).not.toHaveBeenCalled()
 
     commandResponse.resolve(
@@ -612,7 +613,7 @@ describe('plugin import/update freshness', () => {
       remoteUrl,
       remoteSource: updatedSource,
     })
-    DBState.db.plugins = [
+    getDatabase().plugins = [
       seedPlugin('plugin-a', {
         script: 'Risuai.log("old")',
         updateURL: remoteUrl,
@@ -620,9 +621,9 @@ describe('plugin import/update freshness', () => {
       }),
     ]
 
-    await expect(updatePlugin(DBState.db.plugins[0])).resolves.toBe(true)
+    await expect(updatePlugin(getDatabase().plugins[0])).resolves.toBe(true)
 
-    expect(DBState.db.plugins[0].script).toBe(updatedSource)
+    expect(getDatabase().plugins[0].script).toBe(updatedSource)
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
     })
@@ -658,18 +659,18 @@ describe('plugin database command bridge', () => {
       },
     })
     expect(calls.some((call) => call.url.includes('/api/v1/commands/plugin-storage'))).toBe(false)
-    expect(DBState.db.currentPluginProvider).toBe('provider-a')
+    expect(getDatabase().currentPluginProvider).toBe('provider-a')
   })
 
-  it('setArg updates plugin realArg through a command without throwing under the projection guard', async () => {
+  it('setArg updates plugin realArg through a command without throwing under the resource write guard', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
     setServerProjectionWriteGuardEnabled(true)
 
     // Baseline: the guard is active, so a raw projection write throws.
     expect(() => {
-      DBState.db.plugins[0].realArg['raw'] = 'x'
-    }).toThrow(/read-only server projection/)
+      getDatabase().plugins[0].realArg['raw'] = 'x'
+    }).toThrow(/resource database compatibility view is read-only/)
 
     expect(() => apis.setArg('plugin-a::myarg', 'myvalue')).not.toThrow()
 
@@ -680,14 +681,14 @@ describe('plugin database command bridge', () => {
       method: 'PATCH',
       body: { patch: { realArg: { myarg: 'myvalue' } } },
     })
-    expect(DBState.db.plugins[0].realArg.myarg).toBe('myvalue')
+    expect(getDatabase().plugins[0].realArg.myarg).toBe('myvalue')
   })
 
   it('setChar applies command-compatible character fields in server mode', async () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
-    DBState.db.characters = [
+    getDatabase().characters = [
       {
         chaId: 'char-a',
         name: 'Old name',
@@ -711,7 +712,7 @@ describe('plugin database command bridge', () => {
       modules: ['old-module'],
     })
 
-    expect(DBState.db.characters[0]).toEqual({
+    expect(getDatabase().characters[0]).toEqual({
       chaId: 'char-a',
       name: 'New name',
       desc: 'New desc',
@@ -748,7 +749,7 @@ describe('plugin database command bridge', () => {
     const calls = stubCommandFetch({ failCommands: true })
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
-    DBState.db.characters = [
+    getDatabase().characters = [
       {
         chaId: 'char-a',
         name: 'Old name',
@@ -761,7 +762,7 @@ describe('plugin database command bridge', () => {
         chats: [{ id: 'chat-b', message: [] }],
       },
     ] as any
-    ;(DBState.db as any).currentChar = 0
+    ;(getDatabase() as any).currentChar = 0
 
     apis.setChar({
       chaId: 'char-a',
@@ -770,26 +771,26 @@ describe('plugin database command bridge', () => {
       chats: [{ id: 'chat-a', message: [] }],
     })
 
-    expect(DBState.db.characters[0]).toMatchObject({
+    expect(getDatabase().characters[0]).toMatchObject({
       chaId: 'char-a',
       name: 'Attempted name',
       desc: 'Attempted desc',
     })
 
-    DBState.db.characters[1].name = 'Newer sibling name'
-    ;(DBState.db as any).currentChar = 1
+    getDatabase().characters[1].name = 'Newer sibling name'
+    ;(getDatabase() as any).currentChar = 1
     selectedCharID.set(1)
 
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a')).toBe(true)
     })
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].name).toBe('Old name')
+      expect(getDatabase().characters[0].name).toBe('Old name')
     })
 
-    expect(DBState.db.characters[0].desc).toBe('Old desc')
-    expect(DBState.db.characters[1].name).toBe('Newer sibling name')
-    expect((DBState.db as any).currentChar).toBe(1)
+    expect(getDatabase().characters[0].desc).toBe('Old desc')
+    expect(getDatabase().characters[1].name).toBe('Newer sibling name')
+    expect((getDatabase() as any).currentChar).toBe(1)
     expect(get(selectedCharID)).toBe(1)
   })
 
@@ -797,7 +798,7 @@ describe('plugin database command bridge', () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
-    DBState.db.characters = [
+    getDatabase().characters = [
       {
         chaId: 'char-a',
         name: 'Old name',
@@ -806,7 +807,7 @@ describe('plugin database command bridge', () => {
         customscript: 'old custom script',
       },
     ] as any
-    const originalCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
+    const originalCharacter = JSON.parse(JSON.stringify(getDatabase().characters[0]))
 
     expect(() =>
       apis.setChar({
@@ -820,7 +821,7 @@ describe('plugin database command bridge', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 
-    expect(DBState.db.characters[0]).toEqual(originalCharacter)
+    expect(getDatabase().characters[0]).toEqual(originalCharacter)
     expect(calls.some((call) => call.url.startsWith('/api/v1/commands/characters/'))).toBe(false)
   })
 
@@ -828,7 +829,7 @@ describe('plugin database command bridge', () => {
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
     selectedCharID.set(0)
-    DBState.db.characters = [
+    getDatabase().characters = [
       {
         chaId: 'char-a',
         name: 'Old name',
@@ -836,7 +837,7 @@ describe('plugin database command bridge', () => {
         globalLore: [{ key: 'old lore' }],
       },
     ] as any
-    const originalCharacter = JSON.parse(JSON.stringify(DBState.db.characters[0]))
+    const originalCharacter = JSON.parse(JSON.stringify(getDatabase().characters[0]))
 
     expect(() =>
       apis.setChar({
@@ -849,7 +850,7 @@ describe('plugin database command bridge', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 
-    expect(DBState.db.characters[0]).toEqual(originalCharacter)
+    expect(getDatabase().characters[0]).toEqual(originalCharacter)
     expect(calls.some((call) => call.url.startsWith('/api/v1/commands/characters/'))).toBe(false)
   })
 
@@ -871,7 +872,7 @@ describe('plugin database command bridge', () => {
         },
       },
     })
-    expect(DBState.db.moduleIntergration).toBe('ns-a, ns-b')
+    expect(getDatabase().moduleIntergration).toBe('ns-a, ns-b')
   })
 
   it('rolls back failed plugin DB bridge settings patches without clobbering newer plugin state', async () => {
@@ -894,10 +895,10 @@ describe('plugin database command bridge', () => {
     )
     setServerProjectionWriteGuardEnabled(true)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.moduleIntergration = 'old-modules'
-      DBState.db.plugins = [seedPlugin('plugin-a')]
-      DBState.db.currentPluginProvider = 'plugin-a'
-      DBState.db.pluginCustomStorage = {
+      getDatabase().moduleIntergration = 'old-modules'
+      getDatabase().plugins = [seedPlugin('plugin-a')]
+      getDatabase().currentPluginProvider = 'plugin-a'
+      getDatabase().pluginCustomStorage = {
         retained: { value: 1 },
       }
     })
@@ -908,21 +909,21 @@ describe('plugin database command bridge', () => {
     await vi.waitFor(() => {
       expect(captured.length).toBe(1)
     })
-    expect(DBState.db.moduleIntergration).toBe('attempted-modules')
+    expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(
+      getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
         }),
       )
-      DBState.db.currentPluginProvider = 'plugin-newer'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-newer'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
     advancedCommand.resolve(jsonResponse({ error: 'forced advanced failure' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.moduleIntergration).toBe('old-modules')
+      expect(getDatabase().moduleIntergration).toBe('old-modules')
     })
 
     expect(captured[0]).toMatchObject({
@@ -935,14 +936,14 @@ describe('plugin database command bridge', () => {
         },
       },
     })
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a'),
       seedPlugin('plugin-newer', {
         realArg: { mode: 'newer-plugin' },
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-newer')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-newer')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -975,17 +976,17 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
     setServerProjectionWriteGuardEnabled(true)
-    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }] as unknown as typeof DBState.db.customModels
+    const oldCustomModels = [{ id: 'old-model', name: 'Old Model' }] as unknown as Database['customModels']
     const attemptedCustomModels = [{ id: 'attempted-model', name: 'Attempted Model' }]
     withTrustedServerProjectionWrite(() => {
-      DBState.db.customModels = oldCustomModels
-      DBState.db.moduleIntergration = 'old-modules'
-      DBState.db.plugins = [seedPlugin('plugin-a')]
-      DBState.db.currentPluginProvider = 'plugin-a'
-      DBState.db.pluginCustomStorage = {
+      getDatabase().customModels = oldCustomModels
+      getDatabase().moduleIntergration = 'old-modules'
+      getDatabase().plugins = [seedPlugin('plugin-a')]
+      getDatabase().currentPluginProvider = 'plugin-a'
+      getDatabase().pluginCustomStorage = {
         retained: { value: 1 },
       }
-      DBState.db.modules = [seedModule('mod-a')]
+      getDatabase().modules = [seedModule('mod-a')]
     })
     const apis = getV2PluginAPIs()
 
@@ -997,23 +998,23 @@ describe('plugin database command bridge', () => {
     await vi.waitFor(() => {
       expect(captured).toHaveLength(2)
     })
-    expect(DBState.db.customModels).toEqual(attemptedCustomModels)
-    expect(DBState.db.moduleIntergration).toBe('attempted-modules')
+    expect(getDatabase().customModels).toEqual(attemptedCustomModels)
+    expect(getDatabase().moduleIntergration).toBe('attempted-modules')
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.plugins.push(
+      getDatabase().plugins.push(
         seedPlugin('plugin-newer', {
           realArg: { mode: 'newer-plugin' },
         }),
       )
-      DBState.db.currentPluginProvider = 'plugin-newer'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
-      DBState.db.modules.push(seedModule('mod-newer', { description: 'newer module' }))
+      getDatabase().currentPluginProvider = 'plugin-newer'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().modules.push(seedModule('mod-newer', { description: 'newer module' }))
     })
     advancedCommand.resolve(jsonResponse({ error: 'forced advanced failure' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.moduleIntergration).toBe('old-modules')
+      expect(getDatabase().moduleIntergration).toBe('old-modules')
     })
 
     expect(captured[0]).toMatchObject({
@@ -1036,19 +1037,22 @@ describe('plugin database command bridge', () => {
         },
       },
     })
-    expect(DBState.db.customModels).toEqual(attemptedCustomModels)
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().customModels).toEqual(attemptedCustomModels)
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a'),
       seedPlugin('plugin-newer', {
         realArg: { mode: 'newer-plugin' },
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-newer')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-newer')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
-    expect(DBState.db.modules).toEqual([seedModule('mod-a'), seedModule('mod-newer', { description: 'newer module' })])
+    expect(getDatabase().modules).toEqual([
+      seedModule('mod-a'),
+      seedModule('mod-newer', { description: 'newer module' }),
+    ])
   })
 
   it('routes plugin custom model and advanced database writes through settings commands', async () => {
@@ -1159,8 +1163,8 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.modules = [seedModule('mod-a')]
-    DBState.db.enabledModules = []
+    getDatabase().modules = [seedModule('mod-a')]
+    getDatabase().enabledModules = []
     const apis = getV2PluginAPIs()
 
     // Only patch `modules` (not enabledModules) so the assertion sees a
@@ -1199,7 +1203,7 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.modules = [seedModule('mod-a', { description: 'old description' })]
+    getDatabase().modules = [seedModule('mod-a', { description: 'old description' })]
     const apis = getV2PluginAPIs()
 
     apis.setDatabaseLite({
@@ -1209,11 +1213,11 @@ describe('plugin database command bridge', () => {
     await vi.waitFor(() => {
       expect(captured.length).toBe(1)
     })
-    expect(DBState.db.modules[0].description).toBe('attempted description')
+    expect(getDatabase().modules[0].description).toBe('attempted description')
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules[0] = {
-        ...DBState.db.modules[0],
+      getDatabase().modules[0] = {
+        ...getDatabase().modules[0],
         description: 'newer description',
       }
     })
@@ -1232,7 +1236,7 @@ describe('plugin database command bridge', () => {
         }),
       },
     })
-    expect(DBState.db.modules[0].description).toBe('newer description')
+    expect(getDatabase().modules[0].description).toBe('newer description')
   })
 
   it('serializes plugin collection create/update/delete commands against advancing revisions', async () => {
@@ -1259,7 +1263,7 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-c')]
+    getDatabase().plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-c')]
     const apis = getV2PluginAPIs()
 
     apis.setDatabaseLite({
@@ -1323,7 +1327,7 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
+    getDatabase().plugins = [seedPlugin('plugin-a'), seedPlugin('plugin-b'), seedPlugin('plugin-c')]
     const apis = getV2PluginAPIs()
 
     apis.setDatabaseLite({
@@ -1384,7 +1388,7 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.plugins = previousPlugins
+    getDatabase().plugins = previousPlugins
     const apis = getV2PluginAPIs()
 
     apis.setDatabaseLite({
@@ -1395,7 +1399,7 @@ describe('plugin database command bridge', () => {
     })
 
     await vi.waitFor(() => {
-      expect(DBState.db.plugins).toEqual(previousPlugins)
+      expect(getDatabase().plugins).toEqual(previousPlugins)
     })
     expect(captured).toHaveLength(1)
     expect(captured[0]).toMatchObject({
@@ -1435,13 +1439,13 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.plugins = [
+    getDatabase().plugins = [
       seedPlugin('plugin-a'),
       seedPlugin('plugin-c', { displayName: 'Plugin C' }),
       seedPlugin('plugin-d', { script: 'Risuai.log("old d")' }),
     ]
-    DBState.db.currentPluginProvider = 'plugin-a'
-    DBState.db.pluginCustomStorage = {
+    getDatabase().currentPluginProvider = 'plugin-a'
+    getDatabase().pluginCustomStorage = {
       retained: { value: 1 },
     }
     const apis = getV2PluginAPIs()
@@ -1460,21 +1464,21 @@ describe('plugin database command bridge', () => {
     await vi.waitFor(() => {
       expect(captured.length).toBe(1)
     })
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-d', 'plugin-a'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-b', 'plugin-d', 'plugin-a'])
 
     withTrustedServerProjectionWrite(() => {
-      const pluginDIndex = DBState.db.plugins.findIndex((plugin) => plugin.name === 'plugin-d')
-      DBState.db.plugins[pluginDIndex] = {
-        ...DBState.db.plugins[pluginDIndex],
+      const pluginDIndex = getDatabase().plugins.findIndex((plugin) => plugin.name === 'plugin-d')
+      getDatabase().plugins[pluginDIndex] = {
+        ...getDatabase().plugins[pluginDIndex],
         script: 'Risuai.log("newer d")',
       }
-      DBState.db.currentPluginProvider = 'plugin-d'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-d'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
     firstCommand.resolve(jsonResponse({ error: 'failed plugin create' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-c', 'plugin-d'])
+      expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-c', 'plugin-d'])
     })
 
     expect(captured).toHaveLength(1)
@@ -1486,13 +1490,13 @@ describe('plugin database command bridge', () => {
         plugin: expect.objectContaining({ name: 'plugin-b', displayName: 'Created B' }),
       },
     })
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a'),
       seedPlugin('plugin-c', { displayName: 'Plugin C' }),
       seedPlugin('plugin-d', { script: 'Risuai.log("newer d")' }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-d')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-d')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -1525,15 +1529,15 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.plugins = [
+    getDatabase().plugins = [
       seedPlugin('plugin-a'),
       seedPlugin('plugin-d', {
         script: 'Risuai.log("old d")',
         displayName: 'Old D',
       }),
     ]
-    DBState.db.currentPluginProvider = 'plugin-a'
-    DBState.db.pluginCustomStorage = {
+    getDatabase().currentPluginProvider = 'plugin-a'
+    getDatabase().pluginCustomStorage = {
       retained: { value: 1 },
     }
     const apis = getV2PluginAPIs()
@@ -1552,16 +1556,16 @@ describe('plugin database command bridge', () => {
     await vi.waitFor(() => {
       expect(captured.length).toBe(2)
     })
-    expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d', 'plugin-b'])
+    expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d', 'plugin-b'])
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.currentPluginProvider = 'plugin-d'
-      DBState.db.pluginCustomStorage.newerStorage = { value: 'kept' }
+      getDatabase().currentPluginProvider = 'plugin-d'
+      getDatabase().pluginCustomStorage.newerStorage = { value: 'kept' }
     })
     secondCommand.resolve(jsonResponse({ error: 'failed plugin create' }, 500))
 
     await vi.waitFor(() => {
-      expect(DBState.db.plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d'])
+      expect(getDatabase().plugins.map((plugin) => plugin.name)).toEqual(['plugin-a', 'plugin-d'])
     })
 
     expect(captured[0]).toMatchObject({
@@ -1583,15 +1587,15 @@ describe('plugin database command bridge', () => {
         plugin: expect.objectContaining({ name: 'plugin-b', displayName: 'Created B' }),
       },
     })
-    expect(DBState.db.plugins).toEqual([
+    expect(getDatabase().plugins).toEqual([
       seedPlugin('plugin-a'),
       seedPlugin('plugin-d', {
         script: 'Risuai.log("attempted d")',
         displayName: 'Attempted D',
       }),
     ])
-    expect(DBState.db.currentPluginProvider).toBe('plugin-d')
-    expect(DBState.db.pluginCustomStorage).toEqual({
+    expect(getDatabase().currentPluginProvider).toBe('plugin-d')
+    expect(getDatabase().pluginCustomStorage).toEqual({
       retained: { value: 1 },
       newerStorage: { value: 'kept' },
     })
@@ -1624,8 +1628,8 @@ describe('plugin database command bridge', () => {
       }) as unknown as typeof fetch,
     )
 
-    DBState.db.modules = [seedModule('mod-a'), seedModule('mod-b')]
-    DBState.db.enabledModules = ['mod-a']
+    getDatabase().modules = [seedModule('mod-a'), seedModule('mod-b')]
+    getDatabase().enabledModules = ['mod-a']
     const apis = getV2PluginAPIs()
 
     apis.setDatabaseLite({
@@ -1657,22 +1661,22 @@ describe('plugin database command bridge', () => {
         values: { customPluginKey: { value: 1 } },
       },
     })
-    expect(DBState.db.pluginCustomStorage.customPluginKey).toEqual({ value: 1 })
+    expect(getDatabase().pluginCustomStorage.customPluginKey).toEqual({ value: 1 })
   })
 
   it('blocks recognized resource families (in allowedDbKeys) in server mode without persisting', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const calls = stubCommandFetch()
     const apis = getV2PluginAPIs()
-    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }] as any
+    getDatabase().characters = [{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }] as any
 
     apis.setDatabaseLite({ characters: [{ chaId: 'char-b', name: 'Grace' }] })
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 
     // No projection change, no plugin-storage shadow, no command dispatched.
-    expect(DBState.db.characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }])
-    expect(DBState.db.pluginCustomStorage.characters).toBeUndefined()
+    expect(getDatabase().characters).toEqual([{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }])
+    expect(getDatabase().pluginCustomStorage.characters).toBeUndefined()
     expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('characters'))
     warn.mockRestore()
@@ -1690,8 +1694,8 @@ describe('plugin database command bridge', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 
-    expect(DBState.db.pluginCustomStorage.botPresets).toBeUndefined()
-    expect(DBState.db.pluginCustomStorage.loreBook).toBeUndefined()
+    expect(getDatabase().pluginCustomStorage.botPresets).toBeUndefined()
+    expect(getDatabase().pluginCustomStorage.loreBook).toBeUndefined()
     expect(calls.some((call) => call.url.includes('/api/v1/commands/plugin-storage'))).toBe(false)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('botPresets'))
     warn.mockRestore()
@@ -1706,8 +1710,8 @@ describe('plugin database command bridge', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 30))
 
-    expect((DBState.db as any).pluginV2).toBeUndefined()
-    expect(DBState.db.pluginCustomStorage.pluginV2).toBeUndefined()
+    expect((getDatabase() as any).pluginV2).toBeUndefined()
+    expect(getDatabase().pluginCustomStorage.pluginV2).toBeUndefined()
     expect(calls.some((call) => call.url.includes('/api/v1/commands/'))).toBe(false)
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('pluginV2'))
     warn.mockRestore()
@@ -1715,8 +1719,8 @@ describe('plugin database command bridge', () => {
 
   it('does not expose server-owned resource shadows through V2 getDatabase in server mode', () => {
     const apis = getV2PluginAPIs()
-    DBState.db.characters = [{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }] as any
-    DBState.db.pluginCustomStorage = {
+    getDatabase().characters = [{ chaId: 'char-a', name: 'Ada', chats: [], chatPage: 0 }] as any
+    getDatabase().pluginCustomStorage = {
       characters: [{ chaId: 'shadow-char', name: 'Shadow' }],
       pluginV2: [{ name: 'shadow-v2' }],
       botPresets: [{ id: 'shadow-preset' }],
@@ -1737,7 +1741,7 @@ describe('plugin database command bridge', () => {
   it('M8: pluginStorage.getItem clones only the selected key without a whole-DB snapshot', () => {
     const apis = getV2PluginAPIs()
     const largeBody = 'x'.repeat(80_000)
-    DBState.db.characters = [
+    getDatabase().characters = [
       {
         chaId: 'char-a',
         chats: [
@@ -1748,12 +1752,12 @@ describe('plugin database command bridge', () => {
         ],
       },
     ] as any
-    DBState.db.pluginCustomStorage = {
+    getDatabase().pluginCustomStorage = {
       selected: { nested: { count: 1 }, list: ['kept'] },
       unrelated: { blob: largeBody },
     }
-    const unrelatedStorageSize = JSON.stringify(DBState.db.pluginCustomStorage.unrelated).length
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const unrelatedStorageSize = JSON.stringify(getDatabase().pluginCustomStorage.unrelated).length
+    const charactersSize = JSON.stringify(getDatabase().characters).length
 
     const stats = withPluginStorageCloneStats(
       () =>
@@ -1768,11 +1772,11 @@ describe('plugin database command bridge', () => {
     expect(stats.maxClonedSize).toBeLessThan(unrelatedStorageSize)
     expect(stats.maxClonedSize).toBeLessThan(charactersSize)
     expect(stats.result).toEqual({ nested: { count: 1 }, list: ['kept'] })
-    expect(stats.result).not.toBe(DBState.db.pluginCustomStorage.selected)
+    expect(stats.result).not.toBe(getDatabase().pluginCustomStorage.selected)
 
     stats.result.nested.count = 2
     stats.result.list.push('changed')
-    expect(DBState.db.pluginCustomStorage.selected).toEqual({
+    expect(getDatabase().pluginCustomStorage.selected).toEqual({
       nested: { count: 1 },
       list: ['kept'],
     })
@@ -1780,7 +1784,7 @@ describe('plugin database command bridge', () => {
 
   it('M8: pluginStorage.getItem preserves missing scalar and falsey results', () => {
     const apis = getV2PluginAPIs()
-    DBState.db.pluginCustomStorage = {
+    getDatabase().pluginCustomStorage = {
       empty: '',
       zero: 0,
       disabled: false,
@@ -1795,31 +1799,31 @@ describe('plugin database command bridge', () => {
     expect(apis.pluginStorage.getItem('nullValue')).toBeNull()
     expect(apis.pluginStorage.getItem('missing')).toBeNull()
 
-    DBState.db = {
+    setDatabaseLite({
       currentPluginProvider: 'old-provider',
       pluginCompatibilityMode: false,
       plugins: [seedPlugin('plugin-a')],
       modules: [seedModule('mod-a')],
       enabledModules: [],
-    } as any
-    expect(Object.prototype.hasOwnProperty.call(DBState.db, 'pluginCustomStorage')).toBe(false)
+    } as any)
+    expect(Object.prototype.hasOwnProperty.call(getDatabase(), 'pluginCustomStorage')).toBe(false)
     expect(apis.pluginStorage.getItem('missing')).toBeNull()
-    expect(Object.prototype.hasOwnProperty.call(DBState.db, 'pluginCustomStorage')).toBe(false)
+    expect(Object.prototype.hasOwnProperty.call(getDatabase(), 'pluginCustomStorage')).toBe(false)
   })
 
   it('M8: pluginStorage.getItem detaches array values from live plugin storage', () => {
     const apis = getV2PluginAPIs()
-    DBState.db.pluginCustomStorage = {
+    getDatabase().pluginCustomStorage = {
       arrayValue: [{ label: 'live' }],
     }
 
     const value = apis.pluginStorage.getItem('arrayValue') as Array<{ label: string }>
 
     expect(value).toEqual([{ label: 'live' }])
-    expect(value).not.toBe(DBState.db.pluginCustomStorage.arrayValue)
+    expect(value).not.toBe(getDatabase().pluginCustomStorage.arrayValue)
     value[0].label = 'mutated'
     value.push({ label: 'new' })
-    expect(DBState.db.pluginCustomStorage.arrayValue).toEqual([{ label: 'live' }])
+    expect(getDatabase().pluginCustomStorage.arrayValue).toEqual([{ label: 'live' }])
   })
 
   it('disables device-local plugin storage APIs by default in server mode', async () => {
@@ -1848,7 +1852,7 @@ describe('plugin database command bridge', () => {
       open,
       cmp: vi.fn(() => 0),
     })
-    DBState.db.pluginCompatibilityMode = true
+    getDatabase().pluginCompatibilityMode = true
 
     apis.safeLocalStorage.setItem('device', 'enabled')
 

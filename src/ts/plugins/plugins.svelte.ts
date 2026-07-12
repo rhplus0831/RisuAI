@@ -4,8 +4,8 @@ import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '
 import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
 import { selectSingleFile, sleep } from '../util'
 import type { OpenAIChat } from '../process/index.svelte'
-import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from '../globalApi.svelte'
-import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
+import { fetchNative, globalFetch, readImage, saveAsset } from '../globalApi.svelte'
+import { hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { safeStructuredClone } from '../polyfill'
@@ -712,8 +712,9 @@ function cloneJsonValue<T>(value: T): T {
 }
 
 function pluginCustomStorage(): Record<string, unknown> {
-  DBState.db.pluginCustomStorage ??= {}
-  return DBState.db.pluginCustomStorage as Record<string, unknown>
+  const db = getDatabase()
+  db.pluginCustomStorage ??= {}
+  return db.pluginCustomStorage as Record<string, unknown>
 }
 
 function setPluginStorageValue(key: string, value: unknown): void {
@@ -739,7 +740,7 @@ function deletePluginStorageValue(key: string): void {
 function replacePluginStorage(values: Record<string, unknown>): void {
   const previous = currentPluginStorageSnapshot()
   withTrustedServerProjectionWrite(() => {
-    DBState.db.pluginCustomStorage = cloneJsonValue(values)
+    getDatabase().pluginCustomStorage = cloneJsonValue(values)
   })
   if (canUseServerCommands()) {
     dispatchBulkPluginStorage({ values, clear: true }, previous)
@@ -763,7 +764,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
           ? cloneJsonValue(value as Record<string, unknown>)
           : {}
       withTrustedServerProjectionWrite(() => {
-        DBState.db.pluginCustomStorage = cloneJsonValue(replacedStorage)
+        getDatabase().pluginCustomStorage = cloneJsonValue(replacedStorage)
       })
       continue
     }
@@ -778,7 +779,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
 
     if (allowedDbKeys.includes(key)) {
       withTrustedServerProjectionWrite(() => {
-        ;(DBState.db as any)[key] = cloneJsonValue(value)
+        ;(getDatabase() as any)[key] = cloneJsonValue(value)
       })
       if (key === 'currentPluginProvider' && typeof value === 'string') {
         dispatchSelectPluginProvider(value, previous)
@@ -787,7 +788,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
       } else if (key === 'modules' && Array.isArray(value) && previousModules) {
         dispatchModuleCollectionPatch(value as RisuModule[], previousModules)
       } else if (key === 'enabledModules' && Array.isArray(value) && previousModules) {
-        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : DBState.db.modules
+        const moduleSource = Array.isArray(newDb.modules) ? (newDb.modules as RisuModule[]) : getDatabase().modules
         dispatchEnabledModulesPatch(value, previousModules, moduleSource ?? [])
       } else {
         settingsPatch[key] = value
@@ -820,7 +821,7 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
   }
 
   if (!serverMode && options.full) {
-    setDatabase(DBState.db)
+    setDatabase(getDatabase({ snapshot: true }))
   }
 }
 
@@ -844,12 +845,12 @@ export const getV2PluginAPIs = () => {
       const charid = get(selectedCharID)
       if (!canUseServerCommands()) {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[charid] = char
+          getDatabase().characters[charid] = char
         })
         return
       }
 
-      const previousCharacter = DBState.db.characters?.[charid]
+      const previousCharacter = getDatabase().characters?.[charid]
       assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setChar')
       const previous = currentCharacterRowSnapshot(charid)
       const previousCharacterSnapshot = previousCharacter ? $state.snapshot(previousCharacter) : undefined
@@ -860,7 +861,7 @@ export const getV2PluginAPIs = () => {
       )
       if (!optimisticCharacter || factories.length === 0) return
       withTrustedServerProjectionWrite(() => {
-        DBState.db.characters[charid] = optimisticCharacter
+        getDatabase().characters[charid] = optimisticCharacter
       })
       runOptimisticCommandSequence(factories, rollback)
     },
@@ -946,9 +947,6 @@ export const getV2PluginAPIs = () => {
       //from PBV2
       safeGlobal.showDirectoryPicker = window.showDirectoryPicker
 
-      safeGlobal.DBState = {
-        db: toGetter(globalThis.__pluginApis__.getDatabase),
-      }
       safeGlobal.setInterval = (...args: any[]) => {
         //@ts-expect-error spreading any[] into setInterval params causes type mismatch with TimerHandler signature
         return globalThis.setInterval(...args)
@@ -1005,10 +1003,7 @@ export const getV2PluginAPIs = () => {
     apiVersion: '2.1',
     apiVersionCompatibleWith: ['2.0', '2.1'],
     getDatabase: () => {
-      const db = DBState?.db
-      if (!db) {
-        return {}
-      }
+      const db = getDatabase()
       return new Proxy(db, {
         get(target, prop) {
           if (typeof prop === 'string' && allowedDbKeys.includes(prop)) {
@@ -1291,7 +1286,7 @@ export async function pluginProcess(
 export async function handlePluginInstallViaPlugin(plugins: RisuPlugin[]) {
   const trimmedPlugins: RisuPlugin[] = []
   for (const plugin of plugins) {
-    if (!DBState.db.plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
+    if (!getDatabase().plugins.find((p: RisuPlugin) => p.name === plugin.name && p.script === plugin.script)) {
       if (plugin.version !== '3.0') {
         console.warn(
           `Plugin "${plugin.name}" has version "${plugin.version}", which is not supported for installation via plugin. Only API version 3.0 plugins can be installed via plugin. Skipping installation of this plugin.`,
