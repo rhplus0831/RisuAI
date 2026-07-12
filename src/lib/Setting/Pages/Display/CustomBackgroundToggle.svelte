@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { saveImage } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { selectSingleFile } from 'src/ts/util'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
@@ -18,12 +18,12 @@
 
 <div class="flex items-center mt-2">
   <Check
-    check={DBState.db.customBackground !== ''}
+    check={getDatabase().customBackground !== ''}
     onChange={async (check) => {
       const token = customBackgroundOperationGuard.issue('customBackground')
-      const previousBackground = DBState.db.customBackground
+      const previousBackground = getDatabase().customBackground
       const isCurrentUpload = () =>
-        customBackgroundOperationGuard.isLatest(token) && DBState.db.customBackground === '-'
+        customBackgroundOperationGuard.isLatest(token) && getDatabase().customBackground === '-'
 
       try {
         if (!check) {

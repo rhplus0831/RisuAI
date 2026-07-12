@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import {
     changeColorSchemeType,
     exportColorScheme,
@@ -26,18 +26,18 @@
 
   function setColorSchemeValue(key: (typeof colors)[number][0], value: string) {
     applyServerBackedSetting('colorScheme', {
-      ...DBState.db.colorScheme,
+      ...getDatabase().colorScheme,
       [key]: value,
     })
     updateColorScheme()
   }
 </script>
 
-{#if DBState.db.colorSchemeName === 'custom'}
+{#if getDatabase().colorSchemeName === 'custom'}
   <div class="border border-darkborderc p-2 m-2 rounded-md">
     <SelectInput
       className="mt-2"
-      value={DBState.db.colorScheme.type}
+      value={getDatabase().colorScheme.type}
       onchange={(e) => {
         changeColorSchemeType((e.target as HTMLInputElement).value as 'light' | 'dark')
       }}>
@@ -48,7 +48,7 @@
     {#each colors as color}
       <div class="flex items-center mt-2">
         <ColorInput
-          value={DBState.db.colorScheme[color[0]]}
+          value={getDatabase().colorScheme[color[0]]}
           oninput={() => updateColorScheme()}
           onchange={(value) => setColorSchemeValue(color[0], value)} />
         <span class="ml-2">{color[1]}</span>

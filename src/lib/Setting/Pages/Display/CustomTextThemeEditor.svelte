@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
   import ColorInput from 'src/lib/UI/GUI/ColorInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
@@ -15,19 +15,19 @@
 
   function setTextThemeValue(key: (typeof colors)[number][0], value: string) {
     applyServerBackedSetting('customTextTheme', {
-      ...DBState.db.customTextTheme,
+      ...getDatabase().customTextTheme,
       [key]: value,
     })
     updateTextThemeAndCSS()
   }
 </script>
 
-{#if DBState.db.textTheme === 'custom'}
+{#if getDatabase().textTheme === 'custom'}
   {#each colors as color}
     <div class="flex items-center mt-2">
       <ColorInput
         nullable={color[2]}
-        value={DBState.db.customTextTheme[color[0]]}
+        value={getDatabase().customTextTheme[color[0]]}
         oninput={updateTextThemeAndCSS}
         onchange={(value) => setTextThemeValue(color[0], value)} />
       <span class="ml-2">{color[1]}</span>

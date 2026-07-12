@@ -41,7 +41,11 @@ vi.mock('src/ts/alert', () => ({
 }))
 
 import CustomBackgroundToggle from './CustomBackgroundToggle.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+  withResourceDatabaseWrite,
+} from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -74,16 +78,18 @@ async function flushAsync() {
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     customBackground: '',
-  } as any
+  } as any)
   backgroundMocks.alertError.mockReset()
   backgroundMocks.applyServerBackedSetting.mockReset()
   backgroundMocks.saveImage.mockReset()
   backgroundMocks.selectSingleFile.mockReset()
   backgroundMocks.applyServerBackedSetting.mockImplementation((key: string, value: unknown) => {
     if (key === 'customBackground') {
-      DBState.db.customBackground = value as string
+      withResourceDatabaseWrite((database) => {
+        database.customBackground = value as string
+      })
     }
   })
 })
@@ -94,7 +100,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('CustomBackgroundToggle upload rollback', () => {
@@ -119,7 +125,7 @@ describe('CustomBackgroundToggle upload rollback', () => {
       ['customBackground', '-'],
       ['customBackground', ''],
     ])
-    expect(DBState.db.customBackground).toBe('')
+    expect(getDatabase().customBackground).toBe('')
     expect(backgroundMocks.alertError).toHaveBeenCalledWith('upload failed')
   })
 
@@ -139,12 +145,12 @@ describe('CustomBackgroundToggle upload rollback', () => {
     })
     await tick()
 
-    expect(DBState.db.customBackground).toBe('-')
+    expect(getDatabase().customBackground).toBe('-')
 
     checkbox().click()
     await tick()
 
-    expect(DBState.db.customBackground).toBe('')
+    expect(getDatabase().customBackground).toBe('')
 
     upload.resolve('uploaded-background')
     await flushAsync()
@@ -153,7 +159,7 @@ describe('CustomBackgroundToggle upload rollback', () => {
       ['customBackground', '-'],
       ['customBackground', ''],
     ])
-    expect(DBState.db.customBackground).toBe('')
+    expect(getDatabase().customBackground).toBe('')
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
 
@@ -167,14 +173,16 @@ describe('CustomBackgroundToggle upload rollback', () => {
       expect(backgroundMocks.selectSingleFile).toHaveBeenCalledWith(['png', 'webp', 'gif'])
     })
 
-    expect(DBState.db.customBackground).toBe('-')
+    expect(getDatabase().customBackground).toBe('-')
 
-    DBState.db.customBackground = 'newer-background'
+    withResourceDatabaseWrite((database) => {
+      database.customBackground = 'newer-background'
+    })
     picker.resolve(undefined)
     await flushAsync()
 
     expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '-']])
-    expect(DBState.db.customBackground).toBe('newer-background')
+    expect(getDatabase().customBackground).toBe('newer-background')
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
 
@@ -193,14 +201,16 @@ describe('CustomBackgroundToggle upload rollback', () => {
       expect(backgroundMocks.saveImage).toHaveBeenCalledWith(selectedData)
     })
 
-    expect(DBState.db.customBackground).toBe('-')
+    expect(getDatabase().customBackground).toBe('-')
 
-    DBState.db.customBackground = 'newer-background'
+    withResourceDatabaseWrite((database) => {
+      database.customBackground = 'newer-background'
+    })
     upload.reject(new Error('upload failed'))
     await flushAsync()
 
     expect(backgroundMocks.applyServerBackedSetting.mock.calls).toEqual([['customBackground', '-']])
-    expect(DBState.db.customBackground).toBe('newer-background')
+    expect(getDatabase().customBackground).toBe('newer-background')
     expect(backgroundMocks.alertError).not.toHaveBeenCalled()
   })
 })
