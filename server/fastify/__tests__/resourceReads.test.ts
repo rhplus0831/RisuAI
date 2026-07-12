@@ -48,6 +48,8 @@ beforeEach(async () => {
         currentChar: 0,
         characterOrder: ['char-a', 'char-b'],
         enableLorebookStubs: true,
+        localNetworkMode: true,
+        localNetworkTimeoutSec: 45,
         openAIKey: 'root-secret',
         modules: [{ id: 'module-a', name: 'Module A', cjs: 'module.exports = true' }],
         plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")' }],
@@ -130,6 +132,56 @@ describe('authenticated resource read routes', () => {
     })
     expect(response.json().settings).not.toHaveProperty('characters')
     expect(response.json().settings).not.toHaveProperty('modules')
+  })
+
+  it('returns an allowlisted, masked settings group without collection-owned memory presets', async () => {
+    const providers = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/providers',
+      headers: authHeaders(),
+    })
+    expect(providers.statusCode).toBe(200)
+    expect(providers.json()).toMatchObject({
+      revision,
+      group: 'providers',
+      settings: { openAIKey: MASKED_PROVIDER_SECRET },
+    })
+    expect(providers.json().settings).not.toHaveProperty('enableLorebookStubs')
+    expect(providers.json().settings).not.toHaveProperty('hypaV3Presets')
+
+    const memory = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/memory',
+      headers: authHeaders(),
+    })
+    expect(memory.statusCode).toBe(200)
+    expect(memory.json()).toMatchObject({ revision, group: 'memory' })
+    expect(memory.json().settings).not.toHaveProperty('hypaV3Presets')
+
+    const runtime = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/runtime',
+      headers: authHeaders(),
+    })
+    expect(runtime.statusCode).toBe(200)
+    expect(runtime.json().settings).toMatchObject({ localNetworkMode: true, localNetworkTimeoutSec: 45 })
+
+    const account = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/account',
+      headers: authHeaders(),
+    })
+    expect(account.statusCode).toBe(200)
+    expect(account.json().settings).not.toHaveProperty('localNetworkMode')
+    expect(account.json().settings).not.toHaveProperty('localNetworkTimeoutSec')
+
+    const unknown = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/not-a-group',
+      headers: authHeaders(),
+    })
+    expect(unknown.statusCode).toBe(404)
+    expect(unknown.json().error).toBe('settings_group_not_found')
   })
 
   it('returns aggregate and allowlisted targeted collections with masked secrets', async () => {

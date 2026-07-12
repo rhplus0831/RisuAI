@@ -1,4 +1,5 @@
 import type { CommandEvent } from './commands'
+import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   fetchServerBulkCharacterLorebooks,
   fetchServerCharacterLorebook,
@@ -13,6 +14,7 @@ import {
   fetchServerCollection,
   fetchServerCollections,
   fetchServerSettings,
+  fetchServerSettingsGroup,
 } from './resourceReads'
 import {
   applyCharacterOrderResource,
@@ -21,6 +23,7 @@ import {
   applyCharactersResource,
   applyCollectionsResource,
   applySettingsResource,
+  applySettingsGroupResource,
   charactersResourceState,
   collectionsResourceState,
   settingsResourceState,
@@ -62,6 +65,7 @@ export interface ServerResourceInvalidationOptions extends ServerResourceRefresh
 
 interface RefreshPlan {
   settings: boolean
+  settingsGroups: Set<SettingsGroup>
   collections: Set<ServerCollectionName>
   allCharacters: boolean
   characterIds: Set<string>
@@ -75,6 +79,7 @@ interface RefreshPlan {
 }
 
 type SettingsReadResult = Awaited<ReturnType<typeof fetchServerSettings>>
+type SettingsGroupReadResult = Awaited<ReturnType<typeof fetchServerSettingsGroup>>
 type CollectionReadResult = Awaited<ReturnType<typeof fetchServerCollection>>
 type CharactersReadResult = Awaited<ReturnType<typeof fetchServerCharacters>>
 type CharacterReadResult = Awaited<ReturnType<typeof fetchServerCharacter>>
@@ -86,6 +91,7 @@ type BulkLorebookReadResult = Awaited<ReturnType<typeof fetchServerBulkCharacter
 
 type CompletedTargetedRead =
   | { kind: 'settings'; result: SettingsReadResult }
+  | { kind: 'settingsGroup'; group: SettingsGroup; result: SettingsGroupReadResult }
   | { kind: 'collection'; name: ServerCollectionName; result: CollectionReadResult }
   | { kind: 'characters'; result: CharactersReadResult }
   | { kind: 'character'; characterId: string; result: CharacterReadResult }
@@ -137,7 +143,7 @@ export async function refreshAllServerResources(
         charactersApplied: applyCharactersResource(characters, { preserveResidentChatBodies: false }),
       }))
       if (
-        (!settingsApplied && !settingsAlreadyAtLeast(revision)) ||
+        (!settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
         (!collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
         (!charactersApplied && !charactersAlreadyAtLeast(revision))
       ) {
@@ -230,6 +236,7 @@ export async function refreshInvalidatedServerResources(
 function createRefreshPlan(): RefreshPlan {
   return {
     settings: false,
+    settingsGroups: new Set(),
     collections: new Set(),
     allCharacters: false,
     characterIds: new Set(),
@@ -285,20 +292,37 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     plan.allCharacters = true
     plan.characterIds.clear()
   }
+  const addFullSettings = (): void => {
+    plan.settings = true
+    plan.settingsGroups.clear()
+  }
+  const addSettingsGroup = (group: SettingsGroup): void => {
+    if (!plan.settings) plan.settingsGroups.add(group)
+  }
 
   switch (event.resource) {
     case 'asset':
     case 'revisionOnly':
       return
     case 'settings':
+      if (!isSettingsGroup(event.id)) {
+        plan.full = true
+        return
+      }
+      addSettingsGroup(event.id)
+      return
     case 'modelProfile':
     case 'agentPreset':
     case 'prompt':
     case 'moduleEnabled':
-      plan.settings = true
+      addFullSettings()
       return
     case 'settingsWithHypaV3Presets':
-      plan.settings = true
+      if (event.id !== 'memory') {
+        plan.full = true
+        return
+      }
+      addSettingsGroup('memory')
       plan.collections.add('hypaV3Presets')
       return
     case 'character':
@@ -344,28 +368,28 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('botPresets')
       return
     case 'presetCollectionWithPointer':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('botPresets')
       return
     case 'presetPointer':
-      plan.settings = true
+      addFullSettings()
       return
     case 'preset':
     case 'presetApplied':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('botPresets')
       return
     case 'modelPreset':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('modelPresets')
       return
     case 'promptPreset':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('promptPresets')
       plan.collections.add('promptTemplate')
       return
     case 'legacyBotPreset':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('botPresets')
       plan.collections.add('modelPresets')
       plan.collections.add('promptPresets')
@@ -374,19 +398,19 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add(nonEmptyString(event.parentId) ? 'promptPresets' : 'promptTemplate')
       return
     case 'persona':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('personas')
       return
     case 'translatorPreset':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('translatorPresets')
       return
     case 'loadout':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('loadouts')
       return
     case 'globalLorebook':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('loreBook')
       return
     case 'moduleCreated':
@@ -397,20 +421,20 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('modules')
       return
     case 'module':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('modules')
       plan.collections.add('loadouts')
       addAllCharacters()
       return
     case 'plugin':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('plugins')
       return
     case 'pluginStorage':
       plan.collections.add('pluginCustomStorage')
       return
     case 'agentPresetDeleted':
-      plan.settings = true
+      addFullSettings()
       plan.collections.add('loadouts')
       addAllCharacters()
       return
@@ -428,6 +452,15 @@ async function runTargetedReads(
   const reads: Array<Promise<CompletedTargetedRead>> = []
   if (plan.settings) {
     reads.push(fetchServerSettings(signal).then((result) => ({ kind: 'settings' as const, result })))
+  }
+  for (const group of plan.settingsGroups) {
+    reads.push(
+      fetchServerSettingsGroup(group, signal).then((result) => ({
+        kind: 'settingsGroup' as const,
+        group,
+        result,
+      })),
+    )
   }
   for (const name of plan.collections) {
     reads.push(fetchServerCollection(name, signal).then((result) => ({ kind: 'collection' as const, name, result })))
@@ -506,7 +539,13 @@ function applyTargetedRead(
       return (
         entry.result.status !== 'ok' ||
         applySettingsResource(entry.result) ||
-        settingsAlreadyAtLeast(entry.result.revision)
+        settingsFullAlreadyAtLeast(entry.result.revision)
+      )
+    case 'settingsGroup':
+      return (
+        entry.result.status !== 'ok' ||
+        applySettingsGroupResource(entry.result, SERVER_SETTINGS_KEYS_BY_GROUP[entry.group]) ||
+        settingsGroupAlreadyAtLeast(entry.group, entry.result.revision)
       )
     case 'collection': {
       if (entry.result.status !== 'ok') return true
@@ -668,6 +707,8 @@ function targetedReadLabel(entry: CompletedTargetedRead): string {
   switch (entry.kind) {
     case 'settings':
       return 'settings'
+    case 'settingsGroup':
+      return `${entry.group} settings`
     case 'collection':
       return `${entry.name} collection`
     case 'characters':
@@ -727,8 +768,14 @@ function normalizeAppliedRevision(value: number | null | undefined): number | nu
   return Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null
 }
 
-function settingsAlreadyAtLeast(revision: number): boolean {
-  return (settingsResourceState.revision ?? -1) >= revision
+function settingsFullAlreadyAtLeast(revision: number): boolean {
+  return (settingsResourceState.fullRevision ?? -1) >= revision
+}
+
+function settingsGroupAlreadyAtLeast(group: SettingsGroup, revision: number): boolean {
+  return (
+    Math.max(settingsResourceState.fullRevision ?? -1, settingsResourceState.groupRevisions[group] ?? -1) >= revision
+  )
 }
 
 function collectionsAlreadyAtLeast(revision: number): boolean {

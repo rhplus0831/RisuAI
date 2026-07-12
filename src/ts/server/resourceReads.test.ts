@@ -13,6 +13,7 @@ import {
   fetchServerCollection,
   fetchServerCollections,
   fetchServerSettings,
+  fetchServerSettingsGroup,
 } from './resourceReads'
 
 interface CapturedFetch {
@@ -89,6 +90,26 @@ describe('server resource read clients', () => {
       status: 'error',
       error: 'Settings response contained non-setting resources',
     })
+  })
+
+  it('reads one authoritative settings group and rejects cross-group fields', async () => {
+    const responses = [
+      { revision: 8, group: 'display', settings: { theme: 'dark', zoomsize: 90 } },
+      { revision: 9, group: 'display', settings: { openAIKey: 'smuggled' } },
+    ]
+    const calls = stubResourceFetch(() => responses.shift())
+
+    await expect(fetchServerSettingsGroup('display')).resolves.toEqual({
+      status: 'ok',
+      revision: 8,
+      group: 'display',
+      settings: { theme: 'dark', zoomsize: 90 },
+    })
+    await expect(fetchServerSettingsGroup('display')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid display settings response',
+    })
+    expect(calls.map((call) => call.url)).toEqual(['/api/v1/settings/display', '/api/v1/settings/display'])
   })
 
   it('reads the complete and targeted collection envelopes', async () => {

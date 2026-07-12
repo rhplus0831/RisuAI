@@ -1,4 +1,5 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { SERVER_SETTINGS_GROUP_BY_KEY, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   SERVER_COLLECTION_NAMES,
   isServerCollectionName,
@@ -10,6 +11,7 @@ import {
   type ServerCollectionsResourcePayload,
   type ServerCollectionValues,
   type ServerSettingsResourcePayload,
+  type ServerSettingsGroupResourcePayload,
   type ServerSettingsValues,
 } from './resourceState.svelte'
 
@@ -43,6 +45,32 @@ export async function fetchServerSettings(
   return {
     status: 'ok',
     revision: record.revision,
+    settings: record.settings as ServerSettingsValues,
+  }
+}
+
+export async function fetchServerSettingsGroup(
+  group: SettingsGroup,
+  signal?: AbortSignal | null,
+): Promise<ServerResourceReadResult<ServerSettingsGroupResourcePayload>> {
+  if (!isSettingsGroup(group)) return { status: 'error', error: 'Unknown settings group' }
+  const result = await requestServerResourceJson(`${SETTINGS_ENDPOINT}/${encodeURIComponent(group)}`, signal)
+  if (result.status !== 'ok') return result
+
+  const record = readRevisionEnvelope(result.body)
+  if (!record || record.group !== group || !isPlainRecord(record.settings)) {
+    return { status: 'error', error: 'Invalid settings group response' }
+  }
+  if (
+    containsNonSettingResource(record.settings) ||
+    Object.keys(record.settings).some((key) => key === 'hypaV3Presets' || SERVER_SETTINGS_GROUP_BY_KEY[key] !== group)
+  ) {
+    return { status: 'error', error: `Invalid ${group} settings response` }
+  }
+  return {
+    status: 'ok',
+    revision: record.revision,
+    group,
     settings: record.settings as ServerSettingsValues,
   }
 }

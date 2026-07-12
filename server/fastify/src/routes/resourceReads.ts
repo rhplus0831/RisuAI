@@ -4,6 +4,7 @@ import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { maskProviderSecretsInPlace } from '../providerSecrets.js'
+import { SETTINGS_GROUP_KEYS, SETTINGS_GROUPS, type SettingsGroup } from './commands.js'
 import {
   COLLECTION_FIELDS,
   loadCharacterLorebookHydration,
@@ -49,6 +50,32 @@ export function registerResourceReadRoutes(
     return {
       revision,
       settings: maskProviderSecretsInPlace(settings ?? {}),
+    }
+  })
+
+  app.get<{ Params: { group: string } }>('/api/v1/settings/:group', { exposeHeadRoute: false }, async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+    if (!SETTINGS_GROUPS.includes(req.params.group as SettingsGroup)) {
+      reply.code(404).send({
+        error: 'settings_group_not_found',
+        reason: `Unknown settings group: ${req.params.group}`,
+      })
+      return
+    }
+    const group = req.params.group as SettingsGroup
+    // hypaV3Presets is command-owned by the memory group but persists in its
+    // own collection table. Keep this endpoint settings-only; the dedicated
+    // cross-resource event invalidates that collection separately.
+    const keys = SETTINGS_GROUP_KEYS[group].filter(
+      (key) =>
+        key !== 'hypaV3Presets' &&
+        SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group,
+    )
+    const { revision } = getSchemaState(db)
+    return {
+      revision,
+      group,
+      settings: maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, keys)),
     }
   })
 

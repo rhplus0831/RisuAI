@@ -4,6 +4,7 @@ import type { CommandEvent } from './commands'
 
 const api = vi.hoisted(() => ({
   settings: vi.fn(),
+  settingsGroup: vi.fn(),
   collections: vi.fn(),
   collection: vi.fn(),
   characters: vi.fn(),
@@ -27,6 +28,7 @@ const sideEffects = vi.hoisted(() => ({
 
 vi.mock('./resourceReads', () => ({
   fetchServerSettings: api.settings,
+  fetchServerSettingsGroup: api.settingsGroup,
   fetchServerCollections: api.collections,
   fetchServerCollection: api.collection,
   fetchServerCharacters: api.characters,
@@ -211,7 +213,12 @@ describe('API-backed resource invalidation', () => {
 
   it('coalesces known events into minimal settings, collection, and character reads', async () => {
     seedResources(5)
-    api.settings.mockResolvedValue({ status: 'ok', revision: 10, settings: { language: 'ja' } })
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 10,
+      group: 'language',
+      settings: { language: 'ja' },
+    })
     api.collection.mockImplementation(async (name: string) => ({
       status: 'ok',
       revision: 10,
@@ -224,12 +231,17 @@ describe('API-backed resource invalidation', () => {
     })
 
     const result = await refreshInvalidatedServerResources(
-      [event(6, 'settings'), event(7, 'moduleUpdated', { id: 'module-a' }), event(8, 'characterRow', { id: 'char-a' })],
+      [
+        event(6, 'settings', { id: 'language' }),
+        event(7, 'moduleUpdated', { id: 'module-a' }),
+        event(8, 'characterRow', { id: 'char-a' }),
+      ],
       { appliedRevision: 5, hooks },
     )
 
     expect(result).toEqual({ status: 'ok', revision: 8, scope: 'targeted' })
-    expect(api.settings).toHaveBeenCalledTimes(1)
+    expect(api.settingsGroup).toHaveBeenCalledWith('language', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
     expect(api.collection).toHaveBeenCalledWith('modules', undefined)
     expect(api.character).toHaveBeenCalledWith('char-a', undefined)
     expect(api.collections).not.toHaveBeenCalled()
@@ -246,9 +258,9 @@ describe('API-backed resource invalidation', () => {
 
   it('reads Hypa presets only for the cross-resource memory settings event', async () => {
     seedResources(1)
-    api.settings
-      .mockResolvedValueOnce({ status: 'ok', revision: 2, settings: { hypaV3: true } })
-      .mockResolvedValueOnce({ status: 'ok', revision: 3, settings: { hypaV3: true } })
+    api.settingsGroup
+      .mockResolvedValueOnce({ status: 'ok', revision: 2, group: 'memory', settings: { hypaV3: true } })
+      .mockResolvedValueOnce({ status: 'ok', revision: 3, group: 'memory', settings: { hypaV3: true } })
     api.collection.mockResolvedValue({
       status: 'ok',
       revision: 3,
@@ -261,7 +273,9 @@ describe('API-backed resource invalidation', () => {
         hooks,
       }),
     ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
-    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('memory', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
     expect(api.collection).not.toHaveBeenCalled()
 
     await expect(
@@ -270,10 +284,50 @@ describe('API-backed resource invalidation', () => {
         hooks,
       }),
     ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
-    expect(api.settings).toHaveBeenCalledTimes(2)
+    expect(api.settingsGroup).toHaveBeenCalledTimes(2)
     expect(api.collection).toHaveBeenCalledOnce()
     expect(api.collection).toHaveBeenCalledWith('hypaV3Presets', undefined)
     expect(getResourceDatabase().hypaV3Presets).toEqual([{ name: 'Authoritative memory' }])
+  })
+
+  it('spends one scoped request for a settings-group invalidation', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'display',
+      settings: { theme: 'light' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'settings', { id: 'display' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('display', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['group then full', [event(2, 'settings', { id: 'display' }), event(3, 'moduleEnabled', { id: 'module-a' })]],
+    ['full then group', [event(2, 'moduleEnabled', { id: 'module-a' }), event(3, 'settings', { id: 'display' })]],
+  ])('lets a full settings read subsume a scoped read in either order: %s', async (_label, events) => {
+    seedResources(1)
+    api.settings.mockResolvedValue({ status: 'ok', revision: 3, settings: { theme: 'light' } })
+
+    await expect(refreshInvalidatedServerResources(events, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 3,
+      scope: 'targeted',
+    })
+
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).not.toHaveBeenCalled()
   })
 
   it('reads only the resource slices changed by each preset selection shape', async () => {
@@ -551,6 +605,8 @@ describe('API-backed resource invalidation', () => {
 
   it.each([
     ['a revision gap', event(4, 'settings'), 1],
+    ['a settings event without a group', event(2, 'settings'), 1],
+    ['a settings event with an unknown group', event(2, 'settings', { id: 'futureGroup' }), 1],
     ['a state event', event(2, 'state'), 1],
     ['an unknown resource', event(2, 'futureResource'), 1],
     ['a missing required id', event(2, 'characterRow'), 1],
@@ -569,11 +625,16 @@ describe('API-backed resource invalidation', () => {
 
   it('propagates failed targeted reads without applying successful siblings or returning a revision', async () => {
     seedResources(1)
-    api.settings.mockResolvedValue({ status: 'ok', revision: 3, settings: { language: 'not-applied' } })
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      group: 'language',
+      settings: { language: 'not-applied' },
+    })
     api.collection.mockResolvedValue({ status: 'error', error: 'collection failed' })
 
     const result = await refreshInvalidatedServerResources(
-      [event(2, 'settings'), event(3, 'moduleUpdated', { id: 'module-a' })],
+      [event(2, 'settings', { id: 'language' }), event(3, 'moduleUpdated', { id: 'module-a' })],
       { appliedRevision: 1, hooks },
     )
 
@@ -584,9 +645,17 @@ describe('API-backed resource invalidation', () => {
 
   it('rejects a read older than its event and leaves the applied state unchanged', async () => {
     seedResources(1)
-    api.settings.mockResolvedValue({ status: 'ok', revision: 1, settings: { language: 'not-applied' } })
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 1,
+      group: 'language',
+      settings: { language: 'not-applied' },
+    })
 
-    const result = await refreshInvalidatedServerResources(event(2, 'settings'), { appliedRevision: 1, hooks })
+    const result = await refreshInvalidatedServerResources(event(2, 'settings', { id: 'language' }), {
+      appliedRevision: 1,
+      hooks,
+    })
 
     expect(result).toMatchObject({ status: 'error', error: expect.stringContaining('older than event revision 2') })
     expect(result).not.toHaveProperty('revision')

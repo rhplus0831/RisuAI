@@ -144,6 +144,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'settings-group-read',
+    methods: GET_ONLY,
+    path: '/api/v1/settings/:group',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Targeted settings groups contain private user configuration and masked provider credentials.',
+    },
+    activeWriter: {
+      decision: 'not-applicable',
+      reason: 'Read-only targeted settings route.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'collections-read',
     methods: GET_ONLY,
     path: '/api/v1/collections',

@@ -12,6 +12,7 @@ import {
   applyCharactersResource,
   applyCollectionsResource,
   applySettingsResource,
+  applySettingsGroupResource,
   areServerDatabaseResourcesReady,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
@@ -19,6 +20,7 @@ import {
   replaceResourceDatabase,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
+  settingsResourceState,
   withResourceDatabaseWrite,
 } from './resourceState.svelte'
 
@@ -162,6 +164,50 @@ describe('resource-scoped database state', () => {
     expect(collectionsResourceState.values.modules).toEqual([{ id: 'new', name: 'New', description: '' }])
     expect(collectionsResourceState.revisions.modules).toBe(8)
     expect(collectionsResourceState.fullRevision).toBe(7)
+  })
+
+  it('merges settings groups with omitted-key deletion and independent revisions', () => {
+    applySettingsResource({
+      revision: 1,
+      settings: {
+        language: 'en',
+        theme: 'dark',
+        customCSS: 'resident',
+        textScreenBorder: 'solid',
+      },
+    })
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 10,
+          group: 'language',
+          settings: { language: 'ko' },
+        },
+        ['language'],
+      ),
+    ).toBe(true)
+    // A lower response revision is still valid for a different group.
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 9,
+          group: 'display',
+          settings: { theme: 'light', textScreenBorder: null },
+        },
+        ['theme', 'customCSS', 'textScreenBorder'],
+      ),
+    ).toBe(true)
+
+    expect(getResourceDatabase()).toMatchObject({
+      language: 'ko',
+      theme: 'light',
+      textScreenBorder: null,
+    })
+    expect(getResourceDatabase()).not.toHaveProperty('customCSS')
+    expect(settingsResourceState.groupRevisions).toMatchObject({ language: 10, display: 9 })
+    expect(settingsResourceState.revision).toBe(10)
+    expect(applySettingsResource({ revision: 8, settings: { language: 'stale', theme: 'stale' } })).toBe(false)
+    expect(getResourceDatabase()).toMatchObject({ language: 'ko', theme: 'light' })
   })
 
   it('merges character details by stable id and drops stale rows', () => {

@@ -1,6 +1,7 @@
 import type { Database, character } from '../storage/database.svelte'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
+import type { SettingsGroup } from './settingsGroups'
 
 export const SERVER_COLLECTION_NAMES = [
   'modules',
@@ -27,6 +28,12 @@ export type ServerSettingsValues = Partial<
 
 export interface ServerSettingsResourcePayload {
   revision: number
+  settings: ServerSettingsValues
+}
+
+export interface ServerSettingsGroupResourcePayload {
+  revision: number
+  group: SettingsGroup
   settings: ServerSettingsValues
 }
 
@@ -72,6 +79,8 @@ export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 export interface SettingsResourceState {
   value: ServerSettingsValues
   revision: number | null
+  fullRevision: number | null
+  groupRevisions: Partial<Record<SettingsGroup, number>>
   status: ServerResourceStatus
   error: string | null
 }
@@ -105,6 +114,8 @@ export interface CharactersResourceState {
 export const settingsResourceState = $state<SettingsResourceState>({
   value: {},
   revision: null,
+  fullRevision: null,
+  groupRevisions: {},
   status: 'idle',
   error: null,
 })
@@ -169,9 +180,40 @@ export function failSettingsResourceLoad(error: string): void {
 }
 
 export function applySettingsResource(payload: ServerSettingsResourcePayload): boolean {
-  if (isOlderRevision(payload.revision, settingsResourceState.revision)) return false
+  if (isOlderRevision(payload.revision, settingsResourceState.fullRevision)) return false
+  if (Object.values(settingsResourceState.groupRevisions).some((revision) => revision > payload.revision)) return false
   settingsResourceState.value = cloneJsonValue(payload.settings)
   settingsResourceState.revision = payload.revision
+  settingsResourceState.fullRevision = payload.revision
+  settingsResourceState.groupRevisions = {}
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
+  markResourceDatabaseChanged()
+  return true
+}
+
+export function applySettingsGroupResource(
+  payload: ServerSettingsGroupResourcePayload,
+  groupKeys: readonly string[],
+): boolean {
+  const currentRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions[payload.group] ?? -1,
+  )
+  if (payload.revision < currentRevision) return false
+
+  const target = settingsResourceState.value as Record<string, unknown>
+  const incoming = payload.settings as Record<string, unknown>
+  for (const key of groupKeys) {
+    if (key === 'hypaV3Presets') continue
+    if (Object.prototype.hasOwnProperty.call(incoming, key)) {
+      target[key] = cloneJsonValue(incoming[key])
+    } else {
+      delete target[key]
+    }
+  }
+  settingsResourceState.groupRevisions[payload.group] = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   markResourceDatabaseChanged()
@@ -393,6 +435,8 @@ export function applyChatGenerationSettingsLocalEffect(
 export function resetServerResourceState(): void {
   settingsResourceState.value = {}
   settingsResourceState.revision = null
+  settingsResourceState.fullRevision = null
+  settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'idle'
   settingsResourceState.error = null
 
@@ -431,6 +475,8 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
 
   settingsResourceState.value = settings as ServerSettingsValues
   settingsResourceState.revision = nextRevision
+  settingsResourceState.fullRevision = nextRevision
+  settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
 
@@ -740,7 +786,7 @@ function shouldUseCharacterPointerResource(property: 'characterOrder' | 'current
     property === 'characterOrder' ? charactersResourceState.orderRevision : charactersResourceState.selectionRevision
   const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
   if (pointerRevision < 0) return false
-  return settingsResourceState.revision === null || pointerRevision >= settingsResourceState.revision
+  return settingsResourceState.fullRevision === null || pointerRevision >= settingsResourceState.fullRevision
 }
 
 function isOlderRevision(revision: number, current: number | null): boolean {
