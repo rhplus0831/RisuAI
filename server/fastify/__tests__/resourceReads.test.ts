@@ -170,7 +170,7 @@ describe('authenticated resource read routes', () => {
     expect(unknown.json().error).toBe('collection_not_found')
   })
 
-  it('returns full character/chat metadata without message or hypa bodies', async () => {
+  it('returns character/chat metadata with matching chat and lorebook stubs', async () => {
     const list = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/characters',
@@ -186,10 +186,10 @@ describe('authenticated resource read routes', () => {
     expect(listedAda).toMatchObject({
       chaId: 'char-a',
       desc: 'Full character detail',
-      globalLore: [expect.objectContaining({ key: 'Ada', content: 'Character lore' })],
       oaiTTSConfig: { apiKey: MASKED_PROVIDER_SECRET },
       chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
     })
+    expect(listedAda).not.toHaveProperty('globalLore')
     expect(listedAda.chats[0]).not.toHaveProperty('hypaV3Data')
 
     const detail = await harness.app.inject({
@@ -200,9 +200,9 @@ describe('authenticated resource read routes', () => {
     expect(detail.statusCode).toBe(200)
     expect(detail.json().character).toMatchObject({
       chaId: 'char-a',
-      globalLore: [expect.objectContaining({ key: 'Ada', content: 'Character lore' })],
       chats: [{ id: 'chat-a', message: [] }],
     })
+    expect(detail.json().character).not.toHaveProperty('globalLore')
     expect(detail.json().character.oaiTTSConfig.apiKey).toBe(MASKED_PROVIDER_SECRET)
 
     const missing = await harness.app.inject({
@@ -212,6 +212,48 @@ describe('authenticated resource read routes', () => {
     })
     expect(missing.statusCode).toBe(404)
     expect(missing.json().error).toBe('character_not_found')
+  })
+
+  it('keeps character lorebooks resident when lorebook stubs are disabled', async () => {
+    const imported = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: authHeaders(),
+      payload: {
+        database: {
+          enableLorebookStubs: false,
+          characters: [
+            {
+              chaId: 'char-full-lore',
+              name: 'Lore keeper',
+              globalLore: [{ key: ['resident'], content: 'Resident lore' }],
+              chats: [],
+            },
+          ],
+        },
+      },
+    })
+    expect(imported.statusCode).toBe(200)
+
+    const aggregate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters',
+      headers: authHeaders(),
+    })
+    const detail = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-full-lore',
+      headers: authHeaders(),
+    })
+
+    expect(aggregate.statusCode).toBe(200)
+    expect(detail.statusCode).toBe(200)
+    expect(aggregate.json().characters[0].globalLore).toEqual([
+      expect.objectContaining({ key: 'resident', content: 'Resident lore' }),
+    ])
+    expect(detail.json().character.globalLore).toEqual([
+      expect.objectContaining({ key: 'resident', content: 'Resident lore' }),
+    ])
   })
 
   it('returns narrow character order and selection resources', async () => {
@@ -300,7 +342,7 @@ describe('authenticated resource read routes', () => {
     expect(invalid.json().error).toBe('invalid_chat_message_range')
   })
 
-  it('serves single and bulk character lorebooks', async () => {
+  it('serves full single and bulk character lorebooks while character rows are stubbed', async () => {
     const single = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/characters/char-a/lorebook',

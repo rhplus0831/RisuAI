@@ -909,18 +909,19 @@ export function loadPersistedDatabaseFields(
 }
 
 /**
- * Full character rows for resource APIs, with chat metadata retained and the
- * separately stored chat bodies omitted. Character lorebooks and the rest of
- * each character row remain intact.
+ * Character rows for resource APIs, with chat metadata retained and the
+ * separately stored chat bodies omitted. When `enableLorebookStubs` is on,
+ * `globalLore` stays behind the dedicated character-lorebook hydration routes.
  */
-export function loadCharacterRowsForRead(db: DatabaseSync, dataDir: string): JsonRecord[] {
-  const fields = loadPersistedDatabaseFields(db, dataDir, ['characters'])
+export function loadCharacterRowsForRead(db: DatabaseSync, _dataDir: string): JsonRecord[] {
+  const { fields, settings } = loadDatabaseFieldsFromSqlite(db, ['characters'])
   const characters = Array.isArray(fields.characters) ? fields.characters : []
   const result = characters.filter(isRecord)
   eachChat({ characters: result }, (chat) => {
     chat.message = []
     delete chat.hypaV3Data
   })
+  if (settings?.enableLorebookStubs === true) stripCharacterGlobalLoreForRead(result)
   return result
 }
 
@@ -1020,8 +1021,8 @@ function loadPluginCustomStorageFieldFromSqlite(db: DatabaseSync): Record<string
 
 /**
  * Scoped character detail read for resource APIs. Reads one character and its
- * chat metadata without message/hypa bodies, while retaining the full
- * character payload (including its lorebook).
+ * chat metadata without message/hypa bodies. It applies the same optional
+ * lorebook-stub boundary as the aggregate character resource.
  */
 export function loadSingleCharacterRowForRead(
   db: DatabaseSync,
@@ -1050,11 +1051,16 @@ export function loadSingleCharacterRowForRead(
     }
     return chat
   })
+  if (settings.enableLorebookStubs === true) delete character.globalLore
   return character
 }
 
 function loadSingleCharacterRowForReadBroad(db: DatabaseSync, dataDir: string, characterId: string): JsonRecord | null {
   return loadCharacterRowsForRead(db, dataDir).find((candidate) => candidate.chaId === characterId) ?? null
+}
+
+function stripCharacterGlobalLoreForRead(characters: readonly JsonRecord[]): void {
+  for (const character of characters) delete character.globalLore
 }
 
 function selectDatabaseFields(
