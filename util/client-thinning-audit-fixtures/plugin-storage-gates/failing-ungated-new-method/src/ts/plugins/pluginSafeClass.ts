@@ -5,10 +5,10 @@
 // call. A fixed method-name allowlist never inspects it; the hardened
 // sink-driven rule must flag it.
 
-declare const DBState: { db: { pluginCompatibilityMode?: boolean } }
+declare function getDatabase(): { pluginCompatibilityMode?: boolean }
 
 function assertDeviceLocalPluginStorageEnabled(): void {
-  if (DBState.db.pluginCompatibilityMode === true) return
+  if (getDatabase().pluginCompatibilityMode === true) return
   throw new Error('Plugin Compatibility Mode is disabled')
 }
 

@@ -89,7 +89,7 @@ const sourcePaths = [
   'src/ts/process/processzip.ts',
   'src/ts/process/transformers.ts',
   'src/ts/process/mcp/risuaccess/modules.ts',
-  'src/ts/server/projectionWriteGuard.svelte.ts',
+  'src/ts/server/resourceWriteGuard.svelte.ts',
   'src/ts/globalApi.svelte.ts',
 ]
 
@@ -601,7 +601,7 @@ function checkPluginStorageGates(): void {
   const safeText = safeClass.getFullText()
   assertCheck(
     check,
-    safeText.includes('DBState.db.pluginCompatibilityMode === true'),
+    safeText.includes('getDatabase().pluginCompatibilityMode === true'),
     'device-local plugin storage must be gated by pluginCompatibilityMode in Fastify mode.',
     safeClass,
   )
@@ -2393,7 +2393,7 @@ function countDispatchesInScope(scope: Node, dispatcherNames: ReadonlySet<string
     // FunctionDeclarations and class methods are separate top-level scopes —
     // do not descend into them. ArrowFunctions and FunctionExpressions are
     // closures (often inline callbacks like
-    // `withTrustedServerProjectionWrite(() => { ... })`) that share the
+    // `withTrustedResourceWrite(() => { ... })`) that share the
     // enclosing optimistic snapshot, so we DO descend into them.
     if (Node.isFunctionDeclaration(descendant)) return undefined
     if (Node.isMethodDeclaration(descendant)) return undefined

@@ -2,10 +2,10 @@
 // Mode in Fastify mode. Every guarded storage method and every SafeIdbFactory
 // member asserts the gate before touching device-local storage.
 
-declare const DBState: { db: { pluginCompatibilityMode?: boolean } }
+declare function getDatabase(): { pluginCompatibilityMode?: boolean }
 
 function assertDeviceLocalPluginStorageEnabled(): void {
-  if (DBState.db.pluginCompatibilityMode === true) return
+  if (getDatabase().pluginCompatibilityMode === true) return
   throw new Error('Plugin Compatibility Mode is disabled')
 }
 
