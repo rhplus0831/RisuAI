@@ -2885,6 +2885,40 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('reports an accepted character-row patch as a local command effect', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event: {
+        type: 'character.updated',
+        revision: 3,
+        resource: 'characterRow',
+        id: 'char-b',
+      },
+      characterId: 'char-b',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      updateCharacterCommand({
+        baseRevision: 2,
+        characterId: 'char-b',
+        patch: { name: 'B renamed' },
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 3, characterId: 'char-b' })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'characterPatch',
+        characterId: 'char-b',
+        patch: { name: 'B renamed' },
+      },
+    ])
+  })
+
   it('dispatches lorebook commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (

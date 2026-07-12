@@ -356,6 +356,38 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
+  it('acknowledges a contiguous character patch without a resource read and preserves a newer edit', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].name = 'Newer queued edit'
+    })
+    const event = {
+      type: 'character.updated',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterPatch',
+            characterId: 'char-a',
+            patch: { name: 'Accepted edit' },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].name).toBe('Newer queued edit')
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('uses a full resource result revision and invalidates chat hydration after a gap', async () => {
     await loadWebInitialDatabase()
     resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })

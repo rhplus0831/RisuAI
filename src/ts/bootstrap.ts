@@ -40,7 +40,7 @@ import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
 import { enableChatCompletionPushNotifications } from './server/pushNotifications'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
-import { applyChatGenerationSettingsLocalEffect } from './server/resourceState.svelte'
+import { applyCharacterPatchLocalEffect, applyChatGenerationSettingsLocalEffect } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
@@ -353,17 +353,28 @@ async function processServerCommandEvents(
 }
 
 function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
-  if (localEffect.kind !== 'chatGenerationSettings') return false
-  if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
-  return withServerResourceApply(() =>
-    applyChatGenerationSettingsLocalEffect({
-      revision: event.revision,
-      characterId: localEffect.characterId,
-      chatId: localEffect.chatId,
-      attemptedGenerationSettings: localEffect.attemptedGenerationSettings,
-      generationSettings: localEffect.generationSettings,
-    }),
-  )
+  switch (localEffect.kind) {
+    case 'chatGenerationSettings':
+      if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
+      return withServerResourceApply(() =>
+        applyChatGenerationSettingsLocalEffect({
+          revision: event.revision,
+          characterId: localEffect.characterId,
+          chatId: localEffect.chatId,
+          attemptedGenerationSettings: localEffect.attemptedGenerationSettings,
+          generationSettings: localEffect.generationSettings,
+        }),
+      )
+    case 'characterPatch':
+      if (event.resource !== 'characterRow' || event.id !== localEffect.characterId) return false
+      return withServerResourceApply(() =>
+        applyCharacterPatchLocalEffect({
+          revision: event.revision,
+          characterId: localEffect.characterId,
+          patch: localEffect.patch,
+        }),
+      )
+  }
 }
 
 async function processAuthoritativeServerCommandEvents(events: readonly CommandEvent[]): Promise<boolean> {

@@ -42,7 +42,13 @@ export interface ChatGenerationSettingsLocalEffect {
   generationSettings: ChatGenerationSettings
 }
 
-export type ServerCommandLocalEffect = ChatGenerationSettingsLocalEffect
+export interface CharacterPatchLocalEffect {
+  kind: 'characterPatch'
+  characterId: string
+  patch: CharacterSnapshot
+}
+
+export type ServerCommandLocalEffect = ChatGenerationSettingsLocalEffect | CharacterPatchLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -2186,6 +2192,7 @@ export async function updateCharacterCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) => readCharacterPatchLocalEffect(body, event, input.characterId, input.patch),
   })
 }
 
@@ -3322,6 +3329,24 @@ function readChatGenerationSettingsLocalEffect(
     characterId: record.characterId,
     attemptedGenerationSettings: cloneJsonValue(attemptedGenerationSettings),
     generationSettings: cloneJsonValue(record.generationSettings as ChatGenerationSettings),
+  }
+}
+
+function readCharacterPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  expectedCharacterId: string,
+  patch: CharacterSnapshot,
+): CharacterPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const characterId = (body as Record<string, unknown>).characterId
+  if (characterId !== expectedCharacterId) return undefined
+  if (event.resource !== 'characterRow' || event.id !== characterId) return undefined
+  if (Object.keys(patch).length === 0) return undefined
+  return {
+    kind: 'characterPatch',
+    characterId,
+    patch: cloneJsonValue(patch),
   }
 }
 

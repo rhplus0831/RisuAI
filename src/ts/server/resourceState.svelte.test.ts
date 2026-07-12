@@ -6,6 +6,7 @@ import {
 } from './chatGenerationSettingsResourceGuard'
 import {
   SERVER_COLLECTION_NAMES,
+  applyCharacterPatchLocalEffect,
   applyCharacterResource,
   applyCharacterOrderResource,
   applyCharacterSelectionResource,
@@ -14,6 +15,7 @@ import {
   applySettingsResource,
   applySettingsGroupResource,
   areServerDatabaseResourcesReady,
+  charactersResourceState,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
@@ -221,6 +223,52 @@ describe('resource-scoped database state', () => {
     expect(applyCharacterResource({ revision: 4, character: metadataCharacter('char-a', 'Stale') })).toBe(false)
 
     expect(getResourceDatabase().characters[0]?.name).toBe('New')
+  })
+
+  it('acknowledges an optimistic character patch without replacing a newer live value', () => {
+    applyCharactersResource({
+      revision: 3,
+      characters: [metadataCharacter('char-a', 'Old'), metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characters[0].name = 'Newer queued edit'
+    })
+
+    expect(
+      applyCharacterPatchLocalEffect({
+        revision: 4,
+        characterId: 'char-a',
+        patch: { name: 'Accepted edit' },
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().characters[0].name).toBe('Newer queued edit')
+    expect(charactersResourceState.rowRevisions).toEqual({ 'char-a': 4, 'char-b': 3 })
+    expect(charactersResourceState.revision).toBe(4)
+  })
+
+  it('acknowledges a character patch after a newer optimistic delete removed the row', () => {
+    applyCharactersResource({
+      revision: 3,
+      characters: [metadataCharacter('char-a', 'Old')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characters.splice(0, 1)
+    })
+
+    expect(
+      applyCharacterPatchLocalEffect({
+        revision: 4,
+        characterId: 'char-a',
+        patch: { name: 'Accepted before delete' },
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().characters).toEqual([])
+    expect(charactersResourceState.rowRevisions['char-a']).toBe(4)
   })
 
   it('keeps narrow order and selection pointers newer than unrelated settings', () => {

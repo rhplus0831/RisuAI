@@ -74,6 +74,12 @@ export interface ServerChatGenerationSettingsLocalEffectPayload {
   generationSettings: ChatGenerationSettings
 }
 
+export interface ServerCharacterPatchLocalEffectPayload {
+  revision: number
+  characterId: string
+  patch: Record<string, unknown>
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -424,6 +430,30 @@ export function applyChatGenerationSettingsLocalEffect(
   if (isJsonValueEqual(chat.generationSettings, payload.attemptedGenerationSettings)) {
     chat.generationSettings = cloneJsonValue(payload.generationSettings)
   }
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Acknowledge an accepted optimistic character patch without re-reading the
+ * complete row. The live row may already contain a newer queued edit, so the
+ * acknowledgement only fences its revision and never reapplies older fields.
+ */
+export function applyCharacterPatchLocalEffect(payload: ServerCharacterPatchLocalEffectPayload): boolean {
+  const knownRowRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+  )
+  if (knownRowRevision >= payload.revision) return true
+  if (Object.keys(payload.patch).length === 0) return false
+
+  // A newer optimistic delete can remove the row before this accepted patch is
+  // reconciled. Fence the acknowledgement anyway so the following delete event
+  // can reconcile instead of trying to read a row that no longer exists.
   charactersResourceState.rowRevisions[payload.characterId] = payload.revision
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
