@@ -37,7 +37,7 @@
     type AgentPresetStepRecord,
   } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot, AgentPresetStepSnapshot, ServerCommandResult } from 'src/ts/server/commands'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
 
   interface Props {
     mode: 'create' | 'edit'
@@ -94,14 +94,14 @@
 
   let drawerTitle = $derived(mode === 'create' ? language.agentPresets.createPreset : language.agentPresets.editPreset)
   let livePreset = $derived(
-    initialPresetId && Array.isArray(DBState.db.agentPresets)
-      ? (DBState.db.agentPresets.find((candidate) => candidate.id === initialPresetId) ?? initialPreset)
+    initialPresetId && Array.isArray(getDatabase().agentPresets)
+      ? (getDatabase().agentPresets.find((candidate) => candidate.id === initialPresetId) ?? initialPreset)
       : initialPreset,
   )
   let presetSteps = $derived(livePreset?.steps ?? [])
   let beforeMainSteps = $derived(stepsForPhase(presetSteps, 'beforeMain'))
   let afterMainSteps = $derived(stepsForPhase(presetSteps, 'afterMain'))
-  let modelProfiles = $derived(Array.isArray(DBState.db.modelProfiles) ? DBState.db.modelProfiles : [])
+  let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
   let activeStep = $derived(editingStepId ? presetSteps.find((step) => step.id === editingStepId) : undefined)
   let metadataDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
   let stepDirty = $derived(stepInitialSnapshot !== '' && stepInitialSnapshot !== snapshot(stepSnapshotForSave()))

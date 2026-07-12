@@ -24,6 +24,9 @@ vi.mock('src/ts/stores.svelte', () => ({
   DBState: storeMocks.DBState,
   selIdState: storeMocks.selIdState,
 }))
+vi.mock('src/ts/storage/database.svelte', () => ({
+  getDatabase: () => storeMocks.DBState.db,
+}))
 
 import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 import { language } from 'src/lang'

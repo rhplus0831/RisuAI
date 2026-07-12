@@ -14,7 +14,7 @@
   import { createAgentPresetStatusSummary, planAgentPreset } from 'src/ts/agentPresetResolver'
   import type { AgentPresetRecord, AgentPresetStepRecord } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot, ServerCommandResult } from 'src/ts/server/commands'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
 
   type EditorMode = 'create' | 'edit' | null
@@ -30,9 +30,9 @@
   let busy = $state(false)
   let commandError = $state('')
 
-  let presets = $derived(Array.isArray(DBState.db.agentPresets) ? DBState.db.agentPresets : [])
+  let presets = $derived(Array.isArray(getDatabase().agentPresets) ? getDatabase().agentPresets : [])
   let defaultPresetId = $derived(
-    typeof DBState.db.agentPresetDefaultId === 'string' ? DBState.db.agentPresetDefaultId : '',
+    typeof getDatabase().agentPresetDefaultId === 'string' ? getDatabase().agentPresetDefaultId : '',
   )
   let editingPreset = $derived(editingPresetId ? presets.find((preset) => preset.id === editingPresetId) : undefined)
 
@@ -132,12 +132,13 @@
 
   function usageCount(presetId: string): number {
     let count = defaultPresetId === presetId ? 1 : 0
-    for (const character of DBState.db.characters ?? []) {
+    const database = getDatabase()
+    for (const character of database.characters ?? []) {
       for (const chat of character?.chats ?? []) {
         if (chat?.generationSettings?.agentPresetId === presetId) count += 1
       }
     }
-    for (const loadout of DBState.db.loadouts ?? []) {
+    for (const loadout of database.loadouts ?? []) {
       if (loadout?.agentPresetId === presetId) count += 1
     }
     return count
@@ -145,7 +146,7 @@
 
   function statusForPreset(preset: AgentPresetRecord): StatusPresentation {
     if (!preset.enabled) return { label: language.agentPresets.statusDisabled, tone: 'muted' }
-    const planning = planAgentPreset({ database: DBState.db, preset })
+    const planning = planAgentPreset({ database: getDatabase(), preset })
     if (!planning.plan) return { label: language.agentPresets.statusInvalid, tone: 'error' }
     if (planning.incompleteIssues.length > 0) return { label: language.agentPresets.statusIncomplete, tone: 'warning' }
     if (!planning.ready) return { label: language.agentPresets.statusModelNotReady, tone: 'warning' }
@@ -160,7 +161,7 @@
   }
 
   function phaseSummary(preset: AgentPresetRecord): string {
-    const planning = planAgentPreset({ database: DBState.db, preset })
+    const planning = planAgentPreset({ database: getDatabase(), preset })
     const summary = planning.plan
       ? createAgentPresetStatusSummary({
           status: planning.ready ? 'ready' : planning.incompleteIssues.length > 0 ? 'incomplete' : 'model_not_ready',

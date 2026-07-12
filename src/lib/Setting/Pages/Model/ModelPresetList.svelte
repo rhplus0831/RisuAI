@@ -9,13 +9,13 @@
   import {
     createModelPreset,
     deleteModelPreset,
+    getDatabase,
     reorderModelPresets,
     selectModelPreset,
     updateModelPreset,
     type ModelPreset,
     type PromptPreset,
   } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
 
   interface Props {
     embedded?: boolean
@@ -26,9 +26,12 @@
 
   let newPresetName = $state('')
 
-  let presets = $derived(DBState.db.modelPresets ?? [])
-  let selectedIndex = $derived(DBState.db.modelPresetsId ?? -1)
-  let selectedPromptPreset = $derived(DBState.db.promptPresets?.[DBState.db.promptPresetsId])
+  let presets = $derived(getDatabase().modelPresets ?? [])
+  let selectedIndex = $derived(getDatabase().modelPresetsId ?? -1)
+  let selectedPromptPreset = $derived.by(() => {
+    const database = getDatabase()
+    return database.promptPresets?.[database.promptPresetsId]
+  })
   let selectedPromptPresetOverridesRoles = $derived(hasPresetField(selectedPromptPreset, 'modelRoleProfiles'))
 
   function cloneJsonValue<T>(value: T): T {
@@ -51,7 +54,7 @@
 
   function createPresetFromCurrent(): void {
     const name = consumeNewPresetName()
-    createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))
+    createModelPreset(createModelRoleBindingPresetSnapshot(getDatabase(), name))
   }
 
   function createEmptyPreset(): void {
@@ -139,7 +142,7 @@
   }
 
   function profileName(profileId: string): string {
-    return DBState.db.modelProfiles.find((profile) => profile.id === profileId)?.name ?? profileId
+    return getDatabase().modelProfiles.find((profile) => profile.id === profileId)?.name ?? profileId
   }
 
   function bindingLabel(binding: ModelRoleProfileBinding): string {
@@ -167,7 +170,7 @@
     let inheritCount = 0
     let legacyCount = 0
     let missingCount = 0
-    const profileIds = new Set(DBState.db.modelProfiles.map((profile) => profile.id))
+    const profileIds = new Set(getDatabase().modelProfiles.map((profile) => profile.id))
 
     for (const role of MODEL_ROLES) {
       const binding = bindings[role]

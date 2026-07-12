@@ -12,8 +12,7 @@
     type NormalizedModelRoleOverrides,
   } from 'src/ts/model/modelRoles'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
-  import type { Database, SeparateParameters } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase, type Database, type SeparateParameters } from 'src/ts/storage/database.svelte'
   import ModelRoleEditor from './ModelRoleEditor.svelte'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
@@ -112,7 +111,7 @@
   let selectedFallbackKey = $derived(selectedRole ? fallbackKeyByRole[selectedRole] : undefined)
   let selectedSupportsParameters = $derived(selectedRole ? parameterRoles.has(selectedRole) : false)
   const resolverCompatibilityDatabase = $derived.by<Database>(() => ({
-    ...DBState.db,
+    ...getDatabase(),
     aiModel: aiModelDraft.value,
     subModel: subModelDraft.value,
     modelRoles: modelRolesDraft.value,

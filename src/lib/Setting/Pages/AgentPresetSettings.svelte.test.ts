@@ -16,6 +16,18 @@ const agentPresetSpies = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/agentPresets', () => agentPresetSpies)
+vi.mock('src/ts/process/modules', () => ({
+  applyModule: vi.fn(),
+  exportModule: vi.fn(),
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModuleRegexScripts: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  importModule: vi.fn(),
+  moduleUpdate: vi.fn(),
+  readModule: vi.fn(),
+  refreshModules: vi.fn(),
+}))
 
 import AgentPresetSettings from './AgentPresetSettings.svelte'
 import { language } from 'src/lang'

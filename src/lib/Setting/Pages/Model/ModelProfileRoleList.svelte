@@ -13,8 +13,7 @@
   import { getModelInfo } from 'src/ts/model/modellist'
   import { ProviderNames } from 'src/ts/model/types'
   import { runServerCommand, updateModelPresetCommand, updateModelRoleProfilesCommand } from 'src/ts/server/commands'
-  import type { Database } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
 
   type BindingMode = ModelRoleProfileBinding['mode']
 
@@ -23,10 +22,10 @@
   let applying = $state(false)
   let commandError = $state('')
 
-  let profiles = $derived(DBState.db.modelProfiles ?? [])
+  let profiles = $derived(getDatabase().modelProfiles ?? [])
   let profileIdSet = $derived(new Set(profiles.map((profile) => profile.id)))
   let resolverDatabase = $derived.by<Database>(() => ({
-    ...DBState.db,
+    ...getDatabase(),
     modelRoleProfiles: draftBindings,
   }))
   let uiState = $derived.by(() =>
@@ -40,7 +39,7 @@
   let canApply = $derived(hasChanges && changedBindingsAreValid(changedBindings) && !applying)
 
   $effect(() => {
-    const normalized = normalizeModelRoleProfiles(DBState.db.modelRoleProfiles)
+    const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     const snapshot = snapshotBindings(normalized)
     if (snapshot === lastServerSnapshot) return
 
@@ -62,7 +61,7 @@
   }
 
   function collectChangedBindings(): Partial<Record<ModelRole, ModelRoleProfileBinding>> {
-    const persisted = normalizeModelRoleProfiles(DBState.db.modelRoleProfiles)
+    const persisted = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     const changes: Partial<Record<ModelRole, ModelRoleProfileBinding>> = {}
     for (const role of MODEL_ROLES) {
       if (snapshotBinding(draftBindings[role]) !== snapshotBinding(persisted[role])) {
@@ -181,14 +180,15 @@
   }
 
   function resetDraft(): void {
-    const normalized = normalizeModelRoleProfiles(DBState.db.modelRoleProfiles)
+    const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     draftBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshotBindings(normalized)
     commandError = ''
   }
 
   function selectedModelPresetId(): string | null {
-    const preset = DBState.db.modelPresets?.[DBState.db.modelPresetsId]
+    const database = getDatabase()
+    const preset = database.modelPresets?.[database.modelPresetsId]
     return typeof preset?.id === 'string' && preset.id.trim() ? preset.id : null
   }
 

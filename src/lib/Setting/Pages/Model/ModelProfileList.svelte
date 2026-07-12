@@ -21,7 +21,7 @@
     updateModelProfileCommand,
     type ModelProfileSnapshot,
   } from 'src/ts/server/commands'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import ModelProfileEditorDrawer from './ModelProfileEditorDrawer.svelte'
   import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 
@@ -33,7 +33,7 @@
   let busy = $state(false)
   let commandError = $state('')
 
-  let profiles = $derived(DBState.db.modelProfiles ?? [])
+  let profiles = $derived(getDatabase().modelProfiles ?? [])
   let editingProfile = $derived(
     editingProfileId ? profiles.find((profile) => profile.id === editingProfileId) : undefined,
   )
@@ -61,7 +61,7 @@
 
   function statusLabel(profile: ModelProfileRecord): string {
     const resolved = resolveModelProfileByProfileId({
-      database: DBState.db,
+      database: getDatabase(),
       role: 'chatMain',
       profileId: profile.id,
       lookupModelInfo: (_database, id) => getModelInfo(id),
@@ -75,7 +75,7 @@
   }
 
   function rolesUsingProfile(profileId: string): ModelRole[] {
-    const bindings = normalizeModelRoleProfiles(DBState.db.modelRoleProfiles)
+    const bindings = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     return MODEL_ROLES.filter((role) => {
       const binding = bindings[role]
       return binding.mode === 'profile' && binding.profileId === profileId

@@ -9,7 +9,8 @@
   import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
   import { resolveModelProfileUiState } from 'src/ts/model/modelProfileUiState'
   import { convertLegacyModelProfilesCommand, runServerCommand } from 'src/ts/server/commands'
-  import { DBState, openPresetListModal } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { openPresetListModal } from 'src/ts/stores.svelte'
   import LegacyModelRoleList from './ModelRoleList.svelte'
   import ModelProfileList from './ModelProfileList.svelte'
   import ModelProfileRoleList from './ModelProfileRoleList.svelte'
@@ -23,7 +24,7 @@
 
   let modelProfileUiState = $derived.by(() =>
     resolveModelProfileUiState({
-      database: DBState.db,
+      database: getDatabase(),
       lookupModelInfo: (_database, id) => getModelInfo(id),
     }),
   )
@@ -31,26 +32,30 @@
   let showConversionPrompt = $derived(legacyOnly && !conversionPromptDeclined)
   let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)
   let selectedModelPresetButtonLabel = $derived.by(() => {
-    const index = DBState.db.modelPresetsId ?? -1
-    const preset = DBState.db.modelPresets?.[index]
+    const database = getDatabase()
+    const index = database.modelPresetsId ?? -1
+    const preset = database.modelPresets?.[index]
     if (!preset) return language.modelPresets
 
     const name = typeof preset.name === 'string' ? preset.name.trim() : ''
     return name || language.modelProfiles.defaultPresetName(index + 1)
   })
+  let legacyMainModel = $derived(getDatabase().aiModel || language.none)
+  let legacyAuxModel = $derived(getDatabase().subModel || language.none)
 
   function nonBlank(value: unknown): boolean {
     return typeof value === 'string' && value.trim() !== ''
   }
 
   function hasLegacyModelFields(): boolean {
-    if (nonBlank(DBState.db.aiModel) || nonBlank(DBState.db.subModel)) return true
+    const database = getDatabase()
+    if (nonBlank(database.aiModel) || nonBlank(database.subModel)) return true
 
-    const roleOverrides = normalizeModelRoleOverrides(DBState.db.modelRoles)
+    const roleOverrides = normalizeModelRoleOverrides(database.modelRoles)
     if (Object.values(roleOverrides).some(nonBlank)) return true
 
-    if (DBState.db.seperateModelsForAxModels) {
-      const separateModels = normalizeLegacySeperateModels(DBState.db.seperateModels)
+    if (database.seperateModelsForAxModels) {
+      const separateModels = normalizeLegacySeperateModels(database.seperateModels)
       if (Object.values(separateModels).some(nonBlank)) return true
     }
 
@@ -58,9 +63,10 @@
   }
 
   function isClearlyLegacyOnly(): boolean {
-    if ((DBState.db.modelProfiles ?? []).length > 0) return false
+    const database = getDatabase()
+    if ((database.modelProfiles ?? []).length > 0) return false
 
-    const roleProfiles = normalizeModelRoleProfiles(DBState.db.modelRoleProfiles)
+    const roleProfiles = normalizeModelRoleProfiles(database.modelRoleProfiles)
     if (!MODEL_ROLES.every((role) => roleProfiles[role].mode === 'legacy')) return false
 
     return hasLegacyModelFields()
@@ -156,11 +162,11 @@
       <div class="grid gap-2 text-sm md:grid-cols-2">
         <div class="rounded-md border border-darkborderc p-3">
           <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyMainModel}</span>
-          <span>{DBState.db.aiModel || language.none}</span>
+          <span>{legacyMainModel}</span>
         </div>
         <div class="rounded-md border border-darkborderc p-3">
           <span class="block text-xs uppercase text-textcolor2">{language.modelProfiles.legacyAuxModel}</span>
-          <span>{DBState.db.subModel || language.none}</span>
+          <span>{legacyAuxModel}</span>
         </div>
       </div>
       {#if legacyOnly}

@@ -7,7 +7,7 @@
     type ModelProfileRecordRuntimeOptions,
   } from 'src/ts/model/modelProfileRecords'
   import { runServerCommand, updateModelRuntimeDefaultsCommand } from 'src/ts/server/commands'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import ModelRuntimeOptionsEditor from './ModelRuntimeOptionsEditor.svelte'
 
   let editing = $state(false)
@@ -16,7 +16,7 @@
   let draft = $state<ModelProfileRecordRuntimeOptions>({})
   let lastServerSnapshot = $state('')
 
-  let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(DBState.db.modelRuntimeDefaults))
+  let runtimeDefaults = $derived(normalizeModelRuntimeDefaults(getDatabase().modelRuntimeDefaults))
   let runtimeDefaultCount = $derived(Object.keys(runtimeDefaults).length)
   let draftRuntimeDefaultCount = $derived(Object.keys(normalizeModelRuntimeDefaults(draft)).length)
   let draftChanged = $derived(snapshot(draft) !== snapshot(runtimeDefaults))

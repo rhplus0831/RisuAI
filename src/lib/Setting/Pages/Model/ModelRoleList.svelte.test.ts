@@ -67,13 +67,13 @@ describe('ModelRoleList source contract', () => {
     expect(editor).not.toContain('subModelDraft.value = model')
   })
 
-  it('resolves read-only profile summaries from DBState plus legacy drafts', () => {
+  it('resolves read-only profile summaries from the resource database plus legacy drafts', () => {
     const { list, editor } = readModelRoleSources()
 
-    expect(list).toContain("import { DBState } from 'src/ts/stores.svelte'")
+    expect(list).toContain('import { getDatabase, type Database, type SeparateParameters }')
     expect(list).toContain('import { resolveModelProfile, type ResolvedModelProfile }')
     expect(list).toContain('const resolverCompatibilityDatabase = $derived.by<Database>(() => ({')
-    expect(list).toContain('...DBState.db')
+    expect(list).toContain('...getDatabase()')
     for (const draftOverlay of [
       'aiModel: aiModelDraft.value',
       'subModel: subModelDraft.value',
@@ -185,7 +185,7 @@ describe('Model profile-first role shell source contract', () => {
     expect(source).toContain("import { getModelInfo } from 'src/ts/model/modellist'")
     expect(source).toContain('let modelProfileUiState = $derived.by(() =>')
     expect(source).toContain('resolveModelProfileUiState({')
-    expect(source).toContain('database: DBState.db')
+    expect(source).toContain('database: getDatabase()')
     expect(source).toContain('lookupModelInfo: (_database, id) => getModelInfo(id)')
     expect(source).toContain(
       'let showAdvancedLegacySettings = $derived(!modelProfileUiState.allRolesUseDurableProfiles)',
@@ -321,11 +321,12 @@ describe('Model profile-first presets tab source contract', () => {
   it('opens model presets from the roles surface instead of a dedicated tab', () => {
     const shell = readSource('src/lib/Setting/Pages/Model/ModelSettingsShell.svelte')
 
-    expect(shell).toContain("import { DBState, openPresetListModal } from 'src/ts/stores.svelte'")
+    expect(shell).toContain("import { getDatabase } from 'src/ts/storage/database.svelte'")
+    expect(shell).toContain("import { openPresetListModal } from 'src/ts/stores.svelte'")
     expect(shell).toContain("type ModelSettingsTab = 'roles' | 'profiles'")
     expect(shell).toContain("openPresetListModal('global', 'model')")
     expect(shell).toContain('let selectedModelPresetButtonLabel = $derived.by(() =>')
-    expect(shell).toContain('const preset = DBState.db.modelPresets?.[index]')
+    expect(shell).toContain('const preset = database.modelPresets?.[index]')
     expect(shell).toContain('return name || language.modelProfiles.defaultPresetName(index + 1)')
     expect(shell).toContain('className="flex w-full min-w-0 items-center justify-start gap-2 text-left"')
     expect(shell).toContain('{selectedModelPresetButtonLabel}')
@@ -346,7 +347,7 @@ describe('Model profile-first presets tab source contract', () => {
     const source = readSource('src/lib/Setting/Pages/Model/ModelPresetList.svelte')
 
     expect(source).toContain("import { createModelRoleBindingPresetSnapshot } from 'src/ts/model/modelPresetSnapshots'")
-    expect(source).toContain('createModelPreset(createModelRoleBindingPresetSnapshot(DBState.db, name))')
+    expect(source).toContain('createModelPreset(createModelRoleBindingPresetSnapshot(getDatabase(), name))')
     expect(source).toContain('function createEmptyPreset()')
     expect(source).toContain('createModelPreset({')
     expect(source).toContain('modelRoleProfiles: cloneJsonValue(createEmptyPresetRoleProfiles())')

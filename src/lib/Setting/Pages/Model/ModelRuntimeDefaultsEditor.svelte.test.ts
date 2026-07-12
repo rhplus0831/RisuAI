@@ -10,6 +10,18 @@ vi.mock('src/ts/server/commands', () => ({
   runServerCommand: commandSpies.runServerCommand,
   updateModelRuntimeDefaultsCommand: commandSpies.updateModelRuntimeDefaultsCommand,
 }))
+vi.mock('src/ts/process/modules', () => ({
+  applyModule: vi.fn(),
+  exportModule: vi.fn(),
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModuleRegexScripts: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  importModule: vi.fn(),
+  moduleUpdate: vi.fn(),
+  readModule: vi.fn(),
+  refreshModules: vi.fn(),
+}))
 
 import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 import { language } from 'src/lang'
