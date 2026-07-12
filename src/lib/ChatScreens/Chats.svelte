@@ -1,8 +1,8 @@
 <script lang="ts">
-  import type { character, Message } from 'src/ts/storage/database.svelte'
+  import { getDatabase, type character, type Message } from 'src/ts/storage/database.svelte'
   import Chat from './Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
-  import { createSimpleCharacter, DBState, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte'
+  import { createSimpleCharacter, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte'
   import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte'
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
@@ -12,7 +12,7 @@
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
     if (charId < 0) return null
-    const char = DBState.db.characters[charId]
+    const char = getDatabase().characters[charId]
     if (!char) return null
     return char.chats?.[char.chatPage]?.id ?? null
   }
@@ -122,8 +122,9 @@
     // Only auto-scroll if it's the same chat and new messages were added
     if (isSameChat && messages.length > previousLength) {
       const lastMsg = messages[messages.length - 1]
-      if (lastMsg && lastMsg.role === 'char' && DBState.db.autoScrollToNewMessage) {
-        if (wasAtBottomBeforeUpdate || DBState.db.alwaysScrollToNewMessage) {
+      const database = getDatabase()
+      if (lastMsg && lastMsg.role === 'char' && database.autoScrollToNewMessage) {
+        if (wasAtBottomBeforeUpdate || database.alwaysScrollToNewMessage) {
           const element = chatBody.firstElementChild
           if (element) {
             setTimeout(() => {

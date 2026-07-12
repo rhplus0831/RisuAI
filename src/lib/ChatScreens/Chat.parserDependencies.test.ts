@@ -11,6 +11,7 @@ const chatParserMocks = vi.hoisted(() => ({
   alertRequestData: vi.fn(),
   alertWait: vi.fn(),
   canUseServerCommands: vi.fn(() => false),
+  getDatabase: vi.fn(),
   getLLMCache: vi.fn(async () => null),
   ParseMarkdown: vi.fn(async (html: string) => html),
   risuChatParser: vi.fn((message: string, arg?: { cbsConditions?: unknown; chara?: unknown; chatID?: unknown }) => {
@@ -142,6 +143,7 @@ vi.mock('../../ts/parser/parser.svelte', () => ({
 vi.mock('../../ts/storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(() => null),
   getCurrentChat: vi.fn(() => null),
+  getDatabase: chatParserMocks.getDatabase,
   setCurrentChat: vi.fn(),
 }))
 
@@ -194,6 +196,8 @@ import {
   withTrustedServerProjectionWrite,
 } from '../../ts/server/projectionWriteGuard.svelte'
 import { dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
+
+chatParserMocks.getDatabase.mockImplementation(() => DBState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 type ChatHarnessApi = MountedComponent & {

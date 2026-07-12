@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
   import { sleep } from 'src/ts/util'
   import { alertError } from '../../ts/alert'
   import {
@@ -12,7 +11,7 @@
   } from '../../ts/parser/parser.svelte'
   import { translateHTML } from '../../ts/translator/translator'
   import { getModuleAssets } from 'src/ts/process/modules'
-  import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
+  import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import {
     getChatBodyCachedOnlyLlmDecision,
@@ -158,8 +157,9 @@
         lastTranslationDetectionKey = detectionKey
         let translateText = false
         try {
-          if (DBState.db.autoTranslate) {
-            if (DBState.db.autoTranslateCachedOnly && DBState.db.translatorType === 'llm') {
+          const database = getDatabase()
+          if (database.autoTranslate) {
+            if (database.autoTranslateCachedOnly && database.translatorType === 'llm') {
               translateText = await getChatBodyCachedOnlyLlmDecision({
                 data,
                 charArg,
@@ -193,11 +193,12 @@
       }
 
       if (allowClientTranslation && (retranslate || translated)) {
-        if (DBState.db.showTranslationLoading) {
+        const database = getDatabase()
+        if (database.showTranslationLoading) {
           lastParsed = `<div style="display:flex;justify-content:center;align-items:center;height:48px;"><div style="animation: spin 1s linear infinite; border-radius: 50%; height: 32px; width: 32px; border: 2px solid #3b82f6; border-top: 2px solid transparent;"></div></div><style>@keyframes spin { to { transform: rotate(360deg); } }</style>`
         }
 
-        if (DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting) {
+        if (database.translatorType === 'llm' && database.translateBeforeHTMLFormatting) {
           await sleep(100)
           const translatedHtml = await translateHTMLOnce(data, charArg, chatID, retranslate, data, setTranslatingForRun)
           if (!translatedHtml.ok) {
@@ -224,7 +225,7 @@
             }
           }, 10)
           return marked.value
-        } else if (!DBState.db.legacyTranslation) {
+        } else if (!database.legacyTranslation) {
           const marked = await parseWithRetry(
             () =>
               memoizedChatBodyParse({
@@ -325,7 +326,7 @@
   }
 
   const checkImg = () => {
-    if (!DBState.db.newImageHandlingBeta || !bodyRoot) {
+    if (!getDatabase().newImageHandlingBeta || !bodyRoot) {
       return
     }
     const imgs = bodyRoot.querySelectorAll(

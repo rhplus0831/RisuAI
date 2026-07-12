@@ -35,13 +35,13 @@
   import { tick } from 'svelte'
   import Chat from './Chat.svelte'
   import {
+    getDatabase,
     getCharacterByIndex,
     isServerCharacterShell,
     setCharacterByIndex,
     type character,
     type Message,
   } from '../../ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
   import {
     abortActiveGeneration,
@@ -152,7 +152,7 @@
   let messageInput: string = $state('')
   let messageInputTranslate: string = $state('')
   let openMenu = $state(false)
-  let loadPages = $state(normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount))
+  let loadPages = $state(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
   let doingChatInputTranslate = $state(false)
   let toggleStickers: boolean = $state(false)
   let fileInput: string[] = $state([])
@@ -168,10 +168,10 @@
   let activeBgmObserverIdentity: string | null = $state(null)
   let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
-  let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
+  let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
   let activeChatOpen = $derived.by(() => {
     if ($selectedCharID < 0) return false
-    const characterId = DBState.db.characters?.[$selectedCharID]?.chaId
+    const characterId = getDatabase().characters?.[$selectedCharID]?.chaId
     if (characterId === '§playground') return $PlaygroundStore === 2
     return (
       $currentRoute.kind === 'character' &&
@@ -180,7 +180,7 @@
     )
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
-  let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(DBState.db.chatDisplayTailCount))
+  let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
   // The open chat ships as a message-less stub until `/projection/chatMessages`
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
@@ -195,7 +195,7 @@
 
   function getActiveTranscriptWindowIdentity(): string | null {
     const selectedCharacterIndex = $selectedCharID
-    const character = DBState.db.characters?.[selectedCharacterIndex]
+    const character = getDatabase().characters?.[selectedCharacterIndex]
     const chatPage = character?.chatPage ?? null
     const chat = chatPage === null ? null : character?.chats?.[chatPage]
 
@@ -416,12 +416,12 @@
   }
 
   let mostRecentChat = $derived.by(() => {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     return character?.chats?.[character.chatPage] ?? character?.chats?.[0] ?? null
   })
 
   function openMostRecentChat() {
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     const chat = character?.chats?.[character.chatPage] ?? character?.chats?.[0]
     if (!character?.chaId || !chat?.id) return
 
@@ -691,7 +691,8 @@
         return
       }
 
-      const currentChatRecord = DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage]
+      const currentChatRecord =
+        getDatabase().characters[selectedChar].chats[getDatabase().characters[selectedChar].chatPage]
       let userMessage: Message | null = null
       const composerBeforeSend = composerOperation.messageInput
       const translatedComposerBeforeSend = composerOperation.messageInputTranslate
@@ -710,7 +711,7 @@
       const fileSuffix = appendInlayMarkers(filesBeforeSend)
       let messageForSend = composerBeforeSend + fileSuffix
 
-      if (shouldRunInputTranslationHook(continueResponse, DBState.db.characters[selectedChar], composerBeforeSend)) {
+      if (shouldRunInputTranslationHook(continueResponse, getDatabase().characters[selectedChar], composerBeforeSend)) {
         await runInputTranslationHookForSend({
           composerOperation,
           activeTarget,
@@ -724,7 +725,7 @@
         if (messageForSend === '') {
           const messages = currentChatRecord.message ?? []
           if (messages.length === 0 || messages[messages.length - 1].role !== 'user') {
-            if (DBState.db.useSayNothing) {
+            if (getDatabase().useSayNothing) {
               userMessage = {
                 role: 'user',
                 data: '*says nothing*',
@@ -818,7 +819,7 @@
   }
 
   function playSendSoundIfEnabled() {
-    if (DBState.db.playMessage) {
+    if (getDatabase().playMessage) {
       const audio = new Audio(sendSound)
       audio.play().catch(() => {})
     }
@@ -834,7 +835,7 @@
     if (expectedTarget !== undefined && !isActiveChatTargetFresh(expectedTarget)) {
       return
     }
-    const currentCharacter = DBState.db.characters[$selectedCharID]
+    const currentCharacter = getDatabase().characters[$selectedCharID]
     const currentChatRecord = currentCharacter?.chats[currentCharacter.chatPage]
     if (!currentChatRecord) {
       return
@@ -973,7 +974,7 @@
   }
 
   async function updateInputTransateMessage(reverse: boolean) {
-    if (!DBState.db.useAutoTranslateInput) {
+    if (!getDatabase().useAutoTranslateInput) {
       return
     }
     if (isExpTranslator()) {
@@ -1096,7 +1097,7 @@
     openMenu = false
   }}>
   {#if showNewMessageButton}
-    {#if DBState.db.newMessageButtonStyle === 'bottom-center' || !DBState.db.newMessageButtonStyle}
+    {#if getDatabase().newMessageButtonStyle === 'bottom-center' || !getDatabase().newMessageButtonStyle}
       <button
         class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -1105,7 +1106,7 @@
       </button>
     {/if}
 
-    {#if DBState.db.newMessageButtonStyle === 'bottom-right'}
+    {#if getDatabase().newMessageButtonStyle === 'bottom-right'}
       <button
         class="absolute bottom-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -1114,7 +1115,7 @@
       </button>
     {/if}
 
-    {#if DBState.db.newMessageButtonStyle === 'bottom-left'}
+    {#if getDatabase().newMessageButtonStyle === 'bottom-left'}
       <button
         class="absolute bottom-20 left-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -1123,7 +1124,7 @@
       </button>
     {/if}
 
-    {#if DBState.db.newMessageButtonStyle === 'floating-circle'}
+    {#if getDatabase().newMessageButtonStyle === 'floating-circle'}
       <button
         class="absolute bottom-36 right-4 bg-blue-500 text-white w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}
@@ -1132,7 +1133,7 @@
       </button>
     {/if}
 
-    {#if DBState.db.newMessageButtonStyle === 'right-center'}
+    {#if getDatabase().newMessageButtonStyle === 'right-center'}
       <button
         class="absolute top-1/2 right-2 -translate-y-1/2 bg-blue-500 text-white px-2 py-3 rounded-l-lg shadow-lg z-50 flex flex-col items-center gap-1 hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}>
@@ -1141,7 +1142,7 @@
       </button>
     {/if}
 
-    {#if DBState.db.newMessageButtonStyle === 'top-bar'}
+    {#if getDatabase().newMessageButtonStyle === 'top-bar'}
       <button
         class="absolute top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-6 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors text-sm"
         onclick={scrollToBottom}>
@@ -1177,7 +1178,7 @@
     {/if}
   {:else if !activeChatOpen}
     <div class="h-full w-full flex flex-col items-center justify-center text-center px-6" data-risu-chat-empty-state>
-      <h2 class="text-2xl font-bold mb-2">{getCharacterDisplayName(DBState.db.characters[$selectedCharID])}</h2>
+      <h2 class="text-2xl font-bold mb-2">{getCharacterDisplayName(getDatabase().characters[$selectedCharID])}</h2>
       <p class="text-textcolor2">{language.selectChatToOpen}</p>
       {#if mostRecentChat}
         <Button className="mt-4 flex flex-col gap-2" onclick={openMostRecentChat}>
@@ -1198,14 +1199,14 @@
         const scrolled = e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop
         if (
           scrolled < 100 &&
-          DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length >
-            loadPages
+          getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message
+            .length > loadPages
         ) {
           void expandTranscriptWindow(loadPages + 15)
         }
         const chatTarget = e.target as HTMLElement
         const chatsContainer =
-          DBState.db.fixedChatTextarea && chatTarget.children[1] ? chatTarget.children[1] : chatTarget.children[0]
+          getDatabase().fixedChatTextarea && chatTarget.children[1] ? chatTarget.children[1] : chatTarget.children[0]
         const lastEl = chatsContainer?.firstElementChild
         const isAtBottom = lastEl
           ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100
@@ -1215,11 +1216,11 @@
         }
       }}>
       <div
-        class="{DBState.db.fixedChatTextarea
+        class="{getDatabase().fixedChatTextarea
           ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor'
           : 'mt-2 mb-2'} flex items-stretch w-full"
-        style={DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}>
-        {#if DBState.db.useChatSticker}
+        style={getDatabase().fixedChatTextarea ? 'z-index:29;' : ''}>
+        {#if getDatabase().useChatSticker}
           <div
             onclick={() => {
               toggleStickers = !toggleStickers
@@ -1237,10 +1238,10 @@
           bind:this={inputEle}
           onkeydown={(e) => {
             if (e.key.toLocaleLowerCase() === 'enter' && !e.isComposing) {
-              if (DBState.db.sendWithEnter && !e.shiftKey) {
+              if (getDatabase().sendWithEnter && !e.shiftKey) {
                 send()
                 e.preventDefault()
-              } else if (!DBState.db.sendWithEnter && e.shiftKey) {
+              } else if (!getDatabase().sendWithEnter && e.shiftKey) {
                 send()
                 e.preventDefault()
               }
@@ -1275,7 +1276,7 @@
             <Send />
           </button>
         {/if}
-        {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+        {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
           <button
             data-testid="default-chat-menu-button"
             onclick={(e) => {
@@ -1295,7 +1296,7 @@
           </div>
         {/if}
       </div>
-      {#if lastInputTranslationRollback && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+      {#if lastInputTranslationRollback && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
         <div class="flex justify-end mr-2">
           <button
             data-testid="default-chat-input-translation-rollback"
@@ -1308,7 +1309,7 @@
           </button>
         </div>
       {/if}
-      {#if DBState.db.useAutoTranslateInput && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+      {#if getDatabase().useAutoTranslateInput && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
         <div class="flex items-center mt-2 mb-2">
           <label for="messageInputTranslate" class="text-textcolor ml-4">
             <LanguagesIcon />
@@ -1320,7 +1321,7 @@
             bind:this={inputTranslateEle}
             onkeydown={(e) => {
               if (e.key.toLocaleLowerCase() === 'enter' && !e.shiftKey) {
-                if (DBState.db.sendWithEnter) {
+                if (getDatabase().sendWithEnter) {
                   send()
                   e.preventDefault()
                 }
@@ -1399,14 +1400,14 @@
         </div>
       {/if}
 
-      {#if DBState.db.useAutoSuggestions}
+      {#if getDatabase().useAutoSuggestions}
         <Suggestion
           messageInput={(msg) => {
             messageInput =
-              (DBState.db.subModel === 'textgen_webui' ||
-                DBState.db.subModel === 'mancer' ||
-                DBState.db.subModel.startsWith('local_')) &&
-              DBState.db.autoSuggestClean
+              (getDatabase().subModel === 'textgen_webui' ||
+                getDatabase().subModel === 'mancer' ||
+                getDatabase().subModel.startsWith('local_')) &&
+              getDatabase().autoSuggestClean
                 ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
                 : msg
             markComposerDraftChanged('message')
@@ -1414,8 +1415,8 @@
           {send} />
       {/if}
 
-      {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
-        {#await preLoadChat($selectedCharID, DBState.db.characters[$selectedCharID].chatPage)}
+      {#if getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message?.[0]?.data?.startsWith(coldStorageHeader)}
+        {#await preLoadChat($selectedCharID, getDatabase().characters[$selectedCharID].chatPage)}
           <div class="w-full flex justify-center text-textcolor2 italic mb-12">
             {language.loadingChatData}
           </div>
@@ -1457,25 +1458,27 @@
              BOOTSTRAP_CHARACTER_SHELL_FIELDS); skip the greeting render until the
              row hydrates so the unguarded `alternateGreetings.length` reads below
              cannot throw on the correct lazy-shell state. -->
-        {#if !isServerCharacterShell(currentCharacter) && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length <= loadPages}
+        {#if !isServerCharacterShell(currentCharacter) && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length <= loadPages}
           <Chat
-            character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
-            name={getCharacterDisplayName(DBState.db.characters[$selectedCharID])}
-            message={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+            character={createSimpleCharacter(getDatabase().characters[$selectedCharID])}
+            name={getCharacterDisplayName(getDatabase().characters[$selectedCharID])}
+            message={getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
               .fmIndex === -1
-              ? DBState.db.characters[$selectedCharID].firstMessage
-              : DBState.db.characters[$selectedCharID].alternateGreetings[
-                  DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex
+              ? getDatabase().characters[$selectedCharID].firstMessage
+              : getDatabase().characters[$selectedCharID].alternateGreetings[
+                  getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                    .fmIndex
                 ]}
             role="char"
-            img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
+            img={getCharImage(getDatabase().characters[$selectedCharID].image, 'css')}
             idx={-1}
-            altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0}
-            largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
+            altGreeting={getDatabase().characters[$selectedCharID].alternateGreetings.length > 0}
+            largePortrait={getDatabase().characters[$selectedCharID].largePortrait}
             firstMessage={true}
             onReroll={() => {
-              const cha = DBState.db.characters[$selectedCharID]
-              const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+              const cha = getDatabase().characters[$selectedCharID]
+              const chat =
+                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
               if (chat.fmIndex >= cha.alternateGreetings.length - 1) {
                 updateGreetingIndex(-1)
               } else {
@@ -1483,8 +1486,9 @@
               }
             }}
             unReroll={() => {
-              const cha = DBState.db.characters[$selectedCharID]
-              const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+              const cha = getDatabase().characters[$selectedCharID]
+              const chat =
+                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
               if (chat.fmIndex === -1) {
                 updateGreetingIndex(cha.alternateGreetings.length - 1)
               } else {
@@ -1492,17 +1496,18 @@
               }
             }}
             isLastMemory={false}
-            currentPage={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-              .fmIndex ?? -1) + 2}
-            totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1} />
-          {#if aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0}
+            currentPage={(getDatabase().characters[$selectedCharID].chats[
+              getDatabase().characters[$selectedCharID].chatPage
+            ].fmIndex ?? -1) + 2}
+            totalPages={getDatabase().characters[$selectedCharID].alternateGreetings.length + 1} />
+          {#if aiLawApplies() && getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage].message.length === 0}
             <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
               {language.aiGenerationWarning}
             </div>
           {/if}
-          {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
+          {#if !getDatabase().characters[$selectedCharID].removedQuotes && getDatabase().characters[$selectedCharID].creatorNotes.length >= 2}
             <CreatorQuote
-              quote={DBState.db.characters[$selectedCharID].creatorNotes}
+              quote={getDatabase().characters[$selectedCharID].creatorNotes}
               onRemove={() => {
                 const cha = getCharacterByIndex($selectedCharID, { snapshot: true })
                 cha.removedQuotes = true
@@ -1514,14 +1519,14 @@
 
       {#if openMenu}
         <div
-          class="{DBState.db.fixedChatTextarea
+          class="{getDatabase().fixedChatTextarea
             ? 'fixed'
             : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
           onclick={(e) => {
             e.stopPropagation()
           }}>
           <!-- svelte-ignore block_empty -->
-          {#if DBState.db.characters[$selectedCharID].ttsMode === 'webspeech' || DBState.db.characters[$selectedCharID].ttsMode === 'elevenlab'}
+          {#if getDatabase().characters[$selectedCharID].ttsMode === 'webspeech' || getDatabase().characters[$selectedCharID].ttsMode === 'elevenlab'}
             <div
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
@@ -1534,20 +1539,22 @@
 
           <div
             class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
-            class:text-textcolor2={DBState.db.characters[$selectedCharID].chats[
-              DBState.db.characters[$selectedCharID].chatPage
+            class:text-textcolor2={getDatabase().characters[$selectedCharID].chats[
+              getDatabase().characters[$selectedCharID].chatPage
             ].message.length < 2 ||
-              DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
-                  .length - 1
+              getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                .message[
+                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                  .message.length - 1
               ].role !== 'char'}
             onclick={() => {
               if (
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
-                  .length < 2 ||
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                  DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
-                    .length - 1
+                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                  .message.length < 2 ||
+                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                  .message[
+                  getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
+                    .message.length - 1
                 ].role !== 'char'
               ) {
                 return
@@ -1558,7 +1565,7 @@
             <span class="ml-2">{language.continueResponse}</span>
           </div>
 
-          {#if DBState.db.showMenuChatList}
+          {#if getDatabase().showMenuChatList}
             <div
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
@@ -1570,7 +1577,7 @@
             </div>
           {/if}
 
-          {#if DBState.db.enableRisuaiProTools}
+          {#if getDatabase().enableRisuaiProTools}
             <div
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
@@ -1593,7 +1600,7 @@
             </div>
           {/each}
 
-          {#if DBState.db.showMenuHypaMemoryModal && DBState.db.hypaV3}
+          {#if getDatabase().showMenuHypaMemoryModal && getDatabase().hypaV3}
             <div
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
@@ -1605,12 +1612,12 @@
             </div>
           {/if}
 
-          {#if DBState.db.translator !== ''}
+          {#if getDatabase().translator !== ''}
             <div
               class={'flex items-center cursor-pointer ' +
-                (DBState.db.useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
+                (getDatabase().useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
               onclick={() => {
-                applyServerBackedSetting('useAutoTranslateInput', !DBState.db.useAutoTranslateInput)
+                applyServerBackedSetting('useAutoTranslateInput', !getDatabase().useAutoTranslateInput)
               }}>
               <GlobeIcon />
               <span class="ml-2">{language.autoTranslateInput}</span>
@@ -1636,9 +1643,9 @@
 
           <div
             class={'flex items-center cursor-pointer ' +
-              (DBState.db.useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
+              (getDatabase().useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
             onclick={async () => {
-              applyServerBackedSetting('useAutoSuggestions', !DBState.db.useAutoSuggestions)
+              applyServerBackedSetting('useAutoSuggestions', !getDatabase().useAutoSuggestions)
             }}>
             <ReplyIcon />
             <span class="ml-2">{language.autoSuggest}</span>
@@ -1654,7 +1661,7 @@
             <span class="ml-2">{language.modules}</span>
           </div>
 
-          {#if DBState.db.sideMenuRerollButton}
+          {#if getDatabase().sideMenuRerollButton}
             <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={reroll}>
               <RefreshCcwIcon />
               <span class="ml-2">{language.reroll}</span>

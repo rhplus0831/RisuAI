@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const chatBodyMocks = vi.hoisted(() => ({
   addMetadataToElement: vi.fn((html: string) => html),
   alertError: vi.fn(),
+  getDatabase: vi.fn(),
   getCurrentCharacter: vi.fn(() => ({
     additionalAssets: [],
     prebuiltAssetStyle: 'none',
@@ -57,6 +58,7 @@ vi.mock('src/ts/process/scripts', () => ({
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getCurrentCharacter: chatBodyMocks.getCurrentCharacter,
+  getDatabase: chatBodyMocks.getDatabase,
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({
@@ -65,6 +67,8 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 
 import ChatBody from './ChatBody.svelte'
 import { DBState } from 'src/ts/stores.svelte'
+
+chatBodyMocks.getDatabase.mockImplementation(() => DBState.db)
 
 async function flushComponentPromises() {
   for (let i = 0; i < 8; i++) {

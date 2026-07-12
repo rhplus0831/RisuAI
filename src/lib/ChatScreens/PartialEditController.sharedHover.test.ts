@@ -1,5 +1,10 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+vi.mock('src/ts/storage/database.svelte', () => ({
+  getDatabase: () => ({ lineHeight: 1.25, zoomsize: 100 }),
+}))
+
 import PartialEditController from './PartialEditController.svelte'
 import type { PartialEditSaveDetail } from './partialEditFreshness'
 

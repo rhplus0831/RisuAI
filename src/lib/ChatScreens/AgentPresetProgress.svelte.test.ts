@@ -1,8 +1,33 @@
 import { mount, tick, unmount } from 'svelte'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const databaseMocks = vi.hoisted(() => ({
+  getDatabase: vi.fn(),
+}))
+
+vi.mock('src/ts/storage/database.svelte', () => ({
+  getDatabase: databaseMocks.getDatabase,
+}))
+
+vi.mock('src/ts/process/modules', () => ({
+  applyModule: vi.fn(),
+  exportModule: vi.fn(),
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModuleRegexScripts: vi.fn(() => []),
+  getModuleTriggers: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  importModule: vi.fn(),
+  moduleUpdate: vi.fn(),
+  readModule: vi.fn(),
+  refreshModules: vi.fn(),
+}))
+
 import { clearAgentPresetProgress, updateAgentPresetProgress } from 'src/ts/process/agentPresetProgress'
 import { DBState, selectedCharID } from 'src/ts/stores.svelte'
 import AgentPresetProgress from './AgentPresetProgress.svelte'
+
+databaseMocks.getDatabase.mockImplementation(() => DBState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

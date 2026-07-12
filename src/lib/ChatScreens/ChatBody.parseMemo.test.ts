@@ -443,7 +443,7 @@ describe('ChatBody content-keyed parse memo', () => {
         presetRegex: [script('chat-regex', 'chat one')],
       },
     ] as any
-    ;(char.chats[0] as any).generationSettings = {
+    ;(DBState.db.characters[0].chats[0] as any).generationSettings = {
       promptPresetId: 'chat-preset',
     }
 

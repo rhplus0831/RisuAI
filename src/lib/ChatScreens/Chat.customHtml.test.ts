@@ -21,6 +21,7 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
+    getDatabase: vi.fn(),
     getServerCommandBaseRevision: vi.fn(async () => 1),
     runServerCommand: vi.fn(
       async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
@@ -192,6 +193,7 @@ vi.mock('../../ts/parser/parser.svelte', () => ({
 vi.mock('../../ts/storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(),
   getCurrentChat: vi.fn(),
+  getDatabase: customHtmlMocks.getDatabase,
   setCurrentChat: vi.fn(),
 }))
 
@@ -258,6 +260,8 @@ import {
   dispatchUpdateMessageScoped,
 } from 'src/ts/chatCommands'
 import { setActiveMessageTranslations } from 'src/ts/server/messageTranslationJobs'
+
+customHtmlMocks.getDatabase.mockImplementation(() => DBState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 

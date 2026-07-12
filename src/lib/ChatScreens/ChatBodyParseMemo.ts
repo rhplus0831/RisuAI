@@ -1,10 +1,15 @@
 import { get } from 'svelte/store'
 import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
 import { getModules } from '../../ts/process/modules'
-import type { customscript, triggerscript, character, Database } from '../../ts/storage/database.svelte'
-import { getCurrentChat } from '../../ts/storage/database.svelte'
 import {
-  DBState,
+  getCurrentChat,
+  getDatabase,
+  type customscript,
+  type triggerscript,
+  type character,
+  type Database,
+} from '../../ts/storage/database.svelte'
+import {
   CurrentTriggerIdStore,
   ReloadGUIPointer,
   VariableReloadGUIPointer,
@@ -198,7 +203,7 @@ function findCharacterByArg(charArg: ChatBodyParseMemoInput['charArg']) {
   if (!charArg || typeof charArg !== 'string') {
     return charArg
   }
-  return DBState.db?.characters?.find((char: character) => char?.chaId === charArg) ?? charArg
+  return getDatabase().characters?.find((char: character) => char?.chaId === charArg) ?? charArg
 }
 
 function characterSignature(charArg: ChatBodyParseMemoInput['charArg']) {
@@ -266,9 +271,9 @@ function safeGetModules() {
 
 function safeGetActivePromptPresetRegexScripts() {
   try {
-    return getActivePromptPresetRegexScripts(DBState.db as Database)
+    return getActivePromptPresetRegexScripts(getDatabase())
   } catch {
-    const db = DBState.db as Partial<Database>
+    const db = getDatabase() as Partial<Database>
     return Array.isArray(db.presetRegex) ? db.presetRegex : []
   }
 }
@@ -315,7 +320,7 @@ function serializedModuleSignature(modules = safeGetModules()) {
 
 function activeChatSignature() {
   const selectedChar = get(selectedCharID)
-  const char = DBState.db?.characters?.[selectedChar]
+  const char = getDatabase().characters?.[selectedChar]
   let chatId: string | undefined
   let chatModules: unknown
   let scriptstate: unknown
@@ -343,7 +348,7 @@ function activeChatSignature() {
 
 function activeChatSignatureToken() {
   const selectedChar = get(selectedCharID)
-  const char = DBState.db?.characters?.[selectedChar]
+  const char = getDatabase().characters?.[selectedChar]
   let chatId: string | undefined
   let chatModules: unknown
   let scriptstate: unknown
@@ -388,7 +393,7 @@ function moduleAssetsSignature(modules = safeGetModules()) {
 }
 
 function parseSettingsSignature(modules = safeGetModules()) {
-  const db = DBState.db as Partial<Database>
+  const db = getDatabase() as Partial<Database>
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
@@ -410,7 +415,7 @@ function parseSettingsSignature(modules = safeGetModules()) {
 }
 
 function settingsSignatureToken(modules = safeGetModules()) {
-  const db = DBState.db as Partial<Database>
+  const db = getDatabase() as Partial<Database>
   return {
     reloadEpoch: get(ReloadGUIPointer),
     currentTriggerId: get(CurrentTriggerIdStore),
@@ -455,7 +460,7 @@ export function getChatBodyParseMemoKey(input: ChatBodyParseMemoInput): string {
 }
 
 function getTranslateSettingsSignature() {
-  const db = DBState.db as Partial<Database>
+  const db = getDatabase() as Partial<Database>
   return {
     autoTranslate: db.autoTranslate,
     autoTranslateCachedOnly: db.autoTranslateCachedOnly,
@@ -471,12 +476,12 @@ function getTranslateSettingsSignature() {
 export function getChatBodyCachedOnlyLlmDetectionMode(
   input: Pick<ChatBodyCachedOnlyInput, 'fallbackMode'>,
 ): ChatBodyParseMode | 'raw' {
-  const db = DBState.db as Partial<Database>
+  const db = getDatabase() as Partial<Database>
   return db.translateBeforeHTMLFormatting ? 'raw' : db.legacyTranslation ? input.fallbackMode : 'pretranslate'
 }
 
 export function getChatBodyCachedOnlyLlmDetectionKey(input: ChatBodyCachedOnlyInput): string {
-  const db = DBState.db as Partial<Database>
+  const db = getDatabase() as Partial<Database>
   const detectionMode = getChatBodyCachedOnlyLlmDetectionMode(input)
   const parseKey =
     detectionMode === 'raw'
@@ -525,7 +530,7 @@ export async function getChatBodyCachedOnlyLlmDecision(input: ChatBodyCachedOnly
   }
 
   const promise = (async () => {
-    const db = DBState.db as Partial<Database>
+    const db = getDatabase() as Partial<Database>
     const cacheKey = db.translateBeforeHTMLFormatting
       ? input.data
       : await memoizedChatBodyParse({

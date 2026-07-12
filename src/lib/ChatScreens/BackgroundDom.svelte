@@ -1,8 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { ParseMarkdown, risuChatParser } from 'src/ts/parser/parser.svelte'
-  import { type character } from 'src/ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase, type character } from 'src/ts/storage/database.svelte'
   import {
     moduleBackgroundEmbedding,
     ReloadGUIPointer,
@@ -43,7 +42,7 @@
 
   $effect(() => {
     const selectedId = selIdState.selId
-    const selectedCharacter = DBState.db?.characters?.[selectedId] as character | undefined
+    const selectedCharacter = getDatabase().characters?.[selectedId] as character | undefined
     const nextHTML = selectedCharacter?.backgroundHTML ?? ''
     const nextCharacterKey = backgroundCharacterSignature(selectedId, selectedCharacter)
 
@@ -67,7 +66,7 @@
 
   function parseBackground(input: BackgroundParseInput): Promise<string> {
     return untrack(() => {
-      const currentChar = DBState.db?.characters?.[input.selectedId] as character | undefined
+      const currentChar = getDatabase().characters?.[input.selectedId] as character | undefined
       const source = (input.html || '') + '\n' + (input.moduleEmbedding || '')
       return ParseMarkdown(risuChatParser(source, { chara: currentChar }), currentChar, 'back')
     })

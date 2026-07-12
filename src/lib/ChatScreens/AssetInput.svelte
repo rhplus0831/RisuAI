@@ -1,8 +1,8 @@
 <script lang="ts">
   import { FileMusicIcon, PlusIcon } from '@lucide/svelte'
-  import { setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
+  import { getDatabase, setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import { selectedCharID } from 'src/ts/stores.svelte'
   import { selectMultipleFile } from 'src/ts/util'
   import {
     appendFreshCharacterAdditionalAssets,
@@ -53,10 +53,11 @@
     index: number
     character: character | undefined
   } {
-    const index = DBState.db.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
+    const database = getDatabase()
+    const index = database.characters?.findIndex((candidate) => candidate.chaId === characterId) ?? -1
     return {
       index,
-      character: index >= 0 ? DBState.db.characters[index] : undefined,
+      character: index >= 0 ? database.characters[index] : undefined,
     }
   }
 
@@ -64,7 +65,7 @@
     const live = findAdditionalAssetUploadCharacter(operation.characterId)
 
     return {
-      currentCharacterId: DBState.db.characters?.[$selectedCharID]?.chaId,
+      currentCharacterId: getDatabase().characters?.[$selectedCharID]?.chaId,
       rowCharacterId: live.character?.chaId ?? null,
       additionalAssets: live.character?.additionalAssets,
     }
@@ -101,7 +102,7 @@
     const nextAdditionalAssets = appendFreshCharacterAdditionalAssets({
       operation,
       freshness: {
-        currentCharacterId: DBState.db.characters?.[$selectedCharID]?.chaId,
+        currentCharacterId: getDatabase().characters?.[$selectedCharID]?.chaId,
         rowCharacterId: live.character?.chaId ?? null,
         additionalAssets: live.character?.additionalAssets,
       },

@@ -66,8 +66,7 @@
 <script lang="ts">
   import { requestChatData } from 'src/ts/process/request/request'
   import { doingChat, type OpenAIChat } from '../../ts/process/index.svelte'
-  import { type character, type Message } from '../../ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase, type character, type Message } from '../../ts/storage/database.svelte'
   import { selectedCharID } from '../../ts/stores.svelte'
   import { translate } from 'src/ts/translator/translator'
   import { CopyIcon, LanguagesIcon, RefreshCcwIcon } from '@lucide/svelte'
@@ -93,11 +92,12 @@
   }
 
   let { send, messageInput }: Props = $props()
+  const initialCharacter = getDatabase().characters[$selectedCharID]
   let suggestMessages: string[] | undefined = $state(
-    DBState.db.characters[$selectedCharID]?.chats[DBState.db.characters[$selectedCharID].chatPage]?.suggestMessages,
+    initialCharacter?.chats[initialCharacter.chatPage]?.suggestMessages,
   )
   let suggestMessagesTranslated: string[] = $state()
-  let toggleTranslate: boolean = $state(DBState.db.autoTranslate)
+  let toggleTranslate: boolean = $state(getDatabase().autoTranslate)
   let progress: boolean = $state()
   let abortController: AbortController
   let chatPage: number | undefined = $state()
@@ -112,7 +112,7 @@
 
   function activeSuggestionTarget(messages: readonly string[] | undefined): SuggestionTargetSnapshot | undefined {
     const selectedChar = $selectedCharID
-    const currentChar = DBState.db.characters?.[selectedChar]
+    const currentChar = getDatabase().characters?.[selectedChar]
     const currentChat = currentChar?.chats?.[currentChar.chatPage]
     if (selectedChar < 0 || !currentChar || !currentChat) return undefined
     return {
@@ -157,7 +157,7 @@
   function isFreshSuggestionTarget(target: SuggestionTargetSnapshot | undefined) {
     if (!target) return false
     if ($selectedCharID !== target.selectedCharID) return false
-    const currentChar = DBState.db.characters?.[target.selectedCharID]
+    const currentChar = getDatabase().characters?.[target.selectedCharID]
     const currentChat = currentChar?.chats?.[currentChar.chatPage]
     return (
       currentChar?.chaId === target.characterId &&
@@ -168,7 +168,7 @@
 
   const updateSuggestions = () => {
     if ($selectedCharID > -1 && !$doingChat) {
-      const currentChar = DBState.db.characters[$selectedCharID]
+      const currentChar = getDatabase().characters[$selectedCharID]
       const currentChat = currentChar?.chats[currentChar.chatPage]
       if (progress && progressChatId && progressChatId !== currentChat?.id) {
         progress = false
@@ -230,7 +230,8 @@
     }
     if (!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
       const requestSelectedCharId = $selectedCharID
-      let currentChar: character = DBState.db.characters[$selectedCharID]
+      const database = getDatabase()
+      let currentChar: character = database.characters[$selectedCharID]
       const requestCharacterId = currentChar?.chaId
       const requestChatPage = currentChar?.chatPage
       const requestChat = currentChar?.chats[requestChatPage]
@@ -248,10 +249,10 @@
       let lastMessages: Message[] = messages.slice(Math.max(messages.length - 10, 0))
       if (lastMessages.length === 0) return
       const prompt =
-        DBState.db.autoSuggestPrompt && DBState.db.autoSuggestPrompt.length > 0
-          ? DBState.db.autoSuggestPrompt
+        database.autoSuggestPrompt && database.autoSuggestPrompt.length > 0
+          ? database.autoSuggestPrompt
           : defaultAutoSuggestPrompt
-      const autoSuggestionModel = resolveModelForRole(DBState.db, 'otherAx')
+      const autoSuggestionModel = resolveModelForRole(database, 'otherAx')
       let promptbody: OpenAIChat[] = [
         {
           role: 'system',
@@ -273,7 +274,7 @@
         promptbody = [
           {
             role: 'system',
-            content: replacePlaceholders(DBState.db.autoSuggestPrompt, currentChar.name),
+            content: replacePlaceholders(database.autoSuggestPrompt, currentChar.name),
           },
           ...lastMessages.map(({ role, data }) => ({
             role: role === 'user' ? ('user' as const) : ('assistant' as const),
@@ -295,7 +296,7 @@
         'otherAx',
         abortController.signal,
       ).then((rq2) => {
-        const liveChar = DBState.db.characters[$selectedCharID]
+        const liveChar = getDatabase().characters[$selectedCharID]
         const liveChat = liveChar?.chats[liveChar.chatPage]
         const staleResponse =
           requestId !== suggestionRequestId ||
@@ -331,7 +332,7 @@
       requestId,
       toggle,
       messages,
-      translationEnabled: () => DBState.db.translator !== '',
+      translationEnabled: () => getDatabase().translator !== '',
       getCurrentRunId: () => suggestionTranslationId,
       getCurrentRequestId: () => suggestionRequestId,
       getCurrentMessages: () => suggestMessages,
@@ -350,7 +351,7 @@
   $effect.pre(() => {
     $selectedCharID
     // Reads chatPage so suggestions update when the selected chat changes.
-    chatPage = DBState.db.characters[$selectedCharID]?.chatPage
+    chatPage = getDatabase().characters[$selectedCharID]?.chatPage
     updateSuggestions()
   })
   $effect.pre(() => {
@@ -365,7 +366,7 @@
       <div>{language.creatingSuggestions}</div>
     </div>
   {:else if !$doingChat}
-    {#if DBState.db.translator !== ''}
+    {#if getDatabase().translator !== ''}
       <div class="flex mr-2 mb-2">
         <button
           class={'bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm ' +
@@ -392,7 +393,7 @@
           onclick={() => {
             sendFreshSuggestion(suggest, i)
           }}>
-          {#await ParseMarkdown(DBState.db.translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0 ? (suggestMessagesTranslated[i] ?? suggest) : suggest) then md}
+          {#await ParseMarkdown(getDatabase().translator !== '' && toggleTranslate && suggestMessagesTranslated && suggestMessagesTranslated.length > 0 ? (suggestMessagesTranslated[i] ?? suggest) : suggest) then md}
             {@html md}
           {/await}
         </button>

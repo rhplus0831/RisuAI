@@ -48,6 +48,11 @@ vi.mock('./Chat.svelte', async () => {
   return { default: mock.default }
 })
 
+vi.mock('./Suggestion.svelte', async () => {
+  const mock = await import('./DefaultChatScreen.testChat.svelte')
+  return { default: mock.default }
+})
+
 vi.mock('../../lang', () => ({
   language: new Proxy(
     {},

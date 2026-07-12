@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '../../ts/storage/database.svelte'
 
 const backgroundParserMocks = vi.hoisted(() => ({
+  getDatabase: vi.fn(),
   ParseMarkdown: vi.fn(async (html: string) => `markdown:${html}`),
   risuChatParser: vi.fn(
     (
@@ -28,6 +29,24 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
   risuChatParser: backgroundParserMocks.risuChatParser,
 }))
 
+vi.mock('src/ts/storage/database.svelte', () => ({
+  getDatabase: backgroundParserMocks.getDatabase,
+}))
+
+vi.mock('src/ts/process/modules', () => ({
+  applyModule: vi.fn(),
+  exportModule: vi.fn(),
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModuleRegexScripts: vi.fn(() => []),
+  getModuleTriggers: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  importModule: vi.fn(),
+  moduleUpdate: vi.fn(),
+  readModule: vi.fn(),
+  refreshModules: vi.fn(),
+}))
+
 import BackgroundDom from './BackgroundDom.svelte'
 import {
   DBState,
@@ -41,6 +60,8 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from '../../ts/server/projectionWriteGuard.svelte'
+
+backgroundParserMocks.getDatabase.mockImplementation(() => DBState.db)
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
