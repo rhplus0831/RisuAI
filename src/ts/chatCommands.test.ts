@@ -32,7 +32,7 @@ import {
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
 // mid-init.
 import {
-  mergeServerProjectionCharacterRow,
+  mergeServerResourceCharacterRow,
   setCurrentChat,
   type Chat,
   type ChatFolder,
@@ -1694,7 +1694,7 @@ describe('chat command projection helpers', () => {
     }
     setServerCommandSuccessReconciler((event) => {
       const projectedGenerationSettings = event.revision === 11 ? generationSettingsA : generationSettingsB
-      mergeServerProjectionCharacterRow({
+      mergeServerResourceCharacterRow({
         chaId: 'char-a',
         name: 'Character',
         chatPage: 0,

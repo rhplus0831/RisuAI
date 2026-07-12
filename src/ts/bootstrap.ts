@@ -17,9 +17,9 @@ import {
   canUseServerCommands,
   deferOwnServerCommandReconciliation,
   initializeServerDatabase,
-  peekAppliedServerProjectionRevision,
+  peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
-  setAppliedServerProjectionRevision,
+  setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
@@ -137,7 +137,7 @@ export async function loadWebInitialDatabase() {
   resetLorebookHydration()
   recordHydratedCharacterLorebooks(database.characters)
   setCachedServerCommandRevision(resources.revision)
-  setAppliedServerProjectionRevision(resources.revision)
+  setAppliedServerResourceRevision(resources.revision)
   setServerCommandSuccessReconciler((event, coalescedEvents) =>
     enqueueServerResourceSync(() => processServerCommandEvents(coalescedEvents.length > 0 ? coalescedEvents : [event])),
   )
@@ -209,7 +209,7 @@ async function startServerResourceEvents() {
   teardownServerResourceSubscription()
   serverResourceEventsDesired = true
   const subscription = await subscribeServerCommandEvents({
-    sinceRevision: peekAppliedServerProjectionRevision(),
+    sinceRevision: peekAppliedServerResourceRevision(),
     onCommandEvent: handleServerCommandEvent,
     onMemoryEvent: applyServerMemoryEvent,
     onError: (error) => {
@@ -308,7 +308,7 @@ async function processServerCommandEvents(events: readonly CommandEvent[]): Prom
   const previousSelectedCharacterId =
     previousSelectedIndex >= 0 ? getDatabase().characters?.[previousSelectedIndex]?.chaId : undefined
   const result = await refreshInvalidatedServerResources(events, {
-    appliedRevision: peekAppliedServerProjectionRevision(),
+    appliedRevision: peekAppliedServerResourceRevision(),
     hooks: serverResourceInvalidationHooks,
   })
 
@@ -331,7 +331,7 @@ async function processServerCommandEvents(events: readonly CommandEvent[]): Prom
   }
 
   advanceKnownServerCommandRevision(result.revision)
-  setAppliedServerProjectionRevision(result.revision)
+  setAppliedServerResourceRevision(result.revision)
 }
 
 function reconcileSelectedCharacterAfterResourceRefresh(
@@ -367,7 +367,7 @@ function advanceKnownServerCommandRevision(revision: number): void {
 /**
  * Updates the error handling by adding custom handlers for errors and unhandled promise rejections.
  */
-function updateErrorHandling() {
+export function createGlobalErrorHandlers() {
   const errorHandler = (event: ErrorEvent | Event) => {
     console.error(getGlobalErrorLogPayload(event))
     if (isResourceOrWorkerErrorTarget(event.target)) {
@@ -385,6 +385,11 @@ function updateErrorHandling() {
       alertError(alertPayload)
     }
   }
+  return { errorHandler, rejectHandler }
+}
+
+function updateErrorHandling() {
+  const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
   window.addEventListener('error', errorHandler)
   window.addEventListener('unhandledrejection', rejectHandler)
 }

@@ -39,7 +39,7 @@ export function clearPendingChatGenerationSettingsSave(token: PendingChatGenerat
   pendingSavesByChatId.set(token.chatId, next)
 }
 
-export function shouldPreserveLiveChatGenerationSettingsForProjection(
+export function shouldPreserveLiveChatGenerationSettingsForResource(
   chatId: string,
   incomingGenerationSettings: unknown,
 ): boolean {

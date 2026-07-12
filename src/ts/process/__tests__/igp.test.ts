@@ -19,12 +19,7 @@ vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'igp-test-token',
 }))
 
-import {
-  applyServerProjectionDatabase,
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { applyServerResourceDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { evaluateIgp } from '../postGeneration/igp'
@@ -224,7 +219,7 @@ describe('evaluateIgp', () => {
     withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message[0].data = 'stale'
     })
-    applyServerProjectionDatabase({
+    applyServerResourceDatabase({
       characters: [
         {
           ...makeChar(),

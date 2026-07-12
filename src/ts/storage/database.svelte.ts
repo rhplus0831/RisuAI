@@ -91,7 +91,7 @@ import {
 } from '../chatGenerationTogglePresetRecords'
 import { fetchServerLegacyPreset } from '../server/hydrationReads'
 import { canUseServerResourceReads } from '../server/resourceReads'
-import { shouldPreserveLiveChatGenerationSettingsForProjection } from '../server/chatGenerationSettingsProjectionGuard'
+import { shouldPreserveLiveChatGenerationSettingsForResource } from '../server/chatGenerationSettingsResourceGuard'
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
@@ -1520,7 +1520,7 @@ export function setDatabase(data: Database) {
   setDatabaseLite(data)
 }
 
-export function applyServerProjectionDatabase(data: Database, revision?: number) {
+export function applyServerResourceDatabase(data: Database, revision?: number) {
   const result = withServerResourceApply(() => {
     data.customSidebarItems = normalizeCustomSidebarItems(data.customSidebarItems)
     data.chatGenerationTogglePresets = normalizeChatGenerationTogglePresets(data.chatGenerationTogglePresets)
@@ -1528,18 +1528,18 @@ export function applyServerProjectionDatabase(data: Database, revision?: number)
     changeLanguage(data.language)
     setDatabaseLite(data, revision)
   })
-  createDestructiveRefreshToken('server-projection-database-replace')
+  createDestructiveRefreshToken('server-resource-database-replace')
   return result
 }
 
 /**
- * Surgically merges targeted projection fields into the live projection without
- * a full `setDatabase` replace. Used for foreign command events and entity
- * hydration. The fields come from the server projection (same source as
+ * Surgically merges targeted resource fields into the live database without a
+ * full `setDatabase` replace. Used for foreign command events and entity
+ * hydration. The fields come from the server resources (same source as
  * bootstrap), so no re-normalization is needed; this must not clobber
  * locally-hydrated entities outside the named keys.
  */
-export function mergeServerProjectionFields(fields: Partial<Database>) {
+export function mergeServerResourceFields(fields: Partial<Database>) {
   return withServerResourceApply(() => {
     const db = getDatabase() as unknown as Record<string, unknown>
     for (const [key, value] of Object.entries(fields)) {
@@ -1560,16 +1560,16 @@ export function mergeServerProjectionFields(fields: Partial<Database>) {
   })
 }
 
-export type ServerPresetProjectionBaseline = ReadonlyMap<string, Record<string, unknown>>
+export type ServerPresetResourceBaseline = ReadonlyMap<string, Record<string, unknown>>
 
 /**
- * Capture only the preset rows a targeted projection may replace. A response
+ * Capture only the preset rows a targeted resource refresh may replace. A response
  * that arrives after another local edit overlays fields changed since this
  * baseline, so server reconciliation cannot rewind a newer queued input.
  */
-export function captureServerPresetProjectionBaseline(
+export function captureServerPresetResourceBaseline(
   presetIds: readonly (string | undefined)[],
-): ServerPresetProjectionBaseline {
+): ServerPresetResourceBaseline {
   const requestedIds = new Set(
     presetIds.filter((presetId): presetId is string => typeof presetId === 'string' && presetId.length > 0),
   )
@@ -1582,10 +1582,10 @@ export function captureServerPresetProjectionBaseline(
 }
 
 /** Replace one hydrated legacy preset by stable id while retaining newer local fields. */
-export function mergeServerProjectionPresetRow(
+export function mergeServerResourcePresetRow(
   presetId: string,
   preset: Record<string, unknown>,
-  baseline: ServerPresetProjectionBaseline = new Map(),
+  baseline: ServerPresetResourceBaseline = new Map(),
 ): boolean {
   if (preset.id !== presetId) return false
   const index = getDatabase().botPresets.findIndex((candidate) => candidate?.id === presetId)
@@ -1604,10 +1604,10 @@ export function mergeServerProjectionPresetRow(
  * matching entries; unchanged rows retain hydrated bodies while authoritative
  * list metadata is overlaid.
  */
-export function mergeServerProjectionPresetCollection(
+export function mergeServerResourcePresetCollection(
   fields: Partial<Database>,
   presetRows: readonly Record<string, unknown>[],
-  baseline: ServerPresetProjectionBaseline = new Map(),
+  baseline: ServerPresetResourceBaseline = new Map(),
 ): boolean {
   if (!Array.isArray(fields.botPresets)) return false
   const stubsById = uniquePresetRowsById(fields.botPresets)
@@ -1634,7 +1634,7 @@ export function mergeServerProjectionPresetCollection(
     return safeStructuredClone(stub)
   })
 
-  mergeServerProjectionFields({ ...fields, botPresets: nextPresets })
+  mergeServerResourceFields({ ...fields, botPresets: nextPresets })
   return true
 }
 
@@ -1692,7 +1692,7 @@ export function isServerCharacterShell(character: unknown): boolean {
  * dropping loaded history. Returns false if the character is unknown so the
  * caller can fall back to a full bootstrap.
  */
-function mergeServerProjectionCharacterRowMutable(character: { chaId?: string } & Record<string, unknown>): boolean {
+function mergeServerResourceCharacterRowMutable(character: { chaId?: string } & Record<string, unknown>): boolean {
   delete character[SERVER_CHARACTER_SHELL_MARKER]
   const characters = getDatabase().characters
   if (!Array.isArray(characters) || typeof character?.chaId !== 'string') return false
@@ -1718,7 +1718,7 @@ function mergeServerProjectionCharacterRowMutable(character: { chaId?: string } 
       if (priorHypa !== undefined) (chat as { hypaV3Data?: unknown }).hypaV3Data = priorHypa
       if (
         typeof chatId === 'string' &&
-        shouldPreserveLiveChatGenerationSettingsForProjection(
+        shouldPreserveLiveChatGenerationSettingsForResource(
           chatId,
           (chat as { generationSettings?: unknown }).generationSettings,
         )
@@ -1746,19 +1746,19 @@ function mergeServerProjectionCharacterRowMutable(character: { chaId?: string } 
   return true
 }
 
-export function mergeServerProjectionCharacterRow(character: { chaId?: string } & Record<string, unknown>): boolean {
-  return withServerResourceApply(() => mergeServerProjectionCharacterRowMutable(character))
+export function mergeServerResourceCharacterRow(character: { chaId?: string } & Record<string, unknown>): boolean {
+  return withServerResourceApply(() => mergeServerResourceCharacterRowMutable(character))
 }
 
 /**
- * Apply a character-row projection and a dependent projection as one visible
- * change. The dependent callback runs while projection writes are trusted; if
+ * Apply a character row and a dependent resource as one visible change. The
+ * dependent callback runs while resource writes are trusted; if
  * it cannot apply, restore the exact prior character before returning false so
  * the caller can full-resync without exposing half of a composite revision.
  */
-export function mergeServerProjectionCharacterRowComposite(
+export function mergeServerResourceCharacterRowComposite(
   character: { chaId?: string } & Record<string, unknown>,
-  applyDependentProjection: () => boolean,
+  applyDependentResource: () => boolean,
 ): boolean {
   return withServerResourceApply(() => {
     const characters = getDatabase().characters
@@ -1768,8 +1768,8 @@ export function mergeServerProjectionCharacterRowComposite(
     const previous = characters[index]
     let committed = false
     try {
-      if (!mergeServerProjectionCharacterRowMutable(character)) return false
-      committed = applyDependentProjection()
+      if (!mergeServerResourceCharacterRowMutable(character)) return false
+      committed = applyDependentResource()
       return committed
     } catch {
       return false
@@ -1779,7 +1779,7 @@ export function mergeServerProjectionCharacterRowComposite(
   })
 }
 
-export function applyServerCharacterSelectionProjection(input: {
+export function applyServerCharacterSelectionResource(input: {
   characterId: string
   currentChar: number
   lastInteraction?: number
@@ -1802,7 +1802,7 @@ export function applyServerCharacterSelectionProjection(input: {
 
 /**
  * Apply full, tail, or ranged server message hydration to the target chat across
- * all characters. Runs as a trusted projection write so it passes the read-only
+ * all characters. Runs as a trusted resource write so it passes the read-only
  * guard. Returns true if found and hydrated.
  */
 export interface ServerChatMessagesHydrationRange {
@@ -1876,7 +1876,7 @@ export function hydrateServerChatMessages(
 
 /**
  * Fill a stubbed character's `globalLore` with entries hydrated from the server
- * on character-open. Targets by `chaId`; a trusted projection write so it passes
+ * on character-open. Targets by `chaId`; a trusted resource write so it passes
  * the read-only guard. Returns true if found and hydrated.
  */
 export function hydrateServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {

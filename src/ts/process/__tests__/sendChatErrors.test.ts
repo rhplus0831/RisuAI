@@ -18,12 +18,7 @@ vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'send-error-test-token',
 }))
 
-import {
-  applyServerProjectionDatabase,
-  setDatabase,
-  type Database,
-  type character,
-} from '../../storage/database.svelte'
+import { applyServerResourceDatabase, setDatabase, type Database, type character } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
 import { reportSendChatError, type SendChatErrorContext } from '../sendChatErrors'
@@ -281,7 +276,7 @@ describe('reportSendChatError', () => {
     withTrustedResourceWrite(() => {
       testDatabaseState.db.characters[0].chats[0].message = [{ role: 'user', data: 'stale' }]
     })
-    applyServerProjectionDatabase({
+    applyServerResourceDatabase({
       characters: [
         {
           ...makeChar(),

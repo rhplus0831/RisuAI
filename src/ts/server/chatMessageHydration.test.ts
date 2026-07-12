@@ -33,7 +33,7 @@ import {
   hydrateActiveChatWindow,
   hydrateActiveChatFully,
   hydrateChatMessages,
-  applyServerChatMessagesProjection,
+  applyServerChatMessagesResource,
   invalidateChatHydration,
   isChatMessageHydrationPending,
   resetChatHydration,
@@ -256,7 +256,7 @@ describe('chat message hydration bridge', () => {
     await hydrateActiveChatFully()
 
     const appended = { role: 'char', data: 'generated', chatId: 'm3' }
-    expect(applyServerChatMessagesProjection('chat-1', [appended], undefined, [], { start: 2, total: 3 })).toBe(true)
+    expect(applyServerChatMessagesResource('chat-1', [appended], undefined, [], { start: 2, total: 3 })).toBe(true)
 
     expect(db().characters[0].chats[0].message).toEqual([...existingMessages, appended])
     expect((db().characters[0].chats[0].message as Message[]).some(isServerChatMessagePlaceholder)).toBe(false)
@@ -549,7 +549,7 @@ describe('chat message hydration bridge', () => {
       { role: 'char', data: 'projected alternate', chatId: 'm-projected-alt' },
     ]
     expect(
-      applyServerChatMessagesProjection('chat-1', projectedMessages, { source: 'new projection' }, projectedAlternates),
+      applyServerChatMessagesResource('chat-1', projectedMessages, { source: 'new projection' }, projectedAlternates),
     ).toBe(true)
 
     oldHydration.resolve({

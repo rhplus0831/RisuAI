@@ -274,15 +274,15 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     2,
     'Field-scoped projection loaders that skip the characters parse.',
     'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-    'M6: foreign field projections skip character and chat table payload reads',
+    'M6: collection reads skip character and chat table payload reads',
     [
       {
-        testPath: 'server/fastify/__tests__/projection.test.ts',
-        testName: 'M6: foreign field projections are byte-identical to the broad composition',
+        testPath: 'server/fastify/__tests__/resourceReads.test.ts',
+        testName: 'returns settings without collection fields and masks provider secrets',
       },
       {
-        testPath: 'server/fastify/__tests__/projection.test.ts',
-        testName: 'selects character fields with chat and lorebook stubs',
+        testPath: 'server/fastify/__tests__/resourceReads.test.ts',
+        testName: 'returns full character/chat metadata without message or hypa bodies',
       },
     ],
   ),
@@ -1302,11 +1302,11 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'src/ts/bootstrap.test.ts',
-        testName: 'full-bootstraps when reconnect replay is unavailable',
+        testName: 'repairs replay and malformed-frame failures through a complete resource refresh',
       },
       {
         testPath: 'src/ts/bootstrap.test.ts',
-        testName: 'L45: calculates bounded jittered exponential reconnect delays',
+        testName: 'uses capped exponential delay with bounded jitter',
       },
     ],
   ),
@@ -1511,7 +1511,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/generation.chat.test.ts',
-        testName: 'K1: chat-variable generation finalization emits a composite projection',
+        testName: 'K1: chat-variable generation finalization refreshes character metadata and messages',
       },
     ],
   ),

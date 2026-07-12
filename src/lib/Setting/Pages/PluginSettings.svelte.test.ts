@@ -26,7 +26,7 @@ vi.mock('src/ts/plugins/plugins.svelte', () => ({
 
 vi.mock('src/ts/pluginCommands', () => ({
   deletePlugin: vi.fn(),
-  mergePendingPluginStorageProjection: vi.fn((value) => value),
+  mergePendingPluginStorageResource: vi.fn((value) => value),
   setPluginArgument: vi.fn(),
   togglePluginEnabled: vi.fn(),
 }))

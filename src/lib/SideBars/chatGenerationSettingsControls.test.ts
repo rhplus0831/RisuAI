@@ -65,7 +65,7 @@ import {
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
-import { mergeServerProjectionCharacterRow } from 'src/ts/storage/database.svelte'
+import { mergeServerResourceCharacterRow } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -941,7 +941,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(toggleControl('flag').dataset.risuSelected).toBe('true')
     expect(jailbreakControl().dataset.risuSelected).toBe('true')
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       ...testDatabaseState().characters[0],
       name: 'Character Alpha Projected',
       chats: testDatabaseState().characters[0].chats.map((chat) => ({

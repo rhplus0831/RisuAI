@@ -195,7 +195,7 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
-  applyServerChatMessagesProjection: vi.fn(),
+  applyServerChatMessagesResource: vi.fn(),
   hydrateActiveChatFully: loadPageMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: loadPageMocks.hydrateActiveChatWindow,
   isChatMessageHydrationPending: () => false,

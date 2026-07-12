@@ -39,7 +39,7 @@ import {
 import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
-} from './server/chatGenerationSettingsProjectionGuard'
+} from './server/chatGenerationSettingsResourceGuard'
 import { reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
 import type { ChatGenerationSettings } from './chatGenerationSettings'

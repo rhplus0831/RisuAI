@@ -1,9 +1,9 @@
 import { get } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
-import { mergePendingPluginStorageProjection } from '../pluginCommands'
+import { mergePendingPluginStorageResource } from '../pluginCommands'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
-import { applyServerChatMessagesProjection, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
-import { setAppliedServerProjectionRevision, setCachedServerCommandRevision } from './commands'
+import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
+import { setAppliedServerResourceRevision, setCachedServerCommandRevision } from './commands'
 import {
   applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
@@ -25,8 +25,8 @@ let serverResourceRefreshPromise: Promise<ServerResourceRefreshResult> | null = 
 let serverResourceRefreshPending = false
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
-  mergePendingPluginStorage: mergePendingPluginStorageProjection,
-  applyChatMessages: applyServerChatMessagesProjection,
+  mergePendingPluginStorage: mergePendingPluginStorageResource,
+  applyChatMessages: applyServerChatMessagesResource,
   applyCharacterLorebook: applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
   triggerOpenChatGenerationReattach,
@@ -70,7 +70,7 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
 
     syncSelectedCharacterAfterRefresh(selectedIndex, selectedCharacterId)
     setCachedServerCommandRevision(result.revision)
-    setAppliedServerProjectionRevision(result.revision)
+    setAppliedServerResourceRevision(result.revision)
 
     // Full character reads intentionally carry message-free chat rows. Reset
     // hydration identities so every chat is fetched again from its REST body

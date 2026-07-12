@@ -101,7 +101,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Single-row loadSingleCharacterRow; in-place mask where owned',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-    testName: 'M4: the characterRow projection performs zero whole-corpus payload reads',
+    testName: 'M4: the targeted character read performs zero whole-corpus payload reads',
   },
   {
     id: 'M5',
@@ -109,7 +109,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Defer jsonPayloadBytes until metrics are enabled',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-    testName: 'M5: projection and bootstrap responses are serialized once when metrics are off',
+    testName: 'M5: resource and bootstrap reads avoid protocol-metric serialization',
   },
   {
     id: 'M6',

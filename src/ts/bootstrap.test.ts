@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 const bootstrapApi = vi.hoisted(() => ({
@@ -126,11 +126,17 @@ vi.mock('./model/modellist', () => ({
 }))
 vi.mock('./server/pushNotifications', () => ({ enableChatCompletionPushNotifications: vi.fn() }))
 
-import { calculateServerResourceReconnectDelayMs, loadWebInitialDatabase, stopServerResourceEvents } from './bootstrap'
 import {
-  clearAppliedServerProjectionRevision,
+  calculateServerResourceReconnectDelayMs,
+  createGlobalErrorHandlers,
+  loadWebInitialDatabase,
+  stopServerResourceEvents,
+} from './bootstrap'
+import { alertError } from './alert'
+import {
+  clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
-  peekAppliedServerProjectionRevision,
+  peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
 } from './server/commands'
 import { setResourceWriteGuardEnabled } from './storage/database.svelte'
@@ -187,7 +193,7 @@ beforeEach(() => {
   seedResourceDatabase()
   selectedCharID.set(-1)
   clearCachedServerCommandRevision()
-  clearAppliedServerProjectionRevision()
+  clearAppliedServerResourceRevision()
 
   vi.clearAllMocks()
   eventApi.subscriptions = []
@@ -207,6 +213,12 @@ beforeEach(() => {
   })
 })
 
+afterEach(() => {
+  stopServerResourceEvents()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
+
 describe('API-backed client bootstrap', () => {
   it('loads resource APIs, seeds the resource revision, and starts runtime services', async () => {
     await loadWebInitialDatabase()
@@ -214,7 +226,7 @@ describe('API-backed client bootstrap', () => {
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
     expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
     expect(peekCachedServerCommandRevision()).toBe(5)
-    expect(peekAppliedServerProjectionRevision()).toBe(5)
+    expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(get(selectedCharID)).toBe(1)
     expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
@@ -254,7 +266,7 @@ describe('API-backed client bootstrap', () => {
       appliedRevision: 5,
       hooks: resourceApi.hooks,
     })
-    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(6))
+    await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
   })
 
   it('uses a full resource result revision and invalidates chat hydration after a gap', async () => {
@@ -262,7 +274,7 @@ describe('API-backed client bootstrap', () => {
     resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })
     eventApi.subscriptions[0].onCommandEvent({ type: 'state.changed', revision: 9, resource: 'state' })
 
-    await vi.waitFor(() => expect(peekAppliedServerProjectionRevision()).toBe(12))
+    await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(12))
     expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)
     expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
     expect(runtimeApi.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
@@ -274,7 +286,7 @@ describe('API-backed client bootstrap', () => {
     eventApi.subscriptions[0].onCommandEvent({ type: 'persona.updated', revision: 6, resource: 'persona' })
 
     await vi.waitFor(() => expect(resourceApi.refreshInvalidated).toHaveBeenCalledTimes(1))
-    expect(peekAppliedServerProjectionRevision()).toBe(5)
+    expect(peekAppliedServerResourceRevision()).toBe(5)
   })
 
   it('repairs replay and malformed-frame failures through a complete resource refresh', async () => {
@@ -316,6 +328,76 @@ describe('API-backed client bootstrap', () => {
 })
 
 describe('resource event reconnect backoff', () => {
+  it('L45: schedules increasing reconnect delays during a simulated outage', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+    eventApi.subscribe.mockImplementation(async (input) => {
+      eventApi.subscriptions.push(input)
+      if (eventApi.subscriptions.length === 1) {
+        return { status: 'ok', unsubscribe: eventApi.unsubscribe }
+      }
+      return { status: 'error', error: 'offline' }
+    })
+
+    await loadWebInitialDatabase()
+    eventApi.subscriptions[0].onClose?.()
+
+    await vi.advanceTimersByTimeAsync(999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
+  })
+
+  it('L45: keeps one pending reconnect timer for repeated stream failures', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    await loadWebInitialDatabase()
+    eventApi.subscriptions[0].onClose?.()
+    eventApi.subscriptions[0].onClose?.()
+    await vi.advanceTimersByTimeAsync(1_000)
+
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+  })
+
+  it('L45: resets reconnect backoff to the base delay after a successful subscribe', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    await loadWebInitialDatabase()
+    eventApi.subscriptions[0].onClose?.()
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+
+    eventApi.subscriptions[1].onClose?.()
+    await vi.advanceTimersByTimeAsync(999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
+  })
+
+  it('L45: stop clears pending reconnect and resets the next outage to base delay', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+    await loadWebInitialDatabase()
+    eventApi.subscriptions[0].onClose?.()
+    stopServerResourceEvents()
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(1)
+
+    await loadWebInitialDatabase()
+    eventApi.subscriptions[1].onClose?.()
+    await vi.advanceTimersByTimeAsync(999)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(eventApi.subscribe).toHaveBeenCalledTimes(3)
+  })
+
   it('uses capped exponential delay with bounded jitter', () => {
     expect(calculateServerResourceReconnectDelayMs(0, () => 0.5)).toBe(1000)
     expect(calculateServerResourceReconnectDelayMs(1, () => 0.5)).toBe(2000)
@@ -323,5 +405,37 @@ describe('resource event reconnect backoff', () => {
     expect(calculateServerResourceReconnectDelayMs(5, () => 0.5)).toBe(30000)
     expect(calculateServerResourceReconnectDelayMs(10, () => 1)).toBe(30000)
     expect(calculateServerResourceReconnectDelayMs(0, () => Number.NaN)).toBe(1000)
+  })
+})
+
+describe('global bootstrap error handlers', () => {
+  it('L37/I21: global handlers ignore null error events and undefined rejections without useless alerts', () => {
+    const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
+
+    errorHandler(new ErrorEvent('error'))
+    rejectHandler({ reason: undefined } as PromiseRejectionEvent)
+
+    expect(alertError).not.toHaveBeenCalled()
+  })
+
+  it('L37: resource-target global errors skip generic application alerts', () => {
+    const { errorHandler } = createGlobalErrorHandlers()
+    const event = new ErrorEvent('error', { error: new Error('asset failed') })
+    Object.defineProperty(event, 'target', { value: document.createElement('img') })
+
+    errorHandler(event)
+
+    expect(alertError).not.toHaveBeenCalled()
+  })
+
+  it('L37: useful global Error objects and message strings still alert', () => {
+    const { errorHandler, rejectHandler } = createGlobalErrorHandlers()
+    const error = new Error('useful error')
+
+    errorHandler(new ErrorEvent('error', { error }))
+    rejectHandler({ reason: 'useful rejection' } as PromiseRejectionEvent)
+
+    expect(alertError).toHaveBeenNthCalledWith(1, error)
+    expect(alertError).toHaveBeenNthCalledWith(2, 'useful rejection')
   })
 })

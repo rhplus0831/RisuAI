@@ -296,7 +296,7 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
-  applyServerChatMessagesProjection: vi.fn(() => true),
+  applyServerChatMessagesResource: vi.fn(() => true),
   ensureAllChatsHydrated: vi.fn(async () => undefined),
   hydrateActiveChat: vi.fn(async () => undefined),
   resetChatHydration: vi.fn(),

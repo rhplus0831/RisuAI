@@ -888,14 +888,14 @@ export function dispatchBulkPluginStorage(
 
 /**
  * Replays the latest optimistic per-key storage intent over an authoritative
- * projection. Operation records remain pending until the command's public
- * promise finishes projection reconciliation, so a response that started
+ * resource value. Operation records remain pending until the command's public
+ * promise finishes resource reconciliation, so a response that started
  * earlier cannot erase a newer put/delete/bulk edit.
  */
-export function mergePendingPluginStorageProjection(
-  projection: Record<string, unknown> | null | undefined,
+export function mergePendingPluginStorageResource(
+  resource: Record<string, unknown> | null | undefined,
 ): Record<string, unknown> {
-  const merged = cloneJsonValue(projection ?? {})
+  const merged = cloneJsonValue(resource ?? {})
   for (const [key, operations] of pendingPluginStorageOperationsByKey) {
     const latest = operations.at(-1)
     if (!latest) continue
@@ -910,13 +910,13 @@ export function mergePendingPluginStorageProjection(
 
 export function preservePendingPluginStorageInDatabase<T extends { pluginCustomStorage?: unknown }>(database: T): T {
   if (pendingPluginStorageOperationsByKey.size === 0) return database
-  const projected =
+  const serverStorage =
     database.pluginCustomStorage &&
     typeof database.pluginCustomStorage === 'object' &&
     !Array.isArray(database.pluginCustomStorage)
       ? (database.pluginCustomStorage as Record<string, unknown>)
       : {}
-  database.pluginCustomStorage = mergePendingPluginStorageProjection(projected)
+  database.pluginCustomStorage = mergePendingPluginStorageResource(serverStorage)
   return database
 }
 

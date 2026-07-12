@@ -19,7 +19,7 @@ import {
   createModuleCommand,
   createPersonaCommand,
   createPluginCommand,
-  clearAppliedServerProjectionRevision,
+  clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
   createPromptItemCommand,
   createPresetCommand,
@@ -59,7 +59,7 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
-  peekAppliedServerProjectionRevision,
+  peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
   persistGenerationResultCommand,
@@ -126,7 +126,7 @@ import {
   upsertModuleLorebookEntryCommand,
   updateTranslatorPresetCommand,
   selectPresetCommand,
-  setAppliedServerProjectionRevision,
+  setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   updatePromptItemCommand,
@@ -189,7 +189,7 @@ function makeCommandFetch(bodyForUrl: (url: string, init: RequestInit) => unknow
 }
 
 beforeEach(() => {
-  clearAppliedServerProjectionRevision()
+  clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   setServerCommandSuccessReconciler(null)
 })
@@ -594,12 +594,12 @@ describe('server command API adapter', () => {
     expect(peekCachedServerCommandRevision()).toBe(12)
   })
 
-  it('tracks the known command revision independently from the applied projection revision', () => {
-    setAppliedServerProjectionRevision(7)
+  it('tracks the known command revision independently from the applied resource revision', () => {
+    setAppliedServerResourceRevision(7)
     setCachedServerCommandRevision(9)
 
     expect(peekCachedServerCommandRevision()).toBe(9)
-    expect(peekAppliedServerProjectionRevision()).toBe(7)
+    expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
   it('maps revision conflicts to a typed conflict result', async () => {
@@ -613,7 +613,7 @@ describe('server command API adapter', () => {
 
     expect(result).toEqual({ status: 'conflict', currentRevision: 7 })
     expect(peekCachedServerCommandRevision()).toBe(7)
-    expect(peekAppliedServerProjectionRevision()).toBeNull()
+    expect(peekAppliedServerResourceRevision()).toBeNull()
   })
 
   it('maps command errors to status:error', async () => {

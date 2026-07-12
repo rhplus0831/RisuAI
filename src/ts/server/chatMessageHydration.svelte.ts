@@ -466,11 +466,11 @@ export async function hydrateChatMessages(chatId: string): Promise<void> {
 
 /**
  * Apply an already-fetched chat message payload to a chat directly (no refetch).
- * Used by the foreign `generation.persisted` per-chat projection branch, which
+ * Used by the foreign `generation.persisted` per-chat resource branch, which
  * ships the changed chat's messages inline. Marks the chat hydrated and seeds
  * the swipe buffer when it is the open chat, mirroring `hydrateChat`'s apply.
  */
-export function applyServerChatMessagesProjection(
+export function applyServerChatMessagesResource(
   chatId: string,
   message: unknown[],
   hypaV3Data: unknown,

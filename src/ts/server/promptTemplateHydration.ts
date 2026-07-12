@@ -1,5 +1,5 @@
 import { get, writable } from 'svelte/store'
-import { getDatabase, mergeServerProjectionFields, type Database, type PromptPreset } from '../storage/database.svelte'
+import { getDatabase, mergeServerResourceFields, type Database, type PromptPreset } from '../storage/database.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import { fetchServerPromptPresetTemplate } from './hydrationReads'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
@@ -127,7 +127,7 @@ export function applyPromptTemplateProjectionFields(
   ownerId: string | null = currentPromptTemplateOwnerId(),
 ): boolean {
   if (ownerId === null) {
-    mergeServerProjectionFields(fields)
+    mergeServerResourceFields(fields)
     return true
   }
 

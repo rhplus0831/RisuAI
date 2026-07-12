@@ -68,7 +68,7 @@ vi.mock('../characterCommands', () => {
 })
 
 import { selectedCharID } from '../stores.svelte'
-import { mergeServerProjectionCharacterRow, setDatabaseLite, type Database } from '../storage/database.svelte'
+import { mergeServerResourceCharacterRow, setDatabaseLite, type Database } from '../storage/database.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   createServerBackedCharacterDraft,
@@ -215,7 +215,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
     expect(draft.value.name).toBe('Initial')
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Server'),
       desc: 'Server description',
       newGenData: {
@@ -247,7 +247,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
     expect(getDatabase().characters[0].name).toBe('Local draft name')
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Stale server name'),
       desc: 'Fresh server description',
     })
@@ -268,7 +268,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     draft.value.newGenData.prompt = 'Local prompt'
     await flushAndSettle()
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Server'),
       desc: 'Fresh server description',
       newGenData: {
@@ -303,7 +303,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     draft.value.alternateGreetings = ['Local alternate greeting']
     await flushAndSettle()
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Server', {
         alternateGreetings: ['Stale server alternate greeting'],
       }),
@@ -326,7 +326,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     draft.value.name = 'Accepted local name'
     await flushAndSettle()
 
-    const matchingApplied = mergeServerProjectionCharacterRow({
+    const matchingApplied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Accepted local name'),
       desc: 'Accepted server description',
     })
@@ -336,7 +336,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(draft.value.name).toBe('Accepted local name')
     expect(draft.value.desc).toBe('Accepted server description')
 
-    const laterApplied = mergeServerProjectionCharacterRow({
+    const laterApplied = mergeServerResourceCharacterRow({
       ...characterRow('char-1', 'Later server name'),
       desc: 'Later server description',
     })
@@ -440,7 +440,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(recorded.characterUpdates).toEqual([])
     expect(getDatabase().characters[0].name).toBe('Shell')
 
-    const applied = mergeServerProjectionCharacterRow(characterRow('char-1', 'Hydrated'))
+    const applied = mergeServerResourceCharacterRow(characterRow('char-1', 'Hydrated'))
     expect(applied).toBe(true)
     await flushAndSettle()
 
@@ -491,7 +491,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
     flushSync()
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       chaId: 'char-1',
       name: 'Server',
       desc: 'Server description',
@@ -532,7 +532,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
 
     expect(recorded.characterUpdates).toEqual([])
 
-    const applied = mergeServerProjectionCharacterRow(characterRow('char-1', 'Hydrated'))
+    const applied = mergeServerResourceCharacterRow(characterRow('char-1', 'Hydrated'))
     expect(applied).toBe(true)
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)

@@ -155,7 +155,7 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
   withTrustedResourceWrite: (callback: () => void) => callback(),
 }))
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
-  applyServerChatMessagesProjection: vi.fn(),
+  applyServerChatMessagesResource: vi.fn(),
   hydrateActiveChatFully: shellMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: shellMocks.hydrateActiveChatWindow,
   isChatMessageHydrationPending: () => false,

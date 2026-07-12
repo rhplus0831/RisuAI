@@ -16,7 +16,7 @@ import {
 } from '../server/resourceState.svelte'
 import { getServerResourceApplyEpoch, setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
 import {
-  applyServerProjectionDatabase,
+  applyServerResourceDatabase,
   getDatabase,
   setDatabase,
   setDatabaseLite,
@@ -88,7 +88,7 @@ describe('database compatibility accessors over resource state', () => {
     const beforeFacadeEpoch = getResourceDatabaseFacadeEpoch()
     const beforeApplyEpoch = getServerResourceApplyEpoch()
 
-    applyServerProjectionDatabase(databaseFixture('Projected'), 17)
+    applyServerResourceDatabase(databaseFixture('Projected'), 17)
 
     expect(getDatabase().characters[0]?.name).toBe('Projected')
     expect(settingsResourceState.revision).toBe(17)

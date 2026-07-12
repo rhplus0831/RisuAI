@@ -11,7 +11,7 @@ vi.mock('./resourceReads', () => ({
 }))
 
 vi.mock('./chatMessageHydration.svelte', () => ({
-  applyServerChatMessagesProjection: vi.fn(),
+  applyServerChatMessagesResource: vi.fn(),
   hydrateActiveChat: vi.fn(),
   hydrateActiveCharacterLorebook: vi.fn(),
   resetChatHydration: vi.fn(),
@@ -20,8 +20,8 @@ vi.mock('./chatMessageHydration.svelte', () => ({
 import { selectedCharID } from '../stores.svelte'
 import {
   isServerCharacterShell,
-  mergeServerProjectionCharacterRow,
-  mergeServerProjectionFields,
+  mergeServerResourceCharacterRow,
+  mergeServerResourceFields,
   setResourceWriteGuardEnabled,
 } from '../storage/database.svelte'
 import {
@@ -117,7 +117,7 @@ describe('character shell hydration', () => {
 
     const pending = hydrateCharacterShell('char-1')
     setCachedServerCommandRevision(6)
-    mergeServerProjectionFields({ language: 'ko' } as any)
+    mergeServerResourceFields({ language: 'ko' } as any)
     response.resolve({
       status: 'ok',
       revision: 5,
@@ -148,7 +148,7 @@ describe('character shell hydration', () => {
 
     const pending = hydrateCharacterShell('char-1')
     setCachedServerCommandRevision(6)
-    mergeServerProjectionCharacterRow(hydratedCharacter('Newer projection'))
+    mergeServerResourceCharacterRow(hydratedCharacter('Newer projection'))
     response.resolve({
       status: 'ok',
       revision: 5,

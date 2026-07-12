@@ -14,9 +14,9 @@ import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } fro
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
-  applyServerProjectionDatabase,
+  applyServerResourceDatabase,
   botPresetIdsNeedNormalization,
-  captureServerPresetProjectionBaseline,
+  captureServerPresetResourceBaseline,
   changeToPreset,
   copyPreset,
   createPreset,
@@ -26,10 +26,10 @@ import {
   ensureBotPresetHydrated,
   extractLegacyBotPresetByIndex,
   getDatabase,
-  mergeServerProjectionCharacterRow,
-  mergeServerProjectionFields,
-  mergeServerProjectionPresetCollection,
-  mergeServerProjectionPresetRow,
+  mergeServerResourceCharacterRow,
+  mergeServerResourceFields,
+  mergeServerResourcePresetCollection,
+  mergeServerResourcePresetRow,
   normalizePromptTemplateIds,
   presetTemplate,
   promptTemplateIdsNeedNormalization,
@@ -664,12 +664,12 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('mergeServerProjectionCharacterRow', () => {
+describe('mergeServerResourceCharacterRow', () => {
   it('advances destructive refresh epoch for full database replacement but not partial merges', () => {
     seedDatabase([])
     const beforeFullReplace = captureDestructiveRefreshEpoch()
 
-    applyServerProjectionDatabase({
+    applyServerResourceDatabase({
       characters: [],
       modules: [],
       personas: [],
@@ -680,7 +680,7 @@ describe('mergeServerProjectionCharacterRow', () => {
     expect(getDatabase().language).toBe('ko')
 
     const afterFullReplace = captureDestructiveRefreshEpoch()
-    mergeServerProjectionFields({ language: 'en' } as Partial<Database>)
+    mergeServerResourceFields({ language: 'en' } as Partial<Database>)
 
     expect(getDatabase().language).toBe('en')
     expect(captureDestructiveRefreshEpoch()).toBe(afterFullReplace)
@@ -691,7 +691,7 @@ describe('mergeServerProjectionCharacterRow', () => {
     changeLanguage('en')
     expect(activeLanguage.showHelp).toBe('Show Help')
 
-    mergeServerProjectionFields({ language: 'ko' } as Partial<Database>)
+    mergeServerResourceFields({ language: 'ko' } as Partial<Database>)
 
     expect(getDatabase().language).toBe('ko')
     expect(activeLanguage.showHelp).toBe('도움말 보기')
@@ -703,7 +703,7 @@ describe('mergeServerProjectionCharacterRow', () => {
       promptTemplate: [{ id: 'prompt-live', type: 'plain', text: 'keep me' }] as any,
     })
 
-    mergeServerProjectionFields({ agentPresetDefaultId: null } as unknown as Partial<Database>)
+    mergeServerResourceFields({ agentPresetDefaultId: null } as unknown as Partial<Database>)
 
     expect(getDatabase().agentPresetDefaultId).toBeUndefined()
     expect(getDatabase().promptTemplate).toEqual([{ id: 'prompt-live', type: 'plain', text: 'keep me' }])
@@ -721,7 +721,7 @@ describe('mergeServerProjectionCharacterRow', () => {
       },
     ])
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       chaId: 'char-a',
       name: 'Ada Lovelace',
       chats: [{ id: 'chat-a', message: [] }],
@@ -743,7 +743,7 @@ describe('mergeServerProjectionCharacterRow', () => {
       },
     ])
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       chaId: 'char-a',
       name: 'Ada Lovelace',
       chats: [{ id: 'chat-a', message: [] }],
@@ -765,7 +765,7 @@ describe('mergeServerProjectionCharacterRow', () => {
       },
     ])
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       __serverCharacterShell: true,
       chaId: 'char-a',
       name: 'Ada full',
@@ -793,7 +793,7 @@ describe('mergeServerProjectionCharacterRow', () => {
     const characters = getDatabase().characters
     const before = JSON.stringify(characters)
 
-    const applied = mergeServerProjectionCharacterRow({
+    const applied = mergeServerResourceCharacterRow({
       chaId: 'char-missing',
       name: 'Missing',
       chats: [{ id: 'chat-missing', message: [] }],
@@ -812,10 +812,10 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 0,
     })
     const siblingBefore = clonePlain(getDatabase().botPresets[1])
-    const baseline = captureServerPresetProjectionBaseline(['preset-a'])
+    const baseline = captureServerPresetResourceBaseline(['preset-a'])
     getDatabase().botPresets[0].name = 'Alpha edited while fetching'
 
-    const applied = mergeServerProjectionPresetRow(
+    const applied = mergeServerResourcePresetRow(
       'preset-a',
       makePreset('preset-a', 'Alpha from server', {
         mainPrompt: 'authoritative prompt',
@@ -840,10 +840,10 @@ describe('preset command rollback (L21)', () => {
       botPresetsId: 0,
       mainPrompt: 'old root prompt',
     })
-    const baseline = captureServerPresetProjectionBaseline(['preset-a', 'preset-b', 'preset-c'])
+    const baseline = captureServerPresetResourceBaseline(['preset-a', 'preset-b', 'preset-c'])
     getDatabase().botPresets[1].name = 'Beta edited while fetching'
 
-    const applied = mergeServerProjectionPresetCollection(
+    const applied = mergeServerResourcePresetCollection(
       {
         botPresets: [
           { id: 'preset-b', name: 'Beta stub', image: 'beta.png' } as botPreset,
@@ -1078,7 +1078,7 @@ describe('preset command rollback (L21)', () => {
     const pending = ensureBotPresetHydrated(0)
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
     setCachedServerCommandRevision(6)
-    mergeServerProjectionFields({ language: 'ko' } as Partial<Database>)
+    mergeServerResourceFields({ language: 'ko' } as Partial<Database>)
     response.resolve(
       jsonResponse({
         revision: 5,
@@ -1110,7 +1110,7 @@ describe('preset command rollback (L21)', () => {
     const pending = ensureBotPresetHydrated(0)
     await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1))
     setCachedServerCommandRevision(6)
-    mergeServerProjectionFields({
+    mergeServerResourceFields({
       botPresets: [{ id: 'preset-stub', name: 'Newer projection', image: 'img' } as botPreset],
       botPresetsId: 0,
     } as Partial<Database>)

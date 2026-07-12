@@ -25,7 +25,7 @@ import {
   dispatchPluginSettingsPatch,
   dispatchPutPluginStorage,
   dispatchUpdatePlugin,
-  mergePendingPluginStorageProjection,
+  mergePendingPluginStorageResource,
   preservePendingPluginStorageInDatabase,
   setPluginArgument,
   togglePluginEnabled,
@@ -1117,7 +1117,7 @@ describe('plugin projection command helpers', () => {
     await waitForCallCount(calls, 2)
 
     expect(
-      mergePendingPluginStorageProjection({
+      mergePendingPluginStorageResource({
         attempted: { value: 'older projection' },
         serverSibling: true,
       }),
@@ -1140,7 +1140,7 @@ describe('plugin projection command helpers', () => {
     )
     await flushCommandEffects()
 
-    expect(mergePendingPluginStorageProjection({ attempted: { value: 'server final' } })).toEqual({
+    expect(mergePendingPluginStorageResource({ attempted: { value: 'server final' } })).toEqual({
       attempted: { value: 'server final' },
     })
   })
@@ -1157,7 +1157,7 @@ describe('plugin projection command helpers', () => {
     dispatchDeletePluginStorage('deleted', previous)
     await waitForCallCount(calls, 2)
 
-    expect(mergePendingPluginStorageProjection({ deleted: { value: 'stale' }, sibling: true })).toEqual({
+    expect(mergePendingPluginStorageResource({ deleted: { value: 'stale' }, sibling: true })).toEqual({
       sibling: true,
     })
 

@@ -27,7 +27,7 @@ vi.mock('./resourceInvalidation', () => ({
 }))
 vi.mock('./bootstrap', () => ({ fetchServerBootstrapReadOnly: bootstrapApi.fetchReadOnly }))
 vi.mock('./chatMessageHydration.svelte', () => ({
-  applyServerChatMessagesProjection: vi.fn(() => true),
+  applyServerChatMessagesResource: vi.fn(() => true),
   hydrateActiveChat: sideEffects.hydrateActiveChat,
   resetChatHydration: sideEffects.resetChatHydration,
 }))
@@ -38,7 +38,7 @@ vi.mock('./lorebookBridge.svelte', () => ({
   resetLorebookHydration: sideEffects.resetLorebooks,
 }))
 vi.mock('../pluginCommands', () => ({
-  mergePendingPluginStorageProjection: vi.fn((value) => value),
+  mergePendingPluginStorageResource: vi.fn((value) => value),
 }))
 vi.mock('../process/reattach', () => ({
   setActiveGenerationJobs: sideEffects.setGenerationJobs,
@@ -52,9 +52,9 @@ vi.mock('./protocolDiagnostics', () => ({ recordFullResourceRefresh: sideEffects
 
 import { forceServerResourceRefresh } from './resourceRefresh'
 import {
-  clearAppliedServerProjectionRevision,
+  clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
-  peekAppliedServerProjectionRevision,
+  peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
 } from './commands'
 import { replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
@@ -93,7 +93,7 @@ beforeEach(() => {
   )
   selectedCharID.set(1)
   clearCachedServerCommandRevision()
-  clearAppliedServerProjectionRevision()
+  clearAppliedServerResourceRevision()
   refreshApi.refreshAll.mockResolvedValue({ status: 'ok', revision: 5, scope: 'full' })
   bootstrapApi.fetchReadOnly.mockResolvedValue({
     status: 'ok',
@@ -111,7 +111,7 @@ describe('complete server resource refresh', () => {
     await expect(forceServerResourceRefresh('backup-restore')).resolves.toEqual({ status: 'ok', revision: 5 })
 
     expect(peekCachedServerCommandRevision()).toBe(5)
-    expect(peekAppliedServerProjectionRevision()).toBe(5)
+    expect(peekAppliedServerResourceRevision()).toBe(5)
     expect(get(selectedCharID)).toBe(1)
     expect(sideEffects.resetChatHydration).toHaveBeenCalledTimes(1)
     expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
@@ -147,7 +147,7 @@ describe('complete server resource refresh', () => {
       error: 'settings failed',
     })
     expect(peekCachedServerCommandRevision()).toBeNull()
-    expect(peekAppliedServerProjectionRevision()).toBeNull()
+    expect(peekAppliedServerResourceRevision()).toBeNull()
     expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
     expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
   })

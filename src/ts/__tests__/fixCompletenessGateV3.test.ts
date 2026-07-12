@@ -518,8 +518,8 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     'L14: single character-lorebook hydration performs zero whole-corpus payload reads',
     [
       {
-        testPath: 'server/fastify/__tests__/projection.test.ts',
-        testName: 'matches single and bulk character lorebook hydration for the same character',
+        testPath: 'server/fastify/__tests__/resourceReads.test.ts',
+        testName: 'serves single and bulk character lorebooks',
       },
     ],
   ),

@@ -16,7 +16,7 @@ vi.mock('../process/modules', async (importActual) => {
   return { ...actual, moduleUpdate: vi.fn() }
 })
 
-import { mergeServerProjectionFields, setResourceWriteGuardEnabled } from '../storage/database.svelte'
+import { mergeServerResourceFields, setResourceWriteGuardEnabled } from '../storage/database.svelte'
 import {
   clearCachedServerCommandRevision,
   peekCachedServerCommandRevision,
@@ -124,7 +124,7 @@ describe('promptTemplate hydration', () => {
 
     const pending = ensurePromptTemplateHydrated()
     setCachedServerCommandRevision(6)
-    mergeServerProjectionFields({ language: 'ko' } as any)
+    mergeServerResourceFields({ language: 'ko' } as any)
     response.resolve({
       status: 'ok',
       revision: 5,
@@ -160,7 +160,7 @@ describe('promptTemplate hydration', () => {
 
     const pending = ensurePromptTemplateHydrated()
     setCachedServerCommandRevision(6)
-    mergeServerProjectionFields({
+    mergeServerResourceFields({
       promptPresets: [
         {
           id: 'preset-a',

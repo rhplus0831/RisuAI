@@ -131,7 +131,7 @@ vi.mock('src/lang', () => ({
 
 vi.mock('./storage/database.svelte', () => ({
   appVer: 'test',
-  applyServerProjectionDatabase: vi.fn(),
+  applyServerResourceDatabase: vi.fn(),
   defaultSdDataFunc: vi.fn(() => []),
   getCurrentCharacter: vi.fn(),
   getDatabase: vi.fn(() => dbState.db),

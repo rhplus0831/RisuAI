@@ -1250,10 +1250,10 @@ export interface ServerCommandTransportOptions {
 let cachedServerCommandRevision: number | null = null
 // The command/base-revision cursor may move ahead of the browser projection:
 // conflicts and server-owned mutations tell us the latest server revision
-// without proving that its projected state was applied locally. SSE replay,
+// without proving that its resource state was applied locally. SSE replay,
 // gap detection, and already-applied skips must therefore use this separate
-// projection cursor instead of `cachedServerCommandRevision`.
-let appliedServerProjectionRevision: number | null = null
+// resource cursor instead of `cachedServerCommandRevision`.
+let appliedServerResourceRevision: number | null = null
 type ServerCommandSuccessReconciler = (
   event: CommandEvent,
   coalescedEvents: readonly CommandEvent[],
@@ -1421,22 +1421,22 @@ export function clearCachedServerCommandRevision(): void {
   cachedServerCommandRevision = null
 }
 
-export function setAppliedServerProjectionRevision(revision: number): void {
+export function setAppliedServerResourceRevision(revision: number): void {
   if (
     Number.isInteger(revision) &&
     revision >= 0 &&
-    (appliedServerProjectionRevision === null || revision > appliedServerProjectionRevision)
+    (appliedServerResourceRevision === null || revision > appliedServerResourceRevision)
   ) {
-    appliedServerProjectionRevision = revision
+    appliedServerResourceRevision = revision
   }
 }
 
-export function clearAppliedServerProjectionRevision(): void {
-  appliedServerProjectionRevision = null
+export function clearAppliedServerResourceRevision(): void {
+  appliedServerResourceRevision = null
 }
 
-export function peekAppliedServerProjectionRevision(): number | null {
-  return appliedServerProjectionRevision
+export function peekAppliedServerResourceRevision(): number | null {
+  return appliedServerResourceRevision
 }
 
 export function setServerCommandSuccessReconciler(reconciler: ServerCommandSuccessReconciler | null): void {
