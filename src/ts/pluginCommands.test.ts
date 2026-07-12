@@ -92,7 +92,7 @@ function seedPluginState(): void {
         enabled: false,
       }),
     ],
-  } as Database)
+  } as unknown as Database)
 }
 
 function stubCommandFetch(options: { failCommands?: boolean; failCommandUrls?: string[] } = {}): CapturedFetch[] {
