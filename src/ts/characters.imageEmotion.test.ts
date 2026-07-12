@@ -124,13 +124,23 @@ vi.mock('./util', () => {
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setServerProjectionWriteGuardEnabled } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { selectedCharID } from './stores.svelte'
 import { seedCloneCostDb, withCloneInstrumentation } from './__tests__/cloneCostHarness'
-import type { character } from './storage/database.svelte'
+import type { character, Database } from './storage/database.svelte'
 // Import the heavy `./characters` module last so its circular dependency on
 // `stores`/`database` finishes initializing before the reactive `moduleUpdate`
 // effect can run (matches the working characters.importChat test ordering).
 import { addCharEmotion, changeChar, rmCharEmotion, selectCharImg } from './characters'
+
+const testDatabaseState = {
+  get db(): Database {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -297,13 +307,13 @@ describe('Phase 7 image/emotion scoped rollback', () => {
   it('rmCharEmotion captures a single-row baseline, never the whole characters array', async () => {
     // char-0 carries the large 40-message hydrated transcript; the edit targets a
     // small sibling so a whole-array clone would dwarf the single-row clone.
-    DBState.db = seedCloneCostDb() as any
-    ;(DBState.db.characters[1] as any).emotionImages = [
+    testDatabaseState.db = seedCloneCostDb() as any
+    ;(testDatabaseState.db.characters[1] as any).emotionImages = [
       ['happy', 'happy.png'],
       ['sad', 'sad.png'],
     ]
     selectedCharID.set(1)
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
     const instrumented = withCloneInstrumentation(() => {
@@ -313,14 +323,14 @@ describe('Phase 7 image/emotion scoped rollback', () => {
     // the rollback baseline + diff clone only the one edited row, never the
     // multi-message corpus stored on char-0.
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
-    expect(DBState.db.characters[1].emotionImages).toEqual([['sad', 'sad.png']])
+    expect(testDatabaseState.db.characters[1].emotionImages).toEqual([['sad', 'sad.png']])
 
     await tick()
   })
 
   it('rolls back only the edited row on command failure, leaving siblings intact', async () => {
-    DBState.db = seedCloneCostDb() as any
-    ;(DBState.db.characters[1] as any).emotionImages = [
+    testDatabaseState.db = seedCloneCostDb() as any
+    ;(testDatabaseState.db.characters[1] as any).emotionImages = [
       ['happy', 'happy.png'],
       ['sad', 'sad.png'],
     ]
@@ -342,20 +352,20 @@ describe('Phase 7 image/emotion scoped rollback', () => {
 
     rmCharEmotion(1, 0)
     // a concurrent edit to an unrelated sibling that a whole-array restore wipes.
-    DBState.db.characters[2].name = 'Concurrent sibling edit'
+    testDatabaseState.db.characters[2].name = 'Concurrent sibling edit'
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      if (DBState.db.characters[1].emotionImages.length >= 2) break
+      if (testDatabaseState.db.characters[1].emotionImages.length >= 2) break
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
     // the failed update restores only char-1's emotionImages; the sibling edit
     // survives, proving the rollback did not reinstall the whole characters array.
-    expect(DBState.db.characters[1].emotionImages).toEqual([
+    expect(testDatabaseState.db.characters[1].emotionImages).toEqual([
       ['happy', 'happy.png'],
       ['sad', 'sad.png'],
     ])
-    expect(DBState.db.characters[2].name).toBe('Concurrent sibling edit')
+    expect(testDatabaseState.db.characters[2].name).toBe('Concurrent sibling edit')
   })
 })
 
@@ -365,7 +375,7 @@ describe('Phase 3 character avatar upload freshness', () => {
     const upload = deferred<string>()
     selectedFileState.singleQueue.push(avatarFile('stale.png', { Description: 'stale metadata' }))
     saveImageState.queue.push(upload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         baseCharacter({
           image: 'old-avatar',
@@ -380,14 +390,16 @@ describe('Phase 3 character avatar upload freshness', () => {
       expect(saveImageState.calls).toHaveLength(1)
     })
 
-    DBState.db.characters[0].image = 'manual-newer-avatar'
+    testDatabaseState.db.characters[0].image = 'manual-newer-avatar'
     upload.resolve('stale-upload-asset')
     await operation
     await tick()
 
-    expect(DBState.db.characters[0].image).toBe('manual-newer-avatar')
-    expect(DBState.db.characters[0].ccAssets).toEqual([{ type: 'icon', name: 'prior', uri: 'prior-asset', ext: 'png' }])
-    expect(DBState.db.characters[0].extentions.pngExif).toEqual({ Title: 'existing metadata' })
+    expect(testDatabaseState.db.characters[0].image).toBe('manual-newer-avatar')
+    expect(testDatabaseState.db.characters[0].ccAssets).toEqual([
+      { type: 'icon', name: 'prior', uri: 'prior-asset', ext: 'png' },
+    ])
+    expect(testDatabaseState.db.characters[0].extentions.pngExif).toEqual({ Title: 'existing metadata' })
     expect(commandCalls(calls)).toHaveLength(0)
   })
 
@@ -400,7 +412,7 @@ describe('Phase 3 character avatar upload freshness', () => {
       avatarFile('newer.png', { Title: 'newer metadata' }),
     )
     saveImageState.queue.push(olderUpload.promise, newerUpload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ image: 'initial-avatar', ccAssets: [] })],
     } as any
 
@@ -424,11 +436,11 @@ describe('Phase 3 character avatar upload freshness', () => {
     await olderOperation
     await tick()
 
-    expect(DBState.db.characters[0].image).toBe('newer-upload-asset')
-    expect(DBState.db.characters[0].ccAssets).toEqual([
+    expect(testDatabaseState.db.characters[0].image).toBe('newer-upload-asset')
+    expect(testDatabaseState.db.characters[0].ccAssets).toEqual([
       { type: 'icon', name: 'iconx', uri: 'initial-avatar', ext: 'png' },
     ])
-    expect(DBState.db.characters[0].extentions.pngExif).toEqual({ Title: 'newer metadata' })
+    expect(testDatabaseState.db.characters[0].extentions.pngExif).toEqual({ Title: 'newer metadata' })
     expect(commandCalls(calls)).toHaveLength(1)
   })
 
@@ -437,7 +449,7 @@ describe('Phase 3 character avatar upload freshness', () => {
     const olderUpload = deferred<string>()
     selectedFileState.singleQueue.push(avatarFile('older.png', { Title: 'older metadata' }), null)
     saveImageState.queue.push(olderUpload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ image: 'initial-avatar', ccAssets: [] })],
     } as any
 
@@ -455,11 +467,11 @@ describe('Phase 3 character avatar upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(DBState.db.characters[0].image).toBe('older-upload-asset')
-    expect(DBState.db.characters[0].ccAssets).toEqual([
+    expect(testDatabaseState.db.characters[0].image).toBe('older-upload-asset')
+    expect(testDatabaseState.db.characters[0].ccAssets).toEqual([
       { type: 'icon', name: 'iconx', uri: 'initial-avatar', ext: 'png' },
     ])
-    expect(DBState.db.characters[0].extentions.pngExif).toEqual({ Title: 'older metadata' })
+    expect(testDatabaseState.db.characters[0].extentions.pngExif).toEqual({ Title: 'older metadata' })
   })
 
   it('drops a stale upload when the target row id changes before upload resolution', async () => {
@@ -467,7 +479,7 @@ describe('Phase 3 character avatar upload freshness', () => {
     const upload = deferred<string>()
     selectedFileState.singleQueue.push(avatarFile('stale-row.png', { Title: 'stale row metadata' }))
     saveImageState.queue.push(upload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ chaId: 'char-a', image: 'old-avatar', ccAssets: [] })],
     } as any
 
@@ -476,7 +488,7 @@ describe('Phase 3 character avatar upload freshness', () => {
       expect(saveImageState.calls).toHaveLength(1)
     })
 
-    DBState.db.characters[0] = baseCharacter({
+    testDatabaseState.db.characters[0] = baseCharacter({
       chaId: 'char-replacement',
       name: 'Replacement',
       image: 'replacement-avatar',
@@ -486,12 +498,12 @@ describe('Phase 3 character avatar upload freshness', () => {
     await operation
     await tick()
 
-    expect(DBState.db.characters[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0]).toMatchObject({
       chaId: 'char-replacement',
       image: 'replacement-avatar',
       ccAssets: [],
     })
-    expect(DBState.db.characters[0].extentions?.pngExif).toBeUndefined()
+    expect(testDatabaseState.db.characters[0].extentions?.pngExif).toBeUndefined()
     expect(commandCalls(calls)).toHaveLength(0)
   })
 
@@ -500,7 +512,7 @@ describe('Phase 3 character avatar upload freshness', () => {
     const upload = deferred<string>()
     selectedFileState.singleQueue.push(avatarFile('stale-navigation.png', { Title: 'stale navigation metadata' }))
     saveImageState.queue.push(upload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       currentChar: 0,
       characters: [
         baseCharacter({
@@ -529,13 +541,13 @@ describe('Phase 3 character avatar upload freshness', () => {
     await operation
     await tick()
 
-    expect(DBState.db.characters[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0]).toMatchObject({
       chaId: 'char-a',
       image: 'char-a-avatar',
       ccAssets: [{ type: 'icon', name: 'a-prior', uri: 'char-a-prior-asset', ext: 'png' }],
     })
-    expect(DBState.db.characters[0].extentions?.pngExif).toBeUndefined()
-    expect(DBState.db.characters[1]).toMatchObject({
+    expect(testDatabaseState.db.characters[0].extentions?.pngExif).toBeUndefined()
+    expect(testDatabaseState.db.characters[1]).toMatchObject({
       chaId: 'char-b',
       image: 'char-b-avatar',
       ccAssets: [{ type: 'icon', name: 'b-prior', uri: 'char-b-prior-asset', ext: 'png' }],
@@ -550,7 +562,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     const upload = deferred<string>()
     selectedFileState.multipleQueue.push([avatarFile('stale.png')])
     saveImageState.queue.push(upload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         baseCharacter({
           chaId: 'char-a',
@@ -565,15 +577,15 @@ describe('Phase 3 character emotion image upload freshness', () => {
       expect(saveImageState.calls).toHaveLength(1)
     })
 
-    DBState.db.characters[0].emotionImages = [
-      ...DBState.db.characters[0].emotionImages,
+    testDatabaseState.db.characters[0].emotionImages = [
+      ...testDatabaseState.db.characters[0].emotionImages,
       ['manual-newer', 'manual-newer-asset'],
     ]
     upload.resolve('stale-upload-asset')
     await operation
     await tick()
 
-    expect(DBState.db.characters[0].emotionImages).toEqual([
+    expect(testDatabaseState.db.characters[0].emotionImages).toEqual([
       ['base', 'base-asset'],
       ['manual-newer', 'manual-newer-asset'],
     ])
@@ -586,7 +598,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     const newerUpload = deferred<string>()
     selectedFileState.multipleQueue.push([avatarFile('older.png')], [avatarFile('newer.webp')])
     saveImageState.queue.push(olderUpload.promise, newerUpload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ chaId: 'char-a', emotionImages: [] })],
     } as any
     selectedCharID.set(0)
@@ -611,7 +623,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     await olderOperation
     await tick()
 
-    expect(DBState.db.characters[0].emotionImages).toEqual([['newer', 'newer-upload-asset']])
+    expect(testDatabaseState.db.characters[0].emotionImages).toEqual([['newer', 'newer-upload-asset']])
     expect(commandCalls(calls)).toHaveLength(1)
   })
 
@@ -623,7 +635,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     const newerUpload = deferred<string>()
     selectedFileState.multipleQueue.push({ selected: [olderFile], result: olderRead.promise }, [newerFile])
     saveImageState.queue.push(newerUpload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ chaId: 'char-a', emotionImages: [] })],
     } as any
     selectedCharID.set(0)
@@ -649,13 +661,13 @@ describe('Phase 3 character emotion image upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(DBState.db.characters[0].emotionImages).toEqual([['newer', 'newer-upload-asset']])
+    expect(testDatabaseState.db.characters[0].emotionImages).toEqual([['newer', 'newer-upload-asset']])
   })
 
   it('clears an emotion upload operation when a picker read rejects after selection', async () => {
     const failingRead = deferred<MockSelectedFile[] | null>()
     selectedFileState.multipleQueue.push({ selected: [avatarFile('broken.png')], result: failingRead.promise })
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ chaId: 'char-a', emotionImages: [] })],
     } as any
     selectedCharID.set(0)
@@ -678,7 +690,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     const olderUpload = deferred<string>()
     selectedFileState.multipleQueue.push([avatarFile('older.png')], null)
     saveImageState.queue.push(olderUpload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [baseCharacter({ chaId: 'char-a', emotionImages: [] })],
     } as any
     selectedCharID.set(0)
@@ -697,7 +709,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
       expect(commandCalls(calls)).toHaveLength(1)
     })
 
-    expect(DBState.db.characters[0].emotionImages).toEqual([['older', 'older-upload-asset']])
+    expect(testDatabaseState.db.characters[0].emotionImages).toEqual([['older', 'older-upload-asset']])
   })
 
   it('drops a stale emotion upload when the target row id changes before upload resolution', async () => {
@@ -705,7 +717,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     const upload = deferred<string>()
     selectedFileState.multipleQueue.push([avatarFile('stale-row.png')])
     saveImageState.queue.push(upload.promise)
-    DBState.db = {
+    testDatabaseState.db = {
       characters: [
         baseCharacter({
           chaId: 'char-a',
@@ -720,7 +732,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
       expect(saveImageState.calls).toHaveLength(1)
     })
 
-    DBState.db.characters[0] = baseCharacter({
+    testDatabaseState.db.characters[0] = baseCharacter({
       chaId: 'char-replacement',
       name: 'Replacement',
       emotionImages: [['replacement', 'replacement-asset']],
@@ -729,7 +741,7 @@ describe('Phase 3 character emotion image upload freshness', () => {
     await operation
     await tick()
 
-    expect(DBState.db.characters[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0]).toMatchObject({
       chaId: 'char-replacement',
       emotionImages: [['replacement', 'replacement-asset']],
     })

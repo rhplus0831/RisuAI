@@ -57,9 +57,20 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import { selectedCharID } from './stores.svelte'
+import type { Database } from './storage/database.svelte'
 import { importChat } from './characters'
 import { alertError, alertNormal } from './alert'
+
+const testDatabaseState = {
+  get db(): Database {
+    return getResourceDatabase()
+  },
+  set db(value: Database) {
+    replaceResourceDatabase(value)
+  },
+}
 
 interface CapturedFetch {
   url: string
@@ -211,7 +222,7 @@ beforeEach(() => {
   selectedFileState.file = null
   selectedFileState.beforeResolve = null
   selectedFileState.queuedFiles = []
-  DBState.db = {
+  testDatabaseState.db = {
     personas: [
       { id: 'persona-a', name: 'Persona A', personaPrompt: '', icon: '', note: '' },
       { id: 'persona-b', name: 'Persona B', personaPrompt: '', icon: '', note: '' },
@@ -258,17 +269,17 @@ describe('chat import projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
+      testDatabaseState.db.characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
     }).toThrow()
 
     await importChat()
 
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({
       name: 'Imported Chat',
       fmIndex: -1,
     })
     expect(() => {
-      DBState.db.characters[0].chats.unshift({ id: 'direct-2', name: 'Direct', message: [] } as any)
+      testDatabaseState.db.characters[0].chats.unshift({ id: 'direct-2', name: 'Direct', message: [] } as any)
     }).toThrow()
     const [createCall] = await waitForCreateChatCalls(calls)
     expect(createCall).toEqual({
@@ -292,7 +303,9 @@ describe('chat import projection helpers', () => {
 
   it('sequences v2 multi-chat imports as folder creates before chat creates with advancing revisions', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters[0].chatFolders = [{ id: 'folder-a', name: 'Existing Folder', color: '#111', folded: false }]
+    testDatabaseState.db.characters[0].chatFolders = [
+      { id: 'folder-a', name: 'Existing Folder', color: '#111', folded: false },
+    ]
     selectJsonFile('chats.json', {
       type: 'risuAllChats',
       ver: 2,
@@ -329,7 +342,7 @@ describe('chat import projection helpers', () => {
 
   it('re-keys v2 chat, folder, and message ids and rewrites bookmark and memory references', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters.push({
+    testDatabaseState.db.characters.push({
       chaId: 'char-b',
       name: 'Character B',
       chatPage: 0,
@@ -433,13 +446,13 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(2)
-      expect(DBState.db.characters[0].chatFolders).toEqual([
+      expect(testDatabaseState.db.characters[0].chatFolders).toEqual([
         { id: expect.any(String), name: 'Folder A', color: '#c00', folded: false },
       ])
-      expect(DBState.db.characters[0].chats).toHaveLength(1)
+      expect(testDatabaseState.db.characters[0].chats).toHaveLength(1)
     })
-    expect(DBState.db.characters[0].chatFolders[0].id).not.toBe('folder-a')
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
+    expect(testDatabaseState.db.characters[0].chatFolders[0].id).not.toBe('folder-a')
+    expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
     expect(createChatCalls(calls)).toHaveLength(0)
     expect(alertNormal).not.toHaveBeenCalled()
     expect(alertError).toHaveBeenCalledWith('command failed')
@@ -464,10 +477,13 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(3)
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.name)).toEqual(['Folder A', 'Folder B'])
-      expect(DBState.db.characters[0].chats).toHaveLength(1)
+      expect(testDatabaseState.db.characters[0].chatFolders.map((folder) => folder.name)).toEqual([
+        'Folder A',
+        'Folder B',
+      ])
+      expect(testDatabaseState.db.characters[0].chats).toHaveLength(1)
     })
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
+    expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({ id: 'chat-a', name: 'Chat A' })
     expect(createChatCalls(calls)).toHaveLength(1)
   })
 
@@ -477,7 +493,7 @@ describe('chat import projection helpers', () => {
       onCommand: ({ commandNumber }) => {
         if (commandNumber !== 1) return
         withTrustedServerProjectionWrite(() => {
-          const character = DBState.db.characters[0]
+          const character = testDatabaseState.db.characters[0]
           const importedFolder = character.chatFolders.find((folder) => folder.name === 'Folder A')
           const importedChatRow = character.chats.find((chat) => chat.name === 'Imported One')
           if (importedFolder) importedFolder.name = 'Folder A edited'
@@ -502,14 +518,17 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.name)).toEqual(['Folder A edited'])
-      expect(DBState.db.characters[0].chats.map((chat) => chat.name)).toEqual(['Imported One edited', 'Chat A'])
+      expect(testDatabaseState.db.characters[0].chatFolders.map((folder) => folder.name)).toEqual(['Folder A edited'])
+      expect(testDatabaseState.db.characters[0].chats.map((chat) => chat.name)).toEqual([
+        'Imported One edited',
+        'Chat A',
+      ])
     })
   })
 
   it('imports JSONL into the captured character when selection changes while file selection is pending', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters.push({
+    testDatabaseState.db.characters.push({
       chaId: 'char-b',
       name: 'Character B',
       chatPage: 1,
@@ -529,10 +548,10 @@ describe('chat import projection helpers', () => {
 
     await importChat()
 
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({ name: 'Imported Chat' })
-    expect(DBState.db.characters[0].chatPage).toBe(0)
-    expect(DBState.db.characters[1].chatPage).toBe(1)
-    expect(DBState.db.characters[1].chats).toEqual([
+    expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({ name: 'Imported Chat' })
+    expect(testDatabaseState.db.characters[0].chatPage).toBe(0)
+    expect(testDatabaseState.db.characters[1].chatPage).toBe(1)
+    expect(testDatabaseState.db.characters[1].chats).toEqual([
       { id: 'chat-b-0', name: 'Chat B0', message: [], localLore: [], note: '' },
       { id: 'chat-b-1', name: 'Chat B1', message: [], localLore: [], note: '' },
     ])
@@ -543,8 +562,8 @@ describe('chat import projection helpers', () => {
 
   it('lets the newer same-character chat import win when an older picker resolves later', async () => {
     const calls = stubCommandFetch()
-    DBState.db.characters[0].chatPage = 1
-    DBState.db.characters[0].chats.push({
+    testDatabaseState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chats.push({
       id: 'chat-a-2',
       name: 'Chat A2',
       message: [],
@@ -565,7 +584,7 @@ describe('chat import projection helpers', () => {
       ]),
     )
     await newerImport
-    DBState.db.characters[0].chatPage = 1
+    testDatabaseState.db.characters[0].chatPage = 1
 
     olderFile.resolve(
       jsonlFile([
@@ -575,12 +594,12 @@ describe('chat import projection helpers', () => {
     )
     await olderImport
 
-    expect(DBState.db.characters[0].chats.map((chat) => chat.message?.[0]?.data ?? chat.name)).toEqual([
+    expect(testDatabaseState.db.characters[0].chats.map((chat) => chat.message?.[0]?.data ?? chat.name)).toEqual([
       'newer import wins',
       'Chat A',
       'Chat A2',
     ])
-    expect(DBState.db.characters[0].chatPage).toBe(1)
+    expect(testDatabaseState.db.characters[0].chatPage).toBe(1)
     const [createCall] = await waitForCreateChatCalls(calls)
     expect(createCall.body).toMatchObject({
       select: true,
@@ -636,7 +655,7 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
-      expect(DBState.db.characters[0].chats).toEqual([
+      expect(testDatabaseState.db.characters[0].chats).toEqual([
         { id: 'chat-a', name: 'Chat A', message: [], localLore: [], note: '' },
       ])
     })
@@ -655,7 +674,7 @@ describe('chat import projection helpers', () => {
       onCommand: ({ commandNumber }) => {
         if (commandNumber !== 1) return
         withTrustedServerProjectionWrite(() => {
-          const importedChatRow = DBState.db.characters[0].chats[0]
+          const importedChatRow = testDatabaseState.db.characters[0].chats[0]
           if (importedChatRow?.name === 'Imported Duplicate') {
             importedChatRow.name = 'Imported Duplicate edited'
           }
@@ -672,10 +691,13 @@ describe('chat import projection helpers', () => {
 
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
-      expect(DBState.db.characters[0].chats.map((chat) => chat.name)).toEqual(['Imported Duplicate edited', 'Chat A'])
+      expect(testDatabaseState.db.characters[0].chats.map((chat) => chat.name)).toEqual([
+        'Imported Duplicate edited',
+        'Chat A',
+      ])
     })
-    expect(DBState.db.characters[0].chats[0].id).not.toBe('chat-a')
-    expect(new Set(DBState.db.characters[0].chats.map((chat) => chat.id)).size).toBe(2)
+    expect(testDatabaseState.db.characters[0].chats[0].id).not.toBe('chat-a')
+    expect(new Set(testDatabaseState.db.characters[0].chats.map((chat) => chat.id)).size).toBe(2)
   })
 
   it('normalizes risuChat v1 generation settings to incomplete prefill before create-chat dispatch', async () => {
@@ -707,7 +729,7 @@ describe('chat import projection helpers', () => {
         mode: 'warm',
       },
     }
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({
       generationSettings: expectedGenerationSettings,
     })
     const [createCall] = await waitForCreateChatCalls(calls)
@@ -754,7 +776,7 @@ describe('chat import projection helpers', () => {
 
     await importChat()
 
-    const [configuredChat, invalidChat] = DBState.db.characters[0].chats
+    const [configuredChat, invalidChat] = testDatabaseState.db.characters[0].chats
     expect(configuredChat).toMatchObject({
       name: 'Configured V2',
       generationSettings: {
@@ -807,7 +829,7 @@ describe('chat import projection helpers', () => {
 
     await importChat()
 
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(testDatabaseState.db.characters[0].chats[0]).toMatchObject({
       generationSettings: {
         configured: false,
         personaId: 'persona-a',
