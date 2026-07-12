@@ -42,7 +42,7 @@ import {
   unReroll,
 } from './rerollNavigation.svelte'
 
-type Msg = { role: string; data: string; chatId: string }
+type Msg = { role: 'user' | 'char'; data: string; chatId: string }
 
 function tailUid(): string {
   return (testDatabaseState.db.characters[0].chats[0].message.at(-1) as unknown as Msg).chatId
