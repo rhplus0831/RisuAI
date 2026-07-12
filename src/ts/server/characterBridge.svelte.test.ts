@@ -67,8 +67,9 @@ vi.mock('../characterCommands', () => {
   }
 })
 
-import { DBState, selectedCharID } from '../stores.svelte'
-import { mergeServerProjectionCharacterRow } from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { mergeServerProjectionCharacterRow, setDatabaseLite, type Database } from '../storage/database.svelte'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   createServerBackedCharacterDraft,
   flushPendingServerBackedCharacterPatches,
@@ -80,6 +81,12 @@ import { watchServerBackedChatMetadata } from './chatBridge.svelte'
 import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
+
+const resourceDatabase = {
+  set current(value: unknown) {
+    setDatabaseLite(value as Database)
+  },
+}
 
 function characterRow(chaId: string, name: string, fields: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -99,7 +106,7 @@ function characterRow(chaId: string, name: string, fields: Record<string, unknow
 }
 
 function setupCharacter(name = 'Initial'): void {
-  ;(DBState as { db: unknown }).db = {
+  resourceDatabase.current = {
     currentChar: 0,
     characters: [characterRow('char-1', name)],
   }
@@ -107,7 +114,7 @@ function setupCharacter(name = 'Initial'): void {
 }
 
 function setupCharacters(characters: Array<Record<string, unknown>>, selected = 0): void {
-  ;(DBState as { db: unknown }).db = {
+  resourceDatabase.current = {
     currentChar: selected,
     characters,
   }
@@ -142,7 +149,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   selectedCharID.set(-1)
-  ;(DBState as { db: unknown }).db = {}
+  resourceDatabase.current = {}
 })
 
 describe('createServerBackedCharacterDraft seed gating', () => {
@@ -177,11 +184,11 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
     draft.value.newGenData.prompt = 'typed nested draft'
     await flushAndSettle()
-    ;(DBState as { db: unknown }).db = { ...DBState.db }
+    resourceDatabase.current = { ...getDatabase() }
     await flushAndSettle()
 
     expect(newGenDataReads).toBe(seedReads)
-    expect(projectedNewGenData.prompt).toBe('typed nested draft')
+    expect(getDatabase().characters[0].newGenData.prompt).toBe('typed nested draft')
     stop()
   })
 
@@ -193,7 +200,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     expect(draft.value.name).toBe('Initial')
 
     selectedCharID.set(1)
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = 1
+    ;(getDatabase() as unknown as { currentChar?: number }).currentChar = 1
     await flushAndSettle()
 
     expect(draft.characterId).toBe('char-2')
@@ -238,7 +245,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     draft.value.name = 'Local draft name'
     await flushAndSettle()
 
-    expect(DBState.db.characters[0].name).toBe('Local draft name')
+    expect(getDatabase().characters[0].name).toBe('Local draft name')
 
     const applied = mergeServerProjectionCharacterRow({
       ...characterRow('char-1', 'Stale server name'),
@@ -249,8 +256,8 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
     expect(draft.value.name).toBe('Local draft name')
     expect(draft.value.desc).toBe('Fresh server description')
-    expect(DBState.db.characters[0].name).toBe('Local draft name')
-    expect(DBState.db.characters[0].desc).toBe('Fresh server description')
+    expect(getDatabase().characters[0].name).toBe('Local draft name')
+    expect(getDatabase().characters[0].desc).toBe('Fresh server description')
     stop()
   })
 
@@ -279,9 +286,9 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     // the whole newGenData object local, including otherwise clean siblings.
     expect(draft.value.newGenData.instructions).toBe('')
     expect(draft.value.desc).toBe('Fresh server description')
-    expect(DBState.db.characters[0].newGenData.prompt).toBe('Local prompt')
-    expect(DBState.db.characters[0].newGenData.instructions).toBe('')
-    expect(DBState.db.characters[0].desc).toBe('Fresh server description')
+    expect(getDatabase().characters[0].newGenData.prompt).toBe('Local prompt')
+    expect(getDatabase().characters[0].newGenData.instructions).toBe('')
+    expect(getDatabase().characters[0].desc).toBe('Fresh server description')
     stop()
   })
 
@@ -307,8 +314,8 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
     expect(draft.value.alternateGreetings).toEqual(['Local alternate greeting'])
     expect(draft.value.desc).toBe('Fresh server description')
-    expect(DBState.db.characters[0].alternateGreetings).toEqual(['Local alternate greeting'])
-    expect(DBState.db.characters[0].desc).toBe('Fresh server description')
+    expect(getDatabase().characters[0].alternateGreetings).toEqual(['Local alternate greeting'])
+    expect(getDatabase().characters[0].desc).toBe('Fresh server description')
     stop()
   })
 
@@ -338,7 +345,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
     expect(draft.value.name).toBe('Later server name')
     expect(draft.value.desc).toBe('Later server description')
-    expect(DBState.db.characters[0].name).toBe('Later server name')
+    expect(getDatabase().characters[0].name).toBe('Later server name')
     stop()
   })
 
@@ -354,9 +361,9 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     await flushAndSettle()
 
     expect(projectionGuardState.epoch).toBe(0)
-    expect(DBState.db.characters[0].chaId).toBe('char-1')
-    expect(DBState.db.characters[0].name).toBe('Local draft')
-    expect(DBState.db.characters[0].newGenData.prompt).toBe('Local prompt')
+    expect(getDatabase().characters[0].chaId).toBe('char-1')
+    expect(getDatabase().characters[0].name).toBe('Local draft')
+    expect(getDatabase().characters[0].newGenData.prompt).toBe('Local prompt')
 
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -375,7 +382,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 
   it('does not roll back a profile field after a newer same-row edit', () => {
     setupCharacter('Initial')
-    DBState.db.characters[0].name = 'Newer local name'
+    getDatabase().characters[0].name = 'Newer local name'
 
     rollbackServerBackedCharacterProfile({
       characters: [],
@@ -387,12 +394,12 @@ describe('createServerBackedCharacterDraft seed gating', () => {
       attemptedProfile: { name: 'Attempted name' },
     } as any)
 
-    expect(DBState.db.characters[0].name).toBe('Newer local name')
+    expect(getDatabase().characters[0].name).toBe('Newer local name')
   })
 
   it('deletes a profile field added by a failed attempted rollback when the baseline lacked it', () => {
     setupCharacter('Initial')
-    DBState.db.characters[0].creatorNotes = 'Attempted notes'
+    getDatabase().characters[0].creatorNotes = 'Attempted notes'
 
     rollbackServerBackedCharacterProfile({
       characters: [],
@@ -404,7 +411,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
       attemptedProfile: { creatorNotes: 'Attempted notes' },
     } as any)
 
-    expect(Object.hasOwn(DBState.db.characters[0], 'creatorNotes')).toBe(false)
+    expect(Object.hasOwn(getDatabase().characters[0], 'creatorNotes')).toBe(false)
   })
 
   it('does not dispatch draft defaults from a selected character shell', async () => {
@@ -431,7 +438,7 @@ describe('createServerBackedCharacterDraft seed gating', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
 
     expect(recorded.characterUpdates).toEqual([])
-    expect(DBState.db.characters[0].name).toBe('Shell')
+    expect(getDatabase().characters[0].name).toBe('Shell')
 
     const applied = mergeServerProjectionCharacterRow(characterRow('char-1', 'Hydrated'))
     expect(applied).toBe(true)
@@ -469,7 +476,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     })
     flushSync()
 
-    DBState.db.characters[0].backgroundHTML = '<section>local background</section>'
+    getDatabase().characters[0].backgroundHTML = '<section>local background</section>'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -497,7 +504,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
 
     expect(recorded.characterUpdates).toEqual([])
 
-    DBState.db.characters[0].name = 'Local'
+    getDatabase().characters[0].name = 'Local'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -519,7 +526,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].name = 'Shell local'
+    getDatabase().characters[0].name = 'Shell local'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -531,7 +538,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.characterUpdates).toEqual([])
 
-    DBState.db.characters[0].name = 'Local'
+    getDatabase().characters[0].name = 'Local'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -544,7 +551,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.characters[0].name = 'Unload Local'
+    getDatabase().characters[0].name = 'Unload Local'
     flushSync()
     flushPendingServerBackedCharacterPatches({ keepalive: true })
 
@@ -562,7 +569,7 @@ describe('watchServerBackedCharacterProfile baselines', () => {
     const stop = watchServerBackedCharacterProfile({ delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.characters[0].name = 'Teardown Local'
+    getDatabase().characters[0].name = 'Teardown Local'
     flushSync()
     stop()
 

@@ -9,9 +9,10 @@ import {
   type CharacterStateSnapshot,
 } from '../characterCommands'
 import { canUseServerCommands, type CharacterSnapshot, type ServerCommandTransportOptions } from './commands'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 interface PendingCharacterPatch {
@@ -59,7 +60,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
   $effect(() => {
     const selected = selectedCharMirror.value
     const projectionApplyEpoch = getServerProjectionApplyEpoch()
-    const selectedCharacter = DBState.db.characters?.[selected]
+    const selectedCharacter = getDatabase().characters?.[selected]
     const characterId =
       selectedCharacter && !isServerCharacterShell(selectedCharacter) ? (selectedCharacter.chaId ?? null) : null
     const identityChanged = !initialized || selected !== previousSeedSelected || characterId !== previousSeedCharacterId
@@ -137,7 +138,7 @@ export function createServerBackedCharacterDraft(keys: readonly string[]): Serve
     untrack(() => {
       const patch = sanitizeCharacterPatch(cloneJsonValue(draft.value))
       withTrustedServerProjectionWrite(() => {
-        const character = DBState.db.characters?.find((candidate) => candidate.chaId === characterId)
+        const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
         if (!character) return
         Object.assign(character, patch)
       })
@@ -195,7 +196,7 @@ function reassertDirtyDraftFields(
   if (Object.keys(sanitized).length === 0) return
 
   withTrustedServerProjectionWrite(() => {
-    const character = DBState.db.characters?.[selected]
+    const character = getDatabase().characters?.[selected]
     if (!character || character.chaId !== characterId || isServerCharacterShell(character)) return
     Object.assign(character, sanitized)
   })
@@ -206,7 +207,7 @@ function currentCharacterDraftSeed(
   characterId: string | null,
   keys: readonly string[],
 ): { serverSnapshot: string; serverValue: CharacterDraftValue } {
-  const character = DBState.db.characters?.[selected]
+  const character = getDatabase().characters?.[selected]
   if (!character || isServerCharacterShell(character)) {
     const serverValue = normalizeCharacterDraft(pickCharacterFields({}, keys))
     return {
@@ -235,7 +236,7 @@ export function watchServerBackedCharacterProfile(options: WatchServerBackedChar
     $effect(() => {
       const projectionApplyEpoch = getServerProjectionApplyEpoch()
       const index = get(selectedCharID)
-      const character = DBState.db.characters?.[index]
+      const character = getDatabase().characters?.[index]
       const isShell = isServerCharacterShell(character)
       const currentProfile =
         character && !isShell ? scalarCharacterProfile(character as unknown as Record<string, unknown>) : {}
@@ -350,7 +351,7 @@ function selectedCharacterProfileSnapshot(
   return {
     characters: [],
     characterOrder: [],
-    currentChar: (DBState.db as unknown as { currentChar?: number }).currentChar,
+    currentChar: (getDatabase() as unknown as { currentChar?: number }).currentChar,
     selectedCharID: selected,
     profileCharacterId: characterId,
     profile,
@@ -505,7 +506,7 @@ export function rollbackServerBackedCharacterProfile(snapshot: CharacterStateSna
   try {
     if (profileSnapshot.profileCharacterId && profileSnapshot.profile) {
       withTrustedServerProjectionWrite(() => {
-        const character = DBState.db.characters?.find(
+        const character = getDatabase().characters?.find(
           (candidate) => candidate.chaId === profileSnapshot.profileCharacterId,
         )
         if (!character) return

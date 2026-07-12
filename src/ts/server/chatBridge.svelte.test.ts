@@ -135,8 +135,10 @@ vi.mock('../chatCommands', () => {
   }
 })
 
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { setDatabaseLite, type Database } from '../storage/database.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   currentChatMetadataBaselines,
   flushPendingServerBackedChatPatches,
@@ -147,6 +149,12 @@ import {
 
 const DELAY = 50
 
+const resourceDatabase = {
+  set current(value: unknown) {
+    setDatabaseLite(value as Database)
+  },
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((next) => {
@@ -156,7 +164,7 @@ function deferred<T>() {
 }
 
 function setupChat(name = 'Initial'): void {
-  ;(DBState as { db: unknown }).db = {
+  resourceDatabase.current = {
     characters: [
       {
         chaId: 'char-1',
@@ -171,7 +179,7 @@ function setupChat(name = 'Initial'): void {
 beforeEach(() => {
   vi.useFakeTimers()
   projectionGuardState.epoch = 0
-  chatCommandState.getDb = () => DBState.db as unknown as Record<string, unknown>
+  chatCommandState.getDb = () => getDatabase() as unknown as Record<string, unknown>
   chatCommandState.getSelectedCharId = () => {
     let selected = -1
     const unsubscribe = selectedCharID.subscribe((value) => {
@@ -191,7 +199,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   selectedCharID.set(-1)
-  ;(DBState as { db: unknown }).db = {}
+  resourceDatabase.current = {}
 })
 
 describe('watchServerBackedChatMetadata baselines', () => {
@@ -201,12 +209,12 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.characters[0].chats[0].name = 'Server'
+    getDatabase().characters[0].chats[0].name = 'Server'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.chatUpdates).toEqual([])
 
-    DBState.db.characters[0].chats[0].name = 'Local'
+    getDatabase().characters[0].chats[0].name = 'Local'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { name: 'Local' } }])
@@ -219,12 +227,12 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.characters[0].chatFolders[0].name = 'Server Folder'
+    getDatabase().characters[0].chatFolders[0].name = 'Server Folder'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.folderUpdates).toEqual([])
 
-    DBState.db.characters[0].chatFolders[0].folded = true
+    getDatabase().characters[0].chatFolders[0].folded = true
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { folded: true } }])
@@ -240,33 +248,33 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].chats[0].name = 'h'
+    getDatabase().characters[0].chats[0].name = 'h'
     flushSync()
-    DBState.db.characters[0].chats[0].name = 'he'
+    getDatabase().characters[0].chats[0].name = 'he'
     flushSync()
-    DBState.db.characters[0].chats[0].name = 'hello'
-    DBState.db.characters[0].chatFolders[0].name = 'folder'
+    getDatabase().characters[0].chats[0].name = 'hello'
+    getDatabase().characters[0].chatFolders[0].name = 'folder'
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.characters[0].chats[0].name = 'Server Old Chat'
-    DBState.db.characters[0].chatFolders[0].name = 'Server Old Folder'
+    getDatabase().characters[0].chats[0].name = 'Server Old Chat'
+    getDatabase().characters[0].chatFolders[0].name = 'Server Old Folder'
     flushSync()
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('hello')
-    expect(DBState.db.characters[0].chatFolders[0].name).toBe('folder')
+    expect(getDatabase().characters[0].chats[0].name).toBe('hello')
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('folder')
 
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.chatUpdates).toEqual([{ chatId: 'chat-1', patch: { name: 'hello' } }])
     expect(recorded.folderUpdates).toEqual([{ folderId: 'folder-1', patch: { name: 'folder' } }])
 
     projectionGuardState.epoch += 1
-    DBState.db.characters[0].chats[0].name = 'Older In-Flight Chat'
-    DBState.db.characters[0].chatFolders[0].name = 'Older In-Flight Folder'
+    getDatabase().characters[0].chats[0].name = 'Older In-Flight Chat'
+    getDatabase().characters[0].chatFolders[0].name = 'Older In-Flight Folder'
     flushSync()
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('hello')
-    expect(DBState.db.characters[0].chatFolders[0].name).toBe('folder')
+    expect(getDatabase().characters[0].chats[0].name).toBe('hello')
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('folder')
 
     chatSave.resolve({ status: 'ok' })
     folderSave.resolve({ status: 'ok' })
@@ -280,7 +288,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].chatFolders[0].folded = true
+    getDatabase().characters[0].chatFolders[0].folded = true
     syncServerBackedChatMetadataBaselines()
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
@@ -316,7 +324,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
 
-    DBState.db.characters[0].chats[0].name = 'Conflict'
+    getDatabase().characters[0].chats[0].name = 'Conflict'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -329,12 +337,12 @@ describe('watchServerBackedChatMetadata baselines', () => {
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('Initial')
+    expect(getDatabase().characters[0].chats[0].name).toBe('Initial')
     expect(recorded.chatUpdates.map(({ chatId, patch }) => ({ chatId, patch }))).toEqual([
       { chatId: 'chat-1', patch: { name: 'Conflict' } },
     ])
 
-    DBState.db.characters[0].chats[0].name = 'User Edit After Rollback'
+    getDatabase().characters[0].chats[0].name = 'User Edit After Rollback'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 
@@ -350,8 +358,8 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.characters[0].chats[0].name = 'Unload Chat'
-    DBState.db.characters[0].chatFolders[0].folded = true
+    getDatabase().characters[0].chats[0].name = 'Unload Chat'
+    getDatabase().characters[0].chatFolders[0].folded = true
     flushSync()
     flushPendingServerBackedChatPatches({ keepalive: true })
 
@@ -369,8 +377,8 @@ describe('watchServerBackedChatMetadata baselines', () => {
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY * 10 })
     flushSync()
 
-    DBState.db.characters[0].chats[0].name = 'Teardown Chat'
-    DBState.db.characters[0].chatFolders[0].folded = true
+    getDatabase().characters[0].chats[0].name = 'Teardown Chat'
+    getDatabase().characters[0].chatFolders[0].folded = true
     flushSync()
     stop()
 
@@ -386,7 +394,7 @@ describe('watchServerBackedChatMetadata baselines', () => {
 const BIG_BODY = 'x'.repeat(5000)
 
 function setupHydratedChat(): void {
-  ;(DBState as { db: unknown }).db = {
+  resourceDatabase.current = {
     characters: [
       {
         chaId: 'char-1',
@@ -432,7 +440,7 @@ describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
     // A streaming chunk only mutates message[], which is no longer a metadata
     // dependency: the watcher must neither clone the transcript nor queue a patch.
     const instrumented = withCloneInstrumentation(() => {
-      DBState.db.characters[0].chats[0].message.push({
+      getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: BIG_BODY,
         chatId: 'msg-stream',
@@ -452,7 +460,7 @@ describe('watchServerBackedChatMetadata clone cost (Phase 2)', () => {
     flushSync()
 
     projectionGuardState.epoch += 1
-    DBState.db.characters[0].chats[0].name = 'Server Renamed'
+    getDatabase().characters[0].chats[0].name = 'Server Renamed'
 
     const instrumented = withCloneInstrumentation(() => flushSync())
 
@@ -469,8 +477,8 @@ describe('watchServerBackedChatMetadata no-change short-circuit (Phase 6)', () =
     flushSync()
     const baseline = currentChatMetadataBaselines()
 
-    DBState.db.characters[0].chats[0].message[0].data = 'streaming frame'
-    ;(DBState as { db: unknown }).db = { ...DBState.db }
+    getDatabase().characters[0].chats[0].message[0].data = 'streaming frame'
+    resourceDatabase.current = { ...getDatabase() }
 
     const afterMessageOnly = currentChatMetadataBaselines(baseline)
     expect(afterMessageOnly.chats).toBe(baseline.chats)
@@ -487,14 +495,14 @@ describe('watchServerBackedChatMetadata no-change short-circuit (Phase 6)', () =
     setupChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
     flushSync()
-    ;(DBState as { db: unknown }).db = { ...DBState.db }
+    resourceDatabase.current = { ...getDatabase() }
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.chatUpdates).toEqual([])
     expect(recorded.folderUpdates).toEqual([])
 
-    DBState.db.characters[0].chats[0].note = 'Edited note'
-    DBState.db.characters[0].chatFolders[0].color = '#000'
+    getDatabase().characters[0].chats[0].note = 'Edited note'
+    getDatabase().characters[0].chatFolders[0].color = '#000'
     flushSync()
     await vi.advanceTimersByTimeAsync(DELAY)
 

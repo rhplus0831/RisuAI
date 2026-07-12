@@ -1,5 +1,4 @@
 import type { PromptItem } from '../process/prompt'
-import { DBState } from '../stores.svelte'
 import {
   canUseServerCommands,
   patchPromptSettingsCommand,
@@ -13,14 +12,15 @@ import {
 } from './commands'
 import { withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
 import { currentPromptTemplateOwnerId, isPromptTemplateHydrated } from './promptTemplateHydration'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 /**
  * Prompt-template editor projection helpers.
  *
  * The prompt-template editor keeps a local `promptTemplate` draft and mirrors
- * edits into the read-only server projection (`DBState.db.promptTemplate`). The
- * These helpers avoid two per-keystroke costs:
+ * edits into resource-backed state (`getDatabase().promptTemplate`). These
+ * helpers avoid two per-keystroke costs:
  *
  * - the optimistic projection write cloned the WHOLE `promptTemplate` array on
  *   every keystroke (High), and
@@ -96,7 +96,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
 const promptItemDirtyFieldsByOwnerAndId = new Map<string, Set<string>>()
 
 /**
- * Mirror one edited prompt item into the read-only projection in place, without
+ * Mirror one edited prompt item into resource-backed state in place, without
  * cloning the whole `promptTemplate` array. Returns the cloned item that was
  * written (use it as the server patch / rollback "attempted" baseline), or
  * `null` when the item is no longer in the draft.
@@ -111,14 +111,14 @@ export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId:
   if (!draftItem) return null
   const snapshot = cloneJsonValue(draftItem)
   withTrustedServerProjectionWrite(() => {
-    const template = DBState.db.promptTemplate
+    const template = getDatabase().promptTemplate
     if (!Array.isArray(template)) {
-      DBState.db.promptTemplate = cloneJsonValue(draftItems)
+      getDatabase().promptTemplate = cloneJsonValue(draftItems)
       return
     }
     const index = template.findIndex((item) => item.id === itemId)
     if (index === -1) {
-      DBState.db.promptTemplate = cloneJsonValue(draftItems)
+      getDatabase().promptTemplate = cloneJsonValue(draftItems)
       return
     }
     template[index] = snapshot
@@ -127,13 +127,13 @@ export function applyPromptItemProjectionWrite(draftItems: PromptItem[], itemId:
 }
 
 /**
- * Restore a single prompt item in the projection in place (failed-command
+ * Restore a single prompt item in resource-backed state in place (failed-command
  * rollback), leaving every other item untouched. The former rollback re-cloned
  * the whole `promptTemplate` array.
  */
 export function restorePromptItemProjectionWrite(itemId: string, previousItem: PromptItem): void {
   withTrustedServerProjectionWrite(() => {
-    const template = DBState.db.promptTemplate
+    const template = getDatabase().promptTemplate
     if (!Array.isArray(template)) return
     const index = template.findIndex((item) => item.id === itemId)
     if (index !== -1) template[index] = cloneJsonValue(previousItem)
@@ -345,7 +345,7 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
     clearDirtyPromptItemFieldsMatchingProjection(
       pending.ownerId,
       pending.binding.getItems(),
-      (DBState.db.promptTemplate ?? []) as PromptItem[],
+      (getDatabase().promptTemplate ?? []) as PromptItem[],
     )
   })
 }
@@ -400,7 +400,7 @@ function rollbackPendingPromptItemUpdate(
 
 function rollbackPromptSettingsPatch(previous: SettingsPatch, attempted: SettingsPatch): void {
   withTrustedServerProjectionWrite(() => {
-    const target = DBState.db as unknown as Record<string, unknown>
+    const target = getDatabase() as unknown as Record<string, unknown>
     for (const [key, previousValue] of Object.entries(previous)) {
       if (snapshotJson(target[key]) === snapshotJson(attempted[key])) {
         target[key] = cloneJsonValue(previousValue)
@@ -417,20 +417,19 @@ export interface PromptTemplateReconcileResult {
 }
 
 /**
- * Decide whether the prompt-template draft should be re-pulled from the server
- * projection. The cached command revision is the discriminator: a keystroke's
+ * Decide whether the prompt-template draft should be re-pulled from server
+ * resource state. The cached command revision is the discriminator: a keystroke's
  * optimistic write never advances it, so reconciliation only runs after a real
  * server push / command response. The whole-template stringify only happens on
  * such a revision advance, never per keystroke.
  *
- * Reads `DBState.db.promptTemplate` first so a caller `$effect` registers the
- * projection dependency (`DBState.db` is reassigned on every guarded write /
- * projection apply) and re-runs on a server push.
+ * Reads `getDatabase().promptTemplate` first so a caller `$effect` registers the
+ * resource-state dependency and re-runs on a server push.
  */
 export function reconcilePromptTemplateDraft(
   draftItems: PromptItem[],
   previousRevision: number | null,
-  projectedItems: PromptItem[] = (DBState.db.promptTemplate ?? []) as PromptItem[],
+  projectedItems: PromptItem[] = (getDatabase().promptTemplate ?? []) as PromptItem[],
 ): PromptTemplateReconcileResult {
   const ownerId = currentPromptTemplateOwnerId()
   if (!isPromptTemplateHydrated(ownerId)) {
@@ -651,6 +650,6 @@ function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
 function applyPromptTemplateCollectionRollback(binding: PromptTemplateDraftBinding, nextItems: PromptItem[]): void {
   binding.setItems(nextItems)
   withTrustedServerProjectionWrite(() => {
-    DBState.db.promptTemplate = cloneJsonValue(nextItems)
+    getDatabase().promptTemplate = cloneJsonValue(nextItems)
   })
 }

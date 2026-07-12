@@ -17,9 +17,10 @@ import {
   type ChatSnapshot,
   type ServerCommandTransportOptions,
 } from './commands'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import type { Chat, ChatFolder } from '../storage/database.svelte'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 
 interface PendingChatPatch {
   chatId: string
@@ -90,7 +91,7 @@ export function watchServerBackedChatMetadata(options: WatchServerBackedChatMeta
   let previousChats = new Map<string, ChatSnapshot>()
   let previousFolders = new Map<string, ChatFolderSnapshot>()
   let previousSelectedChar = get(selectedCharID)
-  let previousCharacterId = DBState.db.characters?.[previousSelectedChar]?.chaId
+  let previousCharacterId = getDatabase().characters?.[previousSelectedChar]?.chaId
   let previousProjectionApplyEpoch = getServerProjectionApplyEpoch()
 
   resetActiveChatMetadataBaselines = () => {
@@ -396,8 +397,8 @@ function applyFolderMetadataPatch(
 
 function resolveMetadataCharacter(characterId: string | undefined, selectedChar: number) {
   return (
-    DBState.db.characters?.find((candidate) => Boolean(characterId) && candidate.chaId === characterId) ??
-    DBState.db.characters?.[selectedChar]
+    getDatabase().characters?.find((candidate) => Boolean(characterId) && candidate.chaId === characterId) ??
+    getDatabase().characters?.[selectedChar]
   )
 }
 
@@ -437,7 +438,7 @@ function scalarChatFolderMetadata(folder: ChatFolder): ChatFolderSnapshot {
 
 export function currentChatMetadataBaselines(previous?: ChatMetadataBaselines): ChatMetadataBaselines {
   const selectedChar = get(selectedCharID)
-  const character = DBState.db.characters?.[selectedChar]
+  const character = getDatabase().characters?.[selectedChar]
   const characterId = character?.chaId
   const chats = (character?.chats ?? []).filter(hasStringId)
   const folders = (character?.chatFolders ?? []).filter(hasStringId)
