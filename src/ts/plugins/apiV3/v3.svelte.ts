@@ -31,7 +31,6 @@ import {
   additionalHamburgerMenu,
   additionalSettingsMenu,
   bodyIntercepterStore,
-  DBState,
   selectedCharID,
   type MenuDef,
 } from 'src/ts/stores.svelte'
@@ -80,7 +79,7 @@ function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous
     rollback: () => {
       withTrustedServerProjectionWrite(() => {
         const rolledBack = applyAttemptedFieldRollback({
-          target: DBState.db as unknown as Record<string, unknown>,
+          target: getDatabase() as unknown as Record<string, unknown>,
           previous: rollbackPrevious,
           attempted,
         })
@@ -888,7 +887,7 @@ const getPluginPermission = async (
   }
 
   pluginHash =
-    (await hasher(new TextEncoder().encode(DBState.db.plugins.find((p) => p.name === pluginName)?.script))) +
+    (await hasher(new TextEncoder().encode(getDatabase().plugins.find((p) => p.name === pluginName)?.script))) +
     `_${permissionDesc}`
 
   if (!requiresReconfirm && (await permissionForage.getItem(pluginHash))) {
@@ -1077,7 +1076,7 @@ const makeRisuaiAPIV3 = (
       if (!conf) {
         return null
       }
-      const db = DBState.db
+      const db = getDatabase()
       let liteDB = {}
       for (const key of allowedDbKeys) {
         if (includeOnly !== 'all' && !includeOnly.includes(key)) {
@@ -1093,14 +1092,14 @@ const makeRisuaiAPIV3 = (
     // --- Color Scheme APIs ---
     changeColorScheme: (name: string) => {
       const previous = {
-        colorScheme: cloneJsonValue(DBState.db.colorScheme),
-        colorSchemeName: DBState.db.colorSchemeName,
+        colorScheme: cloneJsonValue(getDatabase().colorScheme),
+        colorSchemeName: getDatabase().colorSchemeName,
       }
       changeColorScheme(name)
       dispatchPluginApiSettingsPatch(
         {
-          colorScheme: cloneJsonValue(DBState.db.colorScheme),
-          colorSchemeName: DBState.db.colorSchemeName,
+          colorScheme: cloneJsonValue(getDatabase().colorScheme),
+          colorSchemeName: getDatabase().colorSchemeName,
         },
         previous,
       )
@@ -1127,24 +1126,24 @@ const makeRisuaiAPIV3 = (
         throw new Error('Invalid color scheme type: must be "light" or "dark"')
       }
       const previous = {
-        colorScheme: cloneJsonValue(DBState.db.colorScheme),
-        colorSchemeName: DBState.db.colorSchemeName,
+        colorScheme: cloneJsonValue(getDatabase().colorScheme),
+        colorSchemeName: getDatabase().colorSchemeName,
       }
       withTrustedServerProjectionWrite(() => {
-        DBState.db.colorSchemeName = 'custom'
-        DBState.db.colorScheme = scheme
+        getDatabase().colorSchemeName = 'custom'
+        getDatabase().colorScheme = scheme
       })
       updateColorScheme()
       dispatchPluginApiSettingsPatch(
         {
-          colorScheme: cloneJsonValue(DBState.db.colorScheme),
-          colorSchemeName: DBState.db.colorSchemeName,
+          colorScheme: cloneJsonValue(getDatabase().colorScheme),
+          colorSchemeName: getDatabase().colorSchemeName,
         },
         previous,
       )
     },
     getColorScheme: () => {
-      const db = DBState.db
+      const db = getDatabase()
       return {
         name: db.colorSchemeName,
         scheme: $state.snapshot(db.colorScheme),
@@ -1157,13 +1156,13 @@ const makeRisuaiAPIV3 = (
         throw new Error(`Invalid text theme: ${name}`)
       }
       const previous = {
-        textTheme: DBState.db.textTheme,
+        textTheme: getDatabase().textTheme,
       }
       withTrustedServerProjectionWrite(() => {
-        DBState.db.textTheme = name
+        getDatabase().textTheme = name
       })
       updateTextThemeAndCSS()
-      dispatchPluginApiSettingsPatch({ textTheme: DBState.db.textTheme }, previous)
+      dispatchPluginApiSettingsPatch({ textTheme: getDatabase().textTheme }, previous)
     },
     setCustomTextTheme: (theme: {
       FontColorStandard: string
@@ -1187,24 +1186,24 @@ const makeRisuaiAPIV3 = (
         }
       }
       const previous = {
-        textTheme: DBState.db.textTheme,
-        customTextTheme: cloneJsonValue(DBState.db.customTextTheme),
+        textTheme: getDatabase().textTheme,
+        customTextTheme: cloneJsonValue(getDatabase().customTextTheme),
       }
       withTrustedServerProjectionWrite(() => {
-        DBState.db.textTheme = 'custom'
-        DBState.db.customTextTheme = theme
+        getDatabase().textTheme = 'custom'
+        getDatabase().customTextTheme = theme
       })
       updateTextThemeAndCSS()
       dispatchPluginApiSettingsPatch(
         {
-          textTheme: DBState.db.textTheme,
-          customTextTheme: cloneJsonValue(DBState.db.customTextTheme),
+          textTheme: getDatabase().textTheme,
+          customTextTheme: cloneJsonValue(getDatabase().customTextTheme),
         },
         previous,
       )
     },
     getTextTheme: () => {
-      const db = DBState.db
+      const db = getDatabase()
       return {
         name: db.textTheme,
         customTheme: $state.snapshot(db.customTextTheme),
@@ -1245,7 +1244,7 @@ const makeRisuaiAPIV3 = (
       }
     },
     getCharacterFromIndex: (index: number) => {
-      const db = DBState.db
+      const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[index]
       if (charId) {
@@ -1254,18 +1253,18 @@ const makeRisuaiAPIV3 = (
       return null
     },
     setCharacterToIndex: (index: number, char: any) => {
-      const db = DBState.db
+      const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[index]
       if (charId) {
         if (!canUseServerCommands()) {
           withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[charId] = char
+            getDatabase().characters[charId] = char
           })
           return
         }
 
-        const previousCharacter = DBState.db.characters[charId]
+        const previousCharacter = getDatabase().characters[charId]
         assertNoUnsupportedCharacterChanges(previousCharacter, char, 'setCharacterToIndex')
         const previous = currentCharacterRowSnapshot(index)
         const previousCharacterSnapshot = $state.snapshot(previousCharacter)
@@ -1278,13 +1277,13 @@ const makeRisuaiAPIV3 = (
         )
         if (!optimisticCharacter || factories.length === 0) return
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[charId] = optimisticCharacter
+          getDatabase().characters[charId] = optimisticCharacter
         })
         runOptimisticCommandSequence(factories, rollback)
       }
     },
     getChatFromIndex: (characterIndex: number, chatIndex: number) => {
-      const db = DBState.db
+      const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[characterIndex]
       if (charId) {
@@ -1296,25 +1295,25 @@ const makeRisuaiAPIV3 = (
       return null
     },
     setChatToIndex: (characterIndex: number, chatIndex: number, chat: any) => {
-      const db = DBState.db
+      const db = getDatabase()
       const charIds = Object.keys(db.characters)
       const charId = charIds[characterIndex]
       if (charId) {
         const chats = db.characters[charId].chats
         if (chats && chats[chatIndex]) {
-          const previousChat = DBState.db.characters[charId].chats[chatIndex]
+          const previousChat = getDatabase().characters[charId].chats[chatIndex]
           if (canUseServerCommands()) {
             assertNoUnsupportedChatChanges(previousChat, chat, 'setChatToIndex')
           }
           const previousChatSnapshot = $state.snapshot(previousChat)
           const previous = {
             selectedCharID: get(selectedCharID),
-            characterId: DBState.db.characters[charId]?.chaId,
+            characterId: getDatabase().characters[charId]?.chaId,
             chatId: previousChatSnapshot.id,
             chat: previousChatSnapshot,
           }
           withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[charId].chats[chatIndex] = chat
+            getDatabase().characters[charId].chats[chatIndex] = chat
           })
           // Route through the sequencer so this call shares one advancing revision
           // baseline with other makeRisuaiAPIV3 command factories.
@@ -1327,7 +1326,7 @@ const makeRisuaiAPIV3 = (
       return get(selectedCharID)
     },
     getCurrentChatIndex: () => {
-      const db = DBState.db
+      const db = getDatabase()
       const charId = get(selectedCharID)
       return db.characters[charId].chatPage
     },
@@ -1663,14 +1662,14 @@ const makeRisuaiAPIV3 = (
         throw new Error('A chat is already in progress')
       }
 
-      if (getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')) {
+      if (getModelInfo(getDatabase().aiModel).id.startsWith('pluginmodel:::')) {
         // Plugin-provided models are blocked from chat sends to keep plugin IPC
         // outside provider execution.
         throw new Error('Sending chat with plugin-based model is currently blocked')
       }
 
       const charId = get(selectedCharID)
-      const char = DBState.db.characters[charId]
+      const char = getDatabase().characters[charId]
       if (!char) {
         throw new Error('No character selected')
       }
@@ -1701,7 +1700,7 @@ const makeRisuaiAPIV3 = (
     },
     postPluginChannelMessage: (pluginName: string, channelName: string, message: any) => {
       const currentPluginName = plugin.name
-      const receiverPlugin = DBState.db.plugins.find((p) => p.name === pluginName)
+      const receiverPlugin = getDatabase().plugins.find((p) => p.name === pluginName)
 
       if (!receiverPlugin) {
         console.warn(
