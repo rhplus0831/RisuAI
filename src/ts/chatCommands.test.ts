@@ -26,7 +26,11 @@ import {
   withTrustedServerProjectionWrite,
 } from './server/projectionWriteGuard.svelte'
 import { setChatVar } from './parser/chatVar.svelte'
-import { DBState, selectedCharID } from './stores.svelte'
+import { selectedCharID } from './stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from './server/resourceState.svelte'
 // Import the heavy database module AFTER stores.svelte: importing it first
 // triggers a circular-import TDZ when the reactive moduleUpdate $effect runs
 // mid-init.
@@ -520,7 +524,7 @@ function orderedChatMetadata(values: Record<string, unknown>): Chat {
 
 function seedReadyActiveChatGenerationSettings(): void {
   withTrustedServerProjectionWrite(() => {
-    DBState.db.personas = [
+    getDatabase().personas = [
       {
         id: 'persona-a',
         name: 'Persona A',
@@ -530,9 +534,9 @@ function seedReadyActiveChatGenerationSettings(): void {
         largePortrait: false,
       },
     ] as any
-    DBState.db.modelPresets = [{ id: 'model-preset-a', name: 'Model Preset A' }] as any
-    DBState.db.promptPresets = [{ id: 'preset-a', name: 'Preset A' }] as any
-    DBState.db.characters[0].chats[0].generationSettings = {
+    getDatabase().modelPresets = [{ id: 'model-preset-a', name: 'Model Preset A' }] as any
+    getDatabase().promptPresets = [{ id: 'preset-a', name: 'Preset A' }] as any
+    getDatabase().characters[0].chats[0].generationSettings = {
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -547,7 +551,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(false)
   selectedCharID.set(0)
-  DBState.db = {
+  setDatabaseLite({
     enabledModules: [],
     moduleIntergration: '',
     modules: [],
@@ -569,7 +573,7 @@ beforeEach(() => {
         chatFolders: [{ id: 'folder-a', name: 'Folder', folded: false }],
       },
     ],
-  } as any
+  } as any)
 })
 
 afterEach(() => {
@@ -593,11 +597,11 @@ describe('chat command projection helpers', () => {
 
     expect(applyOptimisticCreatedChat('char-a', chat, previous)).toBe(true)
 
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
-    expect(DBState.db.characters[0].chatPage).toBe(0)
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
+    expect(getDatabase().characters[0].chatPage).toBe(0)
 
     restoreChatState(previous)
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
   it('optimistically inserts a command-created chat folder under the projection guard', () => {
@@ -611,10 +615,10 @@ describe('chat command projection helpers', () => {
 
     expect(applyOptimisticCreatedChatFolder('char-a', folder, previous)).toBe(true)
 
-    expect(DBState.db.characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-b', 'folder-a'])
+    expect(getDatabase().characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-b', 'folder-a'])
 
     restoreChatState(previous)
-    expect(DBState.db.characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-a'])
+    expect(getDatabase().characters[0].chatFolders.map((candidate) => candidate.id)).toEqual(['folder-a'])
   })
 
   it('optimistically removes a command-deleted chat under the projection guard', () => {
@@ -626,11 +630,11 @@ describe('chat command projection helpers', () => {
       selectedChatId: 'chat-b',
     })
 
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-b'])
-    expect(DBState.db.characters[0].chatPage).toBe(0)
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-b'])
+    expect(getDatabase().characters[0].chatPage).toBe(0)
 
     restoreChatState(previous)
-    expect(DBState.db.characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
   it('routes SideChatList chat and folder flows through commands under the projection guard', async () => {
@@ -638,7 +642,7 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
+      getDatabase().characters[0].chats.unshift({ id: 'direct', name: 'Direct', message: [] } as any)
     }).toThrow()
 
     const createChat: ChatSnapshot = {
@@ -677,7 +681,7 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 7)
     expect(() => {
-      DBState.db.characters[0].chatFolders.push({ id: 'direct-folder', name: 'Direct' } as any)
+      getDatabase().characters[0].chatFolders.push({ id: 'direct-folder', name: 'Direct' } as any)
     }).toThrow()
     expect(calls).toEqual([
       {
@@ -783,7 +787,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characters[0].chatFolders[0]
+          const folder = getDatabase().characters[0].chatFolders[0]
           folder.name = 'Newer folder name'
         })
       },
@@ -792,7 +796,7 @@ describe('chat command projection helpers', () => {
 
     const previous = currentChatStateSnapshot()
     withTrustedServerProjectionWrite(() => {
-      const folder = DBState.db.characters[0].chatFolders[0]
+      const folder = getDatabase().characters[0].chatFolders[0]
       folder.name = 'Attempted folder name'
       folder.folded = true
     })
@@ -801,7 +805,7 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+      expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
         id: 'folder-a',
         name: 'Newer folder name',
         folded: false,
@@ -814,7 +818,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chatFolders.push({
+          getDatabase().characters[0].chatFolders.push({
             id: 'folder-c',
             name: 'Newer sibling folder',
             folded: false,
@@ -831,16 +835,16 @@ describe('chat command projection helpers', () => {
       folded: false,
     }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatFolders.unshift(attemptedFolder)
+      getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
     })
 
     dispatchCreateChatFolder('char-a', attemptedFolder, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-c'])
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-c'])
     })
-    expect(DBState.db.characters[0].chatFolders[1]).toMatchObject({
+    expect(getDatabase().characters[0].chatFolders[1]).toMatchObject({
       id: 'folder-c',
       name: 'Newer sibling folder',
     })
@@ -851,7 +855,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chat-folders' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].folderId = 'folder-b'
+          getDatabase().characters[0].chats[0].folderId = 'folder-b'
         })
       },
     })
@@ -864,24 +868,24 @@ describe('chat command projection helpers', () => {
       folded: false,
     }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatFolders.unshift(attemptedFolder)
+      getDatabase().characters[0].chatFolders.unshift(attemptedFolder)
     })
 
     dispatchCreateChatFolder('char-a', attemptedFolder, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
-      expect(DBState.db.characters[0].chats[0].folderId).toBe('folder-b')
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
+      expect(getDatabase().characters[0].chats[0].folderId).toBe('folder-b')
     })
   })
 
   it('restores only a missing deleted folder and still-null chat folder ids after a failed delete', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
     ]
-    DBState.db.characters[0].chats = [
+    getDatabase().characters[0].chats = [
       { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
       { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
       { id: 'chat-c', name: 'Chat C', folderId: 'folder-a', message: [] },
@@ -890,10 +894,10 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'DELETE',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].name = 'Newer unrelated chat name'
-          DBState.db.characters[0].chats[1].name = 'Newer affected chat name'
-          DBState.db.characters[0].chats[2].name = 'Moved affected chat'
-          DBState.db.characters[0].chats[2].folderId = 'folder-b'
+          getDatabase().characters[0].chats[0].name = 'Newer unrelated chat name'
+          getDatabase().characters[0].chats[1].name = 'Newer affected chat name'
+          getDatabase().characters[0].chats[2].name = 'Moved affected chat'
+          getDatabase().characters[0].chats[2].folderId = 'folder-b'
         })
       },
     })
@@ -901,8 +905,8 @@ describe('chat command projection helpers', () => {
 
     const previous = currentChatStateSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatFolders.splice(0, 1)
-      for (const chat of DBState.db.characters[0].chats) {
+      getDatabase().characters[0].chatFolders.splice(0, 1)
+      for (const chat of getDatabase().characters[0].chats) {
         if (chat.folderId === 'folder-a') chat.folderId = null
       }
     })
@@ -911,22 +915,22 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-b'])
-      expect(DBState.db.characters[0].chats[1].folderId).toBe('folder-a')
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-b'])
+      expect(getDatabase().characters[0].chats[1].folderId).toBe('folder-a')
     })
-    expect(DBState.db.characters[0].chats[0].name).toBe('Newer unrelated chat name')
-    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+    expect(getDatabase().characters[0].chats[0].name).toBe('Newer unrelated chat name')
+    expect(getDatabase().characters[0].chats[1]).toMatchObject({
       name: 'Newer affected chat name',
       folderId: 'folder-a',
     })
-    expect(DBState.db.characters[0].chats[2]).toMatchObject({
+    expect(getDatabase().characters[0].chats[2]).toMatchObject({
       name: 'Moved affected chat',
       folderId: 'folder-b',
     })
   })
 
   it('restores a failed chat folder reorder only when live order still equals the attempted order', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
       { id: 'folder-c', name: 'Folder C', folded: false },
@@ -936,7 +940,7 @@ describe('chat command projection helpers', () => {
         url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+          const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
           if (folder) folder.name = 'Newer Folder C'
         })
       },
@@ -946,25 +950,25 @@ describe('chat command projection helpers', () => {
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
     withTrustedServerProjectionWrite(() => {
-      const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      DBState.db.characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
+      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+      getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
     })
 
     dispatchReorderChatFoldersByIds('char-a', attemptedIds, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual([
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual([
         'folder-a',
         'folder-b',
         'folder-c',
       ])
     })
-    expect(DBState.db.characters[0].chatFolders[2].name).toBe('Newer Folder C')
+    expect(getDatabase().characters[0].chatFolders[2].name).toBe('Newer Folder C')
   })
 
   it('skips failed chat folder reorder rollback after a newer reorder', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
       { id: 'folder-c', name: 'Folder C', folded: false },
@@ -975,8 +979,8 @@ describe('chat command projection helpers', () => {
         url === '/api/v1/commands/characters/char-a/chat-folders/reorder' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
-          DBState.db.characters[0].chatFolders = newerIds.map((id) => foldersById.get(id)!)
+          const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+          getDatabase().characters[0].chatFolders = newerIds.map((id) => foldersById.get(id)!)
         })
       },
     })
@@ -985,25 +989,25 @@ describe('chat command projection helpers', () => {
     const previous = currentChatStateSnapshot()
     const attemptedIds = ['folder-c', 'folder-a', 'folder-b']
     withTrustedServerProjectionWrite(() => {
-      const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      DBState.db.characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
+      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+      getDatabase().characters[0].chatFolders = attemptedIds.map((id) => foldersById.get(id)!)
     })
 
     dispatchReorderChatFoldersByIds('char-a', attemptedIds, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(newerIds)
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(newerIds)
     })
   })
 
   it('keeps an accepted folder reorder when the combined chat reorder fails', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
       { id: 'folder-c', name: 'Folder C', folded: false },
     ]
-    DBState.db.characters[0].chats = [
+    getDatabase().characters[0].chats = [
       { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
       { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
       { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
@@ -1012,8 +1016,8 @@ describe('chat command projection helpers', () => {
       fail: 'chats',
       onChatCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
-          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (folder) folder.name = 'Newer Folder C'
           if (chat) chat.name = 'Newer Chat C'
         })
@@ -1030,14 +1034,14 @@ describe('chat command projection helpers', () => {
       'chat-c': 'folder-a',
     }
     withTrustedServerProjectionWrite(() => {
-      const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
-      DBState.db.characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
-      DBState.db.characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
-      for (const chat of DBState.db.characters[0].chats) {
+      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+      getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
+      getDatabase().characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
+      for (const chat of getDatabase().characters[0].chats) {
         chat.folderId = attemptedFolderByChatId[chat.id]
       }
-      DBState.db.characters[0].chatPage = 1
+      getDatabase().characters[0].chatPage = 1
     })
 
     dispatchReorderChatFoldersAndChatsByIds(
@@ -1051,25 +1055,25 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 3)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(attemptedFolderIds)
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(attemptedFolderIds)
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
-    expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+    expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
       id: 'folder-c',
       name: 'Newer Folder C',
     })
-    expect(DBState.db.characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
-    expect(DBState.db.characters[0].chats[2].name).toBe('Newer Chat C')
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+    expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
   })
 
   it('rolls back both attempted orders narrowly when the combined folder reorder fails first', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
       { id: 'folder-c', name: 'Folder C', folded: false },
     ]
-    DBState.db.characters[0].chats = [
+    getDatabase().characters[0].chats = [
       { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
       { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
       { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
@@ -1078,8 +1082,8 @@ describe('chat command projection helpers', () => {
       fail: 'folders',
       onFolderCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const folder = DBState.db.characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
-          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          const folder = getDatabase().characters[0].chatFolders.find((candidate) => candidate.id === 'folder-c')
+          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (folder) folder.name = 'Newer Folder C'
           if (chat) chat.name = 'Newer Chat C'
         })
@@ -1096,14 +1100,14 @@ describe('chat command projection helpers', () => {
       'chat-c': 'folder-a',
     }
     withTrustedServerProjectionWrite(() => {
-      const foldersById = new Map(DBState.db.characters[0].chatFolders.map((folder) => [folder.id, folder]))
-      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
-      DBState.db.characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
-      DBState.db.characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
-      for (const chat of DBState.db.characters[0].chats) {
+      const foldersById = new Map(getDatabase().characters[0].chatFolders.map((folder) => [folder.id, folder]))
+      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+      getDatabase().characters[0].chatFolders = attemptedFolderIds.map((id) => foldersById.get(id)!)
+      getDatabase().characters[0].chats = attemptedChatIds.map((id) => chatsById.get(id)!)
+      for (const chat of getDatabase().characters[0].chats) {
         chat.folderId = attemptedFolderByChatId[chat.id]
       }
-      DBState.db.characters[0].chatPage = 1
+      getDatabase().characters[0].chatPage = 1
     })
 
     dispatchReorderChatFoldersAndChatsByIds(
@@ -1121,20 +1125,20 @@ describe('chat command projection helpers', () => {
       '/api/v1/commands/characters/char-a/chat-folders/reorder',
     ])
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual([
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual([
         'folder-a',
         'folder-b',
         'folder-c',
       ])
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
-    expect(DBState.db.characters[0].chatFolders[2]).toMatchObject({
+    expect(getDatabase().characters[0].chatFolders[2]).toMatchObject({
       id: 'folder-c',
       name: 'Newer Folder C',
     })
-    expect(DBState.db.characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
-    expect(DBState.db.characters[0].chats[2].name).toBe('Newer Chat C')
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+    expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
   })
 
   it('keeps a pre-existing same-id chat after a failed create rollback', async () => {
@@ -1144,18 +1148,18 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     const previous = currentChatStateSnapshot()
-    const attemptedChat = jsonClone(DBState.db.characters[0].chats[1])
+    const attemptedChat = jsonClone(getDatabase().characters[0].chats[1])
 
     expect(applyOptimisticCreatedChat('char-a', attemptedChat, previous)).toBe(true)
-    expect(DBState.db.characters[0].chatPage).toBe(1)
+    expect(getDatabase().characters[0].chatPage).toBe(1)
 
     dispatchCreateChat('char-a', attemptedChat, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
     })
-    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+    expect(getDatabase().characters[0].chats[1]).toMatchObject({
       id: 'chat-b',
       name: 'Chat B',
     })
@@ -1166,8 +1170,8 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[2].name = 'Newer sibling name'
-          DBState.db.characters[0].chats.push({
+          getDatabase().characters[0].chats[2].name = 'Newer sibling name'
+          getDatabase().characters[0].chats.push({
             id: 'chat-d',
             name: 'Newer appended chat',
             folderId: null,
@@ -1191,19 +1195,19 @@ describe('chat command projection helpers', () => {
       fmIndex: -1,
     } as Chat
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats.unshift(attemptedChat)
-      DBState.db.characters[0].chatPage = 0
+      getDatabase().characters[0].chats.unshift(attemptedChat)
+      getDatabase().characters[0].chatPage = 0
     })
 
     dispatchCreateChat('char-a', attemptedChat, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-d'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-d'])
     })
-    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
-    expect(DBState.db.characters[0].chats[2].name).toBe('Newer appended chat')
-    expect(DBState.db.characters[0].chatPage).toBe(0)
+    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
+    expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
   it('skips failed create rollback when the attempted chat has a newer same-row edit', async () => {
@@ -1211,8 +1215,8 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].name = 'Newer attempted chat name'
-          DBState.db.characters[0].chats[2].name = 'Newer sibling name'
+          getDatabase().characters[0].chats[0].name = 'Newer attempted chat name'
+          getDatabase().characters[0].chats[2].name = 'Newer sibling name'
         })
       },
     })
@@ -1229,19 +1233,19 @@ describe('chat command projection helpers', () => {
       fmIndex: -1,
     } as Chat
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats.unshift(attemptedChat)
-      DBState.db.characters[0].chatPage = 0
+      getDatabase().characters[0].chats.unshift(attemptedChat)
+      getDatabase().characters[0].chatPage = 0
     })
 
     dispatchCreateChat('char-a', attemptedChat, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
     })
-    expect(DBState.db.characters[0].chats[0].name).toBe('Newer attempted chat name')
-    expect(DBState.db.characters[0].chats[2].name).toBe('Newer sibling name')
-    expect(DBState.db.characters[0].chatPage).toBe(0)
+    expect(getDatabase().characters[0].chats[0].name).toBe('Newer attempted chat name')
+    expect(getDatabase().characters[0].chats[2].name).toBe('Newer sibling name')
+    expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
   it('failed fork with no local optimistic insert preserves a newer sibling chat edit', async () => {
@@ -1249,7 +1253,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[1].name = 'Newer sibling name'
+          getDatabase().characters[0].chats[1].name = 'Newer sibling name'
         })
       },
     })
@@ -1267,9 +1271,9 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
     })
-    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+    expect(getDatabase().characters[0].chats[1]).toMatchObject({
       id: 'chat-b',
       name: 'Newer sibling name',
     })
@@ -1280,8 +1284,8 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[2].name = 'Newer sibling name'
-          DBState.db.characters[0].chatFolders[1].name = 'Newer folder name'
+          getDatabase().characters[0].chats[2].name = 'Newer sibling name'
+          getDatabase().characters[0].chatFolders[1].name = 'Newer folder name'
         })
       },
     })
@@ -1300,10 +1304,10 @@ describe('chat command projection helpers', () => {
       message: [],
     } as Chat
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatFolders.unshift(branchFolder)
-      DBState.db.characters[0].chats[0].folderId = branchFolder.id
-      DBState.db.characters[0].chats.unshift(forkedChat)
-      DBState.db.characters[0].chatPage = 0
+      getDatabase().characters[0].chatFolders.unshift(branchFolder)
+      getDatabase().characters[0].chats[0].folderId = branchFolder.id
+      getDatabase().characters[0].chats.unshift(forkedChat)
+      getDatabase().characters[0].chatPage = 0
     })
 
     dispatchForkChat('chat-a', previous, {
@@ -1314,22 +1318,22 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
-      expect(DBState.db.characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a'])
     })
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(getDatabase().characters[0].chats[0]).toMatchObject({
       id: 'chat-a',
       folderId: null,
     })
-    expect(DBState.db.characters[0].chats[1]).toMatchObject({
+    expect(getDatabase().characters[0].chats[1]).toMatchObject({
       id: 'chat-b',
       name: 'Newer sibling name',
     })
-    expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+    expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
       id: 'folder-a',
       name: 'Newer folder name',
     })
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
   })
 
   it('failed fork skips forked-chat rollback when the forked row changed after dispatch', async () => {
@@ -1337,7 +1341,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].name = 'Newer forked chat name'
+          getDatabase().characters[0].chats[0].name = 'Newer forked chat name'
         })
       },
     })
@@ -1351,21 +1355,21 @@ describe('chat command projection helpers', () => {
       message: [],
     } as Chat
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats.unshift(forkedChat)
-      DBState.db.characters[0].chatPage = 0
+      getDatabase().characters[0].chats.unshift(forkedChat)
+      getDatabase().characters[0].chatPage = 0
     })
 
     dispatchForkChat('chat-a', previous, { chat: forkedChat })
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-branch', 'chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-branch', 'chat-a', 'chat-b'])
     })
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(getDatabase().characters[0].chats[0]).toMatchObject({
       id: 'chat-branch',
       name: 'Newer forked chat name',
     })
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-branch')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-branch')
   })
 
   it('reinserts only a still-missing deleted chat after a failed delete and preserves sibling edits', async () => {
@@ -1373,8 +1377,8 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].name = 'Newer sibling name'
-          DBState.db.characters[0].chats.push({
+          getDatabase().characters[0].chats[0].name = 'Newer sibling name'
+          getDatabase().characters[0].chats.push({
             id: 'chat-c',
             name: 'Newer appended chat',
             folderId: null,
@@ -1397,15 +1401,15 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
-    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
-    expect(DBState.db.characters[0].chats[2].name).toBe('Newer appended chat')
-    expect(DBState.db.characters[0].chatPage).toBe(0)
+    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(getDatabase().characters[0].chats[2].name).toBe('Newer appended chat')
+    expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
   it('preserves newer user selection instead of restoring old selection after a failed delete', async () => {
-    DBState.db.characters[0].chats.push({
+    getDatabase().characters[0].chats.push({
       id: 'chat-c',
       name: 'Chat C',
       folderId: null,
@@ -1415,7 +1419,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'DELETE',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chatPage = 1
+          getDatabase().characters[0].chatPage = 1
         })
       },
     })
@@ -1431,17 +1435,17 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-c')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-c')
   })
 
   it('restores failed chat reorder order and folder assignments only when live state still equals the attempt', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
     ]
-    DBState.db.characters[0].chats = [
+    getDatabase().characters[0].chats = [
       { id: 'chat-a', name: 'Chat A', folderId: null, message: [] },
       { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
       { id: 'chat-c', name: 'Chat C', folderId: 'folder-b', message: [] },
@@ -1450,7 +1454,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (chat) chat.name = 'Newer Chat C'
         })
       },
@@ -1465,27 +1469,27 @@ describe('chat command projection helpers', () => {
       'chat-c': 'folder-a',
     }
     withTrustedServerProjectionWrite(() => {
-      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
-      DBState.db.characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
-      for (const chat of DBState.db.characters[0].chats) {
+      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+      getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+      for (const chat of getDatabase().characters[0].chats) {
         chat.folderId = attemptedFolderByChatId[chat.id]
       }
-      DBState.db.characters[0].chatPage = 1
+      getDatabase().characters[0].chatPage = 1
     })
 
     dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
-    expect(DBState.db.characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
-    expect(DBState.db.characters[0].chats[2].name).toBe('Newer Chat C')
-    expect(DBState.db.characters[0].chats[DBState.db.characters[0].chatPage].id).toBe('chat-a')
+    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
+    expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
   })
 
   it('skips failed chat reorder rollback after a newer reorder', async () => {
-    DBState.db.characters[0].chats.push({
+    getDatabase().characters[0].chats.push({
       id: 'chat-c',
       name: 'Chat C',
       folderId: null,
@@ -1496,8 +1500,8 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
-          DBState.db.characters[0].chats = newerIds.map((id) => chatsById.get(id)!)
+          const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+          getDatabase().characters[0].chats = newerIds.map((id) => chatsById.get(id)!)
         })
       },
     })
@@ -1511,24 +1515,24 @@ describe('chat command projection helpers', () => {
       'chat-c': null,
     }
     withTrustedServerProjectionWrite(() => {
-      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
-      DBState.db.characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+      getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
     })
 
     dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(newerIds)
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(newerIds)
     })
   })
 
   it('skips failed chat reorder rollback after a newer folder move', async () => {
-    DBState.db.characters[0].chatFolders = [
+    getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
     ]
-    DBState.db.characters[0].chats.push({
+    getDatabase().characters[0].chats.push({
       id: 'chat-c',
       name: 'Chat C',
       folderId: null,
@@ -1538,7 +1542,7 @@ describe('chat command projection helpers', () => {
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const chat = DBState.db.characters[0].chats.find((candidate) => candidate.id === 'chat-c')
+          const chat = getDatabase().characters[0].chats.find((candidate) => candidate.id === 'chat-c')
           if (chat) chat.folderId = 'folder-b'
         })
       },
@@ -1553,17 +1557,17 @@ describe('chat command projection helpers', () => {
       'chat-c': null,
     }
     withTrustedServerProjectionWrite(() => {
-      const chatsById = new Map(DBState.db.characters[0].chats.map((chat) => [chat.id, chat]))
-      DBState.db.characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
+      const chatsById = new Map(getDatabase().characters[0].chats.map((chat) => [chat.id, chat]))
+      getDatabase().characters[0].chats = attemptedIds.map((id) => chatsById.get(id)!)
     })
 
     dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats.map((chat) => chat.id)).toEqual(attemptedIds)
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(attemptedIds)
     })
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(getDatabase().characters[0].chats[0]).toMatchObject({
       id: 'chat-c',
       folderId: 'folder-b',
     })
@@ -1585,7 +1589,7 @@ describe('chat command projection helpers', () => {
     }
 
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettings)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettings)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettings)
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -1641,31 +1645,31 @@ describe('chat command projection helpers', () => {
       },
     }
 
-    expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('generationSettings')
+    expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('generationSettings')
     expect(dispatchSaveChatGenerationSettings('chat-a', nextGenerationSettings)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(nextGenerationSettings)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(nextGenerationSettings)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message.push({
+      getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: 'concurrent same-chat message',
         chatId: 'msg-concurrent',
       })
-      DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+      getDatabase().characters[0].chats[1].name = 'Concurrent sibling edit'
     })
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('generationSettings')
+      expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('generationSettings')
     })
-    expect(DBState.db.characters[0].chats[0].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
       {
         role: 'char',
         data: 'concurrent same-chat message',
         chatId: 'msg-concurrent',
       },
     ])
-    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
+    expect(getDatabase().characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 
   it('keeps newer generation settings through an older successful character-row projection', async () => {
@@ -1714,12 +1718,12 @@ describe('chat command projection helpers', () => {
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsA)).toBe(true)
     await waitForCallCount(calls, 2)
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
 
     firstResponse.resolve(successfulChatGenerationSettingsResponse(11))
     await waitForCallCount(calls, 3)
 
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -1731,7 +1735,7 @@ describe('chat command projection helpers', () => {
 
     secondResponse.resolve(successfulChatGenerationSettingsResponse(12))
     await waitForPendingChatGenerationSettingsSave('chat-a')
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
   })
 
   it('preserves a newer generation settings save when an older save fails from no initial settings', async () => {
@@ -1758,9 +1762,9 @@ describe('chat command projection helpers', () => {
       },
     }
 
-    expect(DBState.db.characters[0].chats[0]).not.toHaveProperty('generationSettings')
+    expect(getDatabase().characters[0].chats[0]).not.toHaveProperty('generationSettings')
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsA)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsA)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsA)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
@@ -1772,12 +1776,12 @@ describe('chat command projection helpers', () => {
     })
 
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
     expect(calls).toHaveLength(2)
 
     firstResponse.resolve(jsonResponse({ error: 'nope' }, 500))
     await waitForCallCount(calls, 3)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
@@ -1789,7 +1793,7 @@ describe('chat command projection helpers', () => {
 
     secondResponse.resolve(successfulChatGenerationSettingsResponse(11))
     await waitForPendingChatGenerationSettingsSave('chat-a')
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
   })
 
   it('preserves a newer generation settings save when an older save fails from configured settings', async () => {
@@ -1826,14 +1830,14 @@ describe('chat command projection helpers', () => {
       },
     }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].generationSettings = jsonClone(initialGenerationSettings)
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initialGenerationSettings)
     })
 
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsA)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsA)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsA)
     await waitForCallCount(calls, 2)
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
     expect(calls).toHaveLength(2)
 
     firstResponse.resolve(jsonResponse({ error: 'nope' }, 500))
@@ -1849,8 +1853,8 @@ describe('chat command projection helpers', () => {
     secondResponse.resolve(successfulChatGenerationSettingsResponse(11))
     await waitForPendingChatGenerationSettingsSave('chat-a')
 
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
-    expect(DBState.db.characters[0].chats[0].generationSettings).not.toEqual(initialGenerationSettings)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+    expect(getDatabase().characters[0].chats[0].generationSettings).not.toEqual(initialGenerationSettings)
   })
 
   it('sets DevTool-style scriptstate values through the chat scriptstate command helper', async () => {
@@ -1858,11 +1862,11 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].chats[0].scriptstate!.$score = 'direct'
+      getDatabase().characters[0].chats[0].scriptstate!.$score = 'direct'
     }).toThrow()
 
     expect(setChatScriptstateValue('chat-a', '$score', '9')).toBe(true)
-    expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
+    expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
 
     await waitForCallCount(calls, 2)
     expect(calls).toEqual([
@@ -1883,7 +1887,7 @@ describe('chat command projection helpers', () => {
         },
       },
     ])
-    expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
+    expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $score: '9' })
   })
 
   it('sets parser chat variables through the projection guard for Lua edit-display hooks', async () => {
@@ -1891,11 +1895,11 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].chats[0].scriptstate!.$outfit = 'direct'
+      getDatabase().characters[0].chats[0].scriptstate!.$outfit = 'direct'
     }).toThrow()
 
     setChatVar('outfit', 'date_a')
-    expect(DBState.db.characters[0].chats[0].scriptstate).toMatchObject({ $outfit: 'date_a' })
+    expect(getDatabase().characters[0].chats[0].scriptstate).toMatchObject({ $outfit: 'date_a' })
 
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
@@ -1914,11 +1918,11 @@ describe('chat command projection helpers', () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
 
-    expect(DBState.db.characters[0].chats[1]).not.toHaveProperty('scriptstate')
+    expect(getDatabase().characters[0].chats[1]).not.toHaveProperty('scriptstate')
 
     expect(setChatScriptstateValue('chat-b', '$enabled', true)).toBe(true)
 
-    expect(DBState.db.characters[0].chats[1].scriptstate).toEqual({ $enabled: true })
+    expect(getDatabase().characters[0].chats[1].scriptstate).toEqual({ $enabled: true })
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/chats/chat-b/scriptstate',
@@ -1935,7 +1939,7 @@ describe('chat command projection helpers', () => {
   it('rejects missing or invalid DevTool-style scriptstate targets without mutating or dispatching', () => {
     const calls = stubCommandFetch()
     setServerProjectionWriteGuardEnabled(true)
-    const before = jsonClone(DBState.db.characters[0].chats[0].scriptstate)
+    const before = jsonClone(getDatabase().characters[0].chats[0].scriptstate)
 
     expect(setChatScriptstateValue(undefined, '$score', '2')).toBe(false)
     expect(setChatScriptstateValue('', '$score', '2')).toBe(false)
@@ -1944,7 +1948,7 @@ describe('chat command projection helpers', () => {
     expect(setChatScriptstateValue('chat-a', '$object', { nested: true })).toBe(false)
     expect(setChatScriptstateValue('chat-a', '$nan', Number.NaN)).toBe(false)
 
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual(before)
+    expect(getDatabase().characters[0].chats[0].scriptstate).toEqual(before)
     expect(calls).toEqual([])
   })
 
@@ -1954,14 +1958,14 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'direct' })
+      getDatabase().characters[0].chats[0].message.push({ role: 'user', data: 'direct' })
     }).toThrow()
 
     const result = await appendCurrentChatUserMessageForSend('autopilot row')
 
     expect(result.status).toBe('ok')
     await waitForCallCount(calls, 2)
-    const message = DBState.db.characters[0].chats[0].message[0]
+    const message = getDatabase().characters[0].chats[0].message[0]
     expect(message).toMatchObject({
       role: 'user',
       data: 'autopilot row',
@@ -2002,7 +2006,7 @@ describe('chat command projection helpers', () => {
     expect(isActiveChatTargetFresh(target)).toBe(true)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chatPage = 1
+      getDatabase().characters[0].chatPage = 1
     })
 
     expect(isActiveChatTargetFresh(target)).toBe(false)
@@ -2015,14 +2019,14 @@ describe('chat command projection helpers', () => {
       error: 'The active chat changed before the message could be appended.',
     })
     expect(calls).toEqual([])
-    expect(DBState.db.characters[0].chats[0].message).toEqual([])
-    expect(DBState.db.characters[0].chats[1].message).toEqual([])
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
+    expect(getDatabase().characters[0].chats[1].message).toEqual([])
   })
 
   it('rejects a captured active-chat target after selectedCharID changes without mutating or dispatching', async () => {
     const calls = stubCommandFetch()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters.push({
+      getDatabase().characters.push({
         chaId: 'char-b',
         name: 'Character B',
         chatPage: 0,
@@ -2045,8 +2049,8 @@ describe('chat command projection helpers', () => {
       error: 'The active chat changed before the message could be appended.',
     })
     expect(calls).toEqual([])
-    expect(DBState.db.characters[0].chats[0].message).toEqual([])
-    expect(DBState.db.characters[1].chats[0].message).toEqual([])
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
+    expect(getDatabase().characters[1].chats[0].message).toEqual([])
   })
 
   it('blocks direct send appends when active-chat generation settings are incomplete', async () => {
@@ -2061,7 +2065,7 @@ describe('chat command projection helpers', () => {
         'Chat generation settings are incomplete. Missing: Generation settings, Configuration confirmation, Persona, Model preset, Prompt preset, Jailbreak toggle.',
     })
     expect(calls).toEqual([])
-    expect(DBState.db.characters[0].chats[0].message).toEqual([])
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
   })
 
   it('appends prepared plain-send user messages through one-message POST bodies', async () => {
@@ -2079,7 +2083,7 @@ describe('chat command projection helpers', () => {
 
     expect(result.status).toBe('ok')
     await waitForCallCount(calls, 2)
-    const message = DBState.db.characters[0].chats[0].message[0]
+    const message = getDatabase().characters[0].chats[0].message[0]
     expect(message).toMatchObject({
       role: 'user',
       data: 'prepared plain send',
@@ -2122,12 +2126,12 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/scriptstate') {
           withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[0].chats[0].message.push({
+            getDatabase().characters[0].chats[0].message.push({
               role: 'char',
               data: 'concurrent same-chat message',
               chatId: 'msg-concurrent',
             })
-            DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+            getDatabase().characters[0].chats[1].name = 'Concurrent sibling edit'
           })
           return jsonResponse({ error: 'nope' }, 500)
         }
@@ -2137,20 +2141,20 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
 
     expect(setChatScriptstateValue('chat-a', '$score', 'failed')).toBe(true)
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'failed', $old: 'gone' })
+    expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'failed', $old: 'gone' })
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+      expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
     })
-    expect(DBState.db.characters[0].chats[0].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
       {
         role: 'char',
         data: 'concurrent same-chat message',
         chatId: 'msg-concurrent',
       },
     ])
-    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
+    expect(getDatabase().characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 
   it('rolls back failed send appends by appended message id only', async () => {
@@ -2170,7 +2174,7 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
           withTrustedServerProjectionWrite(() => {
-            DBState.db.characters[0].chats[0].message.push({
+            getDatabase().characters[0].chats[0].message.push({
               role: 'char',
               data: 'later projection message',
               chatId: 'm-later',
@@ -2184,7 +2188,7 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
     seedReadyActiveChatGenerationSettings()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].message.push({
+      getDatabase().characters[0].chats[0].message.push({
         role: 'char',
         data: 'pre-existing',
         chatId: 'm-existing',
@@ -2200,7 +2204,7 @@ describe('chat command projection helpers', () => {
 
     expect(result).toEqual({ status: 'error', error: 'nope' })
     await waitForCallCount(calls, 2)
-    expect(DBState.db.characters[0].chats[0].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
       { role: 'char', data: 'pre-existing', chatId: 'm-existing' },
       { role: 'char', data: 'later projection message', chatId: 'm-later' },
     ])
@@ -2223,7 +2227,7 @@ describe('chat command projection helpers', () => {
         if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
         if (url === '/api/v1/commands/chats/chat-a/messages') {
           withTrustedServerProjectionWrite(() => {
-            const character = DBState.db.characters[0]
+            const character = getDatabase().characters[0]
             const siblingChat = character.chats.find((chat: Chat) => chat.id === 'chat-b')
             if (!siblingChat) throw new Error('missing sibling chat')
             character.chats = [siblingChat]
@@ -2237,7 +2241,7 @@ describe('chat command projection helpers', () => {
     setServerProjectionWriteGuardEnabled(true)
     seedReadyActiveChatGenerationSettings()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[1].message.push({
+      getDatabase().characters[0].chats[1].message.push({
         role: 'char',
         data: 'same id on active sibling',
         chatId: 'm-shared',
@@ -2263,8 +2267,8 @@ describe('chat command projection helpers', () => {
         },
       },
     })
-    expect(DBState.db.characters[0].chats).toHaveLength(1)
-    expect(DBState.db.characters[0].chats[0]).toMatchObject({
+    expect(getDatabase().characters[0].chats).toHaveLength(1)
+    expect(getDatabase().characters[0].chats[0]).toMatchObject({
       id: 'chat-b',
       message: [{ role: 'char', data: 'same id on active sibling', chatId: 'm-shared' }],
     })
@@ -2273,7 +2277,7 @@ describe('chat command projection helpers', () => {
 
 describe('Phase 0 chat-scoped snapshot kit', () => {
   it('captures only the active chat, never the whole characters array', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     const snapshot = currentChatScopedSnapshot()
@@ -2285,61 +2289,61 @@ describe('Phase 0 chat-scoped snapshot kit', () => {
     expect(snapshot).not.toHaveProperty('characters')
     assertSnapshotOmitsCollections(snapshot)
 
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(getDatabase().characters).length
     const instrumented = withCloneInstrumentation(() => currentChatScopedSnapshot())
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
   })
 
   it('restores only the active chat, preserving concurrent edits to other chats', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     assertRollbackRestoresOnly({
       capture: () => currentChatScopedSnapshot(),
       mutate: () => {
-        DBState.db.characters[0].chats[0].message.push({
+        getDatabase().characters[0].chats[0].message.push({
           role: 'char',
           data: 'optimistic',
           chatId: 'msg-extra',
         })
         // an unrelated, concurrent edit to a different character's chat
-        DBState.db.characters[1].chats[0].note = 'sibling concurrent note'
+        getDatabase().characters[1].chats[0].note = 'sibling concurrent note'
       },
       expectMutated: () => {
-        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+        expect(getDatabase().characters[0].chats[0].message).toHaveLength(41)
       },
       restore: (snapshot) => restoreChatScopedState(snapshot),
       expectRestored: () => {
-        expect(DBState.db.characters[0].chats[0].message).toHaveLength(40)
+        expect(getDatabase().characters[0].chats[0].message).toHaveLength(40)
       },
       expectUntouched: () => {
-        expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent note')
+        expect(getDatabase().characters[1].chats[0].note).toBe('sibling concurrent note')
       },
     })
   })
 
   it('restores the chat by stable id even when its character index has shifted', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
     const snapshot = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message.push({
+    getDatabase().characters[0].chats[0].message.push({
       role: 'char',
       data: 'optimistic',
       chatId: 'msg-extra',
     })
-    DBState.db.characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
+    getDatabase().characters.unshift({ chaId: 'char-new', name: 'Inserted', chats: [] } as any)
 
     restoreChatScopedState(snapshot)
 
-    const restored = DBState.db.characters.find((c: any) => c.chaId === 'char-0')
+    const restored = getDatabase().characters.find((c: any) => c.chaId === 'char-0')
     expect(restored.chats[0].message).toHaveLength(40)
   })
 })
 
 describe('Phase 0 chat-scriptstate snapshot kit', () => {
   it('captures only the scriptstate map and an optional note, never a chat or the collection', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     const snapshot = currentChatScriptstateSnapshot()
@@ -2354,40 +2358,40 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
 
     // The scriptstate map is shallow-cloned: mutating the live map after the
     // snapshot must not bleed into the captured copy.
-    DBState.db.characters[0].chats[0].scriptstate.$score = '99'
+    getDatabase().characters[0].chats[0].scriptstate.$score = '99'
     expect(snapshot.scriptstate?.$score).toBe('0')
   })
 
   it('restores scriptstate and note only, preserving concurrent message edits on the same chat', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     assertRollbackRestoresOnly({
       capture: () => currentChatScriptstateSnapshot(true),
       mutate: () => {
-        DBState.db.characters[0].chats[0].scriptstate = { $score: 'optimistic' }
-        DBState.db.characters[0].chats[0].note = 'optimistic note'
+        getDatabase().characters[0].chats[0].scriptstate = { $score: 'optimistic' }
+        getDatabase().characters[0].chats[0].note = 'optimistic note'
         // a concurrent, unrelated edit to the same chat's message history
-        DBState.db.characters[0].chats[0].message.push({
+        getDatabase().characters[0].chats[0].message.push({
           role: 'char',
           data: 'concurrent',
           chatId: 'msg-concurrent',
         })
       },
       expectMutated: () => {
-        expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'optimistic' })
+        expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'optimistic' })
       },
       restore: (snapshot) => restoreChatScriptstate(snapshot),
       expectRestored: () => {
-        expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({
+        expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({
           $score: '0',
           $old: 'gone',
         })
-        expect(DBState.db.characters[0].chats[0].note).toBe('note-0')
+        expect(getDatabase().characters[0].chats[0].note).toBe('note-0')
       },
       expectUntouched: () => {
         // a whole-chat restore would have wiped this concurrent message
-        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
+        expect(getDatabase().characters[0].chats[0].message).toHaveLength(41)
       },
     })
   })
@@ -2396,7 +2400,7 @@ describe('Phase 0 chat-scriptstate snapshot kit', () => {
 // Chat selection rollback restores only `chatPage`, not the full character collection.
 describe('H2 chat-selection snapshot', () => {
   it('captures only selection scalars and performs zero clone work', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     const instrumented = withCloneInstrumentation(() => currentChatSelectionSnapshot())
@@ -2409,34 +2413,34 @@ describe('H2 chat-selection snapshot', () => {
   })
 
   it('restores only the owning character chatPage, never the selection or sibling edits', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     assertRollbackRestoresOnly({
       capture: () => currentChatSelectionSnapshot(),
       mutate: () => {
         // the optimistic select write
-        DBState.db.characters[0].chatPage = 1
+        getDatabase().characters[0].chatPage = 1
         // concurrent, unrelated edits a whole-array restore would wipe
-        DBState.db.characters[0].chats[0].message.push({
+        getDatabase().characters[0].chats[0].message.push({
           role: 'char',
           data: 'concurrent',
           chatId: 'msg-concurrent',
         })
-        DBState.db.characters[1].chats[0].note = 'sibling concurrent note'
+        getDatabase().characters[1].chats[0].note = 'sibling concurrent note'
         // a concurrent character switch the rollback must not undo
         selectedCharID.set(1)
       },
       expectMutated: () => {
-        expect(DBState.db.characters[0].chatPage).toBe(1)
+        expect(getDatabase().characters[0].chatPage).toBe(1)
       },
       restore: (snapshot) => restoreChatSelection(snapshot),
       expectRestored: () => {
-        expect(DBState.db.characters[0].chatPage).toBe(0)
+        expect(getDatabase().characters[0].chatPage).toBe(0)
       },
       expectUntouched: () => {
-        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
-        expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent note')
+        expect(getDatabase().characters[0].chats[0].message).toHaveLength(41)
+        expect(getDatabase().characters[1].chats[0].note).toBe('sibling concurrent note')
         // chat select never mutates the character selection; restore must not
         // re-write it either (it only locates the row by it)
         expect(get(selectedCharID)).toBe(1)
@@ -2445,12 +2449,12 @@ describe('H2 chat-selection snapshot', () => {
   })
 
   it('restores chatPage by stable chaId even when the character index shifted', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
     const snapshot = currentChatSelectionSnapshot()
 
-    DBState.db.characters[0].chatPage = 1
-    DBState.db.characters.unshift({
+    getDatabase().characters[0].chatPage = 1
+    getDatabase().characters.unshift({
       chaId: 'char-new',
       name: 'Inserted',
       chatPage: 9,
@@ -2459,9 +2463,9 @@ describe('H2 chat-selection snapshot', () => {
 
     restoreChatSelection(snapshot)
 
-    expect(DBState.db.characters.find((c: any) => c.chaId === 'char-0').chatPage).toBe(0)
+    expect(getDatabase().characters.find((c: any) => c.chaId === 'char-0').chatPage).toBe(0)
     // the character now sitting at the stale index is untouched
-    expect(DBState.db.characters[0].chatPage).toBe(9)
+    expect(getDatabase().characters[0].chatPage).toBe(9)
   })
 
   it('dispatchSelectChat sends the empty-patch select command', async () => {
@@ -2508,7 +2512,7 @@ describe('H2 chat-selection snapshot', () => {
 
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
-    expect(DBState.db.characters[0].chatPage).toBe(1)
+    expect(getDatabase().characters[0].chatPage).toBe(1)
     await waitForCallCount(calls, 2)
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/chats/chat-b',
@@ -2545,20 +2549,20 @@ describe('H2 chat-selection snapshot', () => {
 
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
-    expect(DBState.db.characters[0].chatPage).toBe(1)
+    expect(getDatabase().characters[0].chatPage).toBe(1)
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatPage).toBe(0)
+      expect(getDatabase().characters[0].chatPage).toBe(0)
     })
   })
 
   it('dispatchSelectChat does not roll a newer chat selection back to an older page', async () => {
-    DBState.db.characters[0].chats.push({ id: 'chat-c', name: 'Chat C', message: [] } as any)
+    getDatabase().characters[0].chats.push({ id: 'chat-c', name: 'Chat C', message: [] } as any)
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-b' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chatPage = 2
+          getDatabase().characters[0].chatPage = 2
         })
       },
     })
@@ -2566,28 +2570,28 @@ describe('H2 chat-selection snapshot', () => {
 
     dispatchSelectChat('chat-b', currentChatSelectionSnapshot())
 
-    expect(DBState.db.characters[0].chatPage).toBe(1)
+    expect(getDatabase().characters[0].chatPage).toBe(1)
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatPage).toBe(2)
+      expect(getDatabase().characters[0].chatPage).toBe(2)
     })
   })
 })
 
 describe('Phase 5 chat metadata dispatch rollback', () => {
   it('failed scoped metadata updates roll back only attempted fields that have not changed again', async () => {
-    DBState.db.characters[0].chats[0].bookmarks = ['msg-old']
-    DBState.db.characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
-    DBState.db.characters[0].chats[0].note = 'old note'
+    getDatabase().characters[0].chats[0].bookmarks = ['msg-old']
+    getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
+    getDatabase().characters[0].chats[0].note = 'old note'
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          const chat = DBState.db.characters[0].chats[0]
+          const chat = getDatabase().characters[0].chats[0]
           chat.bookmarkNames = { 'msg-newer': 'Newer bookmark' }
           chat.note = 'newer note'
           chat.message.push({ role: 'user', data: 'newer message', chatId: 'msg-newer' })
-          DBState.db.characters[0].chats[1].name = 'newer sibling name'
+          getDatabase().characters[0].chats[1].name = 'newer sibling name'
         })
       },
     })
@@ -2596,8 +2600,8 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const attemptedBookmarks = ['msg-attempted']
     const attemptedBookmarkNames = { 'msg-attempted': 'Attempted bookmark' }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
-      DBState.db.characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
+      getDatabase().characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
+      getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
 
     dispatchUpdateChatScoped(
@@ -2608,14 +2612,14 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['msg-old'])
+      expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['msg-old'])
     })
-    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
-    expect(DBState.db.characters[0].chats[0].note).toBe('newer note')
-    expect(DBState.db.characters[0].chats[0].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
+    expect(getDatabase().characters[0].chats[0].note).toBe('newer note')
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
       { role: 'user', data: 'newer message', chatId: 'msg-newer' },
     ])
-    expect(DBState.db.characters[0].chats[1].name).toBe('newer sibling name')
+    expect(getDatabase().characters[0].chats[1].name).toBe('newer sibling name')
   })
 
   it('failed chat rename restores only attempted name and preserves sibling edits, folders, and selection', async () => {
@@ -2623,9 +2627,9 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[1].name = 'Newer sibling name'
-          DBState.db.characters[0].chatFolders[0].name = 'Newer folder name'
-          DBState.db.characters[0].chatPage = 1
+          getDatabase().characters[0].chats[1].name = 'Newer sibling name'
+          getDatabase().characters[0].chatFolders[0].name = 'Newer folder name'
+          getDatabase().characters[0].chatPage = 1
         })
       },
     })
@@ -2633,18 +2637,18 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
 
     const previous = currentChatStateSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].name = 'Attempted rename'
+      getDatabase().characters[0].chats[0].name = 'Attempted rename'
     })
 
     dispatchUpdateChat('chat-a', { name: 'Attempted rename' }, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].name).toBe('Chat A')
+      expect(getDatabase().characters[0].chats[0].name).toBe('Chat A')
     })
-    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
-    expect(DBState.db.characters[0].chatFolders[0].name).toBe('Newer folder name')
-    expect(DBState.db.characters[0].chatPage).toBe(1)
+    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('Newer folder name')
+    expect(getDatabase().characters[0].chatPage).toBe(1)
   })
 
   it('failed chat rename skips rollback when the live name changed after dispatch', async () => {
@@ -2652,7 +2656,7 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].name = 'Newer live rename'
+          getDatabase().characters[0].chats[0].name = 'Newer live rename'
         })
       },
     })
@@ -2660,26 +2664,26 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
 
     const previous = currentChatStateSnapshot()
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].name = 'Attempted rename'
+      getDatabase().characters[0].chats[0].name = 'Attempted rename'
     })
 
     dispatchUpdateChat('chat-a', { name: 'Attempted rename' }, previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].name).toBe('Newer live rename')
+      expect(getDatabase().characters[0].chats[0].name).toBe('Newer live rename')
     })
   })
 
   it('failed multi-key metadata patch rolls back only keys still matching the attempted values', async () => {
-    DBState.db.characters[0].chats[0].bookmarks = ['msg-old']
-    DBState.db.characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
+    getDatabase().characters[0].chats[0].bookmarks = ['msg-old']
+    getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
 
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[0].bookmarkNames = { 'msg-newer': 'Newer bookmark' }
+          getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-newer': 'Newer bookmark' }
         })
       },
     })
@@ -2689,8 +2693,8 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
     const attemptedBookmarks = ['msg-new']
     const attemptedBookmarkNames: Record<string, string> = { 'msg-new': 'New bookmark' }
     withTrustedServerProjectionWrite(() => {
-      DBState.db.characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
-      DBState.db.characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
+      getDatabase().characters[0].chats[0].bookmarks = jsonClone(attemptedBookmarks)
+      getDatabase().characters[0].chats[0].bookmarkNames = jsonClone(attemptedBookmarkNames)
     })
 
     dispatchUpdateChat(
@@ -2712,9 +2716,9 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['msg-old'])
+      expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['msg-old'])
     })
-    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-newer': 'Newer bookmark' })
   })
 
   it('failed empty-patch select dispatch does not restore chat metadata or selection', async () => {
@@ -2722,8 +2726,8 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
         withTrustedServerProjectionWrite(() => {
-          DBState.db.characters[0].chats[1].name = 'Newer sibling name'
-          DBState.db.characters[0].chatPage = 1
+          getDatabase().characters[0].chats[1].name = 'Newer sibling name'
+          getDatabase().characters[0].chatPage = 1
         })
       },
     })
@@ -2734,15 +2738,15 @@ describe('Phase 5 chat metadata dispatch rollback', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chatPage).toBe(1)
+      expect(getDatabase().characters[0].chatPage).toBe(1)
     })
-    expect(DBState.db.characters[0].chats[1].name).toBe('Newer sibling name')
+    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
   })
 })
 
 describe('Phase 2 chat-metadata-row rollback', () => {
   function scalarMetadata(chatIndex: number): ChatSnapshot {
-    const chat = DBState.db.characters[0].chats[chatIndex] as unknown as Record<string, unknown>
+    const chat = getDatabase().characters[0].chats[chatIndex] as unknown as Record<string, unknown>
     const metadata: Record<string, unknown> = {}
     // mirror the watcher's allowed scalar metadata keys for the seeded fields
     for (const key of ['name', 'note', 'folderId', 'bindedPersona'] as const) {
@@ -2752,7 +2756,7 @@ describe('Phase 2 chat-metadata-row rollback', () => {
   }
 
   it('restores only the one chat row, preserving message history and unrelated chats', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
 
     assertRollbackRestoresOnly({
@@ -2764,31 +2768,31 @@ describe('Phase 2 chat-metadata-row rollback', () => {
       }),
       mutate: () => {
         // optimistic metadata change the failing command must undo
-        DBState.db.characters[0].chats[0].name = 'Optimistic Name'
+        getDatabase().characters[0].chats[0].name = 'Optimistic Name'
         // unrelated concurrent edits a whole-array restore would have clobbered
-        DBState.db.characters[0].chats[0].message.push({
+        getDatabase().characters[0].chats[0].message.push({
           role: 'char',
           data: 'concurrent',
           chatId: 'msg-concurrent',
         })
-        DBState.db.characters[1].chats[0].note = 'sibling concurrent note'
+        getDatabase().characters[1].chats[0].note = 'sibling concurrent note'
       },
       expectMutated: () => {
-        expect(DBState.db.characters[0].chats[0].name).toBe('Optimistic Name')
+        expect(getDatabase().characters[0].chats[0].name).toBe('Optimistic Name')
       },
       restore: (snapshot) => restoreChatRowMetadata(snapshot),
       expectRestored: () => {
-        expect(DBState.db.characters[0].chats[0].name).toBe('Chat 0')
+        expect(getDatabase().characters[0].chats[0].name).toBe('Chat 0')
       },
       expectUntouched: () => {
-        expect(DBState.db.characters[0].chats[0].message).toHaveLength(41)
-        expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent note')
+        expect(getDatabase().characters[0].chats[0].message).toHaveLength(41)
+        expect(getDatabase().characters[1].chats[0].note).toBe('sibling concurrent note')
       },
     })
   })
 
   it('drops an allowed key the optimistic change added but the baseline lacked', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
     // baseline has no bindedPersona
     const snapshot = {
@@ -2799,14 +2803,14 @@ describe('Phase 2 chat-metadata-row rollback', () => {
     }
     expect(snapshot.metadata).not.toHaveProperty('bindedPersona')
 
-    DBState.db.characters[0].chats[0].bindedPersona = 'persona-x'
+    getDatabase().characters[0].chats[0].bindedPersona = 'persona-x'
     restoreChatRowMetadata(snapshot)
 
-    expect(DBState.db.characters[0].chats[0].bindedPersona).toBeUndefined()
+    expect(getDatabase().characters[0].chats[0].bindedPersona).toBeUndefined()
   })
 
   it('does not restore attempted chat metadata after a newer same-row edit', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
     const snapshot = {
       selectedCharID: 0,
@@ -2816,14 +2820,14 @@ describe('Phase 2 chat-metadata-row rollback', () => {
       attempted: { name: 'Optimistic Name' },
     }
 
-    DBState.db.characters[0].chats[0].name = 'Newer local name'
+    getDatabase().characters[0].chats[0].name = 'Newer local name'
     restoreChatRowMetadata(snapshot)
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('Newer local name')
+    expect(getDatabase().characters[0].chats[0].name).toBe('Newer local name')
   })
 
   it('drops attempted metadata missing from the baseline without clobbering newer fields', () => {
-    DBState.db = seedCloneCostDb() as any
+    setDatabaseLite(seedCloneCostDb() as any)
     selectedCharID.set(0)
     const snapshot = {
       selectedCharID: 0,
@@ -2834,18 +2838,18 @@ describe('Phase 2 chat-metadata-row rollback', () => {
     }
     expect(snapshot.metadata).not.toHaveProperty('bindedPersona')
 
-    DBState.db.characters[0].chats[0].name = 'Newer local name'
-    DBState.db.characters[0].chats[0].bindedPersona = 'persona-x'
+    getDatabase().characters[0].chats[0].name = 'Newer local name'
+    getDatabase().characters[0].chats[0].bindedPersona = 'persona-x'
     restoreChatRowMetadata(snapshot)
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('Newer local name')
-    expect(DBState.db.characters[0].chats[0].bindedPersona).toBeUndefined()
+    expect(getDatabase().characters[0].chats[0].name).toBe('Newer local name')
+    expect(getDatabase().characters[0].chats[0].bindedPersona).toBeUndefined()
   })
 
   it('restores only the one folder row by stable id', () => {
-    DBState.db = seedCloneCostDb() as any
-    DBState.db.characters[0].chatFolders = [{ id: 'folder-0', name: 'Folder Zero', color: '#111', folded: false }]
-    DBState.db.characters[1].chatFolders = [{ id: 'folder-1', name: 'Folder One', color: '#222', folded: false }]
+    setDatabaseLite(seedCloneCostDb() as any)
+    getDatabase().characters[0].chatFolders = [{ id: 'folder-0', name: 'Folder Zero', color: '#111', folded: false }]
+    getDatabase().characters[1].chatFolders = [{ id: 'folder-1', name: 'Folder One', color: '#222', folded: false }]
     selectedCharID.set(0)
 
     assertRollbackRestoresOnly({
@@ -2856,23 +2860,23 @@ describe('Phase 2 chat-metadata-row rollback', () => {
         metadata: { name: 'Folder Zero', color: '#111', folded: false } as ChatFolderSnapshot,
       }),
       mutate: () => {
-        DBState.db.characters[0].chatFolders[0].folded = true
-        DBState.db.characters[0].chatFolders[0].name = 'Optimistic Folder'
-        DBState.db.characters[1].chatFolders[0].name = 'Sibling Folder Edit'
+        getDatabase().characters[0].chatFolders[0].folded = true
+        getDatabase().characters[0].chatFolders[0].name = 'Optimistic Folder'
+        getDatabase().characters[1].chatFolders[0].name = 'Sibling Folder Edit'
       },
       expectMutated: () => {
-        expect(DBState.db.characters[0].chatFolders[0].folded).toBe(true)
+        expect(getDatabase().characters[0].chatFolders[0].folded).toBe(true)
       },
       restore: (snapshot) => restoreChatFolderRowMetadata(snapshot),
       expectRestored: () => {
-        expect(DBState.db.characters[0].chatFolders[0]).toMatchObject({
+        expect(getDatabase().characters[0].chatFolders[0]).toMatchObject({
           name: 'Folder Zero',
           color: '#111',
           folded: false,
         })
       },
       expectUntouched: () => {
-        expect(DBState.db.characters[1].chatFolders[0].name).toBe('Sibling Folder Edit')
+        expect(getDatabase().characters[1].chatFolders[0].name).toBe('Sibling Folder Edit')
       },
     })
   })
@@ -3026,7 +3030,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'PUT',
     })
     // a sibling character to prove the scoped rollback never touches it
-    DBState.db.characters.push({
+    getDatabase().characters.push({
       chaId: 'char-b',
       name: 'Other',
       chatPage: 0,
@@ -3046,60 +3050,60 @@ describe('Phase 2 chat-scoped message dispatch', () => {
     ]
     // optimistic local edits: the active message array plus unrelated same-row
     // and sibling edits a whole-chat restore would wipe.
-    DBState.db.characters[0].chats[0].message = jsonClone(attemptedMessages)
-    DBState.db.characters[0].chats[0].note = 'same chat concurrent note'
-    DBState.db.characters[0].chats[0].localLore = [
+    getDatabase().characters[0].chats[0].message = jsonClone(attemptedMessages)
+    getDatabase().characters[0].chats[0].note = 'same chat concurrent note'
+    getDatabase().characters[0].chats[0].localLore = [
       {
         id: 'lore-live',
         key: 'live',
         content: 'keep me',
       },
     ] as any
-    DBState.db.characters[0].chats[0].scriptstate = {
+    getDatabase().characters[0].chats[0].scriptstate = {
       $score: 'newer',
     }
-    DBState.db.characters[0].chats[1].message.push({
+    getDatabase().characters[0].chats[1].message.push({
       role: 'char',
       data: 'same character sibling',
       chatId: 'm-sibling',
     })
-    DBState.db.characters[1].chats[0].note = 'sibling concurrent'
+    getDatabase().characters[1].chats[0].note = 'sibling concurrent'
 
     dispatchReplaceMessagesScoped('chat-a', attemptedMessages, scoped)
     await waitForCallCount(calls, 2)
 
     // only the active chat's message array is restored
-    expect(DBState.db.characters[0].chats[0].message).toEqual([])
-    expect(DBState.db.characters[0].chats[0].note).toBe('same chat concurrent note')
-    expect(DBState.db.characters[0].chats[0].localLore).toEqual([
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
+    expect(getDatabase().characters[0].chats[0].note).toBe('same chat concurrent note')
+    expect(getDatabase().characters[0].chats[0].localLore).toEqual([
       {
         id: 'lore-live',
         key: 'live',
         content: 'keep me',
       },
     ])
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'newer' })
-    expect(DBState.db.characters[0].chats[1].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'newer' })
+    expect(getDatabase().characters[0].chats[1].message).toEqual([
       {
         role: 'char',
         data: 'same character sibling',
         chatId: 'm-sibling',
       },
     ])
-    expect(DBState.db.characters[1].chats[0].note).toBe('sibling concurrent')
+    expect(getDatabase().characters[1].chats[0].note).toBe('sibling concurrent')
   })
 
   it('persists a fully hydrated user append with appendMessageCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [{ role: 'user', data: 'before', chatId: 'm-before' }],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat = jsonClone(previousChat)
     nextChat.message.push({ role: 'char', data: 'new reply', time: 123 })
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3127,18 +3131,18 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   it('persists a fully hydrated single message edit with updateMessageCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         { role: 'user', data: 'before', chatId: 'm-before', time: 1 },
         { role: 'char', data: 'unchanged', chatId: 'm-unchanged', time: 2 },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat = jsonClone(previousChat)
     nextChat.message[0].data = 'after'
     nextChat.message[0].translation = { display: 'translated' } as any
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3164,20 +3168,20 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   it('persists a fully hydrated middle delete with deleteMessageCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         { role: 'user', data: 'one', chatId: 'm-1' },
         { role: 'char', data: 'two', chatId: 'm-2' },
         { role: 'user', data: 'three', chatId: 'm-3' },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat = {
       ...jsonClone(previousChat),
       message: [jsonClone(previousChat.message[0]), jsonClone(previousChat.message[2])],
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3199,20 +3203,20 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   it('persists a fully hydrated suffix delete with truncateMessagesCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         { role: 'user', data: 'one', chatId: 'm-1' },
         { role: 'char', data: 'two', chatId: 'm-2' },
         { role: 'user', data: 'three', chatId: 'm-3' },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat = {
       ...jsonClone(previousChat),
       message: [jsonClone(previousChat.message[0])],
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3235,14 +3239,14 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   it('persists a fully hydrated tail rewrite with replaceTailMessagesCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         { role: 'user', data: 'anchor', chatId: 'm-anchor' },
         { role: 'char', data: 'old one', chatId: 'm-old-1' },
         { role: 'user', data: 'old two', chatId: 'm-old-2' },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat: Chat = {
       ...jsonClone(previousChat),
@@ -3251,7 +3255,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
         { role: 'char', data: 'replacement' },
       ],
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3281,7 +3285,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   it('persists a placeholder-prefix AOS-style user append with appendMessageCommand', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         serverMessagePlaceholder(),
         serverMessagePlaceholder(),
@@ -3289,7 +3293,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
         { role: 'char', data: 'known char tail', chatId: 'm-tail-char' },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat = jsonClone(previousChat)
     nextChat.message.push({
@@ -3297,7 +3301,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       data: 'Selected AOS choice',
       time: 123,
     })
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3325,7 +3329,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
   it('persists a placeholder-prefix tail suffix replacement after a known message anchor', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         serverMessagePlaceholder(),
         serverMessagePlaceholder(),
@@ -3333,7 +3337,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
         { role: 'char', data: 'old tail', chatId: 'm-old-tail' },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat: Chat = {
       ...jsonClone(previousChat),
@@ -3344,7 +3348,7 @@ describe('Phase 2 chat-scoped message dispatch', () => {
         { role: 'char', data: 'replacement tail' },
       ],
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     expect(prepared.factories).toHaveLength(1)
@@ -3373,21 +3377,21 @@ describe('Phase 2 chat-scoped message dispatch', () => {
 
   it('skips unsafe placeholder-containing message edits instead of full replacing the list', () => {
     const previousChat: Chat = {
-      ...jsonClone(DBState.db.characters[0].chats[0]),
+      ...jsonClone(getDatabase().characters[0].chats[0]),
       message: [
         serverMessagePlaceholder(),
         { role: 'user', data: 'known anchor', chatId: 'm-anchor' },
         { role: 'char', data: 'known tail', chatId: 'm-tail' },
       ],
     }
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat = jsonClone(previousChat)
     nextChat.message[0] = {
       ...serverMessagePlaceholder(),
       data: 'unsafe local placeholder edit',
     }
-    DBState.db.characters[0].chats[0] = nextChat
+    getDatabase().characters[0].chats[0] = nextChat
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
 
@@ -3422,9 +3426,9 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       }) as unknown as typeof fetch,
     )
 
-    const previousChat = jsonClone(DBState.db.characters[0].chats[0])
+    const previousChat = jsonClone(getDatabase().characters[0].chats[0])
     previousChat.message = [{ role: 'user', data: 'before', chatId: 'm-before' }]
-    DBState.db.characters[0].chats[0] = jsonClone(previousChat)
+    getDatabase().characters[0].chats[0] = jsonClone(previousChat)
     const previous = currentChatScopedSnapshot()
     const nextChat: Chat = {
       ...jsonClone(previousChat),
@@ -3432,20 +3436,20 @@ describe('Phase 2 chat-scoped message dispatch', () => {
       message: [{ role: 'char', data: 'attempted', chatId: 'm-attempted' }],
     }
 
-    DBState.db.characters[0].chats[0] = jsonClone(nextChat)
+    getDatabase().characters[0].chats[0] = jsonClone(nextChat)
 
     const prepared = prepareCompatibleChatUpdateScoped(previousChat, nextChat, previous)
     runOptimisticCommandSequence(prepared.factories, prepared.rollback)
     await waitForCallCount(calls, 3)
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('Accepted name')
-    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'user', data: 'before', chatId: 'm-before' }])
+    expect(getDatabase().characters[0].chats[0].name).toBe('Accepted name')
+    expect(getDatabase().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'before', chatId: 'm-before' }])
   })
 })
 
 describe('Phase 4 chat-scoped message attempt rollback', () => {
   function seedActiveMessages(messages: Message[]): void {
-    DBState.db.characters[0].chats[0].message = jsonClone(messages)
+    getDatabase().characters[0].chats[0].message = jsonClone(messages)
   }
 
   it('failed empty char append command rolls back the appended message by id', async () => {
@@ -3466,7 +3470,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
         message: { role: 'char', data: '', chatId: expect.any(String) },
       },
     })
-    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+    expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
   })
 
   it('failed scoped message update restores attempted fields and preserves newer same-chat metadata', async () => {
@@ -3476,32 +3480,32 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message[0].data = 'attempted'
-    DBState.db.characters[0].chats[0].name = 'newer metadata'
+    getDatabase().characters[0].chats[0].message[0].data = 'attempted'
+    getDatabase().characters[0].chats[0].name = 'newer metadata'
 
     dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'before', chatId: 'm-1' }])
-    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+    expect(getDatabase().characters[0].chats[0].message).toEqual([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    expect(getDatabase().characters[0].chats[0].name).toBe('newer metadata')
   })
 
   it('failed scoped message update skips rollback when the message changed again after the attempt', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
       onCommand: () => {
-        DBState.db.characters[0].chats[0].message[0].data = 'newer edit'
+        getDatabase().characters[0].chats[0].message[0].data = 'newer edit'
       },
     })
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message[0].data = 'attempted'
+    getDatabase().characters[0].chats[0].message[0].data = 'attempted'
 
     dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual([{ role: 'char', data: 'newer edit', chatId: 'm-1' }])
+    expect(getDatabase().characters[0].chats[0].message).toEqual([{ role: 'char', data: 'newer edit', chatId: 'm-1' }])
   })
 
   it('failed scoped delete restores the prior message list only when live messages equal the attempted deletion', async () => {
@@ -3515,12 +3519,12 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[1])]
+    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[1])]
 
     dispatchDeleteMessageScoped('m-1', previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+    expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
   })
 
   it('failed scoped delete preserves a newer live message list when it changes again before rollback', async () => {
@@ -3535,18 +3539,18 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'DELETE',
       onCommand: () => {
-        DBState.db.characters[0].chats[0].message = jsonClone(newerMessages)
+        getDatabase().characters[0].chats[0].message = jsonClone(newerMessages)
       },
     })
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[1])]
+    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[1])]
 
     dispatchDeleteMessageScoped('m-1', previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual(newerMessages)
+    expect(getDatabase().characters[0].chats[0].message).toEqual(newerMessages)
   })
 
   it('failed scoped truncate restores the prior message list when live messages equal the attempted truncation', async () => {
@@ -3561,12 +3565,12 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[0])]
+    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[0])]
 
     await dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
+    expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
   })
 
   it('failed scoped truncate skips rollback when live messages diverge from the attempted truncation', async () => {
@@ -3581,7 +3585,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message = [
+    getDatabase().characters[0].chats[0].message = [
       jsonClone(previousMessages[0]),
       { role: 'char', data: 'newer after truncate', chatId: 'm-newer' },
     ]
@@ -3589,7 +3593,7 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     await dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
       { role: 'user', data: 'one', chatId: 'm-1' },
       { role: 'char', data: 'newer after truncate', chatId: 'm-newer' },
     ])
@@ -3608,14 +3612,14 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[0]), jsonClone(replacementTail[0])]
-    DBState.db.characters[0].chats[0].name = 'newer metadata'
+    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[0]), jsonClone(replacementTail[0])]
+    getDatabase().characters[0].chats[0].name = 'newer metadata'
 
     dispatchReplaceTailMessagesScoped('chat-a', 'm-1', replacementTail, previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual(previousMessages)
-    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+    expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+    expect(getDatabase().characters[0].chats[0].name).toBe('newer metadata')
   })
 
   it('failed scoped replace-tail preserves newer live messages and same-chat metadata after divergence', async () => {
@@ -3633,20 +3637,20 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages/tail' && init.method === 'POST',
       onCommand: () => {
-        DBState.db.characters[0].chats[0].message = jsonClone(newerMessages)
-        DBState.db.characters[0].chats[0].name = 'newer metadata'
+        getDatabase().characters[0].chats[0].message = jsonClone(newerMessages)
+        getDatabase().characters[0].chats[0].name = 'newer metadata'
       },
     })
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    DBState.db.characters[0].chats[0].message = [jsonClone(previousMessages[0]), jsonClone(replacementTail[0])]
+    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[0]), jsonClone(replacementTail[0])]
 
     dispatchReplaceTailMessagesScoped('chat-a', 'm-1', replacementTail, previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual(newerMessages)
-    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+    expect(getDatabase().characters[0].chats[0].message).toEqual(newerMessages)
+    expect(getDatabase().characters[0].chats[0].name).toBe('newer metadata')
   })
 
   it('failed scoped replace-all skips rollback when live messages diverge from the attempted replacement', async () => {
@@ -3657,20 +3661,20 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     const previous = currentChatScopedSnapshot()
     const replacementMessages: Message[] = [{ role: 'char', data: 'replacement', chatId: 'm-r' }]
 
-    DBState.db.characters[0].chats[0].message = [
+    getDatabase().characters[0].chats[0].message = [
       jsonClone(replacementMessages[0]),
       { role: 'user', data: 'newer follow-up', chatId: 'm-newer' },
     ]
-    DBState.db.characters[0].chats[0].name = 'newer metadata'
+    getDatabase().characters[0].chats[0].name = 'newer metadata'
 
     dispatchReplaceMessagesScoped('chat-a', replacementMessages, previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].message).toEqual([
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
       { role: 'char', data: 'replacement', chatId: 'm-r' },
       { role: 'user', data: 'newer follow-up', chatId: 'm-newer' },
     ])
-    expect(DBState.db.characters[0].chats[0].name).toBe('newer metadata')
+    expect(getDatabase().characters[0].chats[0].name).toBe('newer metadata')
   })
 })
 
@@ -3698,34 +3702,34 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
     const previous = currentChatScriptstateSnapshot(true)
     // optimistic scriptstate edit plus an unrelated concurrent message edit on
     // the same chat (a whole-chat restore would have wiped it)
-    DBState.db.characters[0].chats[0].scriptstate!.$score = 'optimistic'
-    DBState.db.characters[0].chats[0].message.push({ role: 'user', data: 'keep', chatId: 'm-keep' })
+    getDatabase().characters[0].chats[0].scriptstate!.$score = 'optimistic'
+    getDatabase().characters[0].chats[0].message.push({ role: 'user', data: 'keep', chatId: 'm-keep' })
 
     dispatchPatchChatScriptstateScoped('chat-a', { $score: 'optimistic' }, [], previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
-    expect(DBState.db.characters[0].chats[0].message).toHaveLength(1)
+    expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: '1', $old: 'gone' })
+    expect(getDatabase().characters[0].chats[0].message).toHaveLength(1)
   })
 
   it('dispatchPatchChatScriptstateScoped preserves newer values for attempted patch and delete keys', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/scriptstate' && init.method === 'PATCH',
       onCommand: () => {
-        DBState.db.characters[0].chats[0].scriptstate = {
+        getDatabase().characters[0].chats[0].scriptstate = {
           $score: 'newer score',
           $old: 'newer recreated value',
         }
       },
     })
     const previous = currentChatScriptstateSnapshot()
-    DBState.db.characters[0].chats[0].scriptstate = { $score: 'optimistic score' }
+    getDatabase().characters[0].chats[0].scriptstate = { $score: 'optimistic score' }
 
     dispatchPatchChatScriptstateScoped('chat-a', { $score: 'optimistic score' }, ['$old'], previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({
+      expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({
         $score: 'newer score',
         $old: 'newer recreated value',
       })
@@ -3749,40 +3753,40 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    DBState.db.characters[0].chats[0].note = 'original note'
+    getDatabase().characters[0].chats[0].note = 'original note'
 
     const previous = currentChatScriptstateSnapshot(true)
     expect(previous.note).toBe('original note')
 
-    DBState.db.characters[0].chats[0].note = 'optimistic note'
-    DBState.db.characters[0].chats[0].scriptstate!.$score = 'keep'
+    getDatabase().characters[0].chats[0].note = 'optimistic note'
+    getDatabase().characters[0].chats[0].scriptstate!.$score = 'keep'
 
     dispatchUpdateChatNoteScoped('chat-a', 'optimistic note', previous)
     await waitForCallCount(calls, 2)
 
-    expect(DBState.db.characters[0].chats[0].note).toBe('original note')
-    expect(DBState.db.characters[0].chats[0].scriptstate).toEqual({ $score: 'keep', $old: 'gone' })
+    expect(getDatabase().characters[0].chats[0].note).toBe('original note')
+    expect(getDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'keep', $old: 'gone' })
   })
 
   it('dispatchUpdateChatNoteScoped preserves a newer note and sibling scriptstate edit', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
       onCommand: () => {
-        DBState.db.characters[0].chats[0].note = 'newer note'
-        DBState.db.characters[0].chats[0].scriptstate!.$score = 'newer score'
+        getDatabase().characters[0].chats[0].note = 'newer note'
+        getDatabase().characters[0].chats[0].scriptstate!.$score = 'newer score'
       },
     })
-    DBState.db.characters[0].chats[0].note = 'original note'
+    getDatabase().characters[0].chats[0].note = 'original note'
     const previous = currentChatScriptstateSnapshot(true)
-    DBState.db.characters[0].chats[0].note = 'optimistic note'
+    getDatabase().characters[0].chats[0].note = 'optimistic note'
 
     dispatchUpdateChatNoteScoped('chat-a', 'optimistic note', previous)
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(DBState.db.characters[0].chats[0].note).toBe('newer note')
+      expect(getDatabase().characters[0].chats[0].note).toBe('newer note')
     })
-    expect(DBState.db.characters[0].chats[0].scriptstate!.$score).toBe('newer score')
+    expect(getDatabase().characters[0].chats[0].scriptstate!.$score).toBe('newer score')
   })
 
   it('setChatNoteValue applies the author note under the projection guard and rolls back on failure', async () => {
@@ -3802,15 +3806,15 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
         return jsonResponse({ error: `unexpected ${url}` }, 404)
       }) as unknown as typeof fetch,
     )
-    delete (DBState.db.characters[0].chats[0] as { note?: string }).note
+    delete (getDatabase().characters[0].chats[0] as { note?: string }).note
     setServerProjectionWriteGuardEnabled(true)
 
     expect(() => {
-      DBState.db.characters[0].chats[0].note = 'direct note'
+      getDatabase().characters[0].chats[0].note = 'direct note'
     }).toThrow()
 
     expect(setChatNoteValue('chat-a', 'draft note')).toBe(true)
-    expect(DBState.db.characters[0].chats[0].note).toBe('draft note')
+    expect(getDatabase().characters[0].chats[0].note).toBe('draft note')
 
     await waitForCallCount(calls, 2)
 
@@ -3824,7 +3828,7 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
         select: false,
       },
     })
-    expect(DBState.db.characters[0].chats[0].note).toBe('')
+    expect(getDatabase().characters[0].chats[0].note).toBe('')
   })
 })
 
@@ -3911,12 +3915,12 @@ describe('Phase 3 runner rejection rollback (L36)', () => {
 
 describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
   it('U4: replacing the active chat captures a chat-scoped baseline, never the whole characters array', async () => {
-    DBState.db = seedCloneCostDb() as any // char-0 large (40 messages), siblings small
+    setDatabaseLite(seedCloneCostDb() as any) // char-0 large (40 messages), siblings small
     selectedCharID.set(1)
-    const charactersSize = JSON.stringify(DBState.db.characters).length
+    const charactersSize = JSON.stringify(getDatabase().characters).length
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ revision: 10 })) as unknown as typeof fetch)
 
-    const nextChat = JSON.parse(JSON.stringify(DBState.db.characters[1].chats[0]))
+    const nextChat = JSON.parse(JSON.stringify(getDatabase().characters[1].chats[0]))
     nextChat.name = 'Renamed chat'
 
     // The scoped capture + the compatible-update diff stay bounded to the one
@@ -3925,7 +3929,7 @@ describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
       setCurrentChat(nextChat as any)
     })
     expect(instrumented.maxClonedSize).toBeLessThan(charactersSize)
-    expect(DBState.db.characters[1].chats[0].name).toBe('Renamed chat')
+    expect(getDatabase().characters[1].chats[0].name).toBe('Renamed chat')
 
     // drain the async dispatch so it does not leak into the next test
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -3949,17 +3953,17 @@ describe('Phase 3 setCurrentChat scoped snapshot (U4)', () => {
       }) as unknown as typeof fetch,
     )
 
-    const nextChat = JSON.parse(JSON.stringify(DBState.db.characters[0].chats[0]))
+    const nextChat = JSON.parse(JSON.stringify(getDatabase().characters[0].chats[0]))
     nextChat.name = 'Optimistic rename'
 
     setCurrentChat(nextChat as any)
     // a concurrent, unrelated edit to ANOTHER chat row a whole-array restore would wipe
-    DBState.db.characters[0].chats[1].name = 'Concurrent sibling edit'
+    getDatabase().characters[0].chats[1].name = 'Concurrent sibling edit'
 
     await waitForCallCount(calls, 2)
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(DBState.db.characters[0].chats[0].name).toBe('Chat A')
-    expect(DBState.db.characters[0].chats[1].name).toBe('Concurrent sibling edit')
+    expect(getDatabase().characters[0].chats[0].name).toBe('Chat A')
+    expect(getDatabase().characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 })
