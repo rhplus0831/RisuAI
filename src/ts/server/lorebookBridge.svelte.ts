@@ -2,14 +2,7 @@ import { untrack } from 'svelte'
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
-import {
-  getCurrentChat,
-  getDatabase,
-  type character,
-  type Chat,
-  type Database,
-  type loreBook,
-} from '../storage/database.svelte'
+import type { character, Chat, Database, loreBook } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
@@ -40,7 +33,12 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './commands'
-import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import {
+  getServerProjectionApplyEpoch,
+  withServerProjectionApply,
+  withTrustedServerProjectionWrite,
+} from './projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
@@ -537,14 +535,28 @@ export function replaceChatLorebookCollection(chatId: string, entries: loreBook[
   return replaceLorebookCollection({ kind: 'chat', chatId }, entries, delayMs)
 }
 
+function getCurrentChatFromResources(): Chat | undefined {
+  const character = getDatabase().characters?.[get(selectedCharID)]
+  return character?.chats?.[character.chatPage ?? 0]
+}
+
+export function applyServerCharacterLorebookResource(characterId: string, globalLore: unknown[]): boolean {
+  return withServerProjectionApply(() => {
+    const character = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+    if (!character) return false
+    character.globalLore = globalLore as typeof character.globalLore
+    return true
+  })
+}
+
 export function setActiveChatLorebookLocalActivation(book: loreBook, active: boolean, delayMs = 250): boolean {
-  const chatId = getCurrentChat()?.id
+  const chatId = getCurrentChatFromResources()?.id
   const previous = chatId ? currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId }) : null
   if (!chatId || !previous) return false
 
   let entries: loreBook[] | null = null
   const applied = withTrustedServerProjectionWrite(() => {
-    const chat = getCurrentChat()
+    const chat = getCurrentChatFromResources()
     if (!chat || chat.id !== chatId) return false
 
     if (!Array.isArray(chat.localLore)) {

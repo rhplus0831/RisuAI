@@ -1885,17 +1885,6 @@ export function hydrateServerCharacterLorebook(characterId: string, globalLore: 
   })
 }
 
-/**
- * Apply a foreign command-event `character-lorebook` projection. Unlike
- * user-open hydration, this advances the projection epoch so mounted bridge
- * watchers refresh their baselines instead of echoing the foreign edit.
- */
-export function applyServerCharacterLorebookProjection(characterId: string, globalLore: unknown[]): boolean {
-  return withServerProjectionApply(() => {
-    return writeServerCharacterLorebook(characterId, globalLore)
-  })
-}
-
 function writeServerCharacterLorebook(characterId: string, globalLore: unknown[]): boolean {
   for (const character of getDatabase().characters ?? []) {
     if (character.chaId === characterId) {

@@ -70,9 +70,10 @@ vi.mock('./projectionWriteGuard.svelte', () => ({
 }))
 
 import { selectedCharID } from '../stores.svelte'
-import { applyServerCharacterLorebookProjection, getDatabase, setDatabaseLite } from '../storage/database.svelte'
+import { getResourceDatabase as getDatabase, replaceResourceDatabase as setDatabaseLite } from './resourceState.svelte'
 import {
   applyLorebookEntryDraftEdit,
+  applyServerCharacterLorebookResource,
   changedLorebookEntryDraftFields,
   clearDirtyLorebookEntryFieldsMatchingProjection,
   collectLorebookCollectionSnapshots,
@@ -370,14 +371,14 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     stop()
   })
 
-  it('M11: foreign character-lorebook projection apply refreshes baseline without echoing, then local edits dispatch', async () => {
+  it('M11: foreign character-lorebook resource apply refreshes baseline without echoing, then local edits dispatch', async () => {
     setupCharacter([{ key: 'a', content: 'A', id: 'entry-a' }] as Entry[])
     markCharacterLorebookHydrated('c1')
     const stop = watchServerBackedLorebooks({ delayMs: DELAY })
     flushSync()
 
     recorded.commands.length = 0
-    const applied = applyServerCharacterLorebookProjection('c1', [
+    const applied = applyServerCharacterLorebookResource('c1', [
       { key: 'server', content: 'Server', id: 'server-entry' },
     ])
     expect(applied).toBe(true)

@@ -1,15 +1,16 @@
 import { get } from 'svelte/store'
-import { applyServerCharacterLorebookProjection, getDatabase } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { mergePendingPluginStorageProjection } from '../pluginCommands'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesProjection, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
 import { setAppliedServerProjectionRevision, setCachedServerCommandRevision } from './commands'
 import {
+  applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
   recordHydratedCharacterLorebooks,
   resetLorebookHydration,
 } from './lorebookBridge.svelte'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
@@ -26,7 +27,7 @@ let serverResourceRefreshPending = false
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
   mergePendingPluginStorage: mergePendingPluginStorageProjection,
   applyChatMessages: applyServerChatMessagesProjection,
-  applyCharacterLorebook: applyServerCharacterLorebookProjection,
+  applyCharacterLorebook: applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
   triggerOpenChatGenerationReattach,
   clearActiveMessageTranslation,

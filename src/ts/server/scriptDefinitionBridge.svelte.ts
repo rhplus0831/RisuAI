@@ -1,13 +1,7 @@
 import { untrack } from 'svelte'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
-import {
-  getDatabase,
-  type Database,
-  type character,
-  type customscript,
-  type triggerscript,
-} from '../storage/database.svelte'
+import { type Database, type character, type customscript, type triggerscript } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
@@ -22,6 +16,7 @@ import {
   type TriggerDefinitionSnapshot,
 } from './commands'
 import { getServerProjectionApplyEpoch, withTrustedServerProjectionWrite } from './projectionWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 export interface ScriptDefinitionStateSnapshot {
