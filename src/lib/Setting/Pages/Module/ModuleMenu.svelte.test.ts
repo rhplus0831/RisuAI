@@ -13,11 +13,13 @@ import {
   applyImportedModuleRegexRows,
   parseImportedLorebookRows,
 } from './ModuleMenu.svelte'
-import { DBState } from 'src/ts/stores.svelte'
-import { DBState as BridgeDBState } from '../../../../ts/stores.svelte'
 import type { RisuModule } from 'src/ts/process/modules'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { resetServerBackedLorebookBridgeForTests } from 'src/ts/server/lorebookBridge.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 
 let liveModule: RisuModule
 let draftModule: RisuModule
@@ -84,9 +86,8 @@ function seedModule(): void {
     modules: [module],
     useAdditionalAssetsPreview: false,
   } as any
-  DBState.db = db
-  BridgeDBState.db = DBState.db
-  liveModule = DBState.db.modules[0] as RisuModule
+  setDatabaseLite(db)
+  liveModule = getDatabase().modules[0] as RisuModule
   draftModule = cloneJsonValue(liveModule)
 }
 
@@ -97,8 +98,7 @@ beforeEach(() => {
 
 afterEach(() => {
   resetServerBackedLorebookBridgeForTests()
-  DBState.db = {} as any
-  BridgeDBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('ModuleMenu stale import guards', () => {

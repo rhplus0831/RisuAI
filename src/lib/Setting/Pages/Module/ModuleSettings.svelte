@@ -43,7 +43,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
 
-  import { DBState } from 'src/ts/stores.svelte'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import ModuleMenu from 'src/lib/Setting/Pages/Module/ModuleMenu.svelte'
   import { exportModule, importModule, refreshModules, type RisuModule } from 'src/ts/process/modules'
@@ -60,6 +59,7 @@
     setGlobalModuleEnabled,
     updateGlobalModule,
   } from 'src/ts/moduleCommands'
+  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
@@ -74,11 +74,11 @@
   let editModuleIndex = $state(-1)
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
-  let sortedModuleRows = $derived(sortModuleSettingsRows(DBState.db.modules ?? [], normalizedModuleSearch))
-  let moduleIntegrationNamespaces = $derived(parseModuleIntegrationNamespaces(DBState.db.moduleIntergration))
+  let sortedModuleRows = $derived(sortModuleSettingsRows(getResourceDatabase().modules ?? [], normalizedModuleSearch))
+  let moduleIntegrationNamespaces = $derived(parseModuleIntegrationNamespaces(getResourceDatabase().moduleIntergration))
 
   function isModuleEnabled(moduleId: string) {
-    return DBState.db.enabledModules.includes(moduleId)
+    return getResourceDatabase().enabledModules.includes(moduleId)
   }
 
   function moduleIntegrationState(rmodule: RisuModule) {
@@ -97,7 +97,7 @@
   <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
   <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
-    {#if DBState.db.modules.length === 0}
+    {#if getResourceDatabase().modules.length === 0}
       <div class="text-textcolor2 p-3">{language.noModules}</div>
     {:else}
       {#each sortedModuleRows as moduleRow, i (moduleRow.rmodule.id)}
@@ -128,7 +128,7 @@
               use:tooltip={language.enableGlobal}
               onclick={async (e) => {
                 e.stopPropagation()
-                const enabled = !DBState.db.enabledModules.includes(rmodule.id)
+                const enabled = !getResourceDatabase().enabledModules.includes(rmodule.id)
                 setGlobalModuleEnabled(rmodule.id, enabled)
               }}>
               <Globe size={18} />

@@ -9,8 +9,8 @@
     convertExternalLorebook as convertExternalModuleLorebook,
   } from 'src/ts/process/lorebook.svelte'
   import type { RisuModule as ImportTargetRisuModule } from 'src/ts/process/modules'
-  import { DBState as ModuleImportDBState } from 'src/ts/stores.svelte'
   import { replaceModuleLorebookCollectionDraft as replaceModuleLorebookImportDraft } from 'src/ts/server/lorebookBridge.svelte'
+  import { getResourceDatabase as getModuleImportDatabase } from 'src/ts/server/resourceState.svelte'
   import { applyModuleScriptDefinitionDraft as applyModuleScriptDefinitionImportDraft } from 'src/ts/server/scriptDefinitionBridge.svelte'
 
   export interface SelectedModuleImportFile {
@@ -22,7 +22,7 @@
     currentModule: ImportTargetRisuModule | null | undefined,
   ): ImportTargetRisuModule | null {
     return (
-      ModuleImportDBState.db.modules?.find((module) => module.id === moduleId) ??
+      getModuleImportDatabase().modules?.find((module) => module.id === moduleId) ??
       (currentModule?.id === moduleId ? currentModule : null)
     )
   }
@@ -108,7 +108,6 @@
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import { selectMultipleFile } from 'src/ts/util'
 
-  import { DBState } from 'src/ts/stores.svelte'
   import { v4 } from 'uuid'
   import { untrack } from 'svelte'
   import {
@@ -130,6 +129,7 @@
     type ModuleAssetEntry,
     type ModuleAssetUploadOperation,
   } from 'src/ts/server/moduleAssetUpload'
+  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
   const MODULE_ASSET_EXTENSIONS = [
     'png',
@@ -224,7 +224,7 @@
   })
 
   const moduleAssetSourceKey = $derived(
-    DBState.db.useAdditionalAssetsPreview
+    getResourceDatabase().useAdditionalAssetsPreview
       ? (currentModule?.assets ?? []).map((asset) => `${asset[1]}:${asset[2] ?? ''}`).join('\n')
       : '',
   )
@@ -234,7 +234,7 @@
     const run = ++assetPreviewRun
     const nextExtensions: Record<string, string | undefined> = {}
     assetFilePath = {}
-    if (DBState.db.useAdditionalAssetsPreview) {
+    if (getResourceDatabase().useAdditionalAssetsPreview) {
       for (const asset of currentModule?.assets ?? []) {
         const assetPath = asset[1]
         nextExtensions[assetPath] = asset.length > 2 && asset[2] ? asset[2] : assetPath.split('.').pop()
@@ -638,7 +638,7 @@
           {#each currentModule.assets as assets, i (assets[1])}
             <tr>
               <td class="font-medium truncate">
-                {#if assetFilePath[assets[1]] && DBState.db.useAdditionalAssetsPreview}
+                {#if assetFilePath[assets[1]] && getResourceDatabase().useAdditionalAssetsPreview}
                   {#if assetFileExtensions[assets[1]] === 'mp4'}
                     <!-- svelte-ignore a11y_media_has_caption -->
                     <video controls class="mt-2 px-2 w-full m-1 rounded-md"

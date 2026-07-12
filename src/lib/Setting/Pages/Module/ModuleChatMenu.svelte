@@ -3,12 +3,10 @@
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
-  import type { RisuModule } from 'src/ts/process/modules'
-
-  import { DBState } from 'src/ts/stores.svelte'
-  import { selectedCharID } from 'src/ts/stores.svelte'
-  import { SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
   import { toggleSelectedCharacterModule, toggleSelectedChatModule } from 'src/ts/moduleCommands'
+  import type { RisuModule } from 'src/ts/process/modules'
+  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import { selectedCharID, SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
 
   interface Props {
     close?: any
@@ -19,7 +17,6 @@
   let moduleSearch = $state('')
 
   function sortModules(modules: RisuModule[], search: string) {
-    const db = DBState.db
     return modules
       .filter((v) => {
         if (search === '') return true
@@ -52,10 +49,10 @@
     <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
-      {#if DBState.db.modules.length === 0}
+      {#if getResourceDatabase().modules.length === 0}
         <div class="text-textcolor2 p-3">{language.noModules}</div>
       {:else}
-        {#each sortModules(DBState.db.modules, moduleSearch) as rmodule, i}
+        {#each sortModules(getResourceDatabase().modules, moduleSearch) as rmodule, i}
           {#if i !== 0}
             <div class="border-t-1 border-selected"></div>
           {/if}
@@ -63,7 +60,7 @@
             {#if rmodule.mcp}
               <Waypoints size={18} class="mr-2" />
             {/if}
-            {#if !alertMode && DBState.db.enabledModules.includes(rmodule.id)}
+            {#if !alertMode && getResourceDatabase().enabledModules.includes(rmodule.id)}
               <span class="text-textcolor2">{rmodule.name}</span>
             {:else}
               <span class="">{rmodule.name}</span>
@@ -79,15 +76,15 @@
                   }}>
                   <CircleCheckIcon size={18} />
                 </button>
-              {:else if DBState.db.enabledModules.includes(rmodule.id)}
+              {:else if getResourceDatabase().enabledModules.includes(rmodule.id)}
                 <button class="mr-2 text-textcolor2 cursor-not-allowed" aria-labelledby="disabled"> </button>
               {:else}
                 <button
-                  class={DBState.db.characters[$selectedCharID].chats[
-                    DBState.db.characters[$selectedCharID].chatPage
+                  class={getResourceDatabase().characters[$selectedCharID].chats[
+                    getResourceDatabase().characters[$selectedCharID].chatPage
                   ].modules?.includes(rmodule.id)
                     ? 'mr-2 cursor-pointer text-blue-500'
-                    : DBState.db.characters[$selectedCharID]?.modules?.includes(rmodule.id)
+                    : getResourceDatabase().characters[$selectedCharID]?.modules?.includes(rmodule.id)
                       ? 'mr-2 cursor-pointer text-violet-500'
                       : 'text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer'}
                   onclick={async (e) => {

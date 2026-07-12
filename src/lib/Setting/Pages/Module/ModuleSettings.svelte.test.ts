@@ -61,8 +61,11 @@ vi.mock('src/ts/server/commands', async (importActual) => {
 
 import ModuleSettings from './ModuleSettings.svelte'
 import { language } from 'src/lang'
-import { DBState } from 'src/ts/stores.svelte'
 import type { RisuModule } from 'src/ts/process/modules'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -107,39 +110,41 @@ function makeModule(options: ModuleFixtureOptions): RisuModule {
 }
 
 function seedModules(readCounter?: NameReadCounter) {
-  DBState.db = {
+  const modules = [
+    makeModule({
+      id: 'zulu-id',
+      name: 'zulu module',
+      readCounter,
+    }),
+    makeModule({
+      id: 'alpha-id',
+      name: 'Alpha Module',
+      readCounter,
+    }),
+    makeModule({
+      id: 'beta-id',
+      name: 'beta Module',
+      namespace: 'shared',
+      readCounter,
+    }),
+    makeModule({
+      id: 'mcp-id',
+      name: 'MCP Tools',
+      mcp: { url: 'https://example.test/mcp' },
+      readCounter,
+    }),
+  ]
+  setDatabaseLite({
     characters: [],
     enabledModules: ['alpha-id'],
     language: 'en',
     loreBook: [],
     moduleIntergration: 'shared, trimmed',
-    modules: [
-      makeModule({
-        id: 'zulu-id',
-        name: 'zulu module',
-        readCounter,
-      }),
-      makeModule({
-        id: 'alpha-id',
-        name: 'Alpha Module',
-        readCounter,
-      }),
-      makeModule({
-        id: 'beta-id',
-        name: 'beta Module',
-        namespace: 'shared',
-        readCounter,
-      }),
-      makeModule({
-        id: 'mcp-id',
-        name: 'MCP Tools',
-        mcp: { url: 'https://example.test/mcp' },
-        readCounter,
-      }),
-    ],
+    modules: [],
     showDeprecatedTriggerV1: false,
     useAdditionalAssetsPreview: false,
-  } as any
+  } as any)
+  getDatabase().modules = modules
 }
 
 function mountSettings() {
@@ -240,7 +245,7 @@ describe('ModuleSettings derived module rows', () => {
 
     moduleAction('beta-id', 'export').click()
     await tick()
-    expect(moduleProcessSpies.exportModule).toHaveBeenCalledWith(DBState.db.modules[2])
+    expect(moduleProcessSpies.exportModule).toHaveBeenCalledWith(getDatabase().modules[2])
 
     moduleAction('beta-id', 'delete').click()
     await tick()
@@ -301,7 +306,7 @@ describe('ModuleSettings derived module rows', () => {
 
     readCounter.count = 0
     await updateSearch('ALPHA')
-    expect(readCounter.count).toBe(DBState.db.modules.length + moduleRows().length)
+    expect(readCounter.count).toBe(getDatabase().modules.length + moduleRows().length)
 
     readCounter.count = 0
     await clickModuleSurfaceAction('create')
