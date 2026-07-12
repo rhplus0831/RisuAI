@@ -1,4 +1,5 @@
 <script lang="ts">
+  import 'src/ts/stores.svelte'
   import { ArrowLeft, PlusIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import PromptDataItem from 'src/lib/UI/PromptDataItem.svelte'
@@ -9,7 +10,7 @@
   } from 'src/ts/process/prompt'
   import { templateCheck } from 'src/ts/process/templates/templateCheck'
 
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
@@ -180,31 +181,33 @@
   }
 
   function selectedPromptPresetIndex(): number {
-    const selectedIndex = DBState.db.promptPresetsId
+    const selectedIndex = getResourceDatabase().promptPresetsId
     return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : -1
   }
 
   function selectedModelPresetIndex(): number {
-    const selectedIndex = DBState.db.modelPresetsId
+    const selectedIndex = getResourceDatabase().modelPresetsId
     return Number.isInteger(selectedIndex) && selectedIndex >= 0 ? selectedIndex : -1
   }
 
   function selectedPromptPresetId(): string | null {
     const selectedIndex = selectedPromptPresetIndex()
-    const selectedId = selectedIndex >= 0 ? (DBState.db.promptPresets?.[selectedIndex]?.id as unknown) : undefined
+    const selectedId =
+      selectedIndex >= 0 ? (getResourceDatabase().promptPresets?.[selectedIndex]?.id as unknown) : undefined
     return typeof selectedId === 'string' && selectedId.length > 0 ? selectedId : null
   }
 
   function selectedModelPresetId(): string | null {
     const selectedIndex = selectedModelPresetIndex()
-    const selectedId = selectedIndex >= 0 ? (DBState.db.modelPresets?.[selectedIndex]?.id as unknown) : undefined
+    const selectedId =
+      selectedIndex >= 0 ? (getResourceDatabase().modelPresets?.[selectedIndex]?.id as unknown) : undefined
     return typeof selectedId === 'string' && selectedId.length > 0 ? selectedId : null
   }
 
   function selectedPromptPreset(): Record<string, unknown> | undefined {
     const selectedIndex = selectedPromptPresetIndex()
     return selectedIndex >= 0
-      ? (DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined)
+      ? (getResourceDatabase().promptPresets?.[selectedIndex] as Record<string, unknown> | undefined)
       : undefined
   }
 
@@ -218,18 +221,19 @@
     if (preset) {
       return cloneJsonValue(Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [])
     }
-    return cloneJsonValue(DBState.db.promptTemplate ?? [])
+    return cloneJsonValue(getResourceDatabase().promptTemplate ?? [])
   }
 
   function syncSelectedPromptPresetTemplateProjection(templates: PromptItem[]): void {
     const nextTemplate = cloneJsonValue(templates)
     withTrustedServerProjectionWrite(() => {
       const selectedIndex = selectedPromptPresetIndex()
-      const preset = selectedIndex >= 0 ? (DBState.db.promptPresets?.[selectedIndex] as Record<string, unknown>) : null
+      const preset =
+        selectedIndex >= 0 ? (getResourceDatabase().promptPresets?.[selectedIndex] as Record<string, unknown>) : null
       if (preset) {
         preset.promptTemplate = cloneJsonValue(nextTemplate)
       }
-      DBState.db.promptTemplate = cloneJsonValue(nextTemplate)
+      getResourceDatabase().promptTemplate = cloneJsonValue(nextTemplate)
     })
   }
 
@@ -252,11 +256,11 @@
     if (!preset) return
     withTrustedServerProjectionWrite(() => {
       if (Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
-        DBState.db.promptTemplate = cloneJsonValue(
+        getResourceDatabase().promptTemplate = cloneJsonValue(
           Array.isArray(preset.promptTemplate) ? (preset.promptTemplate as PromptItem[]) : [],
         )
       } else {
-        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+        delete (getResourceDatabase() as unknown as Record<string, unknown>).promptTemplate
       }
     })
   }
@@ -267,9 +271,11 @@
   }
 
   function promptTemplatePresetSelectionSignature(): string {
-    const selectedIndex = DBState.db.promptPresetsId
+    const selectedIndex = getResourceDatabase().promptPresetsId
     const selectedId =
-      Number.isInteger(selectedIndex) && selectedIndex >= 0 ? DBState.db.promptPresets?.[selectedIndex]?.id : null
+      Number.isInteger(selectedIndex) && selectedIndex >= 0
+        ? getResourceDatabase().promptPresets?.[selectedIndex]?.id
+        : null
     return `${selectedIndex}:${selectedId ?? ''}`
   }
 
@@ -584,7 +590,7 @@
       untrack(() => {
         const attempted = cloneJsonValue(draft.value)
         const previousSetting = cloneJsonValue(currentPromptSettingValue(key, fallback))
-        const previousProjection = cloneJsonValue((DBState.db as unknown as Record<string, unknown>)[key])
+        const previousProjection = cloneJsonValue((getResourceDatabase() as unknown as Record<string, unknown>)[key])
         const owner = resolvePromptSettingOwnerForEdit(key)
         dirtyStates.set(promptSettingOwnerStateKey(owner), {
           owner,
@@ -593,7 +599,7 @@
         })
         withTrustedServerProjectionWrite(() => {
           // Re-read inside the trusted write to get the mutable projection.
-          const target = DBState.db as unknown as Record<string, unknown>
+          const target = getResourceDatabase() as unknown as Record<string, unknown>
           target[key] = attempted
         })
         const mirroredToPreset = usePromptPresetModelOverrideForKey(key)
@@ -713,7 +719,7 @@
     fallback: T,
   ): { exists: boolean; value: T } {
     if (owner.kind === 'top-level') {
-      const target = DBState.db as unknown as Record<string, unknown> | undefined
+      const target = getResourceDatabase() as unknown as Record<string, unknown> | undefined
       const value = target?.[key]
       return { exists: true, value: value === undefined ? fallback : (value as T) }
     }
@@ -729,7 +735,7 @@
   function reassertPromptSettingOwnerValue<T>(key: string, value: T, owner: PromptSettingOwnerContext): boolean {
     let reasserted = false
     withTrustedServerProjectionWrite(() => {
-      const target = DBState.db as unknown as Record<string, unknown>
+      const target = getResourceDatabase() as unknown as Record<string, unknown>
       if (owner.kind === 'top-level') {
         target[key] = cloneJsonValue(value)
         reasserted = true
@@ -738,11 +744,12 @@
 
       if (owner.kind === 'prompt-preset') {
         const presetIndex = promptPresetIndexById(owner.presetId)
-        const preset = presetIndex >= 0 ? (DBState.db.promptPresets?.[presetIndex] as Record<string, unknown>) : null
+        const preset =
+          presetIndex >= 0 ? (getResourceDatabase().promptPresets?.[presetIndex] as Record<string, unknown>) : null
         if (!preset) return
 
         preset[owner.presetField] = cloneJsonValue(value)
-        if (DBState.db.promptPresetsId === presetIndex) {
+        if (getResourceDatabase().promptPresetsId === presetIndex) {
           target[key] = cloneJsonValue(value)
         }
         reasserted = true
@@ -750,11 +757,12 @@
       }
 
       const presetIndex = modelPresetIndexById(owner.presetId)
-      const preset = presetIndex >= 0 ? (DBState.db.modelPresets?.[presetIndex] as Record<string, unknown>) : null
+      const preset =
+        presetIndex >= 0 ? (getResourceDatabase().modelPresets?.[presetIndex] as Record<string, unknown>) : null
       if (!preset) return
 
       preset[owner.presetField] = cloneJsonValue(value)
-      if (DBState.db.modelPresetsId === presetIndex) {
+      if (getResourceDatabase().modelPresetsId === presetIndex) {
         target[key] = cloneJsonValue(value)
       }
       reasserted = true
@@ -764,27 +772,31 @@
 
   function promptPresetById(presetId: string): Record<string, unknown> | null {
     const index = promptPresetIndexById(presetId)
-    return index >= 0 ? ((DBState.db.promptPresets?.[index] as Record<string, unknown> | undefined) ?? null) : null
+    return index >= 0
+      ? ((getResourceDatabase().promptPresets?.[index] as Record<string, unknown> | undefined) ?? null)
+      : null
   }
 
   function modelPresetById(presetId: string): Record<string, unknown> | null {
     const index = modelPresetIndexById(presetId)
-    return index >= 0 ? ((DBState.db.modelPresets?.[index] as Record<string, unknown> | undefined) ?? null) : null
+    return index >= 0
+      ? ((getResourceDatabase().modelPresets?.[index] as Record<string, unknown> | undefined) ?? null)
+      : null
   }
 
   function promptPresetIndexById(presetId: string): number {
-    return DBState.db.promptPresets?.findIndex((preset) => preset?.id === presetId) ?? -1
+    return getResourceDatabase().promptPresets?.findIndex((preset) => preset?.id === presetId) ?? -1
   }
 
   function modelPresetIndexById(presetId: string): number {
-    return DBState.db.modelPresets?.findIndex((preset) => preset?.id === presetId) ?? -1
+    return getResourceDatabase().modelPresets?.findIndex((preset) => preset?.id === presetId) ?? -1
   }
 
   function currentPromptSettingValue<T>(key: string, fallback: T): T {
     if (usePromptPresetModelOverrideForKey(key)) {
       return currentPromptPresetModelOverrideValue(key, fallback)
     }
-    const target = DBState.db as unknown as Record<string, unknown> | undefined
+    const target = getResourceDatabase() as unknown as Record<string, unknown> | undefined
     const value = target?.[key]
     return value === undefined ? fallback : (value as T)
   }
@@ -795,7 +807,7 @@
 
   $effect.pre(() => {
     if (!promptTemplateHydrated) return
-    warns = templateCheck(DBState.db)
+    warns = templateCheck(getResourceDatabase())
   })
   $effect.pre(() => {
     if (!promptTemplateHydrated) return
@@ -816,7 +828,7 @@
     if (!promptTemplateHydrated) return
     // Reconcile the draft from the projection only when the cached server command
     // revision advances (a real server push / command response), not on every
-    // keystroke. `reconcilePromptTemplateDraft` reads `DBState.db.promptTemplate`
+    // keystroke. `reconcilePromptTemplateDraft` reads `getResourceDatabase().promptTemplate`
     // so this effect still re-runs on a projection change; the whole-template
     // stringify now happens only on a revision advance, never per keystroke.
     const { revision, nextDraft } = reconcilePromptTemplateDraft(
@@ -833,9 +845,9 @@
   })
   $effect(() => {
     if (!promptTemplateHydrated) return
-    if (!promptTemplateIdsNeedNormalization(DBState.db)) return
+    if (!promptTemplateIdsNeedNormalization(getResourceDatabase())) return
     withTrustedServerProjectionWrite(() => {
-      normalizePromptTemplateIds(DBState.db)
+      normalizePromptTemplateIds(getResourceDatabase())
     })
   })
 
@@ -1080,7 +1092,7 @@
     <Check bind:check={strictJsonSchemaDraft.value} name={language.strictJsonSchema} className="mt-4" />
   {/if}
 
-  {#if DBState.db.showUnrecommended}
+  {#if getResourceDatabase().showUnrecommended}
     <Check
       bind:check={promptSettingsDraft.value.customChainOfThought}
       name={language.customChainOfThought}
