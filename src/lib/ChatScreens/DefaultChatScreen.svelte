@@ -181,7 +181,7 @@
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
-  // The open chat ships as a message-less stub until `/projection/chatMessages`
+  // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
   let activeChatMessagesLoading = $derived(

@@ -570,7 +570,7 @@ export function getAllChatIdsWithMessages(db: DatabaseSync): string[] {
   return rows.map((row) => row.chat_id)
 }
 
-/** Number of ACTIVE message rows for a chat (cheap header for stub projection). */
+/** Number of ACTIVE message rows for a chat (cheap header for the chat shell resource). */
 export function countChatMessages(db: DatabaseSync, chatId: string): number {
   const row = db.prepare('SELECT COUNT(*) AS count FROM messages WHERE chat_id = ? AND alternate = 0').get(chatId) as
     | { count: number }

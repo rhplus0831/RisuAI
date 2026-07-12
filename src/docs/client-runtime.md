@@ -1,21 +1,21 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-13.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
 
-The runtime is Fastify-backed. The browser keeps a projection of server state in
-`DBState.db`, renders Svelte UI from that projection, sends command mutations to
-Fastify, listens for events, and hydrates large resources such as chat messages
-on demand.
+The runtime is Fastify-backed. The browser loads durable settings, collections,
+and character rows through REST resources, renders Svelte UI from reactive
+resource state, sends command mutations to Fastify, listens for invalidation
+events, and fetches large bodies such as chat messages on demand.
 
 ## Client TypeScript Areas
 
 | Path                                                                                                                                                                           | Runtime ownership                                                                                                                                                                                            |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: bootstrap, commands, projection resources, hydration, events, active writer, assets, backups, Realm import, memory job events, message translation refresh, bridge watchers, push notifications, projection/stale-operation guards, protocol diagnostics, smoke hooks. |
-| `src/ts/storage/`                                                                                                                                                              | Browser projection database, server-backed auth/storage compatibility, `.risu` helpers, backup helpers, and auto-storage selection.                                                                          |
+| `src/ts/server/`                                                                                                                                                               | Fastify browser adapters: runtime bootstrap, REST resource reads, resource state/invalidation, commands, hydration, events, active writer, assets, backups, Realm import, memory job events, message translation refresh, bridge watchers, push notifications, stale-operation guards, protocol diagnostics, smoke hooks. |
+| `src/ts/storage/`                                                                                                                                                              | Server-backed auth/storage compatibility, resource-database accessors, `.risu` helpers, backup helpers, and auto-storage selection.                                                                            |
 | `src/ts/process/`                                                                                                                                                              | `sendChat`, server-backed generation bridge, durable reattach, files/MCP/memory/embedding/post-generation helpers, retained parity helpers.                                                                  |
 | `src/ts/process/request/`                                                                                                                                                      | Provider/server-routing classifiers, chat/completion/memory request adapters, SSE parsing, message patch helpers.                                                                                            |
 | `src/ts/model/`, `src/ts/horde/`                                                                                                                                               | Browser model registry, durable profile records/resolver/UI state, and provider catalog helpers used by settings and generation preflight.                                                                   |
@@ -36,63 +36,70 @@ the preloading element.
 
 `loadData()` in `src/ts/bootstrap.ts` performs the visible startup work:
 
-1. Fetch `/api/v1/bootstrap` through `fetchServerBootstrapProjection()`, which
-   prepares and merges bootstrap body-cache payloads before returning the
-   projection.
-2. If the server has no database, initialize a fresh server database and refetch
-   the read-only projection.
-3. Apply the server database into `DBState.db`.
-4. Seed selected character state from the projection.
-5. Record hydrated lorebook coverage.
-6. Cache the server command revision.
-7. Enable the projection write guard.
-8. Seed active generation jobs and active message translations, then start
-   active message translation refresh and durable generation reattach.
-9. Start selected-character shell hydration and await the selected shell.
-10. Start chat message hydration and hydrate the active chat.
-11. Start prompt-template hydration.
-12. Start bridge patch lifecycle flushing.
-13. Subscribe to server events.
-14. If `DBState.db.notification === true`, enable chat-completion push
-    notifications.
-15. Load plugins.
-16. Update color scheme, text theme, animation speed, height mode, error
+1. Fetch `/api/v1/bootstrap` for runtime metadata: initialization status,
+   current revision, schema/asset information, active generation jobs, and
+   active message translations.
+2. If SQLite is uninitialized, issue the initialization command and refetch the
+   runtime metadata.
+3. Fetch `/api/v1/settings`, `/api/v1/collections`, and `/api/v1/characters` in
+   parallel. Retry the complete set when their revisions do not match, then
+   apply the consistent set to reactive resource state.
+4. Seed selected-character state, reset body hydration, record already-resident
+   lorebook coverage, and cache the common resource revision.
+5. Enable guarded resource writes and command-event reconciliation.
+6. Seed active generation jobs and active message translations, then start
+   translation refresh and durable generation reattach.
+7. Start chat-message hydration and fetch the active chat body.
+8. Start bridge patch lifecycle flushing and subscribe to server events.
+9. If the loaded `notification` setting is true, enable chat-completion push
+   notifications.
+10. Load plugins.
+11. Update color scheme, text theme, animation speed, height mode, error
     handling, and GUI size CSS variables.
-17. Apply startup UI state such as `botSettingAtStart`.
-18. Set `loadedStore`, start DOM observers, register dynamic models, run module
-    update, and show TOS as needed.
+12. Apply startup UI state such as `botSettingAtStart`.
+13. Set `loadedStore`, select the persisted character, start DOM observers,
+    register dynamic models, run module update, and show TOS as needed.
 
 Visible startup bugs often sit at the boundary between `loadedStore`,
-`selectedCharID`, projection application, route application, and CSS variable
-updates.
+`selectedCharID`, resource application, route application, lazy body reads, and
+CSS variable updates.
 
-## Projection And Hydration
+## Resource State, Invalidation, And Hydration
 
-The browser should treat Fastify projection data as the source of durable truth.
-Use command helpers for user mutations and bridge watchers for compatibility
-paths.
+Fastify is the source of durable truth. The browser composes a compatibility
+database view from three reactive resources: settings, collections, and
+characters. User mutations go through command helpers; successful commands and
+SSE events invalidate concrete resources, which the browser refetches before
+advancing its applied revision.
 
 Important files:
 
-- `src/ts/server/projectionWriteGuard.svelte.ts` protects server-owned
-  projection state from direct browser mutation.
-- `src/ts/server/bootstrapBodyCache.ts` merges cached module/plugin body payloads
-  advertised by bootstrap.
+- `src/ts/server/resourceState.svelte.ts` owns settings, collections, and
+  character resource state and composes the compatibility database view.
+- `src/ts/server/resourceReads.ts` reads `/api/v1/settings`,
+  `/api/v1/collections`, optional named collections, `/api/v1/characters`, and
+  individual character rows.
+- `src/ts/server/hydrationReads.ts` reads chat-message, character-lorebook,
+  legacy-preset, and prompt-preset-template bodies from concrete endpoints.
+- `src/ts/server/resourceInvalidation.ts` maps command events to targeted REST
+  reads and falls back to a consistent three-resource refresh for gaps or
+  unknown/sprawling invalidations.
+- `src/ts/server/resourceRefresh.ts` coalesces authoritative full refreshes after
+  imports, restores, and replay gaps.
+- `src/ts/server/resourceWriteGuard.svelte.ts` limits direct mutation of
+  server-owned resource state to trusted compatibility paths.
 - `src/ts/server/commands.ts` sends revision-checked command mutations.
 - `src/ts/server/events.ts` subscribes to `/api/v1/events`.
-- `src/ts/server/projectionResync.ts` handles full or targeted resync after
-  revision gaps.
 - Grouped `settings.updated` events identify their group in `event.id`, so a
-  contiguous reconcile merges only that group's projected fields. Events from
-  older servers or retained history without a recognized group safely request
-  a full bootstrap instead.
+  contiguous reconcile refetches only the settings resource. Events from older
+  servers or retained history without a recognized group safely request a full
+  resource refresh instead.
 - `src/ts/server/chatMessageHydration.svelte.ts` hydrates active chat messages
   and transcript windows.
 - `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
   character shell rows.
-- `src/ts/server/chatGenerationSettingsProjectionGuard.ts` preserves a queued
-  optimistic chat generation-settings value when a targeted character-row
-  projection differs before that save settles.
+- The chat generation-settings freshness guard preserves a queued optimistic
+  value when a refetched character row differs before that save settles.
 - `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
   and preset prompt bodies with owner-keyed state for selected/requested prompt
   presets.
@@ -103,17 +110,17 @@ Important files:
 
 If a component shows stale or missing data, confirm whether the data is:
 
-- absent from bootstrap by design;
-- waiting on chat, lorebook, character shell, prompt template, preset, or
-  module/plugin body-cache hydration;
+- absent from the settings/collections/characters response by design;
+- waiting on a chat, lorebook, character row, legacy preset, or prompt-template
+  endpoint;
 - hidden by a route/store condition;
 - optimistically changed but awaiting command confirmation;
 - rolled back after command failure;
-- overwritten by an SSE event or resync.
+- superseded by an SSE-triggered targeted read or full resource refresh.
 
-Detailed bootstrap, targeted projection, hydration, SSE reconcile, projection
-write guard, and bridge watcher rules live in
-`docs/structure/server-projection-and-bridges.md`.
+The concrete resource modules above are the authoritative guide for startup,
+targeted invalidation, hydration, SSE reconciliation, guarded compatibility
+writes, and bridge watchers.
 
 Chat/message compatibility writes in `src/ts/chatCommands.ts` classify a list
 change into the narrowest safe command: append, single-message update, prefix
@@ -127,13 +134,13 @@ that send.
 
 Chat generation-settings saves are serialized per chat and optimistically
 applied. While a save is queued,
-`chatGenerationSettingsProjectionGuard.ts` prevents a differing targeted
-`characterRow` merge from rolling the visible value back; this protection ends
-when the save settles and does not replace full-bootstrap resync semantics.
+the generation-settings freshness guard prevents a differing character-row
+response from rolling the visible value back; this protection ends when the
+save settles and does not replace authoritative resource refresh semantics.
 
-Prompt template projection notes:
+Prompt template resource notes:
 
-- Modern `DBState.db.promptPresets[].promptTemplate` is the normal owner for
+- A modern prompt preset's `promptTemplate` field is the normal owner for its
   prompt-template data. Prompt Settings reads and edits the selected modern
   prompt preset first.
 - `promptTemplateHydration.ts` can hydrate the selected/global owner or an
@@ -141,24 +148,24 @@ Prompt template projection notes:
   `generationSettings.promptPresetId`.
 - Prompt-item events apply to the `parentId` preset row. Only an event for the
   currently selected owner may update the top-level compatibility mirror.
-- `DBState.db.promptTemplate` is retained as a compatibility projection/mirror
-  for legacy callers and bridge reconciliation. It should not be treated as the
-  normal editing or generation owner when a modern prompt preset resolves.
+- The top-level `promptTemplate` collection is retained as a compatibility
+  mirror for legacy callers and bridge reconciliation. It should not be treated
+  as the normal editing or generation owner when a modern prompt preset
+  resolves.
 - Legacy `botPresets[].promptTemplate` remains compatibility data for import,
   export, prompt diff, and explicit extraction into prompt presets; legacy bot
   preset selection does not normally apply it into the active top-level
   collection.
 
-Model profile projection notes:
+Model profile resource notes:
 
-- `DBState.db.modelProfiles` and `DBState.db.modelRoleProfiles` are durable
-  Fastify-backed fields. Client and server defaults normalize them, and command
-  patches validate their record, role-binding, provider option, runtime option,
-  and fallback-ref shapes.
-- `DBState.db.modelRuntimeDefaults` is the profile-system runtime default
-  store. It uses the same runtime option schema as profile `runtimeOptions`.
-- Preset, split-preset, loadout, import, bootstrap, and projection paths
-  preserve these durable fields while still accepting legacy flat data.
+- `modelProfiles` and `modelRoleProfiles` are durable Fastify-backed settings.
+  Client and server defaults normalize them, and command patches validate their
+  record, role-binding, provider option, runtime option, and fallback-ref shapes.
+- `modelRuntimeDefaults` is the profile-system runtime default setting. It uses
+  the same runtime option schema as profile `runtimeOptions`.
+- Preset, split-preset, loadout, import, and resource-read paths preserve these
+  durable fields while still accepting legacy flat data.
 - Provider secret masking covers profile-local `apiKey` values by stable
   profile id. Masked placeholders are resolved server-side during settings
   writes.
@@ -171,7 +178,7 @@ Model profile projection notes:
 ## Async Freshness And Import Guards
 
 `src/ts/server/staleStateGuards.ts` is the shared helper for browser async work
-that must not apply after the user changes selection, projection refreshes, or a
+that must not apply after the user changes selection, resource refreshes, or a
 newer operation supersedes it. It provides latest-operation tokens,
 destructive-refresh epochs, attempted-field/list rollback helpers, and dirty
 draft merge helpers used by command bridges and UI import flows.
@@ -292,7 +299,7 @@ Storage:
 Realm import:
 
 - `src/ts/server/realmImport.ts` handles Realm character import, progress SSE,
-  and projection reconciliation after commit.
+  and resource reconciliation after commit.
 - Visible Realm UI is under `src/lib/UI/Realm/`.
 
 Push notifications:
@@ -302,7 +309,7 @@ Push notifications:
   through `/api/v1/push/subscriptions`.
 - `src/lib/Setting/Pages/Display/NotificationToggle.svelte` owns the visible
   setting flow. Startup re-enables push registration when
-  `DBState.db.notification === true`.
+  the `notification` setting is true.
 - The worker is scoped to Web Push chat-completion notifications; it is not the
   old offline/share/file-handler service worker surface.
 
@@ -331,18 +338,19 @@ MCP:
 
 ## Runtime Risks For UI Work
 
-- Direct `DBState.db` mutation can fail under the projection write guard or be
-  lost on SSE/resync. Use command helpers or bridge utilities.
-- Bootstrap may intentionally provide stubs. Active chat messages and lorebooks
-  can hydrate later.
+- Direct compatibility-view mutation can fail under the resource write guard or
+  be lost on a later REST refresh. Use command helpers or bridge utilities.
+- Character resources intentionally provide message-free chat rows and can
+  provide lorebook stubs. Active chat messages and lorebooks hydrate later from
+  their concrete endpoints.
 - Route effects run only after `loadedStore`; a pre-load store write may not
   mean the URL or visible shell has caught up.
-- CSS variables are applied after projection and settings load. A theme bug may
+- CSS variables are applied after resources and settings load. A theme bug may
   be runtime state, not component markup.
 - Plugins can add visible menu items and buttons. Check plugin stores before
   assuming a component owns every visible control.
 - Full-stack visible bugs often need `pnpm dev:agent` or browser smoke because
-  unit tests with fetch mocks can miss auth, SSE, projection, and asset URL
+  unit tests with fetch mocks can miss auth, SSE, resource refresh, and asset URL
   wiring.
 
 ## Verification Pointers

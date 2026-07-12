@@ -13,13 +13,15 @@ import { setupBrowserSmokeAuth } from './auth.js'
 //   - Journey 1: switch chats by clicking sidebar rows -> the generation picker
 //     repaints the newly active chat's prompt preset id.
 //   - Journey 2 (settle): toggle a sidebar checkbox -> the flip survives the
-//     command + projection refreeze (not just the optimistic paint).
+//     command + resource refresh (not just the optimistic paint).
 //   - Journey 3 (GATE): open the "character" sidebar tab, then save generation
-//     settings (a DB projection refreeze). The tab must stay on "character".
+//     settings (a full resource-state replacement). The tab must stay on
+//     "character".
 //     This is the Tier-2 acceptance-gate probe: reverting only the
 //     `untrack(applyRouteToStores)` hunk from 09eae20d3 turns Journey 3 RED
-//     (the refreeze-triggered route re-application resets botMakerMode), while
-//     the store snapshot stays correct. See docs/audit-result/phase0-acceptance-gate.md.
+//     (the refresh-triggered route re-application resets botMakerMode), while
+//     the resource snapshot stays correct. See
+//     docs/audit-result/phase0-acceptance-gate.md.
 
 interface Harness {
   app: FastifyInstance
@@ -76,7 +78,7 @@ test('Journey 1: switching chats repaints the active-chat generation picker', as
   expect(storedPresetId, diagnostics()).toBe('preset-b')
 })
 
-test('Journey 2 (settle): a sidebar toggle flip survives the command + projection refreeze', async ({ page }) => {
+test('Journey 2 (settle): a sidebar toggle flip survives the command + resource refresh', async ({ page }) => {
   const diagnostics = attachDiagnostics(page)
   await boot(page)
   await openCharacter(page)
@@ -86,15 +88,15 @@ test('Journey 2 (settle): a sidebar toggle flip survives the command + projectio
   await expect(flagControl).toBeVisible({ timeout: 15_000 })
   await expect(flagControl).toHaveAttribute('data-risu-selected', 'true')
 
-  // Drive a real click on the rendered toggle, then let the save + SSE
-  // projection refreeze settle. CheckInput hides the real <input>; the <label>
+  // Drive a real click on the rendered toggle, then let the save + SSE resource
+  // refresh settle. CheckInput hides the real <input>; the <label>
   // is the click target.
   await flagControl.locator('label').first().click()
   await expect
     .poll(() => flagControl.getAttribute('data-risu-selected'), { timeout: 15_000, message: diagnostics })
     .toBe('false')
 
-  // Settle window: the projection refreeze must not revert the painted flip.
+  // Settle window: the resource refresh must not revert the painted flip.
   await page.waitForTimeout(750)
   await expect(flagControl).toHaveAttribute('data-risu-selected', 'false')
 
@@ -123,16 +125,17 @@ test('Journey 3 (GATE): the sidebar tab stays on "character" after a generation-
   await expect.poll(() => sidebarTabActive(page, 'character'), { timeout: 10_000, message: diagnostics }).toBe(true)
   await expect(page.locator('[data-risu-sidebar-panel="character"]').first()).toBeVisible()
 
-  // Trigger an *unrelated* full projection refreeze (a state import/restore ->
-  // state.imported -> forceServerProjectionResync, which reassigns DBState.db).
-  // This is the refreeze class the untrack fix guards: a fine-grained toggle
-  // save merges in place, but a resync reassigns the whole projection, which is
-  // exactly what re-runs a tracked route-application effect.
+  // Trigger an *unrelated* full resource refresh (a state import/restore ->
+  // state.imported -> authoritative resource reload).
+  // This is the replacement class the untrack fix guards: a fine-grained toggle
+  // save updates a narrow resource, but an authoritative reload replaces the
+  // composed resource state, which is exactly what re-runs a tracked
+  // route-application effect.
   const importStatus = await importStateForResync(page)
   expect(importStatus, diagnostics()).toBe(200)
 
-  // Store/logic side stays correct on both trees: the projection still holds the
-  // selected character and its chats after the resync.
+  // Store/logic side stays correct on both trees: resource state still holds the
+  // selected character and its chats after the refresh.
   await expect
     .poll(
       () =>

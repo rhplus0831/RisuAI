@@ -1,6 +1,6 @@
 # Svelte UI Guide
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-13.
 
 The frontend is a Svelte 5 SPA. There is no SvelteKit `src/routes/` tree:
 navigation is URL parsing plus Svelte stores, and `src/App.svelte` chooses the
@@ -10,8 +10,8 @@ media previews, alerts/modals, TTS playback, hotkeys, custom HTML/CSS, and
 plugin execution.
 
 Use this file first for Svelte UI/UX bugs. Use `src/docs/client-runtime.md` when
-the visible issue is caused by bootstrap, projection, hydration, commands,
-generation, assets, storage, Realm import, plugins, or MCP.
+the visible issue is caused by startup resource reads, invalidation, hydration,
+commands, generation, assets, storage, Realm import, plugins, or MCP.
 
 ## Fast Triage
 
@@ -40,7 +40,7 @@ generation, assets, storage, Realm import, plugins, or MCP.
 | `src/main.ts`         | Imports polyfills/storage state, installs the store router, mounts `App.svelte`, optionally installs the Fastify browser smoke hook, calls `loadData()`, initializes hotkeys, and removes `#preloading`. |
 | `src/App.svelte`      | Main render switch and overlay host. It owns legal/loading/settings/grid/sidebar/chat priority and global modal mounting.                                                                                |
 | `src/styles.css`      | Tailwind v4 import, theme variable defaults, full-height app CSS, global chat text CSS, and Tailwind compatibility base rules.                                                                           |
-| `src/ts/bootstrap.ts` | Browser startup coordinator. It applies Fastify projection, starts hydration/events/bridges, then updates UI-derived CSS state.                                                                          |
+| `src/ts/bootstrap.ts` | Browser startup coordinator. It loads Fastify resources, starts hydration/events/bridges, then updates UI-derived CSS state.                                                                            |
 | `src/ts/platform.ts`  | Fastify-only platform flag. `isFastifyServer` is hard-coded true.                                                                                                                                        |
 
 `src/LiteMain.svelte` exists but is not the live entrypoint. Live lite behavior
@@ -97,14 +97,16 @@ the URL. Route changes are not file-system based.
   route or has a pending application, then calls `syncRouteFromState`.
 
 The `untrack` is intentional. Applying a route closes route-blocking state such
-as `CustomGUISettingMenuStore`, `botMakerMode`, and `CharEmotion`. If projection
-refreezes or unrelated `DBState` reads retrigger route application, the sidebar
-or chat tabs can visibly reset.
+as `CustomGUISettingMenuStore`, `botMakerMode`, and `CharEmotion`. If a full
+resource refresh or unrelated reactive resource read retriggers route
+application, the sidebar or chat tabs can visibly reset.
 
 Important route/store facts:
 
 - `loadedStore` gates route application and the loading shell.
-- `DBState.db` is the projection-backed database used by nearly all visible UI.
+- `src/ts/server/resourceState.svelte.ts` owns the settings, collections, and
+  character resources used by data-driven UI. Compatibility helpers expose a
+  composed database-shaped view without owning a second state tree.
 - `selectedCharID` drives the active character, sidebar, and chat screen.
 - `settingsOpen` plus `SettingsMenuIndex` controls the settings shell.
 - `PlaygroundStore` controls playground tools. Value `2` is playground chat and
@@ -154,7 +156,7 @@ Transcript rendering then fans out through `Chats.svelte`, `Chat.svelte`,
 
 High-risk chat areas:
 
-- Active chats arrive from bootstrap as message-less stubs. Check
+- Character REST resources carry message-less chat rows. Check
   `src/ts/server/chatMessageHydration.svelte.ts` before treating missing
   messages as a render bug.
 - `ScrollToMessageStore`, transcript window identity, image-load waits, and
@@ -198,16 +200,15 @@ list. Chat-scoped generation controls live in
 `src/ts/activeChatGenerationSettings.ts`; server send/preview/continue/
 regenerate reads the effective overlay in `server/fastify/src/prompt/`.
 Queued generation-settings saves are optimistic and serialized per chat.
-`src/ts/server/chatGenerationSettingsProjectionGuard.ts` prevents a differing
-targeted character-row projection from rolling that visible value back before
-the save settles.
+The chat generation-settings freshness guard prevents a differing character-row
+response from rolling that visible value back before the save settles.
 
 Risk areas:
 
 - Sidebar route application can reset `botMakerMode`; see the route-effect
   notes above.
 - Character and chat reorders are optimistic command flows. Confirm rollback
-  and projection reconcile paths when the visible order changes.
+  and resource reconciliation paths when the visible order changes.
 - Sortable setup/teardown and folder grouping live outside the main Svelte
   markup in `dropList.ts`, `sidebarCharList.ts`, and `chatFolderGrouping.ts`.
 - Hotkeys in `src/ts/hotkey.ts` use DOM selectors and visible state; UI class or
@@ -218,7 +219,7 @@ Relevant tests include `src/lib/SideBars/SideChatList.svelte.test.ts`,
 `src/lib/SideBars/chatFolderGrouping.test.ts`,
 `src/lib/SideBars/dropList.test.ts`,
 `src/lib/SideBars/chatGenerationSettingsControls.test.ts`, and
-`src/ts/hotkey.projectionGuard.test.ts`.
+`src/ts/hotkey.resourceGuard.test.ts`.
 
 ## Settings And Shared Controls
 
@@ -339,8 +340,9 @@ Model profile runtime state lives under `src/ts/model/`:
 
 Value binding and persistence are centralized in `src/ts/setting/utils.ts`:
 
-- `getSettingValue` reads from `DBState.db`, `bindPath`, or custom getters.
-- `setSettingValue` writes locally inside `withTrustedServerProjectionWrite`,
+- `getSettingValue` reads from the composed resource database, `bindPath`, or
+  custom getters.
+- `setSettingValue` writes locally inside `withTrustedResourceWrite`,
   runs `onChange`, then sends a server settings patch when commands are
   available.
 - Failed command patches roll the local value back only if the attempted value
@@ -363,8 +365,9 @@ Settings risk areas:
   missing settings command group.
 - `SettingSelect` and `SettingSegmented` can reset to a visible option when the
   current value is hidden by conditions.
-- Wrapper-local `$state` mirrors must stay in sync with `DBState.db`; stale
-  controls often come from missing read dependencies or over-eager writeback.
+- Wrapper-local `$state` mirrors must stay in sync with the underlying resource
+  value; stale controls often come from missing read dependencies or over-eager
+  writeback.
 - `TextAreaInput.svelte` is complex: highlighting, autocomplete, popup editor,
   context menu, contenteditable mode, and cleanup share one primitive.
 - `SliderInput.svelte` uses disabled sentinels and expects sane `min`/`max`.

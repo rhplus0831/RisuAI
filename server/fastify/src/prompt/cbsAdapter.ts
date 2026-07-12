@@ -10,7 +10,7 @@ import { getActiveDatabase, getActiveSelectedCharID } from './promptScope.js'
  * Server-side `CBSRegisterArg` factory. Wires the DI fields the `registerCBS`
  * infrastructure expects, reading dynamic context
  * (`database`, `selectedCharID`, `userName`, `personaPrompt`) from the
- * active `promptScope` singleton rather than from `DBState` /
+ * active `promptScope` singleton rather than from browser resource state or
  * Svelte stores.
  *
  * Browser-context callbacks like `{{screenwidth}}` and
