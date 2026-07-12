@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RisuModule } from 'src/ts/process/modules'
-import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
+import type { customscript, Database, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 
 // MCP module writes apply an immediate trusted projection and sequence multi-command info writes.
 
@@ -25,7 +25,11 @@ import {
   setServerProjectionWriteGuardEnabled,
   withTrustedServerProjectionWrite,
 } from 'src/ts/server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
 import { ModuleHandler } from '../modules'
 
 interface CapturedFetch {
@@ -121,11 +125,11 @@ function makeLuaTrigger(code: string): triggerscript {
 }
 
 function moduleLuaCode(moduleIndex: number): string {
-  return (DBState.db.modules[moduleIndex].trigger?.[0]?.effect?.[0] as { code: string }).code
+  return (getDatabase().modules[moduleIndex].trigger?.[0]?.effect?.[0] as { code: string }).code
 }
 
 function setModuleLuaCode(moduleIndex: number, code: string): void {
-  const effect = DBState.db.modules[moduleIndex].trigger?.[0]?.effect?.[0] as { code: string }
+  const effect = getDatabase().modules[moduleIndex].trigger?.[0]?.effect?.[0] as { code: string }
   effect.code = code
 }
 
@@ -199,13 +203,13 @@ beforeEach(() => {
   alertConfirmSpy.mockResolvedValue(true)
   clearCachedServerCommandRevision()
   setServerProjectionWriteGuardEnabled(true)
-  DBState.db = {
+  setDatabaseLite({
     characters: [],
     enabledModules: [],
     loreBook: [],
     loreBookPage: 0,
     modules: [makeModule()],
-  } as any
+  } as unknown as Database)
   selectedCharID.set(-1)
 })
 
@@ -235,12 +239,12 @@ describe('MCP module writes optimistic projection', () => {
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules = []
+      getDatabase().modules = []
     })
     acceptPrompt(true)
 
     expect(toolText(await pending)).toBe('Error: Module with ID module-a not found.')
-    expect(DBState.db.enabledModules).toEqual([])
+    expect(getDatabase().enabledModules).toEqual([])
     expect(calls).toEqual([])
   })
 
@@ -263,19 +267,19 @@ describe('MCP module writes optimistic projection', () => {
 
     expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules[0] = replacement
+      getDatabase().modules[0] = replacement
     })
     acceptPrompt(true)
 
     expect(toolText(await pending)).toBe(
       'Error: Module with ID module-a changed before access was accepted. Please retry.',
     )
-    expect(DBState.db.modules[0].name).toBe('Replacement module')
-    expect(DBState.db.enabledModules).toEqual([])
+    expect(getDatabase().modules[0].name).toBe('Replacement module')
+    expect(getDatabase().enabledModules).toEqual([])
     expect(calls).toEqual([])
   })
 
-  it('setModuleInfo patches DBState and read-tool output before sequenced commands resolve', async () => {
+  it('setModuleInfo patches resource state and read-tool output before sequenced commands resolve', async () => {
     const { calls, releaseHeldResponses } = stubCommandFetch({
       holdUrls: ['/api/v1/commands/modules/module-a'],
     })
@@ -287,8 +291,8 @@ describe('MCP module writes optimistic projection', () => {
     })
 
     expect(toolText(result)).toContain('Successfully updated module Renamed module')
-    expect(DBState.db.modules[0].name).toBe('Renamed module')
-    expect(DBState.db.enabledModules).toEqual(['module-a'])
+    expect(getDatabase().modules[0].name).toBe('Renamed module')
+    expect(getDatabase().enabledModules).toEqual(['module-a'])
     expect(
       parseToolJson<{ name: string; enabled: boolean }>(
         await handler.handle('risu-get-module-info', {
@@ -316,14 +320,16 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back only attempted module-info fields and unattempted enable when a held PATCH fails', async () => {
-    DBState.db.modules = [
-      makeModule(),
-      makeModule({
-        id: 'module-b',
-        description: 'Sibling description',
-        name: 'Module B',
-      }),
-    ]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().modules = [
+        makeModule(),
+        makeModule({
+          id: 'module-b',
+          description: 'Sibling description',
+          name: 'Module B',
+        }),
+      ]
+    })
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failUrls: ['/api/v1/commands/modules/module-a'],
       holdUrls: ['/api/v1/commands/modules/module-a'],
@@ -335,40 +341,40 @@ describe('MCP module writes optimistic projection', () => {
       data: { name: 'Attempted', enabled: true },
     })
 
-    expect(DBState.db.modules[0]).toMatchObject({
+    expect(getDatabase().modules[0]).toMatchObject({
       description: 'Original description',
       name: 'Attempted',
     })
-    expect(DBState.db.enabledModules).toEqual(['module-a'])
+    expect(getDatabase().enabledModules).toEqual(['module-a'])
 
     await waitForCallCount(calls, 2)
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules[0] = {
-        ...DBState.db.modules[0],
+      getDatabase().modules[0] = {
+        ...getDatabase().modules[0],
         description: 'Newer description',
       }
-      DBState.db.modules[1] = {
-        ...DBState.db.modules[1],
+      getDatabase().modules[1] = {
+        ...getDatabase().modules[1],
         name: 'Sibling newer',
       }
-      DBState.db.modules.push(makeModule({ id: 'module-c', name: 'Module C' }))
-      DBState.db.enabledModules.push('module-b')
+      getDatabase().modules.push(makeModule({ id: 'module-c', name: 'Module C' }))
+      getDatabase().enabledModules.push('module-b')
     })
 
     releaseHeldResponses()
     await waitForSettledCommands()
 
     expect(calls).toHaveLength(2)
-    expect(DBState.db.modules.map((module) => module.id)).toEqual(['module-a', 'module-b', 'module-c'])
-    expect(DBState.db.modules[0]).toMatchObject({
+    expect(getDatabase().modules.map((module) => module.id)).toEqual(['module-a', 'module-b', 'module-c'])
+    expect(getDatabase().modules[0]).toMatchObject({
       description: 'Newer description',
       name: 'Module A',
     })
-    expect(DBState.db.modules[1]).toMatchObject({
+    expect(getDatabase().modules[1]).toMatchObject({
       description: 'Sibling description',
       name: 'Sibling newer',
     })
-    expect(DBState.db.enabledModules).toEqual(['module-b'])
+    expect(getDatabase().enabledModules).toEqual(['module-b'])
   })
 
   it('keeps the accepted module-info PATCH when the later enable command fails', async () => {
@@ -382,8 +388,8 @@ describe('MCP module writes optimistic projection', () => {
       data: { name: 'Accepted', enabled: true },
     })
 
-    expect(DBState.db.modules[0].name).toBe('Accepted')
-    expect(DBState.db.enabledModules).toEqual(['module-a'])
+    expect(getDatabase().modules[0].name).toBe('Accepted')
+    expect(getDatabase().enabledModules).toEqual(['module-a'])
 
     await waitForCallCount(calls, 3)
     await waitForSettledCommands()
@@ -398,11 +404,11 @@ describe('MCP module writes optimistic projection', () => {
       method: 'POST',
       body: { baseRevision: 11, moduleId: 'module-a', enabled: true },
     })
-    expect(DBState.db.modules[0].name).toBe('Accepted')
-    expect(DBState.db.enabledModules).toEqual([])
+    expect(getDatabase().modules[0].name).toBe('Accepted')
+    expect(getDatabase().enabledModules).toEqual([])
   })
 
-  it('set and delete module lorebooks are immediately visible through DBState and MCP reads', async () => {
+  it('set and delete module lorebooks are immediately visible through resource state and MCP reads', async () => {
     const { calls } = stubCommandFetch()
     const handler = new ModuleHandler()
 
@@ -413,7 +419,7 @@ describe('MCP module writes optimistic projection', () => {
       keys: ['alpha'],
     })
 
-    expect(DBState.db.modules[0].lorebook?.[0]).toMatchObject({
+    expect(getDatabase().modules[0].lorebook?.[0]).toMatchObject({
       comment: 'Created lore',
       content: 'created content',
       key: 'alpha',
@@ -438,7 +444,7 @@ describe('MCP module writes optimistic projection', () => {
       name: 'Created lore',
     })
 
-    expect(DBState.db.modules[0].lorebook).toEqual([])
+    expect(getDatabase().modules[0].lorebook).toEqual([])
     expect(
       toolText(
         await handler.handle('risu-get-module-lorebook', {
@@ -452,30 +458,32 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back failed module lorebook replacement without restoring unrelated lorebook state', async () => {
-    DBState.db.characters = [
-      {
-        chaId: 'character-a',
-        name: 'Character A',
-        globalLore: [makeLorebookEntry({ id: 'character-lore', comment: 'Character lore' })],
-      },
-    ] as any
-    DBState.db.loreBook = [
-      {
-        id: 'global-lorebook',
-        name: 'Global lorebook',
-        data: [makeLorebookEntry({ id: 'global-entry', comment: 'Global entry' })],
-      },
-    ] as any
-    DBState.db.modules = [
-      makeModule({
-        lorebook: [makeLorebookEntry({ id: 'module-a-lore', comment: 'Module lore', content: 'old module' })],
-      }),
-      makeModule({
-        id: 'module-b',
-        name: 'Module B',
-        lorebook: [makeLorebookEntry({ id: 'module-b-lore', comment: 'Sibling lore', content: 'old sibling' })],
-      }),
-    ]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().characters = [
+        {
+          chaId: 'character-a',
+          name: 'Character A',
+          globalLore: [makeLorebookEntry({ id: 'character-lore', comment: 'Character lore' })],
+        },
+      ] as any
+      getDatabase().loreBook = [
+        {
+          id: 'global-lorebook',
+          name: 'Global lorebook',
+          data: [makeLorebookEntry({ id: 'global-entry', comment: 'Global entry' })],
+        },
+      ] as any
+      getDatabase().modules = [
+        makeModule({
+          lorebook: [makeLorebookEntry({ id: 'module-a-lore', comment: 'Module lore', content: 'old module' })],
+        }),
+        makeModule({
+          id: 'module-b',
+          name: 'Module B',
+          lorebook: [makeLorebookEntry({ id: 'module-b-lore', comment: 'Sibling lore', content: 'old sibling' })],
+        }),
+      ]
+    })
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failUrls: ['/api/v1/commands/modules/module-a/lorebooks/entries/module-a-lore'],
       holdUrls: ['/api/v1/commands/modules/module-a/lorebooks/entries/module-a-lore'],
@@ -488,27 +496,27 @@ describe('MCP module writes optimistic projection', () => {
       content: 'attempted module',
     })
 
-    expect(DBState.db.modules[0].lorebook?.[0]?.content).toBe('attempted module')
+    expect(getDatabase().modules[0].lorebook?.[0]?.content).toBe('attempted module')
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules[1].lorebook![0].content = 'newer sibling'
-      const characterLore = (DBState.db.characters[0] as any).globalLore[0] as loreBook
+      getDatabase().modules[1].lorebook![0].content = 'newer sibling'
+      const characterLore = (getDatabase().characters[0] as any).globalLore[0] as loreBook
       characterLore.content = 'newer character'
-      const globalLore = (DBState.db.loreBook[0] as any).data[0] as loreBook
+      const globalLore = (getDatabase().loreBook[0] as any).data[0] as loreBook
       globalLore.content = 'newer global'
     })
 
     releaseHeldResponses()
     await waitForSettledCommands()
 
-    expect(DBState.db.modules[0].lorebook?.[0]?.content).toBe('old module')
-    expect(DBState.db.modules[1].lorebook?.[0]?.content).toBe('newer sibling')
-    expect((DBState.db.characters[0] as any).globalLore[0].content).toBe('newer character')
-    expect((DBState.db.loreBook[0] as any).data[0].content).toBe('newer global')
+    expect(getDatabase().modules[0].lorebook?.[0]?.content).toBe('old module')
+    expect(getDatabase().modules[1].lorebook?.[0]?.content).toBe('newer sibling')
+    expect((getDatabase().characters[0] as any).globalLore[0].content).toBe('newer character')
+    expect((getDatabase().loreBook[0] as any).data[0].content).toBe('newer global')
   })
 
-  it('set and delete module regex scripts are immediately visible through DBState and MCP reads', async () => {
+  it('set and delete module regex scripts are immediately visible through resource state and MCP reads', async () => {
     const { calls } = stubCommandFetch()
     const handler = new ModuleHandler()
 
@@ -522,7 +530,7 @@ describe('MCP module writes optimistic projection', () => {
       ableFlag: true,
     })
 
-    expect(DBState.db.modules[0].regex?.[0]).toMatchObject({
+    expect(getDatabase().modules[0].regex?.[0]).toMatchObject({
       comment: 'Created script',
       flag: 'g',
       in: 'created-in',
@@ -547,7 +555,7 @@ describe('MCP module writes optimistic projection', () => {
       name: 'Created script',
     })
 
-    expect(DBState.db.modules[0].regex).toEqual([])
+    expect(getDatabase().modules[0].regex).toEqual([])
     expect(parseToolJson<unknown[]>(await handler.handle('risu-get-module-regex-scripts', { id: 'module-a' }))).toEqual(
       [],
     )
@@ -556,18 +564,20 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back failed held module regex replacement without restoring triggers, sibling modules, or characters', async () => {
-    DBState.db.characters = [{ chaId: 'character-a', name: 'Character A' }] as any
-    DBState.db.modules = [
-      makeModule({
-        regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
-        trigger: [makeLuaTrigger('print("old trigger")')],
-      }),
-      makeModule({
-        id: 'module-b',
-        name: 'Module B',
-        regex: [makeRegexScript({ id: 'module-b-regex', comment: 'Sibling regex', out: 'old sibling' })],
-      }),
-    ]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().characters = [{ chaId: 'character-a', name: 'Character A' }] as any
+      getDatabase().modules = [
+        makeModule({
+          regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
+          trigger: [makeLuaTrigger('print("old trigger")')],
+        }),
+        makeModule({
+          id: 'module-b',
+          name: 'Module B',
+          regex: [makeRegexScript({ id: 'module-b-regex', comment: 'Sibling regex', out: 'old sibling' })],
+        }),
+      ]
+    })
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failUrls: ['/api/v1/commands/modules/module-a/scripts'],
       holdUrls: ['/api/v1/commands/modules/module-a/scripts'],
@@ -580,32 +590,34 @@ describe('MCP module writes optimistic projection', () => {
       out: 'attempted-out',
     })
 
-    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('attempted-out')
+    expect(getDatabase().modules[0].regex?.[0]?.out).toBe('attempted-out')
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
       setModuleLuaCode(0, 'print("newer trigger")')
-      DBState.db.modules[1].regex![0].out = 'newer sibling'
-      const character = DBState.db.characters[0] as any
+      getDatabase().modules[1].regex![0].out = 'newer sibling'
+      const character = getDatabase().characters[0] as any
       character.name = 'Newer character'
-      DBState.db.characters.push({ chaId: 'character-b', name: 'Character B' } as any)
+      getDatabase().characters.push({ chaId: 'character-b', name: 'Character B' } as any)
     })
 
     releaseHeldResponses()
     await waitForSettledCommands()
 
-    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('old-out')
+    expect(getDatabase().modules[0].regex?.[0]?.out).toBe('old-out')
     expect(moduleLuaCode(0)).toBe('print("newer trigger")')
-    expect(DBState.db.modules[1].regex?.[0]?.out).toBe('newer sibling')
-    expect(DBState.db.characters.map((character: any) => character.name)).toEqual(['Newer character', 'Character B'])
+    expect(getDatabase().modules[1].regex?.[0]?.out).toBe('newer sibling')
+    expect(getDatabase().characters.map((character: any) => character.name)).toEqual(['Newer character', 'Character B'])
   })
 
   it('skips failed held module regex rollback when the same module regex changed again', async () => {
-    DBState.db.modules = [
-      makeModule({
-        regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
-      }),
-    ]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().modules = [
+        makeModule({
+          regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old-out' })],
+        }),
+      ]
+    })
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failUrls: ['/api/v1/commands/modules/module-a/scripts'],
       holdUrls: ['/api/v1/commands/modules/module-a/scripts'],
@@ -618,23 +630,25 @@ describe('MCP module writes optimistic projection', () => {
       out: 'attempted-out',
     })
 
-    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('attempted-out')
+    expect(getDatabase().modules[0].regex?.[0]?.out).toBe('attempted-out')
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules[0].regex![0].out = 'newer-out'
+      getDatabase().modules[0].regex![0].out = 'newer-out'
     })
 
     releaseHeldResponses()
     await waitForSettledCommands()
 
-    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('newer-out')
+    expect(getDatabase().modules[0].regex?.[0]?.out).toBe('newer-out')
   })
 
-  it('setModuleLuaScript is immediately visible through DBState and the Lua read tool', async () => {
+  it('setModuleLuaScript is immediately visible through resource state and the Lua read tool', async () => {
     const { calls } = stubCommandFetch()
     const handler = new ModuleHandler()
-    DBState.db.modules = [makeModule({ trigger: [makeLuaTrigger('print("old")')] })]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().modules = [makeModule({ trigger: [makeLuaTrigger('print("old")')] })]
+    })
 
     await handler.handle('risu-set-module-lua-script', {
       id: 'module-a',
@@ -652,18 +666,20 @@ describe('MCP module writes optimistic projection', () => {
   })
 
   it('rolls back failed held module Lua trigger replacement without restoring regex, sibling modules, or characters', async () => {
-    DBState.db.characters = [{ chaId: 'character-a', name: 'Character A' }] as any
-    DBState.db.modules = [
-      makeModule({
-        regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old regex' })],
-        trigger: [makeLuaTrigger('print("old lua")')],
-      }),
-      makeModule({
-        id: 'module-b',
-        name: 'Module B',
-        trigger: [makeLuaTrigger('print("old sibling lua")')],
-      }),
-    ]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().characters = [{ chaId: 'character-a', name: 'Character A' }] as any
+      getDatabase().modules = [
+        makeModule({
+          regex: [makeRegexScript({ id: 'module-a-regex', comment: 'Regex script', out: 'old regex' })],
+          trigger: [makeLuaTrigger('print("old lua")')],
+        }),
+        makeModule({
+          id: 'module-b',
+          name: 'Module B',
+          trigger: [makeLuaTrigger('print("old sibling lua")')],
+        }),
+      ]
+    })
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failUrls: ['/api/v1/commands/modules/module-a/triggers'],
       holdUrls: ['/api/v1/commands/modules/module-a/triggers'],
@@ -679,24 +695,26 @@ describe('MCP module writes optimistic projection', () => {
     await waitForCallCount(calls, 2)
 
     withTrustedServerProjectionWrite(() => {
-      DBState.db.modules[0].regex![0].out = 'newer regex'
+      getDatabase().modules[0].regex![0].out = 'newer regex'
       setModuleLuaCode(1, 'print("newer sibling lua")')
-      const character = DBState.db.characters[0] as any
+      const character = getDatabase().characters[0] as any
       character.name = 'Newer character'
-      DBState.db.characters.push({ chaId: 'character-b', name: 'Character B' } as any)
+      getDatabase().characters.push({ chaId: 'character-b', name: 'Character B' } as any)
     })
 
     releaseHeldResponses()
     await waitForSettledCommands()
 
     expect(moduleLuaCode(0)).toBe('print("old lua")')
-    expect(DBState.db.modules[0].regex?.[0]?.out).toBe('newer regex')
+    expect(getDatabase().modules[0].regex?.[0]?.out).toBe('newer regex')
     expect(moduleLuaCode(1)).toBe('print("newer sibling lua")')
-    expect(DBState.db.characters.map((character: any) => character.name)).toEqual(['Newer character', 'Character B'])
+    expect(getDatabase().characters.map((character: any) => character.name)).toEqual(['Newer character', 'Character B'])
   })
 
   it('skips failed held module Lua trigger rollback when the same trigger changed again', async () => {
-    DBState.db.modules = [makeModule({ trigger: [makeLuaTrigger('print("old lua")')] })]
+    withTrustedServerProjectionWrite(() => {
+      getDatabase().modules = [makeModule({ trigger: [makeLuaTrigger('print("old lua")')] })]
+    })
     const { calls, releaseHeldResponses } = stubCommandFetch({
       failUrls: ['/api/v1/commands/modules/module-a/triggers'],
       holdUrls: ['/api/v1/commands/modules/module-a/triggers'],
