@@ -1,16 +1,17 @@
 import { get } from 'svelte/store'
-import { DBState, selectedCharID } from '../stores.svelte'
-import { isServerCharacterShell, mergeServerProjectionCharacterRow } from '../storage/database.svelte'
+import { selectedCharID } from '../stores.svelte'
+import { getDatabase, isServerCharacterShell } from '../storage/database.svelte'
 import { hydrateActiveCharacterLorebook, hydrateActiveChat } from './chatMessageHydration.svelte'
 import { peekCachedServerCommandRevision } from './commands'
-import { canUseServerProjection, fetchServerProjectionResource } from './projection'
+import { fetchServerCharacter } from './resourceReads'
+import { applyCharacterResource } from './resourceState.svelte'
 
 const inFlight = new Map<string, Promise<boolean>>()
 let stopSelectionSubscription: (() => void) | null = null
 let shellHydrationGeneration = 0
 
 export function startSelectedCharacterShellHydration(): void {
-  if (stopSelectionSubscription || !canUseServerProjection()) return
+  if (stopSelectionSubscription) return
   stopSelectionSubscription = selectedCharID.subscribe(() => {
     void hydrateSelectedCharacterShell()
   })
@@ -26,7 +27,7 @@ export function stopSelectedCharacterShellHydration(): void {
 export async function hydrateSelectedCharacterShell(): Promise<boolean> {
   const index = get(selectedCharID)
   if (index < 0) return false
-  const character = DBState.db.characters?.[index]
+  const character = getDatabase().characters?.[index]
   if (!isServerCharacterShell(character)) return false
   const characterId = character?.chaId
   if (typeof characterId !== 'string' || characterId.trim() === '') return false
@@ -34,9 +35,7 @@ export async function hydrateSelectedCharacterShell(): Promise<boolean> {
 }
 
 export async function hydrateCharacterShell(characterId: string): Promise<boolean> {
-  if (!canUseServerProjection()) return false
-
-  const existing = DBState.db.characters?.find((candidate) => candidate?.chaId === characterId)
+  const existing = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
   if (!isServerCharacterShell(existing)) return false
 
   const current = inFlight.get(characterId)
@@ -46,29 +45,21 @@ export async function hydrateCharacterShell(characterId: string): Promise<boolea
   const baselineRevision = peekCachedServerCommandRevision()
   const targetSnapshot = snapshotJson(existing)
   const request = (async () => {
-    const result = await fetchServerProjectionResource('characterRow', { id: characterId })
+    const result = await fetchServerCharacter(characterId)
     if (generation !== shellHydrationGeneration) return false
     if (result.status !== 'ok') {
-      shellHydrationWarning(characterId, result.status === 'error' ? result.error : 'server projection unavailable')
-      return false
-    }
-    if (result.mode !== 'character-row') {
-      shellHydrationWarning(characterId, `response mode was ${result.mode}`)
-      return false
-    }
-    if (result.characterId !== characterId) {
-      shellHydrationWarning(characterId, `response was for character ${result.characterId}`)
+      shellHydrationWarning(characterId, result.status === 'error' ? result.error : 'server resource read unavailable')
       return false
     }
     if (isOlderThanRevision(result.revision, baselineRevision)) {
       return false
     }
-    const currentTarget = DBState.db.characters?.find((candidate) => candidate?.chaId === characterId)
+    const currentTarget = getDatabase().characters?.find((candidate) => candidate?.chaId === characterId)
     if (!isServerCharacterShell(currentTarget) || snapshotJson(currentTarget) !== targetSnapshot) {
       return false
     }
 
-    const applied = mergeServerProjectionCharacterRow(result.character)
+    const applied = applyCharacterResource(result)
     if (!applied) return false
     void hydrateActiveChat()
     void hydrateActiveCharacterLorebook()

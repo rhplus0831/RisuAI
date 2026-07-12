@@ -1,13 +1,13 @@
 import { get } from 'svelte/store'
 import { findCharacterIndexbyId } from './util'
 import { characterFormatUpdate, createBlankChar } from './characters'
-import { setCharacterByIndex, type character } from './storage/database.svelte'
-import { DBState, PlaygroundStore, selectedCharID } from './stores.svelte'
+import { getDatabase, setCharacterByIndex, type character } from './storage/database.svelte'
+import { PlaygroundStore, selectedCharID } from './stores.svelte'
 import { currentCharacterSelectionSnapshot, dispatchSelectCharacter, toCharacterSnapshot } from './characterCommands'
 import { withTrustedServerProjectionWrite } from './server/projectionWriteGuard.svelte'
 import { canUseServerCommands, createAndSelectCharacterCommand, runServerCommand } from './server/commands'
-import { fetchServerProjectionResource } from './server/projection'
-import { mergeServerProjectionFields } from './storage/database.svelte'
+import { fetchServerCharacters } from './server/resourceReads'
+import { applyCharactersResource } from './server/resourceState.svelte'
 import { resetChatHydration } from './server/chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 
@@ -23,7 +23,7 @@ export async function openPlaygroundChat(): Promise<void> {
     }
 
     const previous = currentCharacterSelectionSnapshot(PLAYGROUND_CHARACTER_ID)
-    const char = structuredClone(DBState.db.characters[charIndex]) as character
+    const char = structuredClone(getDatabase().characters[charIndex]) as character
     char.utilityBot = true
     char.name = 'assistant'
     char.firstMessage = '{{none}}'
@@ -64,24 +64,20 @@ export async function openPlaygroundChat(): Promise<void> {
   }
 
   withTrustedServerProjectionWrite(() => {
-    DBState.db.characters.push(formattedChar)
-    const index = DBState.db.characters.length - 1
-    ;(DBState.db as unknown as { currentChar?: number }).currentChar = index
+    const database = getDatabase()
+    database.characters.push(formattedChar)
+    const index = database.characters.length - 1
+    ;(database as unknown as { currentChar?: number }).currentChar = index
     selectedCharID.set(index)
   })
 }
 
 async function refreshPlaygroundProjection(): Promise<void> {
-  const result = await fetchServerProjectionResource('character', {
-    id: PLAYGROUND_CHARACTER_ID,
-  })
-  if (result.status !== 'ok' || result.mode !== 'fields') return
-  mergeServerProjectionFields(result.fields)
-  if (Object.prototype.hasOwnProperty.call(result.fields, 'characters')) {
-    resetChatHydration()
-    resetLorebookHydration()
-    recordHydratedCharacterLorebooks(result.fields.characters)
-  }
+  const result = await fetchServerCharacters()
+  if (result.status !== 'ok' || !applyCharactersResource(result)) return
+  resetChatHydration()
+  resetLorebookHydration()
+  recordHydratedCharacterLorebooks(result.characters)
 }
 
 function selectPlaygroundCharacter(): void {

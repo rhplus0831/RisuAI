@@ -8,12 +8,15 @@ const projectionState = vi.hoisted(() => ({
   fetchBulkCharLore: vi.fn(),
 }))
 
-vi.mock('./projection', () => ({
-  canUseServerProjection: projectionState.canUse,
+vi.mock('./hydrationReads', () => ({
   fetchServerBulkCharacterLorebooks: projectionState.fetchBulkCharLore,
   fetchServerBulkChatMessages: projectionState.fetchBulkChat,
   fetchServerChatMessages: projectionState.fetchChat,
   fetchServerCharacterLorebook: projectionState.fetchCharLore,
+}))
+
+vi.mock('./resourceReads', () => ({
+  canUseServerResourceReads: projectionState.canUse,
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'

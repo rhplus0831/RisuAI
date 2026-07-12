@@ -1,8 +1,7 @@
 import { get, writable } from 'svelte/store'
-import { mergeServerProjectionFields, type Database, type PromptPreset } from '../storage/database.svelte'
-import { DBState } from '../stores.svelte'
+import { getDatabase, mergeServerProjectionFields, type Database, type PromptPreset } from '../storage/database.svelte'
 import { peekCachedServerCommandRevision } from './commands'
-import { canUseServerProjection, fetchServerProjectionResource } from './projection'
+import { fetchServerPromptPresetTemplate } from './hydrationReads'
 import { withServerProjectionApply } from './projectionWriteGuard.svelte'
 
 export const promptTemplateHydratedStore = writable(false)
@@ -12,15 +11,15 @@ let promptTemplateHydrationGeneration = 0
 let promptTemplateHydratedOwnerIds = new Set<string | null>()
 
 export function currentPromptTemplateOwnerId(): string | null {
-  const selectedIndex = DBState.db?.promptPresetsId
+  const selectedIndex = getDatabase().promptPresetsId
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return null
-  const preset = DBState.db?.promptPresets?.[selectedIndex]
+  const preset = getDatabase().promptPresets?.[selectedIndex]
   return typeof preset?.id === 'string' && preset.id.trim() !== '' ? preset.id : null
 }
 
 export function isPromptTemplateHydrated(promptPresetId: string | null = currentPromptTemplateOwnerId()): boolean {
   if (get(promptTemplateHydratedStore) && promptTemplateHydratedOwnerIds.has(promptPresetId)) return true
-  return promptPresetId === null && Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate')
+  return promptPresetId === null && Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
 }
 
 export function resetPromptTemplateHydration(): void {
@@ -44,9 +43,12 @@ export function startPromptTemplateHydration(): void {
 export async function ensurePromptTemplateHydrated(
   options: { applyProjection?: boolean; force?: boolean; promptPresetId?: string | null } = {},
 ): Promise<boolean> {
-  if (!canUseServerProjection()) return false
   const ownerId = options.promptPresetId === undefined ? currentPromptTemplateOwnerId() : options.promptPresetId
   if (!options.force && isPromptTemplateHydrated(ownerId)) return true
+  // The top-level compatibility template belongs to the collection resources
+  // and is already part of the initial collection read. Only preset-owned templates
+  // need a separate lazy body request.
+  if (ownerId === null) return localPromptTemplateOwnerIsResolved(null)
   const ownerKey = ownerId ?? '__legacy__'
   const inFlight = promptTemplateHydrationInFlight.get(ownerKey)
   if (inFlight) return inFlight
@@ -59,16 +61,12 @@ export async function ensurePromptTemplateHydrated(
     ownerId === null || (applyProjection && ownerId === currentPromptTemplateOwnerId())
   const ownerSnapshot = promptTemplateOwnerSnapshot(ownerId, includeCompatibilityProjection)
   const request = (async () => {
-    const result = await fetchServerProjectionResource('promptItem', ownerId ? { parentId: ownerId } : {})
+    const result = await fetchServerPromptPresetTemplate(ownerId)
     if (generation !== promptTemplateHydrationGeneration) return false
     const ownerIsCurrent = ownerId === currentPromptTemplateOwnerId()
     if (applyProjection && !ownerIsCurrent) return false
     if (result.status !== 'ok') {
-      promptTemplateHydrationWarning(result.status === 'error' ? result.error : 'server projection unavailable')
-      return false
-    }
-    if (result.mode !== 'fields') {
-      promptTemplateHydrationWarning(`response mode was ${result.mode}`)
+      promptTemplateHydrationWarning(result.status === 'error' ? result.error : 'server resource read unavailable')
       return false
     }
     if (isOlderThanRevision(result.revision, baselineRevision)) {
@@ -78,7 +76,7 @@ export async function ensurePromptTemplateHydrated(
       return false
     }
 
-    const fields = result.fields as Partial<Database>
+    const fields = { promptTemplate: result.promptTemplate } as Partial<Database>
     if (!applyPromptTemplateProjectionFields(fields, ownerId)) return false
     markPromptTemplateProjectionApplied(ownerId)
     return true
@@ -98,17 +96,17 @@ function isOlderThanRevision(revision: number, comparisonRevision: number | null
 
 function promptTemplateOwnerSnapshot(ownerId: string | null, includeCompatibilityProjection: boolean): string {
   const preset =
-    ownerId === null || !Array.isArray(DBState.db?.promptPresets)
+    ownerId === null || !Array.isArray(getDatabase().promptPresets)
       ? undefined
-      : DBState.db.promptPresets.find((candidate) => candidate?.id === ownerId)
+      : getDatabase().promptPresets.find((candidate) => candidate?.id === ownerId)
   return snapshotJson({
     ownerId,
     ownerExists: ownerId === null || preset !== undefined,
     owner: preset,
     ...(includeCompatibilityProjection
       ? {
-          compatibilityPresent: Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate'),
-          compatibility: DBState.db?.promptTemplate,
+          compatibilityPresent: Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate'),
+          compatibility: getDatabase().promptTemplate,
         }
       : {}),
   })
@@ -120,7 +118,7 @@ function snapshotJson(value: unknown): string {
 }
 
 /**
- * Apply a prompt-item projection to its explicit preset owner. A background
+ * Apply a prompt-template resource to its explicit preset owner. A background
  * preset event must update that preset row without replacing the selected
  * preset's top-level compatibility mirror.
  */
@@ -138,7 +136,8 @@ export function applyPromptTemplateProjectionFields(
   if (hasPromptTemplate && promptTemplate !== null && !Array.isArray(promptTemplate)) return false
 
   return withServerProjectionApply(() => {
-    const presets = DBState.db?.promptPresets
+    const database = getDatabase()
+    const presets = database.promptPresets
     if (!Array.isArray(presets)) return false
     const preset = presets.find((candidate): candidate is PromptPreset => candidate?.id === ownerId)
     if (!preset) return false
@@ -153,9 +152,9 @@ export function applyPromptTemplateProjectionFields(
 
     if (ownerId === currentPromptTemplateOwnerId() && hasPromptTemplate) {
       if (promptTemplate === null) {
-        delete (DBState.db as unknown as Record<string, unknown>).promptTemplate
+        delete (database as unknown as Record<string, unknown>).promptTemplate
       } else {
-        DBState.db.promptTemplate = promptTemplate as Database['promptTemplate']
+        database.promptTemplate = promptTemplate as Database['promptTemplate']
       }
     }
     return true
@@ -163,8 +162,8 @@ export function applyPromptTemplateProjectionFields(
 }
 
 function localPromptTemplateOwnerIsResolved(promptPresetId: string | null): boolean {
-  if (promptPresetId === null) return Object.prototype.hasOwnProperty.call(DBState.db ?? {}, 'promptTemplate')
-  const presets = DBState.db?.promptPresets
+  if (promptPresetId === null) return Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')
+  const presets = getDatabase().promptPresets
   if (!Array.isArray(presets)) return false
   const preset = presets.find((candidate) => candidate?.id === promptPresetId)
   return !!preset && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')

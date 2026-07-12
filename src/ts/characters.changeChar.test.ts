@@ -104,7 +104,7 @@ function stubChangeCharFetch(characterRowResponse: Promise<Response>): CapturedF
       if (url === '/api/v1/bootstrap') {
         return jsonResponse({ revision: 10 })
       }
-      if (url.startsWith('/api/v1/projection/characterRow')) {
+      if (url.startsWith('/api/v1/characters/')) {
         return characterRowResponse
       }
       if (url === '/api/v1/commands/characters') {
@@ -135,7 +135,7 @@ function selectedCharacterCommandIds(calls: CapturedFetch[]): string[] {
 
 async function waitForCharacterRowFetch(calls: CapturedFetch[]): Promise<void> {
   await vi.waitFor(() => {
-    expect(calls.some((call) => call.url.startsWith('/api/v1/projection/characterRow'))).toBe(true)
+    expect(calls.some((call) => call.url.startsWith('/api/v1/characters/'))).toBe(true)
   })
 }
 
@@ -180,8 +180,6 @@ describe('changeChar shell selection freshness', () => {
     characterRow.resolve(
       jsonResponse({
         revision: 10,
-        mode: 'character-row',
-        characterId: 'char-a',
         character: hydratedCharacter('char-a', 'Hydrated A'),
       }),
     )
@@ -213,8 +211,6 @@ describe('changeChar shell selection freshness', () => {
     characterRow.resolve(
       jsonResponse({
         revision: 10,
-        mode: 'character-row',
-        characterId: 'char-a',
         character: hydratedCharacter('char-a', 'Hydrated A'),
       }),
     )
@@ -246,8 +242,6 @@ describe('changeChar shell selection freshness', () => {
     characterRow.resolve(
       jsonResponse({
         revision: 10,
-        mode: 'character-row',
-        characterId: 'char-a',
         character: hydratedCharacter('char-a', 'Hydrated A'),
       }),
     )

@@ -5,14 +5,15 @@ const projectionState = vi.hoisted(() => ({
   canUse: true,
 }))
 
-vi.mock('./projection', () => ({
-  canUseServerProjection: () => projectionState.canUse,
-  fetchServerProjectionResource: projectionState.fetchResource,
+vi.mock('./resourceReads', () => ({
+  fetchServerCharacter: projectionState.fetchResource,
 }))
 
 vi.mock('./chatMessageHydration.svelte', () => ({
+  applyServerChatMessagesProjection: vi.fn(),
   hydrateActiveChat: vi.fn(),
   hydrateActiveCharacterLorebook: vi.fn(),
+  resetChatHydration: vi.fn(),
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'
@@ -95,7 +96,7 @@ describe('character shell hydration', () => {
 
     await expect(hydrateCharacterShell('char-1')).resolves.toBe(true)
 
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('characterRow', { id: 'char-1' })
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('char-1')
     expect(isServerCharacterShell(DBState.db.characters[0])).toBe(false)
     expect(DBState.db.characters[0].name).toBe('Hydrated')
     expect(peekCachedServerCommandRevision()).toBe(5)

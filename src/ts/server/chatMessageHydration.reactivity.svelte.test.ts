@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushSync } from 'svelte'
 
-// Real projection write guard (so we exercise the real read-only proxy +
-// DBState.db reassignment that drives re-render), but force projection "on".
-vi.mock('./projection', () => ({
-  canUseServerProjection: () => true,
+// Real resource write guard (so we exercise the real read-only proxy and
+// resource-backed reassignment that drives re-render), but force reads on.
+vi.mock('./resourceReads', () => ({
+  canUseServerResourceReads: () => true,
 }))
 
 import { DBState, selectedCharID } from '../stores.svelte'

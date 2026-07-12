@@ -1,5 +1,9 @@
 import type { CommandEvent } from './commands'
-import { fetchServerBulkCharacterLorebooks, fetchServerCharacterLorebook, fetchServerChatMessages } from './projection'
+import {
+  fetchServerBulkCharacterLorebooks,
+  fetchServerCharacterLorebook,
+  fetchServerChatMessages,
+} from './hydrationReads'
 import {
   fetchServerCharacter,
   fetchServerCharacters,

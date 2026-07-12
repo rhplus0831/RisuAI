@@ -1,297 +1,7 @@
-import type { Database } from '../storage/database.svelte'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { canUseServerResourceReads } from './resourceReads'
 
-const PROJECTION_ENDPOINT = '/api/v1/projection'
-
-export type ServerProjectionResourceResult =
-  | { status: 'ok'; revision: number; mode: 'fields'; fields: Partial<Database> }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'character-selection'
-      characterId: string
-      currentChar: number
-      lastInteraction?: number
-    }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'character-lorebook'
-      characterId: string
-      globalLore: unknown[]
-    }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'character-row'
-      characterId: string
-      character: Record<string, unknown>
-    }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'preset'
-      presetId: string
-      preset: Record<string, unknown>
-    }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'preset-collection'
-      fields: Partial<Database>
-      presetRows: Record<string, unknown>[]
-    }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'chat-transcript'
-      characterId: string
-      character: Record<string, unknown>
-      chatId: string
-      message: unknown[]
-      hypaV3Data?: unknown
-      alternates: unknown[]
-    }
-  | {
-      status: 'ok'
-      revision: number
-      mode: 'generation-chat' | 'chat-messages'
-      chatId: string
-      message: unknown[]
-      hypaV3Data?: unknown
-      messageStart?: number
-      messageTotal?: number
-      alternates: unknown[]
-    }
-  | { status: 'ok'; revision: number; mode: 'full' }
-  | { status: 'error'; error: string }
-  | { status: 'unavailable' }
-
-export function canUseServerProjection(): boolean {
-  return true
-}
-
-/**
- * Targeted per-resource projection fetch.
- *
- * Returns the current server-projected value of the top-level `database` keys
- * owned by `resource`, so a foreign command event can refresh only that
- * resource. `mode: 'full'` means the server could not narrow the resource and
- * the caller should fall back to a full bootstrap. Entity hydration reuses the
- * same fetch primitive.
- */
-export async function fetchServerProjectionResource(
-  resource: string,
-  options: { id?: string; parentId?: string; signal?: AbortSignal | null } = {},
-): Promise<ServerProjectionResourceResult> {
-  if (!canUseServerProjection()) return { status: 'unavailable' }
-
-  const query = new URLSearchParams()
-  if (options.id) query.set('id', options.id)
-  if (options.parentId) query.set('parentId', options.parentId)
-  const suffix = query.toString()
-  const url = `${PROJECTION_ENDPOINT}/${encodeURIComponent(resource)}${suffix ? `?${suffix}` : ''}`
-
-  const auth = await getNodeServerProxyAuth()
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'GET',
-      signal: options.signal ?? undefined,
-      headers: { 'risu-auth': auth },
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { status: 'error', error: `Network error: ${message}` }
-  }
-
-  let body: unknown = null
-  try {
-    body = await response.json()
-  } catch {
-    // Non-JSON failures are reported via HTTP status below.
-  }
-
-  if (!response.ok) {
-    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
-  }
-
-  if (!body || typeof body !== 'object') {
-    return { status: 'error', error: 'Invalid projection response' }
-  }
-
-  const record = body as Record<string, unknown>
-  const revision = record.revision
-  if (!Number.isInteger(revision) || (revision as number) < 0) {
-    return { status: 'error', error: 'Invalid projection revision' }
-  }
-
-  if (record.mode === 'full') {
-    return { status: 'ok', revision: revision as number, mode: 'full' }
-  }
-
-  if (record.mode === 'fields') {
-    const fields = record.fields
-    if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
-      return { status: 'error', error: 'Invalid projection fields' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'fields',
-      fields: fields as Partial<Database>,
-    }
-  }
-
-  if (record.mode === 'character-selection') {
-    if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
-      return { status: 'error', error: 'Invalid character-selection response' }
-    }
-    if (!Number.isInteger(record.currentChar) || (record.currentChar as number) < -1) {
-      return { status: 'error', error: 'Invalid character-selection response' }
-    }
-    if (record.lastInteraction !== undefined && typeof record.lastInteraction !== 'number') {
-      return { status: 'error', error: 'Invalid character-selection response' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'character-selection',
-      characterId: record.characterId,
-      currentChar: record.currentChar as number,
-      ...(typeof record.lastInteraction === 'number' ? { lastInteraction: record.lastInteraction } : {}),
-    }
-  }
-
-  if (record.mode === 'character-lorebook') {
-    if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
-      return { status: 'error', error: 'Invalid character-lorebook response' }
-    }
-    if (!Array.isArray(record.globalLore)) {
-      return { status: 'error', error: 'Invalid character-lorebook response' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'character-lorebook',
-      characterId: record.characterId,
-      globalLore: record.globalLore as unknown[],
-    }
-  }
-
-  if (record.mode === 'character-row') {
-    if (typeof record.characterId !== 'string' || record.characterId.trim() === '') {
-      return { status: 'error', error: 'Invalid character-row response' }
-    }
-    if (!record.character || typeof record.character !== 'object' || Array.isArray(record.character)) {
-      return { status: 'error', error: 'Invalid character-row response' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'character-row',
-      characterId: record.characterId,
-      character: record.character as Record<string, unknown>,
-    }
-  }
-
-  if (record.mode === 'preset') {
-    if (typeof record.presetId !== 'string' || record.presetId.trim() === '') {
-      return { status: 'error', error: 'Invalid preset response' }
-    }
-    if (!record.preset || typeof record.preset !== 'object' || Array.isArray(record.preset)) {
-      return { status: 'error', error: 'Invalid preset response' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'preset',
-      presetId: record.presetId,
-      preset: record.preset as Record<string, unknown>,
-    }
-  }
-
-  if (record.mode === 'preset-collection') {
-    const fields = record.fields
-    if (!fields || typeof fields !== 'object' || Array.isArray(fields) || !Array.isArray(record.presetRows)) {
-      return { status: 'error', error: 'Invalid preset-collection response' }
-    }
-    if (record.presetRows.some((preset) => !preset || typeof preset !== 'object' || Array.isArray(preset))) {
-      return { status: 'error', error: 'Invalid preset-collection response' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'preset-collection',
-      fields: fields as Partial<Database>,
-      presetRows: record.presetRows as Record<string, unknown>[],
-    }
-  }
-
-  if (record.mode === 'chat-transcript') {
-    if (
-      typeof record.characterId !== 'string' ||
-      record.characterId.trim() === '' ||
-      !record.character ||
-      typeof record.character !== 'object' ||
-      Array.isArray(record.character) ||
-      typeof record.chatId !== 'string' ||
-      record.chatId.trim() === '' ||
-      !Array.isArray(record.message)
-    ) {
-      return { status: 'error', error: 'Invalid chat-transcript response' }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: 'chat-transcript',
-      characterId: record.characterId,
-      character: record.character as Record<string, unknown>,
-      chatId: record.chatId,
-      message: record.message as unknown[],
-      hypaV3Data: record.hypaV3Data,
-      alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
-    }
-  }
-
-  if (record.mode === 'generation-chat' || record.mode === 'chat-messages') {
-    if (typeof record.chatId !== 'string' || record.chatId.trim() === '') {
-      return { status: 'error', error: `Invalid ${record.mode} response` }
-    }
-    if (!Array.isArray(record.message)) {
-      return { status: 'error', error: `Invalid ${record.mode} response` }
-    }
-    if (
-      (record.messageStart !== undefined || record.messageTotal !== undefined) &&
-      (!Number.isInteger(record.messageStart) ||
-        (record.messageStart as number) < 0 ||
-        !Number.isInteger(record.messageTotal) ||
-        (record.messageTotal as number) < 0 ||
-        (record.messageStart as number) > (record.messageTotal as number))
-    ) {
-      return { status: 'error', error: `Invalid ${record.mode} range` }
-    }
-    return {
-      status: 'ok',
-      revision: revision as number,
-      mode: record.mode,
-      chatId: record.chatId,
-      message: record.message as unknown[],
-      hypaV3Data: record.hypaV3Data,
-      ...(typeof record.messageStart === 'number' && typeof record.messageTotal === 'number'
-        ? {
-            messageStart: record.messageStart,
-            messageTotal: record.messageTotal,
-          }
-        : {}),
-      alternates: Array.isArray(record.alternates) ? (record.alternates as unknown[]) : [],
-    }
-  }
-
-  return { status: 'error', error: 'Invalid projection mode' }
-}
-
-export async function fetchServerPresetProjection(
+export async function fetchServerLegacyPreset(
   presetId: string,
   options: { signal?: AbortSignal | null } = {},
 ): Promise<
@@ -299,7 +9,7 @@ export async function fetchServerPresetProjection(
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 > {
-  if (!canUseServerProjection()) return { status: 'unavailable' }
+  if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
   let response: Response
@@ -329,7 +39,7 @@ export async function fetchServerPresetProjection(
 
   const record = body as Record<string, unknown>
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) {
-    return { status: 'error', error: 'Invalid projection revision' }
+    return { status: 'error', error: 'Invalid resource revision' }
   }
   if (!record.preset || typeof record.preset !== 'object' || Array.isArray(record.preset)) {
     return { status: 'error', error: 'Invalid preset response' }
@@ -340,6 +50,70 @@ export async function fetchServerPresetProjection(
     revision: record.revision as number,
     presetId: typeof preset.id === 'string' && preset.id.trim() !== '' ? preset.id : presetId,
     preset,
+  }
+}
+
+export type ServerPromptPresetTemplateResult =
+  | {
+      status: 'ok'
+      revision: number
+      promptPresetId: string
+      promptTemplate: unknown[] | null
+    }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
+
+/** Fetch the lazily stored template owned by one prompt preset. */
+export async function fetchServerPromptPresetTemplate(
+  promptPresetId: string,
+  options: { signal?: AbortSignal | null } = {},
+): Promise<ServerPromptPresetTemplateResult> {
+  if (!canUseServerResourceReads()) return { status: 'unavailable' }
+  if (typeof promptPresetId !== 'string' || promptPresetId.trim() === '') {
+    return { status: 'error', error: 'Prompt preset id is required' }
+  }
+
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/prompt-presets/${encodeURIComponent(promptPresetId)}/template`, {
+      method: 'GET',
+      signal: options.signal ?? undefined,
+      headers: { 'risu-auth': auth },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status or response validation below.
+  }
+  if (!response.ok) {
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { status: 'error', error: 'Invalid prompt preset template response' }
+  }
+
+  const record = body as Record<string, unknown>
+  if (!Number.isInteger(record.revision) || (record.revision as number) < 0) {
+    return { status: 'error', error: 'Invalid resource revision' }
+  }
+  if (
+    record.promptPresetId !== promptPresetId ||
+    (record.promptTemplate !== null && !Array.isArray(record.promptTemplate))
+  ) {
+    return { status: 'error', error: 'Invalid prompt preset template response' }
+  }
+  return {
+    status: 'ok',
+    revision: record.revision as number,
+    promptPresetId,
+    promptTemplate: record.promptTemplate as unknown[] | null,
   }
 }
 
@@ -379,7 +153,7 @@ export async function fetchServerChatMessages(
   chatId: string,
   options: { signal?: AbortSignal | null; start?: number; limit?: number; tail?: number } = {},
 ): Promise<ServerChatMessagesResult> {
-  if (!canUseServerProjection()) return { status: 'unavailable' }
+  if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const query = new URLSearchParams()
   if (Number.isInteger(options.tail) && (options.tail as number) > 0) {
@@ -425,7 +199,7 @@ export async function fetchServerChatMessages(
   const record = body as Record<string, unknown>
   const revision = record.revision
   if (!Number.isInteger(revision) || (revision as number) < 0) {
-    return { status: 'error', error: 'Invalid projection revision' }
+    return { status: 'error', error: 'Invalid resource revision' }
   }
   if (!Array.isArray(record.message)) {
     return { status: 'error', error: 'Invalid chat-messages response' }
@@ -464,7 +238,7 @@ export async function fetchServerBulkChatMessages(
   chatIds: readonly string[],
   options: { signal?: AbortSignal | null } = {},
 ): Promise<ServerBulkChatMessagesResult> {
-  if (!canUseServerProjection()) return { status: 'unavailable' }
+  if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
   let response: Response
@@ -497,7 +271,7 @@ export async function fetchServerBulkChatMessages(
   const record = body as Record<string, unknown>
   const revision = record.revision
   if (!Number.isInteger(revision) || (revision as number) < 0) {
-    return { status: 'error', error: 'Invalid projection revision' }
+    return { status: 'error', error: 'Invalid resource revision' }
   }
   if (!Array.isArray(record.chats)) {
     return { status: 'error', error: 'Invalid bulk chat-messages response' }
@@ -549,14 +323,14 @@ export type ServerBulkCharacterLorebookResult =
 
 /**
  * Per-character `globalLore` hydration. When `enableLorebookStubs` is on, the
- * projection ships a character's globalLore as a stub; this fetches the full
+ * character metadata may carry a lorebook stub; this fetches the full
  * globalLore on character-open.
  */
 export async function fetchServerCharacterLorebook(
   characterId: string,
   options: { signal?: AbortSignal | null } = {},
 ): Promise<ServerCharacterLorebookResult> {
-  if (!canUseServerProjection()) return { status: 'unavailable' }
+  if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const url = `/api/v1/characters/${encodeURIComponent(characterId)}/lorebook`
   const auth = await getNodeServerProxyAuth()
@@ -589,7 +363,7 @@ export async function fetchServerCharacterLorebook(
   const record = body as Record<string, unknown>
   const revision = record.revision
   if (!Number.isInteger(revision) || (revision as number) < 0) {
-    return { status: 'error', error: 'Invalid projection revision' }
+    return { status: 'error', error: 'Invalid resource revision' }
   }
   if (!Array.isArray(record.globalLore)) {
     return { status: 'error', error: 'Invalid character-lorebook response' }
@@ -610,7 +384,7 @@ export async function fetchServerBulkCharacterLorebooks(
   characterIds: readonly string[],
   options: { signal?: AbortSignal | null } = {},
 ): Promise<ServerBulkCharacterLorebookResult> {
-  if (!canUseServerProjection()) return { status: 'unavailable' }
+  if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
   let response: Response
@@ -643,7 +417,7 @@ export async function fetchServerBulkCharacterLorebooks(
   const record = body as Record<string, unknown>
   const revision = record.revision
   if (!Number.isInteger(revision) || (revision as number) < 0) {
-    return { status: 'error', error: 'Invalid projection revision' }
+    return { status: 'error', error: 'Invalid resource revision' }
   }
   if (!Array.isArray(record.characters)) {
     return { status: 'error', error: 'Invalid bulk character-lorebook response' }

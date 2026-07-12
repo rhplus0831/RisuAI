@@ -89,7 +89,8 @@ import {
   normalizeChatGenerationTogglePresets,
   type ChatGenerationTogglePreset,
 } from '../chatGenerationTogglePresetRecords'
-import { canUseServerProjection, fetchServerPresetProjection } from '../server/projection'
+import { fetchServerLegacyPreset } from '../server/hydrationReads'
+import { canUseServerResourceReads } from '../server/resourceReads'
 import { shouldPreserveLiveChatGenerationSettingsForProjection } from '../server/chatGenerationSettingsProjectionGuard'
 import {
   createExtractedModelPreset,
@@ -310,7 +311,7 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
 
   const preset = DBState.db.botPresets[index]
   if (!presetNeedsHydration(preset)) return true
-  if (!canUseServerProjection()) return false
+  if (!canUseServerResourceReads()) return false
 
   const current = presetHydrationInFlight.get(presetId)
   if (current) return current
@@ -318,9 +319,9 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
   const baselineRevision = peekCachedServerCommandRevision()
   const targetSnapshot = snapshotJson(preset)
   const request = (async () => {
-    const result = await fetchServerPresetProjection(presetId)
+    const result = await fetchServerLegacyPreset(presetId)
     if (result.status !== 'ok') {
-      presetHydrationWarning(presetId, result.status === 'error' ? result.error : 'server projection unavailable')
+      presetHydrationWarning(presetId, result.status === 'error' ? result.error : 'server resource read unavailable')
       return false
     }
     if (result.presetId !== presetId) {

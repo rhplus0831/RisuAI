@@ -18,9 +18,8 @@ const assemblyState = vi.hoisted(() => ({
   })),
 }))
 
-vi.mock('../../server/projection', () => ({
-  canUseServerProjection: () => projectionState.canUse,
-  fetchServerProjectionResource: projectionState.fetchResource,
+vi.mock('../../server/hydrationReads', () => ({
+  fetchServerPromptPresetTemplate: projectionState.fetchResource,
 }))
 
 vi.mock('../scripts', () => ({
@@ -145,7 +144,6 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
       bias: [],
     }
     setCachedServerCommandRevision(1)
-    projectionState.fetchResource.mockResolvedValue({ status: 'unavailable' })
     const throwError = vi.fn()
 
     const result = await assembleLocalSendChatPrompt({
@@ -165,8 +163,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     })
 
     expect(result).toEqual({ status: 'stopped' })
-    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', {})
+    expect(projectionState.fetchResource).not.toHaveBeenCalled()
     expect(throwError).toHaveBeenCalledWith(language.errors.promptTemplateUnavailable)
   })
 
@@ -209,8 +206,8 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
     projectionState.fetchResource.mockResolvedValue({
       status: 'ok',
       revision: 9,
-      mode: 'fields',
-      fields: { promptTemplate: chatTemplate },
+      promptPresetId: 'prompt-chat',
+      promptTemplate: chatTemplate,
     })
     const throwError = vi.fn()
 
@@ -235,7 +232,7 @@ describe('assembleLocalSendChatPrompt promptTemplate hydration', () => {
       inputTokens: 12,
       outputTokens: 200,
     })
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'prompt-chat' })
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('prompt-chat')
     expect(DBState.db.promptPresets[1].promptTemplate).toEqual(chatTemplate)
     expect(DBState.db.promptTemplate).toEqual(globalTemplate)
     expect(assemblyState.renderFinalPrompt).toHaveBeenCalledWith(

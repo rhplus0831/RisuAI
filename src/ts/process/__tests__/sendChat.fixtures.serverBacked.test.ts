@@ -170,11 +170,24 @@ async function persistedChatMessages(
 ): Promise<Array<Record<string, unknown>>> {
   const res = await harness.app.inject({
     method: 'GET',
-    url: `/api/v1/projection/chatMessages?id=${encodeURIComponent(chatId)}`,
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
     headers: { 'risu-auth': harness.authAssertion },
   })
   expect(res.statusCode).toBe(200)
   return res.json().message as Array<Record<string, unknown>>
+}
+
+async function persistedCharacterResources(harness: RouteBackedHarness): Promise<{
+  revision: number
+  characters: Array<{ chats: Array<Record<string, unknown>> }>
+}> {
+  const res = await harness.app.inject({
+    method: 'GET',
+    url: '/api/v1/characters',
+    headers: { 'risu-auth': harness.authAssertion },
+  })
+  expect(res.statusCode).toBe(200)
+  return res.json()
 }
 
 function headersRecord(headers: RequestInit['headers']): Record<string, string> {
@@ -530,19 +543,14 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
       const scriptstatePosts = harness.commandCalls.filter((call) => call.url.includes('/scriptstate'))
       expect(scriptstatePosts).toEqual([])
 
-      // The route persisted the assembly-time delta itself: bootstrap shows the
+      // The route persisted the assembly-time delta itself: the character resource shows the
       // written scriptstate. simple-send is durable, so the job also persists the
       // result message at completion — configure = rev 2, assembly write = rev 3,
       // result write = rev 4.
-      const bootstrap = await harness.app.inject({
-        method: 'GET',
-        url: '/api/v1/bootstrap',
-        headers: { 'risu-auth': harness.authAssertion },
-      })
-      expect(bootstrap.statusCode).toBe(200)
-      const persistedChat = bootstrap.json().database.characters[0].chats[0]
+      const characterResources = await persistedCharacterResources(harness)
+      const persistedChat = characterResources.characters[0].chats[0]
       expect(persistedChat.scriptstate).toEqual({ $score: '9' })
-      expect(bootstrap.json().revision).toBe(4)
+      expect(characterResources.revision).toBe(4)
       const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')
@@ -604,15 +612,10 @@ describe('sendChat fixtures (/chat route-backed prompt assembly)', () => {
 
       // Durable: the job persisted the post-gen scriptstate delta + the result
       // message in one bump at completion (configure = 2 → persist = 3).
-      const bootstrap = await harness.app.inject({
-        method: 'GET',
-        url: '/api/v1/bootstrap',
-        headers: { 'risu-auth': harness.authAssertion },
-      })
-      expect(bootstrap.statusCode).toBe(200)
-      const persistedChat = bootstrap.json().database.characters[0].chats[0]
+      const characterResources = await persistedCharacterResources(harness)
+      const persistedChat = characterResources.characters[0].chats[0]
       expect(persistedChat.scriptstate).toMatchObject({ $mood: 'happy' })
-      expect(bootstrap.json().revision).toBe(3)
+      expect(characterResources.revision).toBe(3)
       const persistedAssistant = [...(await persistedChatMessages(harness))]
         .reverse()
         .find((m: { role: string }) => m.role === 'char')

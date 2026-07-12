@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../storage/fastifyStorage', () => ({
-  getNodeServerProxyAuth: async () => 'projection-auth-token',
+  getNodeServerProxyAuth: async () => 'resource-auth-token',
 }))
 
 import {
@@ -9,9 +9,9 @@ import {
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
-  fetchServerPresetProjection,
-  fetchServerProjectionResource,
-} from './projection'
+  fetchServerLegacyPreset,
+  fetchServerPromptPresetTemplate,
+} from './hydrationReads'
 
 interface CapturedFetch {
   url: string
@@ -29,7 +29,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function makeProjectionFetch(bodyForRequest: (url: string, init: RequestInit) => unknown): {
+function makeResourceFetch(bodyForRequest: (url: string, init: RequestInit) => unknown): {
   calls: CapturedFetch[]
   fetch: typeof fetch
 } {
@@ -65,160 +65,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('server projection API adapter', () => {
-  it('fetches targeted projection resources with encoded query params, auth, and signal', async () => {
-    const controller = new AbortController()
-    const projectionFetch = makeProjectionFetch(() => ({
-      revision: 9,
-      mode: 'fields',
-      fields: { language: 'en', currentCharacter: 1 },
-    }))
-    vi.stubGlobal('fetch', projectionFetch.fetch)
-
-    const result = await fetchServerProjectionResource('character/row', {
-      id: 'char/one&two',
-      parentId: 'preset one',
-      signal: controller.signal,
-    })
-
-    expect(result).toEqual({
-      status: 'ok',
-      revision: 9,
-      mode: 'fields',
-      fields: { language: 'en', currentCharacter: 1 },
-    })
-    expect(projectionFetch.calls).toHaveLength(1)
-    expect(projectionFetch.calls[0]).toMatchObject({
-      method: 'GET',
-      authHeader: 'projection-auth-token',
-      contentType: null,
-      body: null,
-      signal: controller.signal,
-    })
-    const url = parsedCallUrl(projectionFetch.calls[0])
-    expect(url.pathname).toBe('/api/v1/projection/character%2Frow')
-    expect(url.searchParams.get('id')).toBe('char/one&two')
-    expect(url.searchParams.get('parentId')).toBe('preset one')
-  })
-
-  it('parses targeted projection resource modes', async () => {
-    const responses = [
-      { revision: 1, mode: 'full' },
-      {
-        revision: 2,
-        mode: 'character-selection',
-        characterId: 'char-a',
-        currentChar: 0,
-        lastInteraction: 123,
-      },
-      {
-        revision: 3,
-        mode: 'character-lorebook',
-        characterId: 'char-b',
-        globalLore: [{ key: 'entry' }],
-      },
-      {
-        revision: 4,
-        mode: 'character-row',
-        characterId: 'char-c',
-        character: { chaId: 'char-c', name: 'C' },
-      },
-      {
-        revision: 5,
-        mode: 'chat-transcript',
-        characterId: 'char-d',
-        character: { chaId: 'char-d', chats: [{ id: 'chat-d', message: [] }] },
-        chatId: 'chat-d',
-        message: [{ role: 'user', data: 'rewritten' }],
-        hypaV3Data: { assembly: true },
-        alternates: [],
-      },
-      {
-        revision: 6,
-        mode: 'generation-chat',
-        chatId: 'chat-a',
-        message: [{ role: 'user', data: 'hi' }],
-        hypaV3Data: { enabled: true },
-        messageStart: 4,
-        messageTotal: 5,
-        alternates: [{ swipe: 1 }],
-      },
-      {
-        revision: 7,
-        mode: 'preset-collection',
-        fields: {
-          botPresets: [{ id: 'preset-a', name: 'A' }],
-          botPresetsId: 0,
-          mainPrompt: 'applied prompt',
-        },
-        presetRows: [{ id: 'preset-a', name: 'A', mainPrompt: 'preset prompt' }],
-      },
-    ]
-    const projectionFetch = makeProjectionFetch(() => responses.shift())
-    vi.stubGlobal('fetch', projectionFetch.fetch)
-
-    await expect(fetchServerProjectionResource('state')).resolves.toEqual({
-      status: 'ok',
-      revision: 1,
-      mode: 'full',
-    })
-    await expect(fetchServerProjectionResource('characterSelection')).resolves.toEqual({
-      status: 'ok',
-      revision: 2,
-      mode: 'character-selection',
-      characterId: 'char-a',
-      currentChar: 0,
-      lastInteraction: 123,
-    })
-    await expect(fetchServerProjectionResource('characterLorebook')).resolves.toEqual({
-      status: 'ok',
-      revision: 3,
-      mode: 'character-lorebook',
-      characterId: 'char-b',
-      globalLore: [{ key: 'entry' }],
-    })
-    await expect(fetchServerProjectionResource('characterRow')).resolves.toEqual({
-      status: 'ok',
-      revision: 4,
-      mode: 'character-row',
-      characterId: 'char-c',
-      character: { chaId: 'char-c', name: 'C' },
-    })
-    await expect(fetchServerProjectionResource('chatTranscript')).resolves.toEqual({
-      status: 'ok',
-      revision: 5,
-      mode: 'chat-transcript',
-      characterId: 'char-d',
-      character: { chaId: 'char-d', chats: [{ id: 'chat-d', message: [] }] },
-      chatId: 'chat-d',
-      message: [{ role: 'user', data: 'rewritten' }],
-      hypaV3Data: { assembly: true },
-      alternates: [],
-    })
-    await expect(fetchServerProjectionResource('generation.persisted')).resolves.toEqual({
-      status: 'ok',
-      revision: 6,
-      mode: 'generation-chat',
-      chatId: 'chat-a',
-      message: [{ role: 'user', data: 'hi' }],
-      hypaV3Data: { enabled: true },
-      messageStart: 4,
-      messageTotal: 5,
-      alternates: [{ swipe: 1 }],
-    })
-    await expect(fetchServerProjectionResource('presetApplied')).resolves.toEqual({
-      status: 'ok',
-      revision: 7,
-      mode: 'preset-collection',
-      fields: {
-        botPresets: [{ id: 'preset-a', name: 'A' }],
-        botPresetsId: 0,
-        mainPrompt: 'applied prompt',
-      },
-      presetRows: [{ id: 'preset-a', name: 'A', mainPrompt: 'preset prompt' }],
-    })
-  })
-
+describe('server hydration read clients', () => {
   it('fetches legacy preset detail through the resource endpoint', async () => {
     const controller = new AbortController()
     const responses = [
@@ -231,27 +78,50 @@ describe('server projection API adapter', () => {
         preset: null,
       },
     ]
-    const projectionFetch = makeProjectionFetch(() => responses.shift())
-    vi.stubGlobal('fetch', projectionFetch.fetch)
+    const resourceFetch = makeResourceFetch(() => responses.shift())
+    vi.stubGlobal('fetch', resourceFetch.fetch)
 
-    await expect(fetchServerPresetProjection('preset/a', { signal: controller.signal })).resolves.toEqual({
+    await expect(fetchServerLegacyPreset('preset/a', { signal: controller.signal })).resolves.toEqual({
       status: 'ok',
       revision: 6,
       presetId: 'preset-a',
       preset: { id: 'preset-a', name: 'Preset A' },
     })
-    expect(parsedCallUrl(projectionFetch.calls[0]).pathname).toBe('/api/v1/legacy-presets/preset%2Fa')
-    expect(projectionFetch.calls[0]).toMatchObject({
+    expect(parsedCallUrl(resourceFetch.calls[0]).pathname).toBe('/api/v1/legacy-presets/preset%2Fa')
+    expect(resourceFetch.calls[0]).toMatchObject({
       method: 'GET',
-      authHeader: 'projection-auth-token',
+      authHeader: 'resource-auth-token',
       contentType: null,
       body: null,
       signal: controller.signal,
     })
 
-    await expect(fetchServerPresetProjection('preset-b')).resolves.toEqual({
+    await expect(fetchServerLegacyPreset('preset-b')).resolves.toEqual({
       status: 'error',
       error: 'Invalid preset response',
+    })
+  })
+
+  it('fetches a prompt preset template by encoded stable id', async () => {
+    const controller = new AbortController()
+    const resourceFetch = makeResourceFetch(() => ({
+      revision: 8,
+      promptPresetId: 'preset/one',
+      promptTemplate: [{ id: 'prompt-1', text: 'hello' }],
+    }))
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    await expect(fetchServerPromptPresetTemplate('preset/one', { signal: controller.signal })).resolves.toEqual({
+      status: 'ok',
+      revision: 8,
+      promptPresetId: 'preset/one',
+      promptTemplate: [{ id: 'prompt-1', text: 'hello' }],
+    })
+    expect(parsedCallUrl(resourceFetch.calls[0]).pathname).toBe('/api/v1/prompt-presets/preset%2Fone/template')
+    expect(resourceFetch.calls[0]).toMatchObject({
+      method: 'GET',
+      authHeader: 'resource-auth-token',
+      signal: controller.signal,
     })
   })
 
@@ -271,8 +141,8 @@ describe('server projection API adapter', () => {
         message: [{ role: 'char', data: 'range' }],
       },
     ]
-    const projectionFetch = makeProjectionFetch(() => responses.shift())
-    vi.stubGlobal('fetch', projectionFetch.fetch)
+    const resourceFetch = makeResourceFetch(() => responses.shift())
+    vi.stubGlobal('fetch', resourceFetch.fetch)
 
     await expect(fetchServerChatMessages('chat/request', { tail: 2, start: 4, limit: 99 })).resolves.toEqual({
       status: 'ok',
@@ -293,14 +163,14 @@ describe('server projection API adapter', () => {
       alternates: [],
     })
 
-    const tailUrl = parsedCallUrl(projectionFetch.calls[0])
+    const tailUrl = parsedCallUrl(resourceFetch.calls[0])
     expect(tailUrl.pathname).toBe('/api/v1/chats/chat%2Frequest/messages')
     expect(tailUrl.searchParams.get('tail')).toBe('2')
     expect(tailUrl.searchParams.has('start')).toBe(false)
     expect(tailUrl.searchParams.has('limit')).toBe(false)
-    expect(projectionFetch.calls[0].authHeader).toBe('projection-auth-token')
+    expect(resourceFetch.calls[0].authHeader).toBe('resource-auth-token')
 
-    const rangeUrl = parsedCallUrl(projectionFetch.calls[1])
+    const rangeUrl = parsedCallUrl(resourceFetch.calls[1])
     expect(rangeUrl.pathname).toBe('/api/v1/chats/chat%2Frequest/messages')
     expect(rangeUrl.searchParams.has('id')).toBe(false)
     expect(rangeUrl.searchParams.get('start')).toBe('4')
@@ -308,7 +178,7 @@ describe('server projection API adapter', () => {
   })
 
   it('posts bulk chat hydration with JSON body and filters malformed missing ids', async () => {
-    const projectionFetch = makeProjectionFetch(() => ({
+    const resourceFetch = makeResourceFetch(() => ({
       revision: 12,
       chats: [
         { chatId: 'chat-a', message: [{ data: 'A' }], hypaV3Data: { a: true } },
@@ -316,7 +186,7 @@ describe('server projection API adapter', () => {
       ],
       missing: ['chat-c', 42, null],
     }))
-    vi.stubGlobal('fetch', projectionFetch.fetch)
+    vi.stubGlobal('fetch', resourceFetch.fetch)
 
     await expect(fetchServerBulkChatMessages(['chat-a', 'chat-b', 'chat-c'])).resolves.toEqual({
       status: 'ok',
@@ -328,11 +198,11 @@ describe('server projection API adapter', () => {
       missing: ['chat-c'],
     })
 
-    expect(projectionFetch.calls).toEqual([
+    expect(resourceFetch.calls).toEqual([
       {
         url: '/api/v1/chats/messages/bulk',
         method: 'POST',
-        authHeader: 'projection-auth-token',
+        authHeader: 'resource-auth-token',
         contentType: 'application/json',
         body: { ids: ['chat-a', 'chat-b', 'chat-c'] },
         signal: null,
@@ -352,8 +222,8 @@ describe('server projection API adapter', () => {
         globalLore: [{ key: 'fallback' }],
       },
     ]
-    const projectionFetch = makeProjectionFetch(() => responses.shift())
-    vi.stubGlobal('fetch', projectionFetch.fetch)
+    const resourceFetch = makeResourceFetch(() => responses.shift())
+    vi.stubGlobal('fetch', resourceFetch.fetch)
 
     await expect(fetchServerCharacterLorebook('char/request one')).resolves.toEqual({
       status: 'ok',
@@ -368,12 +238,12 @@ describe('server projection API adapter', () => {
       globalLore: [{ key: 'fallback' }],
     })
 
-    expect(projectionFetch.calls[0].url).toBe('/api/v1/characters/char%2Frequest%20one/lorebook')
-    expect(projectionFetch.calls[1].url).toBe('/api/v1/characters/char%2Frequest%20two/lorebook')
+    expect(resourceFetch.calls[0].url).toBe('/api/v1/characters/char%2Frequest%20one/lorebook')
+    expect(resourceFetch.calls[1].url).toBe('/api/v1/characters/char%2Frequest%20two/lorebook')
   })
 
   it('posts bulk character lorebook hydration with JSON body and filters malformed missing ids', async () => {
-    const projectionFetch = makeProjectionFetch(() => ({
+    const resourceFetch = makeResourceFetch(() => ({
       revision: 15,
       characters: [
         { characterId: 'char-a', globalLore: [{ key: 'A' }] },
@@ -381,7 +251,7 @@ describe('server projection API adapter', () => {
       ],
       missing: ['char-c', false],
     }))
-    vi.stubGlobal('fetch', projectionFetch.fetch)
+    vi.stubGlobal('fetch', resourceFetch.fetch)
 
     await expect(fetchServerBulkCharacterLorebooks(['char-a', 'char-b', 'char-c'])).resolves.toEqual({
       status: 'ok',
@@ -393,11 +263,11 @@ describe('server projection API adapter', () => {
       missing: ['char-c'],
     })
 
-    expect(projectionFetch.calls).toEqual([
+    expect(resourceFetch.calls).toEqual([
       {
         url: '/api/v1/characters/lorebooks/bulk',
         method: 'POST',
-        authHeader: 'projection-auth-token',
+        authHeader: 'resource-auth-token',
         contentType: 'application/json',
         body: { ids: ['char-a', 'char-b', 'char-c'] },
         signal: null,
@@ -408,8 +278,8 @@ describe('server projection API adapter', () => {
   it('returns status errors for server, network, and malformed responses', async () => {
     const responses = [
       jsonResponse({ reason: 'active_writer_stale' }, 423),
-      { revision: 'bad', mode: 'fields', fields: {} },
-      { revision: 1, mode: 'fields', fields: [] },
+      { revision: 'bad', promptPresetId: 'preset-a', promptTemplate: [] },
+      { revision: 1, promptPresetId: 'preset-a', promptTemplate: {} },
       {
         revision: 1,
         chatId: 'chat-a',
@@ -426,20 +296,20 @@ describe('server projection API adapter', () => {
         characters: [{ characterId: 'char-a' }],
       },
     ]
-    const projectionFetch = makeProjectionFetch(() => responses.shift())
-    vi.stubGlobal('fetch', projectionFetch.fetch)
+    const resourceFetch = makeResourceFetch(() => responses.shift())
+    vi.stubGlobal('fetch', resourceFetch.fetch)
 
-    await expect(fetchServerProjectionResource('state')).resolves.toEqual({
+    await expect(fetchServerLegacyPreset('preset-a')).resolves.toEqual({
       status: 'error',
       error: 'active_writer_stale',
     })
-    await expect(fetchServerProjectionResource('state')).resolves.toEqual({
+    await expect(fetchServerPromptPresetTemplate('preset-a')).resolves.toEqual({
       status: 'error',
-      error: 'Invalid projection revision',
+      error: 'Invalid resource revision',
     })
-    await expect(fetchServerProjectionResource('state')).resolves.toEqual({
+    await expect(fetchServerPromptPresetTemplate('preset-a')).resolves.toEqual({
       status: 'error',
-      error: 'Invalid projection fields',
+      error: 'Invalid prompt preset template response',
     })
     await expect(fetchServerChatMessages('chat-a')).resolves.toEqual({
       status: 'error',

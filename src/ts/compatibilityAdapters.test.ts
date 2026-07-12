@@ -477,16 +477,15 @@ describe('Phase 9-3f compatibility adapters', () => {
         if (url === '/api/v1/bootstrap') {
           return jsonResponse({ revision: 10 })
         }
-        if (url.startsWith('/api/v1/projection/characterRow')) {
+        if (url === '/api/v1/characters/char-b') {
           return jsonResponse({
             revision: 10,
-            mode: 'character-row',
-            characterId: 'char-b',
             character: {
               ...seedCharacter(),
               chaId: 'char-b',
               name: 'Hydrated B',
               firstMessage: 'Ready',
+              chats: seedCharacter().chats.map((chat) => ({ ...chat, message: [] })),
               customscript: [],
               triggerscript: [],
               globalLore: [],
@@ -528,7 +527,7 @@ describe('Phase 9-3f compatibility adapters', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/select')).toBe(true)
     })
-    const hydrationCallIndex = calls.findIndex((call) => call.url.startsWith('/api/v1/projection/characterRow'))
+    const hydrationCallIndex = calls.findIndex((call) => call.url === '/api/v1/characters/char-b')
     const selectionCallIndex = calls.findIndex((call) => call.url === '/api/v1/commands/characters/select')
     expect(hydrationCallIndex).toBeGreaterThanOrEqual(0)
     expect(selectionCallIndex).toBeGreaterThan(hydrationCallIndex)

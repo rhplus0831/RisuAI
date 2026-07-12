@@ -336,12 +336,9 @@ function stubApplyLoadoutFetch(
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
-      if (url === '/api/v1/projection/preset?id=preset-b') {
+      if (url === '/api/v1/legacy-presets/preset-b') {
         return jsonResponse({
           revision: 100,
-          resource: 'preset',
-          mode: 'preset',
-          presetId: 'preset-b',
           preset: options.projectionPreset ?? {
             id: 'preset-b',
             name: 'Preset B',
@@ -1018,7 +1015,7 @@ describe('loadout projection command helpers', () => {
     await waitForCallCount(calls, 4)
     await flushCommandEffects()
 
-    expect(calls.map((call) => call.url)).toContain('/api/v1/projection/preset?id=preset-b')
+    expect(calls.map((call) => call.url)).toContain('/api/v1/legacy-presets/preset-b')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/presets/select')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/loadouts/loadout-a/touch')
     expect(DBState.db.mainPrompt).toBe('hydrated preset-b main')

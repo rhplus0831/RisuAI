@@ -30,7 +30,7 @@ vi.mock('./resourceReads', () => ({
   fetchServerCharacter: api.character,
 }))
 
-vi.mock('./projection', () => ({
+vi.mock('./hydrationReads', () => ({
   fetchServerChatMessages: api.chat,
   fetchServerCharacterLorebook: api.lorebook,
   fetchServerBulkCharacterLorebooks: api.lorebooks,

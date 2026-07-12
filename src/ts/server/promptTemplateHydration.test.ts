@@ -6,9 +6,8 @@ const projectionState = vi.hoisted(() => ({
   canUse: true,
 }))
 
-vi.mock('./projection', () => ({
-  canUseServerProjection: () => projectionState.canUse,
-  fetchServerProjectionResource: projectionState.fetchResource,
+vi.mock('./hydrationReads', () => ({
+  fetchServerPromptPresetTemplate: projectionState.fetchResource,
 }))
 
 import { DBState } from '../stores.svelte'
@@ -52,45 +51,39 @@ afterEach(() => {
 })
 
 describe('promptTemplate hydration', () => {
-  it('fetches promptItem, merges promptTemplate, and leaves the cached command revision unchanged', async () => {
+  it('uses the top-level prompt template already loaded with settings', async () => {
+    DBState.db.promptTemplate = [item('p-1', 'settings template')]
     setCachedServerCommandRevision(7)
-    projectionState.fetchResource.mockResolvedValue({
-      status: 'ok',
-      revision: 9,
-      mode: 'fields',
-      fields: { promptTemplate: [item('p-1', 'hydrated template')] },
-    })
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', {})
-    expect(DBState.db.promptTemplate).toEqual([item('p-1', 'hydrated template')])
+    expect(projectionState.fetchResource).not.toHaveBeenCalled()
+    expect(DBState.db.promptTemplate).toEqual([item('p-1', 'settings template')])
     expect(isPromptTemplateHydrated()).toBe(true)
     expect(peekCachedServerCommandRevision()).toBe(7)
   })
 
-  it('marks an absent promptTemplate projection as hydrated without creating an empty template', async () => {
+  it('does not invent a top-level template when settings omit it', async () => {
     setCachedServerCommandRevision(0)
-    projectionState.fetchResource.mockResolvedValue({
-      status: 'ok',
-      revision: 0,
-      mode: 'fields',
-      fields: {},
-    })
 
-    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
+    await expect(ensurePromptTemplateHydrated()).resolves.toBe(false)
 
+    expect(projectionState.fetchResource).not.toHaveBeenCalled()
     expect(DBState.db.promptTemplate).toBeUndefined()
-    expect(isPromptTemplateHydrated()).toBe(true)
+    expect(isPromptTemplateHydrated()).toBe(false)
   })
 
   it('coalesces concurrent hydration requests', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
     setCachedServerCommandRevision(1)
     const response = deferred<{
       status: 'ok'
       revision: number
-      mode: 'fields'
-      fields: { promptTemplate: PromptItem[] }
+      promptPresetId: string
+      promptTemplate: PromptItem[]
     }>()
     projectionState.fetchResource.mockReturnValue(response.promise)
 
@@ -99,8 +92,8 @@ describe('promptTemplate hydration', () => {
     response.resolve({
       status: 'ok',
       revision: 1,
-      mode: 'fields',
-      fields: { promptTemplate: [item('p-1', 'once')] },
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('p-1', 'once')],
     })
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true])
@@ -110,13 +103,17 @@ describe('promptTemplate hydration', () => {
   })
 
   it('accepts a hydration response after an unrelated projection advances the known revision', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
     setCachedServerCommandRevision(5)
     setServerProjectionWriteGuardEnabled(true)
     const response = deferred<{
       status: 'ok'
       revision: number
-      mode: 'fields'
-      fields: { promptTemplate: PromptItem[] }
+      promptPresetId: string
+      promptTemplate: PromptItem[]
     }>()
     projectionState.fetchResource.mockReturnValue(response.promise)
 
@@ -126,8 +123,8 @@ describe('promptTemplate hydration', () => {
     response.resolve({
       status: 'ok',
       revision: 5,
-      mode: 'fields',
-      fields: { promptTemplate: [item('p-current', 'current template')] },
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('p-current', 'current template')],
     })
 
     await expect(pending).resolves.toBe(true)
@@ -151,8 +148,8 @@ describe('promptTemplate hydration', () => {
     const response = deferred<{
       status: 'ok'
       revision: number
-      mode: 'fields'
-      fields: { promptTemplate: PromptItem[] }
+      promptPresetId: string
+      promptTemplate: PromptItem[]
     }>()
     projectionState.fetchResource.mockReturnValue(response.promise)
 
@@ -170,8 +167,8 @@ describe('promptTemplate hydration', () => {
     response.resolve({
       status: 'ok',
       revision: 5,
-      mode: 'fields',
-      fields: { promptTemplate: [item('p-stale', 'stale owner template')] },
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('p-stale', 'stale owner template')],
     })
 
     await expect(pending).resolves.toBe(false)
@@ -181,12 +178,16 @@ describe('promptTemplate hydration', () => {
   })
 
   it('rejects a hydration response older than the request-start revision', async () => {
+    ;(DBState as { db: unknown }).db = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
     setCachedServerCommandRevision(6)
     projectionState.fetchResource.mockResolvedValue({
       status: 'ok',
       revision: 5,
-      mode: 'fields',
-      fields: { promptTemplate: [item('p-old', 'older than request')] },
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('p-old', 'older than request')],
     })
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(false)
@@ -204,13 +205,13 @@ describe('promptTemplate hydration', () => {
     projectionState.fetchResource.mockResolvedValue({
       status: 'ok',
       revision: 7,
-      mode: 'fields',
-      fields: { promptTemplate: [item('preset-row', 'preset body')] },
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('preset-row', 'preset body')],
     })
 
     await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
 
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'preset-a' })
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('preset-a')
     expect(DBState.db.promptTemplate).toEqual([item('preset-row', 'preset body')])
     expect(DBState.db.promptPresets[0].promptTemplate).toEqual([item('preset-row', 'preset body')])
   })
@@ -228,15 +229,15 @@ describe('promptTemplate hydration', () => {
     projectionState.fetchResource.mockResolvedValue({
       status: 'ok',
       revision: 7,
-      mode: 'fields',
-      fields: { promptTemplate: [item('chat-row', 'chat body')] },
+      promptPresetId: 'preset-chat',
+      promptTemplate: [item('chat-row', 'chat body')],
     })
 
     await expect(ensurePromptTemplateHydrated({ promptPresetId: 'preset-chat', applyProjection: false })).resolves.toBe(
       true,
     )
 
-    expect(projectionState.fetchResource).toHaveBeenCalledWith('promptItem', { parentId: 'preset-chat' })
+    expect(projectionState.fetchResource).toHaveBeenCalledWith('preset-chat')
     expect(DBState.db.promptPresets[1].promptTemplate).toEqual([item('chat-row', 'chat body')])
     expect(DBState.db.promptTemplate).toEqual([item('global-row', 'global visible body')])
     expect(isPromptTemplateHydrated('preset-chat')).toBe(true)
@@ -255,8 +256,8 @@ describe('promptTemplate hydration', () => {
     const response = deferred<{
       status: 'ok'
       revision: number
-      mode: 'fields'
-      fields: { promptTemplate: PromptItem[] }
+      promptPresetId: string
+      promptTemplate: PromptItem[]
     }>()
     projectionState.fetchResource.mockReturnValue(response.promise)
 
@@ -265,8 +266,8 @@ describe('promptTemplate hydration', () => {
     response.resolve({
       status: 'ok',
       revision: 7,
-      mode: 'fields',
-      fields: { promptTemplate: [item('preset-a-row', 'stale owner')] },
+      promptPresetId: 'preset-a',
+      promptTemplate: [item('preset-a-row', 'stale owner')],
     })
 
     await expect(pending).resolves.toBe(false)
@@ -284,8 +285,8 @@ describe('promptTemplate hydration', () => {
     projectionState.fetchResource.mockResolvedValue({
       status: 'ok',
       revision: 7,
-      mode: 'fields',
-      fields: { promptTemplate: null },
+      promptPresetId: 'preset-a',
+      promptTemplate: null,
     })
 
     setServerProjectionWriteGuardEnabled(true)
@@ -296,10 +297,10 @@ describe('promptTemplate hydration', () => {
       expect(isPromptTemplateHydrated()).toBe(true)
       expect(() => {
         DBState.db.promptTemplate = []
-      }).toThrow('Cannot mutate read-only server projection')
+      }).toThrow('The resource database compatibility view is read-only')
       expect(() => {
         delete DBState.db.promptTemplate
-      }).toThrow('Cannot mutate read-only server projection')
+      }).toThrow('The resource database compatibility view is read-only')
     } finally {
       setServerProjectionWriteGuardEnabled(false)
     }

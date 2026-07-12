@@ -1177,12 +1177,9 @@ describe('preset command rollback (L21)', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL) => {
-        expect(String(input)).toBe('/api/v1/projection/preset?id=preset-stub')
+        expect(String(input)).toBe('/api/v1/legacy-presets/preset-stub')
         return jsonResponse({
           revision: 8,
-          resource: 'preset',
-          mode: 'preset',
-          presetId: 'preset-stub',
           preset: makePreset('preset-stub', 'Stale', {
             promptTemplate: [{ id: 'stale-prompt', type: 'plain', text: 'stale prompt' }] as any,
           }),

@@ -1,7 +1,8 @@
 import { get } from 'svelte/store'
 import { SvelteSet } from 'svelte/reactivity'
-import { DBState, selectedCharID } from '../stores.svelte'
+import { selectedCharID } from '../stores.svelte'
 import {
+  getDatabase,
   hydrateServerCharacterLorebook,
   hydrateServerChatMessages,
   isServerChatMessagePlaceholder,
@@ -11,12 +12,12 @@ import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '..
 import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
-  canUseServerProjection,
   fetchServerBulkCharacterLorebooks,
   fetchServerBulkChatMessages,
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
-} from './projection'
+} from './hydrationReads'
+import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 
@@ -71,7 +72,7 @@ let charLorebookHydrationGeneration = 0
 function activeChatId(): string | undefined {
   const selId = get(selectedCharID)
   if (selId < 0) return undefined
-  const character = DBState.db?.characters?.[selId]
+  const character = getDatabase().characters?.[selId]
   if (!character) return undefined
   const chat = character.chats?.[character.chatPage ?? 0]
   return chat?.id
@@ -80,7 +81,7 @@ function activeChatId(): string | undefined {
 function activeChatMessageArray(): Message[] | undefined {
   const selId = get(selectedCharID)
   if (selId < 0) return undefined
-  const character = DBState.db?.characters?.[selId]
+  const character = getDatabase().characters?.[selId]
   if (!character) return undefined
   const chat = character.chats?.[character.chatPage ?? 0]
   return chat?.message
@@ -98,7 +99,7 @@ function snapshotJson(value: unknown): string | null {
 }
 
 function chatStateSnapshot(chatId: string): string | null {
-  for (const character of DBState.db?.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     const chat = character.chats?.find((candidate) => candidate.id === chatId)
     if (!chat) continue
     return snapshotJson({
@@ -146,7 +147,7 @@ function chatHydrationStaleReason(chatId: string, token: ChatHydrationFreshnessT
   if (token.expectedChatState === null || currentChatState === null || currentChatState !== token.expectedChatState) {
     return 'chat-state-changed'
   }
-  // Reroll candidates are process-local rather than part of DBState. Protect
+  // Reroll candidates are process-local rather than part of database resources. Protect
   // them separately only while this response would actually seed the open chat.
   if (token.trackRerollState && activeChatId() === chatId) {
     const currentRerollState = rerollStateSnapshot()
@@ -260,7 +261,7 @@ function unloadedRangesForTail(
 }
 
 async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): Promise<void> {
-  if (!canUseServerProjection()) return
+  if (!canUseServerResourceReads()) return
   const force = request.force ?? false
   const wantsFullHydration = !request.range
   if (!force && hydratedChatIds.has(chatId)) return
@@ -338,7 +339,7 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
 }
 
 async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrationOptions = {}): Promise<void> {
-  if (!canUseServerProjection() || chatIds.length === 0) return
+  if (!canUseServerResourceReads() || chatIds.length === 0) return
 
   const generation = chatHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
@@ -412,9 +413,12 @@ function hydrationWarning(scope: string, message: string): void {
 
 /** Hydrate the currently-open chat's messages (no-op if already hydrated). */
 export async function hydrateActiveChat(options: { force?: boolean; loadPages?: number } = {}): Promise<void> {
-  await hydrateActiveChatWindow(options.loadPages ?? normalizeChatDisplayTailCount(DBState.db?.chatDisplayTailCount), {
-    force: options.force,
-  })
+  await hydrateActiveChatWindow(
+    options.loadPages ?? normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount),
+    {
+      force: options.force,
+    },
+  )
 }
 
 /**
@@ -505,7 +509,7 @@ export function applyServerChatMessagesProjection(
  * forever). Also false when server projection is off — nothing hydrates then.
  */
 export function isChatMessageHydrationPending(chatId: string | undefined, messageCount: number): boolean {
-  if (!canUseServerProjection()) return false
+  if (!canUseServerResourceReads()) return false
   if (!chatId) return false
   if (messageCount > 0) return false
   if (hydratedChatIds.has(chatId)) return false
@@ -518,14 +522,14 @@ export function isChatMessageHydrationPending(chatId: string | undefined, messag
 function activeCharacterId(): string | undefined {
   const selId = get(selectedCharID)
   if (selId < 0) return undefined
-  return DBState.db?.characters?.[selId]?.chaId
+  return getDatabase().characters?.[selId]?.chaId
 }
 
 async function hydrateCharacterLorebook(characterId: string, force: boolean): Promise<void> {
-  if (!canUseServerProjection()) return
+  if (!canUseServerResourceReads()) return
   // Off unless globalLore is actually stubbed (the EXPERIMENTAL setting). When off,
   // globalLore is already resident — no fetch needed and nothing to hydrate.
-  if (!DBState.db?.enableLorebookStubs) return
+  if (!getDatabase().enableLorebookStubs) return
   if (!force && hydratedCharLorebookIds.has(characterId)) return
   const currentRequest = charLorebookInFlight.get(characterId)
   if (currentRequest) return currentRequest
@@ -573,7 +577,7 @@ async function hydrateCharacterLorebooksBulk(
   characterIds: readonly string[],
   options: BulkHydrationOptions = {},
 ): Promise<void> {
-  if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs || characterIds.length === 0) {
+  if (!canUseServerResourceReads() || !getDatabase().enableLorebookStubs || characterIds.length === 0) {
     return
   }
 
@@ -638,10 +642,10 @@ export async function hydrateActiveCharacterLorebook(options: { force?: boolean 
  * walk all characters' lorebooks must await this first when stubs are on.
  */
 export async function ensureAllCharacterLorebooksHydrated(options: BulkHydrationOptions = {}): Promise<void> {
-  if (!canUseServerProjection() || !DBState.db?.enableLorebookStubs) return
+  if (!canUseServerResourceReads() || !getDatabase().enableLorebookStubs) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
-  for (const character of DBState.db?.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     if (typeof character.chaId !== 'string' || !character.chaId || hydratedCharLorebookIds.has(character.chaId)) {
       continue
     }
@@ -656,7 +660,7 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   await Promise.all([hydrateCharacterLorebooksBulk(ids, options), ...pendingRequests])
   if (options.strict) {
     const missing: string[] = []
-    for (const character of DBState.db?.characters ?? []) {
+    for (const character of getDatabase().characters ?? []) {
       if (typeof character.chaId === 'string' && character.chaId && !hydratedCharLorebookIds.has(character.chaId)) {
         missing.push(character.chaId)
       }
@@ -702,10 +706,10 @@ function isOlderThanBaselineRevision(revision: number, baselineRevision: number 
  * walk all chats' history must await this first, since non-open chats are stubs.
  */
 export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {}): Promise<void> {
-  if (!canUseServerProjection()) return
+  if (!canUseServerResourceReads()) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
-  for (const character of DBState.db?.characters ?? []) {
+  for (const character of getDatabase().characters ?? []) {
     for (const chat of character.chats ?? []) {
       if (typeof chat.id !== 'string' || !chat.id || hydratedChatIds.has(chat.id)) {
         continue
@@ -722,7 +726,7 @@ export async function ensureAllChatsHydrated(options: BulkHydrationOptions = {})
   await Promise.all([hydrateChatsBulk(ids, options), ...pendingRequests])
   if (options.strict) {
     const missing: string[] = []
-    for (const character of DBState.db?.characters ?? []) {
+    for (const character of getDatabase().characters ?? []) {
       for (const chat of character.chats ?? []) {
         if (typeof chat.id === 'string' && chat.id && !hydratedChatIds.has(chat.id)) {
           missing.push(chat.id)
@@ -745,12 +749,12 @@ let selectedCharMirror = $state(-1)
 /**
  * Wire the hydration trigger: a reactive effect on the active chat id. It re-runs
  * on a character switch (via the `selectedCharMirror` $state) and on a chat
- * switch within a character (via `DBState`'s chats/chatPage $state). It reads the
+ * switch within a character (via the resource database's chats/chatPage state). It reads the
  * chat's id only — not `message` — so writing the hydrated messages does not
  * re-trigger it. Idempotent.
  */
 export function startChatMessageHydration(): void {
-  if (wired || !canUseServerProjection()) return
+  if (wired || !canUseServerResourceReads()) return
   wired = true
   selectedCharID.subscribe((value) => {
     selectedCharMirror = value
@@ -758,7 +762,7 @@ export function startChatMessageHydration(): void {
   $effect.root(() => {
     $effect(() => {
       if (selectedCharMirror < 0) return
-      const character = DBState.db?.characters?.[selectedCharMirror]
+      const character = getDatabase().characters?.[selectedCharMirror]
       const chatId = character?.chats?.[character?.chatPage ?? 0]?.id
       if (chatId) void hydrateActiveChat()
       // Hydrate the open character's globalLore. This reads chaId only, so
