@@ -11,8 +11,7 @@
     QuickSettings,
     additionalHamburgerMenu,
   } from '../../ts/stores.svelte'
-  import { setDatabase } from '../../ts/storage/database.svelte'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase, setDatabase } from '../../ts/storage/database.svelte'
   import BarIcon from './BarIcon.svelte'
   import SidebarIndicator from './SidebarIndicator.svelte'
   import {
@@ -88,7 +87,7 @@
     const folderImage = await selectSingleFile(['png', 'jpg', 'webp'], {
       onFileSelected: () => {
         const folderImageTarget = captureCharacterFolderImageUploadTarget({
-          characterOrder: DBState.db.characterOrder,
+          characterOrder: getDatabase().characterOrder,
           folderId,
         })
         if (!folderImageTarget) return
@@ -105,7 +104,7 @@
       if (
         !isFreshCharacterFolderImageUpload({
           operation: freshFolderImageUpload,
-          characterOrder: DBState.db.characterOrder,
+          characterOrder: getDatabase().characterOrder,
         })
       ) {
         return
@@ -116,7 +115,7 @@
       if (
         !isFreshCharacterFolderImageUpload({
           operation: freshFolderImageUpload,
-          characterOrder: DBState.db.characterOrder,
+          characterOrder: getDatabase().characterOrder,
         })
       ) {
         return
@@ -127,7 +126,7 @@
       if (
         !isFreshCharacterFolderImageUpload({
           operation: freshFolderImageUpload,
-          characterOrder: DBState.db.characterOrder,
+          characterOrder: getDatabase().characterOrder,
         })
       ) {
         return
@@ -135,7 +134,7 @@
 
       const freshImagePatch = resolveFreshCharacterFolderImageUploadPatch({
         operation: freshFolderImageUpload,
-        characterOrder: DBState.db.characterOrder,
+        characterOrder: getDatabase().characterOrder,
         patch: { imgFile: folderImageData, img: folderImageSrc },
       })
 
@@ -150,7 +149,7 @@
   }
 
   function openCharacterRoute(index: number) {
-    const character = DBState.db.characters?.[index]
+    const character = getDatabase().characters?.[index]
     if (!character?.chaId) {
       changeChar(index, { reseter })
       return
@@ -161,9 +160,9 @@
 
   const getSidebarCharacterList = createSidebarCharacterListMemo()
   let charImages: SidebarCharacterListItem[] = $derived.by(
-    () => getSidebarCharacterList(DBState.db.characterOrder, DBState.db.characters).items,
+    () => getSidebarCharacterList(getDatabase().characterOrder, getDatabase().characters).items,
   )
-  let IconRounded = $derived(DBState.db.roundIcons)
+  let IconRounded = $derived(getDatabase().roundIcons)
   let openFolders: string[] = $state([])
   let currentDrag: DragData = $state(null)
   interface Props {
@@ -181,14 +180,14 @@
     const selectedId = $selectedCharID
     if (selectedId === -1) return
 
-    const characterId = DBState.db.characters[selectedId]?.chaId
+    const characterId = getDatabase().characters[selectedId]?.chaId
     if (!characterId) return
 
     let targetFolderId: string | null = null
 
     for (const item of charImages) {
       if (item.type === 'folder') {
-        const foundChar = item.folder.find((c) => DBState.db.characters[c.index]?.chaId === characterId)
+        const foundChar = item.folder.find((c) => getDatabase().characters[c.index]?.chaId === characterId)
         if (foundChar) {
           targetFolderId = item.id
           break
@@ -264,7 +263,7 @@
   }
 </script>
 
-{#if DBState.db.menuSideBar}
+{#if getDatabase().menuSideBar}
   <div
     class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
     class:editMode
@@ -312,7 +311,7 @@
     class:risu-sub-sidebar-close={$sideBarClosing}
     class:hidden
     class:flex={!hidden}>
-    {#if !DBState.db.hamburgerButtonBottom}
+    {#if !getDatabase().hamburgerButtonBottom}
       <button
         class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
         onclick={() => {
@@ -407,7 +406,7 @@
                 size="56"
                 rounded={IconRounded}
                 name={char.name}
-                chaId={DBState.db.characters[char.index]?.chaId} />
+                chaId={getDatabase().characters[char.index]?.chaId} />
             {:else if char.type === 'folder'}
               {#key char.color}
                 {#key char.name}
@@ -463,7 +462,7 @@
                       }
                       openFolders = openFolders
                     }}>
-                    {#if DBState.db.showFolderName}
+                    {#if getDatabase().showFolderName}
                       <div class="h-full w-full flex justify-center items-center">
                         <span class="hyphens-auto truncate font-bold">{char.name}</span>
                       </div>
@@ -558,7 +557,7 @@
                       size="56"
                       rounded={IconRounded}
                       name={char2.name}
-                      chaId={DBState.db.characters[char2.index]?.chaId} />
+                      chaId={getDatabase().characters[char2.index]?.chaId} />
                   </div>
                 </div>
                 <div
@@ -624,7 +623,7 @@
           ></BaseRoundedButton>
       </div>
     </div>
-    {#if DBState.db.hamburgerButtonBottom}
+    {#if getDatabase().hamburgerButtonBottom}
       <div class="border-t border-t-selected w-full relative text-white">
         {#if menuMode === 1}
           <div
@@ -702,8 +701,8 @@
         <h1 class="text-xl">Welcome to RisuAI!</h1>
         <span class="text-xs text-textcolor2">Select a bot to start chatting</span>
       </div>
-    {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
-      <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
+    {:else if getDatabase().characters[$selectedCharID]?.chaId === '§playground'}
+      <SideChatList bind:chara={getDatabase().characters[$selectedCharID]} />
     {:else}
       <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button
@@ -726,7 +725,7 @@
           aria-current={$botMakerMode && !devTool ? 'true' : undefined}
           class="grow rounded-br-md"
           class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
-        {#if DBState.db.enableDevTools}
+        {#if getDatabase().enableDevTools}
           <button
             onclick={() => {
               devTool = true
@@ -747,7 +746,7 @@
         </div>
       {:else}
         <div class="contents" data-risu-sidebar-panel="chat">
-          <SideChatList bind:chara={DBState.db.characters[$selectedCharID]} />
+          <SideChatList bind:chara={getDatabase().characters[$selectedCharID]} />
         </div>
       {/if}
     {/if}
