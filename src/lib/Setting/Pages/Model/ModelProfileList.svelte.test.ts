@@ -33,7 +33,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelProfileList from './ModelProfileList.svelte'
 import { language } from 'src/lang'
-import { DBState } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -62,7 +62,7 @@ async function flushAsync(): Promise<void> {
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     modelProfiles: [
       {
         id: 'profile-1',
@@ -79,7 +79,7 @@ beforeEach(() => {
     ],
     modelRoleProfiles: {},
     modelRuntimeDefaults: {},
-  } as any
+  } as any)
   for (const spy of Object.values(commandSpies)) {
     spy.mockReset()
   }
@@ -94,7 +94,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('ModelProfileList', () => {
@@ -107,7 +107,7 @@ describe('ModelProfileList', () => {
     profileEditButton.click()
     await tick()
 
-    DBState.db.modelProfiles = []
+    getDatabase().modelProfiles = []
     await tick()
 
     buttonByText(language.modelProfiles.save).click()

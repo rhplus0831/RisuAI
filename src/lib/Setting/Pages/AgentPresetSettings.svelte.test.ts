@@ -31,7 +31,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import AgentPresetSettings from './AgentPresetSettings.svelte'
 import { language } from 'src/lang'
-import { DBState } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import type { AgentPresetRecord, AgentPresetStepRecord } from 'src/ts/agentPresetRecords'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -70,7 +70,7 @@ function preset(overrides: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
 }
 
 function seedDb(agentPresets: AgentPresetRecord[] = []): void {
-  DBState.db = {
+  setDatabaseLite({
     agentPresets,
     agentPresetDefaultId: agentPresets[0]?.id,
     characters: [
@@ -87,7 +87,7 @@ function seedDb(agentPresets: AgentPresetRecord[] = []): void {
       },
     ],
     loadouts: agentPresets[0] ? [{ id: 'loadout-a', agentPresetId: agentPresets[0].id }] : [],
-  } as never
+  } as never)
 }
 
 function mountPage(): void {
@@ -158,7 +158,7 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
-  DBState.db = {} as never
+  setDatabaseLite({} as never)
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
@@ -424,7 +424,7 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain('Gather Context')
     expect(target.textContent).not.toContain('Review Draft')
 
-    DBState.db.agentPresets = [
+    getDatabase().agentPresets = [
       preset({
         id: 'ap_a',
         name: 'Research Agent',

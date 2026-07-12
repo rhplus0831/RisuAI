@@ -7,9 +7,6 @@ const commandSpies = vi.hoisted(() => ({
   updateModelRoleProfilesCommand: vi.fn(),
 }))
 const storeMocks = vi.hoisted(() => ({
-  DBState: {
-    db: {} as any,
-  },
   selIdState: {
     selId: -1,
   },
@@ -21,17 +18,12 @@ vi.mock('src/ts/server/commands', () => ({
   updateModelRoleProfilesCommand: commandSpies.updateModelRoleProfilesCommand,
 }))
 vi.mock('src/ts/stores.svelte', () => ({
-  DBState: storeMocks.DBState,
   selIdState: storeMocks.selIdState,
 }))
-vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => storeMocks.DBState.db,
-}))
-
 import ModelProfileRoleList from './ModelProfileRoleList.svelte'
 import { language } from 'src/lang'
 import { normalizeModelRoleProfiles } from 'src/ts/model/modelProfileRecords'
-import { DBState } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -76,7 +68,7 @@ function setSelectValue(select: HTMLSelectElement, value: string): void {
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     modelProfiles: [
       {
         id: 'profile-1',
@@ -97,7 +89,7 @@ beforeEach(() => {
       },
     ],
     modelPresetsId: 0,
-  } as any
+  } as any)
   commandSpies.runServerCommand.mockReset()
   commandSpies.updateModelPresetCommand.mockReset()
   commandSpies.updateModelRoleProfilesCommand.mockReset()
@@ -113,7 +105,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('ModelProfileRoleList', () => {
@@ -139,7 +131,7 @@ describe('ModelProfileRoleList', () => {
       },
     })
 
-    DBState.db.modelPresetsId = 1
+    getDatabase().modelPresetsId = 1
     roleCommand.resolve({ status: 'ok' })
     await flushAsync()
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { DBState } from 'src/ts/stores.svelte'
+  import type { Database } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -12,7 +12,7 @@
   import { v4 } from 'uuid'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
-  type CustomModel = (typeof DBState.db)['customModels'][number]
+  type CustomModel = Database['customModels'][number]
 
   const customModelsDraft = createServerBackedSettingDraft<CustomModel[]>('customModels', [])
 

@@ -32,7 +32,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import ModelPresetList from './ModelPresetList.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -42,7 +42,7 @@ let component: MountedComponent | undefined
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     modelProfiles: [],
     modelRoleProfiles: {},
     modelRuntimeDefaults: {},
@@ -61,7 +61,7 @@ beforeEach(() => {
     modelPresetsId: 0,
     promptPresets: [],
     promptPresetsId: -1,
-  } as any
+  } as any)
   for (const spy of Object.values(commandSpies)) {
     spy.mockReset()
   }
@@ -73,7 +73,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('ModelPresetList', () => {
@@ -92,6 +92,6 @@ describe('ModelPresetList', () => {
     expect(event.defaultPrevented).toBe(false)
     expect(afterApply).not.toHaveBeenCalled()
     expect(commandSpies.selectModelPresetCommand).not.toHaveBeenCalled()
-    expect(DBState.db.modelPresetsId).toBe(0)
+    expect(getDatabase().modelPresetsId).toBe(0)
   })
 })

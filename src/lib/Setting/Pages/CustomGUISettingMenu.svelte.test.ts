@@ -24,8 +24,8 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import CustomGUISettingMenu from './CustomGUISettingMenu.svelte'
-import { DBState } from 'src/ts/stores.svelte'
 import { flushPendingServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -42,9 +42,9 @@ function buttonByText(text: string): HTMLButtonElement {
 beforeEach(() => {
   vi.useFakeTimers()
   commandSpies.patchServerBackedSettings.mockClear()
-  ;(DBState as { db: unknown }).db = {
+  setDatabaseLite({
     guiHTML: '',
-  }
+  } as any)
   previousSafeStructuredClone = (globalThis as { safeStructuredClone?: unknown }).safeStructuredClone
   ;(globalThis as { safeStructuredClone?: <T>(value: T) => T }).safeStructuredClone = structuredClone
   target = document.createElement('div')
@@ -59,13 +59,13 @@ afterEach(() => {
   }
   target.remove()
   ;(globalThis as { safeStructuredClone?: unknown }).safeStructuredClone = previousSafeStructuredClone
-  ;(DBState as { db: unknown }).db = {}
+  setDatabaseLite({} as any)
   vi.useRealTimers()
 })
 
 describe('CustomGUISettingMenu persistence', () => {
   it('loads the editor tree from the server-backed guiHTML setting', async () => {
-    DBState.db.guiHTML = '<component class="flex flex-col flex-1" data-risu-type="fullWidthChat">\n</component>\n'
+    getDatabase().guiHTML = '<component class="flex flex-col flex-1" data-risu-type="fullWidthChat">\n</component>\n'
 
     component = mount(CustomGUISettingMenu, { target })
     await tick()
@@ -83,8 +83,8 @@ describe('CustomGUISettingMenu persistence', () => {
     buttonByText('fullWidthChat').click()
     await tick()
 
-    expect(DBState.db.guiHTML).toContain('data-risu-type="fullWidthChat"')
-    expect(DBState.db.guiHTML).toContain('<component')
+    expect(getDatabase().guiHTML).toContain('data-risu-type="fullWidthChat"')
+    expect(getDatabase().guiHTML).toContain('<component')
 
     await vi.advanceTimersByTimeAsync(250)
     await tick()

@@ -26,6 +26,19 @@ vi.mock('src/ts/globalApi.svelte', async (importActual) => {
   }
 })
 
+vi.mock('src/ts/process/modules', () => ({
+  applyModule: vi.fn(),
+  exportModule: vi.fn(),
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModuleRegexScripts: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  importModule: vi.fn(),
+  moduleUpdate: vi.fn(),
+  readModule: vi.fn(),
+  refreshModules: vi.fn(),
+}))
+
 vi.mock('./Pages/supporters', async (importActual) => {
   const actual = await importActual<typeof import('./Pages/supporters')>()
   supporterSpies.loadSupporters.mockImplementation(async () => {
@@ -47,7 +60,11 @@ vi.mock('./Pages/supporters', async (importActual) => {
 import { SUPPORTER_ENDPOINT } from './Pages/supporters'
 import Settings from './Settings.svelte'
 import { language } from 'src/lang'
-import { additionalSettingsMenu, DBState, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
+import { additionalSettingsMenu, MobileGUI, SettingsMenuIndex } from 'src/ts/stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 import { isLite } from 'src/ts/lite'
 import { applyRouteToStores, currentRoute, navigate } from 'src/ts/router'
 
@@ -85,11 +102,11 @@ describe('Settings supporter tab', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 })
     additionalSettingsMenu.splice(0)
-    DBState.db = {
+    setDatabaseLite({
       enableRisuaiProTools: false,
       doNotWarnExternalServers: false,
       settingsCloseButtonSize: 24,
-    } as any
+    } as any)
     isLite.set(false)
     MobileGUI.set(false)
     SettingsMenuIndex.set(-1)
@@ -152,7 +169,7 @@ describe('Settings supporter tab', () => {
   })
 
   it('skips the external server warning when the opt-out is enabled', async () => {
-    DBState.db.doNotWarnExternalServers = true
+    getDatabase().doNotWarnExternalServers = true
 
     supporterButton().click()
     await flushClick()
@@ -186,12 +203,12 @@ describe('Settings supporter tab', () => {
       unmount(component)
       component = undefined
     }
-    DBState.db = {
+    setDatabaseLite({
       enableRisuaiProTools: false,
       doNotWarnExternalServers: false,
       settingsCloseButtonSize: 24,
       botPresets: [{ id: 'legacy-preset', name: 'Legacy preset' }],
-    } as any
+    } as any)
     component = mount(Settings, { target })
     await tick()
 

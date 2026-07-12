@@ -25,7 +25,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import ModelRuntimeDefaultsEditor from './ModelRuntimeDefaultsEditor.svelte'
 import { language } from 'src/lang'
-import { DBState } from 'src/ts/stores.svelte'
+import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -48,12 +48,12 @@ async function flushAsync(): Promise<void> {
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
-  DBState.db = {
+  setDatabaseLite({
     modelRuntimeDefaults: {
       maxContext: 4096,
       temperature: 0.7,
     },
-  } as any
+  } as any)
   commandSpies.runServerCommand.mockReset()
   commandSpies.updateModelRuntimeDefaultsCommand.mockReset()
   commandSpies.updateModelRuntimeDefaultsCommand.mockResolvedValue({ status: 'ok' })
@@ -68,7 +68,7 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('ModelRuntimeDefaultsEditor', () => {

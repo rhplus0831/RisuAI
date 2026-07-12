@@ -1,6 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import SettingRenderer from '../SettingRenderer.svelte'
   import {
     displayNonRendererServerSettingKeys,
@@ -11,7 +11,7 @@
   import { onDestroy } from 'svelte'
   import { watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
 
-  let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
+  let submenu = $state(getDatabase().useLegacyGUI ? -1 : 0)
 
   const stopServerSettingsWatch = watchServerBackedSettings(displayNonRendererServerSettingKeys)
   onDestroy(stopServerSettingsWatch)

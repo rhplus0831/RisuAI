@@ -3,12 +3,12 @@
   import { language } from 'src/lang'
   import Help from 'src/lib/Others/Help.svelte'
 
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import { exportRegex, importRegex } from 'src/ts/process/scripts'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
-  const globalScriptDraft = createServerBackedSettingDraft('globalscript', DBState.db.globalscript)
+  const globalScriptDraft = createServerBackedSettingDraft('globalscript', getDatabase().globalscript)
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">

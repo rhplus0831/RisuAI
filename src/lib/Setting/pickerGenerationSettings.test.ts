@@ -64,7 +64,8 @@ import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
 import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
-import { DBState, selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
+import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -154,7 +155,7 @@ async function waitForCommandFetches(calls: CapturedFetch[]): Promise<void> {
 
 function seedDb(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  setDatabaseLite({
     modelPresetsId: 0,
     modelPresets: [
       {
@@ -244,7 +245,7 @@ function seedDb(): void {
         ],
       },
     ],
-  } as any
+  } as any)
 }
 
 function elementBySelector<T extends Element>(selector: string, label: string): T {
@@ -343,7 +344,7 @@ describe('generation settings picker mode', () => {
 
     expect(presetSpies.changeToPreset).not.toHaveBeenCalled()
     expect(close).toHaveBeenCalledOnce()
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual({
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual({
       configured: true,
       personaId: 'persona-b',
       modelPresetId: 'model-preset-a',
@@ -377,8 +378,8 @@ describe('generation settings picker mode', () => {
     await waitForCommandFetches(calls)
 
     expect(close).toHaveBeenCalledOnce()
-    expect(DBState.db.promptPresetsId).toBe(1)
-    expect(DBState.db.characters[0].chats[0].generationSettings?.promptPresetId).toBe('preset-b')
+    expect(getDatabase().promptPresetsId).toBe(1)
+    expect(getDatabase().characters[0].chats[0].generationSettings?.promptPresetId).toBe('preset-b')
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/prompt-presets/select',
       method: 'POST',
@@ -399,7 +400,7 @@ describe('generation settings picker mode', () => {
     await waitForFetchCount(calls, 3)
 
     expect(close).toHaveBeenCalledOnce()
-    expect(DBState.db.promptPresetsId).toBe(1)
+    expect(getDatabase().promptPresetsId).toBe(1)
     const selectCalls = calls.filter((call) => call.url.endsWith('/prompt-presets/select'))
     expect(selectCalls).toHaveLength(2)
     expect(selectCalls[0].body).toMatchObject({
@@ -413,7 +414,7 @@ describe('generation settings picker mode', () => {
   })
 
   it('does not retry a stale prompt preset selection after a newer selection wins', async () => {
-    DBState.db.promptPresets.push({
+    getDatabase().promptPresets.push({
       id: 'preset-c',
       name: 'Preset C',
       mainPrompt: '',
@@ -481,7 +482,7 @@ describe('generation settings picker mode', () => {
     // The revisioned command lane keeps C queued until B settles, while the
     // optimistic selection paints C immediately.
     expect(calls).toHaveLength(2)
-    expect(DBState.db.promptPresetsId).toBe(2)
+    expect(getDatabase().promptPresetsId).toBe(2)
 
     resolvePresetBConflict(jsonResponse({ error: 'revision_conflict', currentRevision: 201 }, 409))
     await waitForFetchCount(calls, 3)
@@ -492,7 +493,7 @@ describe('generation settings picker mode', () => {
       'preset-b',
       'preset-c',
     ])
-    expect(DBState.db.promptPresetsId).toBe(2)
+    expect(getDatabase().promptPresetsId).toBe(2)
   })
 
   it('saves persona rows to the active chat without calling global persona selection', async () => {
@@ -511,7 +512,7 @@ describe('generation settings picker mode', () => {
 
     expect(personaSpies.changeUserPersona).not.toHaveBeenCalled()
     expect(close).toHaveBeenCalledOnce()
-    expect(DBState.db.characters[0].chats[0].generationSettings).toEqual({
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual({
       configured: true,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
@@ -545,7 +546,7 @@ describe('generation settings picker mode', () => {
 
     expect(personaSpies.changeUserPersona).toHaveBeenCalledWith(1)
     expect(close).toHaveBeenCalledOnce()
-    expect(DBState.db.characters[0].chats[0].generationSettings?.personaId).toBe('persona-b')
+    expect(getDatabase().characters[0].chats[0].generationSettings?.personaId).toBe('persona-b')
     expect(calls).toEqual([])
   })
 })

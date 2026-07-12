@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const rendererMocks = vi.hoisted(() => ({
   checkCondition: vi.fn((item, ctx) => !item.condition || item.condition(ctx)),
-  DBState: { db: {} as Record<string, unknown> },
   getModelInfo: vi.fn(() => ({
     id: 'renderer-model',
     name: 'Renderer Model',
@@ -20,10 +19,6 @@ const rendererMocks = vi.hoisted(() => ({
 
 vi.mock('src/ts/model/modellist', () => ({
   getModelInfo: rendererMocks.getModelInfo,
-}))
-
-vi.mock('src/ts/stores.svelte', () => ({
-  DBState: rendererMocks.DBState,
 }))
 
 vi.mock('src/ts/setting/utils', () => ({
@@ -43,7 +38,10 @@ vi.mock('src/ts/setting/settingRegistry', async () => {
 })
 
 import SettingRenderer from './SettingRenderer.svelte'
-import { DBState } from 'src/ts/stores.svelte'
+import {
+  getResourceDatabase as getDatabase,
+  replaceResourceDatabase as setDatabaseLite,
+} from 'src/ts/server/resourceState.svelte'
 import type { SettingItem } from 'src/ts/setting/types'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -52,11 +50,11 @@ let target: HTMLElement
 let component: MountedComponent | undefined
 
 function rendererValue<T>(key: string): T {
-  return (DBState.db as unknown as Record<string, T>)[key]
+  return (getDatabase() as unknown as Record<string, T>)[key]
 }
 
 function setRendererValue(key: string, value: unknown): void {
-  ;(DBState.db as unknown as Record<string, unknown>)[key] = value
+  ;(getDatabase() as unknown as Record<string, unknown>)[key] = value
 }
 
 async function changeTextInput(input: HTMLInputElement, value: string): Promise<void> {
@@ -76,14 +74,14 @@ beforeEach(() => {
   document.body.appendChild(target)
   rendererMocks.checkCondition.mockClear()
   rendererMocks.getModelInfo.mockClear()
-  DBState.db = {
+  setDatabaseLite({
     aiModel: '',
     rendererChoice: 'alpha',
     rendererEnabled: false,
     rendererText: 'initial value',
     showHiddenRendererItem: false,
     subModel: '',
-  } as any
+  } as any)
 })
 
 afterEach(() => {
@@ -93,7 +91,7 @@ afterEach(() => {
   }
   target.remove()
   document.body.innerHTML = ''
-  DBState.db = {} as any
+  setDatabaseLite({} as any)
 })
 
 describe('SettingRenderer rendered behavior', () => {

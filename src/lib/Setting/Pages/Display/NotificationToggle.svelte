@@ -1,7 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { alertError } from 'src/ts/alert'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
@@ -12,7 +12,7 @@
 
 <div class="flex items-center mt-2">
   <Check
-    check={DBState.db.notification}
+    check={getDatabase().notification}
     name={language.notification}
     onChange={async (nextValue) => {
       applyServerBackedSetting('notification', nextValue)

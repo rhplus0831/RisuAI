@@ -1,6 +1,6 @@
 <script lang="ts">
   import { language } from 'src/lang'
-  import { DBState } from 'src/ts/stores.svelte'
+  import { getDatabase } from 'src/ts/storage/database.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
 
@@ -11,7 +11,7 @@
   }
 
   let { field, labelKey, defaultColor }: Props = $props()
-  let currentValue = $derived(DBState.db[field])
+  let currentValue = $derived(getDatabase()[field])
 </script>
 
 {#if currentValue}
