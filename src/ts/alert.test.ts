@@ -9,11 +9,6 @@ vi.mock('./stores.svelte', () => ({
   CurrentTriggerIdStore: {
     subscribe: vi.fn(),
   },
-  DBState: {
-    db: {
-      characters: [],
-    },
-  },
   alertStore: {
     set: alertTestState.alertStoreSet,
   },

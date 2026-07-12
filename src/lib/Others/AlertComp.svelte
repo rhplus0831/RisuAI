@@ -1,7 +1,6 @@
 <script lang="ts">
   import { alertGenerationInfoStore, type alertData } from '../../ts/alert'
 
-  import { DBState } from 'src/ts/stores.svelte'
   import { getCharImage } from '../../ts/characters'
   import { ParseMarkdown } from '../../ts/parser/parser.svelte'
   import BarIcon from '../SideBars/BarIcon.svelte'
@@ -24,7 +23,7 @@
   import { ColorSchemeTypeStore } from 'src/ts/gui/colorscheme'
   import Help from './Help.svelte'
   import { getChatBranches } from 'src/ts/gui/branches'
-  import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
+  import { getCurrentCharacter, getDatabase } from 'src/ts/storage/database.svelte'
   import { translateStackTrace } from '../../ts/sourcemap'
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
@@ -62,7 +61,7 @@
   const generationMessage = $derived.by(() => {
     const info = $alertGenerationInfoStore
     if (!info) return undefined
-    const character = DBState.db.characters?.[$selectedCharID]
+    const character = getDatabase().characters?.[$selectedCharID]
     const chat = character?.chats?.[character.chatPage]
     return chat?.message?.[info.idx]
   })
@@ -481,9 +480,9 @@
         </div>
       {:else if $alertStore.type === 'selectChar'}
         <div class="flex w-full items-start flex-wrap gap-2 justify-start">
-          {#each DBState.db.characters as char, i}
+          {#each getDatabase().characters as char}
             {#if char.image}
-              {#await getCharImage(DBState.db.characters[i].image, 'css')}
+              {#await getCharImage(char.image, 'css')}
                 <BarIcon
                   onClick={() => {
                     alertStore.set({ type: 'none', msg: char.chaId })
@@ -588,31 +587,17 @@
             <span class="text-amber-500">Model</span>
             <span class="text-amber-500 justify-self-end">{$alertGenerationInfoStore.genInfo.model}</span>
             <span class="text-green-500">ID</span>
-            <span class="text-green-500 justify-self-end"
-              >{DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                $alertGenerationInfoStore.idx
-              ].chatId ?? 'None'}</span>
+            <span class="text-green-500 justify-self-end">{generationMessage?.chatId ?? 'None'}</span>
             <span class="text-red-500">GenID</span>
             <span class="text-red-500 justify-self-end">{$alertGenerationInfoStore.genInfo.generationId}</span>
             <span class="text-cyan-500">Saying</span>
-            <span class="text-cyan-500 justify-self-end"
-              >{DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                $alertGenerationInfoStore.idx
-              ].saying}</span>
+            <span class="text-cyan-500 justify-self-end">{generationMessage?.saying}</span>
             <span class="text-purple-500">Size</span>
             <span class="text-purple-500 justify-self-end"
-              >{JSON.stringify(
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                  $alertGenerationInfoStore.idx
-                ],
-              ).length} Bytes</span>
+              >{JSON.stringify(generationMessage ?? null).length} Bytes</span>
             <span class="text-yellow-500">Time</span>
             <span class="text-yellow-500 justify-self-end"
-              >{new Date(
-                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[
-                  $alertGenerationInfoStore.idx
-                ].time ?? 0,
-              ).toLocaleString()}</span>
+              >{new Date(generationMessage?.time ?? 0).toLocaleString()}</span>
             {#if $alertGenerationInfoStore.genInfo.stageTiming}
               {@const stage1 = parseFloat(
                 (($alertGenerationInfoStore.genInfo.stageTiming.stage1 ?? 0) / 1000).toFixed(1),
@@ -638,7 +623,7 @@
             {/if}
 
             <span class="text-green-500">Tokens</span>
-            {#await tokenize(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[$alertGenerationInfoStore.idx].data)}
+            {#await tokenize(generationMessage?.data ?? '')}
               <span class="text-green-500 justify-self-end">Loading</span>
             {:then tokens}
               <span class="text-green-500 justify-self-end">{tokens}</span>
@@ -861,12 +846,12 @@
           <span class="text-textcolor2 text-sm">{language.risuMDesc}</span>
         {:else if $alertStore.submsg === 'preset'}
           <span class="text-textcolor2 text-sm">{language.risupresetDesc}</span>
-          {#if cardExportType2 === 'preset' && (DBState.db.botPresets[DBState.db.botPresetsId].image || DBState.db.botPresets[DBState.db.botPresetsId].regex?.length > 0)}
+          {#if cardExportType2 === 'preset' && (getDatabase().botPresets[getDatabase().botPresetsId].image || getDatabase().botPresets[getDatabase().botPresetsId].regex?.length > 0)}
             <span class="text-red-500 text-sm">Preset with image or regexes cannot be exported for now.</span>
           {/if}
         {:else}
           <span class="text-textcolor2 text-sm">{language.ccv3Desc}</span>
-          {#if cardExportType2 !== 'charx' && cardExportType2 !== 'charxJpeg' && isCharacterHasAssets(DBState.db.characters[$selectedCharID])}
+          {#if cardExportType2 !== 'charx' && cardExportType2 !== 'charxJpeg' && isCharacterHasAssets(getDatabase().characters[$selectedCharID])}
             <span class="text-red-500 text-sm">{language.notCharxWarn}</span>
           {/if}
         {/if}
