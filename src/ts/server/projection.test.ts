@@ -219,33 +219,39 @@ describe('server projection API adapter', () => {
     })
   })
 
-  it('unwraps preset projections and validates the resource mode', async () => {
+  it('fetches legacy preset detail through the resource endpoint', async () => {
+    const controller = new AbortController()
     const responses = [
       {
         revision: 6,
-        mode: 'preset',
-        presetId: 'preset-a',
-        preset: { name: 'Preset A' },
+        preset: { id: 'preset-a', name: 'Preset A' },
       },
       {
         revision: 7,
-        mode: 'full',
+        preset: null,
       },
     ]
     const projectionFetch = makeProjectionFetch(() => responses.shift())
     vi.stubGlobal('fetch', projectionFetch.fetch)
 
-    await expect(fetchServerPresetProjection('preset/a')).resolves.toEqual({
+    await expect(fetchServerPresetProjection('preset/a', { signal: controller.signal })).resolves.toEqual({
       status: 'ok',
       revision: 6,
       presetId: 'preset-a',
-      preset: { name: 'Preset A' },
+      preset: { id: 'preset-a', name: 'Preset A' },
     })
-    expect(parsedCallUrl(projectionFetch.calls[0]).searchParams.get('id')).toBe('preset/a')
+    expect(parsedCallUrl(projectionFetch.calls[0]).pathname).toBe('/api/v1/legacy-presets/preset%2Fa')
+    expect(projectionFetch.calls[0]).toMatchObject({
+      method: 'GET',
+      authHeader: 'projection-auth-token',
+      contentType: null,
+      body: null,
+      signal: controller.signal,
+    })
 
     await expect(fetchServerPresetProjection('preset-b')).resolves.toEqual({
       status: 'error',
-      error: 'Invalid preset response mode: full',
+      error: 'Invalid preset response',
     })
   })
 
@@ -253,7 +259,6 @@ describe('server projection API adapter', () => {
     const responses = [
       {
         revision: 10,
-        mode: 'chat-messages',
         chatId: 'chat/server',
         message: [{ role: 'user', data: 'tail' }],
         hypaV3Data: { summary: 'tail' },
@@ -263,7 +268,6 @@ describe('server projection API adapter', () => {
       },
       {
         revision: 11,
-        mode: 'chat-messages',
         message: [{ role: 'char', data: 'range' }],
       },
     ]
@@ -290,15 +294,15 @@ describe('server projection API adapter', () => {
     })
 
     const tailUrl = parsedCallUrl(projectionFetch.calls[0])
-    expect(tailUrl.pathname).toBe('/api/v1/projection/chatMessages')
-    expect(tailUrl.searchParams.get('id')).toBe('chat/request')
+    expect(tailUrl.pathname).toBe('/api/v1/chats/chat%2Frequest/messages')
     expect(tailUrl.searchParams.get('tail')).toBe('2')
     expect(tailUrl.searchParams.has('start')).toBe(false)
     expect(tailUrl.searchParams.has('limit')).toBe(false)
     expect(projectionFetch.calls[0].authHeader).toBe('projection-auth-token')
 
     const rangeUrl = parsedCallUrl(projectionFetch.calls[1])
-    expect(rangeUrl.searchParams.get('id')).toBe('chat/request')
+    expect(rangeUrl.pathname).toBe('/api/v1/chats/chat%2Frequest/messages')
+    expect(rangeUrl.searchParams.has('id')).toBe(false)
     expect(rangeUrl.searchParams.get('start')).toBe('4')
     expect(rangeUrl.searchParams.get('limit')).toBe('8')
   })
@@ -306,7 +310,6 @@ describe('server projection API adapter', () => {
   it('posts bulk chat hydration with JSON body and filters malformed missing ids', async () => {
     const projectionFetch = makeProjectionFetch(() => ({
       revision: 12,
-      mode: 'chat-messages-bulk',
       chats: [
         { chatId: 'chat-a', message: [{ data: 'A' }], hypaV3Data: { a: true } },
         { chatId: 'chat-b', message: [] },
@@ -327,7 +330,7 @@ describe('server projection API adapter', () => {
 
     expect(projectionFetch.calls).toEqual([
       {
-        url: '/api/v1/projection/chatMessages/bulk',
+        url: '/api/v1/chats/messages/bulk',
         method: 'POST',
         authHeader: 'projection-auth-token',
         contentType: 'application/json',
@@ -341,13 +344,11 @@ describe('server projection API adapter', () => {
     const responses = [
       {
         revision: 13,
-        mode: 'character-lorebook',
         characterId: 'char/server',
         globalLore: [{ key: 'server' }],
       },
       {
         revision: 14,
-        mode: 'character-lorebook',
         globalLore: [{ key: 'fallback' }],
       },
     ]
@@ -367,14 +368,13 @@ describe('server projection API adapter', () => {
       globalLore: [{ key: 'fallback' }],
     })
 
-    expect(projectionFetch.calls[0].url).toBe('/api/v1/projection/characterLorebook?id=char%2Frequest%20one')
-    expect(projectionFetch.calls[1].url).toBe('/api/v1/projection/characterLorebook?id=char%2Frequest%20two')
+    expect(projectionFetch.calls[0].url).toBe('/api/v1/characters/char%2Frequest%20one/lorebook')
+    expect(projectionFetch.calls[1].url).toBe('/api/v1/characters/char%2Frequest%20two/lorebook')
   })
 
   it('posts bulk character lorebook hydration with JSON body and filters malformed missing ids', async () => {
     const projectionFetch = makeProjectionFetch(() => ({
       revision: 15,
-      mode: 'character-lorebooks-bulk',
       characters: [
         { characterId: 'char-a', globalLore: [{ key: 'A' }] },
         { characterId: 'char-b', globalLore: [] },
@@ -395,7 +395,7 @@ describe('server projection API adapter', () => {
 
     expect(projectionFetch.calls).toEqual([
       {
-        url: '/api/v1/projection/characterLorebooks/bulk',
+        url: '/api/v1/characters/lorebooks/bulk',
         method: 'POST',
         authHeader: 'projection-auth-token',
         contentType: 'application/json',
@@ -412,7 +412,6 @@ describe('server projection API adapter', () => {
       { revision: 1, mode: 'fields', fields: [] },
       {
         revision: 1,
-        mode: 'chat-messages',
         chatId: 'chat-a',
         message: [],
         messageStart: 3,
@@ -420,12 +419,10 @@ describe('server projection API adapter', () => {
       },
       {
         revision: 1,
-        mode: 'chat-messages-bulk',
         chats: [{ chatId: 'chat-a' }],
       },
       {
         revision: 1,
-        mode: 'character-lorebooks-bulk',
         characters: [{ characterId: 'char-a' }],
       },
     ]

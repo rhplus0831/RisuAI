@@ -299,16 +299,47 @@ export async function fetchServerPresetProjection(
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
 > {
-  const result = await fetchServerProjectionResource('preset', { id: presetId, signal: options.signal })
-  if (result.status !== 'ok') return result
-  if (result.mode !== 'preset') {
-    return { status: 'error', error: `Invalid preset response mode: ${result.mode}` }
+  if (!canUseServerProjection()) return { status: 'unavailable' }
+
+  const auth = await getNodeServerProxyAuth()
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/legacy-presets/${encodeURIComponent(presetId)}`, {
+      method: 'GET',
+      signal: options.signal ?? undefined,
+      headers: { 'risu-auth': auth },
+    })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Network error: ${message}` }
   }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status or response validation below.
+  }
+  if (!response.ok) {
+    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+  }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { status: 'error', error: 'Invalid preset response' }
+  }
+
+  const record = body as Record<string, unknown>
+  if (!Number.isInteger(record.revision) || (record.revision as number) < 0) {
+    return { status: 'error', error: 'Invalid projection revision' }
+  }
+  if (!record.preset || typeof record.preset !== 'object' || Array.isArray(record.preset)) {
+    return { status: 'error', error: 'Invalid preset response' }
+  }
+  const preset = record.preset as Record<string, unknown>
   return {
     status: 'ok',
-    revision: result.revision,
-    presetId: result.presetId,
-    preset: result.preset,
+    revision: record.revision as number,
+    presetId: typeof preset.id === 'string' && preset.id.trim() !== '' ? preset.id : presetId,
+    preset,
   }
 }
 
@@ -350,7 +381,7 @@ export async function fetchServerChatMessages(
 ): Promise<ServerChatMessagesResult> {
   if (!canUseServerProjection()) return { status: 'unavailable' }
 
-  const query = new URLSearchParams({ id: chatId })
+  const query = new URLSearchParams()
   if (Number.isInteger(options.tail) && (options.tail as number) > 0) {
     query.set('tail', String(options.tail))
   } else if (
@@ -362,7 +393,8 @@ export async function fetchServerChatMessages(
     query.set('start', String(options.start))
     query.set('limit', String(options.limit))
   }
-  const url = `${PROJECTION_ENDPOINT}/chatMessages?${query.toString()}`
+  const suffix = query.toString()
+  const url = `/api/v1/chats/${encodeURIComponent(chatId)}/messages${suffix ? `?${suffix}` : ''}`
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
@@ -395,7 +427,7 @@ export async function fetchServerChatMessages(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid projection revision' }
   }
-  if (record.mode !== 'chat-messages' || !Array.isArray(record.message)) {
+  if (!Array.isArray(record.message)) {
     return { status: 'error', error: 'Invalid chat-messages response' }
   }
   if (
@@ -437,7 +469,7 @@ export async function fetchServerBulkChatMessages(
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
-    response = await fetch(`${PROJECTION_ENDPOINT}/chatMessages/bulk`, {
+    response = await fetch('/api/v1/chats/messages/bulk', {
       method: 'POST',
       signal: options.signal ?? undefined,
       headers: { 'content-type': 'application/json', 'risu-auth': auth },
@@ -467,7 +499,7 @@ export async function fetchServerBulkChatMessages(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid projection revision' }
   }
-  if (record.mode !== 'chat-messages-bulk' || !Array.isArray(record.chats)) {
+  if (!Array.isArray(record.chats)) {
     return { status: 'error', error: 'Invalid bulk chat-messages response' }
   }
 
@@ -526,7 +558,7 @@ export async function fetchServerCharacterLorebook(
 ): Promise<ServerCharacterLorebookResult> {
   if (!canUseServerProjection()) return { status: 'unavailable' }
 
-  const url = `${PROJECTION_ENDPOINT}/characterLorebook?id=${encodeURIComponent(characterId)}`
+  const url = `/api/v1/characters/${encodeURIComponent(characterId)}/lorebook`
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
@@ -559,7 +591,7 @@ export async function fetchServerCharacterLorebook(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid projection revision' }
   }
-  if (record.mode !== 'character-lorebook' || !Array.isArray(record.globalLore)) {
+  if (!Array.isArray(record.globalLore)) {
     return { status: 'error', error: 'Invalid character-lorebook response' }
   }
   return {
@@ -583,7 +615,7 @@ export async function fetchServerBulkCharacterLorebooks(
   const auth = await getNodeServerProxyAuth()
   let response: Response
   try {
-    response = await fetch(`${PROJECTION_ENDPOINT}/characterLorebooks/bulk`, {
+    response = await fetch('/api/v1/characters/lorebooks/bulk', {
       method: 'POST',
       signal: options.signal ?? undefined,
       headers: { 'content-type': 'application/json', 'risu-auth': auth },
@@ -613,7 +645,7 @@ export async function fetchServerBulkCharacterLorebooks(
   if (!Number.isInteger(revision) || (revision as number) < 0) {
     return { status: 'error', error: 'Invalid projection revision' }
   }
-  if (record.mode !== 'character-lorebooks-bulk' || !Array.isArray(record.characters)) {
+  if (!Array.isArray(record.characters)) {
     return { status: 'error', error: 'Invalid bulk character-lorebook response' }
   }
 
