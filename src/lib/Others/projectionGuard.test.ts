@@ -42,7 +42,8 @@ import { alertInput } from 'src/ts/alert'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
 import { setServerProjectionWriteGuardEnabled } from 'src/ts/server/projectionWriteGuard.svelte'
 import { listServerMemorySummaries, patchServerMemorySummary } from 'src/ts/process/request/serverMemory'
-import { bookmarkListOpen, DBState, hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
+import { bookmarkListOpen, hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
+import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
 interface CapturedFetch {
   url: string
@@ -98,7 +99,7 @@ async function waitForCommand(
 
 function seedDatabase(): void {
   selectedCharID.set(0)
-  DBState.db = {
+  setDatabaseLite({
     hypaV3PresetId: 0,
     hypaV3Presets: [{ name: 'Default', settings: { processRegexScript: false } }],
     characters: [
@@ -120,7 +121,7 @@ function seedDatabase(): void {
         type: 'character',
       },
     ],
-  } as any
+  } as any)
 }
 
 describe('server projection guarded UI paths', () => {
@@ -157,7 +158,7 @@ describe('server projection guarded UI paths', () => {
     }).not.toThrow()
 
     await tick()
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(getDatabase().characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 
   it('loads live server summaries into the Hypa V3 manager and edits them through the memory API', async () => {
@@ -239,7 +240,7 @@ describe('server projection guarded UI paths', () => {
         tags: ['live'],
       },
     ])
-    expect(DBState.db.characters[0].chats[0].hypaV3Data).toBeUndefined()
+    expect(getDatabase().characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 
   it('renames bookmarks through a command patch without mutating guarded chat state', async () => {
@@ -259,7 +260,7 @@ describe('server projection guarded UI paths', () => {
       (call) => call.url === '/api/v1/commands/chats/chat-1' && call.method === 'PATCH',
     )
     expect(command.body.patch.bookmarkNames).toEqual({ 'msg-1': 'New name' })
-    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'Old name' })
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'Old name' })
   })
 
   it('removes bookmarks through a command patch without mutating guarded chat state', async () => {
@@ -279,7 +280,7 @@ describe('server projection guarded UI paths', () => {
     )
     expect(command.body.patch.bookmarks).toEqual([])
     expect(command.body.patch.bookmarkNames).toEqual({})
-    expect(DBState.db.characters[0].chats[0].bookmarks).toEqual(['msg-1'])
-    expect(DBState.db.characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'Old name' })
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['msg-1'])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'Old name' })
   })
 })

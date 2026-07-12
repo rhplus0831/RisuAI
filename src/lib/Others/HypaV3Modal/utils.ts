@@ -1,8 +1,6 @@
-import { get } from 'svelte/store'
 import { processScriptFull, risuChatParser } from 'src/ts/process/scripts'
-import { type Message } from 'src/ts/storage/database.svelte'
+import { getCurrentCharacter, getCurrentChat, type Message } from 'src/ts/storage/database.svelte'
 import { alertConfirm } from 'src/ts/alert'
-import { DBState, selectedCharID } from 'src/ts/stores.svelte'
 import { language } from 'src/lang'
 
 export async function alertConfirmTwice(firstMessage: string, secondMessage: string): Promise<boolean> {
@@ -77,8 +75,8 @@ export function handleDualAction(element: HTMLElement, params: DualActionParams 
 }
 
 export function getFirstMessage(): string | null {
-  const char = DBState.db.characters[get(selectedCharID)]
-  const chat = char.chats[DBState.db.characters[get(selectedCharID)].chatPage]
+  const char = getCurrentCharacter()
+  const chat = getCurrentChat()
 
   return chat.fmIndex === -1
     ? char.firstMessage
@@ -88,7 +86,7 @@ export function getFirstMessage(): string | null {
 }
 
 export async function processRegexScript(msg: Message, msgIndex: number = -1): Promise<Message> {
-  const char = DBState.db.characters[get(selectedCharID)]
+  const char = getCurrentCharacter()
   const newData: string = (
     await processScriptFull(char, risuChatParser(msg.data, { chara: char, role: msg.role }), 'editprocess', msgIndex, {
       chatRole: msg.role,

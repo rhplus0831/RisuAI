@@ -20,10 +20,9 @@
     getCurrentHypaV3Preset,
   } from 'src/ts/process/memory/hypav3'
   import { type OpenAIChat } from 'src/ts/process/index.svelte'
-  import { type Message } from 'src/ts/storage/database.svelte'
+  import { getCurrentChat, type Message } from 'src/ts/storage/database.svelte'
   import { translateHTML } from 'src/ts/translator/translator'
   import { alertConfirm } from 'src/ts/alert'
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
   import type { SummaryItemState, ExpandedMessageState, SearchState, Category, BulkEditState, UIState } from './types'
   import { alertConfirmTwice, handleDualAction, getFirstMessage, processRegexScript, getCategoryName } from './utils'
 
@@ -142,8 +141,7 @@
   }
 
   function isOrphan(): boolean {
-    const char = DBState.db.characters[$selectedCharID]
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage]
+    const chat = getCurrentChat()
 
     for (const chatMemo of summary.chatMemos) {
       if (chatMemo == null) {
@@ -187,8 +185,7 @@
   }
 
   async function getMessageFromChatMemo(chatMemo: string | null): Promise<Message | null> {
-    const char = DBState.db.characters[$selectedCharID]
-    const chat = char.chats[DBState.db.characters[$selectedCharID].chatPage]
+    const chat = getCurrentChat()
     const shouldProcess = getCurrentHypaV3Preset().settings.processRegexScript
 
     let msg = null

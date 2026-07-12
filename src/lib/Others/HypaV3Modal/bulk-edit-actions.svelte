@@ -1,6 +1,5 @@
 <script lang="ts">
   import { StarIcon } from '@lucide/svelte'
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
   import type { BulkEditState, Category } from './types'
   import { language } from 'src/lang'
 
@@ -31,10 +30,6 @@
     onToggleImportant,
     onParseAndSelectSummaries,
   }: Props = $props()
-
-  const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
-  )
 
   function applyCategoryToSelected() {
     onApplyCategory()

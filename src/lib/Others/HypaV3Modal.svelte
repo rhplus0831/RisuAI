@@ -3,7 +3,8 @@
   import { ChevronUpIcon, ChevronDownIcon } from '@lucide/svelte'
   import { type SerializableHypaV3Data, type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
-  import { DBState, selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
+  import { selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
+  import { getCharacterByIndex } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import { translateHTML } from 'src/ts/translator/translator'
   import { alertConfirmTwice } from './HypaV3Modal/utils'
@@ -40,9 +41,8 @@
   import { shouldShowSummary, isGuidLike, parseSelectionInput } from './HypaV3Modal/utils'
   import type { OpenAIChat } from 'src/ts/process/index.svelte'
 
-  const currentChat = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage],
-  )
+  const currentCharacter = $derived(getCharacterByIndex($selectedCharID))
+  const currentChat = $derived(currentCharacter.chats[currentCharacter.chatPage])
   const serverBackedMemoryMode = $derived(canUseServerMemoryApi())
   const currentChatId = $derived(currentChat.id ?? '')
   const defaultHypaV3Data = $derived(createInitialHypaV3Data())
@@ -613,9 +613,7 @@
     if (
       await alertConfirmTwice(language.hypaV3Modal.resetConfirmMessage, language.hypaV3Modal.resetConfirmSecondMessage)
     ) {
-      DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data = {
-        summaries: [],
-      }
+      currentChat.hypaV3Data = { summaries: [] }
     }
   }
 
@@ -1020,6 +1018,7 @@
   <CategoryManagerModal
     bind:categoryManagerState
     bind:searchState
+    {hypaV3Data}
     {filterState}
     onCategoryFilter={handleCategoryFilter} />
 {/if}

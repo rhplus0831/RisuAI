@@ -1,22 +1,16 @@
 <script lang="ts">
   import { XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
   import type { SerializableHypaV3Data } from 'src/ts/process/memory/hypav3'
   import type { TagManagerState } from './types'
 
   interface Props {
     tagManagerState: TagManagerState
-    hypaV3Data?: SerializableHypaV3Data
+    hypaV3Data: SerializableHypaV3Data
     onSummaryChanged?: (index: number) => void | Promise<void>
   }
 
-  let { tagManagerState = $bindable(), hypaV3Data: providedHypaV3Data, onSummaryChanged }: Props = $props()
-
-  const legacyHypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
-  )
-  const hypaV3Data = $derived(providedHypaV3Data ?? legacyHypaV3Data)
+  let { tagManagerState = $bindable(), hypaV3Data, onSummaryChanged }: Props = $props()
 
   function closeTagManager() {
     tagManagerState.isOpen = false

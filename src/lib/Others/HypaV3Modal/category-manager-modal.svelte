@@ -1,22 +1,25 @@
 <script lang="ts">
   import { PlusIcon, XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { DBState, selectedCharID } from 'src/ts/stores.svelte'
+  import type { SerializableHypaV3Data } from 'src/ts/process/memory/hypav3'
   import type { Category, CategoryManagerState, SearchState, FilterState } from './types'
   import { createCategoryId } from './utils'
 
   interface Props {
     categoryManagerState: CategoryManagerState
     searchState: SearchState
+    hypaV3Data: SerializableHypaV3Data
     filterState?: FilterState
     onCategoryFilter?: (categoryId: string) => void
   }
 
-  let { categoryManagerState = $bindable(), searchState = $bindable(), filterState, onCategoryFilter }: Props = $props()
-
-  const hypaV3Data = $derived(
-    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].hypaV3Data,
-  )
+  let {
+    categoryManagerState = $bindable(),
+    searchState = $bindable(),
+    hypaV3Data,
+    filterState,
+    onCategoryFilter,
+  }: Props = $props()
 
   let categories = $derived(
     (() => {
