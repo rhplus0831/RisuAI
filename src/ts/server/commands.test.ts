@@ -2294,6 +2294,10 @@ describe('server command API adapter', () => {
   })
 
   it('dispatches chat and chat-folder commands through typed helpers', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/chat-folders/reorder')) {
         return {
@@ -2320,8 +2324,9 @@ describe('server command API adapter', () => {
               event: {
                 type: 'chatFolder.updated',
                 revision: 7,
-                resource: 'chatFolder',
+                resource: 'characterRow',
                 id: 'folder-a',
+                parentId: 'char-a',
               },
               folderId: 'folder-a',
             }
@@ -2452,6 +2457,13 @@ describe('server command API adapter', () => {
         selectedChatId: 'chat-a',
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 9, selectedChatId: 'chat-a' })
+
+    expect(observedEffects).toContainEqual({
+      kind: 'characterRowMutation',
+      operation: 'chatFolderUpdate',
+      characterId: 'char-a',
+      targetId: 'folder-a',
+    })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
@@ -2879,6 +2891,10 @@ describe('server command API adapter', () => {
   })
 
   it('dispatches chat scriptstate commands through typed helpers', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/chats/chat-a/scriptstate')) {
         return {
@@ -2886,8 +2902,9 @@ describe('server command API adapter', () => {
           event: {
             type: 'chat.scriptstate.updated',
             revision: 7,
-            resource: 'chat',
+            resource: 'characterRow',
             id: 'chat-a',
+            parentId: 'char-a',
           },
           chatId: 'chat-a',
         }
@@ -2905,6 +2922,15 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 7, chatId: 'chat-a' })
 
+    expect(observedEffects).toEqual([
+      {
+        kind: 'characterRowMutation',
+        operation: 'chatScriptstate',
+        characterId: 'char-a',
+        targetId: 'chat-a',
+      },
+    ])
+
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/chats/chat-a/scriptstate',
@@ -2916,6 +2942,21 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('exposes an exact character reorder as a local revision fence', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const event = { type: 'character.reordered', revision: 6, resource: 'characterOrder' }
+    const commandFetch = makeCommandFetch(() => ({ revision: 6, event, selectedCharacterId: 'char-a' }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const attemptedOrder = [{ id: 'folder-a', name: 'Folder', color: '', data: ['char-a'] }]
+
+    await reorderCharactersCommand({ baseRevision: 5, characterOrder: attemptedOrder })
+
+    expect(observedEffects).toEqual([{ kind: 'characterOrder', attemptedOrder }])
   })
 
   it('dispatches chat generation settings through the dedicated typed helper', async () => {

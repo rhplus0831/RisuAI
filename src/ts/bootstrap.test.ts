@@ -518,6 +518,42 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('fences contiguous nested character and order writes without resource reads', async () => {
+    await loadWebInitialDatabase()
+    const rowEvent = {
+      type: 'chat.scriptstate.updated',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'chat-a',
+      parentId: 'char-a',
+    }
+    const orderEvent = {
+      type: 'character.reordered',
+      revision: 7,
+      resource: 'characterOrder',
+    }
+
+    await commandApi.reconciler?.(
+      orderEvent,
+      [rowEvent, orderEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterRowMutation',
+            operation: 'chatScriptstate',
+            characterId: 'char-a',
+            targetId: 'chat-a',
+          },
+        ],
+        [7, { kind: 'characterOrder', attemptedOrder: ['char-a', 'char-b'] }],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
   it('acknowledges a contiguous character selection without replacing a newer selection', async () => {
     await loadWebInitialDatabase()
     withTrustedResourceWrite(() => {

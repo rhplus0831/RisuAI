@@ -89,6 +89,18 @@ export interface MessageMutationLocalEffect {
   messageId?: string
 }
 
+export interface CharacterRowMutationLocalEffect {
+  kind: 'characterRowMutation'
+  operation: 'chatFolderUpdate' | 'chatScriptstate'
+  characterId: string
+  targetId: string
+}
+
+export interface CharacterOrderLocalEffect {
+  kind: 'characterOrder'
+  attemptedOrder: CharacterOrderEntry[]
+}
+
 export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
@@ -98,6 +110,8 @@ export type ServerCommandLocalEffect =
   | PluginStorageLocalEffect
   | MessageTranslationLocalEffect
   | MessageMutationLocalEffect
+  | CharacterRowMutationLocalEffect
+  | CharacterOrderLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -2324,6 +2338,7 @@ export async function reorderCharactersCommand(
       characterOrder: input.characterOrder,
     },
     signal,
+    readLocalEffect: (_body, event) => readCharacterOrderLocalEffect(event, input.characterOrder),
   })
 }
 
@@ -2456,6 +2471,8 @@ export async function updateChatFolderCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) =>
+      readCharacterRowMutationLocalEffect(body, event, 'chatFolderUpdate', input.folderId),
   })
 }
 
@@ -2499,6 +2516,7 @@ export async function patchChatScriptstateCommand(
       deleteKeys: input.deleteKeys,
     },
     signal,
+    readLocalEffect: (body, event) => readCharacterRowMutationLocalEffect(body, event, 'chatScriptstate', input.chatId),
   })
 }
 
@@ -3635,6 +3653,44 @@ function readMessageMutationLocalEffect(
   }
   if (options.operation === 'replaceAll' && !isNonEmptyStringArray(options.expectedMessageIds, true)) return undefined
   return { kind: 'messageMutation', operation: options.operation, chatId }
+}
+
+function readCharacterRowMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  operation: CharacterRowMutationLocalEffect['operation'],
+  expectedTargetId: string,
+): CharacterRowMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const responseKey = operation === 'chatFolderUpdate' ? 'folderId' : 'chatId'
+  if ((body as Record<string, unknown>)[responseKey] !== expectedTargetId) return undefined
+  const expectedType = operation === 'chatFolderUpdate' ? 'chatFolder.updated' : 'chat.scriptstate.updated'
+  if (
+    event.type !== expectedType ||
+    event.resource !== 'characterRow' ||
+    event.id !== expectedTargetId ||
+    typeof event.parentId !== 'string' ||
+    event.parentId.trim() === ''
+  ) {
+    return undefined
+  }
+  return {
+    kind: 'characterRowMutation',
+    operation,
+    characterId: event.parentId,
+    targetId: expectedTargetId,
+  }
+}
+
+function readCharacterOrderLocalEffect(
+  event: CommandEvent,
+  attemptedOrder: CharacterOrderEntry[],
+): CharacterOrderLocalEffect | undefined {
+  if (event.type !== 'character.reordered' || event.resource !== 'characterOrder' || event.id !== undefined) {
+    return undefined
+  }
+  if (!Array.isArray(attemptedOrder)) return undefined
+  return { kind: 'characterOrder', attemptedOrder: cloneJsonValue(attemptedOrder) }
 }
 
 function isNonEmptyStringArray(value: unknown, allowEmpty = false): value is string[] {

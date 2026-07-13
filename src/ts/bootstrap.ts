@@ -48,6 +48,8 @@ import { loadInitialServerResources, refreshInvalidatedServerResources } from '.
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
 import {
   applyCharacterPatchLocalEffect,
+  applyCharacterOrderLocalEffect,
+  applyCharacterRowMutationLocalEffect,
   applyCharacterSelectionLocalEffect,
   applyChatPatchLocalEffect,
   applyChatGenerationSettingsLocalEffect,
@@ -467,6 +469,32 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       }
       return withServerResourceApply(() => acknowledgeMessageMutationLocalEffect(localEffect.chatId))
     }
+    case 'characterRowMutation': {
+      const expectedType =
+        localEffect.operation === 'chatFolderUpdate' ? 'chatFolder.updated' : 'chat.scriptstate.updated'
+      if (
+        event.type !== expectedType ||
+        event.resource !== 'characterRow' ||
+        event.id !== localEffect.targetId ||
+        event.parentId !== localEffect.characterId
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyCharacterRowMutationLocalEffect({
+          revision: event.revision,
+          characterId: localEffect.characterId,
+          targetId: localEffect.targetId,
+        }),
+      )
+    }
+    case 'characterOrder':
+      if (event.type !== 'character.reordered' || event.resource !== 'characterOrder' || event.id !== undefined) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyCharacterOrderLocalEffect({ revision: event.revision, attemptedOrder: localEffect.attemptedOrder }),
+      )
   }
 }
 

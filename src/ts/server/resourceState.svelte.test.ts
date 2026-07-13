@@ -7,6 +7,8 @@ import {
 import {
   SERVER_COLLECTION_NAMES,
   applyCharacterPatchLocalEffect,
+  applyCharacterOrderLocalEffect,
+  applyCharacterRowMutationLocalEffect,
   applyCharacterResource,
   applyCharacterOrderResource,
   applyCharacterSelectionLocalEffect,
@@ -365,6 +367,25 @@ describe('resource-scoped database state', () => {
       currentChar: 1,
       characters: [{ chaId: 'char-a', lastInteraction: 88 }, { chaId: 'char-b' }],
     })
+  })
+
+  it('fences optimistic character order and nested-row writes without replacing newer values', () => {
+    const ada = metadataCharacter('char-a', 'Ada')
+    ada.chats = [{ id: 'chat-a', message: [], scriptstate: { $score: 'newer' } }] as never
+    applyCharactersResource({
+      revision: 5,
+      characters: [ada, metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-b', 'char-a'],
+      currentChar: 0,
+    })
+
+    expect(applyCharacterRowMutationLocalEffect({ revision: 6, characterId: 'char-a', targetId: 'chat-a' })).toBe(true)
+    expect(applyCharacterOrderLocalEffect({ revision: 7, attemptedOrder: ['char-a', 'char-b'] })).toBe(true)
+
+    expect(getResourceDatabase().characters[0].chats[0].scriptstate).toEqual({ $score: 'newer' })
+    expect(getResourceDatabase().characterOrder).toEqual(['char-b', 'char-a'])
+    expect(charactersResourceState.rowRevisions['char-a']).toBe(6)
+    expect(charactersResourceState.orderRevision).toBe(7)
   })
 
   it('acknowledges an optimistic character selection without replacing a newer selection', () => {

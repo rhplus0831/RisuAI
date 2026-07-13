@@ -105,6 +105,17 @@ export interface ServerPluginStorageLocalEffectPayload {
   revision: number
 }
 
+export interface ServerCharacterRowMutationLocalEffectPayload {
+  revision: number
+  characterId: string
+  targetId: string
+}
+
+export interface ServerCharacterOrderLocalEffectPayload {
+  revision: number
+  attemptedOrder: readonly unknown[]
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -483,6 +494,21 @@ export function applyCharacterOrderResource(payload: ServerCharacterOrderResourc
   return true
 }
 
+/** Fence an exact optimistic character-order write without re-reading it. */
+export function applyCharacterOrderLocalEffect(payload: ServerCharacterOrderLocalEffectPayload): boolean {
+  const knownRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.orderRevision ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+  if (!Array.isArray(payload.attemptedOrder)) return false
+
+  charactersResourceState.orderRevision = payload.revision
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
 export function applyCharacterSelectionResource(payload: ServerCharacterSelectionResourcePayload): boolean {
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
   if (isOlderRevision(payload.revision, charactersResourceState.selectionRevision)) return false
@@ -559,6 +585,27 @@ export function applyCharacterPatchLocalEffect(payload: ServerCharacterPatchLoca
   // A newer optimistic delete can remove the row before this accepted patch is
   // reconciled. Fence the acknowledgement anyway so the following delete event
   // can reconcile instead of trying to read a row that no longer exists.
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence an accepted optimistic write to a chat/folder field stored beneath one
+ * character row. The caller already applied the exact field mutation, and a
+ * newer queued edit must remain untouched.
+ */
+export function applyCharacterRowMutationLocalEffect(payload: ServerCharacterRowMutationLocalEffectPayload): boolean {
+  const knownRowRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+  )
+  if (knownRowRevision >= payload.revision) return true
+  if (!nonEmptyString(payload.targetId)) return false
+
   charactersResourceState.rowRevisions[payload.characterId] = payload.revision
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
