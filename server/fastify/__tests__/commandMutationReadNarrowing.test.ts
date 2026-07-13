@@ -658,6 +658,104 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     expect(loadCountByTable.characters ?? 0).toBeGreaterThanOrEqual(1)
   })
 
+  it('keeps all five root prompt-item mutation reads scoped to settings and prompt templates', async () => {
+    const fixture = buildLargeCorpusFixture()
+    fixture.database.promptTemplate = [
+      { id: 'root-prompt-item-a', type: 'plain', text: 'Root A' },
+      { id: 'root-prompt-item-b', type: 'plain', text: 'Root B' },
+    ]
+    let revision = await importDatabase(fixture.database)
+
+    async function runRootPromptItemCommand(
+      method: 'POST' | 'PATCH' | 'DELETE',
+      url: string,
+      payload: Record<string, unknown>,
+    ): Promise<void> {
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() => command(method, url, payload)),
+      )
+
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+      expectCollectionCommandReadOnlyTables(readCountByTable, ['prompt_templates'])
+      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, ['prompt_templates'])
+      revision = loadRun.result.json().revision
+    }
+
+    await runRootPromptItemCommand('POST', '/api/v1/commands/prompt-items', {
+      baseRevision: revision,
+      promptItem: { id: 'root-prompt-item-c', type: 'plain', text: 'Root C' },
+    })
+    await runRootPromptItemCommand('PATCH', '/api/v1/commands/prompt-items/root-prompt-item-a', {
+      baseRevision: revision,
+      patch: { text: 'Root A patched' },
+    })
+    await runRootPromptItemCommand('DELETE', '/api/v1/commands/prompt-items/root-prompt-item-b', {
+      baseRevision: revision,
+    })
+    await runRootPromptItemCommand('POST', '/api/v1/commands/prompt-items/reorder', {
+      baseRevision: revision,
+      itemIds: ['root-prompt-item-c', 'root-prompt-item-a'],
+    })
+    await runRootPromptItemCommand('POST', '/api/v1/commands/prompt-items/enable', {
+      baseRevision: revision,
+      enabled: false,
+    })
+  })
+
+  it('keeps all five preset-owned prompt-item mutation reads prompt-presets scoped', async () => {
+    const fixture = buildLargeCorpusFixture()
+    const promptPresets = fixture.database.promptPresets as Array<Record<string, unknown>>
+    promptPresets[0] = {
+      ...promptPresets[0],
+      promptTemplate: [
+        { id: 'preset-prompt-item-a', type: 'plain', text: 'Preset A' },
+        { id: 'preset-prompt-item-b', type: 'plain', text: 'Preset B' },
+      ],
+    }
+    let revision = await importDatabase(fixture.database)
+
+    async function runPresetPromptItemCommand(
+      method: 'POST' | 'PATCH' | 'DELETE',
+      url: string,
+      payload: Record<string, unknown>,
+    ): Promise<void> {
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() => command(method, url, payload)),
+      )
+
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+      expectCollectionCommandReadOnlyTables(readCountByTable, ['prompt_presets'])
+      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, [])
+      revision = loadRun.result.json().revision
+    }
+
+    const scoped = { promptPresetId: 'corpus-prompt-preset-0' }
+    await runPresetPromptItemCommand('POST', '/api/v1/commands/prompt-items', {
+      baseRevision: revision,
+      ...scoped,
+      promptItem: { id: 'preset-prompt-item-c', type: 'plain', text: 'Preset C' },
+    })
+    await runPresetPromptItemCommand('PATCH', '/api/v1/commands/prompt-items/preset-prompt-item-a', {
+      baseRevision: revision,
+      ...scoped,
+      patch: { text: 'Preset A patched' },
+    })
+    await runPresetPromptItemCommand('DELETE', '/api/v1/commands/prompt-items/preset-prompt-item-b', {
+      baseRevision: revision,
+      ...scoped,
+    })
+    await runPresetPromptItemCommand('POST', '/api/v1/commands/prompt-items/reorder', {
+      baseRevision: revision,
+      ...scoped,
+      itemIds: ['preset-prompt-item-c', 'preset-prompt-item-a'],
+    })
+    await runPresetPromptItemCommand('POST', '/api/v1/commands/prompt-items/enable', {
+      baseRevision: revision,
+      ...scoped,
+      enabled: false,
+    })
+  })
+
   it('L11: collection commands read only settings plus requested collection tables', async () => {
     const fixture = buildLargeCorpusFixture()
     let revision = await importDatabase(fixture.database)

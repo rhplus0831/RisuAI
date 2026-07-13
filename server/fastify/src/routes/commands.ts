@@ -548,6 +548,7 @@ const COLLECTION_SCOPED_READS = {
   // resident in the targeted mutation snapshot.
   modelPresets: ['modelPresets', 'promptPresets'],
   promptPresets: ['promptPresets'],
+  promptTemplate: ['promptTemplate'],
   legacyBotPresetExtraction: ['botPresets', 'modelPresets', 'promptPresets'],
   presets: ['botPresets'],
   personas: ['personas'],
@@ -3052,7 +3053,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
+        collectionScopedRead: promptPresetId
+          ? COLLECTION_SCOPED_READS.promptPresets
+          : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
@@ -3101,7 +3104,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
+        collectionScopedRead: promptPresetId
+          ? COLLECTION_SCOPED_READS.promptPresets
+          : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
@@ -3151,7 +3156,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
+        collectionScopedRead: promptPresetId
+          ? COLLECTION_SCOPED_READS.promptPresets
+          : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
@@ -3200,7 +3207,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
+        collectionScopedRead: promptPresetId
+          ? COLLECTION_SCOPED_READS.promptPresets
+          : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           if (scoped) {
@@ -3260,7 +3269,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
-        collectionScopedRead: promptPresetId ? COLLECTION_SCOPED_READS.promptPresets : undefined,
+        collectionScopedRead: promptPresetId
+          ? COLLECTION_SCOPED_READS.promptPresets
+          : COLLECTION_SCOPED_READS.promptTemplate,
         mutate(database, innerDb) {
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const target = ensureDatabaseObject(database)
