@@ -101,7 +101,11 @@
 
   const promptPresetFieldSet = new Set<string>(PROMPT_PRESET_FIELDS)
   const promptPresetTemplateIdsPendingServerSync = new Set<string>()
-  const promptPresetTemplateIdSyncInFlight = new Map<string, Promise<boolean>>()
+  interface PromptPresetTemplateIdServerSync {
+    completion: Promise<boolean>
+    itemSnapshots: ReadonlyMap<string, string>
+  }
+  const promptPresetTemplateIdSyncInFlight = new Map<string, PromptPresetTemplateIdServerSync>()
 
   let {
     onGoBack = () => {},
@@ -403,13 +407,14 @@
     syncSelectedPromptPresetItemProjection(itemId, promptItem)
     const queueRowPatch = () =>
       queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem, 250, ownerId)
+    const attemptedItemSnapshot = snapshotJson(promptItem)
     const templateIdSync = queuePromptPresetTemplateIdServerSync(ownerId)
     if (!templateIdSync) {
       queueRowPatch()
       return
     }
-    void templateIdSync.then((synced) => {
-      if (synced) queueRowPatch()
+    void templateIdSync.completion.then((synced) => {
+      if (synced && templateIdSync.itemSnapshots.get(itemId) !== attemptedItemSnapshot) queueRowPatch()
     })
   }
 
@@ -458,14 +463,20 @@
     if (ownerId) promptPresetTemplateIdsPendingServerSync.add(ownerId)
   }
 
-  function queuePromptPresetTemplateIdServerSync(ownerId: string | null): Promise<boolean> | null {
+  function queuePromptPresetTemplateIdServerSync(ownerId: string | null): PromptPresetTemplateIdServerSync | null {
     if (!ownerId || !promptPresetTemplateIdsPendingServerSync.has(ownerId) || !canUseServerCommands()) return null
     const existing = promptPresetTemplateIdSyncInFlight.get(ownerId)
     if (existing) return existing
 
     const promptPresetId = ownerId
-    const patch = { promptTemplate: cloneJsonValue(promptTemplateDraft.value ?? []) }
-    const sync = runServerCommand({
+    const promptTemplate = cloneJsonValue(promptTemplateDraft.value ?? [])
+    const itemSnapshots = new Map(
+      promptTemplate
+        .filter((item): item is PromptItem & { id: string } => typeof item.id === 'string' && item.id.length > 0)
+        .map((item) => [item.id, snapshotJson(item)]),
+    )
+    const patch = { promptTemplate }
+    const completion = runServerCommand({
       command: (baseRevision) =>
         runPromptTemplateOwnerCommand(ownerId, () =>
           updatePromptPresetCommand({
@@ -486,6 +497,7 @@
         promptPresetTemplateIdSyncInFlight.delete(ownerId)
       })
 
+    const sync = { completion, itemSnapshots }
     promptPresetTemplateIdSyncInFlight.set(ownerId, sync)
     return sync
   }

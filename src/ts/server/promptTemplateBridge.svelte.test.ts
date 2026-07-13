@@ -961,7 +961,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
   })
 
-  it('PromptSettings syncs id-less selected preset template ids before row patches', async () => {
+  it('PromptSettings does not repeat an item edit already included in an id sync', async () => {
     hydrationState.setOwner('preset-a')
     resourceDatabase.current = {
       promptSettings: { ...minimalPromptSettings },
@@ -1019,13 +1019,8 @@ describe('flushPendingPromptTemplatePatches', () => {
       await vi.advanceTimersByTimeAsync(250)
       await flushMicrotasks()
 
-      expect(commandState.commands[1].built).toEqual({
-        kind: 'updatePromptItem',
-        baseRevision: 1,
-        promptPresetId: 'preset-a',
-        itemId: presetPatch.promptTemplate[0].id,
-        patch: presetPatch.promptTemplate[0],
-      })
+      expect(commandState.commands).toHaveLength(1)
+      expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
     } finally {
       if (component) await unmount(component)
       target.remove()
@@ -1128,12 +1123,12 @@ describe('flushPendingPromptTemplatePatches', () => {
       const syncedIds = presetSyncArgs.patch.promptTemplate.map((item) => item.id)
       expect(
         commandMocks.updatePromptItemCommand.mock.calls.map(([args]) => (args as { itemId: string }).itemId),
-      ).toEqual(syncedIds)
+      ).toEqual([syncedIds[1]])
       expect(
         commandMocks.updatePromptItemCommand.mock.calls.map(
           ([args]) => (args as { patch: { text?: string } }).patch.text,
         ),
-      ).toEqual(['row A dirty', 'row B dirty'])
+      ).toEqual(['row B dirty'])
     } finally {
       if (component) await unmount(component)
       target.remove()
