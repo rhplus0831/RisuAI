@@ -3501,16 +3501,27 @@ describe('server command API adapter', () => {
   })
 
   it('dispatches plugin-storage commands through typed helpers', async () => {
-    const commandFetch = makeCommandFetch((url) => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url, init) => {
       if (url.includes('/plugin-storage')) {
+        const operation = url.endsWith('/bulk') ? 'bulk' : init.method === 'DELETE' ? 'delete' : 'put'
         return {
           revision: 10,
           event: {
-            type: 'pluginStorage.updated',
+            type:
+              operation === 'put'
+                ? 'pluginStorage.updated'
+                : operation === 'delete'
+                  ? 'pluginStorage.deleted'
+                  : 'pluginStorage.bulkUpdated',
             revision: 10,
             resource: 'pluginStorage',
+            ...(operation === 'bulk' ? {} : { id: 'theme' }),
           },
-          key: 'theme',
+          ...(operation === 'bulk' ? {} : { key: 'theme' }),
         }
       }
       return jsonResponse({ error: 'unexpected' }, 500)
@@ -3525,6 +3536,12 @@ describe('server command API adapter', () => {
       deleteKeys: ['old'],
       clear: false,
     })
+
+    expect(observedEffects).toEqual([
+      { kind: 'pluginStorage', operation: 'put', key: 'theme' },
+      { kind: 'pluginStorage', operation: 'delete', key: 'theme' },
+      { kind: 'pluginStorage', operation: 'bulk' },
+    ])
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {

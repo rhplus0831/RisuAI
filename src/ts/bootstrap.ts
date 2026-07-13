@@ -46,6 +46,7 @@ import {
   applyChatPatchLocalEffect,
   applyChatGenerationSettingsLocalEffect,
   applySettingsPatchLocalEffect,
+  applyPluginStorageLocalEffect,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 
@@ -416,6 +417,17 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           settings: localEffect.settings,
         }),
       )
+    case 'pluginStorage': {
+      const expectedType =
+        localEffect.operation === 'put'
+          ? 'pluginStorage.updated'
+          : localEffect.operation === 'delete'
+            ? 'pluginStorage.deleted'
+            : 'pluginStorage.bulkUpdated'
+      if (event.resource !== 'pluginStorage' || event.type !== expectedType) return false
+      if (localEffect.operation === 'bulk' ? event.id !== undefined : event.id !== localEffect.key) return false
+      return withServerResourceApply(() => applyPluginStorageLocalEffect({ revision: event.revision }))
+    }
   }
 }
 

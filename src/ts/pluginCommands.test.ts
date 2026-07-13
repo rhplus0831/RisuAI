@@ -1345,6 +1345,7 @@ describe('plugin projection command helpers', () => {
       changedAfterClear: { value: 'old-changed' },
       restoreReplaced: { value: 'old-replaced' },
       changedAfterReplace: { value: 'old-replaced-again' },
+      unchangedLarge: { script: 'x'.repeat(10_000) },
     })
     const previous = currentPluginStorageSnapshot()
 
@@ -1352,6 +1353,7 @@ describe('plugin projection command helpers', () => {
       getDatabase().pluginCustomStorage = {
         restoreReplaced: { value: 'bulk-replaced' },
         changedAfterReplace: { value: 'bulk-replaced-again' },
+        unchangedLarge: { script: 'x'.repeat(10_000) },
       }
     })
     dispatchBulkPluginStorage(
@@ -1359,6 +1361,7 @@ describe('plugin projection command helpers', () => {
         values: {
           restoreReplaced: { value: 'bulk-replaced' },
           changedAfterReplace: { value: 'bulk-replaced-again' },
+          unchangedLarge: { script: 'x'.repeat(10_000) },
         },
         clear: true,
       },
@@ -1382,8 +1385,8 @@ describe('plugin projection command helpers', () => {
           restoreReplaced: { value: 'bulk-replaced' },
           changedAfterReplace: { value: 'bulk-replaced-again' },
         },
-        deleteKeys: [],
-        clear: true,
+        deleteKeys: ['restoreCleared', 'changedAfterClear'],
+        clear: false,
       },
     })
     expect(getDatabase().pluginCustomStorage).toEqual({
@@ -1392,6 +1395,19 @@ describe('plugin projection command helpers', () => {
       changedAfterClear: { value: 'newer-same-key' },
       laterAdded: { value: 'newer-sibling' },
       restoreCleared: { value: 'old-cleared' },
+      unchangedLarge: { script: 'x'.repeat(10_000) },
     })
+  })
+
+  it('skips an unchanged full plugin-storage replacement', async () => {
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+    writePluginStorage({ large: { script: 'x'.repeat(10_000) } })
+    const previous = currentPluginStorageSnapshot()
+
+    dispatchBulkPluginStorage({ values: currentPluginStorageSnapshot(), clear: true }, previous)
+    await flushCommandEffects()
+
+    expect(calls).toHaveLength(0)
   })
 })

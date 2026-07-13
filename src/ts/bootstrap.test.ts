@@ -389,6 +389,29 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('acknowledges contiguous optimistic plugin storage without fetching the full map', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().pluginCustomStorage = { local: { nested: true } }
+    })
+    const event = {
+      type: 'pluginStorage.updated',
+      revision: 6,
+      resource: 'pluginStorage',
+      id: 'local',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([[6, { kind: 'pluginStorage', operation: 'put', key: 'local' }]]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().pluginCustomStorage).toEqual({ local: { nested: true } })
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('acknowledges a contiguous character patch without a resource read and preserves a newer edit', async () => {
     await loadWebInitialDatabase()
     withTrustedResourceWrite(() => {

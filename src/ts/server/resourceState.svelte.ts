@@ -101,6 +101,10 @@ export interface ServerSettingsPatchLocalEffectPayload {
   settings: Record<string, unknown>
 }
 
+export interface ServerPluginStorageLocalEffectPayload {
+  revision: number
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -299,6 +303,30 @@ export function applySettingsPatchLocalEffect(payload: ServerSettingsPatchLocalE
     collectionsResourceState.statuses.hypaV3Presets = 'ready'
     delete collectionsResourceState.errors.hypaV3Presets
   }
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence a response-confirmed optimistic plugin-storage mutation. Storage
+ * values are arbitrary and potentially large, so avoid re-downloading the
+ * complete map after the server accepted the exact JSON already shown locally.
+ */
+export function applyPluginStorageLocalEffect(payload: ServerPluginStorageLocalEffectPayload): boolean {
+  const knownRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.pluginCustomStorage ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+
+  const storage = collectionsResourceState.values.pluginCustomStorage
+  if (!storage || typeof storage !== 'object' || Array.isArray(storage)) return false
+  if (collectionsResourceState.statuses.pluginCustomStorage !== 'ready') return false
+
+  collectionsResourceState.revisions.pluginCustomStorage = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses.pluginCustomStorage = 'ready'
+  delete collectionsResourceState.errors.pluginCustomStorage
   markResourceDatabaseChanged()
   return true
 }

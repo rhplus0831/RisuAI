@@ -69,12 +69,19 @@ export interface SettingsPatchLocalEffect {
   settings: SettingsPatch
 }
 
+export interface PluginStorageLocalEffect {
+  kind: 'pluginStorage'
+  operation: 'put' | 'delete' | 'bulk'
+  key?: string
+}
+
 export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
   | CharacterSelectionLocalEffect
   | ChatPatchLocalEffect
   | SettingsPatchLocalEffect
+  | PluginStorageLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -3028,6 +3035,7 @@ export async function putPluginStorageCommand(
       value: input.value,
     },
     signal,
+    readLocalEffect: (body, event) => readPluginStorageLocalEffect(body, event, 'put', input.key),
   })
 }
 
@@ -3041,6 +3049,7 @@ export async function deletePluginStorageCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: (body, event) => readPluginStorageLocalEffect(body, event, 'delete', input.key),
   })
 }
 
@@ -3057,6 +3066,7 @@ export async function bulkPluginStorageCommand(
       clear: input.clear ?? false,
     },
     signal,
+    readLocalEffect: (body, event) => readPluginStorageLocalEffect(body, event, 'bulk'),
   })
 }
 
@@ -3388,6 +3398,33 @@ function readSettingsPatchLocalEffect(
     attemptedPatch: cloneJsonValue(attemptedPatch),
     settings: cloneJsonValue(settings as SettingsPatch),
   }
+}
+
+function readPluginStorageLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  operation: PluginStorageLocalEffect['operation'],
+  expectedKey?: string,
+): PluginStorageLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (event.resource !== 'pluginStorage') return undefined
+
+  const expectedType =
+    operation === 'put'
+      ? 'pluginStorage.updated'
+      : operation === 'delete'
+        ? 'pluginStorage.deleted'
+        : 'pluginStorage.bulkUpdated'
+  if (event.type !== expectedType) return undefined
+
+  if (operation === 'bulk') {
+    if (event.id !== undefined) return undefined
+    return { kind: 'pluginStorage', operation }
+  }
+
+  const key = (body as Record<string, unknown>).key
+  if (key !== expectedKey || event.id !== expectedKey) return undefined
+  return { kind: 'pluginStorage', operation, key: expectedKey }
 }
 
 function readCharacterPatchLocalEffect(

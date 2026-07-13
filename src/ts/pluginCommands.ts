@@ -859,14 +859,15 @@ export function dispatchBulkPluginStorage(
   },
   previous: PluginStorageSnapshot,
 ): void {
-  const values = cloneJsonValue(input.values ?? {})
-  const deleteKeys = [...(input.deleteKeys ?? [])]
-  if (!input.clear && Object.keys(values).length === 0 && deleteKeys.length === 0) return
+  const minimized = minimizePluginStoragePatch(input, previous)
+  const values = minimized.values
+  const deleteKeys = minimized.deleteKeys
+  if (Object.keys(values).length === 0 && deleteKeys.length === 0) return
   const rollbackEntries = buildBulkPluginStorageRollbackEntries(
     {
       values,
       deleteKeys,
-      clear: input.clear ?? false,
+      clear: false,
     },
     previous,
   )
@@ -877,13 +878,41 @@ export function dispatchBulkPluginStorage(
         baseRevision,
         values,
         deleteKeys,
-        clear: input.clear,
+        clear: false,
       }),
     () => rollbackPluginStorageEntries(rollbackEntries, operation),
   )
   void pending?.then((result) => {
     if (result.status === 'ok') clearPluginStorageOperation(operation)
   })
+}
+
+function minimizePluginStoragePatch(
+  input: {
+    values?: Record<string, unknown>
+    deleteKeys?: string[]
+    clear?: boolean
+  },
+  previous: PluginStorageSnapshot,
+): { values: Record<string, unknown>; deleteKeys: string[] } {
+  const requestedValues = cloneJsonValue(input.values ?? {})
+  if (!input.clear) {
+    return {
+      values: requestedValues,
+      deleteKeys: [...new Set(input.deleteKeys ?? [])],
+    }
+  }
+
+  // Full replacements originate from an already-applied optimistic snapshot.
+  // Express the exact same result as a delta so unchanged, potentially large
+  // plugin values do not cross the wire again.
+  const values = Object.fromEntries(
+    Object.entries(requestedValues).filter(
+      ([key, value]) => !Object.prototype.hasOwnProperty.call(previous, key) || !isJsonValueEqual(previous[key], value),
+    ),
+  )
+  const deleteKeys = Object.keys(previous).filter((key) => !Object.prototype.hasOwnProperty.call(requestedValues, key))
+  return { values, deleteKeys }
 }
 
 /**

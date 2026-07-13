@@ -17,6 +17,7 @@ import {
   applySettingsResource,
   applySettingsGroupResource,
   applySettingsPatchLocalEffect,
+  applyPluginStorageLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
   collectionsResourceState,
@@ -169,6 +170,24 @@ describe('resource-scoped database state', () => {
     expect(collectionsResourceState.values.modules).toEqual([{ id: 'new', name: 'New', description: '' }])
     expect(collectionsResourceState.revisions.modules).toBe(8)
     expect(collectionsResourceState.fullRevision).toBe(7)
+  })
+
+  it('acknowledges optimistic plugin storage without replacing the live map', () => {
+    applyCollectionsResource({ revision: 3, collections: completeCollections() })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().pluginCustomStorage = {
+        counter: 2,
+        largePluginValue: { nested: ['already', 'local'] },
+      }
+    })
+
+    expect(applyPluginStorageLocalEffect({ revision: 4 })).toBe(true)
+    expect(getResourceDatabase().pluginCustomStorage).toEqual({
+      counter: 2,
+      largePluginValue: { nested: ['already', 'local'] },
+    })
+    expect(collectionsResourceState.revisions.pluginCustomStorage).toBe(4)
+    expect(collectionsResourceState.revision).toBe(4)
   })
 
   it('merges settings groups with omitted-key deletion and independent revisions', () => {
