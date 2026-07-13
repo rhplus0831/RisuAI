@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
-import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
+import { type CharacterRecord, readCharacterId, readJsonObject } from './characters.js'
 import { ensureModuleCollection, readModuleId, requireModule, type ModuleRecord } from './lorebooks.js'
 
 type JsonRecord = Record<string, unknown>
@@ -61,7 +61,16 @@ export function ensureAllScriptDefinitionCollections(database: JsonRecord): void
 
 export function readCharacterScriptParent(database: JsonRecord, characterId: unknown): CharacterRecord {
   const id = readCharacterId(characterId)
-  const character = ensureCharacterCollection(database).find((candidate) => candidate.chaId === id)
+  const characters = Array.isArray(database.characters) ? database.characters : []
+  let character: CharacterRecord | undefined
+  for (const candidate of characters) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    if ((candidate as Record<string, unknown>).chaId !== id) continue
+    if (character) {
+      throw new ValidationError(`Duplicate character id: ${id}`)
+    }
+    character = candidate as CharacterRecord
+  }
   if (!character) {
     throw new EntityNotFoundError(`Character not found: ${id}`)
   }

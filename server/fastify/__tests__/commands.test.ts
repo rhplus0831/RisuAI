@@ -9789,6 +9789,133 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(bootstrap.json().database.characters[0].triggerscript).toEqual([])
   })
 
+  it('replaces only the owned definition field on sparse raw character and module rows', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A', customscript: [], triggerscript: [] }],
+      characterOrder: ['char-a'],
+      modules: [
+        { id: 'mod-a', name: 'Mod A', regex: [], trigger: [] },
+        { id: 'mod-b', name: 'Mod B', regex: [], trigger: [], opaque: { sibling: true } },
+      ],
+    })
+
+    const invalidScript = { id: 'invalid-script', comment: 'Invalid', in: 17, out: '', type: 'editinput' }
+    const invalidTrigger = {
+      id: 'invalid-trigger',
+      comment: 'Invalid',
+      type: 'start',
+      conditions: { legacy: true },
+      effect: [],
+    }
+    const sparseCharacter = {
+      chaId: 'char-a',
+      customscript: [{ id: 'old-script', comment: 'Old', in: 'a', out: 'b', type: 'editinput' }],
+      triggerscript: [invalidTrigger],
+      opaque: { preserve: ['character', 1] },
+    }
+    const sparseModule = {
+      id: 'mod-a',
+      regex: [{ id: 'old-module-script', comment: 'Old', in: 'a', out: 'b', type: 'editinput' }],
+      trigger: [invalidTrigger],
+      opaque: { preserve: ['module', 1] },
+    }
+    const siblingModuleBefore = readJsonRow('modules', 'mod-b')
+    writeJsonRow('characters', 'char-a', sparseCharacter)
+    writeJsonRow('modules', 'mod-a', sparseModule)
+
+    const script = { id: 'new-script', comment: 'New', in: 'x', out: 'y', type: 'editinput' }
+    const characterScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [script] },
+    })
+    expect(characterScripts.statusCode, JSON.stringify(characterScripts.json())).toBe(200)
+    revision = characterScripts.json().revision
+    expect(readJsonRow('characters', 'char-a')).toEqual({ ...sparseCharacter, customscript: [script] })
+
+    const moduleScript = { ...script, id: 'new-module-script' }
+    const moduleScripts = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [moduleScript] },
+    })
+    expect(moduleScripts.statusCode, JSON.stringify(moduleScripts.json())).toBe(200)
+    revision = moduleScripts.json().revision
+    expect(readJsonRow('modules', 'mod-a')).toEqual({ ...sparseModule, regex: [moduleScript] })
+    expect(readJsonRow('modules', 'mod-b')).toEqual(siblingModuleBefore)
+
+    const characterBeforeTrigger = {
+      ...readJsonRow('characters', 'char-a'),
+      customscript: [invalidScript],
+    }
+    const moduleBeforeTrigger = {
+      ...readJsonRow('modules', 'mod-a'),
+      regex: [invalidScript],
+    }
+    writeJsonRow('characters', 'char-a', characterBeforeTrigger)
+    writeJsonRow('modules', 'mod-a', moduleBeforeTrigger)
+    const trigger = { id: 'new-trigger', comment: 'New', type: 'start', conditions: [], effect: [] }
+
+    const characterTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, triggers: [trigger] },
+    })
+    expect(characterTriggers.statusCode, JSON.stringify(characterTriggers.json())).toBe(200)
+    revision = characterTriggers.json().revision
+    expect(readJsonRow('characters', 'char-a')).toEqual({
+      ...characterBeforeTrigger,
+      triggerscript: [trigger],
+    })
+
+    const moduleTrigger = { ...trigger, id: 'new-module-trigger' }
+    const moduleTriggers = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/modules/mod-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, triggers: [moduleTrigger] },
+    })
+    expect(moduleTriggers.statusCode, JSON.stringify(moduleTriggers.json())).toBe(200)
+    expect(readJsonRow('modules', 'mod-a')).toEqual({
+      ...moduleBeforeTrigger,
+      trigger: [moduleTrigger],
+    })
+    expect(readJsonRow('modules', 'mod-b')).toEqual(siblingModuleBefore)
+  })
+
+  it('rejects duplicate raw character ids instead of silently selecting one', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        { chaId: 'char-a', name: 'A', customscript: [], triggerscript: [] },
+        { chaId: 'char-b', name: 'B', customscript: [], triggerscript: [] },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+    })
+    writeJsonRow('characters', 'char-a', { ...readJsonRow('characters', 'char-a'), chaId: 'duplicate' })
+    writeJsonRow('characters', 'char-b', { ...readJsonRow('characters', 'char-b'), chaId: 'duplicate' })
+
+    const response = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/characters/duplicate/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, scripts: [] },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(response.json().error).toBe('Duplicate character id: duplicate')
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
+  })
+
   it('L12: script and trigger routes skip unrelated definition validation and keep target payload checks strict', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

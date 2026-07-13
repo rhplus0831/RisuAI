@@ -178,6 +178,61 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
+  it('script and trigger definition commands use exact character and module-scoped reads', async () => {
+    const fixture = buildLargeCorpusFixture()
+    let revision = await importDatabase(fixture.database)
+
+    async function runExactCharacterDefinitionCommand(path: 'scripts' | 'triggers'): Promise<void> {
+      const payload =
+        path === 'scripts'
+          ? { scripts: [{ id: 'scoped-script', comment: 'Scoped', in: 'a', out: 'b', type: 'editinput' }] }
+          : {
+              triggers: [{ id: 'scoped-trigger', comment: 'Scoped', type: 'start', conditions: [], effect: [] }],
+            }
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() =>
+          command('PUT', `/api/v1/commands/characters/${fixture.hot.characterId}/${path}`, {
+            baseRevision: revision,
+            ...payload,
+          }),
+        ),
+      )
+
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+      expect(loadRun.corpusLoadCount).toBe(0)
+      expect(loadRun.loadCountByTable).toEqual({})
+      expect(readCountByTable).toEqual({ schema_version: 1, settings: 1, characters: 1 })
+      revision = loadRun.result.json().revision
+    }
+
+    async function runScopedModuleDefinitionCommand(path: 'scripts' | 'triggers'): Promise<void> {
+      const payload =
+        path === 'scripts'
+          ? { scripts: [{ id: 'module-script', comment: 'Scoped', in: 'a', out: 'b', type: 'editinput' }] }
+          : {
+              triggers: [{ id: 'module-trigger', comment: 'Scoped', type: 'start', conditions: [], effect: [] }],
+            }
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() =>
+          command('PUT', `/api/v1/commands/modules/corpus-module-0/${path}`, {
+            baseRevision: revision,
+            ...payload,
+          }),
+        ),
+      )
+
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+      expectCollectionCommandReadOnlyTables(readCountByTable, ['modules'])
+      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, ['modules'])
+      revision = loadRun.result.json().revision
+    }
+
+    await runExactCharacterDefinitionCommand('scripts')
+    await runExactCharacterDefinitionCommand('triggers')
+    await runScopedModuleDefinitionCommand('scripts')
+    await runScopedModuleDefinitionCommand('triggers')
+  })
+
   it('H2: chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)

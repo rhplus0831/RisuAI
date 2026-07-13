@@ -551,6 +551,7 @@ const COLLECTION_SCOPED_READS = {
   translatorPresets: ['translatorPresets'],
   loadouts: ['loadouts'],
   lorebooks: ['loreBook'],
+  modules: ['modules'],
   plugins: ['plugins'],
 } as const
 
@@ -6907,6 +6908,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
           const target = readScriptDefinitionCommandTarget(database)
           const character = readCharacterScriptParent(target, characterId)
@@ -6943,6 +6945,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
           const target = readScriptDefinitionCommandTarget(database)
           const character = readCharacterScriptParent(target, characterId)
@@ -6979,6 +6982,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
           const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
@@ -7023,6 +7027,7 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
         mutate(database, innerDb) {
           const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
