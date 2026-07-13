@@ -68,9 +68,11 @@ CSS variable updates.
 
 Fastify is the source of durable truth. The browser composes a compatibility
 database view from three reactive resources: settings, collections, and
-characters. User mutations go through command helpers; successful commands and
-SSE events invalidate concrete resources, which the browser refetches before
-advancing its applied revision.
+characters. User mutations go through command helpers. A response-confirmed,
+contiguous command can acknowledge an already-applied optimistic change and
+advance its resource fence without a read; foreign SSE events, revision gaps,
+response loss, and commands without a complete local effect still invalidate
+and refetch concrete resources.
 
 Important files:
 
@@ -99,10 +101,12 @@ Important files:
   and transcript windows.
 - `src/ts/server/characterShellHydration.svelte.ts` hydrates selected inactive
   character shell rows.
-- Accepted chat generation-settings commands return their canonical persisted
-  value and reconcile it as a local resource effect, so the normal optimistic
-  save needs no follow-up character read. The freshness guard still preserves a
-  newer queued value against foreign or in-flight character responses.
+- Accepted ordinary character patches, character selections, and chat
+  metadata/selections reconcile their optimistic state as local resource
+  effects, so they do not re-read the changed character row or selection.
+  Accepted chat generation-settings commands also return and apply their
+  canonical persisted value without a follow-up character read. These effects
+  preserve newer queued edits while fencing stale in-flight responses.
 - `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
   and preset prompt bodies with owner-keyed state for selected/requested prompt
   presets.
@@ -137,11 +141,14 @@ that send.
 
 Chat generation-settings saves are serialized per chat and optimistically
 applied. A successful response applies the server-normalized value and advances
-the affected character-row revision without another GET. While a newer save is
-queued, the generation-settings freshness guard prevents a differing
-character-row response from rolling the visible value back. Foreign events,
-replay, response loss, gaps, and missing local targets still use authoritative
-resource invalidation.
+the affected character-row revision without another GET. Ordinary character
+patches, character selection, and chat metadata/selection changes likewise
+acknowledge their already-visible optimistic values and advance the owning row
+or selection fence. While a newer save is queued, the generation-settings
+freshness guard prevents a differing character-row response from rolling the
+visible value back. Foreign events, replay, response loss, gaps, and effects
+whose event ownership does not match still use authoritative resource
+invalidation.
 
 Prompt template resource notes:
 

@@ -31,8 +31,9 @@ explicit server-owned mutation routes.
   active-translation recovery, starts active-chat hydration, installs the
   bridge lifecycle flush, and subscribes to `/api/v1/events`.
 - Command success reconciliation and foreign SSE events both flow through the
-  same serialized resource-invalidation path, so authoritative reads apply in
-  command-event order.
+  same serialized resource path. Contiguous response-confirmed optimistic
+  effects can advance their resource fences without a read; authoritative reads
+  still apply in command-event order for every other event.
 
 | Path                                           | Role                                                                                     |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
@@ -88,9 +89,13 @@ Targeted responses must be at least as new as the invalidating event. Per-slice,
 per-collection, character-list, character-row, and hydrated-body revisions stop
 older responses from overwriting newer resident state. Pending plugin-storage
 operations are replayed over an incoming authoritative storage map until their
-command promises finish. A successful local chat-generation-settings save
-reconciles its canonical response without a GET; its pending-value guard still
-protects a newer edit while an authoritative character row is in flight.
+command promises finish. Successful local character patches, character
+selections, and chat metadata/selections acknowledge their optimistic state
+without a GET. A successful chat-generation-settings save applies its canonical
+response the same way; its pending-value guard still protects a newer edit while
+an authoritative character row is in flight. Local effects require a contiguous
+revision and matching response event owner, so gaps, response loss, and foreign
+events keep the authoritative invalidation path.
 
 After a complete refresh, chat and lorebook hydration identities reset because
 the character endpoint intentionally carries message-free chat rows. The active
