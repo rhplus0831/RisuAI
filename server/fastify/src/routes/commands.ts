@@ -273,6 +273,14 @@ import { validateOptionalServerAssetRef } from '../commands/assets.js'
 import { requireAuth } from '../http.js'
 import type { ChatGenerationSettings } from '../../../../src/ts/chatGenerationSettings.js'
 import {
+  MODEL_PRESET_FIELDS,
+  PROMPT_PRESET_FIELDS,
+  PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
+  PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
+  PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
+  databaseKeyForModelPresetField,
+} from '../../../../src/ts/presetSplit.js'
+import {
   activeMessageIdExistsOutsideChat,
   activeMessageIdExists,
   addAlternateMessage,
@@ -441,6 +449,64 @@ function applySelectedPromptPresetAfterModelPreset(target: Record<string, unknow
   if (promptPreset) {
     applyPromptPreset(target, promptPreset)
   }
+}
+
+const MODEL_PRESET_FIELD_NAMES = new Set<string>(MODEL_PRESET_FIELDS)
+const PROMPT_PRESET_FIELD_NAMES = new Set<string>(PROMPT_PRESET_FIELDS)
+const PROMPT_PRESET_MODEL_PARAMETER_FIELD_NAMES = new Set<string>(PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
+const PROMPT_PRESET_MODEL_OTHER_FIELD_NAMES = new Set<string>(PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
+
+function splitPresetSettingsProjectionKeys(kind: 'model' | 'prompt', patch: Record<string, unknown>): string[] {
+  const keys = new Set<string>()
+  if (kind === 'model') {
+    for (const key of Object.keys(patch)) {
+      if (MODEL_PRESET_FIELD_NAMES.has(key)) keys.add(databaseKeyForModelPresetField(key))
+    }
+    return [...keys]
+  }
+
+  for (const key of Object.keys(patch)) {
+    if (key === 'regex' || key === 'presetRegex') {
+      keys.add('presetRegex')
+    } else if (key !== 'promptTemplate' && PROMPT_PRESET_FIELD_NAMES.has(key)) {
+      keys.add(key)
+    }
+    if (PROMPT_PRESET_MODEL_PARAMETER_FIELD_NAMES.has(key) || PROMPT_PRESET_MODEL_OTHER_FIELD_NAMES.has(key)) {
+      keys.add(databaseKeyForModelPresetField(key))
+    }
+    if (key === PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY) {
+      for (const field of PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS) {
+        keys.add(databaseKeyForModelPresetField(field))
+      }
+    }
+  }
+  return [...keys]
+}
+
+function compactCanonicalOverrides(
+  canonicalSource: Record<string, unknown>,
+  optimisticSource: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const canonical = maskProviderSecrets(Object.fromEntries(keys.map((key) => [key, canonicalSource[key]]))) as Record<
+    string,
+    unknown
+  >
+  const optimistic = maskProviderSecrets(Object.fromEntries(keys.map((key) => [key, optimisticSource[key]]))) as Record<
+    string,
+    unknown
+  >
+  return Object.fromEntries(
+    keys.filter((key) => !isDeepStrictEqual(canonical[key], optimistic[key])).map((key) => [key, canonical[key]]),
+  )
+}
+
+function hasSplitPresetProjectionChange(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  return keys.some((key) => !isDeepStrictEqual(before[key], after[key]))
 }
 
 /** The shared narrow write for every translator-preset route: a full
@@ -2450,7 +2516,8 @@ export function registerCommandRoutes(
       const modelPresetId = readModelPresetId((req.params as { modelPresetId?: unknown }).modelPresetId)
       const body = (req.body ?? {}) as ModelPresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readModelPresetPatch(readJsonObject(body.patch, 'patch'))
+      const requestedPatch = readJsonObject(body.patch, 'patch')
+      const patch = readModelPresetPatch(requestedPatch)
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== modelPresetId) {
         throw new ValidationError('patch.id must match modelPresetId')
       }
@@ -2465,21 +2532,54 @@ export function registerCommandRoutes(
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensureModelPresetCollection(target)
           const index = requireModelPresetIndex(presets, modelPresetId)
+          const projectionKeys = splitPresetSettingsProjectionKeys('model', patch)
+          const selectedProjectionCandidate = target.modelPresetsId === index && projectionKeys.length > 0
+          const optimisticPreset = {
+            ...presets[index],
+            ...requestedPatch,
+            id: modelPresetId,
+          }
+          const optimisticTarget = { ...target }
+          if (selectedProjectionCandidate) {
+            applyModelPreset(optimisticTarget, optimisticPreset)
+            applySelectedPromptPresetAfterModelPreset(optimisticTarget)
+          }
           const resolvedPatch = resolveModelPresetMaskedSecrets(presets[index], patch)
           presets[index] = {
             ...presets[index],
             ...resolvedPatch,
             id: modelPresetId,
           }
+          const canonicalTarget = { ...target }
+          if (selectedProjectionCandidate) {
+            applyModelPreset(canonicalTarget, presets[index])
+            applySelectedPromptPresetAfterModelPreset(canonicalTarget)
+          }
+          const selectedProjectionApplied =
+            selectedProjectionCandidate && hasSplitPresetProjectionChange(target, canonicalTarget, projectionKeys)
+          const selectedPromptPreset = selectedProjectionApplied
+            ? selectedPromptPresetId(target, ensurePromptPresetCollection(target))
+            : null
           writeSingleCollectionRow(innerDb, 'modelPresets', index, presets[index])
-          if (target.modelPresetsId === index) {
+          if (selectedProjectionApplied) {
             applyModelPreset(target, presets[index])
             applySelectedPromptPresetAfterModelPreset(target)
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          const acknowledgedKeys = Object.keys(patch)
           return {
             event: { ...COMMAND_EVENT_CATALOG.modelPresetUpdated, id: modelPresetId },
-            extra: { modelPresetId },
+            extra: {
+              modelPresetId,
+              acknowledgedKeys,
+              preset: compactCanonicalOverrides(presets[index], requestedPatch, acknowledgedKeys),
+              settings: selectedProjectionApplied
+                ? compactCanonicalOverrides(target, optimisticTarget, projectionKeys)
+                : {},
+              selectedProjectionApplied,
+              ownerProjectionApplied: false,
+              selectedPromptPresetId: selectedPromptPreset,
+            },
           }
         },
       })
@@ -2735,7 +2835,8 @@ export function registerCommandRoutes(
       const promptPresetId = readPromptPresetId((req.params as { promptPresetId?: unknown }).promptPresetId)
       const body = (req.body ?? {}) as PromptPresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readPromptPresetPatch(readJsonObject(body.patch, 'patch'))
+      const requestedPatch = readJsonObject(body.patch, 'patch')
+      const patch = readPromptPresetPatch(requestedPatch)
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== promptPresetId) {
         throw new ValidationError('patch.id must match promptPresetId')
       }
@@ -2750,22 +2851,55 @@ export function registerCommandRoutes(
           const target = ensureSplitPresetDatabaseObject(database)
           const presets = ensurePromptPresetCollection(target)
           const index = requirePromptPresetIndex(presets, promptPresetId)
+          const projectionKeys = splitPresetSettingsProjectionKeys('prompt', patch)
+          const selected = target.promptPresetsId === index
+          const selectedProjectionCandidate = selected && projectionKeys.length > 0
+          const touchesPromptTemplate = Object.prototype.hasOwnProperty.call(patch, 'promptTemplate')
+          const optimisticPreset = {
+            ...presets[index],
+            ...requestedPatch,
+            id: promptPresetId,
+          }
+          const optimisticTarget = { ...target }
+          if (selected && (selectedProjectionCandidate || touchesPromptTemplate)) {
+            applyPromptPreset(optimisticTarget, optimisticPreset)
+          }
           presets[index] = {
             ...presets[index],
             ...patch,
             id: promptPresetId,
           }
+          const canonicalTarget = { ...target }
+          if (selected && (selectedProjectionCandidate || touchesPromptTemplate)) {
+            applyPromptPreset(canonicalTarget, presets[index])
+          }
+          const selectedProjectionApplied =
+            selectedProjectionCandidate && hasSplitPresetProjectionChange(target, canonicalTarget, projectionKeys)
           writeSingleCollectionRow(innerDb, 'promptPresets', index, presets[index])
-          if (target.promptPresetsId === index) {
+          if (selected && (selectedProjectionApplied || touchesPromptTemplate)) {
             applyPromptPreset(target, presets[index])
-            if (promptPresetAppliesPromptTemplate(presets[index])) {
+            if (touchesPromptTemplate && promptPresetAppliesPromptTemplate(presets[index])) {
               writePromptTemplatesTable(innerDb, asArray(target.promptTemplate))
             }
+          }
+          if (selectedProjectionApplied) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
+          const acknowledgedKeys = Object.keys(patch)
+          const ownerProjectionApplied =
+            selected && touchesPromptTemplate && promptPresetAppliesPromptTemplate(presets[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.promptPresetUpdated, id: promptPresetId },
-            extra: { promptPresetId },
+            extra: {
+              promptPresetId,
+              acknowledgedKeys,
+              preset: compactCanonicalOverrides(presets[index], requestedPatch, acknowledgedKeys),
+              settings: selectedProjectionApplied
+                ? compactCanonicalOverrides(target, optimisticTarget, projectionKeys)
+                : {},
+              selectedProjectionApplied,
+              ownerProjectionApplied,
+            },
           }
         },
       })

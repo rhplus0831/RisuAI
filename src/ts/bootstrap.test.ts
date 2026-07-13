@@ -184,11 +184,13 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
+  captureSettingsProjectionEpoch,
   collectionsResourceState,
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
   isSettingsGroupAcknowledgementTainted,
+  markCollectionAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
   markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
@@ -776,6 +778,233 @@ describe('API-backed client bootstrap', () => {
     ])
     expect(getDatabase().enabledModules).toEqual(['mod-b'])
     expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('acknowledges a contiguous selected model preset PATCH field-wise without collection or settings reads', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          modelPresets: [{ id: 'model-a', name: 'Model A', temperature: 0.4 }] as never,
+          promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never,
+        },
+      },
+      'modelPresets',
+    )
+    applyCollectionsResource(
+      { revision: 5, collections: { promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never } },
+      'promptPresets',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().modelPresetsId = 0
+      getDatabase().promptPresetsId = 0
+      getDatabase().modelPresets[0].temperature = 0.6
+      getDatabase().temperature = 0.6
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('modelPresets')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    const event = {
+      type: 'modelPreset.updated',
+      revision: 6,
+      resource: 'modelPreset',
+      id: 'model-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'splitPresetPatch',
+            presetKind: 'model',
+            presetId: 'model-a',
+            attemptedPatch: { temperature: 0.6 },
+            preset: { temperature: 0.5 },
+            attemptedSettings: { temperature: 0.6 },
+            settings: { temperature: 0.5 },
+            selectedProjectionApplied: true,
+            ownerProjectionApplied: false,
+            collectionProjectionEpoch,
+            settingsProjectionEpoch,
+            selectedPresetId: 'model-a',
+            selectedPromptPresetId: 'prompt-a',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().modelPresets[0].temperature).toBe(0.5)
+    expect(getDatabase().temperature).toBe(0.5)
+    expect(collectionsResourceState.revisions.modelPresets).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('modelPresets', collectionProjectionEpoch)).toBe(false)
+    expect(captureSettingsProjectionEpoch()).toBe(settingsProjectionEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('acknowledges metadata-only prompt preset PATCHes without owner hydration or settings reads', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      { revision: 5, collections: { promptPresets: [{ id: 'prompt-a', name: 'Prompt A' }] as never } },
+      'promptPresets',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().promptPresetsId = 0
+      getDatabase().promptPresets[0].name = 'Prompt renamed'
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    const event = {
+      type: 'promptPreset.updated',
+      revision: 6,
+      resource: 'promptPreset',
+      id: 'prompt-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'splitPresetPatch',
+            presetKind: 'prompt',
+            presetId: 'prompt-a',
+            attemptedPatch: { name: 'Prompt renamed' },
+            preset: { name: 'Prompt renamed' },
+            attemptedSettings: {},
+            settings: {},
+            selectedProjectionApplied: false,
+            ownerProjectionApplied: false,
+            collectionProjectionEpoch,
+            settingsProjectionEpoch,
+            selectedPresetId: 'prompt-a',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(promptTemplateApi.isHydrated).not.toHaveBeenCalled()
+    expect(promptTemplateApi.markProjectionApplied).not.toHaveBeenCalled()
+    expect(getDatabase().promptPresets[0].name).toBe('Prompt renamed')
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('canonicalizes both prompt owner and compatibility projections for a template-only PATCH', async () => {
+    await loadWebInitialDatabase()
+    const attemptedTemplate = [{ type: 'plain', text: 'Optimistic' }]
+    const canonicalTemplate = [{ id: 'item-a', type: 'plain', text: 'Optimistic' }]
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          promptPresets: [{ id: 'prompt-a', name: 'Prompt A', promptTemplate: attemptedTemplate }] as never,
+        },
+      },
+      'promptPresets',
+    )
+    applyCollectionsResource(
+      { revision: 5, collections: { promptTemplate: attemptedTemplate as never } },
+      'promptTemplate',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().promptPresetsId = 0
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+    const event = {
+      type: 'promptPreset.updated',
+      revision: 6,
+      resource: 'promptPreset',
+      id: 'prompt-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'splitPresetPatch',
+            presetKind: 'prompt',
+            presetId: 'prompt-a',
+            attemptedPatch: { promptTemplate: attemptedTemplate },
+            preset: { promptTemplate: canonicalTemplate },
+            attemptedSettings: {},
+            settings: {},
+            selectedProjectionApplied: false,
+            ownerProjectionApplied: true,
+            collectionProjectionEpoch,
+            settingsProjectionEpoch: captureSettingsProjectionEpoch(),
+            selectedPresetId: 'prompt-a',
+            promptOwnerProjectionEpoch: 19,
+            promptOwnerRevision: 5,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().promptPresets[0].promptTemplate).toEqual(canonicalTemplate)
+    expect(getDatabase().promptTemplate).toEqual(canonicalTemplate)
+    expect(promptTemplateApi.markProjectionApplied).toHaveBeenCalledWith('prompt-a', 6, {
+      advanceProjectionEpoch: false,
+    })
+  })
+
+  it('falls back when a split-preset PATCH collection proof is tainted', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      { revision: 5, collections: { modelPresets: [{ id: 'model-a', name: 'Model A' }] as never } },
+      'modelPresets',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().modelPresetsId = 0
+      getDatabase().modelPresets[0].name = 'Model renamed'
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('modelPresets')
+    markCollectionAcknowledgementTainted('modelPresets')
+    const event = {
+      type: 'modelPreset.updated',
+      revision: 6,
+      resource: 'modelPreset',
+      id: 'model-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'splitPresetPatch',
+            presetKind: 'model',
+            presetId: 'model-a',
+            attemptedPatch: { name: 'Model renamed' },
+            preset: { name: 'Model renamed' },
+            attemptedSettings: {},
+            settings: {},
+            selectedProjectionApplied: false,
+            ownerProjectionApplied: false,
+            collectionProjectionEpoch,
+            settingsProjectionEpoch: captureSettingsProjectionEpoch(),
+            selectedPresetId: 'model-a',
+            selectedPromptPresetId: null,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
   })
 
   it('acknowledges a contiguous exact preset-owned prompt item without fetching its owner', async () => {

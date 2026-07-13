@@ -585,7 +585,7 @@ describe('Phase 4 presets collection range', () => {
     expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'sp-1' }])
   })
 
-  it('PATCH selected prompt-presets/:id persists applied promptTemplate + settings', async () => {
+  it('PATCH selected prompt-presets/:id persists touched settings and promptTemplate projections', async () => {
     const seed = seedDatabase()
     seed.modelPresets = [{ id: 'model-0', name: 'Model 0' }]
     seed.promptPresetsId = 0
@@ -597,7 +597,7 @@ describe('Phase 4 presets collection range', () => {
     const before = rowidSnapshot()
     const beforeRowids = collectionRowidsByPosition('prompt_presets')
 
-    const { metric } = await runCommand({
+    const { metric, body } = await runCommand({
       method: 'PATCH',
       url: '/api/v1/commands/prompt-presets/prompt-0',
       payload: {
@@ -618,6 +618,129 @@ describe('Phase 4 presets collection range', () => {
     expect(readCollection('prompt_templates')).toEqual([
       { id: expect.any(String), type: 'plain', text: 'sp-0 patched' },
     ])
+    expect(body).toMatchObject({
+      promptPresetId: 'prompt-0',
+      acknowledgedKeys: ['mainPrompt', 'promptTemplate'],
+      preset: {
+        promptTemplate: [{ id: expect.any(String), type: 'plain', text: 'sp-0 patched' }],
+      },
+      settings: {},
+      selectedProjectionApplied: true,
+      ownerProjectionApplied: true,
+    })
+  })
+
+  it('PATCH model-presets/:id returns only normalized projection overrides and selection metadata', async () => {
+    const seed = seedDatabase()
+    seed.modelPresetsId = 0
+    seed.modelPresets = [
+      { id: 'model-0', name: 'Model 0', temperature: 0.4, fallbackModels: { main: [] } },
+      { id: 'model-1', name: 'Model 1', temperature: 0.8 },
+    ]
+    seed.promptPresetsId = 0
+    seed.promptPresets = [{ id: 'prompt-0', name: 'Prompt 0', overrideModelParameters: true, temperature: 0.7 }]
+    const revision = await importDatabase(seed)
+
+    const { body } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-presets/model-0',
+      payload: {
+        baseRevision: revision,
+        patch: {
+          name: 'Model 0 renamed',
+          temperature: 0.6,
+          fallbackModels: { main: ['fallback-a', 'fallback-a'] },
+        },
+      },
+    })
+
+    expect(body).toMatchObject({
+      modelPresetId: 'model-0',
+      acknowledgedKeys: ['name', 'temperature', 'fallbackModels'],
+      preset: {
+        fallbackModels: {
+          model: [],
+          memory: [],
+          emotion: [],
+          translate: [],
+          otherAx: [],
+          scriptMain: [],
+          scriptAux: [],
+        },
+      },
+      settings: {},
+      selectedProjectionApplied: true,
+      selectedPromptPresetId: 'prompt-0',
+    })
+  })
+
+  it('does not rewrite settings when a selected model field remains overridden by the selected prompt preset', async () => {
+    const seed = seedDatabase()
+    seed.modelPresetsId = 0
+    seed.modelPresets = [{ id: 'model-0', name: 'Model 0', temperature: 0.4 }]
+    seed.promptPresetsId = 0
+    seed.promptPresets = [{ id: 'prompt-0', name: 'Prompt 0', overrideModelParameters: true, temperature: 0.7 }]
+    seed.temperature = 0.7
+    const revision = await importDatabase(seed)
+
+    const { metric, body } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-presets/model-0',
+      payload: { baseRevision: revision, patch: { temperature: 0.6 } },
+    })
+
+    expect(metric.writtenTables).toEqual(['model_presets'])
+    expect(body).toMatchObject({
+      acknowledgedKeys: ['temperature'],
+      preset: {},
+      settings: {},
+      selectedProjectionApplied: false,
+      ownerProjectionApplied: false,
+      selectedPromptPresetId: null,
+    })
+    expect(readSettings().temperature).toBe(0.7)
+  })
+
+  it('keeps split-preset metadata and non-template field patches on their exact table ranges', async () => {
+    const seed = seedDatabase()
+    seed.modelPresetsId = 0
+    seed.modelPresets = [{ id: 'model-0', name: 'Model 0', temperature: 0.4 }]
+    seed.promptPresetsId = 0
+    seed.promptPresets = [
+      { id: 'prompt-0', name: 'Prompt 0', mainPrompt: 'before', promptTemplate: [{ type: 'plain', text: 'owner' }] },
+    ]
+    let revision = await importDatabase(seed)
+
+    const modelResult = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/model-presets/model-0',
+      payload: { baseRevision: revision, patch: { name: 'Model renamed' } },
+    })
+    revision = modelResult.revision
+    expect(modelResult.metric.writtenTables).toEqual(['model_presets'])
+    expect(modelResult.body).toMatchObject({
+      acknowledgedKeys: ['name'],
+      preset: {},
+      settings: {},
+      selectedProjectionApplied: false,
+      ownerProjectionApplied: false,
+      selectedPromptPresetId: null,
+    })
+
+    const promptResult = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-presets/prompt-0',
+      payload: { baseRevision: revision, patch: { mainPrompt: 'after' } },
+    })
+    expect(promptResult.metric.writtenTables).toEqual(['prompt_presets', 'settings'])
+    expect(promptResult.body).toMatchObject({
+      acknowledgedKeys: ['mainPrompt'],
+      preset: {},
+      settings: {},
+      selectedProjectionApplied: true,
+      ownerProjectionApplied: false,
+    })
+    expect(readCollection('prompt_templates')).toEqual([{ id: expect.any(String), type: 'plain', text: 'current' }])
   })
 
   it('DELETE selected prompt-presets/:id persists the next selected promptTemplate + settings', async () => {

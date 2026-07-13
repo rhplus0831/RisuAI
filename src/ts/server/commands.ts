@@ -152,6 +152,36 @@ export interface PromptItemMutationLocalEffect {
   ownerState: PromptTemplateOwnerStateSnapshot
 }
 
+export interface SplitPresetPatchOptimisticAcknowledgement {
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  selectedPresetId: string | null
+  selectedPromptPresetId?: string | null
+  attemptedSettings: Record<string, unknown>
+  selectedProjectionExpected: boolean
+  ownerProjectionExpected?: boolean
+  promptOwnerProjectionEpoch?: number
+  promptOwnerRevision?: number
+}
+
+export interface SplitPresetPatchLocalEffect {
+  kind: 'splitPresetPatch'
+  presetKind: 'model' | 'prompt'
+  presetId: string
+  attemptedPatch: Record<string, unknown>
+  preset: Record<string, unknown>
+  attemptedSettings: Record<string, unknown>
+  settings: Record<string, unknown>
+  selectedProjectionApplied: boolean
+  ownerProjectionApplied: boolean
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  selectedPresetId: string | null
+  selectedPromptPresetId?: string | null
+  promptOwnerProjectionEpoch?: number
+  promptOwnerRevision?: number
+}
+
 export interface LorebookMutationLocalEffect {
   kind: 'lorebookMutation'
   scope: 'global' | 'character' | 'chat'
@@ -230,6 +260,7 @@ export type ServerCommandLocalEffect =
   | ModuleCollectionMutationLocalEffect
   | ModuleEnabledLocalEffect
   | PromptItemMutationLocalEffect
+  | SplitPresetPatchLocalEffect
   | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
@@ -484,6 +515,7 @@ export interface CreateModelPresetCommandInput extends ModelPresetCommandInput {
 export interface UpdateModelPresetCommandInput extends ModelPresetCommandInput {
   modelPresetId: string
   patch: ModelPresetSnapshot
+  optimisticAcknowledgement?: SplitPresetPatchOptimisticAcknowledgement
 }
 
 export interface DeleteModelPresetCommandInput extends ModelPresetCommandInput {
@@ -514,6 +546,7 @@ export interface CreatePromptPresetCommandInput extends PromptPresetCommandInput
 export interface UpdatePromptPresetCommandInput extends PromptPresetCommandInput {
   promptPresetId: string
   patch: PromptPresetSnapshot
+  optimisticAcknowledgement?: SplitPresetPatchOptimisticAcknowledgement
 }
 
 export interface DeletePromptPresetCommandInput extends PromptPresetCommandInput {
@@ -1764,6 +1797,13 @@ export async function updateModelPresetCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) =>
+      readSplitPresetPatchLocalEffect(body, event, {
+        presetKind: 'model',
+        presetId: input.modelPresetId,
+        attemptedPatch: input.patch,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -1850,6 +1890,13 @@ export async function updatePromptPresetCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) =>
+      readSplitPresetPatchLocalEffect(body, event, {
+        presetKind: 'prompt',
+        presetId: input.promptPresetId,
+        attemptedPatch: input.patch,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -4317,6 +4364,118 @@ function readSettingsPatchLocalEffect(
     attemptedPatch: cloneJsonValue(attemptedPatch),
     settings: canonicalSettings,
     ...(settingsProjectionEpoch === undefined ? {} : { settingsProjectionEpoch }),
+  }
+}
+
+function readSplitPresetPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: {
+    presetKind: 'model' | 'prompt'
+    presetId: string
+    attemptedPatch: Record<string, unknown>
+    acknowledgement?: SplitPresetPatchOptimisticAcknowledgement
+  },
+): SplitPresetPatchLocalEffect | undefined {
+  const acknowledgement = input.acknowledgement
+  if (!acknowledgement || !body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const expectedType = input.presetKind === 'model' ? 'modelPreset.updated' : 'promptPreset.updated'
+  const expectedResource = input.presetKind === 'model' ? 'modelPreset' : 'promptPreset'
+  if (
+    record.revision !== event.revision ||
+    event.type !== expectedType ||
+    event.resource !== expectedResource ||
+    event.id !== input.presetId ||
+    event.parentId !== undefined ||
+    record[`${input.presetKind}PresetId`] !== input.presetId ||
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isProjectionEpoch(acknowledgement.settingsProjectionEpoch)
+  ) {
+    return undefined
+  }
+
+  const acknowledgedKeys = record.acknowledgedKeys
+  const presetOverrides = record.preset
+  const settingsOverrides = record.settings
+  if (
+    !isUniqueStringArray(acknowledgedKeys) ||
+    !presetOverrides ||
+    typeof presetOverrides !== 'object' ||
+    Array.isArray(presetOverrides) ||
+    !settingsOverrides ||
+    typeof settingsOverrides !== 'object' ||
+    Array.isArray(settingsOverrides) ||
+    typeof record.selectedProjectionApplied !== 'boolean' ||
+    typeof record.ownerProjectionApplied !== 'boolean'
+  ) {
+    return undefined
+  }
+
+  const attemptedKeys = Object.keys(input.attemptedPatch).sort()
+  if (
+    attemptedKeys.length === 0 ||
+    !isJsonValueEqual(attemptedKeys, [...acknowledgedKeys].sort()) ||
+    attemptedKeys.some((key) => !isJsonValue(input.attemptedPatch[key])) ||
+    Object.values(acknowledgement.attemptedSettings).some((value) => !isJsonValue(value)) ||
+    record.selectedProjectionApplied !== acknowledgement.selectedProjectionExpected ||
+    record.ownerProjectionApplied !== (acknowledgement.ownerProjectionExpected ?? false)
+  ) {
+    return undefined
+  }
+
+  const acknowledgedKeySet = new Set(acknowledgedKeys)
+  const attemptedSettingsKeySet = new Set(Object.keys(acknowledgement.attemptedSettings))
+  const preset = cloneJsonValue(input.attemptedPatch)
+  for (const [key, value] of Object.entries(presetOverrides as Record<string, unknown>)) {
+    if (!acknowledgedKeySet.has(key) || !isJsonValue(value)) return undefined
+    preset[key] = cloneJsonValue(value)
+  }
+  const settings = cloneJsonValue(acknowledgement.attemptedSettings)
+  for (const [key, value] of Object.entries(settingsOverrides as Record<string, unknown>)) {
+    if (!attemptedSettingsKeySet.has(key) || !isJsonValue(value)) return undefined
+    settings[key] = cloneJsonValue(value)
+  }
+
+  if (input.presetKind === 'model') {
+    const selectedPromptPresetId = record.selectedPromptPresetId
+    const expectedPromptPresetId = acknowledgement.selectedProjectionExpected
+      ? (acknowledgement.selectedPromptPresetId ?? null)
+      : null
+    if (selectedPromptPresetId !== expectedPromptPresetId || record.ownerProjectionApplied !== false) return undefined
+  } else if (record.selectedPromptPresetId !== undefined) {
+    return undefined
+  }
+
+  const ownerExpected = acknowledgement.ownerProjectionExpected === true
+  if (
+    ownerExpected &&
+    (!isProjectionEpoch(acknowledgement.promptOwnerProjectionEpoch) ||
+      !isProjectionEpoch(acknowledgement.promptOwnerRevision))
+  ) {
+    return undefined
+  }
+
+  return {
+    kind: 'splitPresetPatch',
+    presetKind: input.presetKind,
+    presetId: input.presetId,
+    attemptedPatch: cloneJsonValue(input.attemptedPatch),
+    preset,
+    attemptedSettings: cloneJsonValue(acknowledgement.attemptedSettings),
+    settings,
+    selectedProjectionApplied: record.selectedProjectionApplied,
+    ownerProjectionApplied: record.ownerProjectionApplied,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    settingsProjectionEpoch: acknowledgement.settingsProjectionEpoch,
+    selectedPresetId: acknowledgement.selectedPresetId,
+    ...(input.presetKind === 'model' ? { selectedPromptPresetId: acknowledgement.selectedPromptPresetId ?? null } : {}),
+    ...(ownerExpected
+      ? {
+          promptOwnerProjectionEpoch: acknowledgement.promptOwnerProjectionEpoch,
+          promptOwnerRevision: acknowledgement.promptOwnerRevision,
+        }
+      : {}),
   }
 }
 

@@ -120,6 +120,7 @@ import {
   updateModelProfileCommand,
   updateModelRoleProfilesCommand,
   updateModelRuntimeDefaultsCommand,
+  updateModelPresetCommand,
   updateModuleCommand,
   updatePersonaCommand,
   updatePluginCommand,
@@ -135,6 +136,7 @@ import {
   type PromptItemSnapshot,
   type ServerCommandLocalEffect,
   updatePromptItemCommand,
+  updatePromptPresetCommand,
 } from './commands'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './staleStateGuards'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
@@ -1842,6 +1844,156 @@ describe('server command API adapter', () => {
     }
 
     expect(observedEffectCounts, cases.map(({ label }) => label).join(', ')).toEqual(cases.map(() => 0))
+  })
+
+  it('emits exact split-preset PATCH acknowledgements without serializing projection proofs', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.includes('/model-presets/')) {
+        return {
+          revision: 2,
+          event: { type: 'modelPreset.updated', revision: 2, resource: 'modelPreset', id: 'model-a' },
+          modelPresetId: 'model-a',
+          acknowledgedKeys: ['temperature'],
+          preset: { temperature: 0.5 },
+          settings: { temperature: 0.5 },
+          selectedProjectionApplied: true,
+          ownerProjectionApplied: false,
+          selectedPromptPresetId: 'prompt-a',
+        }
+      }
+      return {
+        revision: 3,
+        event: { type: 'promptPreset.updated', revision: 3, resource: 'promptPreset', id: 'prompt-a' },
+        promptPresetId: 'prompt-a',
+        acknowledgedKeys: ['name'],
+        preset: {},
+        settings: {},
+        selectedProjectionApplied: false,
+        ownerProjectionApplied: false,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await updateModelPresetCommand({
+      baseRevision: 1,
+      modelPresetId: 'model-a',
+      patch: { temperature: 0.6 },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 4,
+        settingsProjectionEpoch: 5,
+        selectedPresetId: 'model-a',
+        selectedPromptPresetId: 'prompt-a',
+        attemptedSettings: { temperature: 0.6 },
+        selectedProjectionExpected: true,
+        ownerProjectionExpected: false,
+      },
+    })
+    await updatePromptPresetCommand({
+      baseRevision: 2,
+      promptPresetId: 'prompt-a',
+      patch: { name: 'Prompt renamed' },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 6,
+        settingsProjectionEpoch: 7,
+        selectedPresetId: 'prompt-a',
+        selectedPromptPresetId: 'prompt-a',
+        attemptedSettings: {},
+        selectedProjectionExpected: false,
+        ownerProjectionExpected: false,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'splitPresetPatch',
+        presetKind: 'model',
+        presetId: 'model-a',
+        attemptedPatch: { temperature: 0.6 },
+        preset: { temperature: 0.5 },
+        attemptedSettings: { temperature: 0.6 },
+        settings: { temperature: 0.5 },
+        selectedProjectionApplied: true,
+        ownerProjectionApplied: false,
+        collectionProjectionEpoch: 4,
+        settingsProjectionEpoch: 5,
+        selectedPresetId: 'model-a',
+        selectedPromptPresetId: 'prompt-a',
+      },
+      {
+        kind: 'splitPresetPatch',
+        presetKind: 'prompt',
+        presetId: 'prompt-a',
+        attemptedPatch: { name: 'Prompt renamed' },
+        preset: { name: 'Prompt renamed' },
+        attemptedSettings: {},
+        settings: {},
+        selectedProjectionApplied: false,
+        ownerProjectionApplied: false,
+        collectionProjectionEpoch: 6,
+        settingsProjectionEpoch: 7,
+        selectedPresetId: 'prompt-a',
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).toEqual({ baseRevision: 1, patch: { temperature: 0.6 } })
+    expect(commandFetch.calls[1]?.body).toEqual({ baseRevision: 2, patch: { name: 'Prompt renamed' } })
+  })
+
+  it('keeps malformed split-preset receipts on authoritative reconciliation', async () => {
+    const exactEvent = { type: 'modelPreset.updated', revision: 2, resource: 'modelPreset', id: 'model-a' }
+    const cases = [
+      { ...exactEvent, responseRevision: 3 },
+      { ...exactEvent, resource: 'promptPreset', responseRevision: 2 },
+      { ...exactEvent, id: 'model-b', responseRevision: 2 },
+    ]
+    let responseIndex = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const testCase = cases[responseIndex++]
+        return jsonResponse({
+          revision: testCase.responseRevision,
+          event: {
+            type: testCase.type,
+            revision: 2,
+            resource: testCase.resource,
+            id: testCase.id,
+          },
+          modelPresetId: 'model-a',
+          acknowledgedKeys: ['temperature'],
+          preset: {},
+          settings: {},
+          selectedProjectionApplied: true,
+          ownerProjectionApplied: false,
+          selectedPromptPresetId: 'prompt-a',
+        })
+      }) as unknown as typeof fetch,
+    )
+    const observedSizes: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedSizes.push(localEffects.size)
+    })
+
+    for (const _testCase of cases) {
+      await updateModelPresetCommand({
+        baseRevision: 1,
+        modelPresetId: 'model-a',
+        patch: { temperature: 0.6 },
+        optimisticAcknowledgement: {
+          collectionProjectionEpoch: 1,
+          settingsProjectionEpoch: 1,
+          selectedPresetId: 'model-a',
+          selectedPromptPresetId: 'prompt-a',
+          attemptedSettings: { temperature: 0.6 },
+          selectedProjectionExpected: true,
+        },
+      })
+    }
+
+    expect(observedSizes).toEqual([0, 0, 0])
   })
 
   it('emits exact prompt-item optimistic acknowledgements without serializing their snapshots or epochs', async () => {

@@ -67,6 +67,7 @@ import {
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
+  applySplitPresetPatchLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
@@ -75,6 +76,9 @@ import {
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
+  hasSettingsProjectionEpochChanged,
+  isCollectionAcknowledgementTainted,
+  isSettingsAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
@@ -778,6 +782,82 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return true
       })
     }
+    case 'splitPresetPatch': {
+      const collectionName = localEffect.presetKind === 'model' ? 'modelPresets' : 'promptPresets'
+      const expectedType = localEffect.presetKind === 'model' ? 'modelPreset.updated' : 'promptPreset.updated'
+      const expectedResource = localEffect.presetKind === 'model' ? 'modelPreset' : 'promptPreset'
+      const selectedModelPresetId = currentSplitPresetId('model')
+      const selectedPromptPresetId = currentSplitPresetId('prompt')
+      const selectedPresetId = localEffect.presetKind === 'model' ? selectedModelPresetId : selectedPromptPresetId
+      if (
+        event.type !== expectedType ||
+        event.resource !== expectedResource ||
+        event.id !== localEffect.presetId ||
+        event.parentId !== undefined ||
+        !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+        localEffect.collectionProjectionEpoch < 0 ||
+        hasCollectionProjectionEpochChanged(collectionName, localEffect.collectionProjectionEpoch) ||
+        isCollectionAcknowledgementTainted(collectionName) ||
+        selectedPresetId !== localEffect.selectedPresetId ||
+        (localEffect.presetKind === 'model' && selectedPromptPresetId !== localEffect.selectedPromptPresetId)
+      ) {
+        return false
+      }
+      if (
+        localEffect.selectedProjectionApplied &&
+        (!Number.isInteger(localEffect.settingsProjectionEpoch) ||
+          localEffect.settingsProjectionEpoch < 0 ||
+          hasSettingsProjectionEpochChanged(localEffect.settingsProjectionEpoch) ||
+          isSettingsAcknowledgementTainted() ||
+          selectedPresetId !== localEffect.presetId)
+      ) {
+        return false
+      }
+      if (localEffect.ownerProjectionApplied) {
+        if (
+          localEffect.presetKind !== 'prompt' ||
+          selectedPromptPresetId !== localEffect.presetId ||
+          !Number.isInteger(localEffect.promptOwnerProjectionEpoch) ||
+          (localEffect.promptOwnerProjectionEpoch as number) < 0 ||
+          !Number.isInteger(localEffect.promptOwnerRevision) ||
+          (localEffect.promptOwnerRevision as number) < 0 ||
+          hasPromptTemplateOwnerProjectionEpochChanged(
+            localEffect.presetId,
+            localEffect.promptOwnerProjectionEpoch as number,
+          ) ||
+          !isPromptTemplateHydrated(localEffect.presetId) ||
+          isPromptTemplateOwnerAcknowledgementTainted(localEffect.presetId) ||
+          peekPromptTemplateOwnerRevision(localEffect.presetId) !== localEffect.promptOwnerRevision ||
+          !selectedPromptPresetOwnsTemplate(localEffect.presetId)
+        ) {
+          return false
+        }
+      }
+
+      return withServerResourceApply(() => {
+        if (
+          !applySplitPresetPatchLocalEffect({
+            revision: event.revision,
+            presetKind: localEffect.presetKind,
+            presetId: localEffect.presetId,
+            attemptedPatch: localEffect.attemptedPatch,
+            preset: localEffect.preset,
+            attemptedSettings: localEffect.attemptedSettings,
+            settings: localEffect.settings,
+            selectedProjectionApplied: localEffect.selectedProjectionApplied,
+            ownerProjectionApplied: localEffect.ownerProjectionApplied,
+          })
+        ) {
+          return false
+        }
+        if (localEffect.ownerProjectionApplied) {
+          markPromptTemplateProjectionApplied(localEffect.presetId, event.revision, {
+            advanceProjectionEpoch: false,
+          })
+        }
+        return true
+      })
+    }
     case 'globalLorebookMutation': {
       const expectedType =
         localEffect.operation === 'create'
@@ -1038,6 +1118,23 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         applyCharacterOrderLocalEffect({ revision: event.revision, attemptedOrder: localEffect.attemptedOrder }),
       )
   }
+}
+
+function currentSplitPresetId(kind: 'model' | 'prompt'): string | null {
+  const database = getDatabase()
+  const presets = kind === 'model' ? database.modelPresets : database.promptPresets
+  const selectedIndex = kind === 'model' ? database.modelPresetsId : database.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(presets)) return null
+  const id = presets[selectedIndex]?.id
+  return typeof id === 'string' && id.trim() !== '' ? id : null
+}
+
+function selectedPromptPresetOwnsTemplate(promptPresetId: string): boolean {
+  const database = getDatabase()
+  const selectedIndex = database.promptPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0) return false
+  const preset = database.promptPresets?.[selectedIndex] as Record<string, unknown> | undefined
+  return preset?.id === promptPresetId && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
 }
 
 async function processAuthoritativeServerCommandEvents(events: readonly CommandEvent[]): Promise<boolean> {

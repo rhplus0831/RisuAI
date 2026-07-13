@@ -1371,6 +1371,24 @@ describe('preset command rollback (L21)', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('drops a reverted projected field while retaining a metadata-only collection patch', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Alpha', { temperature: 11 }) as unknown as ModelPreset],
+      modelPresetsId: 0,
+      temperature: 11,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulSplitPresetCommands()
+
+    updateModelPreset(0, { temperature: 22 })
+    updateModelPreset(0, { temperature: 11, name: 'Alpha renamed' })
+    flushPendingSplitPresetPatches()
+
+    const command = await waitForPresetCommand(calls, '/model-presets/model-a')
+    expect(command.body.patch).toEqual({ name: 'Alpha renamed' })
+    expect(getDatabase().temperature).toBe(11)
+  })
+
   it('keeps unrelated owners on independent debounce timers', async () => {
     vi.useFakeTimers()
     try {
@@ -1441,6 +1459,37 @@ describe('preset command rollback (L21)', () => {
     await waitForState(() => {
       expect(getDatabase().modelPresets[0].temperature).toBe(11)
       expect(getDatabase().temperature).toBe(11)
+    })
+  })
+
+  it('does not roll a failed model projection over a newer prompt selection', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Alpha', { temperature: 11 }) as unknown as ModelPreset],
+      modelPresetsId: 0,
+      promptPresets: [
+        makePreset('prompt-a', 'Prompt A', { temperature: 11 }) as unknown as PromptPreset,
+        {
+          ...(makePreset('prompt-b', 'Prompt B', { temperature: 77 }) as unknown as PromptPreset),
+          overrideModelParameters: true,
+        },
+      ],
+      promptPresetsId: 0,
+      temperature: 11,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand(() => {
+      getDatabase().promptPresetsId = 1
+      applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[1])
+    })
+
+    updateModelPreset(0, { temperature: 44 })
+    flushPendingSplitPresetPatches()
+
+    await waitForPresetCommand(calls, '/model-presets/model-a')
+    await waitForState(() => {
+      expect(getDatabase().modelPresets[0].temperature).toBe(11)
+      expect(getDatabase().promptPresetsId).toBe(1)
+      expect(getDatabase().temperature).toBe(77)
     })
   })
 

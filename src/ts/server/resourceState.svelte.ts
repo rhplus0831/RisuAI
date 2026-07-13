@@ -14,7 +14,10 @@ const characterLorebookProjectionEpochs = new Map<string, number>()
 let nextCollectionProjectionEpoch = 0
 let collectionProjectionBaseline = 0
 const collectionProjectionEpochs = new Map<ServerCollectionName, number>()
+const collectionAcknowledgementTaints = new Set<ServerCollectionName>()
 let lorebookPageProjectionEpoch = 0
+let settingsProjectionEpoch = 0
+let settingsAcknowledgementTainted = false
 let nextSettingsProjectionEpoch = 0
 let settingsProjectionBaseline = 0
 const settingsGroupProjectionEpochs = new Map<SettingsGroup, number>()
@@ -61,11 +64,13 @@ export function markCharacterLorebookProjectionApplied(characterId: string): voi
 
 function advanceCollectionProjectionEpoch(name: ServerCollectionName): void {
   collectionProjectionEpochs.set(name, ++nextCollectionProjectionEpoch)
+  collectionAcknowledgementTaints.delete(name)
 }
 
 function advanceAllCollectionProjectionEpochs(): void {
   collectionProjectionBaseline = ++nextCollectionProjectionEpoch
   collectionProjectionEpochs.clear()
+  collectionAcknowledgementTaints.clear()
 }
 
 export function captureCollectionProjectionEpoch(name: ServerCollectionName): number {
@@ -74,6 +79,35 @@ export function captureCollectionProjectionEpoch(name: ServerCollectionName): nu
 
 export function hasCollectionProjectionEpochChanged(name: ServerCollectionName, epoch: number): boolean {
   return captureCollectionProjectionEpoch(name) !== epoch
+}
+
+export function isCollectionAcknowledgementTainted(name: ServerCollectionName): boolean {
+  return collectionAcknowledgementTaints.has(name)
+}
+
+export function markCollectionAcknowledgementTainted(name: ServerCollectionName): void {
+  collectionAcknowledgementTaints.add(name)
+}
+
+export function captureSettingsProjectionEpoch(): number {
+  return settingsProjectionEpoch
+}
+
+export function hasSettingsProjectionEpochChanged(epoch: number): boolean {
+  return captureSettingsProjectionEpoch() !== epoch
+}
+
+export function isSettingsAcknowledgementTainted(): boolean {
+  return settingsAcknowledgementTainted
+}
+
+export function markSettingsAcknowledgementTainted(): void {
+  settingsAcknowledgementTainted = true
+}
+
+function advanceSettingsProjectionEpoch(options: { authoritativeFull?: boolean } = {}): void {
+  settingsProjectionEpoch += 1
+  if (options.authoritativeFull) settingsAcknowledgementTainted = false
 }
 
 function advanceLorebookPageProjectionEpoch(): void {
@@ -275,6 +309,18 @@ export interface ServerPromptItemMutationLocalEffectPayload {
   ownerState: PromptTemplateOwnerStateSnapshot
 }
 
+export interface ServerSplitPresetPatchLocalEffectPayload {
+  revision: number
+  presetKind: 'model' | 'prompt'
+  presetId: string
+  attemptedPatch: Record<string, unknown>
+  preset: Record<string, unknown>
+  attemptedSettings: Record<string, unknown>
+  settings: Record<string, unknown>
+  selectedProjectionApplied: boolean
+  ownerProjectionApplied: boolean
+}
+
 export interface ServerLoadoutMutationLocalEffectPayload {
   revision: number
   operation: 'create' | 'delete' | 'favorite' | 'touch'
@@ -453,6 +499,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   advanceAllSettingsProjectionEpochs()
+  advanceSettingsProjectionEpoch({ authoritativeFull: true })
   if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
   markResourceDatabaseChanged()
   return true
@@ -485,6 +532,7 @@ export function applySettingsGroupResource(
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   advanceSettingsGroupProjectionEpoch(payload.group)
+  advanceSettingsProjectionEpoch()
   markResourceDatabaseChanged()
   return true
 }
@@ -818,6 +866,86 @@ export function applyPromptItemMutationLocalEffect(payload: ServerPromptItemMuta
     collectionsResourceState.revisions[collectionName] ?? -1,
   )
   if (knownRevision >= payload.revision) return true
+
+  collectionsResourceState.revisions[collectionName] = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses[collectionName] = 'ready'
+  delete collectionsResourceState.errors[collectionName]
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Apply a response-confirmed split-preset field PATCH without re-reading the
+ * complete collection and, when selected fields were projected, settings.
+ * Canonical values only replace this attempt while its exact optimistic value
+ * is still live, preserving a later coalesced edit to the same field.
+ */
+export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatchLocalEffectPayload): boolean {
+  if (!nonEmptyString(payload.presetId) || (payload.presetKind !== 'model' && payload.presetKind !== 'prompt')) {
+    return false
+  }
+  const attemptedKeys = Object.keys(payload.attemptedPatch).sort()
+  if (
+    attemptedKeys.length === 0 ||
+    !isJsonValueEqual(attemptedKeys, Object.keys(payload.preset).sort()) ||
+    !isJsonValueEqual(Object.keys(payload.attemptedSettings).sort(), Object.keys(payload.settings).sort())
+  ) {
+    return false
+  }
+
+  const collectionName: ServerCollectionName = payload.presetKind === 'model' ? 'modelPresets' : 'promptPresets'
+  const presets = collectionsResourceState.values[collectionName]
+  if (!Array.isArray(presets) || collectionsResourceState.statuses[collectionName] !== 'ready') return false
+  const matches = presets.filter(
+    (candidate) => isPlainRecord(candidate) && candidate.id === payload.presetId,
+  ) as Record<string, unknown>[]
+  if (matches.length !== 1 || !isUniquePresetCollection(presets)) return false
+  if (collectionsResourceState.revisions[collectionName] === undefined) return false
+
+  if (payload.selectedProjectionApplied) {
+    if (settingsResourceState.status !== 'ready' || settingsResourceState.fullRevision === null) return false
+  } else if (Object.keys(payload.attemptedSettings).length > 0) {
+    return false
+  }
+
+  if (payload.ownerProjectionApplied) {
+    if (
+      payload.presetKind !== 'prompt' ||
+      !Object.prototype.hasOwnProperty.call(payload.attemptedPatch, 'promptTemplate') ||
+      !Object.prototype.hasOwnProperty.call(payload.preset, 'promptTemplate') ||
+      collectionsResourceState.statuses.promptTemplate !== 'ready' ||
+      collectionsResourceState.revisions.promptTemplate === undefined
+    ) {
+      return false
+    }
+    if (isJsonValueEqual(collectionsResourceState.values.promptTemplate, payload.attemptedPatch.promptTemplate)) {
+      collectionsResourceState.values.promptTemplate = cloneJsonValue(payload.preset.promptTemplate) as never
+    }
+    collectionsResourceState.revisions.promptTemplate = payload.revision
+    collectionsResourceState.statuses.promptTemplate = 'ready'
+    delete collectionsResourceState.errors.promptTemplate
+  }
+
+  const preset = matches[0]
+  for (const key of attemptedKeys) {
+    if (isJsonValueEqual(preset[key], payload.attemptedPatch[key])) {
+      preset[key] = cloneJsonValue(payload.preset[key])
+    }
+  }
+
+  if (payload.selectedProjectionApplied) {
+    const settings = settingsResourceState.value as Record<string, unknown>
+    for (const key of Object.keys(payload.attemptedSettings)) {
+      if (isJsonValueEqual(settings[key], payload.attemptedSettings[key])) {
+        settings[key] = cloneJsonValue(payload.settings[key])
+      }
+    }
+    settingsResourceState.fullRevision = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+  }
 
   collectionsResourceState.revisions[collectionName] = payload.revision
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
@@ -1380,6 +1508,7 @@ export function resetServerResourceState(): void {
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
   advanceAllSettingsProjectionEpochs()
+  advanceSettingsProjectionEpoch({ authoritativeFull: true })
   advanceLorebookPageProjectionEpoch()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
@@ -1452,6 +1581,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
   advanceAllSettingsProjectionEpochs()
+  advanceSettingsProjectionEpoch({ authoritativeFull: true })
   advanceLorebookPageProjectionEpoch()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
@@ -1899,6 +2029,15 @@ function nonEmptyString(value: unknown): value is string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isUniquePresetCollection(value: readonly unknown[]): boolean {
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!isPlainRecord(candidate) || !nonEmptyString(candidate.id) || ids.has(candidate.id)) return false
+    ids.add(candidate.id)
+  }
+  return true
 }
 
 function cloneJsonValue<T>(value: T): T {

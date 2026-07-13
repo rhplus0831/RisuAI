@@ -64,6 +64,7 @@ import {
   type PromptPresetSnapshot,
   type PresetSnapshot,
   type ServerCommandTransportOptions,
+  type SplitPresetPatchOptimisticAcknowledgement,
 } from '../server/commands'
 import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from '../characterCommands'
 import {
@@ -77,7 +78,23 @@ import {
   withServerResourceApply,
   withTrustedResourceWrite,
 } from '../server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import {
+  captureCollectionProjectionEpoch,
+  captureSettingsProjectionEpoch,
+  getResourceDatabase,
+  hasCollectionProjectionEpochChanged,
+  hasSettingsProjectionEpochChanged,
+  markCollectionAcknowledgementTainted,
+  markSettingsAcknowledgementTainted,
+  replaceResourceDatabase,
+} from '../server/resourceState.svelte'
+import {
+  capturePromptTemplateOwnerProjectionEpoch,
+  hasPromptTemplateOwnerProjectionEpochChanged,
+  isPromptTemplateHydrated,
+  markPromptTemplateOwnerAcknowledgementTainted,
+  peekPromptTemplateOwnerRevision,
+} from '../server/promptTemplateHydration'
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
@@ -498,6 +515,12 @@ interface PendingSplitPresetPatch {
   presetId: string
   fields: Map<string, SplitPresetPatchFieldAttempt>
   projectionFields: Map<string, SplitPresetPatchFieldAttempt>
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  selectedPresetId: string | null
+  selectedPromptPresetId: string | null
+  promptOwnerProjectionEpoch: number | null
+  promptOwnerRevision: number | null
   timer: ReturnType<typeof setTimeout> | null
 }
 
@@ -506,6 +529,14 @@ interface DispatchedSplitPresetPatch {
   presetId: string
   fields: Map<string, SplitPresetPatchFieldAttempt>
   projectionFields: Map<string, SplitPresetPatchFieldAttempt>
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  selectedPresetId: string | null
+  selectedPromptPresetId: string | null
+  promptOwnerProjectionEpoch: number | null
+  promptOwnerRevision: number | null
+  selectedProjectionExpected: boolean
+  ownerProjectionExpected: boolean
   settled: boolean
 }
 
@@ -575,11 +606,20 @@ function queueSplitPresetPatch(
   const pendingKey = splitPresetPatchKey(kind, presetId)
   let pending = pendingSplitPresetPatches.get(pendingKey)
   if (!pending) {
+    const selectedPresetId = currentSplitPresetSelectedId(kind)
+    const selectedPromptPresetId = currentSplitPresetSelectedId('prompt')
+    const capturesPromptOwner = kind === 'prompt' && selectedPresetId === presetId
     pending = {
       kind,
       presetId,
       fields: new Map(),
       projectionFields: new Map(),
+      collectionProjectionEpoch: captureCollectionProjectionEpoch(kind === 'model' ? 'modelPresets' : 'promptPresets'),
+      settingsProjectionEpoch: captureSettingsProjectionEpoch(),
+      selectedPresetId,
+      selectedPromptPresetId,
+      promptOwnerProjectionEpoch: capturesPromptOwner ? capturePromptTemplateOwnerProjectionEpoch(presetId) : null,
+      promptOwnerRevision: capturesPromptOwner ? peekPromptTemplateOwnerRevision(presetId) : null,
       timer: null,
     }
     pendingSplitPresetPatches.set(pendingKey, pending)
@@ -723,12 +763,52 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
     projectionFields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
   }
 
+  const attemptedSettings = Object.fromEntries(
+    Array.from(projectionFields.entries())
+      .filter(([fieldName]) => !(pending.kind === 'prompt' && fieldName === 'promptTemplate'))
+      .map(([fieldName, field]) => [fieldName, safeStructuredClone(field.attemptedValue)]),
+  )
+  const selectedProjectionExpected =
+    pending.selectedPresetId === pending.presetId && Object.keys(attemptedSettings).length > 0
+  const livePreset = splitPresetList(pending.kind).find((preset) => preset?.id === pending.presetId) as
+    | Record<string, unknown>
+    | undefined
+  const ownerProjectionExpected =
+    pending.kind === 'prompt' &&
+    pending.selectedPresetId === pending.presetId &&
+    Object.prototype.hasOwnProperty.call(patch, 'promptTemplate') &&
+    !!livePreset &&
+    Object.prototype.hasOwnProperty.call(livePreset, 'promptTemplate')
+
   const attempt: DispatchedSplitPresetPatch = {
     kind: pending.kind,
     presetId: pending.presetId,
     fields,
     projectionFields,
+    collectionProjectionEpoch: pending.collectionProjectionEpoch,
+    settingsProjectionEpoch: pending.settingsProjectionEpoch,
+    selectedPresetId: pending.selectedPresetId,
+    selectedPromptPresetId: pending.selectedPromptPresetId,
+    promptOwnerProjectionEpoch: pending.promptOwnerProjectionEpoch,
+    promptOwnerRevision: pending.promptOwnerRevision,
+    selectedProjectionExpected,
+    ownerProjectionExpected,
     settled: false,
+  }
+  const optimisticAcknowledgement: SplitPresetPatchOptimisticAcknowledgement = {
+    collectionProjectionEpoch: attempt.collectionProjectionEpoch,
+    settingsProjectionEpoch: attempt.settingsProjectionEpoch,
+    selectedPresetId: attempt.selectedPresetId,
+    selectedPromptPresetId: attempt.selectedPromptPresetId,
+    attemptedSettings,
+    selectedProjectionExpected,
+    ownerProjectionExpected,
+    ...(ownerProjectionExpected && attempt.promptOwnerProjectionEpoch !== null
+      ? { promptOwnerProjectionEpoch: attempt.promptOwnerProjectionEpoch }
+      : {}),
+    ...(ownerProjectionExpected && attempt.promptOwnerRevision !== null
+      ? { promptOwnerRevision: attempt.promptOwnerRevision }
+      : {}),
   }
   const pendingKey = splitPresetPatchKey(attempt.kind, attempt.presetId)
   const unsettled = unsettledSplitPresetPatches.get(pendingKey) ?? []
@@ -745,6 +825,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
                   baseRevision,
                   modelPresetId: attempt.presetId,
                   patch: safeStructuredClone(patch) as ModelPresetSnapshot,
+                  optimisticAcknowledgement,
                 },
                 options.signal,
                 options.keepalive,
@@ -754,6 +835,7 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
                   baseRevision,
                   promptPresetId: attempt.presetId,
                   patch: safeStructuredClone(patch) as PromptPresetSnapshot,
+                  optimisticAcknowledgement,
                 },
                 options.signal,
                 options.keepalive,
@@ -766,12 +848,19 @@ function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: Ser
       }
     },
     rollback: () => {
+      taintSplitPresetPatchAttempt(attempt)
       settleSplitPresetPatchAttempt(attempt, false)
       rollbackSplitPresetPatchAttempt(attempt)
     },
     signal: options.signal,
     keepalive: options.keepalive,
   })
+}
+
+function taintSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void {
+  markCollectionAcknowledgementTainted(attempt.kind === 'model' ? 'modelPresets' : 'promptPresets')
+  if (attempt.selectedProjectionExpected) markSettingsAcknowledgementTainted()
+  if (attempt.ownerProjectionExpected) markPromptTemplateOwnerAcknowledgementTainted(attempt.presetId)
 }
 
 function splitPresetPatchFieldIsNetChange(field: SplitPresetPatchFieldAttempt): boolean {
@@ -818,24 +907,37 @@ function rebaseSplitPresetPatchFields(
 
 function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void {
   withTrustedResourceWrite(() => {
-    const presets = splitPresetList(attempt.kind)
-    const index = presets.findIndex((preset) => preset?.id === attempt.presetId)
-    if (index >= 0) {
-      const preset = presets[index] as Record<string, unknown>
-      for (const [fieldName, field] of attempt.fields) {
-        if (!Object.prototype.hasOwnProperty.call(preset, fieldName)) continue
-        if (jsonSnapshot(preset[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
-        if (field.previousPresent) {
-          preset[fieldName] = safeStructuredClone(field.previousValue)
-        } else {
-          delete preset[fieldName]
+    const collectionName = attempt.kind === 'model' ? 'modelPresets' : 'promptPresets'
+    if (!hasCollectionProjectionEpochChanged(collectionName, attempt.collectionProjectionEpoch)) {
+      const presets = splitPresetList(attempt.kind)
+      const index = presets.findIndex((preset) => preset?.id === attempt.presetId)
+      if (index >= 0) {
+        const preset = presets[index] as Record<string, unknown>
+        for (const [fieldName, field] of attempt.fields) {
+          if (!Object.prototype.hasOwnProperty.call(preset, fieldName)) continue
+          if (jsonSnapshot(preset[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
+          if (field.previousPresent) {
+            preset[fieldName] = safeStructuredClone(field.previousValue)
+          } else {
+            delete preset[fieldName]
+          }
         }
       }
     }
 
+    if (hasSettingsProjectionEpochChanged(attempt.settingsProjectionEpoch)) return
     if (currentSplitPresetSelectedId(attempt.kind) !== attempt.presetId) return
+    if (attempt.kind === 'model' && currentSplitPresetSelectedId('prompt') !== attempt.selectedPromptPresetId) return
     const database = getDatabase() as unknown as Record<string, unknown>
     for (const [fieldName, field] of attempt.projectionFields) {
+      if (
+        attempt.kind === 'prompt' &&
+        fieldName === 'promptTemplate' &&
+        attempt.promptOwnerProjectionEpoch !== null &&
+        hasPromptTemplateOwnerProjectionEpochChanged(attempt.presetId, attempt.promptOwnerProjectionEpoch)
+      ) {
+        continue
+      }
       if (!Object.prototype.hasOwnProperty.call(database, fieldName)) continue
       if (jsonSnapshot(database[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
       if (field.previousPresent) {
