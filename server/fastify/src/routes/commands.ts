@@ -5276,7 +5276,6 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         chatId: string
         afterMessageId: string | null
-        messageIds: string[]
         replacedCount: number
       }>({
         db,
@@ -5308,7 +5307,6 @@ export function registerCommandRoutes(
             extra: {
               chatId,
               afterMessageId,
-              messageIds: replacement.map((message) => message.chatId),
               replacedCount: base.length - keepCount,
             },
           }

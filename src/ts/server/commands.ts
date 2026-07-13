@@ -3927,9 +3927,7 @@ export async function truncateMessagesCommand(
 export async function replaceTailMessagesCommand(
   input: ReplaceTailMessagesCommandInput,
   signal?: AbortSignal | null,
-): Promise<
-  ServerCommandResult<{ chatId: string; afterMessageId: string | null; messageIds: string[]; replacedCount: number }>
-> {
+): Promise<ServerCommandResult<{ chatId: string; afterMessageId: string | null; replacedCount: number }>> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/messages/tail`, {
     method: 'POST',
     body: {
@@ -4952,12 +4950,7 @@ function readMessageMutationLocalEffect(
     if (!Number.isInteger(record.replacedCount ?? record.removedCount)) return undefined
   }
   if (options.operation === 'replaceTail') {
-    if (
-      !isNonEmptyStringArray(options.expectedMessageIds, true) ||
-      !isJsonValueEqual(record.messageIds, options.expectedMessageIds)
-    ) {
-      return undefined
-    }
+    if (!isUniqueStringArray(options.expectedMessageIds)) return undefined
   }
   if (options.operation === 'replaceAll' && !isNonEmptyStringArray(options.expectedMessageIds, true)) return undefined
   return { kind: 'messageMutation', operation: options.operation, chatId }

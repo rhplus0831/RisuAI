@@ -7982,9 +7982,9 @@ describe('Phase 9-3c message history commands', () => {
       },
       chatId: 'chat-a',
       afterMessageId: 'msg-1',
-      messageIds: ['msg-2b', 'msg-3b'],
       replacedCount: 2,
     })
+    expect(tailReplaced.json()).not.toHaveProperty('messageIds')
     expect(await persistedChatMessages(harness.app, assertion, 'chat-a')).toEqual([
       { role: 'user', data: 'one', chatId: 'msg-1' },
       { role: 'char', data: 'two alt', chatId: 'msg-2b', generationInfo: { model: 'm' } },

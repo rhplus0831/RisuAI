@@ -3271,7 +3271,6 @@ describe('server command API adapter', () => {
           event: { type: 'messages.replaced', revision: 5, resource: 'message', parentId: 'chat-a' },
           chatId: 'chat-a',
           afterMessageId: 'msg-a',
-          messageIds: ['msg-b'],
           replacedCount: 1,
         }
       }
@@ -3379,7 +3378,7 @@ describe('server command API adapter', () => {
         afterMessageId: 'msg-a',
         messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
       }),
-    ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a', messageIds: ['msg-b'] })
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a', replacedCount: 1 })
 
     await expect(
       replaceMessagesCommand({
