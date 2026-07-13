@@ -75,6 +75,7 @@ export async function uploadServerAssetBytes(data: Uint8Array, contentType: stri
     method: 'POST',
     headers: {
       'content-type': contentType,
+      prefer: 'return=minimal',
       'risu-auth': auth,
       ...activeWriterSessionHeader(),
     },

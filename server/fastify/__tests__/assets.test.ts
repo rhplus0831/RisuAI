@@ -254,6 +254,24 @@ describe('Phase 2C assets', () => {
     expect(Buffer.from(readFileSync(onDisk))).toEqual(PNG_BYTES)
   })
 
+  it('returns a compact single-upload acknowledgement when requested', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets',
+      headers: {
+        'content-type': 'image/png',
+        prefer: 'return=minimal',
+        'risu-auth': assertion,
+      },
+      payload: PNG_BYTES,
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.headers['preference-applied']).toBe('return=minimal')
+    expect(res.json()).toEqual({ assetId: PNG_SHA, revision: 0 })
+  })
+
   it('preserves ONNX upload metadata for transformer model assets', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const bytes = Buffer.from('onnx-model-bytes')

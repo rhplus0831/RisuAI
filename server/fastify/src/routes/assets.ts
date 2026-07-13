@@ -235,6 +235,13 @@ export function registerAssetsRoutes(
       try {
         const result = addAsset(db, dataDir, { bytes: req.body, contentType })
         reply.code(result.created ? 201 : 200)
+        if (prefersMinimalResponse(req.headers.prefer)) {
+          reply.header('preference-applied', PREFER_RETURN_MINIMAL)
+          return {
+            assetId: result.entry.id,
+            revision: result.revision,
+          }
+        }
         return {
           assetId: result.entry.id,
           size: result.entry.size,

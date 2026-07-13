@@ -95,6 +95,7 @@ describe('Fastify server asset helpers', () => {
     expect(request?.method).toBe('POST')
     expect(request?.headers).toMatchObject({
       'content-type': 'image/jpeg',
+      prefer: 'return=minimal',
       'risu-auth': 'asset-upload-auth',
       'risu-writer-session': expect.any(String),
     })
