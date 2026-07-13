@@ -25,6 +25,7 @@ import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server
 import { setChatVar } from './parser/chatVar.svelte'
 import { selectedCharID } from './stores.svelte'
 import {
+  applyCharacterResource,
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from './server/resourceState.svelte'
@@ -876,7 +877,7 @@ describe('chat command projection helpers', () => {
     })
   })
 
-  it('restores only a missing deleted folder and still-null chat folder ids after a failed delete', async () => {
+  it('rolls back an optimistic folder delete while preserving newer chat changes', async () => {
     getDatabase().characters[0].chatFolders = [
       { id: 'folder-a', name: 'Folder A', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
@@ -900,14 +901,10 @@ describe('chat command projection helpers', () => {
     setResourceWriteGuardEnabled(true)
 
     const previous = currentChatStateSnapshot()
-    withTrustedResourceWrite(() => {
-      getDatabase().characters[0].chatFolders.splice(0, 1)
-      for (const chat of getDatabase().characters[0].chats) {
-        if (chat.folderId === 'folder-a') chat.folderId = null
-      }
-    })
-
     dispatchDeleteChatFolder('folder-a', previous)
+
+    expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-b'])
+    expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, null, null])
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
@@ -923,6 +920,60 @@ describe('chat command projection helpers', () => {
       name: 'Moved affected chat',
       folderId: 'folder-b',
     })
+  })
+
+  it('does not corrupt chat or folder rows for duplicate reorder ids', async () => {
+    getDatabase().characters[0].chatFolders = [
+      { id: 'folder-a', name: 'Folder A', folded: false },
+      { id: 'folder-b', name: 'Folder B', folded: false },
+    ]
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) =>
+        (url === '/api/v1/commands/characters/char-a/chats/reorder' ||
+          url === '/api/v1/commands/characters/char-a/chat-folders/reorder') &&
+        init.method === 'POST',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    dispatchReorderChatsByIds('char-a', ['chat-a', 'chat-a'], {}, previous)
+    await waitForCallCount(calls, 2)
+
+    expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+
+    dispatchReorderChatFoldersByIds('char-a', ['folder-a', 'folder-a'], previous)
+    await waitForCallCount(calls, 3)
+
+    expect(getDatabase().characters[0].chatFolders.map((folder) => folder.id)).toEqual(['folder-a', 'folder-b'])
+  })
+
+  it('keeps an unchanged omitted folder assignment omitted during optimistic reorder', async () => {
+    withTrustedResourceWrite(() => {
+      const omittedFolderChat = { ...getDatabase().characters[0].chats[0] }
+      delete omittedFolderChat.folderId
+      getDatabase().characters[0].chats[0] = omittedFolderChat
+    })
+    expect(Object.prototype.hasOwnProperty.call(getDatabase().characters[0].chats[0], 'folderId')).toBe(false)
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats/reorder' && init.method === 'POST',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    dispatchReorderChatsByIds(
+      'char-a',
+      ['chat-b', 'chat-a'],
+      { 'chat-a': null, 'chat-b': 'folder-a' },
+      previous,
+      'chat-a',
+    )
+
+    const attemptedChat = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-a')
+    expect(Object.prototype.hasOwnProperty.call(attemptedChat, 'folderId')).toBe(false)
+
+    await waitForCallCount(calls, 2)
+    const restoredChat = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-a')
+    expect(Object.prototype.hasOwnProperty.call(restoredChat, 'folderId')).toBe(false)
   })
 
   it('restores a failed chat folder reorder only when live order still equals the attempted order', async () => {
@@ -1235,7 +1286,7 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
-  it('skips failed create rollback when the attempted chat has a newer same-row edit', async () => {
+  it('removes a failed created-chat ghost even after a dependent row edit', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
       onCommand: () => {
@@ -1266,19 +1317,60 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
     })
-    expect(getDatabase().characters[0].chats[0].name).toBe('Newer attempted chat name')
-    expect(getDatabase().characters[0].chats[2].name).toBe('Newer sibling name')
+    expect(getDatabase().characters[0].chats[1].name).toBe('Newer sibling name')
     expect(getDatabase().characters[0].chatPage).toBe(0)
   })
 
-  it('failed fork with no local optimistic insert preserves a newer sibling chat edit', async () => {
+  it('keeps an authoritative targeted row when a create response fails after the row arrives', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/characters/char-a/chats' && init.method === 'POST',
+      onCommand: () => {
+        withTrustedResourceWrite(() => {
+          const authoritativeCharacter = jsonClone(getDatabase().characters[0])
+          const createdChat = authoritativeCharacter.chats.find((chat) => chat.id === 'chat-c')
+          if (createdChat) createdChat.name = 'Canonical created chat'
+          applyCharacterResource({ revision: 11, character: authoritativeCharacter })
+        })
+      },
+    })
+    setResourceWriteGuardEnabled(true)
+
+    const previous = currentChatStateSnapshot()
+    const attemptedChat = {
+      id: 'chat-c',
+      name: 'Attempted Chat',
+      note: '',
+      folderId: null,
+      message: [],
+      localLore: [],
+      fmIndex: -1,
+    } as Chat
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(attemptedChat)
+      getDatabase().characters[0].chatPage = 0
+    })
+
+    dispatchCreateChat('char-a', attemptedChat, previous)
+
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-c', 'chat-a', 'chat-b'])
+    })
+    expect(getDatabase().characters[0].chats[0].name).toBe('Canonical created chat')
+    expect(getDatabase().characters[0].chatPage).toBe(0)
+  })
+
+  it('rolls back an optimistic fork while preserving a newer sibling chat edit', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
         withTrustedResourceWrite(() => {
-          getDatabase().characters[0].chats[1].name = 'Newer sibling name'
+          const attemptedFork = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-c')
+          const sibling = getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-b')
+          if (attemptedFork) attemptedFork.name = 'Newer dependent fork edit'
+          if (sibling) sibling.name = 'Newer sibling name'
         })
       },
     })
@@ -1361,7 +1453,7 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
   })
 
-  it('failed fork skips forked-chat rollback when the forked row changed after dispatch', async () => {
+  it('removes a failed fork ghost even after a dependent row edit', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/fork' && init.method === 'POST',
       onCommand: () => {
@@ -1388,13 +1480,9 @@ describe('chat command projection helpers', () => {
 
     await waitForCallCount(calls, 2)
     await vi.waitFor(() => {
-      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-branch', 'chat-a', 'chat-b'])
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
     })
-    expect(getDatabase().characters[0].chats[0]).toMatchObject({
-      id: 'chat-branch',
-      name: 'Newer forked chat name',
-    })
-    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-branch')
+    expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
   })
 
   it('reinserts only a still-missing deleted chat after a failed delete and preserves sibling edits', async () => {

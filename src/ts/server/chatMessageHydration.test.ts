@@ -26,6 +26,7 @@ import { isServerChatMessagePlaceholder, type Message } from '../storage/databas
 import {
   BULK_HYDRATION_CONCURRENCY,
   ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
+  acknowledgeCreatedChatTranscriptLocalEffect,
   acknowledgeMessageMutationLocalEffect,
   ensureAllCharacterLorebooksHydrated,
   ensureAllChatsHydrated,
@@ -610,6 +611,22 @@ describe('chat message hydration bridge', () => {
 
     expect(db().characters[0].chats[0].message).toEqual([resident])
     expect(acknowledgeMessageMutationLocalEffect('missing-chat')).toBe(false)
+  })
+
+  it('marks a complete created transcript hydrated and drops an older hydration', async () => {
+    const resident = { role: 'user', data: 'created locally', chatId: 'm-created' }
+    db().characters[0].chats[0].message.push(resident)
+    const oldHydration = deferred<ReturnType<typeof okResult>>()
+    projectionState.fetchChat.mockReturnValueOnce(oldHydration.promise)
+    const pendingHydration = hydrateActiveChatFully()
+
+    expect(acknowledgeCreatedChatTranscriptLocalEffect('chat-1')).toBe(true)
+    oldHydration.resolve(okResult('chat-1', [{ role: 'user', data: 'stale', chatId: 'm-stale' }]))
+    await pendingHydration
+
+    expect(db().characters[0].chats[0].message).toEqual([resident])
+    expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+    expect(acknowledgeCreatedChatTranscriptLocalEffect('missing-chat')).toBe(false)
   })
 
   it('does not let an older hydration erase an optimistic local message or settle its rolled-back stub', async () => {

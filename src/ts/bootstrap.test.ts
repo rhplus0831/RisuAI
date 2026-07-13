@@ -31,9 +31,11 @@ const eventApi = vi.hoisted(() => ({
 }))
 
 const hydrationApi = vi.hoisted(() => ({
+  acknowledgeCreatedChatTranscriptLocalEffect: vi.fn(() => true),
   acknowledgeMessageMutationLocalEffect: vi.fn(() => true),
   applyMessageTranslationLocalEffect: vi.fn(() => true),
   hydrateActiveChat: vi.fn(async () => undefined),
+  invalidateChatHydration: vi.fn(),
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
 }))
@@ -154,7 +156,13 @@ import {
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
-import { replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
+import {
+  applyCharacterResource,
+  captureCharacterRowProjectionEpoch,
+  replaceResourceDatabase,
+  resetServerResourceState,
+} from './server/resourceState.svelte'
+import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
 import { selectedCharID } from './stores.svelte'
 
 function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
@@ -677,6 +685,260 @@ describe('API-backed client bootstrap', () => {
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(hydrationApi.acknowledgeMessageMutationLocalEffect).toHaveBeenCalledWith('chat-a')
     expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('acknowledges contiguous optimistic chat structure mutations without row or transcript reads', async () => {
+    await loadWebInitialDatabase()
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
+    const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(
+        { id: 'chat-created', message: [{ role: 'user', data: 'created', chatId: 'message-created' }] } as never,
+        { id: 'chat-forked', message: [] } as never,
+      )
+    })
+    const effects = [
+      {
+        event: {
+          type: 'chat.created',
+          revision: 6,
+          resource: 'chatTranscript',
+          id: 'chat-created',
+          parentId: 'char-a',
+        },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'create',
+          characterId: 'char-a',
+          targetId: 'chat-created',
+          optimisticEpoch,
+          optimisticRowEpoch,
+          attemptedGenerationSettings: null,
+          generationSettings: null,
+        },
+      },
+      {
+        event: {
+          type: 'chat.forked',
+          revision: 7,
+          resource: 'chatTranscript',
+          id: 'chat-forked',
+          parentId: 'char-a',
+        },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'fork',
+          characterId: 'char-a',
+          targetId: 'chat-forked',
+          optimisticEpoch,
+          optimisticRowEpoch,
+          attemptedGenerationSettings: null,
+          generationSettings: { configured: true, jailbreakToggle: false },
+        },
+      },
+      {
+        event: { type: 'chat.reordered', revision: 8, resource: 'characterRow', parentId: 'char-a' },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'reorder',
+          characterId: 'char-a',
+          attemptedIds: ['chat-forked', 'chat-created', 'chat-a'],
+          optimisticEpoch,
+          optimisticRowEpoch,
+        },
+      },
+      {
+        event: {
+          type: 'chatFolder.created',
+          revision: 9,
+          resource: 'characterRow',
+          id: 'folder-a',
+          parentId: 'char-a',
+        },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'folderCreate',
+          characterId: 'char-a',
+          targetId: 'folder-a',
+          optimisticEpoch,
+          optimisticRowEpoch,
+        },
+      },
+      {
+        event: {
+          type: 'chatFolder.deleted',
+          revision: 10,
+          resource: 'characterRow',
+          id: 'folder-a',
+          parentId: 'char-a',
+        },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'folderDelete',
+          characterId: 'char-a',
+          targetId: 'folder-a',
+          optimisticEpoch,
+          optimisticRowEpoch,
+        },
+      },
+      {
+        event: { type: 'chatFolder.reordered', revision: 11, resource: 'characterRow', parentId: 'char-a' },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'folderReorder',
+          characterId: 'char-a',
+          attemptedIds: [],
+          optimisticEpoch,
+          optimisticRowEpoch,
+        },
+      },
+      {
+        event: {
+          type: 'chat.deleted',
+          revision: 12,
+          resource: 'characterRow',
+          id: 'chat-deleted',
+          parentId: 'char-a',
+        },
+        effect: {
+          kind: 'chatStructureMutation',
+          operation: 'delete',
+          characterId: 'char-a',
+          targetId: 'chat-deleted',
+          optimisticEpoch,
+          optimisticRowEpoch,
+        },
+      },
+    ] as const
+
+    await commandApi.reconciler?.(
+      effects.at(-1)!.event,
+      effects.map(({ event }) => event),
+      new Map(effects.map(({ event, effect }) => [event.revision, effect])),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(hydrationApi.acknowledgeCreatedChatTranscriptLocalEffect).toHaveBeenCalledTimes(2)
+    expect(hydrationApi.acknowledgeCreatedChatTranscriptLocalEffect).toHaveBeenNthCalledWith(1, 'chat-created')
+    expect(hydrationApi.acknowledgeCreatedChatTranscriptLocalEffect).toHaveBeenNthCalledWith(2, 'chat-forked')
+    expect(hydrationApi.invalidateChatHydration).toHaveBeenCalledWith('chat-deleted')
+    expect(getDatabase().characters[0].chats.find((chat) => chat.id === 'chat-forked')?.generationSettings).toEqual({
+      configured: true,
+      jailbreakToggle: false,
+    })
+    expect(peekAppliedServerResourceRevision()).toBe(12)
+  })
+
+  it('keeps malformed chat structure effects on authoritative reconciliation', async () => {
+    await loadWebInitialDatabase()
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
+    const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    const event = {
+      type: 'chat.reordered',
+      revision: 6,
+      resource: 'characterRow',
+      parentId: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'chatStructureMutation',
+            operation: 'reorder',
+            characterId: 'char-a',
+            attemptedIds: ['chat-a', 'chat-a'],
+            optimisticEpoch,
+            optimisticRowEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it('does not fence a structural effect after a full projection refresh', async () => {
+    await loadWebInitialDatabase()
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
+    const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    createDestructiveRefreshToken('chat-structure-bootstrap-test-refresh')
+    const event = {
+      type: 'chat.reordered',
+      revision: 6,
+      resource: 'characterRow',
+      parentId: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'chatStructureMutation',
+            operation: 'reorder',
+            characterId: 'char-a',
+            attemptedIds: ['chat-a'],
+            optimisticEpoch,
+            optimisticRowEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it('does not fence a structural effect after a targeted character refresh', async () => {
+    await loadWebInitialDatabase()
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
+    const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    expect(
+      applyCharacterResource({
+        revision: 5,
+        character: JSON.parse(JSON.stringify(getDatabase().characters[0])),
+      }),
+    ).toBe(true)
+    const event = {
+      type: 'chat.reordered',
+      revision: 6,
+      resource: 'characterRow',
+      parentId: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'chatStructureMutation',
+            operation: 'reorder',
+            characterId: 'char-a',
+            attemptedIds: ['chat-a'],
+            optimisticEpoch,
+            optimisticRowEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
   })
 
   it('acknowledges a contiguous character patch without a resource read and preserves a newer edit', async () => {

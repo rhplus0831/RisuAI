@@ -28,9 +28,11 @@ import {
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import {
+  acknowledgeCreatedChatTranscriptLocalEffect,
   acknowledgeMessageMutationLocalEffect,
   applyMessageTranslationLocalEffect,
   hydrateActiveChat,
+  invalidateChatHydration,
   resetChatHydration,
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
@@ -60,8 +62,10 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  hasCharacterRowProjectionEpochChanged,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
+import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000
@@ -454,6 +458,113 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           select: localEffect.select,
         }),
       )
+    case 'chatStructureMutation': {
+      if (hasDestructiveRefreshEpochChanged(localEffect.optimisticEpoch)) return false
+      if (hasCharacterRowProjectionEpochChanged(localEffect.characterId, localEffect.optimisticRowEpoch)) {
+        return false
+      }
+      const expectedType =
+        localEffect.operation === 'create'
+          ? 'chat.created'
+          : localEffect.operation === 'delete'
+            ? 'chat.deleted'
+            : localEffect.operation === 'fork'
+              ? 'chat.forked'
+              : localEffect.operation === 'reorder'
+                ? 'chat.reordered'
+                : localEffect.operation === 'folderCreate'
+                  ? 'chatFolder.created'
+                  : localEffect.operation === 'folderDelete'
+                    ? 'chatFolder.deleted'
+                    : 'chatFolder.reordered'
+      const createsTranscript = localEffect.operation === 'create' || localEffect.operation === 'fork'
+      const reorders = localEffect.operation === 'reorder' || localEffect.operation === 'folderReorder'
+      if (
+        event.type !== expectedType ||
+        event.parentId !== localEffect.characterId ||
+        (event.resource !== 'characterRow' && !(createsTranscript && event.resource === 'chatTranscript')) ||
+        (reorders ? event.id !== undefined : event.id !== localEffect.targetId)
+      ) {
+        return false
+      }
+      if (
+        reorders &&
+        (!Array.isArray(localEffect.attemptedIds) ||
+          localEffect.attemptedIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+          new Set(localEffect.attemptedIds).size !== localEffect.attemptedIds.length)
+      ) {
+        return false
+      }
+      if (!reorders && (typeof localEffect.targetId !== 'string' || localEffect.targetId.trim() === '')) return false
+
+      if (createsTranscript) {
+        const attemptedGenerationSettings = localEffect.attemptedGenerationSettings
+        const generationSettings = localEffect.generationSettings
+        if (
+          !Object.prototype.hasOwnProperty.call(localEffect, 'attemptedGenerationSettings') ||
+          !Object.prototype.hasOwnProperty.call(localEffect, 'generationSettings') ||
+          (attemptedGenerationSettings !== null &&
+            (!attemptedGenerationSettings ||
+              typeof attemptedGenerationSettings !== 'object' ||
+              Array.isArray(attemptedGenerationSettings))) ||
+          (generationSettings !== null &&
+            (!generationSettings || typeof generationSettings !== 'object' || Array.isArray(generationSettings)))
+        ) {
+          return false
+        }
+      }
+
+      let createdChatMatches: Array<{ characterId: string; message: unknown }> = []
+      if (createsTranscript) {
+        createdChatMatches = (getDatabase().characters ?? []).flatMap((character) =>
+          (character.chats ?? [])
+            .filter((chat) => chat.id === localEffect.targetId)
+            .map((chat) => ({ characterId: character.chaId, message: chat.message })),
+        )
+        if (
+          createdChatMatches.length !== 1 ||
+          createdChatMatches[0].characterId !== localEffect.characterId ||
+          !Array.isArray(createdChatMatches[0].message)
+        ) {
+          return false
+        }
+      }
+
+      return withServerResourceApply(() => {
+        if (
+          !applyCharacterRowMutationLocalEffect({
+            revision: event.revision,
+            characterId: localEffect.characterId,
+            targetId: localEffect.targetId ?? localEffect.characterId,
+          })
+        ) {
+          return false
+        }
+        if (createsTranscript && localEffect.targetId) {
+          const createdChat = (getDatabase().characters ?? [])
+            .find((character) => character.chaId === localEffect.characterId)
+            ?.chats?.find((chat) => chat.id === localEffect.targetId)
+          if (
+            createdChat &&
+            JSON.stringify(createdChat.generationSettings ?? null) ===
+              JSON.stringify(localEffect.attemptedGenerationSettings)
+          ) {
+            if (localEffect.generationSettings === null) {
+              delete createdChat.generationSettings
+            } else {
+              createdChat.generationSettings = JSON.parse(
+                JSON.stringify(localEffect.generationSettings),
+              ) as typeof createdChat.generationSettings
+            }
+          }
+          return acknowledgeCreatedChatTranscriptLocalEffect(localEffect.targetId)
+        }
+        if (localEffect.operation === 'delete' && localEffect.targetId) {
+          invalidateChatHydration(localEffect.targetId)
+        }
+        return true
+      })
+    }
     case 'settingsPatch':
       if (event.id !== localEffect.group) return false
       return withServerResourceApply(() =>

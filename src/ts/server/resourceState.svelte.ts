@@ -3,6 +3,27 @@ import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import type { SettingsGroup } from './settingsGroups'
 
+let nextCharacterRowProjectionEpoch = 0
+let characterRowProjectionBaseline = 0
+const characterRowProjectionEpochs = new Map<string, number>()
+
+function advanceCharacterRowProjectionEpoch(characterId: string): void {
+  characterRowProjectionEpochs.set(characterId, ++nextCharacterRowProjectionEpoch)
+}
+
+function advanceAllCharacterRowProjectionEpochs(): void {
+  characterRowProjectionBaseline = ++nextCharacterRowProjectionEpoch
+  characterRowProjectionEpochs.clear()
+}
+
+export function captureCharacterRowProjectionEpoch(characterId: string): number {
+  return characterRowProjectionEpochs.get(characterId) ?? characterRowProjectionBaseline
+}
+
+export function hasCharacterRowProjectionEpochChanged(characterId: string, epoch: number): boolean {
+  return captureCharacterRowProjectionEpoch(characterId) !== epoch
+}
+
 export const SERVER_COLLECTION_NAMES = [
   'modules',
   'plugins',
@@ -605,6 +626,7 @@ export function applyCharactersResource(
   charactersResourceState.rowErrors = {}
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
+  advanceAllCharacterRowProjectionEpochs()
   markResourceDatabaseChanged()
   return true
 }
@@ -674,6 +696,7 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   charactersResourceState.rowStatuses[characterId] = 'ready'
   delete charactersResourceState.rowErrors[characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  advanceCharacterRowProjectionEpoch(characterId)
   markResourceDatabaseChanged()
   return true
 }
@@ -882,6 +905,7 @@ export function resetServerResourceState(): void {
   charactersResourceState.rowStatuses = {}
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  advanceAllCharacterRowProjectionEpochs()
   markResourceDatabaseChanged()
 }
 
@@ -948,6 +972,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   )
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  advanceAllCharacterRowProjectionEpochs()
   markResourceDatabaseChanged()
 }
 

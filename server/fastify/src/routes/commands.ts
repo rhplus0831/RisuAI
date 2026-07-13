@@ -4244,6 +4244,7 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         chatId: string
         selectedChatId: string | null
+        generationSettings: object | null
       }>({
         db,
         dataDir,
@@ -4301,7 +4302,11 @@ export function registerCommandRoutes(
               id: chat.id,
               parentId: characterId,
             },
-            extra: { chatId: chat.id, selectedChatId: selectedChatId(character) },
+            extra: {
+              chatId: chat.id,
+              selectedChatId: selectedChatId(character),
+              generationSettings: chat.generationSettings ?? null,
+            },
           }
         },
       })
@@ -4500,6 +4505,7 @@ export function registerCommandRoutes(
         chatId: string
         sourceChatId: string
         selectedChatId: string | null
+        generationSettings: object | null
       }>({
         db,
         dataDir,
@@ -4592,6 +4598,7 @@ export function registerCommandRoutes(
               chatId: nextChat.id,
               sourceChatId,
               selectedChatId: selectedChatId(character),
+              generationSettings: nextChat.generationSettings ?? null,
             },
           }
         },

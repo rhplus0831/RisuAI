@@ -27,9 +27,11 @@ import {
   applyModuleEnabledLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
+  captureCharacterRowProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
+  hasCharacterRowProjectionEpochChanged,
   replaceResourceDatabase,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
@@ -411,14 +413,20 @@ describe('resource-scoped database state', () => {
   })
 
   it('merges character details by stable id and drops stale rows', () => {
+    const beforeCollection = captureCharacterRowProjectionEpoch('char-a')
     applyCharactersResource({
       revision: 3,
       characters: [metadataCharacter('char-a', 'Old')],
       characterOrder: ['char-a'],
       currentChar: 0,
     })
+    expect(hasCharacterRowProjectionEpochChanged('char-a', beforeCollection)).toBe(true)
+    const beforeTargeted = captureCharacterRowProjectionEpoch('char-a')
     expect(applyCharacterResource({ revision: 5, character: metadataCharacter('char-a', 'New') })).toBe(true)
+    expect(hasCharacterRowProjectionEpochChanged('char-a', beforeTargeted)).toBe(true)
+    const beforeStale = captureCharacterRowProjectionEpoch('char-a')
     expect(applyCharacterResource({ revision: 4, character: metadataCharacter('char-a', 'Stale') })).toBe(false)
+    expect(hasCharacterRowProjectionEpochChanged('char-a', beforeStale)).toBe(false)
 
     expect(getResourceDatabase().characters[0]?.name).toBe('New')
   })

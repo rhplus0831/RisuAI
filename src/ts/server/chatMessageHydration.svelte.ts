@@ -22,6 +22,7 @@ import {
 import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
+import { setChatStructureHydrationHooks } from './chatStructureHydrationHooks'
 
 export const BULK_HYDRATION_CONCURRENCY = 4
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
@@ -540,6 +541,30 @@ export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
   advanceChatProjectionEpoch(chatId)
   return true
 }
+
+/**
+ * Confirm that a create/fork request supplied the complete transcript already
+ * resident in the new chat. Besides invalidating older reads, mark even an
+ * empty transcript hydrated so opening a freshly-created chat does not issue a
+ * byte-for-byte confirmation request.
+ */
+export function acknowledgeCreatedChatTranscriptLocalEffect(chatId: string): boolean {
+  if (!chatId) return false
+  const matches = getDatabase()
+    .characters?.flatMap((character) => character.chats ?? [])
+    .filter((candidate) => candidate.id === chatId)
+  if (matches?.length !== 1 || !Array.isArray(matches[0].message)) return false
+
+  advanceChatProjectionEpoch(chatId)
+  hydratedChatIds.add(chatId)
+  attemptedChatIds.add(chatId)
+  return true
+}
+
+setChatStructureHydrationHooks({
+  markCreatedTranscript: acknowledgeCreatedChatTranscriptLocalEffect,
+  invalidateTranscript: invalidateChatHydration,
+})
 
 /**
  * Reactive: is the given chat's message history still being hydrated from the

@@ -10,7 +10,11 @@ import type {
 } from '../model/modelProfileRecords'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup } from './settingsGroups'
-import { captureDestructiveRefreshEpoch, runRollbackUnlessDestructiveRefreshChanged } from './staleStateGuards'
+import {
+  captureDestructiveRefreshEpoch,
+  hasDestructiveRefreshEpochChanged,
+  runRollbackUnlessDestructiveRefreshChanged,
+} from './staleStateGuards'
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -67,6 +71,18 @@ export interface ChatPatchLocalEffect {
   chatId: string
   patch: ChatSnapshot
   select: boolean
+}
+
+export interface ChatStructureMutationLocalEffect {
+  kind: 'chatStructureMutation'
+  operation: 'create' | 'delete' | 'fork' | 'reorder' | 'folderCreate' | 'folderDelete' | 'folderReorder'
+  characterId: string
+  targetId?: string
+  attemptedIds?: string[]
+  attemptedGenerationSettings?: ChatGenerationSettings | null
+  generationSettings?: ChatGenerationSettings | null
+  optimisticEpoch: number
+  optimisticRowEpoch: number
 }
 
 export interface SettingsPatchLocalEffect {
@@ -139,6 +155,7 @@ export type ServerCommandLocalEffect =
   | CharacterSelectionLocalEffect
   | CharacterCollectionMutationLocalEffect
   | ChatPatchLocalEffect
+  | ChatStructureMutationLocalEffect
   | SettingsPatchLocalEffect
   | PluginStorageLocalEffect
   | PluginCollectionMutationLocalEffect
@@ -701,12 +718,15 @@ export interface ReorderCharactersCommandInput extends CharacterCommandInput {
 
 export interface ChatCommandInput {
   baseRevision: number
+  optimisticEpoch?: number
+  optimisticRowEpoch?: number
 }
 
 export interface CreateChatCommandInput extends ChatCommandInput {
   characterId: string
   chat: ChatSnapshot
   select?: boolean
+  acknowledgeOptimistic?: boolean
 }
 
 export interface UpdateChatCommandInput extends ChatCommandInput {
@@ -722,6 +742,7 @@ export interface SaveChatGenerationSettingsCommandInput extends ChatCommandInput
 
 export interface DeleteChatCommandInput extends ChatCommandInput {
   chatId: string
+  acknowledgeOptimistic?: boolean
 }
 
 export interface ForkChatCommandInput extends ChatCommandInput {
@@ -730,6 +751,7 @@ export interface ForkChatCommandInput extends ChatCommandInput {
   sourcePatch?: ChatSnapshot
   folder?: ChatFolderSnapshot
   select?: boolean
+  acknowledgeOptimistic?: boolean
 }
 
 export interface ReorderChatsCommandInput extends ChatCommandInput {
@@ -737,11 +759,13 @@ export interface ReorderChatsCommandInput extends ChatCommandInput {
   chatIds: string[]
   folderByChatId?: Record<string, string | null>
   selectedChatId?: string
+  acknowledgeOptimistic?: boolean
 }
 
 export interface CreateChatFolderCommandInput extends ChatCommandInput {
   characterId: string
   folder: ChatFolderSnapshot
+  acknowledgeOptimistic?: boolean
 }
 
 export interface UpdateChatFolderCommandInput extends ChatCommandInput {
@@ -751,12 +775,14 @@ export interface UpdateChatFolderCommandInput extends ChatCommandInput {
 
 export interface DeleteChatFolderCommandInput extends ChatCommandInput {
   folderId: string
+  acknowledgeOptimistic?: boolean
 }
 
 export interface ReorderChatFoldersCommandInput extends ChatCommandInput {
   characterId: string
   folderIds: string[]
   selectedChatId?: string
+  acknowledgeOptimistic?: boolean
 }
 
 export interface PatchChatScriptstateCommandInput extends ChatCommandInput {
@@ -2436,7 +2462,13 @@ export async function reorderCharactersCommand(
 export async function createChatCommand(
   input: CreateChatCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ chatId: string; selectedChatId: string | null }>> {
+): Promise<
+  ServerCommandResult<{
+    chatId: string
+    selectedChatId: string | null
+    generationSettings: ChatGenerationSettings | null
+  }>
+> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/chats`, {
     method: 'POST',
     body: {
@@ -2445,6 +2477,18 @@ export async function createChatCommand(
       select: input.select,
     },
     signal,
+    readLocalEffect:
+      input.acknowledgeOptimistic && isCanonicalOptimisticChatSnapshot(input.chat)
+        ? (body, event) =>
+            readChatStructureMutationLocalEffect(body, event, {
+              operation: 'create',
+              expectedCharacterId: input.characterId,
+              expectedTargetId: input.chat.id,
+              expectedChat: input.chat,
+              expectedOptimisticEpoch: input.optimisticEpoch,
+              expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+            })
+        : undefined,
   })
 }
 
@@ -2499,13 +2543,29 @@ export async function deleteChatCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readChatStructureMutationLocalEffect(body, event, {
+            operation: 'delete',
+            expectedTargetId: input.chatId,
+            expectedOptimisticEpoch: input.optimisticEpoch,
+            expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
 export async function forkChatCommand(
   input: ForkChatCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ chatId: string; sourceChatId: string; selectedChatId: string | null }>> {
+): Promise<
+  ServerCommandResult<{
+    chatId: string
+    sourceChatId: string
+    selectedChatId: string | null
+    generationSettings: ChatGenerationSettings | null
+  }>
+> {
   return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/fork`, {
     method: 'POST',
     body: {
@@ -2516,6 +2576,20 @@ export async function forkChatCommand(
       select: input.select,
     },
     signal,
+    readLocalEffect:
+      input.acknowledgeOptimistic &&
+      isCanonicalOptimisticChatSnapshot(input.chat) &&
+      (input.folder === undefined || isCanonicalOptimisticChatFolderSnapshot(input.folder))
+        ? (body, event) =>
+            readChatStructureMutationLocalEffect(body, event, {
+              operation: 'fork',
+              expectedTargetId: input.chat.id,
+              expectedSourceChatId: input.chatId,
+              expectedChat: input.chat,
+              expectedOptimisticEpoch: input.optimisticEpoch,
+              expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+            })
+        : undefined,
   })
 }
 
@@ -2532,6 +2606,16 @@ export async function reorderChatsCommand(
       selectedChatId: input.selectedChatId,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readChatStructureMutationLocalEffect(body, event, {
+            operation: 'reorder',
+            expectedCharacterId: input.characterId,
+            expectedIds: input.chatIds,
+            expectedOptimisticEpoch: input.optimisticEpoch,
+            expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2546,6 +2630,17 @@ export async function createChatFolderCommand(
       folder: input.folder,
     },
     signal,
+    readLocalEffect:
+      input.acknowledgeOptimistic && isCanonicalOptimisticChatFolderSnapshot(input.folder)
+        ? (body, event) =>
+            readChatStructureMutationLocalEffect(body, event, {
+              operation: 'folderCreate',
+              expectedCharacterId: input.characterId,
+              expectedTargetId: input.folder.id,
+              expectedOptimisticEpoch: input.optimisticEpoch,
+              expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+            })
+        : undefined,
   })
 }
 
@@ -2577,6 +2672,15 @@ export async function deleteChatFolderCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readChatStructureMutationLocalEffect(body, event, {
+            operation: 'folderDelete',
+            expectedTargetId: input.folderId,
+            expectedOptimisticEpoch: input.optimisticEpoch,
+            expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2592,6 +2696,16 @@ export async function reorderChatFoldersCommand(
       selectedChatId: input.selectedChatId,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readChatStructureMutationLocalEffect(body, event, {
+            operation: 'folderReorder',
+            expectedCharacterId: input.characterId,
+            expectedIds: input.folderIds,
+            expectedOptimisticEpoch: input.optimisticEpoch,
+            expectedOptimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -4104,6 +4218,129 @@ function readCharacterRowMutationLocalEffect(
     characterId: event.parentId,
     targetId: expectedTargetId,
   }
+}
+
+interface ReadChatStructureMutationLocalEffectOptions {
+  operation: ChatStructureMutationLocalEffect['operation']
+  expectedCharacterId?: unknown
+  expectedTargetId?: unknown
+  expectedSourceChatId?: unknown
+  expectedIds?: unknown
+  expectedChat?: ChatSnapshot
+  expectedOptimisticEpoch?: unknown
+  expectedOptimisticRowEpoch?: unknown
+}
+
+function readChatStructureMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadChatStructureMutationLocalEffectOptions,
+): ChatStructureMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (
+    !Number.isInteger(options.expectedOptimisticEpoch) ||
+    hasDestructiveRefreshEpochChanged(options.expectedOptimisticEpoch as number)
+  ) {
+    return undefined
+  }
+  if (!Number.isInteger(options.expectedOptimisticRowEpoch)) return undefined
+  if (!nonEmptyString(event.parentId)) return undefined
+  if (options.expectedCharacterId !== undefined && event.parentId !== options.expectedCharacterId) return undefined
+
+  const expectedType =
+    options.operation === 'create'
+      ? 'chat.created'
+      : options.operation === 'delete'
+        ? 'chat.deleted'
+        : options.operation === 'fork'
+          ? 'chat.forked'
+          : options.operation === 'reorder'
+            ? 'chat.reordered'
+            : options.operation === 'folderCreate'
+              ? 'chatFolder.created'
+              : options.operation === 'folderDelete'
+                ? 'chatFolder.deleted'
+                : 'chatFolder.reordered'
+  const allowsTranscriptResource = options.operation === 'create' || options.operation === 'fork'
+  if (
+    event.type !== expectedType ||
+    (event.resource !== 'characterRow' && !(allowsTranscriptResource && event.resource === 'chatTranscript'))
+  ) {
+    return undefined
+  }
+
+  if (options.operation === 'reorder' || options.operation === 'folderReorder') {
+    if (event.id !== undefined || !isUniqueStringArray(options.expectedIds)) return undefined
+    return {
+      kind: 'chatStructureMutation',
+      operation: options.operation,
+      characterId: event.parentId,
+      attemptedIds: [...options.expectedIds],
+      optimisticEpoch: options.expectedOptimisticEpoch as number,
+      optimisticRowEpoch: options.expectedOptimisticRowEpoch as number,
+    }
+  }
+
+  if (!nonEmptyString(options.expectedTargetId) || event.id !== options.expectedTargetId) return undefined
+  const record = body as Record<string, unknown>
+  const responseKey =
+    options.operation === 'folderCreate' || options.operation === 'folderDelete' ? 'folderId' : 'chatId'
+  if (record[responseKey] !== options.expectedTargetId) return undefined
+  if (
+    options.operation === 'fork' &&
+    (!nonEmptyString(options.expectedSourceChatId) || record.sourceChatId !== options.expectedSourceChatId)
+  ) {
+    return undefined
+  }
+
+  if (options.operation === 'create' || options.operation === 'fork') {
+    if (!options.expectedChat || !Object.prototype.hasOwnProperty.call(record, 'generationSettings')) {
+      return undefined
+    }
+    const canonicalGenerationSettings = record.generationSettings
+    if (
+      canonicalGenerationSettings !== null &&
+      (!canonicalGenerationSettings ||
+        typeof canonicalGenerationSettings !== 'object' ||
+        Array.isArray(canonicalGenerationSettings))
+    ) {
+      return undefined
+    }
+    return {
+      kind: 'chatStructureMutation',
+      operation: options.operation,
+      characterId: event.parentId,
+      targetId: options.expectedTargetId,
+      attemptedGenerationSettings: cloneJsonValue(options.expectedChat.generationSettings ?? null),
+      generationSettings: cloneJsonValue(canonicalGenerationSettings as ChatGenerationSettings | null),
+      optimisticEpoch: options.expectedOptimisticEpoch as number,
+      optimisticRowEpoch: options.expectedOptimisticRowEpoch as number,
+    }
+  }
+
+  return {
+    kind: 'chatStructureMutation',
+    operation: options.operation,
+    characterId: event.parentId,
+    targetId: options.expectedTargetId,
+    optimisticEpoch: options.expectedOptimisticEpoch as number,
+    optimisticRowEpoch: options.expectedOptimisticRowEpoch as number,
+  }
+}
+
+function isCanonicalOptimisticChatSnapshot(chat: ChatSnapshot): boolean {
+  return (
+    nonEmptyString(chat.id) &&
+    Array.isArray(chat.message) &&
+    typeof chat.note === 'string' &&
+    typeof chat.name === 'string' &&
+    chat.name.trim() !== '' &&
+    Array.isArray(chat.localLore)
+  )
+}
+
+function isCanonicalOptimisticChatFolderSnapshot(folder: ChatFolderSnapshot): boolean {
+  return nonEmptyString(folder.id) && typeof folder.folded === 'boolean'
 }
 
 function readCharacterOrderLocalEffect(

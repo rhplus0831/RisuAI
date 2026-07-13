@@ -133,7 +133,7 @@ import {
   setServerCommandSuccessReconciler,
   updatePromptItemCommand,
 } from './commands'
-import { createDestructiveRefreshToken } from './staleStateGuards'
+import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './staleStateGuards'
 
 interface CapturedFetch {
   url: string
@@ -2620,6 +2620,255 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('emits strict opt-in local effects for optimistic chat structure mutations', async () => {
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
+    const optimisticRowEpoch = 0
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const responses = [
+      {
+        revision: 1,
+        event: {
+          type: 'chat.created',
+          revision: 1,
+          resource: 'chatTranscript',
+          id: 'chat-created',
+          parentId: 'char-a',
+        },
+        chatId: 'chat-created',
+        selectedChatId: 'chat-created',
+        generationSettings: null,
+      },
+      {
+        revision: 2,
+        event: {
+          type: 'chat.deleted',
+          revision: 2,
+          resource: 'characterRow',
+          id: 'chat-deleted',
+          parentId: 'char-a',
+        },
+        chatId: 'chat-deleted',
+        selectedChatId: 'chat-created',
+      },
+      {
+        revision: 3,
+        event: {
+          type: 'chat.forked',
+          revision: 3,
+          resource: 'chatTranscript',
+          id: 'chat-forked',
+          parentId: 'char-a',
+        },
+        chatId: 'chat-forked',
+        sourceChatId: 'chat-created',
+        selectedChatId: 'chat-forked',
+        generationSettings: null,
+      },
+      {
+        revision: 4,
+        event: { type: 'chat.reordered', revision: 4, resource: 'characterRow', parentId: 'char-a' },
+        selectedChatId: 'chat-created',
+      },
+      {
+        revision: 5,
+        event: {
+          type: 'chatFolder.created',
+          revision: 5,
+          resource: 'characterRow',
+          id: 'folder-a',
+          parentId: 'char-a',
+        },
+        folderId: 'folder-a',
+      },
+      {
+        revision: 6,
+        event: {
+          type: 'chatFolder.deleted',
+          revision: 6,
+          resource: 'characterRow',
+          id: 'folder-a',
+          parentId: 'char-a',
+        },
+        folderId: 'folder-a',
+      },
+      {
+        revision: 7,
+        event: { type: 'chatFolder.reordered', revision: 7, resource: 'characterRow', parentId: 'char-a' },
+        selectedChatId: 'chat-created',
+      },
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => responses[responseIndex++])
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createChatCommand({
+      baseRevision: 0,
+      characterId: 'char-a',
+      chat: {
+        id: 'chat-created',
+        name: 'Created',
+        note: '',
+        localLore: [],
+        message: [{ role: 'user', data: 'Created', chatId: 'message-a' }],
+      },
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+    await deleteChatCommand({
+      baseRevision: 1,
+      chatId: 'chat-deleted',
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+    await forkChatCommand({
+      baseRevision: 2,
+      chatId: 'chat-created',
+      chat: {
+        id: 'chat-forked',
+        name: 'Forked',
+        note: '',
+        localLore: [],
+        message: [{ role: 'user', data: 'Forked', chatId: 'message-b' }],
+      },
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+    await reorderChatsCommand({
+      baseRevision: 3,
+      characterId: 'char-a',
+      chatIds: ['chat-forked', 'chat-created'],
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+    await createChatFolderCommand({
+      baseRevision: 4,
+      characterId: 'char-a',
+      folder: { id: 'folder-a', folded: false },
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+    await deleteChatFolderCommand({
+      baseRevision: 5,
+      folderId: 'folder-a',
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+    await reorderChatFoldersCommand({
+      baseRevision: 6,
+      characterId: 'char-a',
+      folderIds: ['folder-b', 'folder-a'],
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch,
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'chatStructureMutation',
+        operation: 'create',
+        characterId: 'char-a',
+        targetId: 'chat-created',
+        attemptedGenerationSettings: null,
+        generationSettings: null,
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+      {
+        kind: 'chatStructureMutation',
+        operation: 'delete',
+        characterId: 'char-a',
+        targetId: 'chat-deleted',
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+      {
+        kind: 'chatStructureMutation',
+        operation: 'fork',
+        characterId: 'char-a',
+        targetId: 'chat-forked',
+        attemptedGenerationSettings: null,
+        generationSettings: null,
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+      {
+        kind: 'chatStructureMutation',
+        operation: 'reorder',
+        characterId: 'char-a',
+        attemptedIds: ['chat-forked', 'chat-created'],
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+      {
+        kind: 'chatStructureMutation',
+        operation: 'folderCreate',
+        characterId: 'char-a',
+        targetId: 'folder-a',
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+      {
+        kind: 'chatStructureMutation',
+        operation: 'folderDelete',
+        characterId: 'char-a',
+        targetId: 'folder-a',
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+      {
+        kind: 'chatStructureMutation',
+        operation: 'folderReorder',
+        characterId: 'char-a',
+        attemptedIds: ['folder-b', 'folder-a'],
+        optimisticEpoch,
+        optimisticRowEpoch,
+      },
+    ])
+  })
+
+  it('does not emit a structural local effect after a destructive refresh', async () => {
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
+    createDestructiveRefreshToken('chat-structure-test-refresh')
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 1,
+      event: {
+        type: 'chat.created',
+        revision: 1,
+        resource: 'characterRow',
+        id: 'chat-created',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-created',
+      selectedChatId: 'chat-created',
+      generationSettings: null,
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createChatCommand({
+      baseRevision: 0,
+      characterId: 'char-a',
+      chat: { id: 'chat-created', name: 'Created', note: '', localLore: [], message: [] },
+      acknowledgeOptimistic: true,
+      optimisticEpoch,
+      optimisticRowEpoch: 0,
+    })
+
+    expect(observedEffects).toEqual([])
   })
 
   it('dispatches message translation commands through the typed helper', async () => {

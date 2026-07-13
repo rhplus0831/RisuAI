@@ -5532,6 +5532,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
       chatId: 'chat-c',
       selectedChatId: 'chat-c',
+      generationSettings: null,
     })
     await expect(persistedChatMessages(harness.app, assertion, 'chat-c')).resolves.toEqual([
       { role: 'user', data: 'created hello', chatId: 'msg-created' },
@@ -6053,6 +6054,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       id: 'chat-omitted',
       parentId: 'char-a',
     })
+    expect(omitted.json().generationSettings).toBeNull()
 
     const explicitSettings = {
       configured: true,
@@ -6079,6 +6081,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(explicit.statusCode).toBe(200)
+    expect(explicit.json().generationSettings).toEqual(explicitSettings)
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -6657,6 +6660,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(inherited.statusCode).toBe(200)
+    expect(inherited.json().generationSettings).toEqual(sourceSettings)
 
     const overrideSettings = {
       configured: true,
@@ -6683,6 +6687,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(overridden.statusCode).toBe(200)
+    expect(overridden.json().generationSettings).toEqual(overrideSettings)
 
     const incompleteSettings = {
       configured: true,
@@ -6718,6 +6723,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       },
     })
     expect(incompleteInherited.statusCode).toBe(200)
+    expect(incompleteInherited.json().generationSettings).toEqual(incompleteSettings)
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
