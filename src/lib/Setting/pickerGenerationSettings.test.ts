@@ -98,11 +98,12 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const headers = init.headers as Record<string, string> | undefined
       const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
       calls.push({
         url,
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
-        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        body,
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
@@ -132,8 +133,16 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
             revision: 201,
             resource: 'characterRow',
             id: 'chat-a',
+            parentId: 'char-a',
           },
           chatId: 'chat-a',
+          characterId: 'char-a',
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: Object.keys(body?.patch ?? {}).sort(),
+          deletedKeys: [...(body?.deleteKeys ?? [])].sort(),
+          sidebarTogglePatchedKeys: Object.keys(body?.patch?.sidebarToggles ?? {}).sort(),
+          sidebarToggleDeletedKeys: [...(body?.sidebarToggleDeleteKeys ?? [])].sort(),
+          prunedSidebarToggleKeys: [],
         } satisfies ServerCommandResult<{ chatId: string }> & Record<string, unknown>)
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -356,12 +365,11 @@ describe('generation settings picker mode', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'picker-generation-settings-token',
-      body: {
-        baseRevision: 200,
-        generationSettings: expect.objectContaining({
-          promptPresetId: 'preset-a',
-        }),
-      },
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 200,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { promptPresetId: 'preset-a' },
     })
   })
 
@@ -524,12 +532,11 @@ describe('generation settings picker mode', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'picker-generation-settings-token',
-      body: {
-        baseRevision: 200,
-        generationSettings: expect.objectContaining({
-          personaId: 'persona-a',
-        }),
-      },
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 200,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { personaId: 'persona-a' },
     })
   })
 

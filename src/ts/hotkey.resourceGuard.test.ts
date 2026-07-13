@@ -55,10 +55,11 @@ function stubCommandFetch(): CapturedFetch[] {
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
       calls.push({
         url,
         method: init.method ?? 'GET',
-        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        body,
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
       if (url.startsWith('/api/v1/commands/settings/')) {
@@ -77,8 +78,21 @@ function stubCommandFetch(): CapturedFetch[] {
       if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
         return jsonResponse({
           revision: 11,
-          event: { type: 'chat.generation-settings.updated', revision: 11, resource: 'chat' },
+          event: {
+            type: 'chat.updated',
+            revision: 11,
+            resource: 'characterRow',
+            id: 'chat-a',
+            parentId: 'char-a',
+          },
           chatId: 'chat-a',
+          characterId: 'char-a',
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: Object.keys(body?.patch ?? {}).sort(),
+          deletedKeys: [...(body?.deleteKeys ?? [])].sort(),
+          sidebarTogglePatchedKeys: Object.keys(body?.patch?.sidebarToggles ?? {}).sort(),
+          sidebarToggleDeletedKeys: [...(body?.sidebarToggleDeleteKeys ?? [])].sort(),
+          prunedSidebarToggleKeys: [],
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -224,7 +238,11 @@ describe('hotkey handling under the resource guard', () => {
     expect(testDatabaseState.db.modelPresetsId).toBe(0)
 
     const command = await waitForCommand(calls, (call) => call.url.endsWith('/chat-a/generation-settings'))
-    expect(command.body.generationSettings.modelPresetId).toBe('model-second')
+    expect(command.body).toEqual({
+      baseRevision: 10,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { modelPresetId: 'model-second' },
+    })
   })
 
   it('routes a hotkey settings edit through a sidebar settings patch', async () => {

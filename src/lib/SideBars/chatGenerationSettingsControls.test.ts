@@ -108,11 +108,12 @@ function stubCommandFetch(): CapturedFetch[] {
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const headers = init.headers as Record<string, string> | undefined
       const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
       calls.push({
         url,
         method: init.method ?? 'GET',
         authHeader: headers?.['risu-auth'] ?? null,
-        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        body,
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision })
@@ -129,6 +130,7 @@ function stubCommandFetch(): CapturedFetch[] {
         } satisfies ServerCommandResult & Record<string, unknown>)
       }
       if (url.endsWith('/generation-settings')) {
+        const chatId = decodeURIComponent(url.match(/\/chats\/([^/]+)\/generation-settings$/)?.[1] ?? '')
         revision += 1
         return jsonResponse({
           status: 'ok',
@@ -137,9 +139,17 @@ function stubCommandFetch(): CapturedFetch[] {
             type: 'chat.updated',
             revision,
             resource: 'characterRow',
-            id: 'chat-a',
+            id: chatId,
+            parentId: 'char-a',
           },
-          chatId: 'chat-a',
+          chatId,
+          characterId: 'char-a',
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: Object.keys(body?.patch ?? {}).sort(),
+          deletedKeys: [...(body?.deleteKeys ?? [])].sort(),
+          sidebarTogglePatchedKeys: Object.keys(body?.patch?.sidebarToggles ?? {}).sort(),
+          sidebarToggleDeletedKeys: [...(body?.sidebarToggleDeleteKeys ?? [])].sort(),
+          prunedSidebarToggleKeys: [],
         } satisfies ServerCommandResult<{ chatId: string }> & Record<string, unknown>)
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -575,13 +585,11 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          agentPresetId: 'agent-preset-a',
-        }),
-      },
+    })
+    expect(generationSettingsSaves(calls)[0].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { agentPresetId: 'agent-preset-a' },
     })
 
     const savesBeforeClear = generationSettingsSaves(calls).length
@@ -595,13 +603,10 @@ describe('sidebar chat generation settings controls', () => {
     expect(resolveActiveChatGenerationSettings().readiness.ready).toBe(true)
     expect(pickerControl('agent-preset').dataset.risuPickerSelectedId).toBe('')
     expect(pickerControl('agent-preset').textContent).toContain(language.agentPresets.noSelected)
-    expect(generationSettingsSaves(calls).at(-1)).toMatchObject({
-      body: {
-        generationSettings: expect.objectContaining({
-          configured: true,
-          agentPresetId: '',
-        }),
-      },
+    expect(generationSettingsSaves(calls).at(-1)?.body).toEqual({
+      baseRevision: 301,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { agentPresetId: '' },
     })
   })
 
@@ -764,14 +769,13 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          personaId: 'persona-a',
-          promptPresetId: 'preset-a',
-          jailbreakToggle: false,
-        }),
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        configured: true,
+        jailbreakToggle: false,
       },
     })
   })
@@ -824,15 +828,11 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          personaId: 'persona-a',
-          promptPresetId: 'preset-a',
-          jailbreakToggle: false,
-        }),
-      },
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { jailbreakToggle: false },
     })
   })
 
@@ -1097,26 +1097,24 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          promptPresetId: 'preset-b',
-        }),
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        configured: true,
+        promptPresetId: 'preset-b',
       },
     })
     expect(calls[2]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 301,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          promptPresetId: 'preset-b',
-          personaId: 'persona-b',
-        }),
-      },
+    })
+    expect(calls[2].body).toEqual({
+      baseRevision: 301,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { personaId: 'persona-b' },
     })
   })
 
@@ -1215,18 +1213,19 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          promptPresetId: 'preset-a',
-          sidebarToggles: {
-            mood: '0',
-            flag: '0',
-            note: '',
-            moduleFlag: '0',
-          },
-        }),
+    })
+    expect(generationSettingsSaves(calls)[0].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        configured: true,
+        promptPresetId: 'preset-a',
+        sidebarToggles: {
+          mood: '0',
+          flag: '0',
+          note: '',
+          moduleFlag: '0',
+        },
       },
     })
   })
@@ -1305,21 +1304,20 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 300,
-        generationSettings: expect.objectContaining({
-          configured: true,
-          promptPresetId: 'preset-a',
-          personaId: 'persona-a',
-          jailbreakToggle: false,
-          sidebarToggles: {
-            mood: '0',
-            flag: '0',
-            note: '',
-            moduleFlag: '0',
-          },
-        }),
+    })
+    expect(calls[1].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        jailbreakToggle: false,
+        sidebarToggles: {
+          mood: '0',
+          flag: '0',
+          note: '',
+          moduleFlag: '0',
+        },
       },
+      sidebarToggleDeleteKeys: ['stale'],
     })
   })
 
@@ -1467,17 +1465,18 @@ describe('sidebar chat generation settings controls', () => {
       url: '/api/v1/commands/chats/chat-b/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 301,
-        generationSettings: expect.objectContaining({
-          jailbreakToggle: true,
-          sidebarToggles: {
-            mood: '1',
-            flag: '1',
-            note: 'alpha-note',
-            moduleFlag: '1',
-          },
-        }),
+    })
+    expect(calls[2].body).toEqual({
+      baseRevision: 301,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        jailbreakToggle: true,
+        sidebarToggles: {
+          mood: '1',
+          flag: '1',
+          note: 'alpha-note',
+          moduleFlag: '1',
+        },
       },
     })
 
@@ -1545,7 +1544,7 @@ describe('sidebar chat generation settings controls', () => {
     alertSpies.alertConfirm.mockResolvedValueOnce(true)
     togglePresetButton(1).click()
     await tick()
-    await waitForGenerationSettingsSaveCount(calls, 2)
+    await flushAsyncWork()
 
     expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
     expect(activeChat().generationSettings?.sidebarToggles).toMatchObject({
@@ -1555,21 +1554,17 @@ describe('sidebar chat generation settings controls', () => {
       codex: '0',
       moduleFlag: '1',
     })
-    expect(generationSettingsSaves(calls).at(-1)).toMatchObject({
+    expect(generationSettingsSaves(calls)).toHaveLength(1)
+    expect(generationSettingsSaves(calls)[0]).toMatchObject({
       url: '/api/v1/commands/chats/chat-a/generation-settings',
       method: 'PUT',
       authHeader: 'sidebar-generation-settings-token',
-      body: {
-        baseRevision: 301,
-        generationSettings: expect.objectContaining({
-          sidebarToggles: {
-            mood: '1',
-            flag: '1',
-            note: 'alpha-note',
-            codex: '0',
-            moduleFlag: '1',
-          },
-        }),
+    })
+    expect(generationSettingsSaves(calls)[0].body).toEqual({
+      baseRevision: 300,
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: {
+        sidebarToggles: { codex: '0' },
       },
     })
   })

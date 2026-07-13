@@ -289,12 +289,14 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       resolveSettingsSave = resolve
     })
     let settingsSaveRequests = 0
+    let settingsSaveBody: Record<string, unknown> | null = null
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input)
         if (url.endsWith('/generation-settings')) {
           settingsSaveRequests += 1
+          settingsSaveBody = typeof init?.body === 'string' ? JSON.parse(init.body) : null
           return pendingSettingsSave
         }
         return serverChatFetch(input, init)
@@ -302,9 +304,20 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     )
 
     const activeChat = testDatabaseState.db.characters[0].chats[0]
+    const characterId = testDatabaseState.db.characters[0].chaId
     activeChat.id = 'chat-1'
-    expect(dispatchSaveChatGenerationSettings(activeChat.id, activeChat.generationSettings!)).toBe(true)
+    expect(
+      dispatchSaveChatGenerationSettings(activeChat.id, {
+        ...activeChat.generationSettings!,
+        jailbreakToggle: true,
+      }),
+    ).toBe(true)
     await waitForState(() => expect(settingsSaveRequests).toBe(1))
+    expect(settingsSaveBody).toEqual({
+      baseRevision: expect.any(Number),
+      baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+      patch: { jailbreakToggle: true },
+    })
 
     const sendPromise = chatModule.sendChat(-1)
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -314,8 +327,21 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
       new Response(
         JSON.stringify({
           revision: 2,
-          event: { type: 'chat.updated', revision: 2, resource: 'characterRow', id: 'chat-1' },
+          event: {
+            type: 'chat.updated',
+            revision: 2,
+            resource: 'characterRow',
+            id: 'chat-1',
+            parentId: characterId,
+          },
           chatId: 'chat-1',
+          characterId,
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: ['jailbreakToggle'],
+          deletedKeys: [],
+          sidebarTogglePatchedKeys: [],
+          sidebarToggleDeletedKeys: [],
+          prunedSidebarToggleKeys: [],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
