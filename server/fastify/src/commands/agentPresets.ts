@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
+import { isDeepStrictEqual } from 'node:util'
 import {
   AGENT_PRESET_SCHEMA_VERSION,
   AGENT_PRESET_MAX_CONCURRENCY_MAX,
@@ -49,6 +50,19 @@ interface AgentPresetCommandArgs {
 
 type AgentPresetMutationExtra = Record<string, unknown>
 
+interface AgentPresetPatchAcknowledgement extends Record<string, unknown> {
+  acknowledgedKeys: string[]
+  canonicalValues: Record<string, unknown>
+  canonicalDeletedKeys: string[]
+  updatedAt?: number
+}
+
+interface CanonicalAgentPresetState {
+  presets: AgentPresetRecord[]
+  defaultId: string | undefined
+  acknowledgementSafe: boolean
+}
+
 const AGENT_PRESET_PHASE_SET = new Set<string>(AGENT_PRESET_STEP_PHASES)
 const AGENT_PRESET_OUTPUT_FORMAT_SET = new Set<string>(AGENT_PRESET_STEP_OUTPUT_FORMATS)
 const AGENT_PRESET_INPUT_SCOPE_SET = new Set<string>(AGENT_PRESET_STEP_INPUT_SCOPES)
@@ -94,22 +108,33 @@ export function createAgentPresetCommand(
 
 export function updateAgentPresetCommand(
   args: AgentPresetCommandArgs & { presetId: string },
-): JsonCommandMutationResult<{ presetId: string }> {
+): JsonCommandMutationResult<{ presetId: string } & AgentPresetPatchAcknowledgement> {
   const presetId = readNonEmptyString(args.presetId, 'presetId')
   const body = readObject(args.body, 'request body')
   const patch = readPresetMetadataPatch(body.patch)
 
   return applyAgentPresetSettingsMutation(args, (target) => {
-    const presets = currentAgentPresets(target)
+    const before = readCanonicalAgentPresetState(target)
+    const presets = before.presets
     const index = requireAgentPresetIndex(presets, presetId)
     const next = applyPresetMetadataPatch(presets[index], patch)
     const nextPresets = [...presets]
     nextPresets[index] = next
     target.agentPresets = readPresetCollectionForWrite(nextPresets)
     normalizeAgentPresetDefault(target)
+    const after = readCanonicalAgentPresetState(target)
+    const finalPreset = after.presets[requireAgentPresetIndex(after.presets, presetId)]
+    const acknowledgementSafe =
+      before.acknowledgementSafe &&
+      after.acknowledgementSafe &&
+      before.defaultId === after.defaultId &&
+      isExpectedMetadataPatch(before.presets, after.presets, presetId, Object.keys(patch))
     return {
       event: { ...COMMAND_EVENT_CATALOG.agentPresetUpdated, id: presetId },
-      extra: { presetId },
+      extra: {
+        presetId,
+        ...buildAgentPresetPatchAcknowledgement(patch, finalPreset, acknowledgementSafe),
+      },
     }
   })
 }
@@ -251,14 +276,15 @@ export function createAgentPresetStepCommand(
 
 export function updateAgentPresetStepCommand(
   args: AgentPresetCommandArgs & { presetId: string; stepId: string },
-): JsonCommandMutationResult<{ presetId: string; stepId: string }> {
+): JsonCommandMutationResult<{ presetId: string; stepId: string } & AgentPresetPatchAcknowledgement> {
   const presetId = readNonEmptyString(args.presetId, 'presetId')
   const stepId = readNonEmptyString(args.stepId, 'stepId')
   const body = readObject(args.body, 'request body')
   const patch = readStepPatch(body.patch)
 
   return applyAgentPresetSettingsMutation(args, (target) => {
-    const presets = currentAgentPresets(target)
+    const before = readCanonicalAgentPresetState(target)
+    const presets = before.presets
     const preset = clonePreset(presets[requireAgentPresetIndex(presets, presetId)])
     const stepIndex = requireStepIndex(preset, stepId)
     preset.steps[stepIndex] = applyStepPatch(preset.steps[stepIndex], patch)
@@ -266,9 +292,21 @@ export function updateAgentPresetStepCommand(
     const nextPresets = replacePreset(presets, preset)
     target.agentPresets = readPresetCollectionForWrite(nextPresets)
     normalizeAgentPresetDefault(target)
+    const after = readCanonicalAgentPresetState(target)
+    const finalPreset = after.presets[requireAgentPresetIndex(after.presets, presetId)]
+    const finalStep = finalPreset.steps[requireStepIndex(finalPreset, stepId)]
+    const acknowledgementSafe =
+      before.acknowledgementSafe &&
+      after.acknowledgementSafe &&
+      before.defaultId === after.defaultId &&
+      isExpectedStepPatch(before.presets, after.presets, presetId, stepId, Object.keys(patch))
     return {
       event: { ...COMMAND_EVENT_CATALOG.agentPresetStepUpdated, id: stepId, parentId: presetId },
-      extra: { presetId, stepId },
+      extra: {
+        presetId,
+        stepId,
+        ...buildAgentPresetPatchAcknowledgement(patch, finalStep, acknowledgementSafe, finalPreset.updatedAt),
+      },
     }
   })
 }
@@ -387,6 +425,104 @@ function currentAgentPresets(target: Record<string, unknown>): AgentPresetRecord
   const presets = normalizeAgentPresets(target.agentPresets)
   assertValidPresetCollection(presets)
   return presets
+}
+
+function readCanonicalAgentPresetState(target: Record<string, unknown>): CanonicalAgentPresetState {
+  const rawPresets = target.agentPresets
+  const presets = currentAgentPresets(target)
+  const defaultId = normalizeAgentPresetDefaultId(target.agentPresetDefaultId, presets)
+  const defaultIsCanonical = defaultId
+    ? target.agentPresetDefaultId === defaultId
+    : !hasOwn(target, 'agentPresetDefaultId')
+  return {
+    presets,
+    defaultId,
+    acknowledgementSafe: Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && defaultIsCanonical,
+  }
+}
+
+function buildAgentPresetPatchAcknowledgement(
+  patch: Record<string, unknown>,
+  canonicalTarget: object,
+  acknowledgementSafe: boolean,
+  updatedAt = (canonicalTarget as Record<string, unknown>).updatedAt,
+): AgentPresetPatchAcknowledgement {
+  if (!acknowledgementSafe || typeof updatedAt !== 'number' || !Number.isFinite(updatedAt) || updatedAt < 0) {
+    return {
+      acknowledgedKeys: [],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    }
+  }
+
+  const acknowledgedKeys = Object.keys(patch)
+  const canonicalValues: Record<string, unknown> = {}
+  const canonicalDeletedKeys: string[] = []
+  const canonicalRecord = canonicalTarget as Record<string, unknown>
+  for (const key of acknowledgedKeys) {
+    if (hasOwn(canonicalRecord, key)) canonicalValues[key] = cloneJson(canonicalRecord[key])
+    else canonicalDeletedKeys.push(key)
+  }
+  return {
+    acknowledgedKeys,
+    canonicalValues,
+    canonicalDeletedKeys,
+    updatedAt,
+  }
+}
+
+function isExpectedMetadataPatch(
+  before: readonly AgentPresetRecord[],
+  after: readonly AgentPresetRecord[],
+  presetId: string,
+  patchKeys: readonly string[],
+): boolean {
+  if (!samePresetIdentityOrder(before, after)) return false
+  const allowedKeys = new Set([...patchKeys, 'updatedAt'])
+  return before.every((preset, index) =>
+    preset.id === presetId
+      ? recordsEqualExcept(preset, after[index], allowedKeys)
+      : isDeepStrictEqual(preset, after[index]),
+  )
+}
+
+function isExpectedStepPatch(
+  before: readonly AgentPresetRecord[],
+  after: readonly AgentPresetRecord[],
+  presetId: string,
+  stepId: string,
+  patchKeys: readonly string[],
+): boolean {
+  if (!samePresetIdentityOrder(before, after)) return false
+  return before.every((preset, presetIndex) => {
+    const nextPreset = after[presetIndex]
+    if (preset.id !== presetId) return isDeepStrictEqual(preset, nextPreset)
+    if (!recordsEqualExcept(preset, nextPreset, new Set(['steps', 'updatedAt']))) return false
+    if (preset.steps.length !== nextPreset.steps.length) return false
+    const allowedStepKeys = new Set(patchKeys)
+    return preset.steps.every((step, stepIndex) => {
+      const nextStep = nextPreset.steps[stepIndex]
+      if (!nextStep || nextStep.id !== step.id) return false
+      return step.id === stepId
+        ? recordsEqualExcept(step, nextStep, allowedStepKeys)
+        : isDeepStrictEqual(step, nextStep)
+    })
+  })
+}
+
+function samePresetIdentityOrder(before: readonly AgentPresetRecord[], after: readonly AgentPresetRecord[]): boolean {
+  return before.length === after.length && before.every((preset, index) => after[index]?.id === preset.id)
+}
+
+function recordsEqualExcept(before: object, after: object, allowedKeys: ReadonlySet<string>): boolean {
+  const beforeRecord = before as Record<string, unknown>
+  const afterRecord = after as Record<string, unknown>
+  const keys = new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)])
+  for (const key of keys) {
+    if (allowedKeys.has(key)) continue
+    if (!isDeepStrictEqual(beforeRecord[key], afterRecord[key])) return false
+  }
+  return true
 }
 
 function readPresetCollectionForWrite(value: readonly AgentPresetRecord[]): AgentPresetRecord[] {

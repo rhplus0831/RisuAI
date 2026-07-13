@@ -1671,6 +1671,149 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes exact Agent Preset field acknowledgements without serializing optimistic proof', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/agent-presets/ap_a/steps/aps_a')) {
+        return {
+          revision: 4,
+          event: {
+            type: 'agentPreset.step.updated',
+            revision: 4,
+            resource: 'agentPreset',
+            id: 'aps_a',
+            parentId: 'ap_a',
+          },
+          presetId: 'ap_a',
+          stepId: 'aps_a',
+          acknowledgedKeys: ['outputKey'],
+          canonicalValues: { outputKey: 'facts' },
+          canonicalDeletedKeys: [],
+          updatedAt: 400,
+        }
+      }
+      return {
+        revision: 3,
+        event: {
+          type: 'agentPreset.updated',
+          revision: 3,
+          resource: 'agentPreset',
+          id: 'ap_a',
+        },
+        presetId: 'ap_a',
+        acknowledgedKeys: ['name', 'description'],
+        canonicalValues: { name: 'Canonical Name' },
+        canonicalDeletedKeys: ['description'],
+        updatedAt: 300,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await updateAgentPresetCommand({
+      baseRevision: 2,
+      presetId: 'ap_a',
+      patch: { name: '  Canonical Name  ', description: null },
+      optimisticAcknowledgement: {
+        settingsProjectionEpoch: 12,
+        attemptedFields: {
+          name: { present: true, value: '  Canonical Name  ' },
+          description: { present: true, value: null },
+        },
+      },
+    })
+    await updateAgentPresetStepCommand({
+      baseRevision: 3,
+      presetId: 'ap_a',
+      stepId: 'aps_a',
+      patch: { outputKey: ' facts ' },
+      optimisticAcknowledgement: {
+        settingsProjectionEpoch: 12,
+        attemptedFields: { outputKey: { present: true, value: ' facts ' } },
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'agentPresetPatch',
+        presetId: 'ap_a',
+        settingsProjectionEpoch: 12,
+        fields: {
+          name: {
+            attempted: { present: true, value: '  Canonical Name  ' },
+            canonical: { present: true, value: 'Canonical Name' },
+          },
+          description: {
+            attempted: { present: true, value: null },
+            canonical: { present: false },
+          },
+        },
+        updatedAt: 300,
+      },
+      {
+        kind: 'agentPresetStepPatch',
+        presetId: 'ap_a',
+        stepId: 'aps_a',
+        settingsProjectionEpoch: 12,
+        fields: {
+          outputKey: {
+            attempted: { present: true, value: ' facts ' },
+            canonical: { present: true, value: 'facts' },
+          },
+        },
+        updatedAt: 400,
+      },
+    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      {
+        baseRevision: 2,
+        patch: { name: '  Canonical Name  ', description: null },
+      },
+      {
+        baseRevision: 3,
+        patch: { outputKey: ' facts ' },
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticAcknowledgement')
+    expect(commandFetch.calls[1]?.body).not.toHaveProperty('optimisticAcknowledgement')
+  })
+
+  it('keeps contradictory Agent Preset field receipts on authoritative reconciliation', async () => {
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event: {
+        type: 'agentPreset.updated',
+        revision: 3,
+        resource: 'agentPreset',
+        id: 'ap_a',
+      },
+      presetId: 'ap_a',
+      acknowledgedKeys: ['enabled'],
+      canonicalValues: { enabled: false },
+      canonicalDeletedKeys: [],
+      updatedAt: 300,
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await updateAgentPresetCommand({
+      baseRevision: 2,
+      presetId: 'ap_a',
+      patch: { name: 'Attempted' },
+      optimisticAcknowledgement: {
+        settingsProjectionEpoch: 12,
+        attemptedFields: { name: { present: true, value: 'Attempted' } },
+      },
+    })
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('runs server preset commands with revision lookup and surfaces conflicts', async () => {
     let selectAttempts = 0
     const commandFetch = makeCommandFetch((url) => {

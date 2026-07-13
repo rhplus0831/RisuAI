@@ -24,6 +24,8 @@ import {
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
+  type AgentPresetPatchLocalEffect,
+  type AgentPresetStepPatchLocalEffect,
   type LegacyPresetPatchLocalEffect,
   type PersonaPatchLocalEffect,
   type ServerCommandLocalEffect,
@@ -72,6 +74,8 @@ import {
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
   applyLegacyPresetPatchLocalEffect,
+  applyAgentPresetPatchLocalEffect,
+  applyAgentPresetStepPatchLocalEffect,
   applyPersonaPatchLocalEffect,
   applyTranslatorPresetPatchLocalEffect,
   applySplitPresetPatchLocalEffect,
@@ -476,6 +480,58 @@ function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: Pers
   )
 }
 
+function applyAgentPresetPatchAcknowledgement(event: CommandEvent, localEffect: AgentPresetPatchLocalEffect): boolean {
+  if (
+    event.type !== 'agentPreset.updated' ||
+    event.resource !== 'agentPreset' ||
+    event.id !== localEffect.presetId ||
+    event.parentId !== undefined ||
+    !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+    localEffect.settingsProjectionEpoch < 0 ||
+    hasSettingsGroupProjectionEpochChanged('agents', localEffect.settingsProjectionEpoch) ||
+    isSettingsGroupAcknowledgementTainted('agents') ||
+    isSettingsAcknowledgementTainted()
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyAgentPresetPatchLocalEffect({
+      revision: event.revision,
+      presetId: localEffect.presetId,
+      fields: localEffect.fields,
+      updatedAt: localEffect.updatedAt,
+    }),
+  )
+}
+
+function applyAgentPresetStepPatchAcknowledgement(
+  event: CommandEvent,
+  localEffect: AgentPresetStepPatchLocalEffect,
+): boolean {
+  if (
+    event.type !== 'agentPreset.step.updated' ||
+    event.resource !== 'agentPreset' ||
+    event.id !== localEffect.stepId ||
+    event.parentId !== localEffect.presetId ||
+    !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+    localEffect.settingsProjectionEpoch < 0 ||
+    hasSettingsGroupProjectionEpochChanged('agents', localEffect.settingsProjectionEpoch) ||
+    isSettingsGroupAcknowledgementTainted('agents') ||
+    isSettingsAcknowledgementTainted()
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyAgentPresetStepPatchLocalEffect({
+      revision: event.revision,
+      presetId: localEffect.presetId,
+      stepId: localEffect.stepId,
+      fields: localEffect.fields,
+      updatedAt: localEffect.updatedAt,
+    }),
+  )
+}
+
 function applyTranslatorPresetPatchAcknowledgement(
   event: CommandEvent,
   localEffect: TranslatorPresetPatchLocalEffect,
@@ -514,6 +570,10 @@ function applyTranslatorPresetPatchAcknowledgement(
 
 function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
   switch (localEffect.kind) {
+    case 'agentPresetPatch':
+      return applyAgentPresetPatchAcknowledgement(event, localEffect)
+    case 'agentPresetStepPatch':
+      return applyAgentPresetStepPatchAcknowledgement(event, localEffect)
     case 'legacyPresetPatch':
       return applyLegacyPresetPatchAcknowledgement(event, localEffect)
     case 'personaPatch':

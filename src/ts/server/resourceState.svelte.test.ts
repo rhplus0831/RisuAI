@@ -19,6 +19,8 @@ import {
   applyCollectionsResource,
   applyLegacyPresetCollectionResource,
   applyLegacyPresetPatchLocalEffect,
+  applyAgentPresetPatchLocalEffect,
+  applyAgentPresetStepPatchLocalEffect,
   applyPersonaPatchLocalEffect,
   applyTranslatorPresetPatchLocalEffect,
   applyLegacyPresetRowResource,
@@ -647,6 +649,149 @@ describe('resource-scoped database state', () => {
     expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
     expect(collectionsResourceState.revisions.translatorPresets).toBe(3)
     expect(settingsResourceState.groupRevisions.language).toBeUndefined()
+  })
+
+  it('applies canonical Agent Preset fields while preserving later edits and acknowledgement fences', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        agentPresets: [
+          {
+            id: 'ap_a',
+            name: '  Attempted Name  ',
+            description: null,
+            enabled: true,
+            version: 1,
+            steps: [
+              {
+                id: 'aps_a',
+                name: 'Step',
+                enabled: true,
+                phase: 'beforeMain',
+                dependencies: [],
+                instruction: 'newer instruction',
+                model: { mode: 'inheritMain' },
+                runtime: {},
+                inputScopes: [],
+                outputKey: ' facts ',
+                outputFormat: 'text',
+                destination: 'promptOutput',
+                failurePolicy: { mode: 'required' },
+              },
+            ],
+          },
+        ],
+      } as never,
+      3,
+    )
+    const epoch = captureSettingsGroupProjectionEpoch('agents')
+    markSettingsGroupAcknowledgementTainted('agents')
+    withResourceDatabaseWrite((database) => {
+      database.agentPresets[0].name = 'newer local name'
+    })
+
+    expect(
+      applyAgentPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'ap_a',
+        fields: {
+          name: {
+            attempted: { present: true, value: '  Attempted Name  ' },
+            canonical: { present: true, value: 'Attempted Name' },
+          },
+          description: {
+            attempted: { present: true, value: null },
+            canonical: { present: false },
+          },
+        },
+        updatedAt: 400,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().agentPresets[0]).toMatchObject({
+      name: 'newer local name',
+      updatedAt: 400,
+    })
+    expect((settingsResourceState.value as { agentPresets: unknown[] }).agentPresets[0]).not.toHaveProperty(
+      'description',
+    )
+    expect(settingsResourceState.groupRevisions.agents).toBe(4)
+    expect(hasSettingsGroupProjectionEpochChanged('agents', epoch)).toBe(false)
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+
+    expect(
+      applyAgentPresetStepPatchLocalEffect({
+        revision: 5,
+        presetId: 'ap_a',
+        stepId: 'aps_a',
+        fields: {
+          outputKey: {
+            attempted: { present: true, value: ' facts ' },
+            canonical: { present: true, value: 'facts' },
+          },
+          instruction: {
+            attempted: { present: true, value: 'attempted instruction' },
+            canonical: { present: true, value: 'attempted instruction' },
+          },
+        },
+        updatedAt: 500,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().agentPresets[0].steps[0]).toMatchObject({
+      outputKey: 'facts',
+      instruction: 'newer instruction',
+    })
+    expect(getResourceDatabase().agentPresets[0].updatedAt).toBe(500)
+    expect(settingsResourceState.groupRevisions.agents).toBe(5)
+    expect(hasSettingsGroupProjectionEpochChanged('agents', epoch)).toBe(false)
+  })
+
+  it('rejects malformed or ambiguous Agent Preset field local effects', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        agentPresets: [{ id: 'ap_a', name: 'A', enabled: true, version: 1, steps: [] }],
+      } as never,
+      3,
+    )
+    const baseEffect = {
+      revision: 4,
+      presetId: 'ap_a',
+      fields: {
+        name: {
+          attempted: { present: true as const, value: 'Attempted' },
+          canonical: { present: true as const, value: 'Canonical' },
+        },
+      },
+      updatedAt: 400,
+    }
+
+    expect(applyAgentPresetPatchLocalEffect({ ...baseEffect, fields: {} })).toBe(false)
+    expect(
+      applyAgentPresetPatchLocalEffect({
+        ...baseEffect,
+        fields: {
+          name: {
+            attempted: { present: true, value: 'Attempted' },
+            canonical: { present: false },
+          },
+        },
+      }),
+    ).toBe(false)
+
+    settingsResourceState.status = 'idle'
+    expect(applyAgentPresetPatchLocalEffect(baseEffect)).toBe(false)
+    settingsResourceState.status = 'ready'
+    ;(settingsResourceState.value as { agentPresets: unknown[] }).agentPresets.push({
+      id: 'ap_a',
+      name: 'Duplicate',
+      enabled: true,
+      version: 1,
+      steps: [],
+    })
+    expect(applyAgentPresetPatchLocalEffect(baseEffect)).toBe(false)
+    expect(settingsResourceState.groupRevisions.agents).toBeUndefined()
   })
 
   it('intentionally resets hydrated legacy bodies on a complete collection refresh', () => {

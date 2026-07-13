@@ -15,8 +15,14 @@ import {
   updateAgentPresetStepCommand,
   type AgentPresetSnapshot,
   type AgentPresetStepSnapshot,
+  type AgentPresetPatchOptimisticAcknowledgement,
+  type JsonFieldState,
   type ServerCommandResult,
 } from './server/commands'
+import {
+  captureSettingsGroupProjectionEpoch,
+  markSettingsGroupAcknowledgementTainted,
+} from './server/resourceState.svelte'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 import { getDatabase } from './storage/database.svelte'
@@ -54,10 +60,20 @@ export function updateAgentPreset(
   patch: AgentPresetSnapshot,
   options: AgentPresetCommandOptions = {},
 ): Promise<ServerCommandResult<{ presetId: string }>> {
+  const optimistic = optimisticallyPatchAgentPreset(presetId, patch)
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallyPatchAgentPreset(presetId, patch),
-    command: (baseRevision) => updateAgentPresetCommand({ baseRevision, presetId, patch }, options.signal),
+    rollback: taintedAgentPresetRollback(optimistic.rollback),
+    command: (baseRevision) =>
+      updateAgentPresetCommand(
+        {
+          baseRevision,
+          presetId,
+          patch,
+          optimisticAcknowledgement: optimistic.acknowledgement,
+        },
+        options.signal,
+      ),
   })
 }
 
@@ -129,10 +145,21 @@ export function updateAgentPresetStep(
   patch: AgentPresetStepSnapshot,
   options: AgentPresetCommandOptions = {},
 ): Promise<ServerCommandResult<{ presetId: string; stepId: string }>> {
+  const optimistic = optimisticallyPatchAgentPresetStep(presetId, stepId, patch)
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallyPatchAgentPresetStep(presetId, stepId, patch),
-    command: (baseRevision) => updateAgentPresetStepCommand({ baseRevision, presetId, stepId, patch }, options.signal),
+    rollback: taintedAgentPresetRollback(optimistic.rollback),
+    command: (baseRevision) =>
+      updateAgentPresetStepCommand(
+        {
+          baseRevision,
+          presetId,
+          stepId,
+          patch,
+          optimisticAcknowledgement: optimistic.acknowledgement,
+        },
+        options.signal,
+      ),
   })
 }
 
@@ -172,12 +199,21 @@ export function reorderAgentPresetSteps(
   })
 }
 
-function optimisticallyPatchAgentPreset(presetId: string, patch: AgentPresetSnapshot): (() => void) | undefined {
-  return withAgentPresetRollback(['agentPresets'], () => {
-    const preset = getAgentPresetById(presetId)
-    if (!preset) return
-    Object.assign(preset, patch, { id: presetId })
-  })
+interface OptimisticAgentPresetFieldPatch {
+  rollback?: () => void
+  acknowledgement?: AgentPresetPatchOptimisticAcknowledgement
+}
+
+function optimisticallyPatchAgentPreset(presetId: string, patch: AgentPresetSnapshot): OptimisticAgentPresetFieldPatch {
+  const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+  const preset = uniqueAgentPresetById(presetId)
+  if (!preset) return {}
+  return applyOptimisticAgentPresetFields(
+    () => uniqueAgentPresetById(presetId) as unknown as DatabaseRecord | undefined,
+    preset as unknown as DatabaseRecord,
+    patch,
+    projectionEpoch,
+  )
 }
 
 function optimisticallyDeleteAgentPreset(presetId: string): (() => void) | undefined {
@@ -216,12 +252,82 @@ function optimisticallyPatchAgentPresetStep(
   presetId: string,
   stepId: string,
   patch: AgentPresetStepSnapshot,
-): (() => void) | undefined {
-  return withAgentPresetRollback(['agentPresets'], () => {
-    const step = getAgentPresetById(presetId)?.steps.find((candidate) => candidate.id === stepId)
-    if (!step) return
-    Object.assign(step, patch, { id: stepId })
+): OptimisticAgentPresetFieldPatch {
+  const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+  const step = uniqueAgentPresetStepById(presetId, stepId)
+  if (!step) return {}
+  return applyOptimisticAgentPresetFields(
+    () => uniqueAgentPresetStepById(presetId, stepId) as unknown as DatabaseRecord | undefined,
+    step as unknown as DatabaseRecord,
+    patch,
+    projectionEpoch,
+  )
+}
+
+function applyOptimisticAgentPresetFields(
+  resolveTarget: () => DatabaseRecord | undefined,
+  target: DatabaseRecord,
+  patch: Record<string, unknown>,
+  settingsProjectionEpoch: number,
+): OptimisticAgentPresetFieldPatch {
+  const keys = Object.keys(patch).filter((key) => key !== 'id')
+  const previous = snapshotKeys(target, keys)
+  withTrustedResourceWrite(() => {
+    for (const key of keys) target[key] = patch[key]
   })
+  const attempted = snapshotKeys(target, keys)
+  const attemptedFields = snapshotJsonFieldStates(target, keys)
+  return {
+    acknowledgement:
+      keys.length > 0
+        ? {
+            settingsProjectionEpoch,
+            attemptedFields,
+          }
+        : undefined,
+    rollback: () => {
+      const liveTarget = resolveTarget()
+      if (!liveTarget) return
+      withTrustedResourceWrite(() => {
+        applyAttemptedFieldRollback({
+          target: liveTarget,
+          previous,
+          attempted,
+          keys,
+          deleteMissingPrevious: true,
+        })
+      })
+    },
+  }
+}
+
+function snapshotJsonFieldStates(target: DatabaseRecord, keys: readonly string[]): Record<string, JsonFieldState> {
+  const fields: Record<string, JsonFieldState> = {}
+  for (const key of keys) {
+    fields[key] = Object.prototype.hasOwnProperty.call(target, key)
+      ? { present: true, value: safeStructuredClone(target[key]) }
+      : { present: false }
+  }
+  return fields
+}
+
+function uniqueAgentPresetById(presetId: string): AgentPresetRecord | undefined {
+  const matches = getAgentPresets().filter((preset) => preset.id === presetId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function uniqueAgentPresetStepById(presetId: string, stepId: string): AgentPresetStepRecord | undefined {
+  const preset = uniqueAgentPresetById(presetId)
+  if (!preset) return undefined
+  const matches = preset.steps.filter((step) => step.id === stepId)
+  return matches.length === 1 ? matches[0] : undefined
+}
+
+function taintedAgentPresetRollback(rollback?: () => void): () => void {
+  return () => {
+    markSettingsGroupAcknowledgementTainted('agents')
+    rollback?.()
+  }
 }
 
 function optimisticallyDeleteAgentPresetStep(presetId: string, stepId: string): (() => void) | undefined {

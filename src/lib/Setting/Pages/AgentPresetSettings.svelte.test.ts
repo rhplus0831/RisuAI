@@ -364,6 +364,45 @@ describe('AgentPresetSettings', () => {
     expect(onSave).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps metadata dirty while an optimistic projection is still unsettled', async () => {
+    const initial = preset({ id: 'ap_a', name: 'Research Agent' })
+    seedDb([initial])
+    let settleUpdate!: () => void
+    const pendingUpdate = new Promise<void>((resolve) => {
+      settleUpdate = resolve
+    })
+    agentPresetSpies.updateAgentPreset.mockImplementationOnce(async () => {
+      const current = getDatabase().agentPresets[0]
+      getDatabase().agentPresets = [{ ...current, name: 'Pending Agent' } as AgentPresetRecord]
+      await pendingUpdate
+      return { status: 'error', error: 'rejected' }
+    })
+    vi.mocked(window.confirm).mockReturnValue(false)
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    const input = nameInput()
+    input.value = 'Pending Agent'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    button('[data-risu-agent-preset-save]').click()
+    await tick()
+
+    const close = target.querySelector<HTMLButtonElement>(
+      `[data-risu-agent-preset-editor] button[aria-label="${language.modelRoles.close}"]`,
+    )
+    expect(close).toBeTruthy()
+    close!.click()
+    await tick()
+    expect(window.confirm).toHaveBeenCalledWith(language.agentPresets.discardChangesConfirm)
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeTruthy()
+
+    settleUpdate()
+    await flushAsyncWork()
+  })
+
   it('renders disabled, invalid, and incomplete statuses from resolver helpers', async () => {
     seedDb([
       preset({ id: 'ap_disabled', name: 'Disabled Agent', enabled: false }),

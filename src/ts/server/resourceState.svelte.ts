@@ -240,6 +240,23 @@ export interface ServerTranslatorPresetPatchLocalEffectPayload {
   selectedPresetId: string
 }
 
+export interface ServerAgentPresetPatchLocalEffectPayload {
+  revision: number
+  presetId: string
+  fields: Record<
+    string,
+    {
+      attempted: ServerJsonFieldState
+      canonical: ServerJsonFieldState
+    }
+  >
+  updatedAt: number
+}
+
+export interface ServerAgentPresetStepPatchLocalEffectPayload extends ServerAgentPresetPatchLocalEffectPayload {
+  stepId: string
+}
+
 export interface ServerCharactersResourcePayload {
   revision: number
   characters: character[]
@@ -1355,6 +1372,134 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
     settingsResourceState.error = null
   }
   markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Apply response-confirmed Agent Preset fields while fencing only the read-only
+ * `agents` settings projection. Field-state comparisons retain a newer local
+ * edit to the same field; the server-owned timestamp advances independently.
+ * Authoritative settings reads alone advance projection epochs or clear taint.
+ */
+export function applyAgentPresetPatchLocalEffect(payload: ServerAgentPresetPatchLocalEffectPayload): boolean {
+  return applyAgentPresetFieldPatchLocalEffect(payload)
+}
+
+export function applyAgentPresetStepPatchLocalEffect(payload: ServerAgentPresetStepPatchLocalEffectPayload): boolean {
+  return applyAgentPresetFieldPatchLocalEffect(payload)
+}
+
+function applyAgentPresetFieldPatchLocalEffect(
+  payload: ServerAgentPresetPatchLocalEffectPayload | ServerAgentPresetStepPatchLocalEffectPayload,
+): boolean {
+  const isStepPatch = 'stepId' in payload
+  const allowedKeys = isStepPatch
+    ? new Set([
+        'name',
+        'enabled',
+        'phase',
+        'dependencies',
+        'instruction',
+        'model',
+        'runtime',
+        'inputScopes',
+        'outputKey',
+        'outputFormat',
+        'destination',
+        'failurePolicy',
+      ])
+    : new Set(['name', 'description', 'enabled', 'maxConcurrency'])
+  const fieldEntries = isPlainRecord(payload.fields) ? Object.entries(payload.fields) : []
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    !nonEmptyString(payload.presetId) ||
+    (isStepPatch && !nonEmptyString(payload.stepId)) ||
+    fieldEntries.length === 0 ||
+    typeof payload.updatedAt !== 'number' ||
+    !Number.isFinite(payload.updatedAt) ||
+    payload.updatedAt < 0
+  ) {
+    return false
+  }
+  for (const [key, field] of fieldEntries) {
+    if (
+      !allowedKeys.has(key) ||
+      !isPlainRecord(field) ||
+      !isCanonicalJsonFieldState(field.attempted) ||
+      !isCanonicalJsonFieldState(field.canonical) ||
+      (isStepPatch && !field.canonical.present) ||
+      (!isStepPatch && !field.canonical.present && key !== 'description' && key !== 'maxConcurrency')
+    ) {
+      return false
+    }
+  }
+
+  const knownRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions.agents ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+  const settings = settingsResourceState.value as Record<string, unknown>
+  const presets = settings.agentPresets
+  if (
+    settingsResourceState.status !== 'ready' ||
+    knownRevision < 0 ||
+    !Array.isArray(presets) ||
+    !isUniqueAgentPresetProjection(presets)
+  ) {
+    return false
+  }
+
+  const presetIndexes = presets.flatMap((candidate, index) =>
+    isPlainRecord(candidate) && candidate.id === payload.presetId ? [index] : [],
+  )
+  if (presetIndexes.length !== 1) return false
+  const presetIndex = presetIndexes[0]
+  const preset = presets[presetIndex] as Record<string, unknown>
+  const nextPreset = cloneJsonValue(preset)
+  let target = preset
+  let nextTarget = nextPreset
+  if (isStepPatch) {
+    const steps = preset.steps
+    const nextSteps = nextPreset.steps
+    if (!Array.isArray(steps) || !Array.isArray(nextSteps)) return false
+    const stepIndexes = steps.flatMap((candidate, index) =>
+      isPlainRecord(candidate) && candidate.id === payload.stepId ? [index] : [],
+    )
+    if (stepIndexes.length !== 1) return false
+    const stepIndex = stepIndexes[0]
+    target = steps[stepIndex] as Record<string, unknown>
+    nextTarget = nextSteps[stepIndex] as Record<string, unknown>
+  }
+
+  for (const [key, field] of fieldEntries) {
+    if (!jsonFieldStateMatches(target, key, field.attempted)) continue
+    if (field.canonical.present) nextTarget[key] = cloneJsonValue(field.canonical.value)
+    else delete nextTarget[key]
+  }
+  nextPreset.updatedAt = payload.updatedAt
+  presets[presetIndex] = nextPreset
+  settingsResourceState.groupRevisions.agents = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
+  markResourceDatabaseChanged()
+  return true
+}
+
+function isUniqueAgentPresetProjection(value: readonly unknown[]): boolean {
+  const presetIds = new Set<string>()
+  for (const candidate of value) {
+    if (!isPlainRecord(candidate) || !nonEmptyString(candidate.id) || presetIds.has(candidate.id)) return false
+    presetIds.add(candidate.id)
+    if (!Array.isArray(candidate.steps)) return false
+    const stepIds = new Set<string>()
+    for (const step of candidate.steps) {
+      if (!isPlainRecord(step) || !nonEmptyString(step.id) || stepIds.has(step.id)) return false
+      stepIds.add(step.id)
+    }
+  }
   return true
 }
 

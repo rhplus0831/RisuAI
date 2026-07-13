@@ -170,6 +170,7 @@ import {
   clearCachedServerCommandRevision,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
+  subscribeServerCommandLocalEffectApplied,
   withDirectServerCommandEventReconciliation,
 } from './server/commands'
 import { getActiveWriterSessionId } from './server/activeWriterSession'
@@ -1107,6 +1108,133 @@ describe('API-backed client bootstrap', () => {
         appliedRevision: 5,
         hooks: resourceApi.hooks,
       })
+    },
+  )
+
+  it('acknowledges Agent Preset fields locally and notifies settlement only after the effect applies', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets = [
+        {
+          id: 'ap_a',
+          name: '  Attempted Name  ',
+          description: null as never,
+          enabled: true,
+          version: 1,
+          steps: [],
+        },
+      ]
+    })
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets[0].name = 'newer local name'
+    })
+    const event = {
+      type: 'agentPreset.updated',
+      revision: 6,
+      resource: 'agentPreset',
+      id: 'ap_a',
+    }
+    const appliedEffects: unknown[] = []
+    const unsubscribe = subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+      appliedEffects.push(localEffect)
+    })
+    const localEffect = {
+      kind: 'agentPresetPatch' as const,
+      presetId: 'ap_a',
+      settingsProjectionEpoch,
+      fields: {
+        name: {
+          attempted: { present: true as const, value: '  Attempted Name  ' },
+          canonical: { present: true as const, value: 'Attempted Name' },
+        },
+        description: {
+          attempted: { present: true as const, value: null },
+          canonical: { present: false as const },
+        },
+      },
+      updatedAt: 600,
+    }
+
+    await commandApi.reconciler?.(event, [event], new Map([[6, localEffect]]))
+    unsubscribe()
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().agentPresets[0]).toMatchObject({ name: 'newer local name', updatedAt: 600 })
+    expect(getDatabase().agentPresets[0]).not.toHaveProperty('description')
+    expect(settingsResourceState.groupRevisions.agents).toBe(6)
+    expect(hasSettingsGroupProjectionEpochChanged('agents', settingsProjectionEpoch)).toBe(false)
+    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+    expect(appliedEffects).toEqual([localEffect])
+  })
+
+  it.each(['agents epoch', 'agents taint', 'global settings taint', 'agents unready'])(
+    '%s forces an Agent Preset PATCH authoritative fallback without settling its local effect',
+    async (failure) => {
+      await loadWebInitialDatabase()
+      withTrustedResourceWrite(() => {
+        getDatabase().agentPresets = [{ id: 'ap_a', name: 'Attempted', enabled: true, version: 1, steps: [] }]
+      })
+      const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+      if (failure === 'agents epoch') {
+        applySettingsGroupResource(
+          {
+            revision: 5,
+            group: 'agents',
+            settings: {
+              agentPresets: [{ id: 'ap_a', name: 'Attempted', enabled: true, version: 1, steps: [] }],
+            },
+          },
+          ['agentPresets', 'agentPresetDefaultId'],
+        )
+      } else if (failure === 'agents taint') {
+        markSettingsGroupAcknowledgementTainted('agents')
+      } else if (failure === 'global settings taint') {
+        markSettingsAcknowledgementTainted()
+      } else {
+        settingsResourceState.status = 'idle'
+      }
+      const event = {
+        type: 'agentPreset.updated',
+        revision: 6,
+        resource: 'agentPreset',
+        id: 'ap_a',
+      }
+      const appliedEffects: unknown[] = []
+      const unsubscribe = subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+        appliedEffects.push(localEffect)
+      })
+
+      await commandApi.reconciler?.(
+        event,
+        [event],
+        new Map([
+          [
+            6,
+            {
+              kind: 'agentPresetPatch',
+              presetId: 'ap_a',
+              settingsProjectionEpoch,
+              fields: {
+                name: {
+                  attempted: { present: true, value: 'Attempted' },
+                  canonical: { present: true, value: 'Attempted' },
+                },
+              },
+              updatedAt: 600,
+            },
+          ],
+        ]),
+      )
+      unsubscribe()
+
+      expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+        appliedRevision: 5,
+        hooks: resourceApi.hooks,
+      })
+      expect(appliedEffects).toEqual([])
     },
   )
 

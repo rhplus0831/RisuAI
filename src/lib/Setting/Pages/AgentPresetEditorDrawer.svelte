@@ -150,6 +150,11 @@
     const initialJson = snapshot(initialMetadataSnapshot)
     const draftJson = snapshot(draft)
     const projectionJson = snapshot(projection)
+    // The command helper applies an optimistic row before its response has
+    // passed the local-effect or authoritative-projection fences. Keep the
+    // draft dirty until that command promise settles; a failed rollback then
+    // remains a retryable edit instead of becoming the new baseline.
+    if (busy) return
     if (draftJson === projectionJson) {
       if (initialJson !== projectionJson) initialMetadataSnapshot = projection
       return

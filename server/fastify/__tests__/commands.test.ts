@@ -3726,6 +3726,18 @@ describe('Agent Preset command surface', () => {
       },
     })
     expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      presetId: createdBody.presetId,
+      acknowledgedKeys: ['name', 'description', 'maxConcurrency', 'enabled'],
+      canonicalValues: {
+        name: 'Research Agent Renamed',
+        description: 'before-main helper',
+        maxConcurrency: 2,
+        enabled: false,
+      },
+      canonicalDeletedKeys: [],
+      updatedAt: expect.any(Number),
+    })
 
     const defaulted = await harness.app.inject({
       method: 'POST',
@@ -3925,6 +3937,130 @@ describe('Agent Preset command surface', () => {
     expect(source.steps.map((candidate) => candidate.id)).toContain(duplicatedStepId)
     expect(copy.steps.map((candidate) => candidate.id)).not.toContain(stepId)
     expect(copy.steps).toHaveLength(source.steps.length)
+  })
+
+  it('returns exact canonical field receipts for metadata and step PATCHes', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [
+        {
+          id: 'ap_fields',
+          name: 'Fields',
+          description: 'Old description',
+          enabled: true,
+          version: 1,
+          maxConcurrency: 4,
+          steps: [
+            {
+              id: 'aps_fields',
+              name: 'Fields Step',
+              enabled: true,
+              phase: 'beforeMain',
+              dependencies: [],
+              instruction: '',
+              model: { mode: 'inheritMain' },
+              runtime: {},
+              inputScopes: [],
+              outputKey: 'fields',
+              outputFormat: 'text',
+              destination: 'promptOutput',
+              failurePolicy: { mode: 'required' },
+            },
+          ],
+        },
+      ],
+    })
+
+    const metadata = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/agent-presets/ap_fields',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { name: '  Trimmed Fields  ', description: '   ', maxConcurrency: null },
+      },
+    })
+    expect(metadata.statusCode).toBe(200)
+    expect(metadata.json()).toMatchObject({
+      presetId: 'ap_fields',
+      acknowledgedKeys: ['name', 'description', 'maxConcurrency'],
+      canonicalValues: { name: 'Trimmed Fields' },
+      canonicalDeletedKeys: ['description', 'maxConcurrency'],
+      updatedAt: expect.any(Number),
+    })
+
+    const step = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/agent-presets/ap_fields/steps/aps_fields',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: metadata.json().revision,
+        patch: {
+          name: '  Trimmed Step  ',
+          outputKey: '  canonical_key  ',
+          inputScopes: ['currentUserMessage', 'currentUserMessage'],
+          failurePolicy: 'fallbackText',
+        },
+      },
+    })
+    expect(step.statusCode).toBe(200)
+    expect(step.json()).toMatchObject({
+      presetId: 'ap_fields',
+      stepId: 'aps_fields',
+      acknowledgedKeys: ['name', 'outputKey', 'inputScopes', 'failurePolicy'],
+      canonicalValues: {
+        name: 'Trimmed Step',
+        outputKey: 'canonical_key',
+        inputScopes: ['currentUserMessage'],
+        failurePolicy: { mode: 'fallbackText', text: '' },
+      },
+      canonicalDeletedKeys: [],
+      updatedAt: expect.any(Number),
+    })
+  })
+
+  it('withholds field acknowledgements when collection normalization repairs sibling state', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [
+        { id: 'ap_target', name: 'Target', enabled: true, version: 1, steps: [] },
+        { id: 'ap_sibling', name: 'Sibling', enabled: true, version: 1, steps: [] },
+      ],
+      agentPresetDefaultId: 'ap_target',
+    })
+    updateSettingsRow((settings) => {
+      const presets = settings.agentPresets as Array<Record<string, unknown>>
+      presets[1] = { ...presets[1], name: '  Repaired Sibling  ', unexpected: true }
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/agent-presets/ap_target',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { enabled: false } },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      presetId: 'ap_target',
+      acknowledgedKeys: [],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    })
+    expect(updated.json()).not.toHaveProperty('updatedAt')
+
+    const agents = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/agents',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(agents.json().settings.agentPresets[1]).toEqual({
+      id: 'ap_sibling',
+      name: 'Repaired Sibling',
+      enabled: true,
+      version: 1,
+      steps: [],
+    })
   })
 
   it('deletes Agent Presets and clears default, chat, and loadout references atomically', async () => {

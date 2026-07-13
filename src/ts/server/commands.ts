@@ -185,6 +185,41 @@ export interface SplitPresetPatchLocalEffect {
 
 export type JsonFieldState = { present: false } | { present: true; value: unknown }
 
+/** Client-only proof captured after one optimistic Agent Preset field PATCH. */
+export interface AgentPresetPatchOptimisticAcknowledgement {
+  settingsProjectionEpoch: number
+  attemptedFields: Record<string, JsonFieldState>
+}
+
+export interface AgentPresetPatchLocalEffect {
+  kind: 'agentPresetPatch'
+  presetId: string
+  settingsProjectionEpoch: number
+  fields: Record<
+    string,
+    {
+      attempted: JsonFieldState
+      canonical: JsonFieldState
+    }
+  >
+  updatedAt: number
+}
+
+export interface AgentPresetStepPatchLocalEffect {
+  kind: 'agentPresetStepPatch'
+  presetId: string
+  stepId: string
+  settingsProjectionEpoch: number
+  fields: Record<
+    string,
+    {
+      attempted: JsonFieldState
+      canonical: JsonFieldState
+    }
+  >
+  updatedAt: number
+}
+
 /** Client-only proof captured after one optimistic legacy-preset PATCH. */
 export interface LegacyPresetPatchOptimisticAcknowledgement {
   collectionProjectionEpoch: number
@@ -329,6 +364,8 @@ export type ServerCommandLocalEffect =
   | PromptItemMutationLocalEffect
   | SplitPresetPatchLocalEffect
   | LegacyPresetPatchLocalEffect
+  | AgentPresetPatchLocalEffect
+  | AgentPresetStepPatchLocalEffect
   | PersonaPatchLocalEffect
   | TranslatorPresetPatchLocalEffect
   | GlobalLorebookMutationLocalEffect
@@ -648,6 +685,7 @@ export interface CreateAgentPresetCommandInput extends AgentPresetCommandInput {
 export interface UpdateAgentPresetCommandInput extends AgentPresetCommandInput {
   presetId: string
   patch: AgentPresetSnapshot
+  optimisticAcknowledgement?: AgentPresetPatchOptimisticAcknowledgement
 }
 
 export interface DuplicateAgentPresetCommandInput extends AgentPresetCommandInput {
@@ -676,6 +714,7 @@ export interface UpdateAgentPresetStepCommandInput extends AgentPresetCommandInp
   presetId: string
   stepId: string
   patch: AgentPresetStepSnapshot
+  optimisticAcknowledgement?: AgentPresetPatchOptimisticAcknowledgement
 }
 
 export interface DuplicateAgentPresetStepCommandInput extends AgentPresetCommandInput {
@@ -2117,6 +2156,15 @@ export async function updateAgentPresetCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: input.optimisticAcknowledgement
+      ? (body, event) =>
+          readAgentPresetPatchLocalEffect(body, event, {
+            kind: 'preset',
+            presetId: input.presetId,
+            attemptedPatch: input.patch,
+            acknowledgement: input.optimisticAcknowledgement!,
+          })
+      : undefined,
   })
 }
 
@@ -2209,6 +2257,16 @@ export async function updateAgentPresetStepCommand(
         patch: input.patch,
       },
       signal,
+      readLocalEffect: input.optimisticAcknowledgement
+        ? (body, event) =>
+            readAgentPresetPatchLocalEffect(body, event, {
+              kind: 'step',
+              presetId: input.presetId,
+              stepId: input.stepId,
+              attemptedPatch: input.patch,
+              acknowledgement: input.optimisticAcknowledgement!,
+            })
+        : undefined,
     },
   )
 }
@@ -4903,6 +4961,124 @@ function readTranslatorPresetPatchLocalEffect(
     attemptedPatch: cloneJsonValue(input.attemptedPatch),
     attemptedPreset: cloneJsonValue(attemptedPreset),
   }
+}
+
+function readAgentPresetPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: {
+    presetId: string
+    attemptedPatch: Record<string, unknown>
+    acknowledgement: AgentPresetPatchOptimisticAcknowledgement
+  } & ({ kind: 'preset' } | { kind: 'step'; stepId: string }),
+): AgentPresetPatchLocalEffect | AgentPresetStepPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const expectedType = input.kind === 'preset' ? 'agentPreset.updated' : 'agentPreset.step.updated'
+  const expectedId = input.kind === 'preset' ? input.presetId : input.stepId
+  const expectedParentId = input.kind === 'preset' ? undefined : input.presetId
+  if (
+    record.revision !== event.revision ||
+    record.presetId !== input.presetId ||
+    (input.kind === 'step' && record.stepId !== input.stepId) ||
+    event.type !== expectedType ||
+    event.resource !== 'agentPreset' ||
+    event.id !== expectedId ||
+    event.parentId !== expectedParentId ||
+    !isProjectionEpoch(input.acknowledgement.settingsProjectionEpoch) ||
+    !isPlainJsonRecord(input.acknowledgement.attemptedFields)
+  ) {
+    return undefined
+  }
+
+  const allowedKeys =
+    input.kind === 'preset'
+      ? new Set(['name', 'description', 'enabled', 'maxConcurrency'])
+      : new Set([
+          'name',
+          'enabled',
+          'phase',
+          'dependencies',
+          'instruction',
+          'model',
+          'runtime',
+          'inputScopes',
+          'outputKey',
+          'outputFormat',
+          'destination',
+          'failurePolicy',
+        ])
+  const attemptedKeys = Object.keys(input.attemptedPatch).sort()
+  if (
+    attemptedKeys.length === 0 ||
+    attemptedKeys.some((key) => !allowedKeys.has(key) || !isJsonValue(input.attemptedPatch[key])) ||
+    !isJsonValueEqual(Object.keys(input.acknowledgement.attemptedFields).sort(), attemptedKeys)
+  ) {
+    return undefined
+  }
+
+  const attemptedFields: Record<string, JsonFieldState> = {}
+  for (const key of attemptedKeys) {
+    const state = readJsonFieldState(input.acknowledgement.attemptedFields[key])
+    if (!state?.present || !isJsonValueEqual(state.value, input.attemptedPatch[key])) return undefined
+    attemptedFields[key] = state
+  }
+
+  const acknowledgedKeys = record.acknowledgedKeys
+  const canonicalValues = record.canonicalValues
+  const canonicalDeletedKeys = record.canonicalDeletedKeys
+  const updatedAt = record.updatedAt
+  if (
+    !isUniqueStringArray(acknowledgedKeys) ||
+    !isJsonValueEqual([...acknowledgedKeys].sort(), attemptedKeys) ||
+    !isPlainJsonRecord(canonicalValues) ||
+    !isUniqueStringArray(canonicalDeletedKeys) ||
+    typeof updatedAt !== 'number' ||
+    !Number.isFinite(updatedAt) ||
+    updatedAt < 0
+  ) {
+    return undefined
+  }
+
+  const canonicalValueKeys = Object.keys(canonicalValues)
+  const canonicalDeletedKeySet = new Set(canonicalDeletedKeys)
+  const canonicalKeys = [...canonicalValueKeys, ...canonicalDeletedKeys].sort()
+  if (
+    !isJsonValueEqual(canonicalKeys, attemptedKeys) ||
+    canonicalValueKeys.some(
+      (key) => !allowedKeys.has(key) || canonicalDeletedKeySet.has(key) || !isJsonValue(canonicalValues[key]),
+    ) ||
+    canonicalDeletedKeys.some(
+      (key) => !allowedKeys.has(key) || (input.kind === 'preset' && key !== 'description' && key !== 'maxConcurrency'),
+    ) ||
+    (input.kind === 'step' && canonicalDeletedKeys.length > 0)
+  ) {
+    return undefined
+  }
+
+  const fields: AgentPresetPatchLocalEffect['fields'] = {}
+  for (const key of canonicalValueKeys) {
+    fields[key] = {
+      attempted: cloneJsonValue(attemptedFields[key]),
+      canonical: { present: true, value: cloneJsonValue(canonicalValues[key]) },
+    }
+  }
+  for (const key of canonicalDeletedKeys) {
+    fields[key] = {
+      attempted: cloneJsonValue(attemptedFields[key]),
+      canonical: { present: false },
+    }
+  }
+
+  const common = {
+    presetId: input.presetId,
+    settingsProjectionEpoch: input.acknowledgement.settingsProjectionEpoch,
+    fields,
+    updatedAt,
+  }
+  return input.kind === 'preset'
+    ? { kind: 'agentPresetPatch', ...common }
+    : { kind: 'agentPresetStepPatch', stepId: input.stepId, ...common }
 }
 
 function isCanonicalTranslatorPreset(value: unknown): value is TranslatorPresetSnapshot & { id: string } {
