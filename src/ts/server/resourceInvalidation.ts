@@ -473,15 +473,77 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('botPresets')
       addChangedLegacyPresetIds()
       return
-    case 'modelPreset':
-      addFullSettings()
-      plan.collections.add('modelPresets')
+    case 'modelPreset': {
+      const hasEntityId = nonEmptyString(event.id) && event.parentId === undefined
+      switch (event.type) {
+        case 'modelPreset.created':
+        case 'modelPreset.imported':
+          if (!hasEntityId) break
+          // These append a row without selecting or applying it.
+          plan.collections.add('modelPresets')
+          return
+        case 'modelPreset.selected':
+          if (!hasEntityId) break
+          // Selection applies the preset to settings, but does not rewrite the
+          // preset collection.
+          addFullSettings()
+          return
+        case 'modelPreset.updated':
+        case 'modelPreset.deleted':
+          if (!hasEntityId) break
+          // An update can project a selected row into settings; deletion can
+          // move or replace the selected pointer.
+          addFullSettings()
+          plan.collections.add('modelPresets')
+          return
+        case 'modelPreset.reordered':
+          if (event.id !== undefined || event.parentId !== undefined) break
+          // Reordering always rewrites the collection and can move the
+          // selected preset's numeric settings pointer.
+          addFullSettings()
+          plan.collections.add('modelPresets')
+          return
+      }
+      plan.full = true
       return
-    case 'promptPreset':
-      addFullSettings()
-      plan.collections.add('promptPresets')
-      plan.refreshSelectedPromptTemplate = true
+    }
+    case 'promptPreset': {
+      const hasEntityId = nonEmptyString(event.id) && event.parentId === undefined
+      switch (event.type) {
+        case 'promptPreset.created':
+        case 'promptPreset.imported':
+          if (!hasEntityId) break
+          // These append an unselected shell/body. The active prompt template
+          // and settings projection are unchanged.
+          plan.collections.add('promptPresets')
+          return
+        case 'promptPreset.selected':
+          if (!hasEntityId) break
+          // Selection applies settings and may replace the root prompt table,
+          // but does not rewrite the preset collection.
+          addFullSettings()
+          plan.refreshSelectedPromptTemplate = true
+          return
+        case 'promptPreset.updated':
+        case 'promptPreset.deleted':
+          if (!hasEntityId) break
+          // Updating a selected preset can project both settings and its prompt
+          // body; deleting one can select and apply a replacement.
+          addFullSettings()
+          plan.collections.add('promptPresets')
+          plan.refreshSelectedPromptTemplate = true
+          return
+        case 'promptPreset.reordered':
+          if (event.id !== undefined || event.parentId !== undefined) break
+          // Reordering can move the numeric settings pointer, but neither
+          // changes nor reapplies the selected prompt-template body.
+          addFullSettings()
+          plan.collections.add('promptPresets')
+          return
+      }
+      plan.full = true
       return
+    }
     case 'legacyBotPreset':
       addFullSettings()
       plan.collections.add('botPresets')

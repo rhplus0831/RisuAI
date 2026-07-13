@@ -1360,7 +1360,167 @@ describe('API-backed resource invalidation', () => {
     expect(api.collections).not.toHaveBeenCalled()
   })
 
-  it('replaces prompt-preset shells and rehydrates the selected owner after preset events', async () => {
+  it.each([
+    {
+      type: 'modelPreset.created',
+      resource: 'modelPreset',
+      collection: 'modelPresets',
+      settings: false,
+      promptTemplate: false,
+    },
+    {
+      type: 'modelPreset.updated',
+      resource: 'modelPreset',
+      collection: 'modelPresets',
+      settings: true,
+      promptTemplate: false,
+    },
+    {
+      type: 'modelPreset.deleted',
+      resource: 'modelPreset',
+      collection: 'modelPresets',
+      settings: true,
+      promptTemplate: false,
+    },
+    {
+      type: 'modelPreset.selected',
+      resource: 'modelPreset',
+      collection: null,
+      settings: true,
+      promptTemplate: false,
+    },
+    {
+      type: 'modelPreset.imported',
+      resource: 'modelPreset',
+      collection: 'modelPresets',
+      settings: false,
+      promptTemplate: false,
+    },
+    {
+      type: 'modelPreset.reordered',
+      resource: 'modelPreset',
+      collection: 'modelPresets',
+      settings: true,
+      promptTemplate: false,
+    },
+    {
+      type: 'promptPreset.created',
+      resource: 'promptPreset',
+      collection: 'promptPresets',
+      settings: false,
+      promptTemplate: false,
+    },
+    {
+      type: 'promptPreset.updated',
+      resource: 'promptPreset',
+      collection: 'promptPresets',
+      settings: true,
+      promptTemplate: true,
+    },
+    {
+      type: 'promptPreset.deleted',
+      resource: 'promptPreset',
+      collection: 'promptPresets',
+      settings: true,
+      promptTemplate: true,
+    },
+    {
+      type: 'promptPreset.selected',
+      resource: 'promptPreset',
+      collection: null,
+      settings: true,
+      promptTemplate: true,
+    },
+    {
+      type: 'promptPreset.imported',
+      resource: 'promptPreset',
+      collection: 'promptPresets',
+      settings: false,
+      promptTemplate: false,
+    },
+    {
+      type: 'promptPreset.reordered',
+      resource: 'promptPreset',
+      collection: 'promptPresets',
+      settings: true,
+      promptTemplate: false,
+    },
+  ] as const)(
+    'plans only the server-written slices for $type',
+    async ({ type, resource, collection, settings, promptTemplate }) => {
+      seedResources(1)
+      promptHydration.currentOwner = 'prompt-preset-a'
+      api.settings.mockResolvedValue({
+        status: 'ok',
+        revision: 2,
+        settings: { modelPresetsId: 0, promptPresetsId: 0 },
+      })
+      api.collection.mockImplementation(async (name: string) => ({
+        status: 'ok',
+        revision: 2,
+        collections: {
+          [name]:
+            name === 'modelPresets'
+              ? [{ id: 'model-preset-a', name: 'Model A' }]
+              : [{ id: 'prompt-preset-a', name: 'Prompt A' }],
+        },
+      }))
+      const commandEvent: CommandEvent = {
+        type,
+        revision: 2,
+        resource,
+        ...(!type.endsWith('.reordered')
+          ? { id: resource === 'modelPreset' ? 'model-preset-a' : 'prompt-preset-a' }
+          : {}),
+      }
+
+      await expect(refreshInvalidatedServerResources(commandEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+        status: 'ok',
+        revision: 2,
+        scope: 'targeted',
+      })
+
+      expect(api.settings).toHaveBeenCalledTimes(settings ? 1 : 0)
+      expect(api.collection).toHaveBeenCalledTimes(collection === null ? 0 : 1)
+      if (collection !== null) expect(api.collection).toHaveBeenCalledWith(collection, undefined)
+      expect(promptHydration.ensure).toHaveBeenCalledTimes(promptTemplate ? 1 : 0)
+      expect(promptHydration.invalidate).toHaveBeenCalledTimes(promptTemplate ? 1 : 0)
+      if (promptTemplate) {
+        expect(promptHydration.ensure).toHaveBeenCalledWith({
+          applyProjection: true,
+          force: true,
+          minimumRevision: 2,
+          promptPresetId: 'prompt-preset-a',
+        })
+      }
+      expect(promptHydration.reset).toHaveBeenCalledTimes(collection === 'promptPresets' ? 1 : 0)
+      expect(api.collections).not.toHaveBeenCalled()
+      expect(api.characters).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { type: 'modelPreset.future', revision: 2, resource: 'modelPreset', id: 'model-preset-a' },
+    { type: 'promptPreset.future', revision: 2, resource: 'promptPreset', id: 'prompt-preset-a' },
+    { type: 'modelPreset.selected', revision: 2, resource: 'modelPreset' },
+    { type: 'promptPreset.updated', revision: 2, resource: 'promptPreset' },
+    { type: 'modelPreset.reordered', revision: 2, resource: 'modelPreset', id: 'unexpected-id' },
+    { type: 'promptPreset.created', revision: 2, resource: 'promptPreset', id: 'prompt-preset-a', parentId: 'x' },
+  ] as CommandEvent[])('uses a full refresh for malformed split-preset event %#', async (commandEvent) => {
+    fullReadMocks(9)
+
+    await expect(refreshInvalidatedServerResources(commandEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 9,
+      scope: 'full',
+    })
+
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collections).toHaveBeenCalledOnce()
+    expect(api.characters).toHaveBeenCalledOnce()
+  })
+
+  it('replaces prompt-preset shells and rehydrates the selected owner after a prompt preset update', async () => {
     seedResources(1)
     promptHydration.currentOwner = 'prompt-preset-a'
     api.settings.mockResolvedValue({ status: 'ok', revision: 2, settings: { promptPresetsId: 0 } })
