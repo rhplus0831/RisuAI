@@ -1,5 +1,6 @@
 import { globalFetch } from '../globalApi.svelte'
 import type { ModelGridItem } from './modelGrid'
+import { createKeyedRequestCache, type KeyedRequestOptions } from './keyedRequestCache'
 
 export type OllamaModelSource = 'local' | 'cloud'
 
@@ -20,28 +21,46 @@ type OllamaTagModel = {
   }
 }
 
-export async function getOllamaModels(host: string, source: OllamaModelSource, apiKey = ''): Promise<ModelGridItem[]> {
+const ollamaCloudModelRequests = createKeyedRequestCache<ModelGridItem[]>({ ttlMs: 15_000 })
+
+export async function getOllamaModels(
+  host: string,
+  source: OllamaModelSource,
+  apiKey = '',
+  options?: KeyedRequestOptions,
+): Promise<ModelGridItem[]> {
   try {
     const baseUrl = source === 'cloud' ? 'https://ollama.com' : host.replace(/\/$/, '')
-    const headers: Record<string, string> = {}
+    const load = async (): Promise<ModelGridItem[]> => {
+      const headers: Record<string, string> = {}
 
-    if (source === 'cloud' && apiKey) {
-      headers.Authorization = `Bearer ${apiKey}`
+      if (source === 'cloud' && apiKey) {
+        headers.Authorization = `Bearer ${apiKey}`
+      }
+
+      const response = await globalFetch(`${baseUrl}/api/tags`, {
+        method: 'GET',
+        headers,
+        interceptor: 'ollama_models',
+      })
+
+      if (!response.ok) throw new Error('Ollama model request failed')
+      if (!Array.isArray(response.data?.models)) throw new Error('Ollama model response was malformed')
+      const models: OllamaTagModel[] = response.data.models
+      return models.map((model) => toModelGridItem(model, source))
     }
 
-    const response = await globalFetch(`${baseUrl}/api/tags`, {
-      method: 'GET',
-      headers,
-      interceptor: 'ollama_models',
-    })
-
-    if (!response.ok) return []
-    const models: OllamaTagModel[] = response.data?.models ?? []
-
-    return models.map((model) => toModelGridItem(model, source))
+    if (source === 'cloud') {
+      return await ollamaCloudModelRequests.request(JSON.stringify([baseUrl, apiKey]), load, options)
+    }
+    return await load()
   } catch {
     return []
   }
+}
+
+export function clearOllamaCloudModelRequestCacheForTests(): void {
+  ollamaCloudModelRequests.clear()
 }
 
 export function toModelGridItem(model: OllamaTagModel, source: OllamaModelSource): ModelGridItem {

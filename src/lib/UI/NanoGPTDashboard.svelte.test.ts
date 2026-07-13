@@ -16,8 +16,15 @@ describe('NanoGPTDashboard freshness contract', () => {
     expect(source).toContain("from 'src/ts/server/nanoGPTDashboardFetch'")
     expect(source).toContain('beginNanoGPTDashboardFetch(key)')
     expect(source).toContain('resolveFreshNanoGPTSubscriptionState({')
-    expect(source).toContain('if (subscriptionState !== null)')
+    expect(source).toContain('currentApiKey,')
+    expect(source).toContain("subscriptionState !== (getDatabase().nanogptSubscriptionState ?? '')")
     expect(source).not.toContain("const subscriptionState = subscription?.state ?? ''")
+  })
+
+  it('does not render stale account data while a new key is settling', () => {
+    const source = readSource()
+
+    expect(source).toContain('apiKey && apiKey === currentApiKey')
   })
 
   it('clears the active dashboard fetch operation on destroy', () => {

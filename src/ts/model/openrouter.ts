@@ -1,8 +1,10 @@
 import { getDatabase } from '../storage/database.svelte'
 import type { ModelGridItem } from './modelGrid'
+import { createKeyedRequestCache } from './keyedRequestCache'
 
 export type OpenRouterCatalogFetchContext = {
   apiKey?: string | null
+  refresh?: boolean
 }
 
 /** Per-1M-token price entry. undefined means the field is not available for this model. */
@@ -34,6 +36,14 @@ export type OpenRouterModelInfo = {
   internalReasoningPrice1M: PriceEntry
 }
 
+const OPENROUTER_CATALOG_CACHE_TTL_MS = 30_000
+const openRouterProviderRequests = createKeyedRequestCache<{ name: string; slug: string }[]>({
+  ttlMs: OPENROUTER_CATALOG_CACHE_TTL_MS,
+})
+const openRouterModelRequests = createKeyedRequestCache<OpenRouterModelInfo[]>({
+  ttlMs: OPENROUTER_CATALOG_CACHE_TTL_MS,
+})
+
 function resolveOpenRouterCatalogKey(context?: OpenRouterCatalogFetchContext): string {
   if (context !== undefined) {
     return context.apiKey ?? ''
@@ -46,20 +56,24 @@ export async function getOpenRouterProviders(
 ): Promise<{ name: string; slug: string }[]> {
   try {
     const apiKey = resolveOpenRouterCatalogKey(context)
-    const headers = {
-      Authorization: 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-    }
-
-    const providers: { data: { name: string; slug: string }[] } = await fetch(
-      'https://openrouter.ai/api/v1/providers',
-      {
-        headers,
+    return await openRouterProviderRequests.request(
+      apiKey,
+      async () => {
+        const headers = {
+          Authorization: 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
+        }
+        const response = await fetch('https://openrouter.ai/api/v1/providers', {
+          headers,
+        })
+        if (!response.ok) throw new Error(`OpenRouter provider request failed (${response.status})`)
+        const providers: { data?: { name: string; slug: string }[] } = await response.json()
+        if (!Array.isArray(providers.data)) throw new Error('OpenRouter provider response was malformed')
+        return providers.data.map(({ name, slug }) => ({ name, slug })).sort((a, b) => a.name.localeCompare(b.name))
       },
-    ).then((res) => res.json())
-
-    return providers.data.map(({ name, slug }) => ({ name, slug })).sort((a, b) => a.name.localeCompare(b.name))
-  } catch (error) {
+      { refresh: context?.refresh },
+    )
+  } catch {
     return []
   }
 }
@@ -67,55 +81,68 @@ export async function getOpenRouterProviders(
 export async function getOpenRouterModels(context?: OpenRouterCatalogFetchContext): Promise<OpenRouterModelInfo[]> {
   try {
     const apiKey = resolveOpenRouterCatalogKey(context)
-    const headers = {
-      Authorization: 'Bearer ' + apiKey,
-      'Content-Type': 'application/json',
-    }
-
-    const aim = await fetch('https://openrouter.ai/api/v1/models', {
-      headers,
-    }).then((res) => res.json())
-
-    return aim.data
-      .map((model: any) => {
-        const price = (Number(model.pricing.prompt) * 3 + Number(model.pricing.completion)) / 4
-        const priceDisplay = price > 0 ? `$${(price * 1000).toFixed(5)}/1k` : 'Free'
-        const legacyName = price > 0 ? `${model.name} - $${(price * 1000).toFixed(5)}/1k` : `${model.name} - Free`
-
-        const colonIdx = model.name.indexOf(':')
-        const provider = colonIdx !== -1 ? model.name.slice(0, colonIdx).trim() : model.id.split('/')[0]
-        const cleanName = colonIdx !== -1 ? model.name.slice(colonIdx + 1).trim() : model.name
-
-        const toPrice1M = (raw: any): PriceEntry => {
-          const n = Number(raw)
-          return raw !== undefined && raw !== null && raw !== '' && !isNaN(n) ? n * 1_000_000 : undefined
+    return await openRouterModelRequests.request(
+      apiKey,
+      async () => {
+        const headers = {
+          Authorization: 'Bearer ' + apiKey,
+          'Content-Type': 'application/json',
         }
+        const response = await fetch('https://openrouter.ai/api/v1/models', {
+          headers,
+        })
+        if (!response.ok) throw new Error(`OpenRouter model request failed (${response.status})`)
+        const aim: { data?: any[] } = await response.json()
+        if (!Array.isArray(aim.data)) throw new Error('OpenRouter model response was malformed')
 
-        return {
-          id: model.id,
-          name: legacyName,
-          cleanName,
-          provider,
-          price,
-          priceDisplay,
-          context_length: model.context_length,
-          description: model.description ?? '',
-          promptPrice1M: toPrice1M(model.pricing?.prompt),
-          completionPrice1M: toPrice1M(model.pricing?.completion),
-          cacheReadPrice1M: toPrice1M(model.pricing?.input_cache_read),
-          cacheWritePrice1M: toPrice1M(model.pricing?.input_cache_write),
-          internalReasoningPrice1M: toPrice1M(model.pricing?.internal_reasoning),
-        }
-      })
-      .filter((model: OpenRouterModelInfo) => {
-        return model.price >= 0
-      })
-      .sort((a: OpenRouterModelInfo, b: OpenRouterModelInfo) => {
-        return a.price - b.price
-      })
-  } catch (error) {
+        return aim.data
+          .map((model: any) => {
+            const price = (Number(model.pricing.prompt) * 3 + Number(model.pricing.completion)) / 4
+            const priceDisplay = price > 0 ? `$${(price * 1000).toFixed(5)}/1k` : 'Free'
+            const legacyName = price > 0 ? `${model.name} - $${(price * 1000).toFixed(5)}/1k` : `${model.name} - Free`
+
+            const colonIdx = model.name.indexOf(':')
+            const provider = colonIdx !== -1 ? model.name.slice(0, colonIdx).trim() : model.id.split('/')[0]
+            const cleanName = colonIdx !== -1 ? model.name.slice(colonIdx + 1).trim() : model.name
+
+            const toPrice1M = (raw: any): PriceEntry => {
+              const n = Number(raw)
+              return raw !== undefined && raw !== null && raw !== '' && !isNaN(n) ? n * 1_000_000 : undefined
+            }
+
+            return {
+              id: model.id,
+              name: legacyName,
+              cleanName,
+              provider,
+              price,
+              priceDisplay,
+              context_length: model.context_length,
+              description: model.description ?? '',
+              promptPrice1M: toPrice1M(model.pricing?.prompt),
+              completionPrice1M: toPrice1M(model.pricing?.completion),
+              cacheReadPrice1M: toPrice1M(model.pricing?.input_cache_read),
+              cacheWritePrice1M: toPrice1M(model.pricing?.input_cache_write),
+              internalReasoningPrice1M: toPrice1M(model.pricing?.internal_reasoning),
+            }
+          })
+          .filter((model: OpenRouterModelInfo) => {
+            return model.price >= 0
+          })
+          .sort((a: OpenRouterModelInfo, b: OpenRouterModelInfo) => {
+            return a.price - b.price
+          })
+      },
+      { refresh: context?.refresh },
+    )
+  } catch {
     return []
   }
+}
+
+export function clearOpenRouterRequestCachesForTests(): void {
+  openRouterProviderRequests.clear()
+  openRouterModelRequests.clear()
 }
 
 export function toModelGridItem(m: OpenRouterModelInfo): ModelGridItem {

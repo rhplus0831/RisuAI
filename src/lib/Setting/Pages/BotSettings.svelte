@@ -18,7 +18,7 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
   import { getOpenRouterModels, toModelGridItem as orToGridItem } from 'src/ts/model/openrouter'
-  import { getNanoGPTModels, getNanoGPTSubscriptionModels, toModelGridItem as ngToGridItem } from 'src/ts/model/nanogpt'
+  import { getNanoGPTModelCatalog, toModelGridItem as ngToGridItem } from 'src/ts/model/nanogpt'
   import { getOllamaModels } from 'src/ts/model/ollama'
   import ModelGrid from 'src/lib/UI/ModelGrid.svelte'
   import NanoGPTDashboard from 'src/lib/UI/NanoGPTDashboard.svelte'
@@ -202,6 +202,39 @@
   const formatingOrderDraft = createPromptFieldDraft<string[]>('formatingOrder', [])
   const promptPreprocessDraft = createPromptFieldDraft<boolean>('promptPreprocess', false)
   let currentPluginProviderDraft = $state(getDatabase().currentPluginProvider ?? '')
+
+  const PROVIDER_CATALOG_KEY_DEBOUNCE_MS = 400
+  let nanogptCatalogApiKey = $state(nanogptKeyDraft.value)
+  let openrouterCatalogApiKey = $state(openrouterKeyDraft.value)
+  let ollamaCloudCatalogApiKey = $state(ollamaApiKeyDraft.value)
+
+  $effect(() => {
+    const nextApiKey = nanogptKeyDraft.value
+    if (nextApiKey === nanogptCatalogApiKey) return
+    const timer = setTimeout(() => {
+      nanogptCatalogApiKey = nextApiKey
+    }, PROVIDER_CATALOG_KEY_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  })
+
+  $effect(() => {
+    const nextApiKey = openrouterKeyDraft.value
+    if (nextApiKey === openrouterCatalogApiKey) return
+    const timer = setTimeout(() => {
+      openrouterCatalogApiKey = nextApiKey
+    }, PROVIDER_CATALOG_KEY_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  })
+
+  $effect(() => {
+    const nextApiKey = ollamaApiKeyDraft.value
+    if (nextApiKey === ollamaCloudCatalogApiKey) return
+    const timer = setTimeout(() => {
+      ollamaCloudCatalogApiKey = nextApiKey
+    }, PROVIDER_CATALOG_KEY_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
+  })
+
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
   let selectedPromptPreset = $derived(getDatabase().promptPresets?.[getDatabase().promptPresetsId])
   let selectedPromptPresetOwnsPromptTemplate = $derived(selectedPromptPresetHasOwnPromptTemplate())
@@ -925,10 +958,6 @@
       prevNanogptInputMode = nanogptInputMode
     }
   })
-
-  function getNanoGPTModelCatalogs(apiKey: string) {
-    return Promise.all([getNanoGPTModels({ apiKey }), getNanoGPTSubscriptionModels(apiKey)])
-  }
 </script>
 
 {#if settingsKind === 'model'}
@@ -1120,7 +1149,7 @@
             placeholder="Model"
             oninput={() => (ollamaCloudModelNameDraft.value = '')} />
         {:else}
-          {#await getOllamaModels(ollamaURLDraft.value, 'cloud', ollamaApiKeyDraft.value)}
+          {#await getOllamaModels(ollamaURLDraft.value, 'cloud', ollamaCloudCatalogApiKey)}
             <ModelGrid bind:value={ollamaCloudModelDraft.value} loading={true} />
           {:then cloudModels}
             <ModelGrid
@@ -1185,7 +1214,7 @@
       <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
       <TextInput hideText marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
 
-      <NanoGPTDashboard apiKey={nanogptKeyDraft.value} />
+      <NanoGPTDashboard apiKey={nanogptCatalogApiKey} currentApiKey={nanogptKeyDraft.value} />
 
       {#if nanogptSubscriptionStateDraft.value === 'active' || nanogptSubscriptionStateDraft.value === 'grace'}
         <div class="flex items-center mt-3">
@@ -1212,14 +1241,12 @@
           placeholder={(language as any).nanoGPTManualModelSelect || 'Manual Model Select'}
           oninput={() => (nanogptRequestModelNameDraft.value = '')} />
       {:else}
-        {#await getNanoGPTModelCatalogs(nanogptKeyDraft.value)}
+        {#await getNanoGPTModelCatalog(nanogptCatalogApiKey, nanogptUseSubscriptionEndpointDraft.value)}
           <ModelGrid bind:value={nanogptRequestModelDraft.value} loading={true} />
-        {:then [regular, sub]}
+        {:then models}
           <ModelGrid
             bind:value={nanogptRequestModelDraft.value}
-            items={nanogptUseSubscriptionEndpointDraft.value
-              ? (sub ?? []).map(ngToGridItem)
-              : (regular ?? []).map(ngToGridItem)}
+            items={(models ?? []).map(ngToGridItem)}
             showSubBadge={nanogptUseSubscriptionEndpointDraft.value}
             selectedLabelOverride={nanogptRequestModelDraft.value && !nanogptRequestModelNameDraft.value
               ? nanogptRequestModelDraft.value
@@ -1229,7 +1256,7 @@
             }} />
           {#if !nanogptUseSubscriptionEndpointDraft.value}
             <NanoGPTProviderPicker
-              apiKey={nanogptKeyDraft.value}
+              apiKey={nanogptCatalogApiKey}
               modelId={nanogptRequestModelDraft.value}
               bind:value={nanogptProviderDraft.value} />
           {/if}
@@ -1241,7 +1268,7 @@
       <TextInput hideText marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
 
       <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
-      {#await getOpenRouterModels({ apiKey: openrouterKeyDraft.value })}
+      {#await getOpenRouterModels({ apiKey: openrouterCatalogApiKey })}
         <ModelGrid bind:value={openrouterRequestModelDraft.value} pinnedItems={openrouterPinnedItems} loading={true} />
       {:then m}
         <ModelGrid
@@ -1572,7 +1599,7 @@
     {/if}
 
     {#if usesOpenRouterModel}
-      <OpenrouterSettings apiKey={openrouterKeyDraft.value} />
+      <OpenrouterSettings apiKey={openrouterCatalogApiKey} />
     {/if}
 
     <SeparateParametersSection promptPresetModelOverrideMode={promptParameterOverrideMode} />

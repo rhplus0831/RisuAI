@@ -14,9 +14,10 @@
 
   interface Props {
     apiKey: string
+    currentApiKey?: string
   }
 
-  let { apiKey }: Props = $props()
+  let { apiKey, currentApiKey = apiKey }: Props = $props()
   let activeDashboardOperation: NanoGPTDashboardFetchOperation | null = null
 
   type DashboardData = {
@@ -25,7 +26,9 @@
   }
 
   let dashboardPromise = $derived(
-    apiKey ? fetchDashboard(apiKey) : Promise.resolve<DashboardData>({ balance: null, subscription: null }),
+    apiKey && apiKey === currentApiKey
+      ? fetchDashboard(apiKey)
+      : Promise.resolve<DashboardData>({ balance: null, subscription: null }),
   )
 
   async function fetchDashboard(key: string): Promise<DashboardData> {
@@ -37,10 +40,10 @@
       // Persist subscription state so chat requests can pick the right endpoint.
       const subscriptionState = resolveFreshNanoGPTSubscriptionState({
         operation,
-        currentApiKey: apiKey,
+        currentApiKey,
         subscriptionState: subscription?.state ?? '',
       })
-      if (subscriptionState !== null) {
+      if (subscriptionState !== null && subscriptionState !== (getDatabase().nanogptSubscriptionState ?? '')) {
         if (canUseServerCommands()) {
           void patchServerBackedSettings({
             patch: { nanogptSubscriptionState: subscriptionState },
