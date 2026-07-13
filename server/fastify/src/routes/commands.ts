@@ -200,7 +200,10 @@ import {
   type ModuleRecord as LorebookModuleRecord,
 } from '../commands/lorebooks.js'
 import {
+  applyScriptDefinitionCollectionMutation,
+  applyTriggerDefinitionCollectionMutation,
   readCharacterScriptParent,
+  readDefinitionCollectionMutation,
   readScriptDefinitions,
   readTriggerDefinitions,
 } from '../commands/scriptDefinitions.js'
@@ -687,6 +690,21 @@ interface ScriptDefinitionCommandBody {
   baseRevision?: unknown
   scripts?: unknown
   triggers?: unknown
+}
+
+interface ScriptDefinitionMutationCommandBody {
+  baseRevision?: unknown
+  mutation?: unknown
+}
+
+function readScriptDefinitionMutationCommandBody(input: unknown): ScriptDefinitionMutationCommandBody {
+  const body = readJsonObject(input, 'body')
+  for (const key of Object.keys(body)) {
+    if (key !== 'baseRevision' && key !== 'mutation') {
+      throw new ValidationError(`body.${key} is not supported for definition mutation commands`)
+    }
+  }
+  return body
 }
 
 interface ModuleCommandBody {
@@ -7038,6 +7056,162 @@ export function registerCommandRoutes(
           return {
             // Only the `modules` table is rewritten, so emit a module-scoped
             // resource shipping `modules`.
+            event: {
+              ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced,
+              id: moduleId,
+              resource: 'moduleTriggerDefinition',
+            },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/characters/:characterId/scripts', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = readScriptDefinitionMutationCommandBody(req.body ?? {})
+      const baseRevision = readBaseRevision(body)
+      const mutation = readDefinitionCollectionMutation(body.mutation)
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
+        mutate(database, innerDb) {
+          const target = readScriptDefinitionCommandTarget(database)
+          const character = readCharacterScriptParent(target, characterId)
+          character.customscript = applyScriptDefinitionCollectionMutation(character.customscript, mutation)
+          writeSingleCharacterRow(innerDb, characterId, character)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/characters/:characterId/triggers', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const characterId = readCharacterId((req.params as { characterId?: unknown }).characterId)
+      const body = readScriptDefinitionMutationCommandBody(req.body ?? {})
+      const baseRevision = readBaseRevision(body)
+      const mutation = readDefinitionCollectionMutation(body.mutation)
+      const result = applyTargetedCommandMutation<{ characterId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
+        mutate(database, innerDb) {
+          const target = readScriptDefinitionCommandTarget(database)
+          const character = readCharacterScriptParent(target, characterId)
+          character.triggerscript = applyTriggerDefinitionCollectionMutation(character.triggerscript, mutation)
+          writeSingleCharacterRow(innerDb, characterId, character)
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced, id: characterId },
+            extra: { characterId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/modules/:moduleId/scripts', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = readScriptDefinitionMutationCommandBody(req.body ?? {})
+      const baseRevision = readBaseRevision(body)
+      const mutation = readDefinitionCollectionMutation(body.mutation)
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
+        mutate(database, innerDb) {
+          const { modules } = readModuleCollectionCommandTarget(database)
+          const module = requireModule(modules, moduleId)
+          module.regex = applyScriptDefinitionCollectionMutation(module.regex, mutation)
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
+          return {
+            event: {
+              ...COMMAND_EVENT_CATALOG.scriptDefinitionsReplaced,
+              id: moduleId,
+              resource: 'moduleScriptDefinition',
+            },
+            extra: { moduleId },
+          }
+        },
+      })
+
+      return {
+        revision: result.revision,
+        event: result.event,
+        ...result.extra,
+      }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/modules/:moduleId/triggers', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const moduleId = readModuleId((req.params as { moduleId?: unknown }).moduleId)
+      const body = readScriptDefinitionMutationCommandBody(req.body ?? {})
+      const baseRevision = readBaseRevision(body)
+      const mutation = readDefinitionCollectionMutation(body.mutation)
+      const result = applyTargetedCommandMutation<{ moduleId: string }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.collection,
+        collectionScopedRead: COLLECTION_SCOPED_READS.modules,
+        mutate(database, innerDb) {
+          const { modules } = readModuleCollectionCommandTarget(database)
+          const module = requireModule(modules, moduleId)
+          module.trigger = applyTriggerDefinitionCollectionMutation(module.trigger, mutation)
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
+          return {
             event: {
               ...COMMAND_EVENT_CATALOG.triggerDefinitionsReplaced,
               id: moduleId,

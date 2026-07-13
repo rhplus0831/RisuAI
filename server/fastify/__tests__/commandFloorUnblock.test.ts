@@ -320,6 +320,28 @@ describe('Phase 8a script/trigger PUTs → targeted-character-row', () => {
     expect(readCharacter('char-a').chatPage).toBe(1)
   })
 
+  it('PATCH characters/:id/scripts mutates one definition in only the target character row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      payload: {
+        baseRevision: revision,
+        mutation: { op: 'update', id: 'rx-old', patch: { comment: 'compact update' } },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-character-row')
+    expect(metric.writtenTables).toEqual(['characters'])
+    expect(metric.dbJsonWriteMs).toBe(0)
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    expect((readCharacter('char-a').customscript as Array<{ comment: string }>)[0].comment).toBe('compact update')
+    expect((readCharacter('char-b').customscript as Array<{ id: string }>)[0].id).toBe('rx-b')
+  })
+
   it('a malformed scripts payload is rejected without any write', async () => {
     const revision = await importDatabase(seedDatabase())
     const res = await harness.app.inject({

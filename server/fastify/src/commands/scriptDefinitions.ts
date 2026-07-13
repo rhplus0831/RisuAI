@@ -13,6 +13,14 @@ export interface TriggerDefinitionRecord extends JsonRecord {
   id: string
 }
 
+export type DefinitionCollectionMutation =
+  | { op: 'update'; id: string; patch: JsonRecord; deleteKeys: string[] }
+  | { op: 'create'; row: JsonRecord; index: number }
+  | { op: 'delete'; id: string }
+  | { op: 'reorder'; ids: string[] }
+
+type DefinitionKind = 'script' | 'trigger'
+
 export function normalizeScriptDefinitionDatabase(database: unknown): JsonRecord {
   const target = readJsonObject(database, 'database')
   ensureAllScriptDefinitionCollections(target)
@@ -93,6 +101,175 @@ export function readTriggerDefinitions(input: unknown, label = 'triggers'): Trig
     throw new ValidationError(`${label} must be an array`)
   }
   return validateTriggerDefinitions(input, label)
+}
+
+export function readDefinitionCollectionMutation(input: unknown): DefinitionCollectionMutation {
+  const mutation = readJsonObject(input, 'mutation')
+  switch (mutation.op) {
+    case 'update': {
+      assertExactMutationKeys(mutation, 'update', ['op', 'id', 'patch', 'deleteKeys'])
+      const id = readDefinitionMutationId(mutation.id, 'mutation.id')
+      const patch = mutation.patch === undefined ? {} : readJsonObject(mutation.patch, 'mutation.patch')
+      const deleteKeys = readDefinitionMutationFieldList(mutation.deleteKeys)
+      if (Object.keys(patch).length === 0 && deleteKeys.length === 0) {
+        throw new ValidationError('update mutation must include patch fields or deleteKeys')
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'id')) {
+        throw new ValidationError('mutation.patch.id is not supported')
+      }
+      for (const key of deleteKeys) {
+        if (key === 'id') {
+          throw new ValidationError('mutation.deleteKeys cannot include id')
+        }
+        if (Object.prototype.hasOwnProperty.call(patch, key)) {
+          throw new ValidationError(`mutation.deleteKeys cannot also patch ${key}`)
+        }
+      }
+      return { op: 'update', id, patch, deleteKeys }
+    }
+    case 'create': {
+      assertExactMutationKeys(mutation, 'create', ['op', 'row', 'index'])
+      const row = readJsonObject(mutation.row, 'mutation.row')
+      if (!Number.isInteger(mutation.index) || (mutation.index as number) < 0) {
+        throw new ValidationError('mutation.index must be a non-negative integer')
+      }
+      return { op: 'create', row, index: mutation.index as number }
+    }
+    case 'delete':
+      assertExactMutationKeys(mutation, 'delete', ['op', 'id'])
+      return { op: 'delete', id: readDefinitionMutationId(mutation.id, 'mutation.id') }
+    case 'reorder':
+      assertExactMutationKeys(mutation, 'reorder', ['op', 'ids'])
+      return { op: 'reorder', ids: readDefinitionMutationIdList(mutation.ids) }
+    default:
+      throw new ValidationError(`Unsupported definition mutation operation: ${String(mutation.op)}`)
+  }
+}
+
+export function applyScriptDefinitionCollectionMutation(
+  input: unknown,
+  mutation: DefinitionCollectionMutation,
+  label = 'scripts',
+): ScriptDefinitionRecord[] {
+  return applyDefinitionCollectionMutation(input, mutation, label, 'script') as ScriptDefinitionRecord[]
+}
+
+export function applyTriggerDefinitionCollectionMutation(
+  input: unknown,
+  mutation: DefinitionCollectionMutation,
+  label = 'triggers',
+): TriggerDefinitionRecord[] {
+  return applyDefinitionCollectionMutation(input, mutation, label, 'trigger') as TriggerDefinitionRecord[]
+}
+
+function applyDefinitionCollectionMutation(
+  input: unknown,
+  mutation: DefinitionCollectionMutation,
+  label: string,
+  kind: DefinitionKind,
+): JsonRecord[] {
+  const definitions = readCurrentDefinitionCollection(input, label, kind)
+  switch (mutation.op) {
+    case 'update': {
+      const index = definitions.findIndex((definition) => definition.id === mutation.id)
+      if (index === -1) throw definitionNotFound(kind, mutation.id)
+      const next: JsonRecord = { ...definitions[index], ...mutation.patch, id: mutation.id }
+      for (const key of mutation.deleteKeys) delete next[key]
+      validateDefinitionRecord(next, `${label}[${index}]`, kind)
+      const updated = [...definitions]
+      updated[index] = next
+      return updated
+    }
+    case 'create': {
+      const created = validateDefinitionRecords([mutation.row], label, kind)[0]
+      if (definitions.some((definition) => definition.id === created.id)) {
+        throw new ValidationError(`Duplicate ${kind} definition id: ${created.id}`)
+      }
+      if (mutation.index > definitions.length) {
+        throw new ValidationError(`mutation.index must be at most ${definitions.length}`)
+      }
+      const updated = [...definitions]
+      updated.splice(mutation.index, 0, created)
+      return updated
+    }
+    case 'delete': {
+      const index = definitions.findIndex((definition) => definition.id === mutation.id)
+      if (index === -1) throw definitionNotFound(kind, mutation.id)
+      return definitions.filter((_definition, definitionIndex) => definitionIndex !== index)
+    }
+    case 'reorder': {
+      const definitionsById = new Map(definitions.map((definition) => [definition.id, definition]))
+      for (const id of mutation.ids) {
+        if (!definitionsById.has(id)) {
+          throw new ValidationError(`Unknown ${kind} definition id in mutation.ids: ${id}`)
+        }
+      }
+      if (mutation.ids.length !== definitions.length) {
+        throw new ValidationError(`mutation.ids must include every ${kind} definition`)
+      }
+      return mutation.ids.map((id) => definitionsById.get(id)!)
+    }
+  }
+}
+
+function readCurrentDefinitionCollection(input: unknown, label: string, kind: DefinitionKind): JsonRecord[] {
+  if (input === undefined) return []
+  if (!Array.isArray(input)) {
+    throw new ValidationError(`${label} must be an array`)
+  }
+  return validateDefinitionRecords(input, label, kind)
+}
+
+function assertExactMutationKeys(mutation: JsonRecord, operation: string, allowedKeys: readonly string[]): void {
+  const allowed = new Set(allowedKeys)
+  for (const key of Object.keys(mutation)) {
+    if (!allowed.has(key)) {
+      throw new ValidationError(`mutation.${key} is not supported for ${operation}`)
+    }
+  }
+}
+
+function readDefinitionMutationId(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ValidationError(`${label} must be a non-empty string`)
+  }
+  return value
+}
+
+function readDefinitionMutationFieldList(value: unknown): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    throw new ValidationError('mutation.deleteKeys must be an array')
+  }
+  const seen = new Set<string>()
+  return value.map((key, index) => {
+    const parsed = readDefinitionMutationId(key, `mutation.deleteKeys[${index}]`)
+    if (seen.has(parsed)) {
+      throw new ValidationError(`Duplicate mutation.deleteKeys field: ${parsed}`)
+    }
+    seen.add(parsed)
+    return parsed
+  })
+}
+
+function readDefinitionMutationIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    throw new ValidationError('mutation.ids must be an array')
+  }
+  const seen = new Set<string>()
+  return value.map((id, index) => {
+    const parsed = readDefinitionMutationId(id, `mutation.ids[${index}]`)
+    if (seen.has(parsed)) {
+      throw new ValidationError(`Duplicate definition id in mutation.ids: ${parsed}`)
+    }
+    seen.add(parsed)
+    return parsed
+  })
+}
+
+function definitionNotFound(kind: DefinitionKind, id: string): EntityNotFoundError {
+  const label = kind === 'script' ? 'Script' : 'Trigger'
+  return new EntityNotFoundError(`${label} definition not found: ${id}`)
 }
 
 function repairScriptDefinitions(input: unknown[], label: string): ScriptDefinitionRecord[] {

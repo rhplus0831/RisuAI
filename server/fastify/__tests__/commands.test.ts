@@ -10074,6 +10074,468 @@ describe('Phase 9-4b script and trigger definition commands', () => {
   })
 })
 
+describe('compact script and trigger definition mutations', () => {
+  it('updates, creates, reorders, and deletes rows on all four definition owners', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const script = (id: string) => ({
+      id,
+      comment: `Script ${id}`,
+      in: 'input',
+      out: 'output',
+      type: 'editinput',
+      flag: 'g',
+      removeMe: 'delete this',
+      extension: { original: true },
+    })
+    const trigger = (id: string) => ({
+      id,
+      comment: `Trigger ${id}`,
+      type: 'start',
+      conditions: [],
+      effect: [],
+      removeMe: 'delete this',
+      extension: { original: true },
+    })
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          customscript: [script('character-script')],
+          triggerscript: [trigger('character-trigger')],
+        },
+      ],
+      characterOrder: ['char-a'],
+      modules: [
+        {
+          id: 'mod-a',
+          name: 'Mod',
+          regex: [script('module-script')],
+          trigger: [trigger('module-trigger')],
+        },
+      ],
+    })
+
+    const targets = [
+      {
+        url: '/api/v1/commands/characters/char-a/scripts',
+        table: 'characters' as const,
+        ownerId: 'char-a',
+        ownerKey: 'characterId',
+        field: 'customscript',
+        initialId: 'character-script',
+        createdId: 'character-script-created',
+        eventType: 'scriptDefinitions.replaced',
+        resource: 'characterRow',
+        row: script,
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/triggers',
+        table: 'characters' as const,
+        ownerId: 'char-a',
+        ownerKey: 'characterId',
+        field: 'triggerscript',
+        initialId: 'character-trigger',
+        createdId: 'character-trigger-created',
+        eventType: 'triggerDefinitions.replaced',
+        resource: 'characterRow',
+        row: trigger,
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/scripts',
+        table: 'modules' as const,
+        ownerId: 'mod-a',
+        ownerKey: 'moduleId',
+        field: 'regex',
+        initialId: 'module-script',
+        createdId: 'module-script-created',
+        eventType: 'scriptDefinitions.replaced',
+        resource: 'moduleScriptDefinition',
+        row: script,
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/triggers',
+        table: 'modules' as const,
+        ownerId: 'mod-a',
+        ownerKey: 'moduleId',
+        field: 'trigger',
+        initialId: 'module-trigger',
+        createdId: 'module-trigger-created',
+        eventType: 'triggerDefinitions.replaced',
+        resource: 'moduleTriggerDefinition',
+        row: trigger,
+      },
+    ]
+
+    for (const target of targets) {
+      const request = async (mutation: Record<string, unknown>) => {
+        const response = await harness.app.inject({
+          method: 'PATCH',
+          url: target.url,
+          headers: { 'risu-auth': assertion },
+          payload: { baseRevision: revision, mutation },
+        })
+        expect(response.statusCode, JSON.stringify(response.json())).toBe(200)
+        const body = response.json() as Record<string, unknown>
+        expect(Object.keys(body).sort()).toEqual(
+          target.ownerKey === 'characterId' ? ['characterId', 'event', 'revision'] : ['event', 'moduleId', 'revision'],
+        )
+        expect(body[target.ownerKey]).toBe(target.ownerId)
+        expect(body).not.toHaveProperty('scripts')
+        expect(body).not.toHaveProperty('triggers')
+        expect(body).not.toHaveProperty('mutation')
+        expect(body.event).toMatchObject({
+          type: target.eventType,
+          resource: target.resource,
+          id: target.ownerId,
+        })
+        revision = body.revision as number
+      }
+      const readRows = () => readJsonRow(target.table, target.ownerId)[target.field] as Array<Record<string, unknown>>
+
+      await request({
+        op: 'update',
+        id: target.initialId,
+        patch: {
+          comment: `Updated ${target.initialId}`,
+          extension: { original: true, updated: true },
+          addedUnknown: ['preserved'],
+        },
+        deleteKeys: ['removeMe'],
+      })
+      expect(readRows()).toHaveLength(1)
+      expect(readRows()[0]).toMatchObject({
+        id: target.initialId,
+        comment: `Updated ${target.initialId}`,
+        extension: { original: true, updated: true },
+        addedUnknown: ['preserved'],
+      })
+      expect(readRows()[0]).not.toHaveProperty('removeMe')
+
+      const createdRow = { ...target.row(target.createdId), extension: { created: true } }
+      await request({ op: 'create', row: createdRow, index: 0 })
+      expect(readRows().map((row) => row.id)).toEqual([target.createdId, target.initialId])
+      expect(readRows()[0].extension).toEqual({ created: true })
+
+      await request({ op: 'reorder', ids: [target.initialId, target.createdId] })
+      expect(readRows().map((row) => row.id)).toEqual([target.initialId, target.createdId])
+
+      await request({ op: 'delete', id: target.initialId })
+      expect(readRows()).toEqual([createdRow])
+    }
+  })
+
+  it('strictly validates mutation shapes and row-level operations without bumping revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          customscript: [
+            { id: 'script-a', comment: 'A', in: 'a', out: 'b', type: 'editinput' },
+            { id: 'script-b', comment: 'B', in: 'b', out: 'c', type: 'editinput' },
+          ],
+          triggerscript: [],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const url = '/api/v1/commands/characters/char-a/scripts'
+    const cases: Array<{
+      name: string
+      payload: Record<string, unknown>
+      status?: number
+      error: string
+    }> = [
+      {
+        name: 'legacy scripts field',
+        payload: { baseRevision: revision, mutation: { op: 'delete', id: 'script-a' }, scripts: [] },
+        error: 'body.scripts is not supported for definition mutation commands',
+      },
+      {
+        name: 'unknown update key',
+        payload: {
+          baseRevision: revision,
+          mutation: { op: 'update', id: 'script-a', patch: { comment: 'x' }, extra: true },
+        },
+        error: 'mutation.extra is not supported for update',
+      },
+      {
+        name: 'empty update',
+        payload: { baseRevision: revision, mutation: { op: 'update', id: 'script-a' } },
+        error: 'update mutation must include patch fields or deleteKeys',
+      },
+      {
+        name: 'blank update id',
+        payload: { baseRevision: revision, mutation: { op: 'update', id: ' ', patch: { comment: 'x' } } },
+        error: 'mutation.id must be a non-empty string',
+      },
+      {
+        name: 'id patch',
+        payload: { baseRevision: revision, mutation: { op: 'update', id: 'script-a', patch: { id: 'new' } } },
+        error: 'mutation.patch.id is not supported',
+      },
+      {
+        name: 'id deletion',
+        payload: { baseRevision: revision, mutation: { op: 'update', id: 'script-a', deleteKeys: ['id'] } },
+        error: 'mutation.deleteKeys cannot include id',
+      },
+      {
+        name: 'duplicate delete key',
+        payload: {
+          baseRevision: revision,
+          mutation: { op: 'update', id: 'script-a', deleteKeys: ['comment', 'comment'] },
+        },
+        error: 'Duplicate mutation.deleteKeys field: comment',
+      },
+      {
+        name: 'patch and delete overlap',
+        payload: {
+          baseRevision: revision,
+          mutation: { op: 'update', id: 'script-a', patch: { comment: 'x' }, deleteKeys: ['comment'] },
+        },
+        error: 'mutation.deleteKeys cannot also patch comment',
+      },
+      {
+        name: 'invalid resulting row',
+        payload: { baseRevision: revision, mutation: { op: 'update', id: 'script-a', patch: { in: 17 } } },
+        error: 'scripts[0].in must be a string',
+      },
+      {
+        name: 'missing update target',
+        payload: { baseRevision: revision, mutation: { op: 'update', id: 'missing', patch: { comment: 'x' } } },
+        status: 404,
+        error: 'Script definition not found: missing',
+      },
+      {
+        name: 'unknown create key',
+        payload: {
+          baseRevision: revision,
+          mutation: {
+            op: 'create',
+            row: { id: 'script-c', comment: 'C', in: '', out: '', type: 'editinput' },
+            index: 0,
+            extra: true,
+          },
+        },
+        error: 'mutation.extra is not supported for create',
+      },
+      {
+        name: 'negative create index',
+        payload: {
+          baseRevision: revision,
+          mutation: {
+            op: 'create',
+            row: { id: 'script-c', comment: 'C', in: '', out: '', type: 'editinput' },
+            index: -1,
+          },
+        },
+        error: 'mutation.index must be a non-negative integer',
+      },
+      {
+        name: 'large create index',
+        payload: {
+          baseRevision: revision,
+          mutation: {
+            op: 'create',
+            row: { id: 'script-c', comment: 'C', in: '', out: '', type: 'editinput' },
+            index: 3,
+          },
+        },
+        error: 'mutation.index must be at most 2',
+      },
+      {
+        name: 'duplicate create id',
+        payload: {
+          baseRevision: revision,
+          mutation: {
+            op: 'create',
+            row: { id: 'script-a', comment: 'C', in: '', out: '', type: 'editinput' },
+            index: 0,
+          },
+        },
+        error: 'Duplicate script definition id: script-a',
+      },
+      {
+        name: 'missing create id',
+        payload: {
+          baseRevision: revision,
+          mutation: {
+            op: 'create',
+            row: { comment: 'C', in: '', out: '', type: 'editinput' },
+            index: 0,
+          },
+        },
+        error: 'scripts[0].id must be a non-empty string',
+      },
+      {
+        name: 'unknown delete key',
+        payload: { baseRevision: revision, mutation: { op: 'delete', id: 'script-a', extra: true } },
+        error: 'mutation.extra is not supported for delete',
+      },
+      {
+        name: 'missing delete target',
+        payload: { baseRevision: revision, mutation: { op: 'delete', id: 'missing' } },
+        status: 404,
+        error: 'Script definition not found: missing',
+      },
+      {
+        name: 'unknown reorder key',
+        payload: {
+          baseRevision: revision,
+          mutation: { op: 'reorder', ids: ['script-a', 'script-b'], extra: true },
+        },
+        error: 'mutation.extra is not supported for reorder',
+      },
+      {
+        name: 'duplicate reorder id',
+        payload: { baseRevision: revision, mutation: { op: 'reorder', ids: ['script-a', 'script-a'] } },
+        error: 'Duplicate definition id in mutation.ids: script-a',
+      },
+      {
+        name: 'blank reorder id',
+        payload: { baseRevision: revision, mutation: { op: 'reorder', ids: ['script-a', ' '] } },
+        error: 'mutation.ids[1] must be a non-empty string',
+      },
+      {
+        name: 'unknown reorder id',
+        payload: { baseRevision: revision, mutation: { op: 'reorder', ids: ['script-a', 'missing'] } },
+        error: 'Unknown script definition id in mutation.ids: missing',
+      },
+      {
+        name: 'incomplete reorder',
+        payload: { baseRevision: revision, mutation: { op: 'reorder', ids: ['script-a'] } },
+        error: 'mutation.ids must include every script definition',
+      },
+      {
+        name: 'unsupported operation',
+        payload: { baseRevision: revision, mutation: { op: 'replace', ids: [] } },
+        error: 'Unsupported definition mutation operation: replace',
+      },
+    ]
+
+    for (const testCase of cases) {
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url,
+        headers: { 'risu-auth': assertion },
+        payload: testCase.payload,
+      })
+      expect(response.statusCode, testCase.name).toBe(testCase.status ?? 400)
+      expect(response.json().error, testCase.name).toBe(testCase.error)
+    }
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      expect(getSchemaState(db).revision).toBe(revision)
+    } finally {
+      db.close()
+    }
+  })
+
+  it('creates into absent arrays, rejects present non-arrays, malformed current ids, and stale revisions', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    let revision = await importDatabase(harness.app, assertion, {
+      characters: [{ chaId: 'char-a', name: 'A' }],
+      characterOrder: ['char-a'],
+      modules: [{ id: 'mod-a', name: 'Mod' }],
+    })
+    writeJsonRow('characters', 'char-a', { chaId: 'char-a', opaque: { exact: true } })
+    writeJsonRow('modules', 'mod-a', { id: 'mod-a', opaque: { exact: true } })
+
+    const characterCreate = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        mutation: {
+          op: 'create',
+          row: { id: 'script-a', comment: 'A', in: '', out: '', type: 'editinput', unknown: { keep: true } },
+          index: 0,
+        },
+      },
+    })
+    expect(characterCreate.statusCode, JSON.stringify(characterCreate.json())).toBe(200)
+    revision = characterCreate.json().revision
+    expect(readJsonRow('characters', 'char-a')).toEqual({
+      chaId: 'char-a',
+      opaque: { exact: true },
+      customscript: [{ id: 'script-a', comment: 'A', in: '', out: '', type: 'editinput', unknown: { keep: true } }],
+    })
+
+    const moduleCreate = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        mutation: {
+          op: 'create',
+          row: { id: 'trigger-a', comment: 'A', type: 'start', conditions: [], effect: [] },
+          index: 0,
+        },
+      },
+    })
+    expect(moduleCreate.statusCode, JSON.stringify(moduleCreate.json())).toBe(200)
+    revision = moduleCreate.json().revision
+    expect(readJsonRow('modules', 'mod-a')).toEqual({
+      id: 'mod-a',
+      opaque: { exact: true },
+      trigger: [{ id: 'trigger-a', comment: 'A', type: 'start', conditions: [], effect: [] }],
+    })
+
+    writeJsonRow('characters', 'char-a', {
+      ...readJsonRow('characters', 'char-a'),
+      triggerscript: { legacy: true },
+    })
+    const nonArray = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a/triggers',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        mutation: {
+          op: 'create',
+          row: { id: 'trigger-b', comment: 'B', type: 'start', conditions: [], effect: [] },
+          index: 0,
+        },
+      },
+    })
+    expect(nonArray.statusCode).toBe(400)
+    expect(nonArray.json().error).toBe('triggers must be an array')
+
+    writeJsonRow('modules', 'mod-a', {
+      ...readJsonRow('modules', 'mod-a'),
+      regex: [
+        { id: 'duplicate', comment: 'A', in: '', out: '', type: 'editinput' },
+        { id: 'duplicate', comment: 'B', in: '', out: '', type: 'editinput' },
+      ],
+    })
+    const duplicateCurrentIds = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        mutation: { op: 'update', id: 'duplicate', patch: { comment: 'Updated' } },
+      },
+    })
+    expect(duplicateCurrentIds.statusCode).toBe(400)
+    expect(duplicateCurrentIds.json().error).toBe('Duplicate script definition id: duplicate')
+
+    const stale = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/characters/char-a/scripts',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision - 1, mutation: { op: 'delete', id: 'script-a' } },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: revision })
+  })
+})
+
 describe('Phase 9-4c module record and enablement commands', () => {
   it('creates, patches, enables, reorders, relinks, and deletes modules', async () => {
     const { assertion } = await setupAuthedClient(harness.app)

@@ -233,6 +233,53 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     await runScopedModuleDefinitionCommand('triggers')
   })
 
+  it('compact definition mutations retain exact character and module-scoped read budgets', async () => {
+    const fixture = buildLargeCorpusFixture()
+    let revision = await importDatabase(fixture.database)
+    const rows = {
+      scripts: { id: 'compact-script', comment: 'Compact', in: 'a', out: 'b', type: 'editinput' },
+      triggers: { id: 'compact-trigger', comment: 'Compact', type: 'start', conditions: [], effect: [] },
+    }
+
+    async function runCharacterPatch(path: 'scripts' | 'triggers'): Promise<void> {
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() =>
+          command('PATCH', `/api/v1/commands/characters/${fixture.hot.characterId}/${path}`, {
+            baseRevision: revision,
+            mutation: { op: 'create', row: rows[path], index: 0 },
+          }),
+        ),
+      )
+
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+      expect(loadRun.corpusLoadCount).toBe(0)
+      expect(loadRun.loadCountByTable).toEqual({})
+      expect(readCountByTable).toEqual({ schema_version: 1, settings: 1, characters: 1 })
+      revision = loadRun.result.json().revision
+    }
+
+    async function runModulePatch(path: 'scripts' | 'triggers'): Promise<void> {
+      const { result: loadRun, readCountByTable } = await withSqliteSelectReadInstrumentation(() =>
+        withServerLoadInstrumentation(() =>
+          command('PATCH', `/api/v1/commands/modules/corpus-module-0/${path}`, {
+            baseRevision: revision,
+            mutation: { op: 'create', row: { ...rows[path], id: `module-${rows[path].id}` }, index: 0 },
+          }),
+        ),
+      )
+
+      expect(loadRun.result.statusCode, JSON.stringify(loadRun.result.json())).toBe(200)
+      expectCollectionCommandReadOnlyTables(readCountByTable, ['modules'])
+      expectCollectionLoadOnlyTables(loadRun.loadCountByTable, ['modules'])
+      revision = loadRun.result.json().revision
+    }
+
+    await runCharacterPatch('scripts')
+    await runCharacterPatch('triggers')
+    await runModulePatch('scripts')
+    await runModulePatch('triggers')
+  })
+
   it('H2: chat-create performs zero whole-corpus message/hypa reads while writing only the new transcript', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)

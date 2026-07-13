@@ -1510,6 +1510,30 @@ describe('Phase 4 modules collection range', () => {
     expect(modules[0].regex.map((s) => s.id)).toEqual(['script-a'])
   })
 
+  it('PATCH modules/:id/scripts mutates one definition in one modules row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const beforeRowids = collectionRowidsByPosition('modules')
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a/scripts',
+      payload: {
+        baseRevision: revision,
+        mutation: { op: 'create', row: SCRIPT, index: 0 },
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-collection')
+    expect(metric.writtenTables).toEqual(['modules'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(collectionRowidsByPosition('modules')).toEqual(beforeRowids)
+    const modules = readCollection('modules') as Array<{ id: string; regex: Array<{ id: string }> }>
+    expect(modules[0].regex.map((script) => script.id)).toEqual(['script-a'])
+    expect(modules[1].regex).toEqual([])
+  })
+
   it('PUT modules/:id/triggers rewrites modules; character repairs stay validate-only', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
