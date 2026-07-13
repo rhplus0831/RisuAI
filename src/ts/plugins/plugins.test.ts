@@ -83,7 +83,7 @@ import { selectedCharID } from '../stores.svelte'
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
-import { getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
+import { checkPluginUpdate, getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
 
 interface CapturedFetch {
@@ -373,6 +373,66 @@ afterEach(() => {
 })
 
 describe('plugin import/update freshness', () => {
+  it('deduplicates concurrent checks and caches a successful no-update result', async () => {
+    const updateURL = 'https://plugins.example/no-update.js'
+    const fetchMock = vi.fn(async () => new Response('//@version 1.0.0\nRisuai.log("same")', { status: 206 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const plugin = seedPlugin('plugin-negative-cache', {
+      updateURL,
+      versionOfPlugin: '1.0.0',
+    })
+
+    await expect(Promise.all([checkPluginUpdate(plugin), checkPluginUpdate(plugin)])).resolves.toEqual([
+      undefined,
+      undefined,
+    ])
+    await expect(checkPluginUpdate({ ...plugin })).resolves.toBeUndefined()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledWith(updateURL, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-512' },
+    })
+  })
+
+  it('does not reuse an update check after the source URL or installed version changes', async () => {
+    const fetchMock = vi.fn(async () => new Response('//@version 2.0.0', { status: 206 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const plugin = seedPlugin('plugin-update-cache-identity', {
+      updateURL: 'https://plugins.example/first.js',
+      versionOfPlugin: '1.0.0',
+    })
+
+    await expect(checkPluginUpdate(plugin)).resolves.toMatchObject({ version: '2.0.0' })
+    await expect(
+      checkPluginUpdate({
+        ...plugin,
+        updateURL: 'https://plugins.example/second.js',
+      }),
+    ).resolves.toMatchObject({ version: '2.0.0' })
+    await expect(checkPluginUpdate({ ...plugin, versionOfPlugin: '1.1.0' })).resolves.toMatchObject({
+      version: '2.0.0',
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  it('retries failed plugin update checks instead of caching failures', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('temporary failure', { status: 503 }))
+      .mockResolvedValueOnce(new Response('//@version 2.0.0', { status: 206 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const plugin = seedPlugin('plugin-update-retry', {
+      updateURL: 'https://plugins.example/retry.js',
+      versionOfPlugin: '1.0.0',
+    })
+
+    await expect(checkPluginUpdate(plugin)).resolves.toBeUndefined()
+    await expect(checkPluginUpdate(plugin)).resolves.toMatchObject({ version: '2.0.0' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   it('drops file import after real file selection if the plugin list changes before file read completes', async () => {
     const calls = stubCommandFetch()
     const picker = createPicker()
