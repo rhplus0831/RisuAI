@@ -281,7 +281,8 @@ describe('server command API adapter', () => {
     const commandFetch = makeCommandFetch(() => ({
       revision: 3,
       event,
-      settings: { theme: 'light', zoomsize: 90 },
+      acknowledgedKeys: ['theme', 'zoomsize'],
+      settings: { theme: 'light' },
     }))
     vi.stubGlobal('fetch', commandFetch.fetch)
     const observedEffects: unknown[] = []
@@ -303,6 +304,115 @@ describe('server command API adapter', () => {
         settings: { theme: 'light', zoomsize: 90 },
       },
     ])
+  })
+
+  it('reconstructs omitted large verbatim settings in the local effect', async () => {
+    const customCSS = `/* large */${'x'.repeat(64 * 1024)}`
+    const event = {
+      type: 'settings.updated',
+      revision: 3,
+      resource: 'settings',
+      id: 'display',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      acknowledgedKeys: ['customCSS'],
+      settings: {},
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await patchSettingsGroup({
+      group: 'display',
+      baseRevision: 2,
+      patch: { customCSS },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { customCSS },
+        settings: { customCSS },
+      },
+    ])
+  })
+
+  it('keeps malformed compact settings acknowledgements on the authoritative fallback path', async () => {
+    const event = {
+      type: 'settings.updated',
+      revision: 3,
+      resource: 'settings',
+      id: 'display',
+    }
+    const malformedBodies: Array<Record<string, unknown>> = [
+      {
+        revision: 3,
+        event,
+        acknowledgedKeys: ['theme'],
+        settings: {},
+      },
+      {
+        revision: 3,
+        event,
+        acknowledgedKeys: ['theme', 'theme', 'zoomsize'],
+        settings: {},
+      },
+      {
+        revision: 3,
+        event,
+        acknowledgedKeys: ['theme', 'zoomsize'],
+        settings: { customCSS: 'not acknowledged' },
+      },
+      {
+        revision: 3,
+        event,
+        acknowledgedKeys: ['theme', 'zoomsize'],
+        settings: { theme: Number.NaN },
+      },
+      {
+        revision: 3,
+        event: { ...event, type: 'settings.other' },
+        acknowledgedKeys: ['theme', 'zoomsize'],
+        settings: {},
+      },
+      {
+        revision: 3,
+        event: { ...event, parentId: 'unexpected' },
+        acknowledgedKeys: ['theme', 'zoomsize'],
+        settings: {},
+      },
+    ]
+    let responseIndex = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const body = malformedBodies[responseIndex++]
+        return {
+          status: 200,
+          ok: true,
+          json: async () => body,
+        } as Response
+      }) as unknown as typeof fetch,
+    )
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    for (const _body of malformedBodies) {
+      await patchSettingsGroup({
+        group: 'display',
+        baseRevision: 2,
+        patch: { theme: 'light', zoomsize: 90 },
+      })
+    }
+
+    expect(observedEffectCounts).toEqual(malformedBodies.map(() => 0))
   })
 
   it('notifies the command success reconciler before resolving an ok command', async () => {

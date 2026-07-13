@@ -4182,24 +4182,41 @@ function readSettingsPatchLocalEffect(
   attemptedPatch: SettingsPatch,
 ): SettingsPatchLocalEffect | undefined {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
-  const settings = (body as Record<string, unknown>).settings
-  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return undefined
-  if (event.id !== group) return undefined
+  const record = body as Record<string, unknown>
+  const acknowledgedKeys = record.acknowledgedKeys
+  const overrides = record.settings
+  if (!isUniqueStringArray(acknowledgedKeys)) return undefined
+  if (!overrides || typeof overrides !== 'object' || Array.isArray(overrides)) return undefined
 
   const attemptedKeys = Object.keys(attemptedPatch).sort()
-  const canonicalKeys = Object.keys(settings).sort()
-  if (attemptedKeys.length === 0 || !isJsonValueEqual(attemptedKeys, canonicalKeys)) return undefined
+  const sortedAcknowledgedKeys = [...acknowledgedKeys].sort()
+  if (attemptedKeys.length === 0 || !isJsonValueEqual(attemptedKeys, sortedAcknowledgedKeys)) return undefined
   if (attemptedKeys.some((key) => SERVER_SETTINGS_GROUP_BY_KEY[key] !== group)) return undefined
+  if (attemptedKeys.some((key) => !isJsonValue(attemptedPatch[key]))) return undefined
 
   const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(attemptedPatch, 'hypaV3Presets')
   const expectedResource = writesHypaV3Presets ? 'settingsWithHypaV3Presets' : 'settings'
-  if (event.resource !== expectedResource) return undefined
+  if (
+    event.type !== 'settings.updated' ||
+    event.resource !== expectedResource ||
+    event.id !== group ||
+    event.parentId !== undefined
+  ) {
+    return undefined
+  }
+
+  const acknowledgedKeySet = new Set(acknowledgedKeys)
+  const canonicalSettings = cloneJsonValue(attemptedPatch)
+  for (const [key, value] of Object.entries(overrides)) {
+    if (!acknowledgedKeySet.has(key) || !isJsonValue(value)) return undefined
+    canonicalSettings[key] = cloneJsonValue(value)
+  }
 
   return {
     kind: 'settingsPatch',
     group,
     attemptedPatch: cloneJsonValue(attemptedPatch),
-    settings: cloneJsonValue(settings as SettingsPatch),
+    settings: canonicalSettings,
   }
 }
 
@@ -5127,6 +5144,31 @@ function isNonEmptyStringArray(value: unknown, allowEmpty = false): value is str
 
 function isUniqueStringArray(value: unknown): value is string[] {
   return isNonEmptyStringArray(value, true) && new Set(value).size === value.length
+}
+
+function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (!value || typeof value !== 'object') return false
+  if (ancestors.has(value)) return false
+
+  const prototype = Object.getPrototypeOf(value)
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false
+
+  ancestors.add(value)
+  let valid = true
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (!Object.prototype.hasOwnProperty.call(value, index) || !isJsonValue(value[index], ancestors)) {
+        valid = false
+        break
+      }
+    }
+  } else {
+    valid = Object.values(value).every((entry) => isJsonValue(entry, ancestors))
+  }
+  ancestors.delete(value)
+  return valid
 }
 
 function nonEmptyString(value: unknown): value is string {

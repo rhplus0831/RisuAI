@@ -514,9 +514,8 @@ describe('Phase 9-1 command foundation', () => {
         resource: 'settings',
         id: 'runtime',
       },
-      settings: {
-        streamGeminiThoughts: true,
-      },
+      acknowledgedKeys: ['streamGeminiThoughts'],
+      settings: {},
     })
     expect(harness.commandEvents.list()).toEqual([res.json().event])
 
@@ -800,10 +799,8 @@ describe('Phase 9-2a scalar settings groups', () => {
         resource: 'settings',
         id: 'display',
       },
-      settings: {
-        theme: 'light',
-        zoomsize: 88,
-      },
+      acknowledgedKeys: ['theme', 'zoomsize'],
+      settings: {},
     })
 
     const bootstrap = await harness.app.inject({
@@ -816,6 +813,72 @@ describe('Phase 9-2a scalar settings groups', () => {
       theme: 'light',
       zoomsize: 88,
       greeting: 'hi',
+    })
+  })
+
+  it('omits a large verbatim setting value from the command response', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      customCSS: '',
+    })
+    const customCSS = `/* large */${'x'.repeat(64 * 1024)}`
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/display',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { customCSS } },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      acknowledgedKeys: ['customCSS'],
+      settings: {},
+    })
+    expect(res.body).not.toContain(customCSS)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.customCSS).toBe(customCSS)
+  })
+
+  it('returns only a normalized settings override alongside the acknowledged keys', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      keepSessionAlive: 'off',
+      showUnrecommended: false,
+    })
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/advanced',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          keepSessionAlive: 'pip',
+          showUnrecommended: true,
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({
+      acknowledgedKeys: ['keepSessionAlive', 'showUnrecommended'],
+      settings: { keepSessionAlive: 'sound' },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      keepSessionAlive: 'sound',
+      showUnrecommended: true,
     })
   })
 
@@ -2564,7 +2627,10 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
     expect(settingsOnly.statusCode).toBe(200)
-    expect(settingsOnly.json().settings).toEqual({ hypaV3: true })
+    expect(settingsOnly.json()).toMatchObject({
+      acknowledgedKeys: ['hypaV3'],
+      settings: {},
+    })
     expect(settingsOnly.json().event).toMatchObject({
       type: 'settings.updated',
       resource: 'settings',
@@ -2593,18 +2659,9 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
     expect(withPresets.statusCode).toBe(200)
-    expect(withPresets.json().settings).toEqual({
-      hypaV3Presets: [
-        {
-          name: 'Cross-resource memory',
-          settings: {
-            summarizationModel: 'subModel',
-            summarizationPrompt: 'Summarize',
-            recentMemoryRatio: 0.4,
-            similarMemoryRatio: 0.5,
-          },
-        },
-      ],
+    expect(withPresets.json()).toMatchObject({
+      acknowledgedKeys: ['hypaV3Presets'],
+      settings: {},
     })
     expect(withPresets.json().event).toMatchObject({
       type: 'settings.updated',

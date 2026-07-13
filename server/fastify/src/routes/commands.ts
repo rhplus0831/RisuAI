@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
+import { isDeepStrictEqual } from 'node:util'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import {
@@ -1481,6 +1482,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as RuntimeSettingsCommandBody
       const baseRevision = readBaseRevision(body)
       const patch = readSettingsGroupPatch(group, body.patch)
+      const requestedPatch = body.patch as Record<string, unknown>
       const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')
       validateSettingsAssetRefs(db, patch)
       const result = applyTargetedCommandMutation({
@@ -1504,7 +1506,15 @@ export function registerCommandRoutes(
             )
           }
           const target = database as Record<string, unknown>
-          const settings = Object.fromEntries(Object.keys(patch).map((key) => [key, target[key]]))
+          const acknowledgedKeys = Object.keys(patch)
+          const canonicalSettings = maskProviderSecrets(
+            Object.fromEntries(acknowledgedKeys.map((key) => [key, target[key]])),
+          )
+          const settings = Object.fromEntries(
+            acknowledgedKeys
+              .filter((key) => !isDeepStrictEqual(canonicalSettings[key], requestedPatch[key]))
+              .map((key) => [key, canonicalSettings[key]]),
+          )
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.settingsUpdated,
@@ -1512,10 +1522,12 @@ export function registerCommandRoutes(
               id: group,
             },
             extra: {
-              // Return only the keys this command touched. The client can use
-              // this canonical, secret-masked patch to acknowledge its
-              // optimistic write without downloading the complete group.
-              settings: maskProviderSecrets(settings),
+              // Name every accepted key, but return values only when storage
+              // normalization or secret masking changed what the client sent.
+              // The client already holds verbatim accepted values and can
+              // reconstruct the canonical patch without echoing large data.
+              acknowledgedKeys,
+              settings,
             },
           }
         },
