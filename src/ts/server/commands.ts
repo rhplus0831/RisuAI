@@ -626,6 +626,7 @@ export interface UpdatePromptItemCommandInput {
   promptPresetId?: string
   itemId: string
   patch: PromptItemSnapshot
+  deleteKeys?: string[]
 }
 
 export interface DeletePromptItemCommandInput {
@@ -2205,6 +2206,7 @@ export async function updatePromptItemCommand(
       baseRevision: input.baseRevision,
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
       patch: input.patch,
+      ...(input.deleteKeys?.length ? { deleteKeys: input.deleteKeys } : {}),
     },
     signal,
     keepalive,

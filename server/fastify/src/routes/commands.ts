@@ -42,6 +42,7 @@ import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
   readPromptItemId,
+  readPromptItemPatch,
   readPromptSettingsPatch,
   requirePromptItemIndex,
   validateFullPromptItemIdList,
@@ -603,6 +604,7 @@ interface PromptCommandBody {
   baseRevision?: unknown
   promptItem?: unknown
   patch?: unknown
+  deleteKeys?: unknown
   itemIds?: unknown
   enabled?: unknown
   promptPresetId?: unknown
@@ -3097,7 +3099,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PromptCommandBody
       const baseRevision = readBaseRevision(body)
       const promptPresetId = readOptionalPromptPresetIdFromBody(body)
-      const patch = createPromptItemRecord({ ...readJsonObject(body.patch, 'patch'), id: itemId })
+      const { patch, deleteKeys } = readPromptItemPatch(body.patch, body.deleteKeys, itemId)
       const result = applyTargetedCommandMutation<{ itemId: string }>({
         db,
         dataDir,
@@ -3111,11 +3113,11 @@ export function registerCommandRoutes(
           const scoped = promptPresetId ? requireSelectedPromptPresetCommandTarget(database, promptPresetId) : undefined
           const items = scoped ? scoped.items : ensurePromptTemplateCollection(ensureDatabaseObject(database))
           const index = requirePromptItemIndex(items, itemId)
-          items[index] = {
-            ...items[index],
-            ...patch,
-            id: itemId,
-          }
+          const updated = { ...items[index] }
+          for (const key of deleteKeys) delete updated[key]
+          Object.assign(updated, patch)
+          updated.id = itemId
+          items[index] = updated
           if (scoped) {
             writeSingleCollectionRow(innerDb, 'promptPresets', scoped.index, scoped.preset)
           } else {

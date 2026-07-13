@@ -177,6 +177,7 @@ import {
   rollbackFailedPromptTemplateItemReorder,
   runPromptTemplateOwnerCommand,
   runPromptTemplateOwnerRollback,
+  snapshotJson,
   type PromptTemplateDraftBinding,
 } from './promptTemplateBridge.svelte'
 
@@ -835,7 +836,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       baseRevision: 1,
       promptPresetId: 'prompt-a',
       itemId: 'p-0',
-      patch: item('p-0', 'unload item'),
+      patch: { text: 'unload item' },
     })
 
     await vi.advanceTimersByTimeAsync(500)
@@ -883,13 +884,92 @@ describe('flushPendingPromptTemplatePatches', () => {
       kind: 'updatePromptItem',
       baseRevision: 1,
       itemId: 'p-0',
-      patch: item('p-0', 'draft two'),
+      patch: { text: 'draft two' },
     })
 
     commandState.commands[0].rollback?.()
 
     expect(textOf(draftItems[0])).toBe('small')
     expect(textOf((getResourceDatabase().promptTemplate as PromptItem[])[0])).toBe('small')
+  })
+
+  it('omits very large unchanged fields from a debounced prompt item update', async () => {
+    const previous = promptItemFixture({
+      ...item('p-0', 'small'),
+      largeMetadata: BIG,
+      nestedMetadata: { body: BIG },
+    })
+    resourceDatabase.current = { promptTemplate: [cloneJsonValue(previous)] }
+    let draftItems = [promptItemFixture({ ...previous, text: 'edited' })]
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    queuePromptItemProjectionUpdate(binding, 'p-0', previous, 500)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'updatePromptItem',
+      baseRevision: 1,
+      itemId: 'p-0',
+      patch: { text: 'edited' },
+    })
+    expect(snapshotJson(commandState.commands[0].built).length).toBeLessThan(BIG.length)
+  })
+
+  it('sends removals through deleteKeys while retaining explicit null values', async () => {
+    const previous = promptItemFixture({
+      ...item('p-0', 'small'),
+      removable: 'drop me',
+      innerFormat: 'legacy format',
+      unchanged: BIG,
+    })
+    const attempted = promptItemFixture({ ...previous, innerFormat: null })
+    delete (attempted as unknown as Record<string, unknown>).removable
+    resourceDatabase.current = { promptTemplate: [cloneJsonValue(previous)] }
+    let draftItems = [attempted]
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    queuePromptItemProjectionUpdate(binding, 'p-0', previous, 500)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(1)
+    expect(commandState.commands[0].built).toEqual({
+      kind: 'updatePromptItem',
+      baseRevision: 1,
+      itemId: 'p-0',
+      patch: { innerFormat: null },
+      deleteKeys: ['removable'],
+    })
+  })
+
+  it('suppresses a debounced update that reverts to the first retained previous row', async () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('p-0', 'draft edit')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500)
+    draftItems[0] = item('p-0', 'small')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'draft edit'), 500)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands).toHaveLength(0)
+    expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
   })
 
   it('M8: PromptSettings component teardown flushes pending prompt-template patches', async () => {
@@ -929,7 +1009,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       kind: 'updatePromptItem',
       baseRevision: 1,
       itemId: 'p-0',
-      patch: item('p-0', 'component teardown item'),
+      patch: { text: 'component teardown item' },
     })
 
     await vi.advanceTimersByTimeAsync(500)

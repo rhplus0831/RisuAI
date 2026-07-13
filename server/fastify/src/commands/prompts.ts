@@ -8,6 +8,11 @@ export interface PromptItemRecord extends JsonRecord {
   type?: unknown
 }
 
+export interface PromptItemPatch {
+  patch: JsonRecord
+  deleteKeys: string[]
+}
+
 export const PROMPT_SETTINGS_KEYS = [
   'mainPrompt',
   'jailbreak',
@@ -79,6 +84,59 @@ export function readPromptItemId(value: unknown, label = 'itemId'): string {
     throw new ValidationError(`${label} must be a non-empty string`)
   }
   return value
+}
+
+export function readPromptItemPatch(patchInput: unknown, deleteKeysInput: unknown, itemId: string): PromptItemPatch {
+  const patch = { ...readJsonObject(patchInput, 'patch') }
+  for (const key of Object.keys(patch)) {
+    if (key.trim() === '') {
+      throw new ValidationError('patch keys must be non-empty strings')
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'id')) {
+    if (patch.id !== itemId) {
+      throw new ValidationError('patch.id must match itemId')
+    }
+    // Older clients sent the complete row, including its stable id. Accept the
+    // matching id during migration, but never treat it as a mutable field.
+    delete patch.id
+  }
+
+  const deleteKeys = readPromptItemDeleteKeys(deleteKeysInput)
+  for (const key of deleteKeys) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      throw new ValidationError(`patch and deleteKeys must not overlap: ${key}`)
+    }
+  }
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) {
+    throw new ValidationError('prompt item update must include at least one field')
+  }
+  return { patch, deleteKeys }
+}
+
+function readPromptItemDeleteKeys(value: unknown): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) {
+    throw new ValidationError('deleteKeys must be an array')
+  }
+
+  const deleteKeys: string[] = []
+  const seen = new Set<string>()
+  for (const key of value) {
+    if (typeof key !== 'string' || key.trim() === '') {
+      throw new ValidationError('deleteKeys must contain non-empty strings')
+    }
+    if (key === 'id') {
+      throw new ValidationError('deleteKeys must not contain id')
+    }
+    if (seen.has(key)) {
+      throw new ValidationError(`Duplicate delete key: ${key}`)
+    }
+    seen.add(key)
+    deleteKeys.push(key)
+  }
+  return deleteKeys
 }
 
 export function readPromptSettingsPatch(patch: unknown): JsonRecord {

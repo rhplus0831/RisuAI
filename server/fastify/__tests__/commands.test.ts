@@ -3865,6 +3865,9 @@ describe('Phase 9-2c prompt template and item commands', () => {
           type2: 'normal',
           text: 'hello',
           role: 'system',
+          innerFormat: 'legacy format',
+          removable: 'drop me',
+          largeMetadata: 'x'.repeat(20_000),
         },
       },
     })
@@ -3887,11 +3890,11 @@ describe('Phase 9-2c prompt template and item commands', () => {
       payload: {
         baseRevision: created.json().revision,
         patch: {
-          type: 'plain',
-          type2: 'normal',
           text: 'updated',
           role: 'user',
+          innerFormat: null,
         },
+        deleteKeys: ['removable'],
       },
     })
     expect(updated.statusCode).toBe(200)
@@ -3940,13 +3943,93 @@ describe('Phase 9-2c prompt template and item commands', () => {
         type2: 'normal',
         text: 'updated',
         role: 'user',
+        innerFormat: null,
+        largeMetadata: 'x'.repeat(20_000),
       },
     ])
+  })
+
+  it('applies sparse prompt item fields and deletions to a selected prompt preset only', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          promptTemplate: [
+            {
+              id: 'item-a',
+              type: 'plain',
+              text: 'before',
+              role: 'system',
+              innerFormat: 'legacy format',
+              removable: 'drop me',
+              largeMetadata: 'x'.repeat(20_000),
+            },
+          ],
+        },
+      ],
+      promptTemplate: [{ id: 'root-item', type: 'memory', untouched: true }],
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/item-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        promptPresetId: 'prompt-a',
+        patch: { id: 'item-a', text: 'after', innerFormat: null },
+        deleteKeys: ['removable'],
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'prompt.item.updated',
+        revision: 2,
+        resource: 'promptItem',
+        id: 'item-a',
+        parentId: 'prompt-a',
+      },
+      itemId: 'item-a',
+    })
+
+    const presetTemplate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/prompt-presets/prompt-a/template',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(presetTemplate.statusCode).toBe(200)
+    expect(presetTemplate.json().promptTemplate).toEqual([
+      {
+        id: 'item-a',
+        type: 'plain',
+        text: 'after',
+        role: 'system',
+        innerFormat: null,
+        largeMetadata: 'x'.repeat(20_000),
+      },
+    ])
+
+    const rootTemplate = await projectedPromptItems(harness.app, assertion)
+    expect(rootTemplate.promptTemplate).toEqual([{ id: 'root-item', type: 'memory', untouched: true }])
   })
 
   it('rejects malformed prompt commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
+      promptPresetsId: 0,
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          promptTemplate: [{ id: 'preset-item', type: 'plain', text: 'preset text' }],
+        },
+      ],
       promptTemplate: [
         { id: 'item-a', type: 'description' },
         { id: 'item-b', type: 'memory' },
@@ -4013,9 +4096,86 @@ describe('Phase 9-2c prompt template and item commands', () => {
     expect(reorder.statusCode).toBe(400)
     expect(reorder.json().error).toBe('Duplicate prompt item id: item-a')
 
+    const invalidUpdates = [
+      {
+        payload: { patch: {}, deleteKeys: 'text' },
+        error: 'deleteKeys must be an array',
+      },
+      {
+        payload: { patch: {}, deleteKeys: [''] },
+        error: 'deleteKeys must contain non-empty strings',
+      },
+      {
+        payload: { patch: {}, deleteKeys: ['text', 'text'] },
+        error: 'Duplicate delete key: text',
+      },
+      {
+        payload: { patch: {}, deleteKeys: ['id'] },
+        error: 'deleteKeys must not contain id',
+      },
+      {
+        payload: { patch: { id: 'item-b', text: 'changed' } },
+        error: 'patch.id must match itemId',
+      },
+      {
+        payload: { patch: { text: 'changed' }, deleteKeys: ['text'] },
+        error: 'patch and deleteKeys must not overlap: text',
+      },
+      {
+        payload: { patch: {} },
+        error: 'prompt item update must include at least one field',
+      },
+      {
+        payload: { patch: { id: 'item-a' } },
+        error: 'prompt item update must include at least one field',
+      },
+      {
+        payload: { patch: { ' ': true } },
+        error: 'patch keys must be non-empty strings',
+      },
+    ]
+
+    for (const invalid of invalidUpdates) {
+      const update = await harness.app.inject({
+        method: 'PATCH',
+        url: '/api/v1/commands/prompt-items/item-a',
+        headers: { 'risu-auth': assertion },
+        payload: {
+          baseRevision: revision,
+          ...invalid.payload,
+        },
+      })
+      expect(update.statusCode).toBe(400)
+      expect(update.json().error).toBe(invalid.error)
+    }
+
+    const invalidPresetUpdate = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/prompt-items/preset-item',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        promptPresetId: 'prompt-a',
+        patch: { text: 'changed' },
+        deleteKeys: ['text'],
+      },
+    })
+    expect(invalidPresetUpdate.statusCode).toBe(400)
+    expect(invalidPresetUpdate.json().error).toBe('patch and deleteKeys must not overlap: text')
+
     const projected = await projectedPromptItems(harness.app, assertion)
     expect(projected.revision).toBe(1)
     expect(projected.promptTemplate?.map((item) => item.id)).toEqual(['item-a', 'item-b'])
+
+    const presetTemplate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/prompt-presets/prompt-a/template',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(presetTemplate.json()).toMatchObject({
+      revision: 1,
+      promptTemplate: [{ id: 'preset-item', type: 'plain', text: 'preset text' }],
+    })
   })
 
   it('enables and disables prompt items through prompt-item commands', async () => {

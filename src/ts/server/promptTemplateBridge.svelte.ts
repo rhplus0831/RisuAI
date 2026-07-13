@@ -79,6 +79,11 @@ interface PendingPromptItemUpdate {
   timer: ReturnType<typeof setTimeout> | null
 }
 
+interface SparsePromptItemUpdate {
+  patch: PromptItemSnapshot
+  deleteKeys: string[]
+}
+
 interface PendingPromptSettingsPatch {
   patch: SettingsPatch
   previous: SettingsPatch
@@ -313,6 +318,9 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
     return
   }
 
+  const sparseUpdate = sparsePromptItemUpdate(pending.previousItem, pending.attemptedItem)
+  if (!sparseUpdate) return
+
   void runServerCommand({
     command: (baseRevision) =>
       updatePromptItemCommand(
@@ -320,7 +328,8 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
           baseRevision,
           ...(pending.ownerId ? { promptPresetId: pending.ownerId } : {}),
           itemId: pending.itemId,
-          patch: cloneJsonValue(pending.attemptedItem) as PromptItemSnapshot,
+          patch: sparseUpdate.patch,
+          ...(sparseUpdate.deleteKeys.length > 0 ? { deleteKeys: sparseUpdate.deleteKeys } : {}),
         },
         options.signal,
         options.keepalive,
@@ -486,6 +495,29 @@ function changedPromptItemFields(previousItem: PromptItem, attemptedItem: Prompt
   }
 
   return changed
+}
+
+function sparsePromptItemUpdate(previousItem: PromptItem, attemptedItem: PromptItem): SparsePromptItemUpdate | null {
+  const previous = promptItemAsRecord(previousItem)
+  const attempted = promptItemAsRecord(attemptedItem)
+  const patch: PromptItemSnapshot = {}
+  const deleteKeys: string[] = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(attempted)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+    const previousHasKey = Object.prototype.hasOwnProperty.call(previous, key)
+    const attemptedHasKey = Object.prototype.hasOwnProperty.call(attempted, key)
+    if (!attemptedHasKey || attempted[key] === undefined) {
+      if (previousHasKey) deleteKeys.push(key)
+      continue
+    }
+    if (!previousHasKey || snapshotJson(previous[key]) !== snapshotJson(attempted[key])) {
+      patch[key] = cloneJsonValue(attempted[key])
+    }
+  }
+
+  return Object.keys(patch).length > 0 || deleteKeys.length > 0 ? { patch, deleteKeys } : null
 }
 
 function markDirtyPromptItemFields(

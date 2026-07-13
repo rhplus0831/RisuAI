@@ -1444,6 +1444,7 @@ describe('server command API adapter', () => {
         promptPresetId: 'prompt-preset-a',
         itemId: 'item-b',
         patch: { type: 'description' },
+        deleteKeys: ['text'],
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 4, itemId: 'item-b' })
 
@@ -1496,7 +1497,12 @@ describe('server command API adapter', () => {
       {
         url: '/api/v1/commands/prompt-items/item-b',
         method: 'PATCH',
-        body: { baseRevision: 3, promptPresetId: 'prompt-preset-a', patch: { type: 'description' } },
+        body: {
+          baseRevision: 3,
+          promptPresetId: 'prompt-preset-a',
+          patch: { type: 'description' },
+          deleteKeys: ['text'],
+        },
       },
       {
         url: '/api/v1/commands/prompt-items/item-a',
