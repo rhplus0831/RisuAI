@@ -4027,6 +4027,17 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
     const acknowledgementEligible = normalizedIds && botPresetHasHydratedSettings(db.botPresets[id])
     const attempted = safeStructuredClone(patch)
     delete attempted.id
+    const currentPreset = db.botPresets[id] as unknown as Record<string, unknown>
+    for (const [key, value] of Object.entries(attempted)) {
+      if (
+        Object.prototype.hasOwnProperty.call(currentPreset, key) &&
+        isExactJsonValue(currentPreset[key]) &&
+        isExactJsonValue(value) &&
+        exactJsonValuesEqual(currentPreset[key], value)
+      ) {
+        delete (attempted as Record<string, unknown>)[key]
+      }
+    }
     const commandPatch = safeStructuredClone(attempted) as PresetSnapshot
     if (Object.keys(commandPatch).length === 0) return []
     const wirePatch = acknowledgementEligible ? exactJsonRecordClone(commandPatch) : null

@@ -1470,6 +1470,20 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
+  it('suppresses legacy preset updates whose mutable fields are unchanged', async () => {
+    seedPresetDatabase()
+    setCachedServerCommandRevision(100)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    updatePreset(0, { id: 'ignored-id', temperature: 11 })
+
+    await Promise.resolve()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(getDatabase().botPresets[0]).toMatchObject({ id: 'preset-a', temperature: 11 })
+    expect(isCollectionAcknowledgementTainted('botPresets')).toBe(false)
+  })
+
   it('preserves explicit null, empty collection, and empty string clears in sparse save patches', async () => {
     const settings = {
       additionalParams: [['header::X-Legacy', 'enabled']],
