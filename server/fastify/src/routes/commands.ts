@@ -4785,7 +4785,9 @@ export function registerCommandRoutes(
           writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
           insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
           replaceActiveChatMessages(innerDb, chat.id, chatMessages)
-          setChatHypaV3(innerDb, chat.id, chat.hypaV3Data)
+          if (chat.hypaV3Data !== undefined && chat.hypaV3Data !== null) {
+            setChatHypaV3(innerDb, chat.id, chat.hypaV3Data)
+          }
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
@@ -5088,7 +5090,9 @@ export function registerCommandRoutes(
           writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
           insertCharacterChatRow(innerDb, characterId, 0, nextChat as Record<string, unknown>)
           replaceActiveChatMessages(innerDb, nextChat.id, forkedMessages)
-          setChatHypaV3(innerDb, nextChat.id, nextChat.hypaV3Data)
+          if (nextChat.hypaV3Data !== undefined && nextChat.hypaV3Data !== null) {
+            setChatHypaV3(innerDb, nextChat.id, nextChat.hypaV3Data)
+          }
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {

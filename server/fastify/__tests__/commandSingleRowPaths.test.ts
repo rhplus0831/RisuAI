@@ -795,7 +795,7 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
     })
 
     expect(metric.mutationPath).toBe('targeted-character-row')
-    expect(metric.writtenTables).toEqual(['characters', 'chat_hypa_v3', 'chats', 'messages'])
+    expect(metric.writtenTables).toEqual(['characters', 'chats', 'messages'])
     assertCommandMetricGate(metric)
     // Existing character/chat rows are UPDATEd in place (rowids stable); the
     // forked chat is a new row, ignored by the before-snapshot.
