@@ -46,6 +46,10 @@ const lorebookApi = vi.hoisted(() => ({
   resetLorebookHydration: vi.fn(),
 }))
 
+const promptTemplateApi = vi.hoisted(() => ({
+  ensure: vi.fn(async () => true),
+}))
+
 const runtimeApi = vi.hoisted(() => ({
   setActiveGenerationJobs: vi.fn(),
   startActiveGenerationReattach: vi.fn(),
@@ -91,6 +95,9 @@ vi.mock('./server/resourceRefresh', () => ({
 vi.mock('./server/events', () => ({ subscribeServerCommandEvents: eventApi.subscribe }))
 vi.mock('./server/chatMessageHydration.svelte', () => hydrationApi)
 vi.mock('./server/lorebookBridge.svelte', () => lorebookApi)
+vi.mock('./server/promptTemplateHydration', () => ({
+  ensurePromptTemplateHydrated: promptTemplateApi.ensure,
+}))
 vi.mock('./server/bridgeFlush', () => ({
   startBridgePatchLifecycleFlush: bridgeApi.start,
 }))
@@ -249,6 +256,8 @@ beforeEach(() => {
   vi.clearAllMocks()
   eventApi.subscriptions = []
   bridgeApi.start.mockReturnValue(bridgeApi.stop)
+  promptTemplateApi.ensure.mockClear()
+  promptTemplateApi.ensure.mockResolvedValue(true)
   bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap())
   bootstrapApi.fetchReadOnly.mockResolvedValue(runtimeBootstrap({ revision: 5 }))
   resourceApi.loadInitial.mockResolvedValue({ status: 'ok', revision: 5, scope: 'full' })
@@ -282,6 +291,7 @@ describe('API-backed client bootstrap', () => {
     expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
     expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
     expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
+    expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })
 
@@ -324,6 +334,16 @@ describe('API-backed client bootstrap', () => {
     bootstrapApi.fetch.mockResolvedValueOnce(runtimeBootstrap())
     resourceApi.loadInitial.mockResolvedValueOnce({ status: 'error', error: 'settings failed' })
     await expect(loadWebInitialDatabase()).rejects.toThrow('Server resource load failed: settings failed')
+    expect(eventApi.subscribe).not.toHaveBeenCalled()
+  })
+
+  it('does not complete startup when the selected prompt-template owner cannot be hydrated', async () => {
+    promptTemplateApi.ensure.mockResolvedValueOnce(false)
+
+    await expect(loadWebInitialDatabase()).rejects.toThrow('Selected prompt-template owner hydration failed')
+
+    expect(peekCachedServerCommandRevision()).toBeNull()
+    expect(peekAppliedServerResourceRevision()).toBeNull()
     expect(eventApi.subscribe).not.toHaveBeenCalled()
   })
 
@@ -1859,7 +1879,20 @@ describe('API-backed client bootstrap', () => {
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(12))
     expect(hydrationApi.resetChatHydration).toHaveBeenCalledTimes(2)
     expect(hydrationApi.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
     expect(runtimeApi.triggerOpenChatGenerationReattach).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not advance the applied cursor when full-refresh prompt-template hydration fails', async () => {
+    await loadWebInitialDatabase()
+    promptTemplateApi.ensure.mockResolvedValueOnce(false)
+    resourceApi.refreshInvalidated.mockResolvedValueOnce({ status: 'ok', revision: 12, scope: 'full' })
+    eventApi.subscriptions[0].onCommandEvent({ type: 'state.changed', revision: 9, resource: 'state' })
+
+    await vi.waitFor(() => expect(promptTemplateApi.ensure).toHaveBeenCalledTimes(2))
+    expect(promptTemplateApi.ensure).toHaveBeenLastCalledWith({ force: true, minimumRevision: 12 })
+    expect(peekAppliedServerResourceRevision()).toBe(5)
+    expect(hydrationApi.hydrateActiveChat).not.toHaveBeenCalledWith({ force: true })
   })
 
   it('does not advance the applied cursor when an invalidation read fails', async () => {

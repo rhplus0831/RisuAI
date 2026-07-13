@@ -10,7 +10,7 @@ import {
   defaultJailbreak,
   defaultMainPrompt,
 } from './defaultPrompts'
-import { alertNormal } from '../alert'
+import { alertError, alertNormal } from '../alert'
 import type { NAISettings } from '../process/models/nai'
 import { prebuiltNAIpresets, prebuiltPresets } from '../process/templates/templates'
 import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme'
@@ -4314,6 +4314,28 @@ import type { Loadout } from '../loadout'
 
 export async function downloadPreset(id: number, type: 'json' | 'risupreset' | 'return' = 'json') {
   let db = getDatabase()
+  const promptPresetId = db.promptPresets?.[id]?.id
+  if (typeof promptPresetId === 'string' && promptPresetId.trim() !== '') {
+    // Prompt-preset list resources contain metadata shells. Export is a
+    // background consumer, so hydrate this explicit owner before taking the
+    // serialization snapshot without replacing the visible selected template.
+    const { ensurePromptTemplateHydrated } = await import('../server/promptTemplateHydration')
+    const hydrated = await ensurePromptTemplateHydrated({
+      applyProjection: false,
+      promptPresetId,
+    })
+    if (!hydrated) {
+      alertError(language.errors.promptTemplateUnavailable)
+      return
+    }
+    db = getDatabase()
+    const hydratedIndex = db.promptPresets.findIndex((preset) => preset?.id === promptPresetId)
+    if (hydratedIndex < 0) {
+      alertError(language.errors.promptTemplateUnavailable)
+      return
+    }
+    id = hydratedIndex
+  }
   let pres = promptPresetExportPayload(safeStructuredClone(db.promptPresets[id]))
   pres.openAIKey = ''
   pres.forceReplaceUrl = ''

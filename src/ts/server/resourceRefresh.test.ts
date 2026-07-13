@@ -15,6 +15,7 @@ const sideEffects = vi.hoisted(() => ({
   triggerReattach: vi.fn(),
   setTranslations: vi.fn(),
   recordRefresh: vi.fn(),
+  hydratePromptTemplate: vi.fn(async () => true),
 }))
 
 vi.mock('../process/modules', () => ({
@@ -53,6 +54,9 @@ vi.mock('./messageTranslationJobs', () => ({
   setActiveMessageTranslations: sideEffects.setTranslations,
 }))
 vi.mock('./protocolDiagnostics', () => ({ recordFullResourceRefresh: sideEffects.recordRefresh }))
+vi.mock('./promptTemplateHydration', () => ({
+  ensurePromptTemplateHydrated: sideEffects.hydratePromptTemplate,
+}))
 
 import { forceServerResourceRefresh, refreshServerRealmImportResources } from './resourceRefresh'
 import {
@@ -192,6 +196,7 @@ describe('complete server resource refresh', () => {
     expect(get(selectedCharID)).toBe(1)
     expect(sideEffects.resetChatHydration).toHaveBeenCalledTimes(1)
     expect(sideEffects.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+    expect(sideEffects.hydratePromptTemplate).toHaveBeenCalledWith({ force: true, minimumRevision: 5 })
     expect(sideEffects.setGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
     expect(sideEffects.setTranslations).toHaveBeenCalledWith([{ chatId: 'chat-b', messageId: 'message-b' }])
     expect(sideEffects.recordRefresh).toHaveBeenCalledWith('backup-restore', undefined)
@@ -223,6 +228,21 @@ describe('complete server resource refresh', () => {
       status: 'error',
       error: 'settings failed',
     })
+    expect(peekCachedServerCommandRevision()).toBeNull()
+    expect(peekAppliedServerResourceRevision()).toBeNull()
+    expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
+    expect(sideEffects.hydratePromptTemplate).not.toHaveBeenCalled()
+    expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
+  })
+
+  it('does not complete a full refresh when the selected prompt-template owner cannot be hydrated', async () => {
+    sideEffects.hydratePromptTemplate.mockResolvedValueOnce(false)
+
+    await expect(forceServerResourceRefresh('backup-restore')).resolves.toEqual({
+      status: 'error',
+      error: 'Selected prompt-template owner hydration failed',
+    })
+
     expect(peekCachedServerCommandRevision()).toBeNull()
     expect(peekAppliedServerResourceRevision()).toBeNull()
     expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()

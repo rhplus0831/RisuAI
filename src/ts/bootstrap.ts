@@ -77,6 +77,7 @@ import {
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
+import { ensurePromptTemplateHydrated } from './server/promptTemplateHydration'
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000
@@ -174,6 +175,9 @@ export async function loadWebInitialDatabase() {
   resetChatHydration()
   resetLorebookHydration()
   recordHydratedCharacterLorebooks(database.characters)
+  if (!(await ensurePromptTemplateHydrated({ minimumRevision: resources.revision }))) {
+    throw new Error('Selected prompt-template owner hydration failed')
+  }
   setCachedServerCommandRevision(resources.revision)
   setAppliedServerResourceRevision(resources.revision)
   setServerCommandSuccessReconciler((event, coalescedEvents, localEffects) =>
@@ -963,6 +967,15 @@ async function processAuthoritativeServerCommandEvents(events: readonly CommandE
     return false
   }
   if (result.scope === 'none') return true
+
+  if (
+    result.scope === 'full' &&
+    !(await ensurePromptTemplateHydrated({ force: true, minimumRevision: result.revision }))
+  ) {
+    console.warn('Server resource invalidation failed: selected prompt-template owner hydration failed')
+    scheduleServerResourceReconnect()
+    return false
+  }
 
   reconcileSelectedCharacterAfterResourceRefresh(events, previousSelectedIndex, previousSelectedCharacterId)
   recordHydratedCharacterLorebooks(getDatabase().characters)

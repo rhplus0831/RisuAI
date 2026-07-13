@@ -19,6 +19,7 @@ import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
+import { ensurePromptTemplateHydrated } from './promptTemplateHydration'
 import {
   refreshAllServerResources,
   refreshInvalidatedServerResources,
@@ -138,6 +139,9 @@ async function completeFullServerResourceRefresh(
   selectedCharacterId: string | undefined,
 ): Promise<ServerResourceRefreshResult> {
   syncSelectedCharacterAfterRefresh(selectedIndex, selectedCharacterId)
+  if (!(await ensurePromptTemplateHydrated({ force: true, minimumRevision: revision }))) {
+    return { status: 'error', error: 'Selected prompt-template owner hydration failed' }
+  }
   setCachedServerCommandRevision(revision)
   setAppliedServerResourceRevision(revision)
 

@@ -7,6 +7,13 @@ import {
   fetchServerGenerationChatMessages,
 } from './hydrationReads'
 import {
+  currentPromptTemplateOwnerId,
+  ensurePromptTemplateHydrated,
+  invalidatePromptTemplateHydration,
+  markPromptTemplateProjectionApplied,
+  resetPromptTemplateHydration,
+} from './promptTemplateHydration'
+import {
   fetchServerCharacter,
   fetchServerCharacterOrder,
   fetchServerCharacterSelection,
@@ -77,6 +84,8 @@ interface RefreshPlan {
   generationChatMessageIds: Map<string, string>
   lorebookCharacterIds: Set<string>
   translatedMessageIds: Set<string>
+  promptTemplateOwnerIds: Set<string>
+  refreshSelectedPromptTemplate: boolean
   full: boolean
 }
 
@@ -148,6 +157,7 @@ export async function refreshAllServerResources(
         // data across a restore. Leave the chats as API-hydration stubs.
         charactersApplied: applyCharactersResource(characters, { preserveResidentChatBodies: false }),
       }))
+      if (collectionsApplied) resetPromptTemplateHydration()
       if (
         (!settingsApplied && !settingsFullAlreadyAtLeast(revision)) ||
         (!collectionsApplied && !collectionsAlreadyAtLeast(revision)) ||
@@ -231,6 +241,9 @@ export async function refreshInvalidatedServerResources(
     }
   }
 
+  const promptTemplateRefreshError = await refreshInvalidatedPromptTemplateOwners(plan, normalized.revision)
+  if (promptTemplateRefreshError) return { status: 'error', error: promptTemplateRefreshError }
+
   if (plan.chatIds.size > 0 || plan.generationChatMessageIds.size > 0) {
     options.hooks?.triggerOpenChatGenerationReattach?.()
   }
@@ -252,6 +265,8 @@ function createRefreshPlan(): RefreshPlan {
     generationChatMessageIds: new Map(),
     lorebookCharacterIds: new Set(),
     translatedMessageIds: new Set(),
+    promptTemplateOwnerIds: new Set(),
+    refreshSelectedPromptTemplate: false,
     full: false,
   }
 }
@@ -392,16 +407,21 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     case 'promptPreset':
       addFullSettings()
       plan.collections.add('promptPresets')
-      plan.collections.add('promptTemplate')
+      plan.refreshSelectedPromptTemplate = true
       return
     case 'legacyBotPreset':
       addFullSettings()
       plan.collections.add('botPresets')
       plan.collections.add('modelPresets')
       plan.collections.add('promptPresets')
+      plan.refreshSelectedPromptTemplate = true
       return
     case 'promptItem':
-      plan.collections.add(nonEmptyString(event.parentId) ? 'promptPresets' : 'promptTemplate')
+      if (nonEmptyString(event.parentId)) {
+        plan.promptTemplateOwnerIds.add(event.parentId)
+      } else {
+        plan.collections.add('promptTemplate')
+      }
       return
     case 'persona':
       addFullSettings()
@@ -617,10 +637,13 @@ function applyTargetedRead(
         entry.name === 'pluginCustomStorage'
           ? withPendingPluginStorage(entry.result, hooks?.mergePendingPluginStorage)
           : entry.result
-      return (
-        applyCollectionsResource(payload, entry.name) ||
-        (collectionsResourceState.revisions[entry.name] ?? -1) >= entry.result.revision
-      )
+      const applied = applyCollectionsResource(payload, entry.name)
+      if (applied && entry.name === 'promptPresets') resetPromptTemplateHydration()
+      const alreadyApplied = (collectionsResourceState.revisions[entry.name] ?? -1) >= entry.result.revision
+      if (applied && entry.name === 'promptTemplate') {
+        markPromptTemplateProjectionApplied(null, entry.result.revision)
+      }
+      return applied || alreadyApplied
     }
     case 'characters':
       return (
@@ -665,6 +688,32 @@ function applyTargetedRead(
       })
     }
   }
+}
+
+async function refreshInvalidatedPromptTemplateOwners(
+  plan: RefreshPlan,
+  minimumRevision: number,
+): Promise<string | null> {
+  const ownerIds = new Set(plan.promptTemplateOwnerIds)
+  if (plan.refreshSelectedPromptTemplate) {
+    const selectedOwnerId = currentPromptTemplateOwnerId()
+    if (selectedOwnerId !== null) ownerIds.add(selectedOwnerId)
+  }
+  if (ownerIds.size === 0) return null
+
+  const selectedOwnerId = currentPromptTemplateOwnerId()
+  for (const ownerId of ownerIds) invalidatePromptTemplateHydration(ownerId)
+  const results = await Promise.all(
+    [...ownerIds].map((ownerId) =>
+      ensurePromptTemplateHydrated({
+        applyProjection: ownerId === selectedOwnerId,
+        force: true,
+        minimumRevision,
+        promptPresetId: ownerId,
+      }),
+    ),
+  )
+  return results.every(Boolean) ? null : 'Failed to refresh an invalidated prompt-template owner'
 }
 
 function applyChatMessages(

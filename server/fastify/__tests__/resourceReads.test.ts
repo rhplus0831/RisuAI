@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import { COLLECTION_FIELDS } from '../src/repository.js'
@@ -207,6 +208,11 @@ describe('authenticated resource read routes', () => {
     ])
     expect(aggregateBody.collections.modelPresets[0].openAIKey).toBe(MASKED_PROVIDER_SECRET)
     expect(aggregateBody.collections.pluginCustomStorage).toEqual({ 'plugin-a:state': { enabled: true } })
+    expect(aggregateBody.collections.promptPresets).toEqual([
+      { id: 'prompt-a', name: 'Prompt A' },
+      { id: 'prompt-empty', name: 'Prompt Empty' },
+    ])
+    expect(aggregateBody.collections.promptTemplate).toEqual([])
 
     const targeted = await harness.app.inject({
       method: 'GET',
@@ -221,6 +227,35 @@ describe('authenticated resource read routes', () => {
       },
     })
 
+    const promptPresets = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections/promptPresets',
+      headers: authHeaders(),
+    })
+    expect(promptPresets.statusCode).toBe(200)
+    expect(promptPresets.json()).toEqual({
+      revision,
+      collections: {
+        promptPresets: [
+          { id: 'prompt-a', name: 'Prompt A' },
+          { id: 'prompt-empty', name: 'Prompt Empty' },
+        ],
+      },
+    })
+
+    const rootPromptTemplate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections/promptTemplate',
+      headers: authHeaders(),
+    })
+    expect(rootPromptTemplate.statusCode).toBe(200)
+    expect(rootPromptTemplate.json()).toEqual({
+      revision,
+      collections: {
+        promptTemplate: [{ id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' }],
+      },
+    })
+
     const unknown = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/collections/not-a-collection',
@@ -228,6 +263,62 @@ describe('authenticated resource read routes', () => {
     })
     expect(unknown.statusCode).toBe(404)
     expect(unknown.json().error).toBe('collection_not_found')
+  })
+
+  it('retains the aggregate root prompt template when the selected modern preset pointer is malformed', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string }
+      const settings = JSON.parse(row.data_json) as Record<string, unknown>
+      settings.promptPresetsId = 99
+      sqlite.prepare('UPDATE settings SET data_json = ? WHERE id = 1').run(JSON.stringify(settings))
+    } finally {
+      sqlite.close()
+    }
+
+    const aggregate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+    })
+
+    expect(aggregate.statusCode).toBe(200)
+    expect(aggregate.json().collections.promptPresets).toEqual([
+      { id: 'prompt-a', name: 'Prompt A' },
+      { id: 'prompt-empty', name: 'Prompt Empty' },
+    ])
+    expect(aggregate.json().collections.promptTemplate).toEqual([
+      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
+    ])
+  })
+
+  it('retains the root projection and rejects dedicated hydration when modern preset ids are duplicated', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      sqlite
+        .prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 1')
+        .run(JSON.stringify({ id: 'prompt-a', name: 'Duplicate Prompt A' }))
+    } finally {
+      sqlite.close()
+    }
+
+    const aggregate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+    })
+    expect(aggregate.statusCode).toBe(200)
+    expect(aggregate.json().collections.promptTemplate).toEqual([
+      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
+    ])
+
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/prompt-presets/prompt-a/template',
+      headers: authHeaders(),
+    })
+    expect(hydration.statusCode).toBe(409)
+    expect(hydration.json().error).toBe('prompt_preset_ambiguous')
   })
 
   it('returns character/chat metadata with matching chat and lorebook stubs', async () => {

@@ -84,7 +84,9 @@ export function registerResourceReadRoutes(
     const { revision } = getSchemaState(db)
     return {
       revision,
-      collections: loadCollections(db, dataDir, READABLE_COLLECTION_NAMES),
+      collections: loadCollections(db, dataDir, READABLE_COLLECTION_NAMES, {
+        suppressSelectedPromptTemplateProjection: true,
+      }),
     }
   })
 
@@ -301,14 +303,22 @@ export function registerResourceReadRoutes(
       if (!(await requireAuth(authState, req, reply))) return
       const fields = loadPersistedDatabaseFields(db, dataDir, ['promptPresets'])
       const presets = Array.isArray(fields.promptPresets) ? fields.promptPresets : []
-      const preset = presets.find((candidate) => isRecord(candidate) && candidate.id === req.params.id)
-      if (!preset || !isRecord(preset)) {
+      const matches = presets.filter((candidate) => isRecord(candidate) && candidate.id === req.params.id)
+      if (matches.length === 0) {
         reply.code(404).send({
           error: 'prompt_preset_not_found',
           reason: `Prompt preset not found: ${req.params.id}`,
         })
         return
       }
+      if (matches.length !== 1) {
+        reply.code(409).send({
+          error: 'prompt_preset_ambiguous',
+          reason: `Prompt preset id is not unique: ${req.params.id}`,
+        })
+        return
+      }
+      const preset = matches[0]
       const { revision } = getSchemaState(db)
       return {
         revision,
@@ -323,13 +333,62 @@ function loadCollections(
   db: DatabaseSync,
   dataDir: string,
   names: readonly ReadableCollectionName[],
+  options: { suppressSelectedPromptTemplateProjection?: boolean } = {},
 ): Record<string, unknown> {
-  const collections = loadPersistedDatabaseFields(db, dataDir, names)
+  const readsSelectedPromptPreset =
+    options.suppressSelectedPromptTemplateProjection &&
+    names.includes('promptPresets') &&
+    names.includes('promptTemplate')
+  const collections = loadPersistedDatabaseFields(
+    db,
+    dataDir,
+    readsSelectedPromptPreset ? [...names, 'promptPresetsId'] : names,
+  )
+  const selectedPromptPresetIndex = collections.promptPresetsId
+  delete collections.promptPresetsId
+
+  if (Array.isArray(collections.promptPresets)) {
+    const promptPresetShells = collections.promptPresets.map((candidate) => {
+      if (!isRecord(candidate) || !Object.prototype.hasOwnProperty.call(candidate, 'promptTemplate')) {
+        return candidate
+      }
+      const shell = { ...candidate }
+      delete shell.promptTemplate
+      return shell
+    })
+    collections.promptPresets = promptPresetShells
+
+    if (
+      options.suppressSelectedPromptTemplateProjection &&
+      names.includes('promptTemplate') &&
+      Number.isInteger(selectedPromptPresetIndex) &&
+      (selectedPromptPresetIndex as number) >= 0 &&
+      (selectedPromptPresetIndex as number) < promptPresetShells.length &&
+      isCanonicalPromptPresetShellList(promptPresetShells)
+    ) {
+      // The selected modern preset owns this body. The top-level collection is
+      // only its compatibility projection, so avoid returning the same large
+      // template twice in the aggregate response. The browser hydrates the
+      // selected owner through /prompt-presets/:id/template.
+      collections.promptTemplate = []
+    }
+  }
+
   for (const name of names) {
     if (Object.prototype.hasOwnProperty.call(collections, name)) continue
     collections[name] = name === PLUGIN_STORAGE_COLLECTION ? {} : []
   }
   return maskProviderSecretsInPlace(collections)
+}
+
+function isCanonicalPromptPresetShellList(value: readonly unknown[]): boolean {
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!isRecord(candidate) || typeof candidate.id !== 'string' || candidate.id.trim() === '') return false
+    if (ids.has(candidate.id)) return false
+    ids.add(candidate.id)
+  }
+  return true
 }
 
 function isReadableCollectionName(value: string): value is ReadableCollectionName {

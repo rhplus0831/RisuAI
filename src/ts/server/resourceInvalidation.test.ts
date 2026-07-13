@@ -26,6 +26,14 @@ const sideEffects = vi.hoisted(() => ({
   applyLorebook: vi.fn(() => true),
 }))
 
+const promptHydration = vi.hoisted(() => ({
+  currentOwner: null as string | null,
+  ensure: vi.fn(async () => true),
+  invalidate: vi.fn(),
+  mark: vi.fn(),
+  reset: vi.fn(),
+}))
+
 vi.mock('./resourceReads', () => ({
   fetchServerSettings: api.settings,
   fetchServerSettingsGroup: api.settingsGroup,
@@ -42,6 +50,14 @@ vi.mock('./hydrationReads', () => ({
   fetchServerGenerationChatMessages: api.generationChat,
   fetchServerCharacterLorebook: api.lorebook,
   fetchServerBulkCharacterLorebooks: api.lorebooks,
+}))
+
+vi.mock('./promptTemplateHydration', () => ({
+  currentPromptTemplateOwnerId: () => promptHydration.currentOwner,
+  ensurePromptTemplateHydrated: promptHydration.ensure,
+  invalidatePromptTemplateHydration: promptHydration.invalidate,
+  markPromptTemplateProjectionApplied: promptHydration.mark,
+  resetPromptTemplateHydration: promptHydration.reset,
 }))
 
 import {
@@ -137,7 +153,17 @@ beforeEach(() => {
   resetServerResourceState()
   for (const mock of Object.values(api)) mock.mockReset()
   for (const mock of Object.values(sideEffects)) mock.mockClear()
+  for (const mock of [
+    promptHydration.ensure,
+    promptHydration.invalidate,
+    promptHydration.mark,
+    promptHydration.reset,
+  ]) {
+    mock.mockClear()
+  }
+  promptHydration.currentOwner = null
   sideEffects.mergePluginStorage.mockImplementation((value: Record<string, unknown>) => value)
+  promptHydration.ensure.mockResolvedValue(true)
 })
 
 describe('API-backed resource invalidation', () => {
@@ -164,6 +190,7 @@ describe('API-backed resource invalidation', () => {
       ],
     })
     expect(sideEffects.mergePluginStorage).toHaveBeenCalledWith({ authoritative: true })
+    expect(promptHydration.reset).toHaveBeenCalledTimes(1)
   })
 
   it('retries inconsistent full reads and applies only a common revision', async () => {
@@ -723,7 +750,7 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
-  it('reads only the owning collection for prompt item events', async () => {
+  it('reads a preset-owned prompt body and only the root collection for root prompt item events', async () => {
     seedResources(1)
     api.collection.mockImplementation(async (name: string) => ({
       status: 'ok',
@@ -741,11 +768,49 @@ describe('API-backed resource invalidation', () => {
       ),
     ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
 
-    expect(api.collection).toHaveBeenCalledTimes(2)
-    expect(api.collection).toHaveBeenCalledWith('promptPresets', undefined)
+    expect(api.collection).toHaveBeenCalledTimes(1)
     expect(api.collection).toHaveBeenCalledWith('promptTemplate', undefined)
+    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.ensure).toHaveBeenCalledWith({
+      applyProjection: false,
+      force: true,
+      minimumRevision: 3,
+      promptPresetId: 'prompt-preset-a',
+    })
+    expect(promptHydration.mark).toHaveBeenCalledWith(null, 3)
     expect(api.settings).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
+  })
+
+  it('replaces prompt-preset shells and rehydrates the selected owner after preset events', async () => {
+    seedResources(1)
+    promptHydration.currentOwner = 'prompt-preset-a'
+    api.settings.mockResolvedValue({ status: 'ok', revision: 2, settings: { promptPresetsId: 0 } })
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { promptPresets: [{ id: 'prompt-preset-a', name: 'Prompt A' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'promptPreset', { id: 'prompt-preset-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collection).toHaveBeenCalledOnce()
+    expect(api.collection).toHaveBeenCalledWith('promptPresets', undefined)
+    expect(api.collection).not.toHaveBeenCalledWith('promptTemplate', undefined)
+    expect(promptHydration.reset).toHaveBeenCalledTimes(1)
+    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.ensure).toHaveBeenCalledWith({
+      applyProjection: true,
+      force: true,
+      minimumRevision: 2,
+      promptPresetId: 'prompt-preset-a',
+    })
   })
 
   it.each(['lorebook.created', 'lorebook.updated', 'lorebook.entries.replaced'])(
