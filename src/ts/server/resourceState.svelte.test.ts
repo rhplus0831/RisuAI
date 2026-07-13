@@ -19,6 +19,7 @@ import {
   applyCollectionsResource,
   applyLegacyPresetCollectionResource,
   applyLegacyPresetPatchLocalEffect,
+  applyPersonaPatchLocalEffect,
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
@@ -40,6 +41,7 @@ import {
   captureLorebookPageProjectionEpoch,
   captureLegacyPresetResourceBaseline,
   captureSettingsGroupProjectionEpoch,
+  captureSettingsProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
@@ -48,11 +50,14 @@ import {
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
+  hasSettingsProjectionEpochChanged,
+  isSettingsAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
   isCollectionAcknowledgementTainted,
   markCollectionAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
   markSettingsGroupAcknowledgementTainted,
+  markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
@@ -415,6 +420,121 @@ describe('resource-scoped database state', () => {
         fields: {},
       }),
     ).toBe(false)
+  })
+
+  it('fences an accepted persona PATCH while preserving later row and settings edits', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [
+          {
+            id: 'persona-a',
+            name: 'Newer local name',
+            icon: 'newer-local-icon',
+            personaPrompt: 'Attempted prompt',
+            note: 'Attempted note',
+          },
+        ],
+        selectedPersona: 0,
+        username: 'Newer local name',
+        userIcon: 'newer-local-icon',
+        personaPrompt: 'Attempted prompt',
+        userNote: 'Attempted note',
+      } as never,
+      3,
+    )
+    const collectionEpoch = captureCollectionProjectionEpoch('personas')
+    const settingsEpoch = captureSettingsProjectionEpoch()
+    markCollectionAcknowledgementTainted('personas')
+    markSettingsAcknowledgementTainted()
+
+    expect(
+      applyPersonaPatchLocalEffect({
+        revision: 4,
+        personaId: 'persona-a',
+        attemptedPatch: { personaPrompt: 'Attempted prompt', note: 'Attempted note' },
+        attemptedPersona: {
+          id: 'persona-a',
+          name: 'Attempted name',
+          icon: 'attempted-icon',
+          personaPrompt: 'Attempted prompt',
+          note: 'Attempted note',
+        },
+        attemptedLegacyProfile: {
+          username: 'Attempted name',
+          userIcon: 'attempted-icon',
+          personaPrompt: 'Attempted prompt',
+          userNote: 'Attempted note',
+        },
+        legacyProfileProjectionApplied: true,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase()).toMatchObject({
+      username: 'Newer local name',
+      userIcon: 'newer-local-icon',
+      personaPrompt: 'Attempted prompt',
+      userNote: 'Attempted note',
+      personas: [
+        expect.objectContaining({
+          id: 'persona-a',
+          name: 'Newer local name',
+          icon: 'newer-local-icon',
+          personaPrompt: 'Attempted prompt',
+          note: 'Attempted note',
+        }),
+      ],
+    })
+    expect(collectionsResourceState.revisions.personas).toBe(4)
+    expect(settingsResourceState.fullRevision).toBe(4)
+    expect(hasCollectionProjectionEpochChanged('personas', collectionEpoch)).toBe(false)
+    expect(hasSettingsProjectionEpochChanged(settingsEpoch)).toBe(false)
+    expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
+    expect(isSettingsAcknowledgementTainted()).toBe(true)
+  })
+
+  it('rejects malformed or ambiguous persona PATCH local effects', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+      } as never,
+      3,
+    )
+    const baseEffect = {
+      revision: 4,
+      personaId: 'persona-a',
+      attemptedPatch: { name: 'Attempted' },
+      attemptedPersona: { id: 'persona-a', name: 'Attempted', icon: '', personaPrompt: '', note: '' },
+      attemptedLegacyProfile: {
+        username: 'Attempted',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+      },
+      legacyProfileProjectionApplied: true,
+    }
+
+    expect(
+      applyPersonaPatchLocalEffect({
+        ...baseEffect,
+        attemptedPatch: { name: 'Different' },
+      }),
+    ).toBe(false)
+    expect(
+      applyPersonaPatchLocalEffect({
+        ...baseEffect,
+        attemptedLegacyProfile: { ...baseEffect.attemptedLegacyProfile, username: 'Different' },
+      }),
+    ).toBe(false)
+
+    collectionsResourceState.values.personas = [
+      { id: 'persona-a', name: 'A' },
+      { id: 'persona-a', name: 'Duplicate' },
+    ] as never
+    expect(applyPersonaPatchLocalEffect(baseEffect)).toBe(false)
   })
 
   it('intentionally resets hydrated legacy bodies on a complete collection refresh', () => {

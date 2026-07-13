@@ -4560,10 +4560,17 @@ describe('Phase 9-2d persona commands', () => {
       },
     })
     expect(updated.statusCode).toBe(200)
-    expect(updated.json().event).toMatchObject({
-      type: 'persona.updated',
-      resource: 'persona',
-      id: 'persona-b',
+    expect(updated.json()).toEqual({
+      revision: 3,
+      event: {
+        type: 'persona.updated',
+        revision: 3,
+        resource: 'persona',
+        id: 'persona-b',
+      },
+      personaId: 'persona-b',
+      acknowledgedKeys: ['name', 'displayName', 'largePortrait'],
+      legacyProfileProjectionApplied: false,
     })
 
     const reordered = await harness.app.inject({
@@ -4697,6 +4704,48 @@ describe('Phase 9-2d persona commands', () => {
       icon: 'assets/edited-a.png',
       personaPrompt: 'edited a prompt',
       note: 'edited a note',
+    })
+  })
+
+  it('reports when a persona PATCH applies the selected legacy profile projection', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      username: 'A',
+      userIcon: '',
+      personaPrompt: 'Old prompt',
+      userNote: 'Old note',
+      personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: 'Old prompt', note: 'Old note' }],
+      selectedPersona: 0,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/personas/persona-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { personaPrompt: 'New prompt', note: 'New note' },
+        mirrorLegacyProfile: true,
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toMatchObject({
+      personaId: 'persona-a',
+      acknowledgedKeys: ['personaPrompt', 'note'],
+      legacyProfileProjectionApplied: true,
+    })
+    expect(updated.json()).not.toHaveProperty('persona')
+    expect(updated.json()).not.toHaveProperty('settings')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      personaPrompt: 'New prompt',
+      userNote: 'New note',
     })
   })
 

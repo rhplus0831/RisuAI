@@ -2518,6 +2518,142 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes an exact persona PATCH acknowledgement without serializing optimistic proof', async () => {
+    const event = {
+      type: 'persona.updated',
+      revision: 3,
+      resource: 'persona',
+      id: 'persona-b',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      personaId: 'persona-b',
+      acknowledgedKeys: ['name', 'largePortrait'],
+      legacyProfileProjectionApplied: true,
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const attemptedPersona = {
+      id: 'persona-b',
+      name: 'Bee',
+      displayName: 'B',
+      icon: 'asset-b',
+      personaPrompt: 'Prompt B',
+      note: 'Note B',
+      largePortrait: true,
+    }
+
+    await updatePersonaCommand({
+      baseRevision: 2,
+      personaId: 'persona-b',
+      patch: { name: 'Bee', largePortrait: true },
+      mirrorLegacyProfile: true,
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 11,
+        settingsProjectionEpoch: 17,
+        attemptedPersona,
+        attemptedLegacyProfile: {
+          username: 'Bee',
+          userIcon: 'asset-b',
+          personaPrompt: 'Prompt B',
+          userNote: 'Note B',
+        },
+        legacyProfileProjectionExpected: true,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'personaPatch',
+        personaId: 'persona-b',
+        collectionProjectionEpoch: 11,
+        settingsProjectionEpoch: 17,
+        attemptedPatch: { name: 'Bee', largePortrait: true },
+        attemptedPersona,
+        attemptedLegacyProfile: {
+          username: 'Bee',
+          userIcon: 'asset-b',
+          personaPrompt: 'Prompt B',
+          userNote: 'Note B',
+        },
+        legacyProfileProjectionApplied: true,
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).toEqual({
+      baseRevision: 2,
+      patch: { name: 'Bee', largePortrait: true },
+      mirrorLegacyProfile: true,
+    })
+    expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticAcknowledgement')
+  })
+
+  it('keeps malformed or contradictory persona PATCH receipts on authoritative reconciliation', async () => {
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+    const event = {
+      type: 'persona.updated',
+      revision: 3,
+      resource: 'persona',
+      id: 'persona-b',
+    }
+    const responses = [
+      {
+        revision: 3,
+        event,
+        personaId: 'persona-b',
+        acknowledgedKeys: ['displayName'],
+        legacyProfileProjectionApplied: true,
+      },
+      {
+        revision: 3,
+        event,
+        personaId: 'persona-b',
+        acknowledgedKeys: ['name'],
+        legacyProfileProjectionApplied: false,
+      },
+      {
+        revision: 3,
+        event: { ...event, resource: 'settings' },
+        personaId: 'persona-b',
+        acknowledgedKeys: ['name'],
+        legacyProfileProjectionApplied: true,
+      },
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => responses[responseIndex++])
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const acknowledgement = {
+      collectionProjectionEpoch: 11,
+      settingsProjectionEpoch: 17,
+      attemptedPersona: { id: 'persona-b', name: 'Bee', icon: '', personaPrompt: '', note: '' },
+      attemptedLegacyProfile: {
+        username: 'Bee',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+      },
+      legacyProfileProjectionExpected: true,
+    }
+
+    for (let index = 0; index < responses.length; index += 1) {
+      await updatePersonaCommand({
+        baseRevision: 2,
+        personaId: 'persona-b',
+        patch: { name: 'Bee' },
+        mirrorLegacyProfile: true,
+        optimisticAcknowledgement: acknowledgement,
+      })
+    }
+
+    expect(observedEffectCounts).toEqual([0, 0, 0])
+  })
+
   it('runs persona commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {

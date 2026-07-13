@@ -192,10 +192,12 @@ import {
   isSettingsGroupAcknowledgementTainted,
   markCollectionAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
+  markSettingsAcknowledgementTainted,
   markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
   resetServerResourceState,
 } from './server/resourceState.svelte'
+import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
 import { selectedCharID } from './stores.svelte'
 
@@ -958,6 +960,154 @@ describe('API-backed client bootstrap', () => {
       hooks: resourceApi.hooks,
     })
   })
+
+  it('acknowledges a contiguous persona PATCH without a collection/settings read or apply-epoch bump', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          personas: [
+            {
+              id: 'persona-a',
+              name: 'Attempted name',
+              icon: 'attempted-icon',
+              personaPrompt: 'Attempted prompt',
+              note: 'Attempted note',
+            },
+          ] as never,
+        },
+      },
+      'personas',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().selectedPersona = 0
+      getDatabase().username = 'Attempted name'
+      getDatabase().userIcon = 'attempted-icon'
+      getDatabase().personaPrompt = 'Attempted prompt'
+      getDatabase().userNote = 'Attempted note'
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    withTrustedResourceWrite(() => {
+      getDatabase().personas[0].name = 'Newer local name'
+      getDatabase().username = 'Newer local name'
+    })
+    const event = {
+      type: 'persona.updated',
+      revision: 6,
+      resource: 'persona',
+      id: 'persona-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'personaPatch',
+            personaId: 'persona-a',
+            collectionProjectionEpoch,
+            settingsProjectionEpoch,
+            attemptedPatch: { personaPrompt: 'Attempted prompt', note: 'Attempted note' },
+            attemptedPersona: {
+              id: 'persona-a',
+              name: 'Attempted name',
+              icon: 'attempted-icon',
+              personaPrompt: 'Attempted prompt',
+              note: 'Attempted note',
+            },
+            attemptedLegacyProfile: {
+              username: 'Attempted name',
+              userIcon: 'attempted-icon',
+              personaPrompt: 'Attempted prompt',
+              userNote: 'Attempted note',
+            },
+            legacyProfileProjectionApplied: true,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().personas[0].name).toBe('Newer local name')
+    expect(getDatabase().username).toBe('Newer local name')
+    expect(collectionsResourceState.revisions.personas).toBe(6)
+    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it.each(['collection epoch', 'settings epoch', 'collection taint', 'settings taint'])(
+    '%s forces a persona PATCH authoritative fallback',
+    async (failure) => {
+      await loadWebInitialDatabase()
+      const persona = {
+        id: 'persona-a',
+        name: 'Attempted',
+        icon: '',
+        personaPrompt: '',
+        note: '',
+      }
+      applyCollectionsResource({ revision: 5, collections: { personas: [persona] as never } }, 'personas')
+      withTrustedResourceWrite(() => {
+        getDatabase().selectedPersona = 0
+        getDatabase().username = 'Attempted'
+        getDatabase().userIcon = ''
+        getDatabase().personaPrompt = ''
+        getDatabase().userNote = ''
+      })
+      const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+      const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+      if (failure === 'collection epoch') {
+        applyCollectionsResource({ revision: 5, collections: { personas: [persona] as never } }, 'personas')
+      } else if (failure === 'settings epoch') {
+        applySettingsResource({ revision: 5, settings: { username: 'Attempted' } })
+      } else if (failure === 'collection taint') {
+        markCollectionAcknowledgementTainted('personas')
+      } else {
+        markSettingsAcknowledgementTainted()
+      }
+      const event = {
+        type: 'persona.updated',
+        revision: 6,
+        resource: 'persona',
+        id: 'persona-a',
+      }
+
+      await commandApi.reconciler?.(
+        event,
+        [event],
+        new Map([
+          [
+            6,
+            {
+              kind: 'personaPatch',
+              personaId: 'persona-a',
+              collectionProjectionEpoch,
+              settingsProjectionEpoch,
+              attemptedPatch: { name: 'Attempted' },
+              attemptedPersona: persona,
+              attemptedLegacyProfile: {
+                username: 'Attempted',
+                userIcon: '',
+                personaPrompt: '',
+                userNote: '',
+              },
+              legacyProfileProjectionApplied: true,
+            },
+          ],
+        ]),
+      )
+
+      expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+        appliedRevision: 5,
+        hooks: resourceApi.hooks,
+      })
+    },
+  )
 
   it('acknowledges metadata-only prompt preset PATCHes without owner hydration or settings reads', async () => {
     await loadWebInitialDatabase()

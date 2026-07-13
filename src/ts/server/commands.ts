@@ -204,6 +204,33 @@ export interface LegacyPresetPatchLocalEffect {
   >
 }
 
+export interface PersonaLegacyProfileProjection {
+  username: string
+  userIcon: string
+  personaPrompt: string
+  userNote: string
+}
+
+/** Client-only proof captured after one optimistic persona PATCH. */
+export interface PersonaPatchOptimisticAcknowledgement {
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  attemptedPersona: PersonaSnapshot & { id: string }
+  attemptedLegacyProfile: PersonaLegacyProfileProjection
+  legacyProfileProjectionExpected: boolean
+}
+
+export interface PersonaPatchLocalEffect {
+  kind: 'personaPatch'
+  personaId: string
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  attemptedPatch: PersonaSnapshot
+  attemptedPersona: PersonaSnapshot & { id: string }
+  attemptedLegacyProfile: PersonaLegacyProfileProjection
+  legacyProfileProjectionApplied: boolean
+}
+
 export interface LorebookMutationLocalEffect {
   kind: 'lorebookMutation'
   scope: 'global' | 'character' | 'chat'
@@ -284,6 +311,7 @@ export type ServerCommandLocalEffect =
   | PromptItemMutationLocalEffect
   | SplitPresetPatchLocalEffect
   | LegacyPresetPatchLocalEffect
+  | PersonaPatchLocalEffect
   | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
@@ -754,6 +782,7 @@ export interface UpdatePersonaCommandInput extends PersonaCommandInput {
   personaId: string
   patch: PersonaSnapshot
   mirrorLegacyProfile?: boolean
+  optimisticAcknowledgement?: PersonaPatchOptimisticAcknowledgement
 }
 
 export interface DeletePersonaCommandInput extends PersonaCommandInput {
@@ -1294,6 +1323,7 @@ type ServerCommandSuccessReconciler = (
   coalescedEvents: readonly CommandEvent[],
   localEffects: ReadonlyMap<number, ServerCommandLocalEffect>,
 ) => Promise<void> | void
+type ServerCommandLocalEffectAppliedListener = (event: CommandEvent, localEffect: ServerCommandLocalEffect) => void
 
 interface ServerCommandReconciliationBatch {
   pendingEvents: Map<number, CommandEvent>
@@ -1310,6 +1340,7 @@ interface DirectServerCommandReconciliation {
 }
 
 let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
+const serverCommandLocalEffectAppliedListeners = new Set<ServerCommandLocalEffectAppliedListener>()
 // Every command domain shares one server revision. Keep high-level mutations in
 // one client queue so two unrelated optimistic edits cannot both dispatch with
 // the same base revision and make the later edit roll back with a self-conflict.
@@ -1583,6 +1614,32 @@ export function peekAppliedServerResourceRevision(): number | null {
 
 export function setServerCommandSuccessReconciler(reconciler: ServerCommandSuccessReconciler | null): void {
   serverCommandSuccessReconciler = reconciler
+}
+
+/**
+ * Observe only local effects that passed every event/projection fence and were
+ * actually applied. This is intentionally distinct from an HTTP 2xx receipt:
+ * callers can safely settle optimistic dirty markers without weakening the
+ * authoritative fallback path for malformed or stale acknowledgements.
+ */
+export function subscribeServerCommandLocalEffectApplied(
+  listener: ServerCommandLocalEffectAppliedListener,
+): () => void {
+  serverCommandLocalEffectAppliedListeners.add(listener)
+  return () => serverCommandLocalEffectAppliedListeners.delete(listener)
+}
+
+export function notifyServerCommandLocalEffectApplied(
+  event: CommandEvent,
+  localEffect: ServerCommandLocalEffect,
+): void {
+  for (const listener of serverCommandLocalEffectAppliedListeners) {
+    try {
+      listener(event, localEffect)
+    } catch (error) {
+      console.warn('Server command local-effect listener failed', error)
+    }
+  }
 }
 
 /**
@@ -2476,6 +2533,13 @@ export async function updatePersonaCommand(
       mirrorLegacyProfile: input.mirrorLegacyProfile,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPersonaPatchLocalEffect(body, event, {
+        personaId: input.personaId,
+        attemptedPatch: input.patch,
+        mirrorLegacyProfile: input.mirrorLegacyProfile === true,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -4619,6 +4683,93 @@ function readLegacyPresetPatchLocalEffect(
     presetId: input.presetId,
     collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
     fields,
+  }
+}
+
+function readPersonaPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: {
+    personaId: string
+    attemptedPatch: PersonaSnapshot
+    mirrorLegacyProfile: boolean
+    acknowledgement?: PersonaPatchOptimisticAcknowledgement
+  },
+): PersonaPatchLocalEffect | undefined {
+  const acknowledgement = input.acknowledgement
+  if (!acknowledgement || !body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (
+    record.revision !== event.revision ||
+    record.personaId !== input.personaId ||
+    event.type !== 'persona.updated' ||
+    event.resource !== 'persona' ||
+    event.id !== input.personaId ||
+    event.parentId !== undefined ||
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isProjectionEpoch(acknowledgement.settingsProjectionEpoch) ||
+    typeof acknowledgement.legacyProfileProjectionExpected !== 'boolean' ||
+    (!input.mirrorLegacyProfile && acknowledgement.legacyProfileProjectionExpected) ||
+    typeof record.legacyProfileProjectionApplied !== 'boolean' ||
+    record.legacyProfileProjectionApplied !== acknowledgement.legacyProfileProjectionExpected
+  ) {
+    return undefined
+  }
+
+  const acknowledgedKeys = record.acknowledgedKeys
+  const attemptedKeys = Object.keys(input.attemptedPatch).sort()
+  if (
+    !isUniqueStringArray(acknowledgedKeys) ||
+    attemptedKeys.length === 0 ||
+    !isJsonValueEqual(attemptedKeys, [...acknowledgedKeys].sort()) ||
+    attemptedKeys.some((key) => !isJsonValue(input.attemptedPatch[key]))
+  ) {
+    return undefined
+  }
+
+  const attemptedPersona = acknowledgement.attemptedPersona
+  if (
+    !isPlainJsonRecord(attemptedPersona) ||
+    !isJsonValue(attemptedPersona) ||
+    attemptedPersona.id !== input.personaId ||
+    attemptedKeys.some(
+      (key) =>
+        !Object.prototype.hasOwnProperty.call(attemptedPersona, key) ||
+        !isJsonValueEqual(attemptedPersona[key], input.attemptedPatch[key]),
+    )
+  ) {
+    return undefined
+  }
+
+  const attemptedLegacyProfile = acknowledgement.attemptedLegacyProfile
+  const legacyKeys: Array<keyof PersonaLegacyProfileProjection> = ['username', 'userIcon', 'personaPrompt', 'userNote']
+  if (
+    !isPlainJsonRecord(attemptedLegacyProfile) ||
+    !isJsonValueEqual(Object.keys(attemptedLegacyProfile).sort(), [...legacyKeys].sort()) ||
+    legacyKeys.some((key) => typeof attemptedLegacyProfile[key] !== 'string')
+  ) {
+    return undefined
+  }
+
+  if (acknowledgement.legacyProfileProjectionExpected) {
+    const expectedLegacyProfile: PersonaLegacyProfileProjection = {
+      username: typeof attemptedPersona.name === 'string' ? attemptedPersona.name : '',
+      userIcon: typeof attemptedPersona.icon === 'string' ? attemptedPersona.icon : '',
+      personaPrompt: typeof attemptedPersona.personaPrompt === 'string' ? attemptedPersona.personaPrompt : '',
+      userNote: typeof attemptedPersona.note === 'string' ? attemptedPersona.note : '',
+    }
+    if (legacyKeys.some((key) => attemptedLegacyProfile[key] !== expectedLegacyProfile[key])) return undefined
+  }
+
+  return {
+    kind: 'personaPatch',
+    personaId: input.personaId,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    settingsProjectionEpoch: acknowledgement.settingsProjectionEpoch,
+    attemptedPatch: cloneJsonValue(input.attemptedPatch),
+    attemptedPersona: cloneJsonValue(attemptedPersona as PersonaSnapshot & { id: string }),
+    attemptedLegacyProfile: cloneJsonValue(attemptedLegacyProfile as PersonaLegacyProfileProjection),
+    legacyProfileProjectionApplied: record.legacyProfileProjectionApplied,
   }
 }
 

@@ -17,6 +17,7 @@ import {
   canUseServerCommands,
   deferOwnServerCommandReconciliation,
   initializeServerDatabase,
+  notifyServerCommandLocalEffectApplied,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   setAppliedServerResourceRevision,
@@ -24,6 +25,7 @@ import {
   setServerCommandSuccessReconciler,
   type CommandEvent,
   type LegacyPresetPatchLocalEffect,
+  type PersonaPatchLocalEffect,
   type ServerCommandLocalEffect,
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
@@ -69,6 +71,7 @@ import {
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
   applyLegacyPresetPatchLocalEffect,
+  applyPersonaPatchLocalEffect,
   applySplitPresetPatchLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
@@ -83,7 +86,7 @@ import {
   isSettingsAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
 } from './server/resourceState.svelte'
-import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
+import { withServerResourceApply, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
 import {
   ensurePromptTemplateHydrated,
@@ -402,6 +405,7 @@ async function processServerCommandEvents(
       event.revision === appliedRevision + 1 &&
       applyContiguousServerCommandLocalEffect(event, localEffect)
     ) {
+      notifyServerCommandLocalEffectApplied(event, localEffect)
       advanceKnownServerCommandRevision(event.revision)
       setAppliedServerResourceRevision(event.revision)
       continue
@@ -441,10 +445,41 @@ function applyLegacyPresetPatchAcknowledgement(
   )
 }
 
+function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: PersonaPatchLocalEffect): boolean {
+  if (
+    event.type !== 'persona.updated' ||
+    event.resource !== 'persona' ||
+    event.id !== localEffect.personaId ||
+    event.parentId !== undefined ||
+    !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+    localEffect.collectionProjectionEpoch < 0 ||
+    !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+    localEffect.settingsProjectionEpoch < 0 ||
+    hasCollectionProjectionEpochChanged('personas', localEffect.collectionProjectionEpoch) ||
+    isCollectionAcknowledgementTainted('personas') ||
+    (localEffect.legacyProfileProjectionApplied &&
+      (hasSettingsProjectionEpochChanged(localEffect.settingsProjectionEpoch) || isSettingsAcknowledgementTainted()))
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyPersonaPatchLocalEffect({
+      revision: event.revision,
+      personaId: localEffect.personaId,
+      attemptedPatch: localEffect.attemptedPatch,
+      attemptedPersona: localEffect.attemptedPersona,
+      attemptedLegacyProfile: localEffect.attemptedLegacyProfile,
+      legacyProfileProjectionApplied: localEffect.legacyProfileProjectionApplied,
+    }),
+  )
+}
+
 function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
   switch (localEffect.kind) {
     case 'legacyPresetPatch':
       return applyLegacyPresetPatchAcknowledgement(event, localEffect)
+    case 'personaPatch':
+      return applyPersonaPatchAcknowledgement(event, localEffect)
     case 'chatGenerationSettings':
       if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
       return withServerResourceApply(() =>

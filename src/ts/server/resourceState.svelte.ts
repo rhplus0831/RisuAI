@@ -218,6 +218,20 @@ export interface ServerLegacyPresetPatchLocalEffectPayload {
   >
 }
 
+export interface ServerPersonaPatchLocalEffectPayload {
+  revision: number
+  personaId: string
+  attemptedPatch: Record<string, unknown>
+  attemptedPersona: Record<string, unknown>
+  attemptedLegacyProfile: {
+    username: string
+    userIcon: string
+    personaPrompt: string
+    userNote: string
+  }
+  legacyProfileProjectionApplied: boolean
+}
+
 export interface ServerCharactersResourcePayload {
   revision: number
   characters: character[]
@@ -1161,6 +1175,97 @@ export function applyLegacyPresetPatchLocalEffect(payload: ServerLegacyPresetPat
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.botPresets = 'ready'
   delete collectionsResourceState.errors.botPresets
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence a response-confirmed persona PATCH without re-reading the complete
+ * persona collection or settings row. The optimistic row and legacy mirror
+ * are already resident; advancing only their revision fences preserves any
+ * later local edits. Authoritative reads alone advance projection epochs and
+ * clear acknowledgement taints.
+ */
+export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEffectPayload): boolean {
+  const legacyKeys = ['username', 'userIcon', 'personaPrompt', 'userNote'] as const
+  const attemptedPatchKeys = isPlainRecord(payload.attemptedPatch) ? Object.keys(payload.attemptedPatch) : []
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    !nonEmptyString(payload.personaId) ||
+    !isPlainRecord(payload.attemptedPatch) ||
+    attemptedPatchKeys.length === 0 ||
+    !isJsonValue(payload.attemptedPatch) ||
+    !isPlainRecord(payload.attemptedPersona) ||
+    !isJsonValue(payload.attemptedPersona) ||
+    payload.attemptedPersona.id !== payload.personaId ||
+    !isPlainRecord(payload.attemptedLegacyProfile) ||
+    !isJsonValueEqual(Object.keys(payload.attemptedLegacyProfile).sort(), [...legacyKeys].sort()) ||
+    legacyKeys.some((key) => typeof payload.attemptedLegacyProfile[key] !== 'string') ||
+    typeof payload.legacyProfileProjectionApplied !== 'boolean' ||
+    attemptedPatchKeys.some(
+      (key) =>
+        !Object.prototype.hasOwnProperty.call(payload.attemptedPersona, key) ||
+        !isJsonValueEqual(payload.attemptedPersona[key], payload.attemptedPatch[key]),
+    )
+  ) {
+    return false
+  }
+
+  if (payload.legacyProfileProjectionApplied) {
+    const expectedLegacyProfile = {
+      username: typeof payload.attemptedPersona.name === 'string' ? payload.attemptedPersona.name : '',
+      userIcon: typeof payload.attemptedPersona.icon === 'string' ? payload.attemptedPersona.icon : '',
+      personaPrompt:
+        typeof payload.attemptedPersona.personaPrompt === 'string' ? payload.attemptedPersona.personaPrompt : '',
+      userNote: typeof payload.attemptedPersona.note === 'string' ? payload.attemptedPersona.note : '',
+    }
+    if (legacyKeys.some((key) => payload.attemptedLegacyProfile[key] !== expectedLegacyProfile[key])) return false
+  }
+
+  const knownCollectionRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.personas ?? -1,
+  )
+  const knownSettingsRevision = settingsResourceState.fullRevision ?? -1
+  if (
+    knownCollectionRevision >= payload.revision &&
+    (!payload.legacyProfileProjectionApplied || knownSettingsRevision >= payload.revision)
+  ) {
+    return true
+  }
+
+  const personas = collectionsResourceState.values.personas
+  if (
+    collectionsResourceState.statuses.personas !== 'ready' ||
+    collectionsResourceState.revisions.personas === undefined ||
+    !Array.isArray(personas) ||
+    !isUniquePresetCollection(personas)
+  ) {
+    return false
+  }
+  const matches = personas.filter((candidate) => isPlainRecord(candidate) && candidate.id === payload.personaId)
+  if (matches.length !== 1) return false
+
+  if (
+    payload.legacyProfileProjectionApplied &&
+    (settingsResourceState.status !== 'ready' || settingsResourceState.fullRevision === null)
+  ) {
+    return false
+  }
+
+  collectionsResourceState.revisions.personas = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses.personas = 'ready'
+  delete collectionsResourceState.errors.personas
+
+  if (payload.legacyProfileProjectionApplied) {
+    settingsResourceState.fullRevision = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+  }
+
   markResourceDatabaseChanged()
   return true
 }

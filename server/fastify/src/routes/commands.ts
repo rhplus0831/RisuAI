@@ -3586,7 +3586,11 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== personaId) {
         throw new ValidationError('patch.id must match personaId')
       }
-      const result = applyTargetedCommandMutation<{ personaId: string }>({
+      const result = applyTargetedCommandMutation<{
+        personaId: string
+        acknowledgedKeys: string[]
+        legacyProfileProjectionApplied: boolean
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -3605,13 +3609,18 @@ export function registerCommandRoutes(
           writeSingleCollectionRow(innerDb, 'personas', index, personas[index])
           // Editing the selected persona with mirroring refreshes the legacy
           // profile scalars; co-write settings only then.
-          if (mirror && target.selectedPersona === index) {
+          const legacyProfileProjectionApplied = mirror && target.selectedPersona === index
+          if (legacyProfileProjectionApplied) {
             mirrorLegacyProfile(target, personas[index])
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaUpdated, id: personaId },
-            extra: { personaId },
+            extra: {
+              personaId,
+              acknowledgedKeys: Object.keys(patch),
+              legacyProfileProjectionApplied,
+            },
           }
         },
       })
