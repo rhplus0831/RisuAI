@@ -523,6 +523,27 @@ function compactCanonicalPresetReceipt(
   return { canonicalValues, canonicalDeletedKeys }
 }
 
+function resolveMaskedLegacyPresetPatch(
+  existingPreset: Record<string, unknown>,
+  requestedPatch: Record<string, unknown>,
+  presetId: string,
+): Record<string, unknown> {
+  const includesModelProfiles = Object.prototype.hasOwnProperty.call(requestedPatch, 'modelProfiles')
+  const resolved = resolveMaskedProviderSecretPlaceholders(
+    {
+      botPresets: [existingPreset],
+      modelProfiles: Array.isArray(existingPreset.modelProfiles) ? existingPreset.modelProfiles : [],
+    },
+    {
+      botPresets: [{ ...requestedPatch, id: presetId }],
+      ...(includesModelProfiles ? { modelProfiles: requestedPatch.modelProfiles } : {}),
+    },
+  ) as { botPresets: Record<string, unknown>[]; modelProfiles?: unknown }
+  const resolvedPatch = resolved.botPresets[0] ?? { id: presetId }
+  if (includesModelProfiles) resolvedPatch.modelProfiles = resolved.modelProfiles
+  return resolvedPatch
+}
+
 function maskLegacyPresetReceiptRow(source: Record<string, unknown>): Record<string, unknown> {
   const envelope = maskProviderSecrets({
     botPresets: [source],
@@ -2150,8 +2171,7 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
       const requestedPatch = readJsonObject(body.patch, 'patch')
-      const patch = readPresetPatch(requestedPatch, { assetDb: db })
-      if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
+      if (Object.prototype.hasOwnProperty.call(requestedPatch, 'id') && requestedPatch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
       const result = applyTargetedCommandMutation<{
@@ -2170,6 +2190,9 @@ export function registerCommandRoutes(
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           const index = requirePresetIndex(presets, presetId)
+          const patch = readPresetPatch(resolveMaskedLegacyPresetPatch(presets[index], requestedPatch, presetId), {
+            assetDb: db,
+          })
           const optimisticPreset = {
             ...presets[index],
             ...requestedPatch,

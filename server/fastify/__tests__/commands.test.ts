@@ -3072,6 +3072,68 @@ describe('Phase 9-2b bot preset commands', () => {
     expect(updated.body).not.toContain('receipt-must-not-leak')
   })
 
+  it('resolves masked secrets in legacy preset PATCHes before persisting them', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        {
+          id: 'preset-a',
+          name: 'A',
+          openAIKey: 'stored-openai-secret',
+          proxyKey: 'stored-proxy-secret',
+          modelProfiles: [
+            {
+              id: 'profile-a',
+              name: 'Profile A',
+              providerOptions: { apiKey: 'stored-profile-secret' },
+            },
+          ],
+        },
+      ],
+      botPresetsId: 0,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          openAIKey: MASKED_PROVIDER_SECRET,
+          proxyKey: MASKED_PROVIDER_SECRET,
+          modelProfiles: [
+            {
+              id: 'profile-a',
+              name: ' Renamed profile ',
+              providerOptions: { apiKey: MASKED_PROVIDER_SECRET },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(updated.statusCode, updated.body).toBe(200)
+    expect(updated.body).not.toContain('stored-openai-secret')
+    expect(updated.body).not.toContain('stored-proxy-secret')
+    expect(updated.body).not.toContain('stored-profile-secret')
+    const persisted = loadPersistedFromDir(harness.dataDir).database as {
+      botPresets: Array<Record<string, any>>
+    }
+    expect(persisted.botPresets[0]).toMatchObject({
+      id: 'preset-a',
+      openAIKey: 'stored-openai-secret',
+      proxyKey: 'stored-proxy-secret',
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Renamed profile',
+          providerOptions: { apiKey: 'stored-profile-secret' },
+        },
+      ],
+    })
+  })
+
   it('validates preset image asset references on create and patch', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const uploaded = await uploadAsset(harness.app, assertion, Buffer.from('preset-image'))
