@@ -520,6 +520,53 @@ describe('resource-scoped database state', () => {
     expect(isSettingsAcknowledgementTainted()).toBe(true)
   })
 
+  it('fences an accepted persona PATCH after a later optimistic delete removed the row', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [{ id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' }],
+        selectedPersona: 0,
+        username: 'B',
+        userIcon: '',
+        personaPrompt: 'B',
+        userNote: '',
+      } as never,
+      3,
+    )
+
+    expect(
+      applyPersonaPatchLocalEffect({
+        revision: 4,
+        personaId: 'persona-a',
+        attemptedPatch: { name: 'Edited A' },
+        attemptedPersona: {
+          id: 'persona-a',
+          name: 'Edited A',
+          icon: '',
+          personaPrompt: 'A',
+          note: '',
+        },
+        attemptedLegacyProfile: {
+          username: 'Edited A',
+          userIcon: '',
+          personaPrompt: 'A',
+          userNote: '',
+        },
+        legacyProfileProjectionApplied: true,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase()).toMatchObject({
+      personas: [{ id: 'persona-b', name: 'B' }],
+      selectedPersona: 0,
+      username: 'B',
+      personaPrompt: 'B',
+    })
+    expect(collectionsResourceState.revisions.personas).toBe(4)
+    expect(settingsResourceState.fullRevision).toBe(4)
+  })
+
   it('rejects malformed or ambiguous persona PATCH local effects', () => {
     replaceResourceDatabase(
       {

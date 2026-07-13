@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'persona-command-token',
@@ -6,9 +7,11 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import {
   clearCachedServerCommandRevision,
+  notifyServerCommandLocalEffectApplied,
   setServerCommandSuccessReconciler,
   type ServerCommandLocalEffect,
 } from './server/commands'
+import { serializePersonaCollectionDigestInput, serializePersonaProfileDigestInput } from './personaMutationCertificate'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import {
   applyCollectionsResource,
@@ -61,6 +64,10 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
 function makePersona(patch: Record<string, unknown>): Record<string, unknown> {
@@ -347,6 +354,190 @@ describe('persona ID read and command preparation', () => {
       personaPrompt: 'Unsaved prompt',
     })
     expect(currentPersonaStateSnapshot()).toEqual(previous)
+  })
+
+  it('enqueues a debounced persona PATCH before a structural selection', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'A prompt',
+          note: 'A note',
+        }),
+        makePersona({
+          id: 'persona-b',
+          name: 'Persona B',
+          icon: 'b.png',
+          personaPrompt: 'B prompt',
+          note: 'B note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'A prompt'
+    getDatabase().userNote = 'A note'
+    const previous = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Edited A prompt')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+
+    vi.mocked(fetch).mockImplementation(async (input) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 1 })
+      if (url === '/api/v1/commands/personas/persona-a') {
+        return jsonResponse({
+          revision: 2,
+          event: { type: 'persona.updated', revision: 2, resource: 'persona', id: 'persona-a' },
+          personaId: 'persona-a',
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      if (url === '/api/v1/commands/personas/select') {
+        return jsonResponse({
+          revision: 3,
+          event: { type: 'persona.selected', revision: 3, resource: 'persona', id: 'persona-b' },
+          personaId: 'persona-b',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    changeUserPersona(1)
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    expect(vi.mocked(fetch).mock.calls.map(([input]) => String(input))).toEqual([
+      '/api/v1/bootstrap',
+      '/api/v1/commands/personas/persona-a',
+      '/api/v1/commands/personas/select',
+    ])
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))).toMatchObject({
+      baseRevision: 1,
+      patch: { personaPrompt: 'Edited A prompt' },
+    })
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[2][1]?.body))).toMatchObject({
+      baseRevision: 2,
+      personaId: 'persona-b',
+      saveCurrent: true,
+    })
+    await flushCommandEffects()
+  })
+
+  it('orders a pending persona PATCH before deletion and settles the accepted dirty edit', async () => {
+    const personaA = makePersona({
+      id: 'persona-delete-a',
+      name: 'Persona A',
+      icon: 'a.png',
+      personaPrompt: 'A prompt',
+      note: 'A note',
+    })
+    const personaB = makePersona({
+      id: 'persona-delete-b',
+      name: 'Persona B',
+      icon: 'b.png',
+      personaPrompt: 'B prompt',
+      note: 'B note',
+    })
+    seedPersonaState([personaA, personaB], 0)
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'A prompt'
+    getDatabase().userNote = 'A note'
+    const previous = currentPersonaStateSnapshot()
+    updateSelectedPersonaField('personaPrompt', 'Edited A prompt')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, events, localEffects) => {
+      for (const event of events) {
+        const localEffect = localEffects.get(event.revision)
+        if (!localEffect) continue
+        observedEffects.push(localEffect)
+        notifyServerCommandLocalEffectApplied(event, localEffect)
+      }
+    })
+    const collectionDigest = sha256Hex(serializePersonaCollectionDigestInput([personaB]))
+    const legacyProfileDigest = sha256Hex(
+      serializePersonaProfileDigestInput({
+        name: 'Persona B',
+        icon: 'b.png',
+        personaPrompt: 'B prompt',
+        note: 'B note',
+      }),
+    )
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 1 })
+      if (url === '/api/v1/commands/personas/persona-delete-a' && init?.method === 'PATCH') {
+        return jsonResponse({
+          revision: 2,
+          event: {
+            type: 'persona.updated',
+            revision: 2,
+            resource: 'persona',
+            id: 'persona-delete-a',
+          },
+          personaId: 'persona-delete-a',
+          acknowledgedKeys: ['personaPrompt'],
+          legacyProfileProjectionApplied: true,
+        })
+      }
+      if (url === '/api/v1/commands/personas/persona-delete-a' && init?.method === 'DELETE') {
+        return jsonResponse({
+          revision: 3,
+          event: {
+            type: 'persona.deleted',
+            revision: 3,
+            resource: 'persona',
+            id: 'persona-delete-a',
+          },
+          personaId: 'persona-delete-a',
+          personaMutationCertificate: 'persona-mutation-v1',
+          operation: 'delete',
+          personaProjectionDigest: collectionDigest,
+          selectedPersonaId: 'persona-delete-b',
+          collectionWritten: true,
+          settingsWritten: true,
+          legacyProfileProjectionApplied: true,
+          legacyProfileDigest,
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    })
+
+    expect(deleteSelectedUserPersona()).toBe(true)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+    await flushCommandEffects()
+
+    expect(vi.mocked(fetch).mock.calls.map(([input, init]) => [String(input), init?.method ?? 'GET'])).toEqual([
+      ['/api/v1/bootstrap', 'GET'],
+      ['/api/v1/commands/personas/persona-delete-a', 'PATCH'],
+      ['/api/v1/commands/personas/persona-delete-a', 'DELETE'],
+    ])
+    expect(observedEffects.map((effect) => effect.kind)).toEqual(['personaPatch', 'personaMutation'])
+    expect(getDatabase().personas).toEqual([personaB])
+
+    getDatabase().personas.push(
+      makePersona({
+        id: 'persona-delete-a',
+        name: 'Server Persona A',
+        icon: 'server-a.png',
+        personaPrompt: 'Server A prompt',
+        note: 'Server A note',
+      }) as any,
+    )
+    getDatabase().selectedPersona = 1
+    getDatabase().username = 'Server Persona A'
+    getDatabase().userIcon = 'server-a.png'
+    getDatabase().personaPrompt = 'Server A prompt'
+    getDatabase().userNote = 'Server A note'
+    reconcileSelectedPersonaProjectionEpoch()
+
+    expect(getDatabase().personaPrompt).toBe('Server A prompt')
+    expect(getDatabase().personas[1].personaPrompt).toBe('Server A prompt')
   })
 
   it('drops a coalesced persona edit that returns to its baseline before dispatch', async () => {

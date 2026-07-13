@@ -1284,7 +1284,10 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
     return false
   }
   const matches = personas.filter((candidate) => isPlainRecord(candidate) && candidate.id === payload.personaId)
-  if (matches.length !== 1) return false
+  // A later optimistic delete can remove this row before the accepted PATCH
+  // response is reconciled. The receipt only fences revisions and never
+  // reapplies fields, so zero matches is safe; duplicates remain ambiguous.
+  if (matches.length > 1) return false
 
   if (
     payload.legacyProfileProjectionApplied &&

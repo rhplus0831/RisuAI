@@ -1,6 +1,7 @@
 import { runOptimisticCommandSequence } from './chatCommands'
 import {
   currentPersonaStateSnapshot,
+  flushPendingSelectedPersonaUpdate,
   personaMutationOptimisticAcknowledgement,
   selectUserPersonaLocally,
   type PersonaStateSnapshot,
@@ -1385,6 +1386,9 @@ function applyLoadoutNow(
     ),
   )
 
+  if (personaSelection && personaRollback) {
+    void flushPendingSelectedPersonaUpdate()
+  }
   runOptimisticCommandSequence(
     steps.map((step) => step.command),
     () => rollbackUnacceptedLoadoutApplySteps(steps),

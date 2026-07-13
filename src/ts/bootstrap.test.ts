@@ -1042,6 +1042,92 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('coalesces an accepted persona PATCH followed by deletion without a resource read', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          personas: [{ id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' }] as never,
+        },
+      },
+      'personas',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().selectedPersona = 0
+      getDatabase().username = 'B'
+      getDatabase().userIcon = ''
+      getDatabase().personaPrompt = 'B'
+      getDatabase().userNote = ''
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    const patchEvent = {
+      type: 'persona.updated',
+      revision: 6,
+      resource: 'persona',
+      id: 'persona-a',
+    }
+    const deleteEvent = {
+      type: 'persona.deleted',
+      revision: 7,
+      resource: 'persona',
+      id: 'persona-a',
+    }
+
+    await commandApi.reconciler?.(
+      deleteEvent,
+      [patchEvent, deleteEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'personaPatch',
+            personaId: 'persona-a',
+            collectionProjectionEpoch,
+            settingsProjectionEpoch,
+            attemptedPatch: { name: 'Edited A' },
+            attemptedPersona: {
+              id: 'persona-a',
+              name: 'Edited A',
+              icon: '',
+              personaPrompt: 'A',
+              note: '',
+            },
+            attemptedLegacyProfile: {
+              username: 'Edited A',
+              userIcon: '',
+              personaPrompt: 'A',
+              userNote: '',
+            },
+            legacyProfileProjectionApplied: true,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'personaMutation',
+            operation: 'delete',
+            targetPersonaId: 'persona-a',
+            collectionProjectionEpoch,
+            settingsProjectionEpoch,
+            collectionWritten: true,
+            settingsWritten: true,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().personas).toEqual([expect.objectContaining({ id: 'persona-b', name: 'B' })])
+    expect(getDatabase().username).toBe('B')
+    expect(collectionsResourceState.revisions.personas).toBe(7)
+    expect(settingsResourceState.fullRevision).toBe(7)
+    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
   it.each(['collection epoch', 'settings epoch', 'collection taint', 'settings taint'])(
     '%s forces a persona PATCH authoritative fallback',
     async (failure) => {

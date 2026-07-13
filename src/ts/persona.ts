@@ -1040,6 +1040,7 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
     mirrorLegacyProfile: true,
     saveCurrent: false,
   })
+  void flushPendingSelectedPersonaUpdate()
   void runServerCommand({
     command: (baseRevision) =>
       createPersonaCommand({
@@ -1078,6 +1079,7 @@ function dispatchDeletePersona(
     mirrorLegacyProfile: true,
     saveCurrent: true,
   })
+  void flushPendingSelectedPersonaUpdate()
   void runServerCommand({
     command: (baseRevision) =>
       deletePersonaCommand({
@@ -1116,6 +1118,7 @@ function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
     mirrorLegacyProfile: false,
     saveCurrent: false,
   })
+  void flushPendingSelectedPersonaUpdate()
   void runServerCommand({
     command: (baseRevision) =>
       reorderPersonasCommand({
@@ -1194,7 +1197,6 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
     return pendingPersonaUpdate.promise ?? Promise.resolve(null)
   }
 
-  const previousPromise = pendingPersonaUpdate.promise ?? Promise.resolve(null)
   const optimisticAcknowledgement =
     pending.attempted && pending.collectionProjectionEpoch !== null && pending.settingsProjectionEpoch !== null
       ? personaPatchOptimisticAcknowledgement({
@@ -1206,35 +1208,33 @@ export function flushPendingSelectedPersonaUpdate(): Promise<ServerCommandResult
           settingsProjectionEpoch: pending.settingsProjectionEpoch,
         })
       : undefined
-  const next = previousPromise
-    .catch(() => null)
-    .then(async () => {
-      const result = await runServerCommand({
-        command: (baseRevision) =>
-          updatePersonaCommand({
-            baseRevision,
-            personaId: pending.personaId,
-            patch: pending.patch,
-            mirrorLegacyProfile: true,
-            optimisticAcknowledgement,
-          }),
-        rollback: personaCommandRollback({ personas: true, settings: true }, () => {
-          if (!pending.previous || !pending.attempted) return
-          applyPersonaProfileCommandRollback({
-            personaId: pending.personaId,
-            previous: pending.previous,
-            attempted: pending.attempted,
-            rowKeys: personaRowRollbackKeysForPatch(pending.patch),
-          })
-        }),
+  // runServerCommand's global queue already serializes this PATCH behind any
+  // older command. Enqueue it synchronously so a structural persona action in
+  // the same task cannot overtake the debounced row update and force a digest
+  // mismatch followed by an authoritative collection/settings read.
+  const next = runServerCommand({
+    command: (baseRevision) =>
+      updatePersonaCommand({
+        baseRevision,
+        personaId: pending.personaId,
+        patch: pending.patch,
+        mirrorLegacyProfile: true,
+        optimisticAcknowledgement,
+      }),
+    rollback: personaCommandRollback({ personas: true, settings: true }, () => {
+      if (!pending.previous || !pending.attempted) return
+      applyPersonaProfileCommandRollback({
+        personaId: pending.personaId,
+        previous: pending.previous,
+        attempted: pending.attempted,
+        rowKeys: personaRowRollbackKeysForPatch(pending.patch),
       })
-      return result
-    })
-    .finally(() => {
-      if (pendingPersonaUpdate.promise === next) {
-        pendingPersonaUpdate.promise = null
-      }
-    })
+    }),
+  }).finally(() => {
+    if (pendingPersonaUpdate.promise === next) {
+      pendingPersonaUpdate.promise = null
+    }
+  })
 
   pendingPersonaUpdate.promise = next
   return next
@@ -1581,6 +1581,7 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
     saveCurrent: save === 'save',
   })
   if (personaId) {
+    void flushPendingSelectedPersonaUpdate()
     runPersonaCommand(
       (baseRevision) =>
         selectPersonaCommand({
@@ -1702,6 +1703,7 @@ export async function importUserPersona() {
         mirrorLegacyProfile: false,
         saveCurrent: false,
       })
+      void flushPendingSelectedPersonaUpdate()
       runPersonaCommand(
         (baseRevision) =>
           createPersonaCommand({

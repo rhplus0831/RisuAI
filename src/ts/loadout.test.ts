@@ -1206,6 +1206,39 @@ describe('loadout projection command helpers', () => {
     ])
   })
 
+  it('flushes a pending persona PATCH ahead of a loadout persona selection', async () => {
+    const loadout = seedApplyLoadoutState()
+    const previousPersona = currentPersonaStateSnapshot()
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.username = 'Pending User'
+      testDatabaseState.db.personas[0].name = 'Pending User'
+    })
+    queueSelectedPersonaUpdate(previousPersona, currentPersonaStateSnapshot())
+    const calls = stubApplyLoadoutFetch()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    applyLoadout(loadout, ['persona'])
+
+    await waitForCallCount(calls, 4)
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/bootstrap',
+      '/api/v1/commands/personas/persona-a',
+      '/api/v1/commands/personas/select',
+      '/api/v1/commands/loadouts/loadout-a/touch',
+    ])
+    expect(calls[1].body).toMatchObject({
+      baseRevision: 10,
+      patch: { name: 'Pending User' },
+    })
+    expect(calls[2].body).toMatchObject({
+      baseRevision: 11,
+      personaId: 'persona-b',
+      saveCurrent: true,
+    })
+    await flushCommandEffects()
+  })
+
   it('failed favorite preserves newer sibling edits/appends and newer same-row changes', async () => {
     const calls = stubCommandFetch({ failCommands: true })
     setResourceWriteGuardEnabled(true)
