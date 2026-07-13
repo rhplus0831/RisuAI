@@ -90,6 +90,49 @@ function preset(overrides: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
   }
 }
 
+function seedAgentPresetDeleteReferences(): void {
+  setResourceWriteGuardEnabled(false)
+  setDatabaseLite(
+    {
+      agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
+      agentPresetDefaultId: 'ap_a',
+      characters: [
+        {
+          chaId: 'char_a',
+          name: 'Character A',
+          chats: [
+            {
+              id: 'chat_a',
+              name: 'Chat A',
+              message: [],
+              note: '',
+              localLore: [],
+              generationSettings: { agentPresetId: 'ap_a', configured: false },
+            },
+          ],
+        },
+      ],
+      loadouts: [
+        {
+          id: 'loadout_a',
+          name: 'Loadout A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: ['char_a'],
+          modules: [],
+          globalVariables: { mood: 'initial' },
+          presetName: '',
+          agentPresetId: 'ap_a',
+          agentPresetName: 'Preset A',
+          personaId: '',
+        },
+      ],
+    } as never,
+    1,
+  )
+  setResourceWriteGuardEnabled(true)
+}
+
 beforeEach(() => {
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
@@ -109,6 +152,102 @@ afterEach(() => {
 })
 
 describe('Agent Preset optimistic field rollback', () => {
+  it('restores failed delete references by stable id while preserving concurrent chat and loadout edits', async () => {
+    seedAgentPresetDeleteReferences()
+    const pendingResponse = deferred<Response>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => pendingResponse.promise),
+    )
+
+    const resultPromise = deleteAgentPreset('ap_a')
+    expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_b'])
+    expect(getDatabase()).not.toHaveProperty('agentPresetDefaultId')
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBeUndefined()
+    expect(getDatabase().loadouts[0].agentPresetId).toBeUndefined()
+    expect(getDatabase().loadouts[0].agentPresetName).toBeUndefined()
+
+    withTrustedResourceWrite(() => {
+      const chat = getDatabase().characters[0].chats[0]
+      getDatabase().characters[0].chats[0] = {
+        ...chat,
+        name: 'Edited Chat A',
+        generationSettings: {
+          ...chat.generationSettings,
+          configured: true,
+        },
+      }
+      const loadout = getDatabase().loadouts[0]
+      getDatabase().loadouts[0] = {
+        ...loadout,
+        name: 'Edited Loadout A',
+        globalVariables: { ...loadout.globalVariables, mood: 'edited' },
+      }
+    })
+    pendingResponse.resolve(response({ error: 'rejected' }, 400))
+
+    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'rejected' })
+    expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_a', 'ap_b'])
+    expect(getDatabase().agentPresetDefaultId).toBe('ap_a')
+    expect(getDatabase().characters[0].chats[0]).toMatchObject({
+      name: 'Edited Chat A',
+      generationSettings: { agentPresetId: 'ap_a', configured: true },
+    })
+    expect(getDatabase().loadouts[0]).toMatchObject({
+      name: 'Edited Loadout A',
+      globalVariables: { mood: 'edited' },
+      agentPresetId: 'ap_a',
+      agentPresetName: 'Preset A',
+    })
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+  })
+
+  it('preserves newer chat and loadout Agent Preset selections when a delete fails', async () => {
+    seedAgentPresetDeleteReferences()
+    const pendingResponse = deferred<Response>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => pendingResponse.promise),
+    )
+
+    const resultPromise = deleteAgentPreset('ap_a')
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings!.agentPresetId = 'ap_b'
+      getDatabase().loadouts[0].agentPresetId = 'ap_b'
+      getDatabase().loadouts[0].agentPresetName = 'Preset B'
+    })
+    pendingResponse.resolve(response({ error: 'revision_conflict', currentRevision: 2 }, 409))
+
+    await expect(resultPromise).resolves.toEqual({ status: 'conflict', currentRevision: 2 })
+    expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_b')
+    expect(getDatabase().loadouts[0]).toMatchObject({
+      agentPresetId: 'ap_b',
+      agentPresetName: 'Preset B',
+    })
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+  })
+
+  it('does not recreate or mutate delete-reference targets superseded by structural edits', async () => {
+    seedAgentPresetDeleteReferences()
+    const pendingResponse = deferred<Response>()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => pendingResponse.promise),
+    )
+
+    const resultPromise = deleteAgentPreset('ap_a')
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats = []
+      getDatabase().loadouts = []
+    })
+    pendingResponse.resolve(response({ error: 'rejected' }, 400))
+
+    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'rejected' })
+    expect(getDatabase().characters[0].chats).toEqual([])
+    expect(getDatabase().loadouts).toEqual([])
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+  })
+
   it('taints before rolling back failed metadata fields and preserves a later edit', async () => {
     const pendingResponse = deferred<Response>()
     vi.stubGlobal(

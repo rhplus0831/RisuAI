@@ -20,7 +20,12 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import {
+  captureCharacterRowProjectionEpoch,
+  captureCollectionProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
+  hasCharacterRowProjectionEpochChanged,
+  hasCollectionProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
   markSettingsGroupAcknowledgementTainted,
 } from './server/resourceState.svelte'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
@@ -204,6 +209,14 @@ interface OptimisticAgentPresetFieldPatch {
   acknowledgement?: AgentPresetPatchOptimisticAcknowledgement
 }
 
+interface AgentPresetDeleteFieldRollback {
+  keys: string[]
+  previous: Record<string, JsonFieldState>
+  attempted: Record<string, JsonFieldState>
+  resolveTarget: () => DatabaseRecord | undefined
+  hasProjectionChanged: () => boolean
+}
+
 function optimisticallyPatchAgentPreset(presetId: string, patch: AgentPresetSnapshot): OptimisticAgentPresetFieldPatch {
   const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
   const preset = uniqueAgentPresetById(presetId)
@@ -217,16 +230,42 @@ function optimisticallyPatchAgentPreset(presetId: string, patch: AgentPresetSnap
 }
 
 function optimisticallyDeleteAgentPreset(presetId: string): (() => void) | undefined {
-  return withAgentPresetRollback(['agentPresets', 'agentPresetDefaultId', 'characters', 'loadouts'], () => {
+  const preset = uniqueAgentPresetById(presetId)
+  if (!preset) return undefined
+  const presetRollback = withAgentPresetRollback(['agentPresets'], () => {
     const presets = getAgentPresets()
-    const index = presets.findIndex((preset) => preset.id === presetId)
+    const index = presets.indexOf(preset)
     if (index !== -1) presets.splice(index, 1)
-    if (getDatabase().agentPresetDefaultId === presetId) {
-      delete getDatabase().agentPresetDefaultId
-    }
-    clearChatAgentPresetSelections(presetId)
-    clearLoadoutAgentPresetSelections(presetId)
   })
+  const referenceRollbacks = withTrustedResourceWrite(() => {
+    const rollbacks: AgentPresetDeleteFieldRollback[] = []
+    const database = getDatabase() as unknown as DatabaseRecord
+    if (getDatabase().agentPresetDefaultId === presetId) {
+      const projectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+      rollbacks.push(
+        captureAgentPresetDeleteFieldRollback({
+          target: database,
+          resolveTarget: () => getDatabase() as unknown as DatabaseRecord,
+          keys: ['agentPresetDefaultId'],
+          mutate: () => delete getDatabase().agentPresetDefaultId,
+          hasProjectionChanged: () => hasSettingsGroupProjectionEpochChanged('agents', projectionEpoch),
+        }),
+      )
+    }
+    rollbacks.push(...clearChatAgentPresetSelections(presetId), ...clearLoadoutAgentPresetSelections(presetId))
+    return rollbacks
+  })
+
+  return () => {
+    presetRollback?.()
+    // Never restore references to a preset whose whole-row rollback was
+    // superseded by a later edit. The agents taint forces authoritative
+    // reconciliation before a later local acknowledgement can fence it.
+    if (!uniqueAgentPresetById(presetId)) return
+    withTrustedResourceWrite(() => {
+      for (const rollback of referenceRollbacks) restoreAgentPresetDeleteFields(rollback)
+    })
+  }
 }
 
 function optimisticallyReorderAgentPresets(presetIds: string[]): (() => void) | undefined {
@@ -380,21 +419,133 @@ function snapshotKeys(target: DatabaseRecord, keys: readonly string[]): Partial<
   return snapshot
 }
 
-function clearChatAgentPresetSelections(presetId: string): void {
+function clearChatAgentPresetSelections(presetId: string): AgentPresetDeleteFieldRollback[] {
+  const rollbacks: AgentPresetDeleteFieldRollback[] = []
   for (const character of getDatabase().characters ?? []) {
+    const characterId = nonBlankId(character?.chaId)
+    if (!characterId) continue
+    const projectionEpoch = captureCharacterRowProjectionEpoch(characterId)
     const chats = Array.isArray(character?.chats) ? character.chats : []
     for (const chat of chats) {
-      if (chat.generationSettings?.agentPresetId === presetId) {
-        delete chat.generationSettings.agentPresetId
+      const chatId = nonBlankId(chat?.id)
+      const generationSettings = chat?.generationSettings as unknown
+      if (
+        !chatId ||
+        !isDatabaseRecord(generationSettings) ||
+        generationSettings.agentPresetId !== presetId ||
+        resolveUniqueChatGenerationSettings(characterId, chatId) !== generationSettings
+      ) {
+        continue
       }
+      rollbacks.push(
+        captureAgentPresetDeleteFieldRollback({
+          target: generationSettings,
+          resolveTarget: () => resolveUniqueChatGenerationSettings(characterId, chatId),
+          keys: ['agentPresetId'],
+          mutate: () => delete generationSettings.agentPresetId,
+          hasProjectionChanged: () => hasCharacterRowProjectionEpochChanged(characterId, projectionEpoch),
+        }),
+      )
     }
+  }
+  return rollbacks
+}
+
+function clearLoadoutAgentPresetSelections(presetId: string): AgentPresetDeleteFieldRollback[] {
+  const rollbacks: AgentPresetDeleteFieldRollback[] = []
+  const projectionEpoch = captureCollectionProjectionEpoch('loadouts')
+  for (const loadout of getDatabase().loadouts ?? []) {
+    const loadoutId = nonBlankId(loadout?.id)
+    const target = loadout as unknown as DatabaseRecord
+    if (!loadoutId || target.agentPresetId !== presetId || resolveUniqueLoadout(loadoutId) !== target) {
+      continue
+    }
+    rollbacks.push(
+      captureAgentPresetDeleteFieldRollback({
+        target,
+        resolveTarget: () => resolveUniqueLoadout(loadoutId),
+        keys: ['agentPresetId', 'agentPresetName'],
+        mutate: () => {
+          delete target.agentPresetId
+          delete target.agentPresetName
+        },
+        hasProjectionChanged: () => hasCollectionProjectionEpochChanged('loadouts', projectionEpoch),
+      }),
+    )
+  }
+  return rollbacks
+}
+
+function captureAgentPresetDeleteFieldRollback(input: {
+  target: DatabaseRecord
+  resolveTarget: () => DatabaseRecord | undefined
+  keys: string[]
+  mutate: () => void
+  hasProjectionChanged: () => boolean
+}): AgentPresetDeleteFieldRollback {
+  const previous = snapshotAgentPresetDeleteFieldStates(input.target, input.keys)
+  input.mutate()
+  return {
+    keys: input.keys,
+    previous,
+    attempted: snapshotAgentPresetDeleteFieldStates(input.target, input.keys),
+    resolveTarget: input.resolveTarget,
+    hasProjectionChanged: input.hasProjectionChanged,
   }
 }
 
-function clearLoadoutAgentPresetSelections(presetId: string): void {
-  for (const loadout of getDatabase().loadouts ?? []) {
-    if (loadout.agentPresetId !== presetId) continue
-    delete loadout.agentPresetId
-    delete loadout.agentPresetName
+function restoreAgentPresetDeleteFields(rollback: AgentPresetDeleteFieldRollback): void {
+  if (rollback.hasProjectionChanged()) return
+  const target = rollback.resolveTarget()
+  if (!target) return
+  // Treat related loadout id/name fields atomically. A later edit to either
+  // field supersedes this rollback and must not be partially overwritten.
+  if (rollback.keys.some((key) => !jsonFieldStateMatches(target, key, rollback.attempted[key]))) return
+  for (const key of rollback.keys) {
+    const previous = rollback.previous[key]
+    if (previous.present) target[key] = safeStructuredClone(previous.value)
+    else delete target[key]
   }
+}
+
+function jsonFieldStateMatches(target: DatabaseRecord, key: string, expected: JsonFieldState): boolean {
+  const present = Object.prototype.hasOwnProperty.call(target, key)
+  if (!expected.present) return !present || target[key] === undefined
+  return present && JSON.stringify(target[key]) === JSON.stringify(expected.value)
+}
+
+function snapshotAgentPresetDeleteFieldStates(
+  target: DatabaseRecord,
+  keys: readonly string[],
+): Record<string, JsonFieldState> {
+  const fields: Record<string, JsonFieldState> = {}
+  for (const key of keys) {
+    const value = target[key]
+    fields[key] =
+      Object.prototype.hasOwnProperty.call(target, key) && value !== undefined
+        ? { present: true, value: safeStructuredClone(value) }
+        : { present: false }
+  }
+  return fields
+}
+
+function resolveUniqueChatGenerationSettings(characterId: string, chatId: string): DatabaseRecord | undefined {
+  const characters = (getDatabase().characters ?? []).filter((character) => character?.chaId === characterId)
+  if (characters.length !== 1) return undefined
+  const chats = (characters[0].chats ?? []).filter((chat) => chat?.id === chatId)
+  if (chats.length !== 1 || !isDatabaseRecord(chats[0].generationSettings)) return undefined
+  return chats[0].generationSettings as unknown as DatabaseRecord
+}
+
+function resolveUniqueLoadout(loadoutId: string): DatabaseRecord | undefined {
+  const loadouts = (getDatabase().loadouts ?? []).filter((loadout) => loadout?.id === loadoutId)
+  return loadouts.length === 1 ? (loadouts[0] as unknown as DatabaseRecord) : undefined
+}
+
+function isDatabaseRecord(value: unknown): value is DatabaseRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function nonBlankId(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined
 }
