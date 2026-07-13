@@ -3937,7 +3937,7 @@ export function registerCommandRoutes(
           const index = requireLoadoutIndex(loadouts, loadoutId)
           const loadout = loadouts[index]
           loadout.lastUsed = lastUsed
-          if (characterId) {
+          if (characterId && !loadout.characterIds.includes(characterId)) {
             loadout.characterIds.push(characterId)
           }
           target.lastLoadedLoadoutName = loadout.name

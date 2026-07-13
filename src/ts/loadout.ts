@@ -1038,6 +1038,7 @@ export function applyLoadout(
     previousLastLoadedLoadoutName: getDatabase().lastLoadedLoadoutName,
     attemptedLastLoadedLoadoutName: loadout.name,
   }
+  let addedCurrentCharacter = false
   let selectedLegacyPresetId: string | null = null
   let selectedModelPresetId: string | null = null
   let selectedPromptPresetId: string | null = null
@@ -1058,6 +1059,7 @@ export function applyLoadout(
     targetLoadout.lastUsed = lastUsed
     if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
       targetLoadout.characterIds.push(currentCharacterId)
+      addedCurrentCharacter = true
     }
     if (previousLoadout) {
       touchRollback.attempted = {
@@ -1263,7 +1265,7 @@ export function applyLoadout(
           baseRevision,
           loadoutId: loadout.id,
           lastUsed,
-          characterId: currentCharacterId,
+          characterId: addedCurrentCharacter ? currentCharacterId : undefined,
         }),
       () => rollbackLoadoutTouch(touchRollback),
     ),

@@ -4783,6 +4783,48 @@ describe('Phase 9-2f loadout commands', () => {
     ])
   })
 
+  it('does not duplicate an existing character membership when a loadout is touched', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: ['char-a'],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          personaId: '',
+        },
+      ],
+      lastLoadedLoadoutName: '',
+    })
+
+    const touched = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/loadouts/loadout-a/touch',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        lastUsed: 200,
+        characterId: 'char-a',
+      },
+    })
+    expect(touched.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.loadouts[0]).toMatchObject({
+      lastUsed: 200,
+      characterIds: ['char-a'],
+    })
+  })
+
   it('rejects malformed loadout commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

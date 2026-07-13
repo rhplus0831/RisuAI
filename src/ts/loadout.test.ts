@@ -687,6 +687,32 @@ describe('loadout projection command helpers', () => {
     ])
   })
 
+  it('omits the current character from a touch when the loadout already contains it', async () => {
+    const loadout = seedApplyLoadoutState()
+    loadout.characterIds.push('char-a')
+    const calls = stubApplyLoadoutFetch()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    applyLoadout(loadout, [])
+
+    await waitForCallCount(calls, 2)
+
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
+      lastUsed: 123456,
+      characterIds: ['char-a'],
+    })
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/loadouts/loadout-a/touch',
+      method: 'POST',
+      authHeader: 'loadout-command-token',
+      body: {
+        baseRevision: 10,
+        lastUsed: 123456,
+      },
+    })
+  })
+
   it('applies split model and prompt preset selections without falling back to legacy presets', async () => {
     const loadout = seedSplitPresetLoadoutState()
     const calls = stubApplyLoadoutFetch()
