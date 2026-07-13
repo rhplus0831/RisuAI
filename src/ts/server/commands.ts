@@ -54,10 +54,19 @@ export interface CharacterSelectionLocalEffect {
   lastInteraction: number
 }
 
+export interface ChatPatchLocalEffect {
+  kind: 'chatPatch'
+  characterId: string
+  chatId: string
+  patch: ChatSnapshot
+  select: boolean
+}
+
 export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
   | CharacterSelectionLocalEffect
+  | ChatPatchLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -2278,6 +2287,7 @@ export async function updateChatCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) => readChatPatchLocalEffect(body, event, input),
   })
 }
 
@@ -3376,6 +3386,27 @@ function readCharacterSelectionLocalEffect(
     kind: 'characterSelection',
     characterId,
     lastInteraction,
+  }
+}
+
+function readChatPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: UpdateChatCommandInput,
+): ChatPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const chatId = (body as Record<string, unknown>).chatId
+  if (chatId !== input.chatId) return undefined
+  if (event.resource !== 'characterRow' || event.id !== chatId) return undefined
+  if (typeof event.parentId !== 'string' || event.parentId.trim() === '') return undefined
+  const select = input.select === true
+  if (Object.keys(input.patch).length === 0 && !select) return undefined
+  return {
+    kind: 'chatPatch',
+    characterId: event.parentId,
+    chatId,
+    patch: cloneJsonValue(input.patch),
+    select,
   }
 }
 

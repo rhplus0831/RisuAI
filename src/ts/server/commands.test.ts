@@ -2953,6 +2953,45 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('reports an accepted chat update as a local command effect', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 5,
+      event: {
+        type: 'chat.updated',
+        revision: 5,
+        resource: 'characterRow',
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-a',
+      selectedChatId: 'chat-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(
+      updateChatCommand({
+        baseRevision: 4,
+        chatId: 'chat-a',
+        patch: {},
+        select: true,
+      }),
+    ).resolves.toMatchObject({ status: 'ok', revision: 5, selectedChatId: 'chat-a' })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'chatPatch',
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        patch: {},
+        select: true,
+      },
+    ])
+  })
+
   it('dispatches lorebook commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (

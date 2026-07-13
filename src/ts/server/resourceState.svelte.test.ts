@@ -12,6 +12,7 @@ import {
   applyCharacterSelectionLocalEffect,
   applyCharacterSelectionResource,
   applyCharactersResource,
+  applyChatPatchLocalEffect,
   applyCollectionsResource,
   applySettingsResource,
   applySettingsGroupResource,
@@ -323,6 +324,35 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().characters[0].lastInteraction).toBe(200)
     expect(charactersResourceState.selectionRevision).toBe(6)
     expect(charactersResourceState.rowRevisions).toEqual({ 'char-a': 6, 'char-b': 5 })
+  })
+
+  it('acknowledges an optimistic chat update without replacing newer metadata or selection', () => {
+    const ada = metadataCharacter('char-a', 'Ada')
+    ada.chats = [
+      { id: 'chat-a', name: 'Newer queued edit', message: [] },
+      { id: 'chat-b', name: 'Newer selection', message: [] },
+    ] as never
+    ada.chatPage = 1
+    applyCharactersResource({
+      revision: 5,
+      characters: [ada],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(
+      applyChatPatchLocalEffect({
+        revision: 6,
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        patch: { name: 'Accepted edit' },
+        select: true,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().characters[0].chats[0].name).toBe('Newer queued edit')
+    expect(getResourceDatabase().characters[0].chatPage).toBe(1)
+    expect(charactersResourceState.rowRevisions['char-a']).toBe(6)
   })
 
   it('preserves resident transcript and hypa bodies across newer metadata lists', () => {

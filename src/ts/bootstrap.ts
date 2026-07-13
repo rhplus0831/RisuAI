@@ -43,6 +43,7 @@ import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './s
 import {
   applyCharacterPatchLocalEffect,
   applyCharacterSelectionLocalEffect,
+  applyChatPatchLocalEffect,
   applyChatGenerationSettingsLocalEffect,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
@@ -385,6 +386,23 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           revision: event.revision,
           characterId: localEffect.characterId,
           lastInteraction: localEffect.lastInteraction,
+        }),
+      )
+    case 'chatPatch':
+      if (
+        event.resource !== 'characterRow' ||
+        event.id !== localEffect.chatId ||
+        event.parentId !== localEffect.characterId
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyChatPatchLocalEffect({
+          revision: event.revision,
+          characterId: localEffect.characterId,
+          chatId: localEffect.chatId,
+          patch: localEffect.patch,
+          select: localEffect.select,
         }),
       )
   }

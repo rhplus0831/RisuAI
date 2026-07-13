@@ -86,6 +86,14 @@ export interface ServerCharacterSelectionLocalEffectPayload {
   lastInteraction: number
 }
 
+export interface ServerChatPatchLocalEffectPayload {
+  revision: number
+  characterId: string
+  chatId: string
+  patch: Record<string, unknown>
+  select: boolean
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -482,6 +490,27 @@ export function applyCharacterSelectionLocalEffect(payload: ServerCharacterSelec
   if (!Number.isFinite(payload.lastInteraction)) return false
 
   charactersResourceState.selectionRevision = payload.revision
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence an accepted optimistic chat metadata or selection update. Later chat
+ * edits, selections, or deletion remain untouched while the parent-row fence
+ * prevents an older character response from overwriting them.
+ */
+export function applyChatPatchLocalEffect(payload: ServerChatPatchLocalEffectPayload): boolean {
+  const knownRowRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+  )
+  if (knownRowRevision >= payload.revision) return true
+  if (Object.keys(payload.patch).length === 0 && !payload.select) return false
+
   charactersResourceState.rowRevisions[payload.characterId] = payload.revision
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
