@@ -495,6 +495,7 @@ describe('module command projection helpers', () => {
       name: 'Module A',
       description: '',
       backgroundEmbedding: 'old background',
+      cjs: 'x'.repeat(10_000),
     } as any
     setResourceWriteGuardEnabled(true)
 
@@ -507,6 +508,7 @@ describe('module command projection helpers', () => {
       name: 'Module A',
       description: '',
       backgroundEmbedding: 'new background',
+      cjs: 'x'.repeat(10_000),
     })
 
     expect(getDatabase().modules[0].backgroundEmbedding).toBe('new background')
@@ -520,8 +522,6 @@ describe('module command projection helpers', () => {
       body: {
         baseRevision: 10,
         patch: {
-          name: 'Module A',
-          description: '',
           backgroundEmbedding: 'new background',
         },
       },

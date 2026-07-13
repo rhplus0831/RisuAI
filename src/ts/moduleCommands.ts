@@ -337,7 +337,7 @@ export function dispatchUpdateModule(
   patch: ModuleSnapshot,
   previous: GlobalModuleStateSnapshot,
 ): void {
-  const commandPatch = cloneJsonValue(sanitizeModulePatch(patch))
+  const commandPatch = changedModulePatch(moduleId, patch, previous)
   if (Object.keys(commandPatch).length === 0) return
   if (!canUseServerCommands()) return
   const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
@@ -371,7 +371,7 @@ export function dispatchModuleInfoPatch(
   if (!canUseServerCommands()) return
 
   const steps: ModuleCollectionPatchStep[] = []
-  const commandPatch = cloneJsonValue(sanitizeModulePatch(patch))
+  const commandPatch = changedModulePatch(moduleId, patch, previous)
 
   if (Object.keys(commandPatch).length > 0) {
     const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
@@ -591,17 +591,15 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
       })
       continue
     }
-    if (JSON.stringify(before) !== JSON.stringify(module)) {
-      const commandPatch = cloneJsonValue(sanitizeModulePatch(toModuleSnapshot(module)))
-      if (Object.keys(commandPatch).length === 0) continue
-      const moduleId = module.id
-      const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
-      if (rollbackEntries.length === 0) continue
-      steps.push({
-        factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
-        rollbackEntries,
-      })
-    }
+    const moduleId = module.id
+    const commandPatch = changedModulePatch(moduleId, toModuleSnapshot(module), previous)
+    if (Object.keys(commandPatch).length === 0) continue
+    const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
+    if (rollbackEntries.length === 0) continue
+    steps.push({
+      factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
+      rollbackEntries,
+    })
   }
 
   for (const module of previous.modules) {
@@ -1345,6 +1343,24 @@ export function sanitizeModulePatch(patch: ModuleSnapshot): ModuleSnapshot {
     sanitized[key] = value
   }
   return sanitized
+}
+
+function changedModulePatch(
+  moduleId: string,
+  patch: ModuleSnapshot,
+  previous: GlobalModuleStateSnapshot,
+): ModuleSnapshot {
+  const sanitized = sanitizeModulePatch(patch)
+  const before = previous.modules.find((module) => module.id === moduleId) as
+    | (RisuModule & Record<string, unknown>)
+    | undefined
+  if (!before) return cloneJsonValue(sanitized)
+
+  return Object.fromEntries(
+    Object.entries(sanitized)
+      .filter(([key, value]) => !hasOwnRecordKey(before, key) || !isJsonValueEqual(before[key], value))
+      .map(([key, value]) => [key, cloneJsonValue(value)]),
+  )
 }
 
 function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean {

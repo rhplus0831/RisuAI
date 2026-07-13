@@ -725,11 +725,15 @@ describe('plugin projection command helpers', () => {
     })
   })
 
-  it('dispatchUpdatePlugin sends the original nested patch after delayed bootstrap', async () => {
+  it('dispatchUpdatePlugin omits unchanged nested fields and large scripts after delayed bootstrap', async () => {
     const { calls, resolveBootstrap } = stubDelayedBootstrapCommandFetch()
     setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins[0].script = 'x'.repeat(10_000)
+    })
     const previous = currentPluginStateSnapshot()
     const patch = {
+      script: 'x'.repeat(10_000),
       arguments: { mode: ['fast', 'slow'] },
       realArg: { mode: 'attempted', token: 'abc' },
     }
@@ -754,7 +758,6 @@ describe('plugin projection command helpers', () => {
       body: {
         baseRevision: 10,
         patch: {
-          arguments: { mode: ['fast', 'slow'] },
           realArg: { mode: 'attempted', token: 'abc' },
         },
       },

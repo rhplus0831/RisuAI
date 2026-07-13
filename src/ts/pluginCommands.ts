@@ -213,7 +213,7 @@ export function runUpdatePluginCommand(
   patch: PluginSnapshot,
   previous: PluginStateSnapshot,
 ): Promise<ServerCommandResult<{ pluginId: string }>> | null {
-  const commandPatch = cloneJsonValue(sanitizePluginPatch(patch))
+  const commandPatch = changedPluginPatch(pluginId, patch, previous)
   if (Object.keys(commandPatch).length === 0) return null
   if (!canUseServerCommands()) return null
   const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
@@ -409,17 +409,15 @@ export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: P
       })
       continue
     }
-    if (JSON.stringify(before) !== JSON.stringify(plugin)) {
-      const commandPatch = sanitizePluginPatch(toPluginSnapshot(plugin))
-      if (Object.keys(commandPatch).length === 0) continue
-      const pluginId = plugin.name
-      const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
-      if (rollbackEntries.length === 0) continue
-      steps.push({
-        factory: (baseRevision) => updatePluginCommand({ baseRevision, pluginId, patch: commandPatch }),
-        rollbackEntries,
-      })
-    }
+    const pluginId = plugin.name
+    const commandPatch = changedPluginPatch(pluginId, toPluginSnapshot(plugin), previous)
+    if (Object.keys(commandPatch).length === 0) continue
+    const rollbackEntries = pluginFieldRollbackEntries(pluginId, commandPatch, previous)
+    if (rollbackEntries.length === 0) continue
+    steps.push({
+      factory: (baseRevision) => updatePluginCommand({ baseRevision, pluginId, patch: commandPatch }),
+      rollbackEntries,
+    })
   }
 
   for (const plugin of previous.plugins) {
@@ -1232,4 +1230,20 @@ export function sanitizePluginPatch(patch: PluginSnapshot): PluginSnapshot {
     sanitized[key] = value
   }
   return sanitized
+}
+
+function changedPluginPatch(pluginId: string, patch: PluginSnapshot, previous: PluginStateSnapshot): PluginSnapshot {
+  const sanitized = sanitizePluginPatch(patch)
+  const before = previous.plugins.find((plugin) => plugin.name === pluginId) as
+    | (RisuPlugin & Record<string, unknown>)
+    | undefined
+  if (!before) return cloneJsonValue(sanitized)
+
+  return Object.fromEntries(
+    Object.entries(sanitized)
+      .filter(
+        ([key, value]) => !Object.prototype.hasOwnProperty.call(before, key) || !isJsonValueEqual(before[key], value),
+      )
+      .map(([key, value]) => [key, cloneJsonValue(value)]),
+  )
 }
