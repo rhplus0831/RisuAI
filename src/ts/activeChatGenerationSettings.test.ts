@@ -12,7 +12,7 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'active-chat-generation-settings-token',
 }))
 
-import { clearCachedServerCommandRevision, type ServerCommandResult } from './server/commands'
+import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
@@ -75,17 +75,25 @@ function stubCommandFetch(): CapturedFetch[] {
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
       if (url.endsWith('/generation-settings')) {
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
         return jsonResponse({
-          status: 'ok',
           revision: 101,
           event: {
             type: 'chat.updated',
             revision: 101,
             resource: 'characterRow',
             id: 'chat-a',
+            parentId: 'char-a',
           },
           chatId: 'chat-a',
-        } satisfies ServerCommandResult<{ chatId: string }> & Record<string, unknown>)
+          characterId: 'char-a',
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: Object.keys(body.patch ?? {}).sort(),
+          deletedKeys: [...(body.deleteKeys ?? [])].sort(),
+          sidebarTogglePatchedKeys: Object.keys(body.patch?.sidebarToggles ?? {}).sort(),
+          sidebarToggleDeletedKeys: [...(body.sidebarToggleDeleteKeys ?? [])].sort(),
+          prunedSidebarToggleKeys: [],
+        } satisfies Record<string, unknown>)
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
@@ -421,7 +429,7 @@ describe('active chat generation settings helper', () => {
       method: 'PUT',
       body: {
         baseRevision: 100,
-        generationSettings: nextSettings,
+        patch: nextSettings,
       },
     })
   })
@@ -482,7 +490,7 @@ describe('active chat generation settings helper', () => {
       method: 'PUT',
       body: {
         baseRevision: 100,
-        generationSettings: nextSettings,
+        patch: nextSettings,
       },
     })
   })
@@ -601,7 +609,14 @@ describe('active chat generation settings helper', () => {
       method: 'PUT',
       body: {
         baseRevision: 100,
-        generationSettings: expectedSettings,
+        patch: {
+          sidebarToggles: {
+            newFlag: '0',
+            newMemo: '',
+            newMode: '0',
+            newNote: '',
+          },
+        },
       },
     })
   })
@@ -658,7 +673,11 @@ describe('active chat generation settings helper', () => {
       method: 'PUT',
       body: {
         baseRevision: 100,
-        generationSettings: nextSettings,
+        patch: {
+          jailbreakToggle: false,
+          sidebarToggles: nextSettings.sidebarToggles,
+        },
+        sidebarToggleDeleteKeys: ['stale'],
       },
     })
   })
@@ -694,7 +713,7 @@ describe('active chat generation settings helper', () => {
       method: 'PUT',
       body: {
         baseRevision: 100,
-        generationSettings: nextSettings,
+        patch: nextSettings,
       },
     })
   })
@@ -753,7 +772,12 @@ describe('active chat generation settings helper', () => {
         authHeader: 'active-chat-generation-settings-token',
         body: {
           baseRevision: 100,
-          generationSettings: nextSettings,
+          baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          patch: {
+            configured: true,
+            personaId: 'persona-b',
+            promptPresetId: 'preset-a',
+          },
         },
       },
     ])
@@ -818,7 +842,11 @@ describe('active chat generation settings helper', () => {
       method: 'PUT',
       body: {
         baseRevision: 100,
-        generationSettings: nextSettings,
+        patch: {
+          jailbreakToggle: false,
+          sidebarToggles: { mode: 'cold' },
+        },
+        sidebarToggleDeleteKeys: ['stale'],
       },
     })
   })

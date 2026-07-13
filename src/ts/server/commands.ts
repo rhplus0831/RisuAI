@@ -1,5 +1,10 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import {
+  CHAT_GENERATION_SETTINGS_KEYS,
+  serializeChatGenerationSettingsDigestInput,
+  type ChatGenerationSettings,
+  type SparseChatGenerationSettingsUpdate,
+} from '../chatGenerationSettings'
 import {
   AGENT_PRESET_SCHEMA_VERSION,
   normalizeAgentPresets,
@@ -53,6 +58,7 @@ export interface ChatGenerationSettingsLocalEffect {
   characterId: string
   attemptedGenerationSettings: ChatGenerationSettings
   generationSettings: ChatGenerationSettings
+  characterRowProjectionEpoch?: number
 }
 
 export interface CharacterPatchLocalEffect {
@@ -1000,6 +1006,10 @@ export interface UpdateChatCommandInput extends ChatCommandInput {
 export interface SaveChatGenerationSettingsCommandInput extends ChatCommandInput {
   chatId: string
   generationSettings: ChatGenerationSettings
+  sparseUpdate?: SparseChatGenerationSettingsUpdate
+  sparseBaseGenerationSettings?: ChatGenerationSettings | null
+  expectedCharacterId?: string
+  optimisticCharacterRowEpoch?: number
 }
 
 export interface DeleteChatCommandInput extends ChatCommandInput {
@@ -3061,19 +3071,55 @@ export async function saveChatGenerationSettingsCommand(
   ServerCommandResult<{
     chatId: string
     characterId: string
-    generationSettings: ChatGenerationSettings
+    generationSettings?: ChatGenerationSettings
+    certificate?: string
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+    sidebarTogglePatchedKeys?: string[]
+    sidebarToggleDeletedKeys?: string[]
+    prunedSidebarToggleKeys?: string[]
+    acknowledgedGenerationSettings?: ChatGenerationSettings
   }>
 > {
-  return requestCommandJson(`/chats/${encodeURIComponent(input.chatId)}/generation-settings`, {
+  const body = input.sparseUpdate
+    ? {
+        baseRevision: input.baseRevision,
+        baseGenerationSettingsDigest: await sha256HexUtf8(
+          serializeChatGenerationSettingsDigestInput(input.sparseBaseGenerationSettings),
+        ),
+        patch: input.sparseUpdate.patch,
+        ...(input.sparseUpdate.deleteKeys?.length ? { deleteKeys: input.sparseUpdate.deleteKeys } : {}),
+        ...(input.sparseUpdate.sidebarToggleDeleteKeys?.length
+          ? { sidebarToggleDeleteKeys: input.sparseUpdate.sidebarToggleDeleteKeys }
+          : {}),
+      }
+    : {
+        baseRevision: input.baseRevision,
+        generationSettings: input.generationSettings,
+      }
+  const result = await requestCommandJson<{
+    chatId: string
+    characterId: string
+    generationSettings?: ChatGenerationSettings
+    certificate?: string
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+    sidebarTogglePatchedKeys?: string[]
+    sidebarToggleDeletedKeys?: string[]
+    prunedSidebarToggleKeys?: string[]
+  }>(`/chats/${encodeURIComponent(input.chatId)}/generation-settings`, {
     method: 'PUT',
-    body: {
-      baseRevision: input.baseRevision,
-      generationSettings: input.generationSettings,
-    },
+    body,
     signal,
     keepalive,
-    readLocalEffect: (body) => readChatGenerationSettingsLocalEffect(body, input.generationSettings),
+    readLocalEffect: (responseBody, event) => readChatGenerationSettingsLocalEffect(responseBody, event, input),
   })
+  if (result.status !== 'ok') return result
+  const localEffect = readChatGenerationSettingsLocalEffect(result, result.event, input)
+  return {
+    ...result,
+    acknowledgedGenerationSettings: localEffect ? cloneJsonValue(localEffect.generationSettings) : undefined,
+  }
 }
 
 export async function deleteChatCommand(
@@ -4749,26 +4795,175 @@ async function reconcileServerCommandSuccessEvents(
 
 function readChatGenerationSettingsLocalEffect(
   body: unknown,
-  attemptedGenerationSettings: ChatGenerationSettings,
+  event: CommandEvent | null | undefined,
+  input: SaveChatGenerationSettingsCommandInput,
 ): ChatGenerationSettingsLocalEffect | undefined {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !event || typeof event !== 'object') return undefined
   const record = body as Record<string, unknown>
-  if (typeof record.chatId !== 'string' || record.chatId.trim() === '') return undefined
-  if (typeof record.characterId !== 'string' || record.characterId.trim() === '') return undefined
   if (
-    !record.generationSettings ||
-    typeof record.generationSettings !== 'object' ||
-    Array.isArray(record.generationSettings)
+    record.revision !== event.revision ||
+    record.chatId !== input.chatId ||
+    typeof record.characterId !== 'string' ||
+    record.characterId.trim() === '' ||
+    event.type !== 'chat.updated' ||
+    event.resource !== 'characterRow' ||
+    event.id !== input.chatId ||
+    event.parentId !== record.characterId ||
+    !isChatGenerationSettingsSnapshot(input.generationSettings)
   ) {
     return undefined
   }
+
+  if (input.sparseUpdate) {
+    if (
+      !isProjectionEpoch(input.optimisticCharacterRowEpoch) ||
+      !nonEmptyString(input.expectedCharacterId) ||
+      record.characterId !== input.expectedCharacterId ||
+      (input.sparseBaseGenerationSettings !== null &&
+        !isChatGenerationSettingsSnapshot(input.sparseBaseGenerationSettings)) ||
+      !isSparseChatGenerationSettingsUpdateProof(input.sparseUpdate, input.generationSettings)
+    ) {
+      return undefined
+    }
+  } else if (
+    input.optimisticCharacterRowEpoch !== undefined ||
+    input.expectedCharacterId !== undefined ||
+    input.sparseBaseGenerationSettings !== undefined
+  ) {
+    return undefined
+  }
+
+  let canonicalGenerationSettings: ChatGenerationSettings
+  if (Object.prototype.hasOwnProperty.call(record, 'generationSettings')) {
+    if (!isChatGenerationSettingsSnapshot(record.generationSettings)) return undefined
+    canonicalGenerationSettings = cloneJsonValue(record.generationSettings)
+  } else {
+    if (!input.sparseUpdate || record.certificate !== 'chat-generation-settings-sparse-v1') return undefined
+    if (
+      !isUniqueStringArray(record.patchedKeys) ||
+      !isUniqueStringArray(record.deletedKeys) ||
+      !isUniqueStringArray(record.sidebarTogglePatchedKeys) ||
+      !isUniqueStringArray(record.sidebarToggleDeletedKeys) ||
+      !isUniqueStringArray(record.prunedSidebarToggleKeys) ||
+      !isJsonValueEqual([...record.patchedKeys].sort(), Object.keys(input.sparseUpdate.patch).sort()) ||
+      !isJsonValueEqual([...record.deletedKeys].sort(), [...(input.sparseUpdate.deleteKeys ?? [])].sort()) ||
+      !isJsonValueEqual(
+        [...record.sidebarTogglePatchedKeys].sort(),
+        Object.keys(input.sparseUpdate.patch.sidebarToggles ?? {}).sort(),
+      ) ||
+      !isJsonValueEqual(
+        [...record.sidebarToggleDeletedKeys].sort(),
+        [...(input.sparseUpdate.sidebarToggleDeleteKeys ?? [])].sort(),
+      )
+    ) {
+      return undefined
+    }
+
+    const attemptedToggles = input.generationSettings.sidebarToggles ?? {}
+    if (
+      record.prunedSidebarToggleKeys.some(
+        (key) =>
+          !Object.prototype.hasOwnProperty.call(attemptedToggles, key) ||
+          (input.sparseUpdate?.sidebarToggleDeleteKeys ?? []).includes(key),
+      )
+    ) {
+      return undefined
+    }
+    canonicalGenerationSettings = cloneJsonValue(input.generationSettings)
+    if (canonicalGenerationSettings.sidebarToggles) {
+      for (const key of record.prunedSidebarToggleKeys) delete canonicalGenerationSettings.sidebarToggles[key]
+    }
+    if (!isChatGenerationSettingsSnapshot(canonicalGenerationSettings)) return undefined
+  }
+
   return {
     kind: 'chatGenerationSettings',
     chatId: record.chatId,
     characterId: record.characterId,
-    attemptedGenerationSettings: cloneJsonValue(attemptedGenerationSettings),
-    generationSettings: cloneJsonValue(record.generationSettings as ChatGenerationSettings),
+    attemptedGenerationSettings: cloneJsonValue(input.generationSettings),
+    generationSettings: canonicalGenerationSettings,
+    ...(input.sparseUpdate ? { characterRowProjectionEpoch: input.optimisticCharacterRowEpoch } : {}),
   }
+}
+
+async function sha256HexUtf8(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+const CHAT_GENERATION_SETTINGS_KEY_SET = new Set<string>(CHAT_GENERATION_SETTINGS_KEYS)
+
+function isChatGenerationSettingsSnapshot(value: unknown): value is ChatGenerationSettings {
+  if (!isPlainJsonRecord(value) || !isJsonValue(value)) return false
+  if (Object.keys(value).some((key) => !CHAT_GENERATION_SETTINGS_KEY_SET.has(key))) return false
+  if (typeof value.jailbreakToggle !== 'boolean') return false
+  if (value.configured !== undefined && typeof value.configured !== 'boolean') return false
+  for (const key of ['personaId', 'modelPresetId', 'promptPresetId', 'agentPresetId'] as const) {
+    if (value[key] !== undefined && typeof value[key] !== 'string') return false
+  }
+  if (value.sidebarToggles !== undefined) {
+    if (!isPlainJsonRecord(value.sidebarToggles)) return false
+    if (
+      Object.entries(value.sidebarToggles).some(
+        ([key, toggleValue]) => key.trim() === '' || typeof toggleValue !== 'string',
+      )
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
+function isSparseChatGenerationSettingsUpdateProof(
+  update: SparseChatGenerationSettingsUpdate,
+  attempted: ChatGenerationSettings,
+): boolean {
+  if (!isPlainJsonRecord(update.patch) || !isJsonValue(update.patch)) return false
+  const patchedKeys = Object.keys(update.patch)
+  const deletedKeys = update.deleteKeys ?? []
+  const sidebarToggleDeletedKeys = update.sidebarToggleDeleteKeys ?? []
+  if (
+    patchedKeys.length + deletedKeys.length + sidebarToggleDeletedKeys.length === 0 ||
+    patchedKeys.some((key) => !CHAT_GENERATION_SETTINGS_KEY_SET.has(key)) ||
+    !isUniqueStringArray(deletedKeys) ||
+    deletedKeys.some(
+      (key) =>
+        !CHAT_GENERATION_SETTINGS_KEY_SET.has(key) ||
+        key === 'jailbreakToggle' ||
+        Object.prototype.hasOwnProperty.call(update.patch, key),
+    ) ||
+    !isUniqueStringArray(sidebarToggleDeletedKeys) ||
+    (deletedKeys.includes('sidebarToggles') &&
+      (Object.prototype.hasOwnProperty.call(update.patch, 'sidebarToggles') || sidebarToggleDeletedKeys.length > 0))
+  ) {
+    return false
+  }
+
+  const sidebarPatch = update.patch.sidebarToggles
+  if (sidebarPatch !== undefined) {
+    if (
+      !isPlainJsonRecord(sidebarPatch) ||
+      Object.entries(sidebarPatch).some(
+        ([key, value]) => key.trim() === '' || typeof value !== 'string' || sidebarToggleDeletedKeys.includes(key),
+      )
+    ) {
+      return false
+    }
+  }
+  for (const [key, value] of Object.entries(update.patch)) {
+    if (key === 'sidebarToggles') continue
+    if (!Object.prototype.hasOwnProperty.call(attempted, key) || !isJsonValueEqual(attempted[key], value)) return false
+  }
+  if (deletedKeys.some((key) => Object.prototype.hasOwnProperty.call(attempted, key))) return false
+  for (const [key, value] of Object.entries(sidebarPatch ?? {})) {
+    if (attempted.sidebarToggles?.[key] !== value) return false
+  }
+  if (
+    sidebarToggleDeletedKeys.some((key) => Object.prototype.hasOwnProperty.call(attempted.sidebarToggles ?? {}, key))
+  ) {
+    return false
+  }
+  return true
 }
 
 function readSettingsPatchLocalEffect(

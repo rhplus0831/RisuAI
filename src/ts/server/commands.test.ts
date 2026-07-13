@@ -5489,6 +5489,179 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('sends a sparse generation-settings update and reconstructs its value-free acknowledgement', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const attemptedGenerationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'cold',
+        stale: '1',
+      },
+    }
+    const sparseUpdate = {
+      patch: {
+        promptPresetId: 'preset-b',
+        sidebarToggles: { mode: 'cold' },
+      },
+      deleteKeys: ['agentPresetId'] as const,
+      sidebarToggleDeleteKeys: ['notes'],
+    }
+    const event = {
+      type: 'chat.updated',
+      revision: 8,
+      resource: 'characterRow',
+      id: 'chat-a',
+      parentId: 'char-a',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 8,
+      event,
+      chatId: 'chat-a',
+      characterId: 'char-a',
+      certificate: 'chat-generation-settings-sparse-v1',
+      patchedKeys: ['promptPresetId', 'sidebarToggles'],
+      deletedKeys: ['agentPresetId'],
+      sidebarTogglePatchedKeys: ['mode'],
+      sidebarToggleDeletedKeys: ['notes'],
+      prunedSidebarToggleKeys: ['stale'],
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const result = await saveChatGenerationSettingsCommand({
+      baseRevision: 7,
+      chatId: 'chat-a',
+      generationSettings: attemptedGenerationSettings,
+      sparseUpdate: {
+        patch: sparseUpdate.patch,
+        deleteKeys: [...sparseUpdate.deleteKeys],
+        sidebarToggleDeleteKeys: sparseUpdate.sidebarToggleDeleteKeys,
+      },
+      sparseBaseGenerationSettings: null,
+      expectedCharacterId: 'char-a',
+      optimisticCharacterRowEpoch: 7,
+    })
+
+    expect(result).toMatchObject({
+      status: 'ok',
+      acknowledgedGenerationSettings: {
+        ...attemptedGenerationSettings,
+        sidebarToggles: { mode: 'cold' },
+      },
+    })
+    expect(observedEffects).toEqual([
+      {
+        kind: 'chatGenerationSettings',
+        chatId: 'chat-a',
+        characterId: 'char-a',
+        attemptedGenerationSettings,
+        generationSettings: {
+          ...attemptedGenerationSettings,
+          sidebarToggles: { mode: 'cold' },
+        },
+        characterRowProjectionEpoch: 7,
+      },
+    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      {
+        baseRevision: 7,
+        baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+        patch: sparseUpdate.patch,
+        deleteKeys: ['agentPresetId'],
+        sidebarToggleDeleteKeys: ['notes'],
+      },
+    ])
+  })
+
+  it('withholds sparse generation-settings effects for inexact acknowledgements', async () => {
+    const attemptedGenerationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      promptPresetId: 'preset-b',
+      jailbreakToggle: false,
+      sidebarToggles: { mode: 'cold', stale: '1' },
+    }
+    const sparseUpdate = {
+      patch: {
+        promptPresetId: 'preset-b',
+        sidebarToggles: { mode: 'cold' },
+      },
+      deleteKeys: ['agentPresetId' as const],
+      sidebarToggleDeleteKeys: ['notes'],
+    }
+    const validBody = {
+      revision: 8,
+      event: {
+        type: 'chat.updated',
+        revision: 8,
+        resource: 'characterRow',
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-a',
+      characterId: 'char-a',
+      certificate: 'chat-generation-settings-sparse-v1',
+      patchedKeys: ['promptPresetId', 'sidebarToggles'],
+      deletedKeys: ['agentPresetId'],
+      sidebarTogglePatchedKeys: ['mode'],
+      sidebarToggleDeletedKeys: ['notes'],
+      prunedSidebarToggleKeys: ['stale'],
+    }
+    const malformedBodies = [
+      { ...validBody, patchedKeys: ['promptPresetId'] },
+      { ...validBody, deletedKeys: ['agentPresetId', 'agentPresetId'] },
+      { ...validBody, prunedSidebarToggleKeys: ['missing'] },
+      { ...validBody, certificate: 'chat-generation-settings-sparse-v2' },
+      {
+        ...validBody,
+        event: { ...validBody.event, parentId: 'char-b' },
+      },
+      {
+        ...validBody,
+        characterId: 'char-b',
+        event: { ...validBody.event, parentId: 'char-b' },
+      },
+      {
+        ...validBody,
+        event: undefined,
+      },
+      {
+        ...validBody,
+        patchedKeys: ['unexpected'],
+        acknowledgedGenerationSettings: { jailbreakToggle: true },
+      },
+    ]
+
+    for (const body of malformedBodies) {
+      const observedEffects: unknown[] = []
+      setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+        observedEffects.push(...localEffects.values())
+      })
+      const commandFetch = makeCommandFetch(() => body)
+      vi.stubGlobal('fetch', commandFetch.fetch)
+
+      const result = await saveChatGenerationSettingsCommand({
+        baseRevision: 7,
+        chatId: 'chat-a',
+        generationSettings: attemptedGenerationSettings,
+        sparseUpdate,
+        sparseBaseGenerationSettings: null,
+        expectedCharacterId: 'char-a',
+        optimisticCharacterRowEpoch: 7,
+      })
+
+      expect(result.status).toBe('ok')
+      expect(result).toHaveProperty('acknowledgedGenerationSettings', undefined)
+      expect(observedEffects).toEqual([])
+    }
+  })
+
   it('reports an accepted character-row patch as a local command effect', async () => {
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {

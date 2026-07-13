@@ -9,6 +9,7 @@ import {
   deleteMessageCommand,
   forkChatCommand,
   patchChatScriptstateCommand,
+  peekAppliedServerResourceRevision,
   reorderChatFoldersCommand,
   reorderChatsCommand,
   replaceTailMessagesCommand,
@@ -28,12 +29,14 @@ import {
   type ServerCommandResult,
   type ServerCommandTransportOptions,
 } from './server/commands'
-import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import { withServerResourceApply, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
+  applyCharacterResource,
   captureCharacterRowProjectionEpoch,
   getResourceDatabase as getDatabase,
   hasCharacterRowProjectionEpochChanged,
 } from './server/resourceState.svelte'
+import { fetchServerCharacter } from './server/resourceReads'
 import { isServerChatMessagePlaceholder } from './server/chatMessagePlaceholders'
 import {
   invalidateOptimisticCreatedChatTranscript,
@@ -43,6 +46,7 @@ import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
   captureDestructiveRefreshEpoch,
+  hasDestructiveRefreshEpochChanged,
 } from './server/staleStateGuards'
 import {
   clearPendingChatGenerationSettingsSave,
@@ -50,7 +54,12 @@ import {
 } from './server/chatGenerationSettingsResourceGuard'
 import { reloadGuiDisplay, selectedCharID } from './stores.svelte'
 import type { Chat, ChatFolder, Message, character } from './storage/database.svelte'
-import type { ChatGenerationSettings } from './chatGenerationSettings'
+import {
+  applySparseChatGenerationSettingsUpdate,
+  diffChatGenerationSettings,
+  type ChatGenerationSettings,
+  type SparseChatGenerationSettingsUpdate,
+} from './chatGenerationSettings'
 import { v4 } from 'uuid'
 
 export interface ChatStateSnapshot {
@@ -272,7 +281,21 @@ export interface ChatGenerationSettingsSnapshot {
   attemptedGenerationSettings?: ChatGenerationSettings
 }
 
-const pendingChatGenerationSettingsSaves = new Map<string, Promise<ServerCommandResult | null>>()
+interface PendingChatGenerationSettingsJob {
+  intent: SparseChatGenerationSettingsUpdate
+  originalTarget: ChatGenerationSettings
+  fallbackRollback: ChatGenerationSettingsSnapshot
+  options: ServerCommandTransportOptions
+  pendingSave: ReturnType<typeof registerPendingChatGenerationSettingsSave>
+}
+
+interface PendingChatGenerationSettingsQueue {
+  confirmed: ChatGenerationSettingsSnapshot | null
+  jobs: PendingChatGenerationSettingsJob[]
+  tail: Promise<ServerCommandResult | null>
+}
+
+const pendingChatGenerationSettingsSaves = new Map<string, PendingChatGenerationSettingsQueue>()
 
 export interface MutateChatScopedOptions {
   selectedChar?: number
@@ -388,11 +411,20 @@ export function restoreChatGenerationSettings(snapshot: ChatGenerationSettingsSn
   })
 }
 
-export function waitForPendingChatGenerationSettingsSave(
+export async function waitForPendingChatGenerationSettingsSave(
   chatId: string | undefined,
 ): Promise<ServerCommandResult | null> {
-  if (!chatId) return Promise.resolve(null)
-  return pendingChatGenerationSettingsSaves.get(chatId) ?? Promise.resolve(null)
+  if (!chatId) return null
+  const state = pendingChatGenerationSettingsSaves.get(chatId)
+  if (!state) return null
+
+  let tail = state.tail
+  let result = await tail
+  while (pendingChatGenerationSettingsSaves.get(chatId) === state && state.tail !== tail) {
+    tail = state.tail
+    result = await tail
+  }
+  return result
 }
 
 // Narrow scriptstate rollback. `setVar`/`setChatVar`/`/setvar`/`/addvar` only
@@ -1786,6 +1818,11 @@ export function dispatchSaveChatGenerationSettings(
   const commandSettings = cloneJsonValue(generationSettings)
   const rollbackSnapshot = currentChatGenerationSettingsSnapshot(chatId)
   if (!rollbackSnapshot) return false
+  const intent = diffChatGenerationSettings(
+    rollbackSnapshot.hadGenerationSettings ? rollbackSnapshot.generationSettings : undefined,
+    commandSettings,
+  )
+  if (!intent) return true
   const rollback: ChatGenerationSettingsSnapshot = {
     ...rollbackSnapshot,
     attemptedGenerationSettings: commandSettings,
@@ -1801,45 +1838,247 @@ export function dispatchSaveChatGenerationSettings(
   if (!applied) return false
 
   if (canUseServerCommands()) {
-    const pendingSave = registerPendingChatGenerationSettingsSave(chatId, commandSettings)
-    const savePromise = enqueueChatGenerationSettingsSave(chatId, () =>
-      runServerCommand({
-        command: (baseRevision) =>
-          saveChatGenerationSettingsCommand(
-            {
-              baseRevision,
-              chatId,
-              generationSettings: commandSettings,
-            },
-            options.signal,
-            options.keepalive,
-          ),
-        rollback: () => restoreChatGenerationSettings(rollback),
-        ...options,
-      }),
-    ).finally(() => {
-      clearPendingChatGenerationSettingsSave(pendingSave)
-    })
-    void savePromise
+    let state = pendingChatGenerationSettingsSaves.get(chatId)
+    if (!state) {
+      state = {
+        confirmed: cloneJsonValue(rollbackSnapshot),
+        jobs: [],
+        tail: Promise.resolve(null),
+      }
+      pendingChatGenerationSettingsSaves.set(chatId, state)
+    }
+    const job: PendingChatGenerationSettingsJob = {
+      intent,
+      originalTarget: commandSettings,
+      fallbackRollback: rollback,
+      options,
+      pendingSave: registerPendingChatGenerationSettingsSave(chatId, commandSettings),
+    }
+    state.jobs.push(job)
+    enqueueChatGenerationSettingsSave(chatId, state, job)
   }
   return true
 }
 
 function enqueueChatGenerationSettingsSave(
   chatId: string,
-  run: () => Promise<ServerCommandResult>,
-): Promise<ServerCommandResult | null> {
-  const previous = pendingChatGenerationSettingsSaves.get(chatId) ?? Promise.resolve(null)
-  const next = previous
-    .catch(() => null)
-    .then(() => run())
-    .finally(() => {
-      if (pendingChatGenerationSettingsSaves.get(chatId) === next) {
+  state: PendingChatGenerationSettingsQueue,
+  job: PendingChatGenerationSettingsJob,
+): void {
+  const previous = state.tail
+  const next = previous.catch(() => null).then(() => executeChatGenerationSettingsSave(chatId, state, job))
+  state.tail = next
+  void next.then(
+    () => {
+      if (pendingChatGenerationSettingsSaves.get(chatId) === state && state.tail === next && state.jobs.length === 0) {
         pendingChatGenerationSettingsSaves.delete(chatId)
       }
+    },
+    () => {
+      if (pendingChatGenerationSettingsSaves.get(chatId) === state && state.tail === next && state.jobs.length === 0) {
+        pendingChatGenerationSettingsSaves.delete(chatId)
+      }
+    },
+  )
+}
+
+async function executeChatGenerationSettingsSave(
+  chatId: string,
+  state: PendingChatGenerationSettingsQueue,
+  job: PendingChatGenerationSettingsJob,
+): Promise<ServerCommandResult | null> {
+  const confirmed = state.confirmed ? cloneJsonValue(state.confirmed) : null
+  const confirmedSettings = confirmed?.hadGenerationSettings ? confirmed.generationSettings : undefined
+  const attemptedSettings = confirmed
+    ? applySparseChatGenerationSettingsUpdate(confirmedSettings, job.intent)
+    : cloneJsonValue(job.originalTarget)
+  const sparseUpdate = confirmed ? diffChatGenerationSettings(confirmedSettings, attemptedSettings) : null
+  const rollback = confirmed
+    ? {
+        ...confirmed,
+        attemptedGenerationSettings: cloneJsonValue(attemptedSettings),
+      }
+    : {
+        ...cloneJsonValue(job.fallbackRollback),
+        attemptedGenerationSettings: cloneJsonValue(attemptedSettings),
+      }
+
+  const characterId = rollback.characterId
+  const destructiveRefreshEpoch = captureDestructiveRefreshEpoch()
+  const characterRowProjectionEpoch = characterId ? captureCharacterRowProjectionEpoch(characterId) : null
+  const appliedRevisionBefore = peekAppliedServerResourceRevision()
+  let result: ServerCommandResult | null = null
+  if (sparseUpdate && characterId && characterRowProjectionEpoch !== null) {
+    result = await runServerCommand({
+      command: (baseRevision) =>
+        saveChatGenerationSettingsCommand(
+          {
+            baseRevision,
+            chatId,
+            generationSettings: attemptedSettings,
+            sparseUpdate,
+            sparseBaseGenerationSettings: confirmedSettings ?? null,
+            expectedCharacterId: characterId,
+            optimisticCharacterRowEpoch: characterRowProjectionEpoch,
+          },
+          job.options.signal,
+          job.options.keepalive,
+        ),
+      rollback: () => restoreChatGenerationSettings(rollback),
+      ...job.options,
     })
-  pendingChatGenerationSettingsSaves.set(chatId, next)
-  return next
+  } else if (!confirmed || sparseUpdate) {
+    result = await runServerCommand({
+      command: (baseRevision) =>
+        saveChatGenerationSettingsCommand(
+          {
+            baseRevision,
+            chatId,
+            generationSettings: attemptedSettings,
+          },
+          job.options.signal,
+          job.options.keepalive,
+        ),
+      rollback: () => restoreChatGenerationSettings(rollback),
+      ...job.options,
+    })
+  }
+
+  const head = state.jobs.shift()
+  if (head) clearPendingChatGenerationSettingsSave(head.pendingSave)
+
+  const resultRecord = result?.status === 'ok' ? (result as unknown as Record<string, unknown>) : null
+  const acknowledged = resultRecord?.acknowledgedGenerationSettings
+  const acknowledgementValid = isChatGenerationSettingsValue(acknowledged)
+  const projectionChanged =
+    hasDestructiveRefreshEpochChanged(destructiveRefreshEpoch) ||
+    (characterId !== undefined &&
+      characterRowProjectionEpoch !== null &&
+      hasCharacterRowProjectionEpochChanged(characterId, characterRowProjectionEpoch))
+  const appliedRevision = peekAppliedServerResourceRevision()
+  const acknowledgementWasOvertaken =
+    appliedRevision !== null &&
+    (result?.status === 'ok'
+      ? appliedRevision > result.revision
+      : appliedRevisionBefore === null || appliedRevision > appliedRevisionBefore)
+  if ((result?.status === 'ok' && !acknowledgementValid) || acknowledgementWasOvertaken || projectionChanged) {
+    await reseedChatGenerationSettingsQueue(chatId, characterId, state)
+    return result
+  }
+
+  if (resultRecord && acknowledgementValid) {
+    state.confirmed = {
+      characterId: typeof resultRecord.characterId === 'string' ? resultRecord.characterId : rollback.characterId,
+      chatId,
+      hadGenerationSettings: true,
+      generationSettings: cloneJsonValue(acknowledged),
+    }
+  }
+  projectChatGenerationSettingsQueue(chatId, state)
+  return result
+}
+
+async function reseedChatGenerationSettingsQueue(
+  chatId: string,
+  characterId: string | undefined,
+  state: PendingChatGenerationSettingsQueue,
+): Promise<void> {
+  for (const pending of state.jobs) clearPendingChatGenerationSettingsSave(pending.pendingSave)
+  state.confirmed = null
+  if (!characterId) {
+    restoreUnknownChatGenerationSettingsGuards(chatId, state)
+    return
+  }
+
+  const result = await fetchServerCharacter(characterId)
+  if (result.status !== 'ok') {
+    restoreUnknownChatGenerationSettingsGuards(chatId, state)
+    return
+  }
+  // Jobs can be appended while the recovery read is in flight. Release every
+  // current guard immediately before applying this authoritative row, then
+  // replay all still-pending intents over the freshly read base.
+  for (const pending of state.jobs) clearPendingChatGenerationSettingsSave(pending.pendingSave)
+  if (!withServerResourceApply(() => applyCharacterResource(result))) {
+    restoreUnknownChatGenerationSettingsGuards(chatId, state)
+    return
+  }
+  const authoritative = currentChatGenerationSettingsSnapshot(chatId)
+  if (!authoritative || authoritative.characterId !== characterId) {
+    restoreUnknownChatGenerationSettingsGuards(chatId, state)
+    return
+  }
+  state.confirmed = cloneJsonValue(authoritative)
+  projectChatGenerationSettingsQueue(chatId, state, true)
+}
+
+function restoreUnknownChatGenerationSettingsGuards(chatId: string, state: PendingChatGenerationSettingsQueue): void {
+  const live = currentChatGenerationSettingsSnapshot(chatId)
+  if (!live?.generationSettings) return
+  for (const pending of state.jobs) {
+    clearPendingChatGenerationSettingsSave(pending.pendingSave)
+    pending.pendingSave = registerPendingChatGenerationSettingsSave(chatId, live.generationSettings)
+  }
+}
+
+function projectChatGenerationSettingsQueue(
+  chatId: string,
+  state: PendingChatGenerationSettingsQueue,
+  replaceAllPendingTokens = false,
+): void {
+  if (!state.confirmed) return
+  const projected = projectPendingChatGenerationSettings(state.confirmed, state.jobs)
+  writeChatGenerationSettingsProjection(projected)
+  if (replaceAllPendingTokens) {
+    let settings = state.confirmed.hadGenerationSettings
+      ? cloneJsonValue(state.confirmed.generationSettings)
+      : undefined
+    for (const pending of state.jobs) {
+      settings = applySparseChatGenerationSettingsUpdate(settings, pending.intent)
+      pending.pendingSave = registerPendingChatGenerationSettingsSave(chatId, settings)
+    }
+    return
+  }
+  const latestJob = state.jobs.at(-1)
+  if (latestJob?.pendingSave && projected.generationSettings) {
+    clearPendingChatGenerationSettingsSave(latestJob.pendingSave)
+    latestJob.pendingSave = registerPendingChatGenerationSettingsSave(chatId, projected.generationSettings)
+  }
+}
+
+function projectPendingChatGenerationSettings(
+  confirmed: ChatGenerationSettingsSnapshot,
+  jobs: readonly PendingChatGenerationSettingsJob[],
+): ChatGenerationSettingsSnapshot {
+  let projected = confirmed.hadGenerationSettings ? cloneJsonValue(confirmed.generationSettings) : undefined
+  for (const pending of jobs) projected = applySparseChatGenerationSettingsUpdate(projected, pending.intent)
+  return {
+    characterId: confirmed.characterId,
+    chatId: confirmed.chatId,
+    hadGenerationSettings: jobs.length > 0 || confirmed.hadGenerationSettings,
+    generationSettings: projected,
+  }
+}
+
+function writeChatGenerationSettingsProjection(snapshot: ChatGenerationSettingsSnapshot): void {
+  withTrustedResourceWrite(() => {
+    const location = locateChatById(snapshot.chatId, snapshot.characterId)
+    if (!location) return
+    if (snapshot.hadGenerationSettings) {
+      location.chat.generationSettings = cloneJsonValue(snapshot.generationSettings)
+    } else {
+      delete (location.chat as unknown as Record<string, unknown>).generationSettings
+    }
+  })
+}
+
+function isChatGenerationSettingsValue(value: unknown): value is ChatGenerationSettings {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof (value as Record<string, unknown>).jailbreakToggle === 'boolean'
+  )
 }
 
 export function dispatchCompatibleChatUpdate(

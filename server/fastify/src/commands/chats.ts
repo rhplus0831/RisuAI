@@ -1,14 +1,19 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import {
+  CHAT_GENERATION_SETTINGS_KEYS,
   CHAT_GENERATION_SETTINGS_FIELD,
+  applySparseChatGenerationSettingsUpdate,
   resolveChatGenerationSettingsReadiness,
+  serializeChatGenerationSettingsDigestInput,
   type ChatGenerationAgentPresetReference,
   type ChatGenerationModelPresetReference,
   type ChatGenerationModuleReference,
   type ChatGenerationPersonaReference,
   type ChatGenerationPromptPresetReference,
   type ChatGenerationSettings,
+  type SparseChatGenerationSettingsUpdate,
 } from '../../../../src/ts/chatGenerationSettings.js'
 import { repairStoredChatGenerationSettings } from '../chatGenerationSettingsStorage.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
@@ -72,6 +77,7 @@ const ALLOWED_CHAT_PATCH_KEYS = new Set([
 ])
 
 const ALLOWED_CHAT_FOLDER_PATCH_KEYS = new Set(['name', 'color', 'folded'])
+const ALLOWED_CHAT_GENERATION_SETTINGS_KEYS = new Set<string>(CHAT_GENERATION_SETTINGS_KEYS)
 
 export function ensureCharacterChats(character: CharacterRecord): ChatRecord[] {
   if (!Array.isArray(character.chats)) {
@@ -310,6 +316,155 @@ export function validateChatScriptstateCommand(
       throw new ValidationError(`Duplicate delete key: ${key}`)
     }
     seenDeleteKeys.add(key)
+  }
+}
+
+export type ChatGenerationSettingsWrite =
+  | {
+      mode: 'full'
+      requested: ChatGenerationSettings
+      canonical: ChatGenerationSettings
+    }
+  | {
+      mode: 'sparse'
+      requested: ChatGenerationSettings
+      canonical: ChatGenerationSettings
+      update: SparseChatGenerationSettingsUpdate
+      baseMatches: boolean
+    }
+
+export interface ChatGenerationSettingsSparseReceipt {
+  certificate: 'chat-generation-settings-sparse-v1'
+  patchedKeys: string[]
+  deletedKeys: string[]
+  sidebarTogglePatchedKeys: string[]
+  sidebarToggleDeletedKeys: string[]
+  prunedSidebarToggleKeys: string[]
+}
+
+export function readChatGenerationSettingsWrite(
+  input: unknown,
+  current: ChatGenerationSettings | undefined,
+  context: ChatGenerationSettingsValidationContext,
+): ChatGenerationSettingsWrite {
+  const body = readJsonObject(input, 'body')
+  const hasFullSettings = hasOwn(body, 'generationSettings')
+  const hasSparseFields =
+    hasOwn(body, 'patch') ||
+    hasOwn(body, 'deleteKeys') ||
+    hasOwn(body, 'sidebarToggleDeleteKeys') ||
+    hasOwn(body, 'baseGenerationSettingsDigest')
+  if (hasFullSettings && hasSparseFields) {
+    throw new ValidationError('generationSettings cannot be combined with sparse update fields')
+  }
+
+  if (hasFullSettings) {
+    const canonical = readChatGenerationSettingsSave(body.generationSettings, context)
+    return {
+      mode: 'full',
+      requested: cloneJsonValue(body.generationSettings as ChatGenerationSettings),
+      canonical,
+    }
+  }
+
+  const unsupportedBodyKey = Object.keys(body).find(
+    (key) =>
+      key !== 'baseRevision' &&
+      key !== 'baseGenerationSettingsDigest' &&
+      key !== 'patch' &&
+      key !== 'deleteKeys' &&
+      key !== 'sidebarToggleDeleteKeys',
+  )
+  if (unsupportedBodyKey) {
+    throw new ValidationError(`Unsupported sparse generation settings field: ${unsupportedBodyKey}`)
+  }
+
+  const rawPatch = body.patch === undefined ? {} : readJsonObject(body.patch, 'patch')
+  const patch: Partial<ChatGenerationSettings> = {}
+  for (const [key, value] of Object.entries(rawPatch)) {
+    if (!ALLOWED_CHAT_GENERATION_SETTINGS_KEYS.has(key)) {
+      throw new ValidationError(`generationSettings.${key} is not supported`)
+    }
+    if (key === 'sidebarToggles') {
+      patch.sidebarToggles = readSidebarToggleValueMap(value, 'generationSettings.sidebarToggles')
+    } else {
+      ;(patch as Record<string, unknown>)[key] = cloneJsonValue(value)
+    }
+  }
+
+  const deleteKeys = readUniqueNonEmptyStringList(body.deleteKeys, 'deleteKeys')
+  for (const key of deleteKeys) {
+    if (!ALLOWED_CHAT_GENERATION_SETTINGS_KEYS.has(key)) {
+      throw new ValidationError(`Unsupported generation settings delete key: ${key}`)
+    }
+    if (key === 'jailbreakToggle') {
+      throw new ValidationError('generationSettings.jailbreakToggle cannot be deleted')
+    }
+    if (hasOwn(patch, key)) {
+      throw new ValidationError(`patch and deleteKeys must not overlap: ${key}`)
+    }
+  }
+
+  const sidebarToggleDeleteKeys = readUniqueNonEmptyStringList(body.sidebarToggleDeleteKeys, 'sidebarToggleDeleteKeys')
+  if (
+    deleteKeys.includes('sidebarToggles') &&
+    (hasOwn(patch, 'sidebarToggles') || sidebarToggleDeleteKeys.length > 0)
+  ) {
+    throw new ValidationError('sidebarToggles deletion cannot be combined with nested toggle updates')
+  }
+  for (const key of sidebarToggleDeleteKeys) {
+    if (Object.prototype.hasOwnProperty.call(patch.sidebarToggles ?? {}, key)) {
+      throw new ValidationError(`sidebar toggle patch and delete keys must not overlap: ${key}`)
+    }
+  }
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0 && sidebarToggleDeleteKeys.length === 0) {
+    throw new ValidationError('sparse generation settings update must include at least one field')
+  }
+
+  if (
+    typeof body.baseGenerationSettingsDigest !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(body.baseGenerationSettingsDigest)
+  ) {
+    throw new ValidationError('baseGenerationSettingsDigest must be a SHA-256 hex string')
+  }
+
+  const update: SparseChatGenerationSettingsUpdate = {
+    patch,
+    ...(deleteKeys.length ? { deleteKeys: deleteKeys as SparseChatGenerationSettingsUpdate['deleteKeys'] } : {}),
+    ...(sidebarToggleDeleteKeys.length ? { sidebarToggleDeleteKeys } : {}),
+  }
+  const requested = applySparseChatGenerationSettingsUpdate(current, update)
+  return {
+    mode: 'sparse',
+    requested,
+    canonical: readChatGenerationSettingsSave(requested, context),
+    update,
+    baseMatches:
+      body.baseGenerationSettingsDigest ===
+      createHash('sha256').update(serializeChatGenerationSettingsDigestInput(current), 'utf8').digest('hex'),
+  }
+}
+
+export function buildChatGenerationSettingsSparseReceipt(
+  write: Extract<ChatGenerationSettingsWrite, { mode: 'sparse' }>,
+): ChatGenerationSettingsSparseReceipt | null {
+  if (!write.baseMatches) return null
+  const prunedSidebarToggleKeys = Object.keys(write.requested.sidebarToggles ?? {}).filter(
+    (key) => !Object.prototype.hasOwnProperty.call(write.canonical.sidebarToggles ?? {}, key),
+  )
+  const reconstructed = cloneJsonValue(write.requested)
+  if (reconstructed.sidebarToggles) {
+    for (const key of prunedSidebarToggleKeys) delete reconstructed.sidebarToggles[key]
+  }
+  if (!isDeepStrictEqual(reconstructed, write.canonical)) return null
+
+  return {
+    certificate: 'chat-generation-settings-sparse-v1',
+    patchedKeys: Object.keys(write.update.patch).sort(),
+    deletedKeys: [...(write.update.deleteKeys ?? [])].sort(),
+    sidebarTogglePatchedKeys: Object.keys(write.update.patch.sidebarToggles ?? {}).sort(),
+    sidebarToggleDeletedKeys: [...(write.update.sidebarToggleDeleteKeys ?? [])].sort(),
+    prunedSidebarToggleKeys: prunedSidebarToggleKeys.sort(),
   }
 }
 
@@ -700,6 +855,26 @@ function readSidebarToggleValueMap(value: unknown, label: string): Record<string
     normalized[key] = toggleValue
   }
   return normalized
+}
+
+function readUniqueNonEmptyStringList(value: unknown, label: string): string[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new ValidationError(`${label} must be an array`)
+  const result = value.map((entry, index) => {
+    if (typeof entry !== 'string' || entry.trim() === '') {
+      throw new ValidationError(`${label}[${index}] must be a non-empty string`)
+    }
+    return entry
+  })
+  if (new Set(result).size !== result.length) {
+    throw new ValidationError(`${label} must not contain duplicates`)
+  }
+  return result
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function isJsonRecord(value: unknown): value is JsonRecord {

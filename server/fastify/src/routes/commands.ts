@@ -145,6 +145,7 @@ import {
   validateFullCharacterOrder,
 } from '../commands/characters.js'
 import {
+  buildChatGenerationSettingsSparseReceipt,
   chatFolderIdExists,
   chatIdExists,
   createChatFolderRecord,
@@ -156,6 +157,7 @@ import {
   readChatFolderIdList,
   readChatFolderPatch,
   readChatGenerationSettingsSave,
+  readChatGenerationSettingsWrite,
   readChatId,
   readChatIdList,
   readChatPatch,
@@ -4802,7 +4804,13 @@ export function registerCommandRoutes(
       const result = applyTargetedCommandMutation<{
         chatId: string
         characterId: string
-        generationSettings: ChatGenerationSettings
+        generationSettings?: ChatGenerationSettings
+        certificate?: string
+        patchedKeys?: string[]
+        deletedKeys?: string[]
+        sidebarTogglePatchedKeys?: string[]
+        sidebarToggleDeletedKeys?: string[]
+        prunedSidebarToggleKeys?: string[]
       }>({
         db,
         dataDir,
@@ -4813,20 +4821,25 @@ export function registerCommandRoutes(
           const target = ensureModuleCommandDatabase(database)
           const characters = normalizeAllCharacterChats(target)
           const { character, chat } = requireChatLocation(characters, chatId)
-          chat.generationSettings = readChatGenerationSettingsSave(
-            body.generationSettings,
+          const write = readChatGenerationSettingsWrite(
+            body,
+            chat.generationSettings,
             buildChatGenerationSettingsValidationContext(target, character, chat),
           )
+          chat.generationSettings = write.canonical
           writeSingleChatRow(innerDb, chatId, chat)
+          const sparseReceipt = write.mode === 'sparse' ? buildChatGenerationSettingsSparseReceipt(write) : null
           return {
             event: { ...COMMAND_EVENT_CATALOG.chatUpdated, id: chatId, parentId: character.chaId },
             extra: {
               chatId,
               characterId: character.chaId,
-              // Return the value that was actually persisted. Validation can
-              // prune stale sidebar-toggle keys, so echoing the request would
-              // not be an authoritative command acknowledgement.
-              generationSettings: chat.generationSettings,
+              // Legacy full writes keep their authoritative response shape.
+              // Sparse writes prove exact application with value-free key lists;
+              // an unrepresentable future normalization falls back to the full value.
+              ...(write.mode === 'full' || !sparseReceipt
+                ? { generationSettings: chat.generationSettings }
+                : sparseReceipt),
             },
           }
         },

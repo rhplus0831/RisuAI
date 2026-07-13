@@ -16,6 +16,135 @@ export interface ChatGenerationSettings {
   sidebarToggles?: Record<string, string>
 }
 
+export const CHAT_GENERATION_SETTINGS_KEYS = [
+  'configured',
+  'personaId',
+  'modelPresetId',
+  'promptPresetId',
+  'agentPresetId',
+  'jailbreakToggle',
+  'sidebarToggles',
+] as const
+
+export type ChatGenerationSettingsKey = (typeof CHAT_GENERATION_SETTINGS_KEYS)[number]
+
+export interface SparseChatGenerationSettingsUpdate {
+  patch: Partial<ChatGenerationSettings>
+  deleteKeys?: ChatGenerationSettingsKey[]
+  sidebarToggleDeleteKeys?: string[]
+}
+
+export function serializeChatGenerationSettingsDigestInput(
+  settings: ChatGenerationSettings | null | undefined,
+): string {
+  if (settings == null) return 'chat-generation-settings-base-v1:null'
+  const normalized: Record<string, unknown> = {}
+  for (const key of CHAT_GENERATION_SETTINGS_KEYS) {
+    const value = settings[key]
+    if (value === undefined) continue
+    if (key === 'sidebarToggles') {
+      normalized.sidebarToggles = Object.fromEntries(
+        Object.entries(value as Record<string, string>).sort(([left], [right]) =>
+          left < right ? -1 : left > right ? 1 : 0,
+        ),
+      )
+    } else {
+      normalized[key] = value
+    }
+  }
+  return `chat-generation-settings-base-v1:${JSON.stringify(normalized)}`
+}
+
+const CHAT_GENERATION_SETTINGS_SCALAR_KEYS = CHAT_GENERATION_SETTINGS_KEYS.filter(
+  (key): key is Exclude<ChatGenerationSettingsKey, 'sidebarToggles'> => key !== 'sidebarToggles',
+)
+
+export function diffChatGenerationSettings(
+  previous: ChatGenerationSettings | undefined,
+  attempted: ChatGenerationSettings,
+): SparseChatGenerationSettingsUpdate | null {
+  const patch: Partial<ChatGenerationSettings> = {}
+  const deleteKeys: ChatGenerationSettingsKey[] = []
+  const before = previous ?? {}
+
+  for (const key of CHAT_GENERATION_SETTINGS_SCALAR_KEYS) {
+    const previousPresent = hasDefinedOwn(before, key)
+    const attemptedPresent = hasDefinedOwn(attempted, key)
+    if (!attemptedPresent) {
+      if (previousPresent) deleteKeys.push(key)
+      continue
+    }
+    if (!previousPresent || !isJsonValueEqual(before[key], attempted[key])) {
+      ;(patch as Record<string, unknown>)[key] = cloneJsonValue(attempted[key])
+    }
+  }
+
+  const previousHasToggles = hasDefinedOwn(before, 'sidebarToggles')
+  const attemptedHasToggles = hasDefinedOwn(attempted, 'sidebarToggles')
+  const sidebarToggleDeleteKeys: string[] = []
+  if (!attemptedHasToggles) {
+    if (previousHasToggles) deleteKeys.push('sidebarToggles')
+  } else {
+    const previousToggles = previousHasToggles ? (before.sidebarToggles ?? {}) : {}
+    const attemptedToggles = attempted.sidebarToggles ?? {}
+    const sidebarPatch: Record<string, string> = {}
+    for (const key of new Set([...Object.keys(previousToggles), ...Object.keys(attemptedToggles)])) {
+      if (!Object.prototype.hasOwnProperty.call(attemptedToggles, key)) {
+        sidebarToggleDeleteKeys.push(key)
+      } else if (
+        !Object.prototype.hasOwnProperty.call(previousToggles, key) ||
+        previousToggles[key] !== attemptedToggles[key]
+      ) {
+        sidebarPatch[key] = attemptedToggles[key]
+      }
+    }
+    if (!previousHasToggles || Object.keys(sidebarPatch).length > 0) patch.sidebarToggles = sidebarPatch
+  }
+
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0 && sidebarToggleDeleteKeys.length === 0) return null
+  return {
+    patch,
+    ...(deleteKeys.length ? { deleteKeys: deleteKeys.sort() } : {}),
+    ...(sidebarToggleDeleteKeys.length ? { sidebarToggleDeleteKeys: sidebarToggleDeleteKeys.sort() } : {}),
+  }
+}
+
+export function applySparseChatGenerationSettingsUpdate(
+  current: ChatGenerationSettings | undefined,
+  update: SparseChatGenerationSettingsUpdate,
+): ChatGenerationSettings {
+  const next = cloneJsonValue(current ?? {})
+  for (const [key, value] of Object.entries(update.patch)) {
+    if (key === 'sidebarToggles') continue
+    ;(next as Record<string, unknown>)[key] = cloneJsonValue(value)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(update.patch, 'sidebarToggles')) {
+    next.sidebarToggles = {
+      ...(next.sidebarToggles ?? {}),
+      ...cloneJsonValue(update.patch.sidebarToggles ?? {}),
+    }
+  }
+  if (next.sidebarToggles) {
+    for (const key of update.sidebarToggleDeleteKeys ?? []) delete next.sidebarToggles[key]
+  }
+  for (const key of update.deleteKeys ?? []) delete next[key]
+  return next
+}
+
+function hasDefinedOwn(value: object, key: PropertyKey): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key) && (value as Record<PropertyKey, unknown>)[key] !== undefined
+}
+
+function cloneJsonValue<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isJsonValueEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
+}
+
 export interface ChatGenerationPersonaReference {
   id?: string | null
 }

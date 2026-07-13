@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import type { FastifyInstance } from 'fastify'
@@ -8,6 +9,7 @@ import { buildApp } from '../src/app.js'
 import { setupAuthedClient } from './helpers/auth.js'
 import { assertCommandMetricGate, type CommandMutationMetric } from './helpers/commandMetricGates.js'
 import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
+import { serializeChatGenerationSettingsDigestInput } from '../../../src/ts/chatGenerationSettings.js'
 
 // Single character-row / single chat-row regression. Character/chat metadata
 // edits write only their target row plus documented conditional co-writes instead
@@ -18,6 +20,10 @@ import { assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.j
 interface Harness {
   app: FastifyInstance
   dataDir: string
+}
+
+function chatGenerationSettingsDigest(settings: Parameters<typeof serializeChatGenerationSettingsDigestInput>[0]) {
+  return createHash('sha256').update(serializeChatGenerationSettingsDigestInput(settings), 'utf8').digest('hex')
 }
 
 const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
@@ -469,6 +475,44 @@ describe('Phase 3 single chat-row paths', () => {
       jailbreakToggle: false,
       sidebarToggles: {},
     })
+  })
+
+  it('sparse PUT chats/:id/generation-settings still writes only the chat row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+    const generationSettings = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    const { metric, body } = await runCommand({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a-1/generation-settings',
+      payload: {
+        baseRevision: revision,
+        baseGenerationSettingsDigest: chatGenerationSettingsDigest(null),
+        patch: generationSettings,
+      },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-chat-row')
+    expect(metric.writtenTables).toEqual(['chats'])
+    assertCommandMetricGate(metric)
+    expectNoChurn(before)
+    expect(body).toMatchObject({
+      certificate: 'chat-generation-settings-sparse-v1',
+      patchedKeys: ['configured', 'jailbreakToggle', 'modelPresetId', 'personaId', 'promptPresetId', 'sidebarToggles'],
+      deletedKeys: [],
+      sidebarTogglePatchedKeys: [],
+      sidebarToggleDeletedKeys: [],
+      prunedSidebarToggleKeys: [],
+    })
+    expect(body).not.toHaveProperty('generationSettings')
+    expect(readChat('chat-a-1').generationSettings).toEqual(generationSettings)
   })
 
   it('PATCH chats/:id with select:true co-writes the parent character row', async () => {

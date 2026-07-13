@@ -13,7 +13,9 @@ vi.mock('./storage/fastifyStorage', () => ({
 }))
 
 import {
+  clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
+  setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type ChatFolderSnapshot,
@@ -217,6 +219,7 @@ function stubCommandFetch(): CapturedFetch[] {
         })
       }
       if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
         return jsonResponse({
           revision: 19,
           event: {
@@ -224,8 +227,16 @@ function stubCommandFetch(): CapturedFetch[] {
             revision: 19,
             resource: 'characterRow',
             id: 'chat-a',
+            parentId: 'char-a',
           },
           chatId: 'chat-a',
+          characterId: 'char-a',
+          certificate: 'chat-generation-settings-sparse-v1',
+          patchedKeys: Object.keys(body.patch ?? {}).sort(),
+          deletedKeys: [...(body.deleteKeys ?? [])].sort(),
+          sidebarTogglePatchedKeys: Object.keys(body.patch?.sidebarToggles ?? {}).sort(),
+          sidebarToggleDeletedKeys: [...(body.sidebarToggleDeleteKeys ?? [])].sort(),
+          prunedSidebarToggleKeys: [],
         })
       }
       if (url === '/api/v1/commands/chats/chat-a/messages') {
@@ -310,7 +321,10 @@ function stubControlledChatGenerationSettingsFetch(): {
   return { calls, firstResponse, secondResponse }
 }
 
-function successfulChatGenerationSettingsResponse(revision: number): Response {
+function successfulChatGenerationSettingsResponse(
+  revision: number,
+  generationSettings: Record<string, unknown>,
+): Response {
   return jsonResponse({
     revision,
     event: {
@@ -318,8 +332,11 @@ function successfulChatGenerationSettingsResponse(revision: number): Response {
       revision,
       resource: 'characterRow',
       id: 'chat-a',
+      parentId: 'char-a',
     },
     chatId: 'chat-a',
+    characterId: 'char-a',
+    generationSettings,
   })
 }
 
@@ -547,6 +564,7 @@ function seedReadyActiveChatGenerationSettings(): void {
 }
 
 beforeEach(() => {
+  clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   selectedCharID.set(0)
@@ -576,6 +594,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  clearAppliedServerResourceRevision()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
@@ -1731,7 +1750,8 @@ describe('chat command projection helpers', () => {
         authHeader: 'chat-command-token',
         body: {
           baseRevision: 10,
-          generationSettings,
+          baseGenerationSettingsDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
+          patch: generationSettings,
         },
       },
     ])
@@ -1798,6 +1818,68 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats[1].name).toBe('Concurrent sibling edit')
   })
 
+  it('does not overwrite a destructive refresh after a pending save fails', async () => {
+    const calls: CapturedFetch[] = []
+    const commandResponse = createDeferred<Response>()
+    const refreshedSettings = {
+      configured: true,
+      personaId: 'persona-from-refresh',
+      jailbreakToggle: false,
+      sidebarToggles: { refreshed: '1' },
+    }
+    const refreshedCharacter = {
+      chaId: 'char-a',
+      name: 'Refreshed Character',
+      chatPage: 0,
+      chats: [
+        {
+          id: 'chat-a',
+          name: 'Chat A',
+          folderId: null,
+          message: [],
+          generationSettings: refreshedSettings,
+        },
+      ],
+      chatFolders: [],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        const headers = init.headers as Record<string, string> | undefined
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') return commandResponse.promise
+        if (url === '/api/v1/characters/char-a') {
+          return jsonResponse({ revision: 10, character: refreshedCharacter })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setResourceWriteGuardEnabled(true)
+
+    expect(
+      dispatchSaveChatGenerationSettings('chat-a', {
+        configured: true,
+        personaId: 'persona-attempted',
+        jailbreakToggle: true,
+        sidebarToggles: {},
+      }),
+    ).toBe(true)
+    await waitForCallCount(calls, 2)
+    setDatabaseLite({ characters: [refreshedCharacter] } as any)
+    commandResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+
+    expect(calls.some((call) => call.url === '/api/v1/characters/char-a')).toBe(true)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(refreshedSettings)
+  })
+
   it('keeps newer generation settings through an older successful character-row projection', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
     setResourceWriteGuardEnabled(true)
@@ -1846,7 +1928,7 @@ describe('chat command projection helpers', () => {
     expect(dispatchSaveChatGenerationSettings('chat-a', generationSettingsB)).toBe(true)
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
 
-    firstResponse.resolve(successfulChatGenerationSettingsResponse(11))
+    firstResponse.resolve(successfulChatGenerationSettingsResponse(11, generationSettingsA))
     await waitForCallCount(calls, 3)
 
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
@@ -1855,20 +1937,154 @@ describe('chat command projection helpers', () => {
       method: 'PUT',
       body: {
         baseRevision: 11,
-        generationSettings: generationSettingsB,
+        patch: {
+          sidebarToggles: { notes: 'ab' },
+        },
       },
     })
 
-    secondResponse.resolve(successfulChatGenerationSettingsResponse(12))
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(12, generationSettingsB))
     await waitForPendingChatGenerationSettingsSave('chat-a')
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
+  })
+
+  it('does not project a sparse acknowledgement overtaken by a newer full write', async () => {
+    const calls: CapturedFetch[] = []
+    const sparseResponse = createDeferred<Response>()
+    const sparseTarget = {
+      configured: true,
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'sparse' },
+    }
+    const newerFullTarget = {
+      ...sparseTarget,
+      agentPresetId: 'agent-from-newer-full-write',
+      sidebarToggles: { notes: 'sparse', moduleDefault: '1' },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        const headers = init.headers as Record<string, string> | undefined
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') return sparseResponse.promise
+        if (url === '/api/v1/characters/char-a') {
+          return jsonResponse({
+            revision: 12,
+            character: {
+              chaId: 'char-a',
+              name: 'Character',
+              chatPage: 0,
+              chats: [
+                {
+                  id: 'chat-a',
+                  name: 'Chat A',
+                  folderId: null,
+                  message: [],
+                  generationSettings: newerFullTarget,
+                },
+                { id: 'chat-b', name: 'Chat B', folderId: 'folder-a', message: [] },
+              ],
+              chatFolders: [{ id: 'folder-a', name: 'Folder', folded: false }],
+            },
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setServerCommandSuccessReconciler(() => {
+      // Simulate a later full generation-settings command that joined the
+      // active global batch before the sparse command promise resumed.
+      setAppliedServerResourceRevision(12)
+    })
+    setResourceWriteGuardEnabled(true)
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', sparseTarget)).toBe(true)
+    await waitForCallCount(calls, 2)
+    sparseResponse.resolve(successfulChatGenerationSettingsResponse(11, sparseTarget))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+
+    expect(calls.some((call) => call.url === '/api/v1/characters/char-a')).toBe(true)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(newerFullTarget)
+  })
+
+  it('does not project a stale rollback when a failed sparse save is overtaken by a full write', async () => {
+    const calls: CapturedFetch[] = []
+    const sparseResponse = createDeferred<Response>()
+    const newerFullTarget = {
+      configured: true,
+      personaId: 'persona-from-newer-full-write',
+      jailbreakToggle: false,
+      sidebarToggles: { moduleDefault: '1' },
+    }
+    const newerCharacter = {
+      chaId: 'char-a',
+      name: 'Character',
+      chatPage: 0,
+      chats: [
+        {
+          id: 'chat-a',
+          name: 'Chat A',
+          folderId: null,
+          message: [],
+          generationSettings: newerFullTarget,
+        },
+      ],
+      chatFolders: [],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(requestInput)
+        const headers = init.headers as Record<string, string> | undefined
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/chats/chat-a/generation-settings') return sparseResponse.promise
+        if (url === '/api/v1/characters/char-a') {
+          return jsonResponse({ revision: 12, character: newerCharacter })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    setResourceWriteGuardEnabled(true)
+
+    expect(
+      dispatchSaveChatGenerationSettings('chat-a', {
+        configured: true,
+        personaId: 'persona-attempted',
+        jailbreakToggle: true,
+        sidebarToggles: {},
+      }),
+    ).toBe(true)
+    await waitForCallCount(calls, 2)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(newerFullTarget)
+    })
+    setAppliedServerResourceRevision(12)
+    sparseResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+
+    expect(calls.some((call) => call.url === '/api/v1/characters/char-a')).toBe(true)
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(newerFullTarget)
   })
 
   it('preserves a newer generation settings save when an older save fails from no initial settings', async () => {
     const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
     setResourceWriteGuardEnabled(true)
     const generationSettingsA = {
-      configured: true,
+      configured: false,
       personaId: 'persona-a',
       modelPresetId: 'model-preset-a',
       promptPresetId: 'preset-a',
@@ -1897,7 +2113,7 @@ describe('chat command projection helpers', () => {
       method: 'PUT',
       body: {
         baseRevision: 10,
-        generationSettings: generationSettingsA,
+        patch: generationSettingsA,
       },
     })
 
@@ -1913,11 +2129,11 @@ describe('chat command projection helpers', () => {
       method: 'PUT',
       body: {
         baseRevision: 10,
-        generationSettings: generationSettingsB,
+        patch: generationSettingsB,
       },
     })
 
-    secondResponse.resolve(successfulChatGenerationSettingsResponse(11))
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(11, generationSettingsB))
     await waitForPendingChatGenerationSettingsSave('chat-a')
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
   })
@@ -1973,14 +2189,112 @@ describe('chat command projection helpers', () => {
       method: 'PUT',
       body: {
         baseRevision: 10,
-        generationSettings: generationSettingsB,
+        patch: {
+          personaId: 'persona-b',
+          modelPresetId: 'model-preset-b',
+          promptPresetId: 'preset-b',
+          sidebarToggles: { mode: 'b' },
+        },
       },
     })
-    secondResponse.resolve(successfulChatGenerationSettingsResponse(11))
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(11, generationSettingsB))
     await waitForPendingChatGenerationSettingsSave('chat-a')
 
     expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(generationSettingsB)
     expect(getDatabase().characters[0].chats[0].generationSettings).not.toEqual(initialGenerationSettings)
+  })
+
+  it('drops only a failed older field intent before sending a disjoint queued edit', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      modelPresetId: 'model-preset-a',
+      promptPresetId: 'preset-a',
+      jailbreakToggle: false,
+      sidebarToggles: { notes: 'initial' },
+    }
+    const firstTarget = { ...initial, personaId: 'persona-a' }
+    const secondTarget = {
+      ...firstTarget,
+      sidebarToggles: { notes: 'queued' },
+    }
+    const canonicalSecond = {
+      ...initial,
+      sidebarToggles: { notes: 'queued' },
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+    await waitForCallCount(calls, 2)
+    expect(dispatchSaveChatGenerationSettings('chat-a', secondTarget)).toBe(true)
+
+    firstResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForCallCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      body: {
+        baseRevision: 10,
+        patch: { sidebarToggles: { notes: 'queued' } },
+      },
+    })
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(canonicalSecond)
+
+    secondResponse.resolve(successfulChatGenerationSettingsResponse(11, canonicalSecond))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(canonicalSecond)
+  })
+
+  it('keeps an accepted value when a newer queued edit to the same field fails', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    const firstTarget = { ...initial, personaId: 'persona-a' }
+    const secondTarget = { ...initial, personaId: 'persona-b' }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', firstTarget)).toBe(true)
+    await waitForCallCount(calls, 2)
+    expect(dispatchSaveChatGenerationSettings('chat-a', secondTarget)).toBe(true)
+    firstResponse.resolve(successfulChatGenerationSettingsResponse(11, firstTarget))
+    await waitForCallCount(calls, 3)
+
+    secondResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(firstTarget)
+  })
+
+  it('restores the original value when overlapping queued edits both fail', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledChatGenerationSettingsFetch()
+    setResourceWriteGuardEnabled(true)
+    const initial = {
+      configured: true,
+      personaId: 'persona-initial',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].generationSettings = jsonClone(initial)
+    })
+
+    expect(dispatchSaveChatGenerationSettings('chat-a', { ...initial, personaId: 'persona-a' })).toBe(true)
+    await waitForCallCount(calls, 2)
+    expect(dispatchSaveChatGenerationSettings('chat-a', { ...initial, personaId: 'persona-b' })).toBe(true)
+    firstResponse.resolve(jsonResponse({ error: 'nope' }, 500))
+    await waitForCallCount(calls, 3)
+    secondResponse.resolve(jsonResponse({ error: 'still nope' }, 500))
+
+    await waitForPendingChatGenerationSettingsSave('chat-a')
+    expect(getDatabase().characters[0].chats[0].generationSettings).toEqual(initial)
   })
 
   it('sets DevTool-style scriptstate values through the chat scriptstate command helper', async () => {

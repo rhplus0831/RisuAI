@@ -581,7 +581,18 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
     case 'translatorPresetPatch':
       return applyTranslatorPresetPatchAcknowledgement(event, localEffect)
     case 'chatGenerationSettings':
-      if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
+      if (
+        event.type !== 'chat.updated' ||
+        event.resource !== 'characterRow' ||
+        event.id !== localEffect.chatId ||
+        event.parentId !== localEffect.characterId ||
+        (localEffect.characterRowProjectionEpoch !== undefined &&
+          (!Number.isInteger(localEffect.characterRowProjectionEpoch) ||
+            localEffect.characterRowProjectionEpoch < 0 ||
+            hasCharacterRowProjectionEpochChanged(localEffect.characterId, localEffect.characterRowProjectionEpoch)))
+      ) {
+        return false
+      }
       return withServerResourceApply(() =>
         applyChatGenerationSettingsLocalEffect({
           revision: event.revision,

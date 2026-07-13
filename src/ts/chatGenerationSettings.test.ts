@@ -3,11 +3,14 @@ import {
   CHAT_GENERATION_SETTINGS_INCOMPLETE_ERROR,
   CHAT_GENERATION_SETTINGS_INCOMPLETE_MESSAGE,
   CHAT_GENERATION_SETTINGS_INCOMPLETE_STATUS,
+  applySparseChatGenerationSettingsUpdate,
   createChatGenerationSettingsIncompleteError,
+  diffChatGenerationSettings,
   resolveChatGenerationControlRequirements,
   resolveDisplayedSidebarToggles,
   resolveChatGenerationSettingsReadiness,
   resolveRequiredSidebarToggles,
+  serializeChatGenerationSettingsDigestInput,
   type ChatGenerationPromptPresetReference,
   type ResolveChatGenerationSettingsReadinessInput,
 } from './chatGenerationSettings'
@@ -27,6 +30,91 @@ function readinessInput(
 }
 
 describe('chat generation settings contract', () => {
+  it('diffs and reapplies scalar, optional, and nested toggle changes', () => {
+    const previous = {
+      configured: true,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-a',
+      agentPresetId: 'agent-a',
+      jailbreakToggle: false,
+      sidebarToggles: {
+        mode: 'warm',
+        notes: 'old',
+        removed: '1',
+      },
+    }
+    const attempted = {
+      ...previous,
+      promptPresetId: 'prompt-b',
+      jailbreakToggle: true,
+      sidebarToggles: {
+        mode: 'cold',
+        notes: 'old',
+        added: '',
+      },
+    }
+    delete (attempted as Partial<typeof attempted>).agentPresetId
+
+    const update = diffChatGenerationSettings(previous, attempted)
+
+    expect(update).toEqual({
+      patch: {
+        promptPresetId: 'prompt-b',
+        jailbreakToggle: true,
+        sidebarToggles: {
+          mode: 'cold',
+          added: '',
+        },
+      },
+      deleteKeys: ['agentPresetId'],
+      sidebarToggleDeleteKeys: ['removed'],
+    })
+    expect(applySparseChatGenerationSettingsUpdate(previous, update!)).toEqual(attempted)
+  })
+
+  it('represents whole toggle-map deletion without sending its previous values', () => {
+    const previous = {
+      jailbreakToggle: false,
+      sidebarToggles: { mode: 'warm', notes: 'large text' },
+    }
+    const attempted = { jailbreakToggle: false }
+
+    expect(diffChatGenerationSettings(previous, attempted)).toEqual({
+      patch: {},
+      deleteKeys: ['sidebarToggles'],
+    })
+  })
+
+  it('sends the complete value only when no prior settings exist', () => {
+    const attempted = {
+      configured: true,
+      personaId: 'persona-a',
+      jailbreakToggle: false,
+      sidebarToggles: {},
+    }
+
+    expect(diffChatGenerationSettings(undefined, attempted)).toEqual({ patch: attempted })
+    expect(diffChatGenerationSettings(attempted, attempted)).toBeNull()
+  })
+
+  it('serializes digest inputs independently of object and toggle insertion order', () => {
+    expect(
+      serializeChatGenerationSettingsDigestInput({
+        sidebarToggles: { z: 'last', a: 'first' },
+        jailbreakToggle: false,
+        configured: true,
+      }),
+    ).toBe(
+      serializeChatGenerationSettingsDigestInput({
+        configured: true,
+        jailbreakToggle: false,
+        sidebarToggles: { a: 'first', z: 'last' },
+      }),
+    )
+    expect(serializeChatGenerationSettingsDigestInput(null)).not.toBe(serializeChatGenerationSettingsDigestInput({}))
+  })
+
   it('resolves displayed preset toggles from the selected promptPresetId', () => {
     const promptPresets: ChatGenerationPromptPresetReference[] = [
       {

@@ -4,7 +4,7 @@ import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { webcrypto } from 'node:crypto'
+import { createHash, webcrypto } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -16,9 +16,17 @@ import { loadPersisted, writePersistedWithMessages, insertAssetMetadataBatch } f
 import { activeMessageRowids, assertOnlyRowsWritten, tableRowidsById } from './helpers/rowStability.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 import { LLMFlags, LLMFormat } from '../../../src/ts/model/types.js'
+import {
+  serializeChatGenerationSettingsDigestInput,
+  type ChatGenerationSettings,
+} from '../../../src/ts/chatGenerationSettings.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
+
+function chatGenerationSettingsDigest(settings: ChatGenerationSettings | null | undefined): string {
+  return createHash('sha256').update(serializeChatGenerationSettingsDigestInput(settings), 'utf8').digest('hex')
+}
 
 interface Harness {
   app: FastifyInstance
@@ -7223,6 +7231,214 @@ describe('Phase 9-3b chat record and folder commands', () => {
         integrated: '',
       },
     })
+  })
+
+  it('patches chat generation settings sparsely and returns only an exact application certificate', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [{ id: 'agent-preset-a', name: 'Agent Preset A', enabled: true, version: 1, steps: [] }],
+      modelPresets: [{ id: 'model-a', name: 'Model A' }],
+      promptPresets: [
+        {
+          id: 'prompt-a',
+          name: 'Prompt A',
+          customPromptTemplateToggle: 'mode=Mode\nnotes=Notes=text',
+        },
+        {
+          id: 'prompt-b',
+          name: 'Prompt B',
+          customPromptTemplateToggle: 'mode=Mode',
+        },
+      ],
+      personas: [{ id: 'persona-a', name: 'Persona A', icon: '', personaPrompt: '', note: '' }],
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-a',
+                modelPresetId: 'model-a',
+                promptPresetId: 'prompt-a',
+                agentPresetId: 'agent-preset-a',
+                jailbreakToggle: false,
+                sidebarToggles: { mode: 'warm', notes: 'keep me' },
+              },
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const saved = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        baseGenerationSettingsDigest: chatGenerationSettingsDigest({
+          configured: false,
+          personaId: 'persona-a',
+          modelPresetId: 'model-a',
+          promptPresetId: 'prompt-a',
+          agentPresetId: 'agent-preset-a',
+          jailbreakToggle: false,
+          sidebarToggles: { mode: 'warm', notes: 'keep me' },
+        }),
+        patch: {
+          promptPresetId: 'prompt-b',
+          sidebarToggles: { mode: 'cold', stale: '1' },
+        },
+        deleteKeys: ['agentPresetId'],
+        sidebarToggleDeleteKeys: ['notes'],
+      },
+    })
+
+    expect(saved.statusCode).toBe(200)
+    expect(saved.json()).toEqual({
+      revision: revision + 1,
+      event: {
+        type: 'chat.updated',
+        resource: 'characterRow',
+        revision: revision + 1,
+        id: 'chat-a',
+        parentId: 'char-a',
+      },
+      chatId: 'chat-a',
+      characterId: 'char-a',
+      certificate: 'chat-generation-settings-sparse-v1',
+      patchedKeys: ['promptPresetId', 'sidebarToggles'],
+      deletedKeys: ['agentPresetId'],
+      sidebarTogglePatchedKeys: ['mode', 'stale'],
+      sidebarToggleDeletedKeys: ['notes'],
+      prunedSidebarToggleKeys: ['stale'],
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.characters[0].chats[0].generationSettings).toEqual({
+      configured: false,
+      personaId: 'persona-a',
+      modelPresetId: 'model-a',
+      promptPresetId: 'prompt-b',
+      jailbreakToggle: false,
+      sidebarToggles: { mode: 'cold' },
+    })
+
+    const staleBase = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 1,
+        baseGenerationSettingsDigest: '0'.repeat(64),
+        patch: { configured: true },
+      },
+    })
+    expect(staleBase.statusCode).toBe(200)
+    expect(staleBase.json()).toMatchObject({
+      revision: revision + 2,
+      generationSettings: {
+        configured: true,
+        personaId: 'persona-a',
+        modelPresetId: 'model-a',
+        promptPresetId: 'prompt-b',
+        jailbreakToggle: false,
+        sidebarToggles: { mode: 'cold' },
+      },
+    })
+    expect(staleBase.json()).not.toHaveProperty('certificate')
+  })
+
+  it('rejects ambiguous sparse generation-settings updates without advancing the revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const initialSettings = {
+      configured: false,
+      jailbreakToggle: false,
+      sidebarToggles: { mode: 'warm', notes: 'old' },
+    }
+    const revision = await importDatabase(harness.app, assertion, {
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              generationSettings: initialSettings,
+            },
+          ],
+          chatFolders: [],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const invalidPayloads = [
+      { generationSettings: initialSettings, patch: { configured: false } },
+      {},
+      { patch: { unknown: true } },
+      { patch: {}, deleteKeys: ['configured', 'configured'] },
+      { patch: { configured: false }, deleteKeys: ['configured'] },
+      { patch: {}, deleteKeys: ['jailbreakToggle'] },
+      {
+        patch: { sidebarToggles: { mode: 'cold' } },
+        deleteKeys: ['sidebarToggles'],
+      },
+      {
+        patch: { sidebarToggles: { mode: 'cold' } },
+        sidebarToggleDeleteKeys: ['mode'],
+      },
+      { patch: { configured: false }, unexpected: true },
+    ]
+
+    for (const payload of invalidPayloads) {
+      const response = await harness.app.inject({
+        method: 'PUT',
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        headers: { 'risu-auth': assertion },
+        payload: { baseRevision: revision, ...payload },
+      })
+      expect(response.statusCode, JSON.stringify(response.json())).toBe(400)
+    }
+
+    const unchanged = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(unchanged.json().revision).toBe(revision)
+    expect(unchanged.json().database.characters[0].chats[0].generationSettings).toEqual(initialSettings)
+
+    const valid = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a/generation-settings',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        baseGenerationSettingsDigest: chatGenerationSettingsDigest(initialSettings),
+        patch: { configured: false },
+      },
+    })
+    expect(valid.statusCode).toBe(200)
+    expect(valid.json().revision).toBe(revision + 1)
   })
 
   it('rejects invalid chat generation settings without bumping revision', async () => {
