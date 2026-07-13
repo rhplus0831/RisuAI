@@ -4,12 +4,14 @@
  * POSTs an intent body, authenticates with the `risu-auth` header, and
  * stream-parses the SSE response. Unlike `/completion` (which dispatches an
  * already-assembled prompt to a provider), `/chat` performs server-side prompt
- * assembly and streams back the assembled `prompt` payload plus `info` telemetry.
+ * assembly and streams back prompt metadata plus `info` telemetry. Preview
+ * requests still receive the assembled rows they render.
  *
  * This adapter consumes `stage` / `prompt` / `message_patch` / `info` /
  * `error` / `done`. Token / side-effect / warning events are tolerated for
- * generation streams. The `prompt` event carries full `formated` rows and
- * `biases`, so previews and the send path can use the server payload directly.
+ * generation streams. Preview prompt events carry full `formated` rows; normal
+ * server-dispatched generations request metadata only because the browser never
+ * sends those rows to a provider itself.
  */
 
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
@@ -38,6 +40,7 @@ const HUMAN_REASON_ERROR_CODES = new Set(['generation_in_progress', 'generation_
 const REQUEST_UID_HEADER = 'X-Request-UID'
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
+  promptMetadataOnly: true,
 } as const
 
 function clearLiveGenerationProgress(): void {

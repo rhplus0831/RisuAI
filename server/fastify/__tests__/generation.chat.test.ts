@@ -1011,6 +1011,47 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(prompt.data.promptInfo).toBeDefined()
   })
 
+  it('sends prompt metadata without provider rows to server-dispatched clients', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        clientCapabilities: { compactPromptEvent: true, promptMetadataOnly: true },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const prompt = parseEvents(res.body).find((event) => event.type === 'prompt')!
+    expect(prompt).toBeDefined()
+    expect(Object.keys(prompt.data)).toEqual(['promptInfo'])
+    expect(prompt.data.promptInfo).toBeDefined()
+  })
+
+  it('retains provider rows for previews that request prompt metadata only', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, fixtureDatabase)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        mode: 'preview',
+        clientCapabilities: { compactPromptEvent: true, promptMetadataOnly: true },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const prompt = parseEvents(res.body).find((event) => event.type === 'prompt')!
+    expect(Array.isArray(prompt.data.formated)).toBe(true)
+  })
+
   it('L19: leaves chat SSE uncompressed when gzip is requested', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     await seedDatabase(harness.app, assertion, fixtureDatabase)

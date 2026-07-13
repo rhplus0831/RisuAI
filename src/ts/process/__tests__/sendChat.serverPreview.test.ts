@@ -473,6 +473,23 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     })
   })
 
+  it('streams a server-dispatched send without receiving assembled prompt rows', async () => {
+    await seedEcho()
+    setServerChatPrompt([], { inputTokens: 11, outputTokens: 22 }, {})
+    setServerChatDispatchResult('metadata-only reply', {
+      model: 'echo_model',
+      generationId: 'uuid-metadata-only',
+      inputTokens: 11,
+      outputTokens: 22,
+      maxContext: 4000,
+      stageTiming: { stage1: 1, stage2: 0, stage3: 0, stage4: 0 },
+    })
+    vi.stubGlobal('fetch', serverChatFetch)
+
+    await expect(chatModule.sendChat(-1)).resolves.toBe(true)
+    expect(testDatabaseState.db.characters[0].chats[0].message.at(-1)?.data).toBe('metadata-only reply')
+  })
+
   it('allows one server-requested resend for a root send', async () => {
     await seedEcho()
     setServerChatPrompt(

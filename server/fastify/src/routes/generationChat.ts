@@ -126,6 +126,7 @@ type SuccessfulAssembleResult = AssembleResult & {
 
 interface GenerationClientCapabilities {
   compactPromptEvent: boolean
+  promptMetadataOnly: boolean
 }
 
 type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
@@ -473,6 +474,7 @@ function readClientCapabilities(body: ChatRequestBody): GenerationClientCapabili
   const clientCapabilities = body.clientCapabilities
   return {
     compactPromptEvent: isRecord(clientCapabilities) && clientCapabilities.compactPromptEvent === true,
+    promptMetadataOnly: isRecord(clientCapabilities) && clientCapabilities.promptMetadataOnly === true,
   }
 }
 
@@ -497,6 +499,9 @@ function promptEventForClient(
     }
   }
   const { messages: _messages, lorebookActivation: _lorebookActivation, ...compactPrompt } = prompt
+  if (capabilities.promptMetadataOnly && mode !== undefined && isPersistingMode(mode)) {
+    return compactPrompt.promptInfo === undefined ? {} : { promptInfo: compactPrompt.promptInfo }
+  }
   return compactPrompt
 }
 
@@ -1129,6 +1134,7 @@ function createPromptAssemblyMetricContext(args: {
     inlayAssetRefsCount: args.input.inlayAssetRefs?.length,
     durable: args.durable,
     compactPromptEvent: args.clientCapabilities.compactPromptEvent,
+    promptMetadataOnly: args.clientCapabilities.promptMetadataOnly,
     generationId: args.generationId,
     durableJobId: args.durable ? args.generationId : undefined,
   }

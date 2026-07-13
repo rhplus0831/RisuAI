@@ -354,14 +354,6 @@ export async function assembleServerBackedSendChat(args: {
     currentChat: args.currentChat,
   })
 
-  if (!served.prompt.formated) {
-    return {
-      status: 'failed',
-      error: 'server prompt assembly did not return formated rows',
-      currentChat,
-    }
-  }
-
   const promptText = served.prompt.promptInfo?.promptText
   if (Array.isArray(promptText)) {
     args.promptInfo.promptText = promptText as OpenAIChat[]
@@ -380,7 +372,10 @@ export async function assembleServerBackedSendChat(args: {
   return {
     status: 'assembled',
     currentChat,
-    formated: served.prompt.formated,
+    // Provider dispatch is server-owned on this branch. New servers omit the
+    // potentially large prompt rows; retain the empty fallback for older call
+    // sites whose common result type still includes `formated`.
+    formated: served.prompt.formated ?? [],
     biases: served.prompt.biases ?? [],
     inputTokens: numberFrom(served.info?.tokens?.prompt) ?? numberFrom(served.prompt.promptInfo?.inputTokens) ?? 0,
     outputTokens:
@@ -453,14 +448,6 @@ export async function reattachServerBackedSendChat(args: {
     currentChat: args.currentChat,
   })
 
-  if (!served.prompt.formated) {
-    return {
-      status: 'failed',
-      error: 'reattached generation did not return formated rows',
-      currentChat,
-    }
-  }
-
   const promptText = served.prompt.promptInfo?.promptText
   if (Array.isArray(promptText)) {
     args.promptInfo.promptText = promptText as OpenAIChat[]
@@ -478,7 +465,7 @@ export async function reattachServerBackedSendChat(args: {
   return {
     status: 'assembled',
     currentChat,
-    formated: served.prompt.formated,
+    formated: served.prompt.formated ?? [],
     biases: served.prompt.biases ?? [],
     inputTokens: numberFrom(served.info?.tokens?.prompt) ?? numberFrom(served.prompt.promptInfo?.inputTokens) ?? 0,
     outputTokens:
