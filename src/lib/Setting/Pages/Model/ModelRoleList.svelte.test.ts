@@ -210,8 +210,8 @@ describe('Model profile-first role shell source contract', () => {
     expect(source).toContain('let changedBindings = $derived.by(() => collectChangedBindings())')
     expect(source).toContain('function resetDraft()')
     expect(source).toContain('async function applyDraft()')
-    expect(source).toContain('runServerCommand({')
-    expect(source).toContain('command: (baseRevision) =>')
+    expect(source).toContain('runServerCommandSequence(commands)')
+    expect(source).toContain('(baseRevision) =>')
     expect(source).toContain('updateModelRoleProfilesCommand({')
     expect(source).toContain('baseRevision,')
     expect(source).toContain('bindings,')
@@ -370,7 +370,7 @@ describe('Model profile-first presets tab source contract', () => {
   it('updates the selected model preset when role bindings are applied', () => {
     const source = readSource('src/lib/Setting/Pages/Model/ModelProfileRoleList.svelte')
 
-    expect(source).toContain('import { runServerCommand, updateModelPresetCommand, updateModelRoleProfilesCommand }')
+    expect(source).toContain('runServerCommandSequence,')
     expect(source).toContain('function selectedModelPresetId(): string | null')
     expect(source).toContain('const nextRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(draftBindings))')
     expect(source).toContain('updateModelPresetCommand({')

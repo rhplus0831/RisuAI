@@ -2,7 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandSpies = vi.hoisted(() => ({
-  runServerCommand: vi.fn(),
+  runServerCommandSequence: vi.fn(),
   updateModelPresetCommand: vi.fn(),
   updateModelRoleProfilesCommand: vi.fn(),
 }))
@@ -13,7 +13,8 @@ const storeMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/server/commands', () => ({
-  runServerCommand: commandSpies.runServerCommand,
+  runServerCommandSequence: commandSpies.runServerCommandSequence,
+  subscribeServerCommandLocalEffectApplied: vi.fn(),
   updateModelPresetCommand: commandSpies.updateModelPresetCommand,
   updateModelRoleProfilesCommand: commandSpies.updateModelRoleProfilesCommand,
 }))
@@ -90,12 +91,18 @@ beforeEach(() => {
     ],
     modelPresetsId: 0,
   } as any)
-  commandSpies.runServerCommand.mockReset()
+  commandSpies.runServerCommandSequence.mockReset()
   commandSpies.updateModelPresetCommand.mockReset()
   commandSpies.updateModelRoleProfilesCommand.mockReset()
-  commandSpies.runServerCommand.mockImplementation(async (input: { command: (baseRevision: number) => unknown }) => {
-    return input.command(123)
-  })
+  commandSpies.runServerCommandSequence.mockImplementation(
+    async (commands: Array<(baseRevision: number) => Promise<{ status: string }>>) => {
+      for (const command of commands) {
+        const result = await command(123)
+        if (result.status !== 'ok') return result
+      }
+      return null
+    },
+  )
   commandSpies.updateModelPresetCommand.mockResolvedValue({ status: 'ok' })
 })
 
@@ -145,5 +152,6 @@ describe('ModelProfileRoleList', () => {
         }),
       },
     })
+    expect(commandSpies.runServerCommandSequence).toHaveBeenCalledTimes(1)
   })
 })

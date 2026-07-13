@@ -12,7 +12,13 @@
   import { MODEL_ROLES, modelRoleProfileInheritSource, type ModelRole } from 'src/ts/model/modelRoles'
   import { getModelInfo } from 'src/ts/model/modellist'
   import { ProviderNames } from 'src/ts/model/types'
-  import { runServerCommand, updateModelPresetCommand, updateModelRoleProfilesCommand } from 'src/ts/server/commands'
+  import {
+    runServerCommandSequence,
+    updateModelPresetCommand,
+    updateModelRoleProfilesCommand,
+    type ServerCommandFactory,
+    type ServerCommandResult,
+  } from 'src/ts/server/commands'
   import { getDatabase, type Database } from 'src/ts/storage/database.svelte'
 
   type BindingMode = ModelRoleProfileBinding['mode']
@@ -192,7 +198,7 @@
     return typeof preset?.id === 'string' && preset.id.trim() ? preset.id : null
   }
 
-  function commandErrorMessage(result: Awaited<ReturnType<typeof runServerCommand>>): string {
+  function commandErrorMessage(result: ServerCommandResult): string {
     return result.status === 'conflict'
       ? language.modelProfiles.commandConflict
       : result.status === 'error'
@@ -207,27 +213,15 @@
     const bindings = cloneJsonValue(changedBindings)
     const nextRoleProfiles = cloneJsonValue(normalizeModelRoleProfiles(draftBindings))
     const modelPresetId = selectedModelPresetId()
-    const roleResult = await runServerCommand({
-      command: (baseRevision) =>
+    const commands: ServerCommandFactory[] = [
+      (baseRevision) =>
         updateModelRoleProfilesCommand({
           baseRevision,
           bindings,
         }),
-    })
-
-    if (roleResult.status !== 'ok') {
-      applying = false
-      commandError = commandErrorMessage(roleResult)
-      return
-    }
-
-    if (!modelPresetId) {
-      applying = false
-      return
-    }
-
-    const presetResult = await runServerCommand({
-      command: (baseRevision) =>
+    ]
+    if (modelPresetId) {
+      commands.push((baseRevision) =>
         updateModelPresetCommand({
           baseRevision,
           modelPresetId,
@@ -235,11 +229,14 @@
             modelRoleProfiles: nextRoleProfiles,
           },
         }),
-    })
+      )
+    }
+
+    const failure = await runServerCommandSequence(commands)
     applying = false
 
-    if (presetResult.status === 'ok') return
-    commandError = commandErrorMessage(presetResult)
+    if (failure === null) return
+    commandError = commandErrorMessage(failure)
   }
 </script>
 
