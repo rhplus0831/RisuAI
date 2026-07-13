@@ -30,4 +30,9 @@ describe('settings group contracts', () => {
       expect(SERVER_SETTINGS_KEYS_BY_GROUP.providers).toContain(key)
     }
   })
+
+  it('exposes the Translator Preset selection only through language reads', () => {
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.language).toContain('translatorPresetId')
+    expect(SERVER_SETTINGS_GROUP_BY_KEY).not.toHaveProperty('translatorPresetId')
+  })
 })

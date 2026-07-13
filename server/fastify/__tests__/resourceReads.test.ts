@@ -236,6 +236,18 @@ describe('authenticated resource read routes', () => {
     expect(runtime.json().settings).not.toHaveProperty('fallbackWhenBlankResponse')
     expect(runtime.json().settings).not.toHaveProperty('doNotChangeFallbackModels')
 
+    const language = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/language',
+      headers: authHeaders(),
+    })
+    expect(language.statusCode).toBe(200)
+    expect(language.json()).toMatchObject({
+      revision,
+      group: 'language',
+      settings: { translatorPresetId: 0 },
+    })
+
     const prompt = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/settings/prompt',

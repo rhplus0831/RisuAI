@@ -359,9 +359,19 @@ export const SERVER_SETTINGS_KEYS_BY_GROUP = Object.fromEntries(
       ? ['agentPresets', 'agentPresetDefaultId']
       : group === 'models'
         ? [...MODEL_PROFILE_SETTINGS_KEYS]
-        : Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
-            .filter(([, owner]) => owner === group)
-            .map(([key]) => key),
+        : group === 'language'
+          ? [
+              ...Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
+                .filter(([, owner]) => owner === group)
+                .map(([key]) => key),
+              // Translator Preset commands own this selection pointer. Expose
+              // it through the language read projection without allowing the
+              // generic settings PATCH route to write it.
+              'translatorPresetId',
+            ]
+          : Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
+              .filter(([, owner]) => owner === group)
+              .map(([key]) => key),
   ]),
 ) as Record<SettingsGroup, string[]>
 

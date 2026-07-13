@@ -74,10 +74,13 @@ export function registerResourceReadRoutes(
     // hypaV3Presets is command-owned by the memory group but persists in its
     // own collection table. Keep this endpoint settings-only; the dedicated
     // cross-resource event invalidates that collection separately.
-    const keys = SETTINGS_GROUP_KEYS[group].filter(
+    const groupKeys =
+      group === 'language' ? [...SETTINGS_GROUP_KEYS[group], 'translatorPresetId'] : SETTINGS_GROUP_KEYS[group]
+    const keys = groupKeys.filter(
       (key) =>
         key !== 'hypaV3Presets' &&
         (group === 'models' ||
+          (group === 'language' && key === 'translatorPresetId') ||
           READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group),
     )
     const { revision } = getSchemaState(db)

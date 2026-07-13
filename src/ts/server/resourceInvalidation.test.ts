@@ -347,6 +347,46 @@ describe('API-backed resource invalidation', () => {
     expect(api.settings).not.toHaveBeenCalled()
   })
 
+  it('reads only language settings alongside translator preset mutations', async () => {
+    seedResources(1)
+    const translatorPresets = [{ name: 'Authoritative translator', prompt: 'Translate this' }]
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'language',
+      settings: {
+        translatorPresetId: 0,
+        translatorPrompt: 'Translate this',
+        translatorMaxResponse: 2048,
+      },
+    })
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { translatorPresets },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'translatorPreset.updated', revision: 2, resource: 'translatorPreset', id: 'preset-a' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('language', undefined)
+    expect(api.collection).toHaveBeenCalledOnce()
+    expect(api.collection).toHaveBeenCalledWith('translatorPresets', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({
+      translatorPresets,
+      translatorPresetId: 0,
+      translatorPrompt: 'Translate this',
+      translatorMaxResponse: 2048,
+    })
+  })
+
   it('reads Hypa presets only for the cross-resource memory settings event', async () => {
     seedResources(1)
     api.settingsGroup

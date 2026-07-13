@@ -563,7 +563,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('personas')
       return
     case 'translatorPreset':
-      addFullSettings()
+      addSettingsGroup('language')
       plan.collections.add('translatorPresets')
       return
     case 'loadout':
