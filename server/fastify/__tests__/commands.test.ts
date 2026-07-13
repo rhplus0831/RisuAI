@@ -9066,8 +9066,12 @@ describe('Phase 9-4a lorebook commands', () => {
         },
       ],
       characterOrder: ['char-a'],
-      modules: [{ id: 'mod-a', name: 'Mod', lorebook: [entry('module-a', 'Module A'), entry('module-b', 'Module B')] }],
+      modules: [
+        { id: 'mod-a', name: 'Mod', lorebook: [entry('module-a', 'Module A'), entry('module-b', 'Module B')] },
+        { id: 'mod-b', name: 'Untouched', lorebook: [] },
+      ],
     })
+    writeJsonRow('modules', 'mod-b', { ...readJsonRow('modules', 'mod-b'), lorebook: undefined })
 
     const global = await harness.app.inject({
       method: 'PUT',
@@ -9151,6 +9155,7 @@ describe('Phase 9-4a lorebook commands', () => {
       'Module B Updated',
       'Module A',
     ])
+    expect(readJsonRow('modules', 'mod-b')).not.toHaveProperty('lorebook')
   })
 
   it('rejects malformed lorebook commands without bumping revision', async () => {
@@ -9783,6 +9788,7 @@ describe('Phase 9-4b script and trigger definition commands', () => {
       ...readJsonRow('modules', 'mod-b'),
       regex: [invalidScript],
       trigger: [invalidTrigger],
+      lorebook: undefined,
     })
 
     const script = {
@@ -9854,6 +9860,7 @@ describe('Phase 9-4b script and trigger definition commands', () => {
     expect(readJsonRow('characters', 'char-b').triggerscript).toEqual([invalidTrigger])
     expect(readJsonRow('modules', 'mod-b').regex).toEqual([invalidScript])
     expect(readJsonRow('modules', 'mod-b').trigger).toEqual([invalidTrigger])
+    expect(readJsonRow('modules', 'mod-b')).not.toHaveProperty('lorebook')
   })
 
   it('returns 404 and 409 for missing parents and stale script revisions', async () => {

@@ -124,6 +124,19 @@ export interface ServerPluginProviderLocalEffectPayload {
   provider: string
 }
 
+export interface ServerModuleCollectionMutationLocalEffectPayload {
+  revision: number
+  operation: 'create' | 'update' | 'reorder' | 'lorebooks' | 'scripts' | 'triggers'
+  moduleId?: string
+  moduleIds?: readonly string[]
+}
+
+export interface ServerModuleEnabledLocalEffectPayload {
+  revision: number
+  moduleId: string
+  enabled: boolean
+}
+
 export interface ServerCharacterRowMutationLocalEffectPayload {
   revision: number
   characterId: string
@@ -141,6 +154,7 @@ export interface SettingsResourceState {
   value: ServerSettingsValues
   revision: number | null
   fullRevision: number | null
+  enabledModulesRevision: number | null
   groupRevisions: Partial<Record<SettingsGroup, number>>
   status: ServerResourceStatus
   error: string | null
@@ -176,6 +190,7 @@ export const settingsResourceState = $state<SettingsResourceState>({
   value: {},
   revision: null,
   fullRevision: null,
+  enabledModulesRevision: null,
   groupRevisions: {},
   status: 'idle',
   error: null,
@@ -243,9 +258,21 @@ export function failSettingsResourceLoad(error: string): void {
 export function applySettingsResource(payload: ServerSettingsResourcePayload): boolean {
   if (isOlderRevision(payload.revision, settingsResourceState.fullRevision)) return false
   if (Object.values(settingsResourceState.groupRevisions).some((revision) => revision > payload.revision)) return false
+  const preserveEnabledModules = (settingsResourceState.enabledModulesRevision ?? -1) > payload.revision
+  const liveEnabledModules = preserveEnabledModules
+    ? cloneJsonValue((settingsResourceState.value as Record<string, unknown>).enabledModules)
+    : undefined
   settingsResourceState.value = cloneJsonValue(payload.settings)
-  settingsResourceState.revision = payload.revision
+  if (preserveEnabledModules) {
+    ;(settingsResourceState.value as Record<string, unknown>).enabledModules = liveEnabledModules
+  }
+  settingsResourceState.revision = preserveEnabledModules
+    ? maxRevision(settingsResourceState.revision, payload.revision)
+    : payload.revision
   settingsResourceState.fullRevision = payload.revision
+  settingsResourceState.enabledModulesRevision = preserveEnabledModules
+    ? settingsResourceState.enabledModulesRevision
+    : null
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
@@ -408,6 +435,56 @@ export function applyPluginProviderLocalEffect(payload: ServerPluginProviderLoca
   // deliberately retaining the newer optimistic provider.
 
   settingsResourceState.groupRevisions.providers = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
+  markResourceDatabaseChanged()
+  return true
+}
+
+/** Fence an accepted optimistic module-record mutation without re-downloading large module definitions. */
+export function applyModuleCollectionMutationLocalEffect(
+  payload: ServerModuleCollectionMutationLocalEffectPayload,
+): boolean {
+  const knownRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.modules ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+
+  const modules = collectionsResourceState.values.modules
+  if (!isNormalizedModuleCollectionProjection(modules) || collectionsResourceState.statuses.modules !== 'ready') {
+    return false
+  }
+  if (payload.operation === 'reorder') {
+    if (!isUniqueStringArray(payload.moduleIds)) return false
+  } else if (!nonEmptyString(payload.moduleId)) {
+    return false
+  }
+
+  collectionsResourceState.revisions.modules = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses.modules = 'ready'
+  delete collectionsResourceState.errors.modules
+  markResourceDatabaseChanged()
+  return true
+}
+
+/** Fence one accepted optimistic enabledModules membership write without a full settings read. */
+export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalEffectPayload): boolean {
+  const knownRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.enabledModulesRevision ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+  if (!nonEmptyString(payload.moduleId) || typeof payload.enabled !== 'boolean') return false
+
+  const enabledModules = (settingsResourceState.value as Record<string, unknown>).enabledModules
+  if (settingsResourceState.status !== 'ready' || !isUniqueStringArray(enabledModules)) {
+    return false
+  }
+
+  settingsResourceState.enabledModulesRevision = payload.revision
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
@@ -779,6 +856,7 @@ export function resetServerResourceState(): void {
   settingsResourceState.value = {}
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
+  settingsResourceState.enabledModulesRevision = null
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'idle'
   settingsResourceState.error = null
@@ -819,6 +897,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.value = settings as ServerSettingsValues
   settingsResourceState.revision = nextRevision
   settingsResourceState.fullRevision = nextRevision
+  settingsResourceState.enabledModulesRevision = null
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
@@ -1130,6 +1209,20 @@ function shouldUseCharacterPointerResource(property: 'characterOrder' | 'current
   const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
   if (pointerRevision < 0) return false
   return settingsResourceState.fullRevision === null || pointerRevision >= settingsResourceState.fullRevision
+}
+
+function isNormalizedModuleCollectionProjection(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const record = candidate as Record<string, unknown>
+    const moduleId = record.id
+    if (!nonEmptyString(moduleId) || ids.has(moduleId)) return false
+    if (!nonEmptyString(record.name) || typeof record.description !== 'string') return false
+    ids.add(moduleId)
+  }
+  return true
 }
 
 function isNormalizedCharacterCollectionProjection(): boolean {

@@ -1117,6 +1117,7 @@ function queueScopedLorebookReplacement(
                 },
                 options.signal,
                 options.keepalive,
+                true,
               ) as Promise<ServerCommandResult<Record<string, unknown>>>
           }
         },
@@ -1360,22 +1361,34 @@ function lorebookScopedEntryCommand(
     case 'module':
       if (action === 'upsert') {
         return upsertModuleLorebookEntryCommand(
-          { baseRevision, moduleId: scope.moduleId, entryId: payload.entryId!, entry: payload.entry! },
+          {
+            baseRevision,
+            moduleId: scope.moduleId,
+            entryId: payload.entryId!,
+            entry: payload.entry!,
+          },
           options.signal,
           options.keepalive,
+          true,
         ) as Promise<ServerCommandResult<Record<string, unknown>>>
       }
       if (action === 'delete') {
         return deleteModuleLorebookEntryCommand(
-          { baseRevision, moduleId: scope.moduleId, entryId: payload.entryId! },
+          {
+            baseRevision,
+            moduleId: scope.moduleId,
+            entryId: payload.entryId!,
+          },
           options.signal,
           options.keepalive,
+          true,
         ) as Promise<ServerCommandResult<Record<string, unknown>>>
       }
       return reorderModuleLorebookEntriesCommand(
         { baseRevision, moduleId: scope.moduleId, entryIds: payload.entryIds! },
         options.signal,
         options.keepalive,
+        true,
       ) as Promise<ServerCommandResult<Record<string, unknown>>>
   }
 }
@@ -1436,6 +1449,7 @@ function lorebookEntryUpsertCommand(
         },
         options.signal,
         options.keepalive,
+        true,
       ) as Promise<ServerCommandResult<Record<string, unknown>>>
   }
 }

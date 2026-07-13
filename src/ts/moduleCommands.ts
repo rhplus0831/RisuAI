@@ -328,10 +328,7 @@ export function dispatchCreateModule(module: RisuModule, previous: GlobalModuleS
   const operation = issueGlobalModuleOperation([rollbackEntry])
   runModuleCommand(
     async (baseRevision) => {
-      const result = await createModuleCommand({
-        baseRevision,
-        module: moduleSnapshot,
-      })
+      const result = await createModuleCommand({ baseRevision, module: moduleSnapshot }, undefined, true)
       if (result.status === 'ok') {
         clearGlobalModuleOperation(operation)
       }
@@ -349,15 +346,12 @@ export function dispatchUpdateModule(
   const commandPatch = changedModulePatch(moduleId, patch, previous, { complete: true })
   if (Object.keys(commandPatch).length === 0) return
   if (!canUseServerCommands()) return
+  applyModuleDeletionSentinelsOptimistically(moduleId, commandPatch)
   const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
   runModuleCommand(
     async (baseRevision) => {
-      const result = await updateModuleCommand({
-        baseRevision,
-        moduleId,
-        patch: commandPatch,
-      })
+      const result = await updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true)
       if (operation && result.status === 'ok') {
         clearGlobalModuleOperation(operation)
       }
@@ -383,10 +377,12 @@ export function dispatchModuleInfoPatch(
   const commandPatch = changedModulePatch(moduleId, patch, previous)
 
   if (Object.keys(commandPatch).length > 0) {
+    applyModuleDeletionSentinelsOptimistically(moduleId, commandPatch)
     const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
     if (rollbackEntries.length > 0) {
       steps.push({
-        factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
+        factory: (baseRevision) =>
+          updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true),
         rollbackEntries,
       })
     }
@@ -394,7 +390,7 @@ export function dispatchModuleInfoPatch(
 
   if (enabled !== null) {
     steps.push({
-      factory: (baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled }),
+      factory: (baseRevision) => enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true),
       rollbackEntries: [moduleEnableRollbackEntry(moduleId, enabled, previous)],
     })
   }
@@ -431,11 +427,7 @@ export function dispatchEnableModule(moduleId: string, enabled: boolean, previou
   const operation = issueGlobalModuleOperation([rollbackEntry])
   runModuleCommand(
     async (baseRevision) => {
-      const result = await enableModuleCommand({
-        baseRevision,
-        moduleId,
-        enabled,
-      })
+      const result = await enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true)
       if (result.status === 'ok') {
         clearGlobalModuleOperation(operation)
       }
@@ -569,10 +561,7 @@ export function dispatchReorderModules(previous: GlobalModuleStateSnapshot): voi
   const operation = issueGlobalModuleOperation([rollbackEntry])
   runModuleCommand(
     async (baseRevision) => {
-      const result = await reorderModulesCommand({
-        baseRevision,
-        moduleIds: attemptedModuleIds,
-      })
+      const result = await reorderModulesCommand({ baseRevision, moduleIds: attemptedModuleIds }, undefined, true)
       if (result.status === 'ok') {
         clearGlobalModuleOperation(operation)
       }
@@ -595,7 +584,7 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
     if (!before) {
       const moduleSnapshot = toModuleSnapshot(module)
       steps.push({
-        factory: (baseRevision) => createModuleCommand({ baseRevision, module: moduleSnapshot }),
+        factory: (baseRevision) => createModuleCommand({ baseRevision, module: moduleSnapshot }, undefined, true),
         rollbackEntries: [moduleCreateRollbackEntry(moduleSnapshot as RisuModule)],
       })
       continue
@@ -603,10 +592,11 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
     const moduleId = module.id
     const commandPatch = changedModulePatch(moduleId, toModuleSnapshot(module), previous, { complete: true })
     if (Object.keys(commandPatch).length === 0) continue
+    applyModuleDeletionSentinelsOptimistically(moduleId, commandPatch)
     const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
     if (rollbackEntries.length === 0) continue
     steps.push({
-      factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }),
+      factory: (baseRevision) => updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true),
       rollbackEntries,
     })
   }
@@ -635,6 +625,9 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
   }
   if (!isStringArrayEqual(expectedOrderAfterCreateDelete, attemptedModuleIds)) {
     steps.push({
+      // A preceding authoritative delete refresh can temporarily restore the
+      // server's pre-reorder projection. Keep this sequence's final reorder
+      // authoritative so it cannot fence that intermediate order as current.
       factory: (baseRevision) => reorderModulesCommand({ baseRevision, moduleIds: attemptedModuleIds }),
       rollbackEntries: [moduleOrderRollbackEntry(previous, attemptedModuleIds)],
     })
@@ -732,6 +725,23 @@ function moduleFieldRollbackEntries(
       return moduleFieldRollbackEntry(moduleId, field, previous, !deletesField, deletesField ? undefined : value)
     })
     .filter((entry): entry is ModuleFieldRollbackEntry => entry !== null)
+}
+
+function applyModuleDeletionSentinelsOptimistically(moduleId: string, patch: ModuleSnapshot): void {
+  const deletedFields = Object.entries(patch)
+    .filter(([field, value]) => value === null && MODULE_PATCH_DELETABLE_KEYS.has(field))
+    .map(([field]) => field)
+  if (deletedFields.length === 0) return
+
+  withTrustedResourceWrite(() => {
+    const module = getDatabase().modules?.find((candidate) => candidate.id === moduleId) as
+      | (RisuModule & Record<string, unknown>)
+      | undefined
+    if (!module) return
+    for (const field of deletedFields) {
+      if (module[field] === null) delete module[field]
+    }
+  })
 }
 
 function moduleFieldRollbackEntry(
@@ -1248,11 +1258,15 @@ function dispatchReorderCharacterModulesWithGenerationSettings(
   runOptimisticCommandSequence(
     [
       (baseRevision) =>
-        reorderCharacterModulesCommand({
-          baseRevision,
-          characterId,
-          moduleIds: commandModules,
-        }),
+        reorderCharacterModulesCommand(
+          {
+            baseRevision,
+            characterId,
+            moduleIds: commandModules,
+          },
+          undefined,
+          true,
+        ),
       (baseRevision) =>
         saveChatGenerationSettingsCommand({
           baseRevision,
@@ -1272,11 +1286,15 @@ export function dispatchReorderCharacterModules(characterId: string, previous: C
   if (!character) return
   runModuleCommand(
     (baseRevision) =>
-      reorderCharacterModulesCommand({
-        baseRevision,
-        characterId,
-        moduleIds: character.modules ?? [],
-      }),
+      reorderCharacterModulesCommand(
+        {
+          baseRevision,
+          characterId,
+          moduleIds: character.modules ?? [],
+        },
+        undefined,
+        true,
+      ),
     () => restoreCharacterModuleState(previous),
   )
 }

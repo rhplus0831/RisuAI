@@ -359,6 +359,7 @@ export function dispatchReplaceModuleScripts(
             },
             options.signal,
             options.keepalive,
+            true,
           ),
         rollback: () =>
           rollbackServerBackedScriptDefinitions(rollback, {
@@ -397,6 +398,7 @@ export function dispatchReplaceModuleTriggers(
             },
             options.signal,
             options.keepalive,
+            true,
           ),
         rollback: () =>
           rollbackServerBackedScriptDefinitions(rollback, {
@@ -853,6 +855,7 @@ function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, d
             },
             options.signal,
             options.keepalive,
+            true,
           ),
         rollback: () =>
           rollbackServerBackedScriptDefinitions(rollback, {
@@ -891,6 +894,7 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
             },
             options.signal,
             options.keepalive,
+            true,
           ),
         rollback: () =>
           rollbackServerBackedScriptDefinitions(rollback, {

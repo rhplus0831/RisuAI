@@ -316,6 +316,33 @@ describe('MCP module writes optimistic projection', () => {
     await waitForSettledCommands()
   })
 
+  it('projects optional module null sentinels as field deletion', async () => {
+    withTrustedResourceWrite(() => {
+      getDatabase().modules[0].backgroundEmbedding = 'old background'
+    })
+    const { calls, releaseHeldResponses } = stubCommandFetch({
+      holdUrls: ['/api/v1/commands/modules/module-a'],
+    })
+    const handler = new ModuleHandler()
+
+    const result = await handler.handle('risu-set-module-info', {
+      id: 'module-a',
+      data: { backgroundEmbedding: null },
+    })
+
+    expect(toolText(result)).toContain('Successfully updated module')
+    expect(getDatabase().modules[0].backgroundEmbedding).toBeUndefined()
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/modules/module-a',
+      method: 'PATCH',
+      body: { baseRevision: 10, patch: { backgroundEmbedding: null } },
+    })
+
+    releaseHeldResponses()
+    await waitForSettledCommands()
+  })
+
   it('rolls back only attempted module-info fields and unattempted enable when a held PATCH fails', async () => {
     withTrustedResourceWrite(() => {
       getDatabase().modules = [

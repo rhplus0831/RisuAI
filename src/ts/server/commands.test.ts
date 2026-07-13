@@ -3706,6 +3706,182 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes only matching optimistic module mutations as compact local effects', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/characters/char-a/modules/reorder')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'character.modules.reordered',
+            revision: 10,
+            resource: 'characterRow',
+            id: 'char-a',
+          },
+          characterId: 'char-a',
+        }
+      }
+      if (url.endsWith('/modules/reorder')) {
+        return {
+          revision: 10,
+          event: { type: 'module.reordered', revision: 10, resource: 'moduleReordered' },
+        }
+      }
+      if (url.endsWith('/modules/enable')) {
+        return {
+          revision: 10,
+          event: { type: 'module.enabled', revision: 10, resource: 'moduleEnabled', id: 'mod-a' },
+          moduleId: 'mod-a',
+          enabled: true,
+        }
+      }
+      if (url.endsWith('/modules/mod-a/lorebooks')) {
+        return {
+          revision: 10,
+          event: { type: 'lorebook.entries.replaced', revision: 10, resource: 'moduleUpdated', id: 'mod-a' },
+          moduleId: 'mod-a',
+        }
+      }
+      if (url.endsWith('/modules/mod-a/scripts')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'scriptDefinitions.replaced',
+            revision: 10,
+            resource: 'moduleScriptDefinition',
+            id: 'mod-a',
+          },
+          moduleId: 'mod-a',
+        }
+      }
+      if (url.endsWith('/modules/mod-a/triggers')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'triggerDefinitions.replaced',
+            revision: 10,
+            resource: 'moduleTriggerDefinition',
+            id: 'mod-a',
+          },
+          moduleId: 'mod-a',
+        }
+      }
+      const created = url.endsWith('/modules')
+      return {
+        revision: 10,
+        event: {
+          type: created ? 'module.created' : 'module.updated',
+          revision: 10,
+          resource: created ? 'moduleCreated' : 'moduleUpdated',
+          id: 'mod-a',
+        },
+        moduleId: 'mod-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const entry = {
+      id: 'entry-a',
+      key: 'key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Lore',
+      content: 'body',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    await createModuleCommand({ baseRevision: 1, module: { id: 'mod-a', name: 'A', description: '' } }, undefined, true)
+    await updateModuleCommand({ baseRevision: 2, moduleId: 'mod-a', patch: { name: 'Renamed' } }, undefined, true)
+    await enableModuleCommand({ baseRevision: 3, moduleId: 'mod-a', enabled: true }, undefined, true)
+    await reorderModulesCommand({ baseRevision: 4, moduleIds: ['mod-b', 'mod-a'] }, undefined, true)
+    await replaceModuleLorebooksCommand(
+      { baseRevision: 5, moduleId: 'mod-a', entries: [entry] },
+      undefined,
+      false,
+      true,
+    )
+    await replaceModuleScriptsCommand(
+      { baseRevision: 6, moduleId: 'mod-a', scripts: [{ id: 'script-a' }] },
+      undefined,
+      false,
+      true,
+    )
+    await replaceModuleTriggersCommand(
+      { baseRevision: 7, moduleId: 'mod-a', triggers: [{ id: 'trigger-a' }] },
+      undefined,
+      false,
+      true,
+    )
+    await reorderCharacterModulesCommand(
+      { baseRevision: 8, characterId: 'char-a', moduleIds: ['mod-a'] },
+      undefined,
+      true,
+    )
+
+    expect(observedEffects).toEqual([
+      { kind: 'moduleCollectionMutation', operation: 'create', moduleId: 'mod-a' },
+      { kind: 'moduleCollectionMutation', operation: 'update', moduleId: 'mod-a' },
+      { kind: 'moduleEnabled', moduleId: 'mod-a', enabled: true },
+      { kind: 'moduleCollectionMutation', operation: 'reorder', moduleIds: ['mod-b', 'mod-a'] },
+      { kind: 'moduleCollectionMutation', operation: 'lorebooks', moduleId: 'mod-a' },
+      { kind: 'moduleCollectionMutation', operation: 'scripts', moduleId: 'mod-a' },
+      { kind: 'moduleCollectionMutation', operation: 'triggers', moduleId: 'mod-a' },
+      { kind: 'characterPatch', characterId: 'char-a', patch: { modules: ['mod-a'] } },
+    ])
+  })
+
+  it('keeps module deletion, non-optimistic calls, and mismatched responses authoritative', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url, init) => {
+      if (url.endsWith('/characters/char-a/modules/reorder')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'character.modules.reordered',
+            revision: 10,
+            resource: 'characterRow',
+            id: 'char-a',
+            parentId: 'chat-a',
+          },
+          characterId: 'char-a',
+        }
+      }
+      return {
+        revision: 10,
+        event: {
+          type: init.method === 'DELETE' ? 'module.deleted' : 'module.updated',
+          revision: 10,
+          resource: init.method === 'DELETE' ? 'module' : 'moduleUpdated',
+          id: 'mod-a',
+        },
+        moduleId: url.endsWith('/mod-mismatch') ? 'different-module' : 'mod-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await deleteModuleCommand({ baseRevision: 1, moduleId: 'mod-a' })
+    await updateModuleCommand({ baseRevision: 2, moduleId: 'mod-a', patch: { name: 'Not projected' } })
+    await updateModuleCommand(
+      { baseRevision: 3, moduleId: 'mod-mismatch', patch: { name: 'Projected' } },
+      undefined,
+      true,
+    )
+    await reorderCharacterModulesCommand(
+      { baseRevision: 4, characterId: 'char-a', moduleIds: ['mod-a'] },
+      undefined,
+      true,
+    )
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('dispatches plugin record and configuration commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url.includes('/plugins')) {

@@ -182,7 +182,6 @@ import {
   deleteLorebookEntryById,
   ensureGlobalLorebookCollection,
   ensureLorebookDatabase,
-  ensureModuleCollection,
   normalizeSelectedCharacterLorebooks,
   normalizeSelectedChatLorebooks,
   readCharacterId as readLorebookCharacterId,
@@ -199,10 +198,10 @@ import {
   validateGlobalLorebookCreate,
   validateLorebookEntries,
   validateLorebookEntryForId,
+  type ModuleRecord as LorebookModuleRecord,
 } from '../commands/lorebooks.js'
 import {
   readCharacterScriptParent,
-  readModuleScriptParent,
   readScriptDefinitions,
   readTriggerDefinitions,
 } from '../commands/scriptDefinitions.js'
@@ -372,6 +371,20 @@ function readScriptDefinitionCommandTarget(database: unknown): Record<string, un
   // Incoming script/trigger payloads are strictly validated before mutation.
   // The corpus-wide script-definition repair is validate-only for these routes.
   return readJsonObject(database, 'database')
+}
+
+function readModuleCollectionCommandTarget(database: unknown): {
+  target: Record<string, unknown>
+  modules: LorebookModuleRecord[]
+} {
+  const target = readJsonObject(database, 'database')
+  const modules = Array.isArray(target.modules)
+    ? (target.modules.map((candidate, index) =>
+        readJsonObject(candidate, `module[${index}]`),
+      ) as LorebookModuleRecord[])
+    : []
+  target.modules = modules
+  return { target, modules }
 }
 
 function characterOrderIncludes(order: readonly unknown[], characterId: string): boolean {
@@ -6706,8 +6719,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const modules = ensureModuleCollection(target)
+          const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
           module.lorebook = entries
           // One module's lorebook is a single-row edit; the in-memory child
@@ -6759,8 +6771,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const modules = ensureModuleCollection(target)
+          const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
           module.lorebook ??= []
           const upserted = upsertLorebookEntryById(module.lorebook, entryId, entry)
@@ -6806,8 +6817,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const modules = ensureModuleCollection(target)
+          const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
           module.lorebook ??= []
           const deleted = deleteLorebookEntryById(module.lorebook, entryId)
@@ -6848,8 +6858,7 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const modules = ensureModuleCollection(target)
+          const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
           module.lorebook ??= []
           reorderLorebookEntriesById(module.lorebook, entryIds)
@@ -6962,12 +6971,12 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = readScriptDefinitionCommandTarget(database)
-          const module = readModuleScriptParent(target, moduleId)
+          const { modules } = readModuleCollectionCommandTarget(database)
+          const module = requireModule(modules, moduleId)
           module.regex = scripts
           // Module script updates rewrite only the `modules` table; corpus-wide
           // character repairs are validate-only.
-          writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             // Only the `modules` table is rewritten, so emit a module-scoped
             // resource shipping `modules`.
@@ -7006,12 +7015,12 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
-          const target = readScriptDefinitionCommandTarget(database)
-          const module = readModuleScriptParent(target, moduleId)
+          const { modules } = readModuleCollectionCommandTarget(database)
+          const module = requireModule(modules, moduleId)
           module.trigger = triggers
           // Module trigger updates rewrite only the `modules` table; corpus-wide
           // character repairs are validate-only.
-          writeSingleCollectionTable(innerDb, 'modules', asArray(target.modules))
+          writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             // Only the `modules` table is rewritten, so emit a module-scoped
             // resource shipping `modules`.

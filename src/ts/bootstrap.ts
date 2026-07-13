@@ -58,6 +58,8 @@ import {
   applyPluginCollectionMutationLocalEffect,
   applyPluginProviderLocalEffect,
   applyPluginStorageLocalEffect,
+  applyModuleCollectionMutationLocalEffect,
+  applyModuleEnabledLocalEffect,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 
@@ -505,6 +507,60 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       }
       return withServerResourceApply(() =>
         applyPluginProviderLocalEffect({ revision: event.revision, provider: localEffect.provider }),
+      )
+    case 'moduleCollectionMutation': {
+      const expectedType =
+        localEffect.operation === 'create'
+          ? 'module.created'
+          : localEffect.operation === 'update'
+            ? 'module.updated'
+            : localEffect.operation === 'reorder'
+              ? 'module.reordered'
+              : localEffect.operation === 'lorebooks'
+                ? 'lorebook.entries.replaced'
+                : localEffect.operation === 'scripts'
+                  ? 'scriptDefinitions.replaced'
+                  : 'triggerDefinitions.replaced'
+      const expectedResource =
+        localEffect.operation === 'create'
+          ? 'moduleCreated'
+          : localEffect.operation === 'reorder'
+            ? 'moduleReordered'
+            : localEffect.operation === 'scripts'
+              ? 'moduleScriptDefinition'
+              : localEffect.operation === 'triggers'
+                ? 'moduleTriggerDefinition'
+                : 'moduleUpdated'
+      if (event.type !== expectedType || event.resource !== expectedResource || event.parentId !== undefined) {
+        return false
+      }
+      if (localEffect.operation === 'reorder' ? event.id !== undefined : event.id !== localEffect.moduleId) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyModuleCollectionMutationLocalEffect({
+          revision: event.revision,
+          operation: localEffect.operation,
+          moduleId: localEffect.moduleId,
+          moduleIds: localEffect.moduleIds,
+        }),
+      )
+    }
+    case 'moduleEnabled':
+      if (
+        event.type !== 'module.enabled' ||
+        event.resource !== 'moduleEnabled' ||
+        event.id !== localEffect.moduleId ||
+        event.parentId !== undefined
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyModuleEnabledLocalEffect({
+          revision: event.revision,
+          moduleId: localEffect.moduleId,
+          enabled: localEffect.enabled,
+        }),
       )
     case 'messageTranslation':
       if (

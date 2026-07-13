@@ -94,6 +94,19 @@ export interface PluginProviderLocalEffect {
   provider: string
 }
 
+export interface ModuleCollectionMutationLocalEffect {
+  kind: 'moduleCollectionMutation'
+  operation: 'create' | 'update' | 'reorder' | 'lorebooks' | 'scripts' | 'triggers'
+  moduleId?: string
+  moduleIds?: string[]
+}
+
+export interface ModuleEnabledLocalEffect {
+  kind: 'moduleEnabled'
+  moduleId: string
+  enabled: boolean
+}
+
 export interface MessageTranslationLocalEffect {
   kind: 'messageTranslation'
   chatId: string
@@ -130,6 +143,8 @@ export type ServerCommandLocalEffect =
   | PluginStorageLocalEffect
   | PluginCollectionMutationLocalEffect
   | PluginProviderLocalEffect
+  | ModuleCollectionMutationLocalEffect
+  | ModuleEnabledLocalEffect
   | MessageTranslationLocalEffect
   | MessageMutationLocalEffect
   | CharacterRowMutationLocalEffect
@@ -2875,6 +2890,7 @@ export async function replaceModuleLorebooksCommand(
   input: ReplaceModuleLorebooksCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/lorebooks`, {
     method: 'PUT',
@@ -2884,6 +2900,14 @@ export async function replaceModuleLorebooksCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'lorebooks',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: isCanonicalLorebookEntryArray(input.entries),
+          })
+      : undefined,
   })
 }
 
@@ -2891,6 +2915,7 @@ export async function upsertModuleLorebookEntryCommand(
   input: UpsertModuleLorebookEntryCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string; entryId: string; entryIndex: number; created: boolean }>> {
   return requestCommandJson(
     `/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
@@ -2902,6 +2927,16 @@ export async function upsertModuleLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: acknowledgeOptimistic
+        ? (body, event) =>
+            readModuleCollectionMutationLocalEffect(body, event, {
+              operation: 'lorebooks',
+              expectedModuleId: input.moduleId,
+              expectedEntryId: input.entryId,
+              entryResult: 'upsert',
+              hasCanonicalPayload: isCanonicalLorebookEntry(input.entry),
+            })
+        : undefined,
     },
   )
 }
@@ -2910,6 +2945,7 @@ export async function deleteModuleLorebookEntryCommand(
   input: DeleteModuleLorebookEntryCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string; entryId: string; entryIndex: number }>> {
   return requestCommandJson(
     `/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
@@ -2920,6 +2956,15 @@ export async function deleteModuleLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: acknowledgeOptimistic
+        ? (body, event) =>
+            readModuleCollectionMutationLocalEffect(body, event, {
+              operation: 'lorebooks',
+              expectedModuleId: input.moduleId,
+              expectedEntryId: input.entryId,
+              entryResult: 'delete',
+            })
+        : undefined,
     },
   )
 }
@@ -2928,6 +2973,7 @@ export async function reorderModuleLorebookEntriesCommand(
   input: ReorderModuleLorebookEntriesCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/reorder`, {
     method: 'POST',
@@ -2937,6 +2983,14 @@ export async function reorderModuleLorebookEntriesCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'lorebooks',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: isUniqueStringArray(input.entryIds),
+          })
+      : undefined,
   })
 }
 
@@ -2976,6 +3030,7 @@ export async function replaceModuleScriptsCommand(
   input: ReplaceModuleScriptsCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/scripts`, {
     method: 'PUT',
@@ -2985,6 +3040,14 @@ export async function replaceModuleScriptsCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'scripts',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: isUniqueDefinitionArray(input.scripts),
+          })
+      : undefined,
   })
 }
 
@@ -2992,6 +3055,7 @@ export async function replaceModuleTriggersCommand(
   input: ReplaceModuleTriggersCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/triggers`, {
     method: 'PUT',
@@ -3001,12 +3065,21 @@ export async function replaceModuleTriggersCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'triggers',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: isUniqueDefinitionArray(input.triggers),
+          })
+      : undefined,
   })
 }
 
 export async function createModuleCommand(
   input: CreateModuleCommandInput,
   signal?: AbortSignal | null,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson('/modules', {
     method: 'POST',
@@ -3015,12 +3088,21 @@ export async function createModuleCommand(
       module: input.module,
     },
     signal,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'create',
+            expectedModuleId: input.module.id,
+            hasCanonicalPayload: isCanonicalModuleCreate(input.module),
+          })
+      : undefined,
   })
 }
 
 export async function updateModuleCommand(
   input: UpdateModuleCommandInput,
   signal?: AbortSignal | null,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string }>> {
   return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}`, {
     method: 'PATCH',
@@ -3029,6 +3111,14 @@ export async function updateModuleCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'update',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: Object.keys(input.patch).length > 0,
+          })
+      : undefined,
   })
 }
 
@@ -3048,6 +3138,7 @@ export async function deleteModuleCommand(
 export async function enableModuleCommand(
   input: EnableModuleCommandInput,
   signal?: AbortSignal | null,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ moduleId: string; enabled: boolean }>> {
   return requestCommandJson('/modules/enable', {
     method: 'POST',
@@ -3057,12 +3148,16 @@ export async function enableModuleCommand(
       enabled: input.enabled,
     },
     signal,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) => readModuleEnabledLocalEffect(body, event, input.moduleId, input.enabled)
+      : undefined,
   })
 }
 
 export async function reorderModulesCommand(
   input: ReorderModulesCommandInput,
   signal?: AbortSignal | null,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult> {
   return requestCommandJson('/modules/reorder', {
     method: 'POST',
@@ -3071,12 +3166,20 @@ export async function reorderModulesCommand(
       moduleIds: input.moduleIds,
     },
     signal,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'reorder',
+            expectedModuleIds: input.moduleIds,
+          })
+      : undefined,
   })
 }
 
 export async function reorderCharacterModulesCommand(
   input: ReorderCharacterModulesCommandInput,
   signal?: AbortSignal | null,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/modules/reorder`, {
     method: 'POST',
@@ -3085,6 +3188,12 @@ export async function reorderCharacterModulesCommand(
       moduleIds: input.moduleIds,
     },
     signal,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          event.type === 'character.modules.reordered' && event.parentId === undefined
+            ? readCharacterPatchLocalEffect(body, event, input.characterId, { modules: input.moduleIds })
+            : undefined
+      : undefined,
   })
 }
 
@@ -3715,6 +3824,150 @@ function readPluginProviderLocalEffect(
     return undefined
   }
   return { kind: 'pluginProvider', provider: expectedProvider }
+}
+
+interface ReadModuleCollectionMutationLocalEffectOptions {
+  operation: ModuleCollectionMutationLocalEffect['operation']
+  expectedModuleId?: unknown
+  expectedModuleIds?: unknown
+  expectedEntryId?: unknown
+  entryResult?: 'upsert' | 'delete'
+  hasCanonicalPayload?: boolean
+}
+
+function readModuleCollectionMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadModuleCollectionMutationLocalEffectOptions,
+): ModuleCollectionMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (options.hasCanonicalPayload === false) return undefined
+
+  const expectedType =
+    options.operation === 'create'
+      ? 'module.created'
+      : options.operation === 'update'
+        ? 'module.updated'
+        : options.operation === 'reorder'
+          ? 'module.reordered'
+          : options.operation === 'lorebooks'
+            ? 'lorebook.entries.replaced'
+            : options.operation === 'scripts'
+              ? 'scriptDefinitions.replaced'
+              : 'triggerDefinitions.replaced'
+  const expectedResource =
+    options.operation === 'create'
+      ? 'moduleCreated'
+      : options.operation === 'reorder'
+        ? 'moduleReordered'
+        : options.operation === 'scripts'
+          ? 'moduleScriptDefinition'
+          : options.operation === 'triggers'
+            ? 'moduleTriggerDefinition'
+            : 'moduleUpdated'
+  if (event.type !== expectedType || event.resource !== expectedResource || event.parentId !== undefined) {
+    return undefined
+  }
+
+  if (options.operation === 'reorder') {
+    if (event.id !== undefined || !isUniqueStringArray(options.expectedModuleIds)) return undefined
+    return {
+      kind: 'moduleCollectionMutation',
+      operation: options.operation,
+      moduleIds: [...options.expectedModuleIds],
+    }
+  }
+
+  if (!nonEmptyString(options.expectedModuleId)) return undefined
+  const record = body as Record<string, unknown>
+  if (record.moduleId !== options.expectedModuleId || event.id !== options.expectedModuleId) return undefined
+  if (options.expectedEntryId !== undefined) {
+    if (
+      !nonEmptyString(options.expectedEntryId) ||
+      record.entryId !== options.expectedEntryId ||
+      !Number.isInteger(record.entryIndex) ||
+      (record.entryIndex as number) < 0 ||
+      (options.entryResult === 'upsert'
+        ? typeof record.created !== 'boolean'
+        : options.entryResult === 'delete'
+          ? record.created !== undefined
+          : false)
+    ) {
+      return undefined
+    }
+  }
+  return {
+    kind: 'moduleCollectionMutation',
+    operation: options.operation,
+    moduleId: options.expectedModuleId,
+  }
+}
+
+function readModuleEnabledLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  expectedModuleId: unknown,
+  expectedEnabled: unknown,
+): ModuleEnabledLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (!nonEmptyString(expectedModuleId) || typeof expectedEnabled !== 'boolean') return undefined
+  const record = body as Record<string, unknown>
+  if (
+    event.type !== 'module.enabled' ||
+    event.resource !== 'moduleEnabled' ||
+    event.id !== expectedModuleId ||
+    event.parentId !== undefined ||
+    record.moduleId !== expectedModuleId ||
+    record.enabled !== expectedEnabled
+  ) {
+    return undefined
+  }
+  return { kind: 'moduleEnabled', moduleId: expectedModuleId, enabled: expectedEnabled }
+}
+
+function isCanonicalModuleCreate(value: ModuleSnapshot): boolean {
+  return (
+    nonEmptyString(value.id) &&
+    typeof value.name === 'string' &&
+    value.name.trim() !== '' &&
+    typeof value.description === 'string'
+  )
+}
+
+function isUniqueDefinitionArray(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const ids: string[] = []
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const id = (candidate as Record<string, unknown>).id
+    if (!nonEmptyString(id)) return false
+    ids.push(id)
+  }
+  return new Set(ids).size === ids.length
+}
+
+function isCanonicalLorebookEntryArray(value: unknown): boolean {
+  if (!Array.isArray(value) || !value.every(isCanonicalLorebookEntry)) return false
+  const ids = value.map((entry) => (entry as Record<string, unknown>).id as string)
+  return new Set(ids).size === ids.length
+}
+
+function isCanonicalLorebookEntry(value: unknown): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return (
+    nonEmptyString(record.id) &&
+    typeof record.key === 'string' &&
+    typeof record.secondkey === 'string' &&
+    typeof record.insertorder === 'number' &&
+    Number.isFinite(record.insertorder) &&
+    typeof record.comment === 'string' &&
+    typeof record.content === 'string' &&
+    typeof record.mode === 'string' &&
+    typeof record.alwaysActive === 'boolean' &&
+    typeof record.selective === 'boolean' &&
+    (record.folder === undefined || typeof record.folder === 'string')
+  )
 }
 
 function readMessageTranslationLocalEffect(

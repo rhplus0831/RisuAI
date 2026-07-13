@@ -23,6 +23,8 @@ import {
   applyPluginCollectionMutationLocalEffect,
   applyPluginProviderLocalEffect,
   applyPluginStorageLocalEffect,
+  applyModuleCollectionMutationLocalEffect,
+  applyModuleEnabledLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
   collectionsResourceState,
@@ -328,6 +330,84 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().currentPluginProvider).toBe('newer-provider')
     expect(settingsResourceState.groupRevisions.providers).toBe(4)
     expect(settingsResourceState.revision).toBe(4)
+  })
+
+  it('fences optimistic module definitions without replacing newer records or order', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        modules: [
+          { id: 'mod-b', name: 'Newer B', description: '', cjs: 'newer-b' },
+          { id: 'mod-a', name: 'Newer A', description: '', cjs: 'newer-a' },
+        ],
+      },
+    })
+
+    expect(
+      applyModuleCollectionMutationLocalEffect({
+        revision: 4,
+        operation: 'update',
+        moduleId: 'mod-a',
+      }),
+    ).toBe(true)
+    expect(
+      applyModuleCollectionMutationLocalEffect({
+        revision: 5,
+        operation: 'reorder',
+        moduleIds: ['mod-a', 'mod-b'],
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().modules).toEqual([
+      { id: 'mod-b', name: 'Newer B', description: '', cjs: 'newer-b' },
+      { id: 'mod-a', name: 'Newer A', description: '', cjs: 'newer-a' },
+    ])
+    expect(collectionsResourceState.revisions.modules).toBe(5)
+    expect(collectionsResourceState.revision).toBe(5)
+  })
+
+  it('fences enabled modules as one settings slice and preserves it across an older full read', () => {
+    applySettingsResource({ revision: 3, settings: { enabledModules: ['mod-a'], language: 'en' } })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().enabledModules = ['mod-b']
+    })
+
+    expect(applyModuleEnabledLocalEffect({ revision: 4, moduleId: 'mod-a', enabled: true })).toBe(true)
+    expect(getResourceDatabase().enabledModules).toEqual(['mod-b'])
+    expect(settingsResourceState.enabledModulesRevision).toBe(4)
+
+    expect(applySettingsResource({ revision: 3, settings: { enabledModules: ['stale-module'], language: 'ko' } })).toBe(
+      true,
+    )
+    expect(getResourceDatabase()).toMatchObject({ enabledModules: ['mod-b'], language: 'ko' })
+    expect(settingsResourceState.revision).toBe(4)
+    expect(settingsResourceState.enabledModulesRevision).toBe(4)
+
+    expect(
+      applySettingsResource({ revision: 5, settings: { enabledModules: ['server-module'], language: 'ja' } }),
+    ).toBe(true)
+    expect(getResourceDatabase()).toMatchObject({ enabledModules: ['server-module'], language: 'ja' })
+    expect(settingsResourceState.enabledModulesRevision).toBeNull()
+  })
+
+  it('rejects unsafe module acknowledgements so authoritative reads remain available', () => {
+    applySettingsResource({ revision: 3, settings: { enabledModules: ['mod-a', 'mod-a'] } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        modules: [
+          { id: 'mod-a', name: 'A', description: '' },
+          { id: 'mod-a', name: 'Duplicate', description: '' },
+        ],
+      },
+    })
+
+    expect(applyModuleEnabledLocalEffect({ revision: 4, moduleId: 'mod-a', enabled: true })).toBe(false)
+    expect(applyModuleCollectionMutationLocalEffect({ revision: 4, operation: 'update', moduleId: 'mod-a' })).toBe(
+      false,
+    )
   })
 
   it('merges character details by stable id and drops stale rows', () => {

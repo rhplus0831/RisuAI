@@ -503,10 +503,7 @@ export class ModuleHandler extends MCPToolHandler {
         }
         getDatabase().enabledModules = Array.from(enabledModules)
       }
-      for (const [key, value] of Object.entries(acceptedPatch)) {
-        // @ts-ignore
-        liveModule[key] = value
-      }
+      applyModuleInfoFields(liveModule as unknown as Record<string, unknown>, acceptedPatch)
     }
 
     const updatedModuleName = getDatabase().modules.find((m) => m.id === moduleId)?.name || liveModule.name || moduleId
@@ -980,10 +977,7 @@ function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, 
     const target = getDatabase().modules?.find((candidate) => candidate.id === moduleId)
     if (!target) return
 
-    const mutableTarget = target as unknown as Record<string, unknown>
-    for (const [field, value] of Object.entries(patch)) {
-      mutableTarget[field] = value
-    }
+    applyModuleInfoFields(target as unknown as Record<string, unknown>, patch)
 
     if (enabled !== null) {
       const enabledModules = new Set(getDatabase().enabledModules ?? [])
@@ -995,6 +989,18 @@ function applyModuleInfoOptimistically(moduleId: string, patch: ModuleSnapshot, 
       getDatabase().enabledModules = Array.from(enabledModules)
     }
   })
+}
+
+const MODULE_INFO_DELETABLE_FIELDS = new Set(['lowLevelAccess', 'backgroundEmbedding', 'customModuleToggle'])
+
+function applyModuleInfoFields(target: Record<string, unknown>, patch: ModuleSnapshot): void {
+  for (const [field, value] of Object.entries(patch)) {
+    if (value === null && MODULE_INFO_DELETABLE_FIELDS.has(field)) {
+      delete target[field]
+    } else {
+      target[field] = value
+    }
+  }
 }
 
 function replaceModuleLorebooksOptimistically(moduleId: string, entries: loreBook[]): void {

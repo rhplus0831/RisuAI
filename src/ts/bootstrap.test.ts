@@ -530,6 +530,83 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
+  it('acknowledges contiguous optimistic module definitions and enablement without resource reads', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().modules = [
+        { id: 'mod-b', name: 'Newer B', description: '', cjs: 'newer-b' },
+        { id: 'mod-a', name: 'Newer A', description: '', cjs: 'newer-a' },
+      ]
+      getDatabase().enabledModules = ['mod-b']
+    })
+    const collectionEvent = {
+      type: 'module.reordered',
+      revision: 6,
+      resource: 'moduleReordered',
+    }
+    const enabledEvent = {
+      type: 'module.enabled',
+      revision: 7,
+      resource: 'moduleEnabled',
+      id: 'mod-a',
+    }
+
+    await commandApi.reconciler?.(
+      enabledEvent,
+      [collectionEvent, enabledEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'moduleCollectionMutation',
+            operation: 'reorder',
+            moduleIds: ['mod-a', 'mod-b'],
+          },
+        ],
+        [7, { kind: 'moduleEnabled', moduleId: 'mod-a', enabled: true }],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().modules.map((module) => [module.id, module.cjs])).toEqual([
+      ['mod-b', 'newer-b'],
+      ['mod-a', 'newer-a'],
+    ])
+    expect(getDatabase().enabledModules).toEqual(['mod-b'])
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('keeps mismatched module acknowledgements on authoritative reconciliation', async () => {
+    await loadWebInitialDatabase()
+    const event = {
+      type: 'module.updated',
+      revision: 6,
+      resource: 'moduleUpdated',
+      id: 'mod-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'moduleCollectionMutation',
+            operation: 'scripts',
+            moduleId: 'mod-a',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('applies a contiguous canonical message translation without fetching the transcript', async () => {
     await loadWebInitialDatabase()
     const translation = {
