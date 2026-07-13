@@ -14,6 +14,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import {
   clearCachedServerCommandRevision,
+  setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type ChatFolderSnapshot,
   type ChatSnapshot,
@@ -3958,6 +3959,38 @@ describe('Phase 2 scriptstate-scoped var dispatch', () => {
 })
 
 describe('Phase 3 runner rejection rollback (L36)', () => {
+  it('reconciles all successful optimistic sequence steps once through the async wrapper', async () => {
+    setCachedServerCommandRevision(70)
+    const bases: number[] = []
+    const reconciliations: number[][] = []
+    setServerCommandSuccessReconciler((_event, events) => {
+      reconciliations.push(events.map((event) => event.revision))
+    })
+    const success = (revision: number): ServerCommandResult => ({
+      status: 'ok',
+      revision,
+      event: { type: 'chat.updated', revision, resource: 'characterRow' },
+    })
+
+    const result = await runOptimisticCommandSequenceAsync(
+      [
+        async (baseRevision) => {
+          bases.push(baseRevision)
+          return success(baseRevision + 1)
+        },
+        async (baseRevision) => {
+          bases.push(baseRevision)
+          return success(baseRevision + 1)
+        },
+      ],
+      vi.fn(),
+    )
+
+    expect(result).toBeNull()
+    expect(bases).toEqual([70, 71])
+    expect(reconciliations).toEqual([[71, 72]])
+  })
+
   it('skips sequence rollback when a destructive refresh lands before failure', async () => {
     stubCommandFetch()
     const rollback = vi.fn()

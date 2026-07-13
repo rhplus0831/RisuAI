@@ -91,6 +91,7 @@ import {
   reorderAgentPresetStepsCommand,
   reorderPresetsCommand,
   runServerCommand,
+  runServerCommandSequence,
   runServerPresetCommand,
   replaceTailMessagesCommand,
   replaceMessagesCommand,
@@ -139,6 +140,7 @@ import {
   setServerCommandSuccessReconciler,
   type PromptItemSnapshot,
   type ServerCommandLocalEffect,
+  type ServerCommandResult,
   updatePromptItemCommand,
   updatePromptPresetCommand,
   updatePresetCommand,
@@ -593,6 +595,195 @@ describe('server command API adapter', () => {
     ])
     expect(reconciled).toEqual([{ revision: 12, coalescedRevisions: [11, 12] }])
     expect(visibleValue).toBe('second optimistic value')
+  })
+
+  it('runs a multi-step sequence with advancing revisions and one coalesced local-effect reconciliation', async () => {
+    const attempts = [{ maxContext: 8_000 }, { maxResponse: 1_000 }]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => {
+      const patch = attempts[responseIndex]
+      const revision = 11 + responseIndex
+      responseIndex += 1
+      return {
+        revision,
+        event: {
+          type: 'settings.updated',
+          revision,
+          resource: 'settings',
+          id: 'runtime',
+        },
+        acknowledgedKeys: Object.keys(patch),
+        settings: {},
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    setCachedServerCommandRevision(10)
+    const reconciliations: Array<{
+      latestRevision: number
+      revisions: number[]
+      localEffects: Array<[number, ServerCommandLocalEffect]>
+    }> = []
+    setServerCommandSuccessReconciler((event, events, localEffects) => {
+      reconciliations.push({
+        latestRevision: event.revision,
+        revisions: events.map((candidate) => candidate.revision),
+        localEffects: Array.from(localEffects.entries()),
+      })
+    })
+    const rollback = vi.fn()
+
+    const result = await runServerCommandSequence(
+      [
+        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: attempts[0] }),
+        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: attempts[1] }),
+      ],
+      rollback,
+    )
+
+    expect(result).toBeNull()
+    expect(rollback).not.toHaveBeenCalled()
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      { baseRevision: 10, patch: attempts[0] },
+      { baseRevision: 11, patch: attempts[1] },
+    ])
+    expect(reconciliations).toEqual([
+      {
+        latestRevision: 12,
+        revisions: [11, 12],
+        localEffects: [
+          [
+            11,
+            {
+              kind: 'settingsPatch',
+              group: 'runtime',
+              attemptedPatch: attempts[0],
+              settings: attempts[0],
+            },
+          ],
+          [
+            12,
+            {
+              kind: 'settingsPatch',
+              group: 'runtime',
+              attemptedPatch: attempts[1],
+              settings: attempts[1],
+            },
+          ],
+        ],
+      },
+    ])
+  })
+
+  it('keeps a command sequence atomic against unrelated queued work and advances custom success revisions', async () => {
+    const firstStarted = createDeferred<void>()
+    const releaseFirst = createDeferred<void>()
+    const order: string[] = []
+    const bases: number[] = []
+    const success = (revision: number, type: string): ServerCommandResult => ({
+      status: 'ok',
+      revision,
+      event: { type, revision, resource: 'asset' },
+    })
+    setCachedServerCommandRevision(20)
+
+    const sequence = runServerCommandSequence([
+      async (baseRevision) => {
+        order.push('sequence-1')
+        bases.push(baseRevision)
+        firstStarted.resolve()
+        await releaseFirst.promise
+        return success(baseRevision + 1, 'sequence.first')
+      },
+      async (baseRevision) => {
+        order.push('sequence-2')
+        bases.push(baseRevision)
+        return success(baseRevision + 1, 'sequence.second')
+      },
+    ])
+
+    await firstStarted.promise
+    const unrelated = runServerCommand({
+      command: async (baseRevision) => {
+        order.push('unrelated')
+        bases.push(baseRevision)
+        return success(baseRevision + 1, 'unrelated.updated')
+      },
+    })
+    releaseFirst.resolve()
+
+    await expect(Promise.all([sequence, unrelated])).resolves.toEqual([
+      null,
+      expect.objectContaining({ status: 'ok', revision: 23 }),
+    ])
+    expect(order).toEqual(['sequence-1', 'sequence-2', 'unrelated'])
+    expect(bases).toEqual([20, 21, 22])
+    expect(peekCachedServerCommandRevision()).toBe(23)
+  })
+
+  it('fails a sequence fast and rolls back before reconciling its accepted events', async () => {
+    const order: string[] = []
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => {
+      responseIndex += 1
+      if (responseIndex === 1) {
+        order.push('accepted-response')
+        return {
+          revision: 51,
+          event: { type: 'settings.updated', revision: 51, resource: 'settings', id: 'runtime' },
+        }
+      }
+      order.push('conflict-response')
+      return jsonResponse({ currentRevision: 55 }, 409)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    setCachedServerCommandRevision(50)
+    setServerCommandSuccessReconciler(() => {
+      order.push('reconcile')
+    })
+    const rollback = vi.fn(() => {
+      order.push('rollback')
+    })
+    const skipped = vi.fn(async (baseRevision: number) => ({
+      status: 'ok' as const,
+      revision: baseRevision + 1,
+      event: { type: 'skipped.updated', revision: baseRevision + 1, resource: 'asset' },
+    }))
+
+    const result = await runServerCommandSequence(
+      [
+        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 8_000 } }),
+        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxResponse: 1_000 } }),
+        skipped,
+      ],
+      rollback,
+    )
+
+    expect(result).toEqual({ status: 'conflict', currentRevision: 55 })
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      { baseRevision: 50, patch: { maxContext: 8_000 } },
+      { baseRevision: 51, patch: { maxResponse: 1_000 } },
+    ])
+    expect(skipped).not.toHaveBeenCalled()
+    expect(rollback).toHaveBeenCalledTimes(1)
+    expect(order).toEqual(['accepted-response', 'conflict-response', 'rollback', 'reconcile'])
+    expect(peekCachedServerCommandRevision()).toBe(55)
+  })
+
+  it('completes compatibility sequences whose successful result has no command event', async () => {
+    setCachedServerCommandRevision(60)
+    const reconciler = vi.fn()
+    const rollback = vi.fn()
+    setServerCommandSuccessReconciler(reconciler)
+
+    const result = await runServerCommandSequence(
+      [async () => ({ status: 'ok' }) as unknown as ServerCommandResult],
+      rollback,
+    )
+
+    expect(result).toBeNull()
+    expect(rollback).not.toHaveBeenCalled()
+    expect(reconciler).not.toHaveBeenCalled()
+    expect(peekCachedServerCommandRevision()).toBe(60)
   })
 
   it('keeps unqueued translation response reconciliation immediate during an unrelated queued mutation', async () => {

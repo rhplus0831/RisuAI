@@ -14,6 +14,7 @@ import {
   replaceTailMessagesCommand,
   replaceMessagesCommand,
   runServerCommand,
+  runServerCommandSequence,
   saveChatGenerationSettingsCommand,
   truncateMessagesCommand,
   updateChatCommand,
@@ -42,7 +43,6 @@ import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
   captureDestructiveRefreshEpoch,
-  runRollbackUnlessDestructiveRefreshChanged,
 } from './server/staleStateGuards'
 import {
   clearPendingChatGenerationSettingsSave,
@@ -1324,51 +1324,21 @@ export function runMessageCommand<T extends Record<string, unknown>>(
 }
 
 // Exported so other modules can serialize multi-resource command fan-out
-// against a shared optimistic snapshot. Each command runs sequentially; if
-// one fails (including conflict), the rollback is invoked once and the rest
-// are skipped. Without this, sibling `runServerCommand` calls all read the
-// same cached `baseRevision` and the later ones 409 after the first succeeds.
-// A thrown/rejected step is treated as a failure too: it is surfaced and
-// rolled back instead of escaping the fire-and-forget `void` as an unhandled
-// rejection that left the optimistic write silently diverged.
+// against a shared optimistic snapshot. The command layer enqueues the whole
+// sequence as one unit, advances the base revision after each accepted step,
+// and reconciles the accumulated events once after the sequence settles.
 export function runOptimisticCommandSequence(
   commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
   rollback: () => void,
 ): void {
-  if (!canUseServerCommands() || commands.length === 0) return
-  const rollbackEpoch = captureDestructiveRefreshEpoch()
-  void (async () => {
-    let failed = false
-    try {
-      for (const command of commands) {
-        const result = await runServerCommand({ command })
-        if (result.status !== 'ok') {
-          failed = true
-          break
-        }
-      }
-    } catch (error) {
-      console.error('Optimistic command sequence rejected:', error)
-      failed = true
-    }
-    if (failed) runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
-  })()
+  void runServerCommandSequence(commands, rollback)
 }
 
 export async function runOptimisticCommandSequenceAsync(
   commands: Array<(baseRevision: number) => Promise<ServerCommandResult>>,
   rollback: () => void,
 ): Promise<ServerCommandResult | null> {
-  if (!canUseServerCommands() || commands.length === 0) return null
-  const rollbackEpoch = captureDestructiveRefreshEpoch()
-  for (const command of commands) {
-    const result = await runServerCommand({ command })
-    if (result.status !== 'ok') {
-      runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
-      return result
-    }
-  }
-  return null
+  return runServerCommandSequence(commands, rollback)
 }
 
 function runChatCommandSequence(

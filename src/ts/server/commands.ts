@@ -1326,6 +1326,8 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
   keepalive?: boolean
 }
 
+export type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
+
 export interface ServerCommandTransportOptions {
   signal?: AbortSignal | null
   keepalive?: boolean
@@ -1456,10 +1458,9 @@ async function flushServerCommandReconciliationBatch(batch: ServerCommandReconci
         return
       }
 
-      // Response handling advances only the known cursor. With two or more
-      // accepted revisions, reconciling the latest event against the unchanged
-      // applied cursor intentionally forms a gap, so bootstrap performs one
-      // authoritative full resync covering every resource in server order.
+      // Reconcile accepted revisions together so bootstrap can apply safe
+      // contiguous local effects and issue at most one authoritative refresh
+      // for the remaining invalidations.
       const localEffects = new Map<number, ServerCommandLocalEffect>()
       for (const coalescedEvent of coalescedEvents) {
         const effect = batch.pendingLocalEffects.get(coalescedEvent.revision)
@@ -4385,6 +4386,46 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   return enqueueServerCommandExecution(() => executeServerCommand(input, rollbackEpoch))
 }
 
+/**
+ * Run a multi-resource optimistic mutation as one queue unit. Every accepted
+ * response advances the shared revision cursor before the next factory runs,
+ * while response events remain deferred until the whole sequence finishes.
+ * This prevents unrelated queued commands from interleaving between steps and
+ * lets bootstrap reconcile the accumulated events once.
+ *
+ * A failure rolls back inside the queue task, before its accepted earlier
+ * events are flushed through reconciliation. `null` means every step was
+ * accepted (or there was no work to dispatch); otherwise the first failure is
+ * returned and later factories are skipped.
+ */
+export async function runServerCommandSequence(
+  commands: readonly ServerCommandFactory[],
+  rollback?: () => void,
+): Promise<ServerCommandResult | null> {
+  if (!canUseServerCommands() || commands.length === 0) return null
+
+  const rollbackEpoch = captureDestructiveRefreshEpoch()
+  return enqueueServerCommandExecution(() => executeServerCommandSequence(commands, rollback, rollbackEpoch))
+}
+
+async function executeServerCommandSequence(
+  commands: readonly ServerCommandFactory[],
+  rollback: (() => void) | undefined,
+  rollbackEpoch: number,
+): Promise<ServerCommandResult | null> {
+  for (const command of commands) {
+    // The sequence owns rollback so it runs exactly once for the first failed
+    // step. executeServerCommand still normalizes thrown factories to an error
+    // result and defers every accepted event into this sequence's active batch.
+    const result = await executeServerCommand({ command }, rollbackEpoch)
+    if (result.status === 'ok') continue
+
+    runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
+    return result
+  }
+  return null
+}
+
 async function executeServerCommand<T extends Record<string, unknown>>(
   input: RunServerPresetCommandInput<T>,
   rollbackEpoch: number,
@@ -4412,6 +4453,10 @@ async function executeServerCommand<T extends Record<string, unknown>>(
   if (result.status !== 'ok') {
     runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
   } else {
+    // requestCommandJson already advances this cursor, but custom command
+    // factories are also supported. Trust their accepted revision so the next
+    // queued factory does not reuse a stale baseRevision.
+    setCachedServerCommandRevision(result.revision)
     await notifyServerCommandSuccessReconciler(result.event)
   }
   return result
