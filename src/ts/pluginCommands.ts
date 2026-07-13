@@ -40,6 +40,14 @@ interface PluginSettingsPatchRollbackStep {
 }
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
+const PLUGIN_PATCH_DELETABLE_KEYS = new Set([
+  'version',
+  'displayName',
+  'versionOfPlugin',
+  'updateURL',
+  'enabled',
+  'allowedIPC',
+])
 let pluginWatchSuppressionVersion = 0
 let nextPluginStorageOperationSequence = 0
 const pendingPluginStorageOperationsByKey = new Map<string, PluginStorageOperationRecord[]>()
@@ -500,7 +508,10 @@ function pluginFieldRollbackEntries(
   previous: PluginStateSnapshot,
 ): PluginFieldRollbackEntry[] {
   return Object.entries(patch)
-    .map(([field, value]) => pluginFieldRollbackEntry(pluginId, field, previous, true, value))
+    .map(([field, value]) => {
+      const deletesField = value === null && PLUGIN_PATCH_DELETABLE_KEYS.has(field)
+      return pluginFieldRollbackEntry(pluginId, field, previous, !deletesField, deletesField ? undefined : value)
+    })
     .filter((entry): entry is PluginFieldRollbackEntry => entry !== null)
 }
 
@@ -675,7 +686,7 @@ function rollbackPluginFieldIfLiveMatches(entry: PluginFieldRollbackEntry): bool
   const liveExists = hasOwnRecordKey(livePlugin, entry.field)
   if (entry.attemptedExists) {
     if (!liveExists || !isJsonValueEqual(livePlugin[entry.field], entry.attemptedValue)) return false
-  } else if (liveExists) {
+  } else if (liveExists && livePlugin[entry.field] !== undefined) {
     return false
   }
 
@@ -1220,7 +1231,12 @@ function rollbackPluginSettingsPatch(snapshot: PluginSettingsPatchRollbackSnapsh
 }
 
 export function toPluginSnapshot(plugin: RisuPlugin): PluginSnapshot {
-  return cloneJsonValue(plugin) as PluginSnapshot
+  // Preserve top-level `undefined` on optional fields. The delta builder turns
+  // an explicitly removed field into the JSON-safe `null` deletion sentinel.
+  // A JSON clone here would erase that distinction before diffing.
+  return Object.fromEntries(
+    Object.entries(plugin as RisuPlugin & Record<string, unknown>).map(([key, value]) => [key, cloneJsonValue(value)]),
+  ) as PluginSnapshot
 }
 
 export function sanitizePluginPatch(patch: PluginSnapshot): PluginSnapshot {
@@ -1239,11 +1255,25 @@ function changedPluginPatch(pluginId: string, patch: PluginSnapshot, previous: P
     | undefined
   if (!before) return cloneJsonValue(sanitized)
 
-  return Object.fromEntries(
+  const changed = Object.fromEntries(
     Object.entries(sanitized)
       .filter(
         ([key, value]) => !Object.prototype.hasOwnProperty.call(before, key) || !isJsonValueEqual(before[key], value),
       )
       .map(([key, value]) => [key, cloneJsonValue(value)]),
-  )
+  ) as Record<string, unknown>
+
+  for (const [key, value] of Object.entries(patch)) {
+    if (
+      value === undefined &&
+      PLUGIN_PATCH_DELETABLE_KEYS.has(key) &&
+      Object.prototype.hasOwnProperty.call(before, key)
+    ) {
+      // Plugin fields cannot otherwise contain null. The server interprets it
+      // as an explicit delete, keeping sparse full-record updates compact.
+      changed[key] = null
+    }
+  }
+
+  return changed as PluginSnapshot
 }

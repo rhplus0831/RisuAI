@@ -19,6 +19,14 @@ export interface PluginRecord extends JsonRecord {
 }
 
 const PLUGIN_PATCH_EXCLUDED_KEYS = new Set(['name'])
+const PLUGIN_PATCH_DELETABLE_KEYS = new Set([
+  'version',
+  'displayName',
+  'versionOfPlugin',
+  'updateURL',
+  'enabled',
+  'allowedIPC',
+])
 
 const PLUGIN_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
   ['script', ['string']],
@@ -73,7 +81,7 @@ export function readPluginPatch(input: unknown): JsonRecord {
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one plugin field')
   }
-  validatePluginPatch(patch, 'patch')
+  validatePluginPatch(patch, 'patch', { allowDeleteSentinel: true })
   return patch
 }
 
@@ -130,10 +138,21 @@ function validatePluginRecord(record: JsonRecord, label: string): void {
   validatePluginPatch(record, label, { allowName: true })
 }
 
-function validatePluginPatch(record: JsonRecord, label: string, options: { allowName?: boolean } = {}): void {
+function validatePluginPatch(
+  record: JsonRecord,
+  label: string,
+  options: { allowName?: boolean; allowDeleteSentinel?: boolean } = {},
+): void {
   for (const key of Object.keys(record)) {
     if (!options.allowName && PLUGIN_PATCH_EXCLUDED_KEYS.has(key)) {
       throw new ValidationError(`${label}.${key} cannot be changed by plugin commands`)
+    }
+
+    if (record[key] === null) {
+      if (!options.allowDeleteSentinel || !PLUGIN_PATCH_DELETABLE_KEYS.has(key)) {
+        throw new ValidationError(`${label}.${key} cannot be deleted`)
+      }
+      continue
     }
 
     const allowedTypes = PLUGIN_SCALAR_FIELD_TYPES.get(key)

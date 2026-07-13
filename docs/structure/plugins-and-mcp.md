@@ -75,6 +75,10 @@ Plugin command routes are part of the generic `/api/v1/commands/` manifest entry
 and use the same auth, active-writer, base-revision, and command-event contract
 as other command routes:
 
+Plugin record `PATCH` requests contain only changed fields. Because JSON omits
+`undefined`, `null` is reserved as a deletion sentinel for optional plugin
+metadata; it is rejected for required fields and full plugin creation records.
+
 - `POST /api/v1/commands/plugins`
 - `PATCH /api/v1/commands/plugins/:pluginId`
 - `DELETE /api/v1/commands/plugins/:pluginId`

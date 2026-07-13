@@ -252,11 +252,16 @@ function pluginSource(
   options: {
     api?: '2.1' | '3.0'
     body?: string
+    displayName?: string | null
     versionOfPlugin?: string
     updateURL?: string
   } = {},
 ): string {
-  const lines = [`//@name ${name}`, `//@display-name ${name}`, `//@api ${options.api ?? '3.0'}`]
+  const lines = [`//@name ${name}`]
+  if (options.displayName !== null) {
+    lines.push(`//@display-name ${options.displayName ?? name}`)
+  }
+  lines.push(`//@api ${options.api ?? '3.0'}`)
   if (options.versionOfPlugin) {
     lines.push(`//@version ${options.versionOfPlugin}`)
   }
@@ -537,15 +542,17 @@ describe('plugin import/update freshness', () => {
         versionOfPlugin: '1.0.0',
       }),
     ])
-    expect(calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toMatchObject({
+    const patchCall = calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')
+    expect(patchCall).toMatchObject({
       method: 'PATCH',
       body: {
         baseRevision: 10,
-        patch: expect.objectContaining({
+        patch: {
           script: updatedSource,
+          displayName: 'plugin-a',
           versionOfPlugin: '1.0.1',
-          updateURL: remoteUrl,
-        }),
+          allowedIPC: [],
+        },
       },
     })
     expect(loadV3Plugins).not.toHaveBeenCalled()
@@ -624,15 +631,47 @@ describe('plugin import/update freshness', () => {
     await vi.waitFor(() => {
       expect(calls.some((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toBe(true)
     })
+    const patchCall = calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')
+    expect(patchCall).toMatchObject({
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: {
+          script: updatedSource,
+          displayName: 'plugin-a',
+          versionOfPlugin: '1.0.1',
+          allowedIPC: [],
+        },
+      },
+    })
+  })
+
+  it('removes optional metadata omitted by a fresh remote plugin snapshot', async () => {
+    const remoteUrl = 'https://plugins.example/plugin-a.js'
+    const updatedSource = pluginSource('plugin-a', {
+      body: 'Risuai.log("updated")',
+      displayName: null,
+      versionOfPlugin: '1.0.1',
+      updateURL: remoteUrl,
+    })
+    const calls = stubRemotePluginUpdateFetch({ remoteUrl, remoteSource: updatedSource })
+    getDatabase().plugins = [
+      seedPlugin('plugin-a', {
+        script: 'Risuai.log("old")',
+        displayName: 'Old display name',
+        updateURL: remoteUrl,
+        versionOfPlugin: '1.0.0',
+      }),
+    ]
+
+    await expect(updatePlugin(getDatabase().plugins[0])).resolves.toBe(true)
+
+    expect(getDatabase().plugins[0].displayName).toBeUndefined()
     expect(calls.find((call) => call.url === '/api/v1/commands/plugins/plugin-a')).toMatchObject({
       method: 'PATCH',
       body: {
         baseRevision: 10,
-        patch: expect.objectContaining({
-          script: updatedSource,
-          versionOfPlugin: '1.0.1',
-          updateURL: remoteUrl,
-        }),
+        patch: expect.objectContaining({ displayName: null }),
       },
     })
   })

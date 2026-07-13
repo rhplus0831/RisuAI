@@ -6376,7 +6376,13 @@ export function registerCommandRoutes(
           const target = ensurePluginCommandDatabase(database)
           const plugins = ensurePluginRecords(target)
           const index = requirePluginIndex(plugins, pluginId)
-          Object.assign(plugins[index], patch)
+          for (const [key, value] of Object.entries(patch)) {
+            if (value === null) {
+              delete plugins[index][key]
+            } else {
+              plugins[index][key] = value
+            }
+          }
           writeSingleCollectionRow(innerDb, 'plugins', index, plugins[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.pluginUpdated, id: pluginId },

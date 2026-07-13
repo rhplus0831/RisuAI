@@ -10225,6 +10225,56 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     ])
   })
 
+  it('deletes optional plugin fields through null patch sentinels', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      plugins: [
+        {
+          name: 'plugin-a',
+          script: 'Risuai.log("A")',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version: '3.0',
+          displayName: 'Plugin A',
+          updateURL: 'https://plugins.example/plugin-a.js',
+          allowedIPC: ['channel-a'],
+          enabled: true,
+        },
+      ],
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/plugins/plugin-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { displayName: null, updateURL: null, allowedIPC: null },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.plugins[0]).not.toHaveProperty('displayName')
+    expect(bootstrap.json().database.plugins[0]).not.toHaveProperty('updateURL')
+    expect(bootstrap.json().database.plugins[0]).not.toHaveProperty('allowedIPC')
+
+    const invalid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/plugins/plugin-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, patch: { script: null } },
+    })
+    expect(invalid.statusCode).toBe(400)
+    expect(invalid.json().error).toBe('patch.script cannot be deleted')
+  })
+
   it('rejects malformed plugin commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

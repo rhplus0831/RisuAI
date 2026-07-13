@@ -28,6 +28,7 @@ import {
   mergePendingPluginStorageResource,
   preservePendingPluginStorageInDatabase,
   setPluginArgument,
+  toPluginSnapshot,
   togglePluginEnabled,
 } from './pluginCommands'
 import type { RisuPlugin } from './plugins/plugins.svelte'
@@ -761,6 +762,43 @@ describe('plugin projection command helpers', () => {
           realArg: { mode: 'attempted', token: 'abc' },
         },
       },
+    })
+  })
+
+  it('encodes optional-field deletion and restores it when the command fails', async () => {
+    const calls = stubCommandFetch({ failCommands: true })
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins[0] = seedPlugin('plugin-a', {
+        displayName: 'Old display name',
+        allowedIPC: ['old-channel'],
+      })
+    })
+    const previous = currentPluginStateSnapshot()
+    const patch = { displayName: undefined, allowedIPC: undefined }
+    const fullSnapshot = toPluginSnapshot(seedPlugin('plugin-a', patch))
+    expect(Object.keys(fullSnapshot)).toEqual(expect.arrayContaining(['displayName', 'allowedIPC']))
+
+    withTrustedResourceWrite(() => {
+      delete getDatabase().plugins[0].displayName
+      delete getDatabase().plugins[0].allowedIPC
+    })
+    dispatchUpdatePlugin('plugin-a', patch, previous)
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/plugins/plugin-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { displayName: null, allowedIPC: null },
+      },
+    })
+    expect(getDatabase().plugins[0]).toMatchObject({
+      displayName: 'Old display name',
+      allowedIPC: ['old-channel'],
     })
   })
 
