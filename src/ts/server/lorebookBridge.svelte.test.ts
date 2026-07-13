@@ -70,7 +70,14 @@ vi.mock('./resourceWriteGuard.svelte', () => ({
 }))
 
 import { selectedCharID } from '../stores.svelte'
-import { getResourceDatabase as getDatabase, replaceResourceDatabase as setDatabaseLite } from './resourceState.svelte'
+import {
+  captureCharacterLorebookProjectionEpoch,
+  captureCharacterRowProjectionEpoch,
+  captureCollectionProjectionEpoch,
+  getResourceDatabase as getDatabase,
+  markCharacterLorebookProjectionApplied,
+  replaceResourceDatabase as setDatabaseLite,
+} from './resourceState.svelte'
 import {
   applyLorebookEntryDraftEdit,
   applyServerCharacterLorebookResource,
@@ -167,6 +174,10 @@ function characterEntryReorderCommands(): Array<Record<string, unknown> & { a?: 
 
 function globalEntryCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
   return recorded.commands.filter((c) => c.kind === 'upsertGlobalEntry')
+}
+
+function globalEntryReplaceCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
+  return recorded.commands.filter((c) => c.kind === 'replaceGlobalEntries')
 }
 
 function globalCreateCommands(): Array<Record<string, unknown> & { a?: unknown; rollback?: () => void }> {
@@ -1808,6 +1819,112 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect((getDatabase().characters[0].globalLore as Entry[]).map((entry) => entry.id)).toEqual(originalIds)
   })
 
+  it('passes queue-time projection epochs through compact and full scoped command paths', async () => {
+    setupK4EditorDb()
+    const characterRowEpoch = captureCharacterRowProjectionEpoch('c-k4')
+    const characterLorebookEpoch = captureCharacterLorebookProjectionEpoch('c-k4')
+    const characterEntries = getDatabase().characters[0].globalLore as Entry[]
+    const characterPrevious = currentLorebookCollectionScopedSnapshot({ kind: 'character', characterId: 'c-k4' })
+    characterEntries.push({
+      id: 'character-new',
+      key: 'new',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'New',
+      content: 'new',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    } as Entry)
+    dispatchReplaceCharacterLorebooks('c-k4', characterEntries as any, characterPrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(characterEntryCommands()[0].a).toMatchObject({
+      acknowledgeOptimistic: true,
+      optimisticRowEpoch: characterRowEpoch,
+      optimisticLorebookEpoch: characterLorebookEpoch,
+      optimisticEntries: expect.arrayContaining([expect.objectContaining({ id: 'character-new' })]),
+    })
+
+    recorded.commands.length = 0
+    const chatEntries = getDatabase().characters[0].chats[0].localLore as Entry[]
+    const chatPrevious = currentLorebookCollectionScopedSnapshot({ kind: 'chat', chatId: 'chat-k4' })
+    chatEntries[0].content = 'chat edited'
+    dispatchReplaceChatLorebooks('chat-k4', chatEntries as any, chatPrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(chatEntryCommands()[0].a).toMatchObject({
+      acknowledgeOptimistic: true,
+      optimisticCharacterId: 'c-k4',
+      optimisticRowEpoch: characterRowEpoch,
+      optimisticEntries: [expect.objectContaining({ id: 'chat-entry-0', content: 'chat edited' })],
+    })
+
+    recorded.commands.length = 0
+    const globalEpoch = captureCollectionProjectionEpoch('loreBook')
+    const globalEntries = getDatabase().loreBook[0].data as Entry[]
+    const globalPrevious = currentLorebookCollectionScopedSnapshot({ kind: 'global', lorebookId: 'global-k4' })
+    globalEntries[0].content = 'global first edit'
+    globalEntries[1].content = 'global second edit'
+    dispatchReplaceGlobalLorebookEntries('global-k4', globalEntries as any, globalPrevious, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(globalEntryReplaceCommands()[0].a).toMatchObject({
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: globalEpoch,
+      optimisticEntries: expect.arrayContaining([
+        expect.objectContaining({ content: 'global first edit' }),
+        expect.objectContaining({ content: 'global second edit' }),
+      ]),
+    })
+  })
+
+  it('captures projection epochs when queued and skips rollback after authoritative lorebook replacement', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const queuedLorebookEpoch = captureCharacterLorebookProjectionEpoch('c-k4')
+    const attemptedEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    attemptedEntries[2].content = 'attempted edit'
+
+    applyLorebookEntryDraftEdit(scope, 2, attemptedEntries[2] as any, DELAY)
+    expect(applyServerCharacterLorebookResource('c-k4', attemptedEntries)).toBe(true)
+    markCharacterLorebookProjectionApplied('c-k4')
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const command = characterEntryCommands()[0]
+    expect(command.a).toMatchObject({
+      optimisticLorebookEpoch: queuedLorebookEpoch,
+      entry: { content: 'attempted edit' },
+    })
+    command.rollback?.()
+    expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe('attempted edit')
+  })
+
+  it('starts a new coalesced rollback baseline after the relevant projection epoch changes', async () => {
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const first = {
+      ...(getDatabase().characters[0].globalLore as Entry[])[2],
+      content: 'first queued edit',
+    }
+    applyLorebookEntryDraftEdit(scope, 2, first as any, DELAY)
+
+    const authoritativeEntries = cloneEntries(getDatabase().characters[0].globalLore as Entry[])
+    authoritativeEntries[2].content = 'authoritative baseline'
+    expect(applyServerCharacterLorebookResource('c-k4', authoritativeEntries)).toBe(true)
+    markCharacterLorebookProjectionApplied('c-k4')
+    const replacementLorebookEpoch = captureCharacterLorebookProjectionEpoch('c-k4')
+
+    const second = { ...authoritativeEntries[2], content: 'second queued edit' }
+    applyLorebookEntryDraftEdit(scope, 2, second as any, DELAY)
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const command = characterEntryCommands()[0]
+    expect(command.a).toMatchObject({ optimisticLorebookEpoch: replacementLorebookEpoch })
+    command.rollback?.()
+    expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe('authoritative baseline')
+  })
+
   it('Batch 6: module collection draft helper owns live/draft optimistic write, dispatch, and rollback', async () => {
     setupK4ModuleDb()
     const liveModule = getDatabase().modules[0] as unknown as { id: string; lorebook: Entry[] }
@@ -1951,7 +2068,12 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     const deletes = characterEntryDeleteCommands()
     expect(deletes).toHaveLength(1)
-    expect(deletes[0].a).toMatchObject({ characterId: 'c-k4', entryId: 'entry-3' })
+    expect(deletes[0].a).toMatchObject({
+      characterId: 'c-k4',
+      entryId: 'entry-3',
+      acknowledgeOptimistic: true,
+      optimisticEntries: expect.not.arrayContaining([expect.objectContaining({ id: 'entry-3' })]),
+    })
 
     recorded.commands.length = 0
     const reorderPrevious = currentLorebookCollectionScopedSnapshot({
@@ -1968,6 +2090,8 @@ describe('K4 lorebook editor entry draft scope', () => {
     expect(reorders[0].a).toMatchObject({
       characterId: 'c-k4',
       entryIds: entries.map((entry) => entry.id),
+      acknowledgeOptimistic: true,
+      optimisticEntries: entries,
     })
   })
 

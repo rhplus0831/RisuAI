@@ -41,6 +41,7 @@ const hydrationApi = vi.hoisted(() => ({
 }))
 
 const lorebookApi = vi.hoisted(() => ({
+  isCharacterLorebookHydrated: vi.fn(() => true),
   recordHydratedCharacterLorebooks: vi.fn(),
   resetLorebookHydration: vi.fn(),
 }))
@@ -161,8 +162,10 @@ import {
   applyCharacterResource,
   applySettingsGroupResource,
   captureCollectionProjectionEpoch,
+  captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
+  markCharacterLorebookProjectionApplied,
   replaceResourceDatabase,
   resetServerResourceState,
 } from './server/resourceState.svelte'
@@ -604,6 +607,131 @@ describe('API-backed client bootstrap', () => {
     ])
     expect(getDatabase().enabledModules).toEqual(['mod-b'])
     expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('acknowledges contiguous scoped lorebook mutations without replacing newer optimistic entries', async () => {
+    await loadWebInitialDatabase()
+    const entry = (id: string, content: string) => ({
+      id,
+      key: id,
+      secondkey: '',
+      insertorder: 100,
+      comment: id,
+      content,
+      mode: 'normal' as const,
+      alwaysActive: false,
+      selective: false,
+    })
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBook = [
+        { id: 'book-a', name: 'Book A', data: [entry('global-entry', 'global newer')] },
+      ] as never
+      getDatabase().characters[0].globalLore = [entry('character-entry', 'character newer')]
+      getDatabase().characters[0].chats[0].localLore = [entry('chat-entry', 'chat newer')]
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
+    const characterRowProjectionEpoch = captureCharacterRowProjectionEpoch('char-a')
+    const characterLorebookProjectionEpoch = captureCharacterLorebookProjectionEpoch('char-a')
+    const globalEvent = {
+      type: 'lorebook.entries.replaced',
+      revision: 6,
+      resource: 'globalLorebook',
+      id: 'book-a',
+    }
+    const characterEvent = {
+      type: 'lorebook.entries.replaced',
+      revision: 7,
+      resource: 'characterLorebook',
+      id: 'char-a',
+    }
+    const chatEvent = {
+      type: 'lorebook.entries.replaced',
+      revision: 8,
+      resource: 'characterRow',
+      id: 'chat-a',
+      parentId: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      chatEvent,
+      [globalEvent, characterEvent, chatEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'lorebookMutation',
+            scope: 'global',
+            operation: 'upsert',
+            lorebookId: 'book-a',
+            collectionProjectionEpoch,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'lorebookMutation',
+            scope: 'character',
+            operation: 'replace',
+            characterId: 'char-a',
+            characterRowProjectionEpoch,
+            characterLorebookProjectionEpoch,
+          },
+        ],
+        [
+          8,
+          {
+            kind: 'lorebookMutation',
+            scope: 'chat',
+            operation: 'reorder',
+            characterId: 'char-a',
+            chatId: 'chat-a',
+            characterRowProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().loreBook[0].data[0].content).toBe('global newer')
+    expect(getDatabase().characters[0].globalLore[0].content).toBe('character newer')
+    expect(getDatabase().characters[0].chats[0].localLore[0].content).toBe('chat newer')
+    expect(peekAppliedServerResourceRevision()).toBe(8)
+  })
+
+  it('falls back when a dedicated character-lorebook projection supersedes an optimistic effect', async () => {
+    await loadWebInitialDatabase()
+    const characterRowProjectionEpoch = captureCharacterRowProjectionEpoch('char-a')
+    const characterLorebookProjectionEpoch = captureCharacterLorebookProjectionEpoch('char-a')
+    markCharacterLorebookProjectionApplied('char-a')
+    const event = {
+      type: 'lorebook.entries.replaced',
+      revision: 6,
+      resource: 'characterLorebook',
+      id: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'lorebookMutation',
+            scope: 'character',
+            operation: 'upsert',
+            characterId: 'char-a',
+            characterRowProjectionEpoch,
+            characterLorebookProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
   })
 
   it('acknowledges contiguous optimistic loadout favorite and touch without resource reads', async () => {

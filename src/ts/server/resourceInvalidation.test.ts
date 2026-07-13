@@ -56,7 +56,11 @@ import {
   applyCharactersResource,
   applyCollectionsResource,
   applySettingsResource,
+  captureCharacterLorebookProjectionEpoch,
+  captureCharacterRowProjectionEpoch,
   getResourceDatabase,
+  hasCharacterLorebookProjectionEpochChanged,
+  hasCharacterRowProjectionEpochChanged,
   resetServerResourceState,
 } from './resourceState.svelte'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
@@ -524,6 +528,8 @@ describe('API-backed resource invalidation', () => {
 
   it('uses individual chat and bulk lorebook reads while applying hydration side effects', async () => {
     seedResources(1)
+    const characterLorebookEpoch = captureCharacterLorebookProjectionEpoch('char-a')
+    const characterRowEpoch = captureCharacterRowProjectionEpoch('char-a')
     api.chat.mockImplementation(async (chatId: string) => ({
       status: 'ok',
       revision: 5,
@@ -587,6 +593,8 @@ describe('API-backed resource invalidation', () => {
     expect(sideEffects.reattach).toHaveBeenCalledTimes(1)
     expect(sideEffects.clearTranslation).toHaveBeenCalledWith('message-a')
     expect(sideEffects.markLorebook).toHaveBeenCalledTimes(2)
+    expect(hasCharacterLorebookProjectionEpochChanged('char-a', characterLorebookEpoch)).toBe(true)
+    expect(hasCharacterRowProjectionEpochChanged('char-a', characterRowEpoch)).toBe(false)
   })
 
   it('uses a full chat read when generation windows for one chat are ambiguous', async () => {

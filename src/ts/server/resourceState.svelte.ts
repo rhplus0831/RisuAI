@@ -6,6 +6,9 @@ import type { SettingsGroup } from './settingsGroups'
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
 const characterRowProjectionEpochs = new Map<string, number>()
+let nextCharacterLorebookProjectionEpoch = 0
+let characterLorebookProjectionBaseline = 0
+const characterLorebookProjectionEpochs = new Map<string, number>()
 let nextCollectionProjectionEpoch = 0
 let collectionProjectionBaseline = 0
 const collectionProjectionEpochs = new Map<ServerCollectionName, number>()
@@ -28,6 +31,28 @@ export function captureCharacterRowProjectionEpoch(characterId: string): number 
 
 export function hasCharacterRowProjectionEpochChanged(characterId: string, epoch: number): boolean {
   return captureCharacterRowProjectionEpoch(characterId) !== epoch
+}
+
+function advanceCharacterLorebookProjectionEpoch(characterId: string): void {
+  characterLorebookProjectionEpochs.set(characterId, ++nextCharacterLorebookProjectionEpoch)
+}
+
+function advanceAllCharacterLorebookProjectionEpochs(): void {
+  characterLorebookProjectionBaseline = ++nextCharacterLorebookProjectionEpoch
+  characterLorebookProjectionEpochs.clear()
+}
+
+export function captureCharacterLorebookProjectionEpoch(characterId: string): number {
+  return characterLorebookProjectionEpochs.get(characterId) ?? characterLorebookProjectionBaseline
+}
+
+export function hasCharacterLorebookProjectionEpochChanged(characterId: string, epoch: number): boolean {
+  return captureCharacterLorebookProjectionEpoch(characterId) !== epoch
+}
+
+/** Record a successful authoritative character-lorebook-only projection apply. */
+export function markCharacterLorebookProjectionApplied(characterId: string): void {
+  if (nonEmptyString(characterId)) advanceCharacterLorebookProjectionEpoch(characterId)
 }
 
 function advanceCollectionProjectionEpoch(name: ServerCollectionName): void {
@@ -202,6 +227,15 @@ export interface ServerLoadoutMutationLocalEffectPayload {
   revision: number
   operation: 'favorite' | 'touch'
   loadoutId: string
+}
+
+export interface ServerLorebookMutationLocalEffectPayload {
+  revision: number
+  scope: 'global' | 'character' | 'chat'
+  operation: 'replace' | 'upsert' | 'delete' | 'reorder'
+  lorebookId?: string
+  characterId?: string
+  chatId?: string
 }
 
 export interface ServerCharacterRowMutationLocalEffectPayload {
@@ -539,6 +573,58 @@ export function applyModuleCollectionMutationLocalEffect(
   return true
 }
 
+/**
+ * Fence an accepted optimistic lorebook-entry mutation. The bridge already
+ * contains the accepted collection (and may contain a newer queued edit), so
+ * only advance the owning resource revision after validating the live target.
+ */
+export function applyLorebookMutationLocalEffect(payload: ServerLorebookMutationLocalEffectPayload): boolean {
+  if (!isLorebookMutationOperation(payload.operation)) return false
+
+  if (payload.scope === 'global') {
+    const knownRevision = Math.max(
+      collectionsResourceState.fullRevision ?? -1,
+      collectionsResourceState.revisions.loreBook ?? -1,
+    )
+    if (knownRevision >= payload.revision) return true
+    if (
+      collectionsResourceState.statuses.loreBook !== 'ready' ||
+      !nonEmptyString(payload.lorebookId) ||
+      !isCanonicalGlobalLorebookTarget(payload.lorebookId)
+    ) {
+      return false
+    }
+
+    collectionsResourceState.revisions.loreBook = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses.loreBook = 'ready'
+    delete collectionsResourceState.errors.loreBook
+    markResourceDatabaseChanged()
+    return true
+  }
+
+  if (!nonEmptyString(payload.characterId)) return false
+  const knownRevision = Math.max(
+    charactersResourceState.listRevision ?? -1,
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+  if (charactersResourceState.rowStatuses[payload.characterId] !== 'ready') return false
+
+  const targetIsCanonical =
+    payload.scope === 'character'
+      ? payload.chatId === undefined && isCanonicalCharacterLorebookTarget(payload.characterId)
+      : nonEmptyString(payload.chatId) && isCanonicalChatLorebookTarget(payload.characterId, payload.chatId)
+  if (!targetIsCanonical) return false
+
+  charactersResourceState.rowRevisions[payload.characterId] = payload.revision
+  charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+  delete charactersResourceState.rowErrors[payload.characterId]
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  markResourceDatabaseChanged()
+  return true
+}
+
 /** Fence one accepted optimistic enabledModules membership write without a full settings read. */
 export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalEffectPayload): boolean {
   const knownRevision = Math.max(
@@ -720,6 +806,7 @@ export function applyCharactersResource(
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
   advanceAllCharacterRowProjectionEpochs()
+  advanceAllCharacterLorebookProjectionEpochs()
   markResourceDatabaseChanged()
   return true
 }
@@ -790,6 +877,7 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   delete charactersResourceState.rowErrors[characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
   advanceCharacterRowProjectionEpoch(characterId)
+  advanceCharacterLorebookProjectionEpoch(characterId)
   markResourceDatabaseChanged()
   return true
 }
@@ -1001,6 +1089,7 @@ export function resetServerResourceState(): void {
   advanceAllSettingsProjectionEpochs()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
+  advanceAllCharacterLorebookProjectionEpochs()
   markResourceDatabaseChanged()
 }
 
@@ -1070,6 +1159,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   advanceAllSettingsProjectionEpochs()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
+  advanceAllCharacterLorebookProjectionEpochs()
   markResourceDatabaseChanged()
 }
 
@@ -1369,6 +1459,70 @@ function isStringRecord(value: unknown): value is Record<string, string> {
     !Array.isArray(value) &&
     Object.values(value).every((entry) => typeof entry === 'string')
   )
+}
+
+function isLorebookMutationOperation(value: unknown): value is ServerLorebookMutationLocalEffectPayload['operation'] {
+  return value === 'replace' || value === 'upsert' || value === 'delete' || value === 'reorder'
+}
+
+function isCanonicalGlobalLorebookTarget(lorebookId: string): boolean {
+  const lorebooks = collectionsResourceState.values.loreBook
+  if (!Array.isArray(lorebooks)) return false
+
+  const ids = new Set<string>()
+  let target: Record<string, unknown> | null = null
+  for (const candidate of lorebooks) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const record = candidate as Record<string, unknown>
+    if (!nonEmptyString(record.id) || ids.has(record.id)) return false
+    ids.add(record.id)
+    if (record.id === lorebookId) target = record
+  }
+  return !!target && nonEmptyString(target.name) && isCanonicalLorebookEntries(target.data)
+}
+
+function isCanonicalCharacterLorebookTarget(characterId: string): boolean {
+  const matches = charactersResourceState.characters.filter((candidate) => candidate?.chaId === characterId)
+  return matches.length === 1 && isCanonicalLorebookEntries(matches[0].globalLore)
+}
+
+function isCanonicalChatLorebookTarget(characterId: string, chatId: string): boolean {
+  let target: unknown = null
+  let matches = 0
+  for (const character of charactersResourceState.characters) {
+    for (const chat of character.chats ?? []) {
+      if (chat?.id !== chatId) continue
+      matches += 1
+      if (character.chaId === characterId) target = chat.localLore
+    }
+  }
+  return matches === 1 && isCanonicalLorebookEntries(target)
+}
+
+function isCanonicalLorebookEntries(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const entry = candidate as Record<string, unknown>
+    if (!nonEmptyString(entry.id) || ids.has(entry.id)) return false
+    if (
+      typeof entry.key !== 'string' ||
+      typeof entry.secondkey !== 'string' ||
+      typeof entry.insertorder !== 'number' ||
+      !Number.isFinite(entry.insertorder) ||
+      typeof entry.comment !== 'string' ||
+      typeof entry.content !== 'string' ||
+      typeof entry.mode !== 'string' ||
+      typeof entry.alwaysActive !== 'boolean' ||
+      typeof entry.selective !== 'boolean' ||
+      (entry.folder !== undefined && typeof entry.folder !== 'string')
+    ) {
+      return false
+    }
+    ids.add(entry.id)
+  }
+  return true
 }
 
 function isNormalizedModuleCollectionProjection(value: unknown): boolean {

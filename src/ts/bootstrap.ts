@@ -36,7 +36,11 @@ import {
   resetChatHydration,
   startChatMessageHydration,
 } from './server/chatMessageHydration.svelte'
-import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
+import {
+  isCharacterLorebookHydrated,
+  recordHydratedCharacterLorebooks,
+  resetLorebookHydration,
+} from './server/lorebookBridge.svelte'
 import {
   setActiveGenerationJobs,
   startActiveGenerationReattach,
@@ -63,6 +67,8 @@ import {
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
   applyLoadoutMutationLocalEffect,
+  applyLorebookMutationLocalEffect,
+  hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
@@ -676,6 +682,77 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           enabled: localEffect.enabled,
         }),
       )
+    case 'lorebookMutation': {
+      if (
+        localEffect.operation !== 'replace' &&
+        localEffect.operation !== 'upsert' &&
+        localEffect.operation !== 'delete' &&
+        localEffect.operation !== 'reorder'
+      ) {
+        return false
+      }
+
+      if (localEffect.scope === 'global') {
+        if (
+          event.type !== 'lorebook.entries.replaced' ||
+          event.resource !== 'globalLorebook' ||
+          event.id !== localEffect.lorebookId ||
+          event.parentId !== undefined ||
+          typeof localEffect.collectionProjectionEpoch !== 'number' ||
+          !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+          localEffect.collectionProjectionEpoch < 0 ||
+          hasCollectionProjectionEpochChanged('loreBook', localEffect.collectionProjectionEpoch)
+        ) {
+          return false
+        }
+      } else if (localEffect.scope === 'character') {
+        if (
+          event.type !== 'lorebook.entries.replaced' ||
+          event.resource !== 'characterLorebook' ||
+          event.id !== localEffect.characterId ||
+          event.parentId !== undefined ||
+          typeof localEffect.characterRowProjectionEpoch !== 'number' ||
+          !Number.isInteger(localEffect.characterRowProjectionEpoch) ||
+          localEffect.characterRowProjectionEpoch < 0 ||
+          typeof localEffect.characterLorebookProjectionEpoch !== 'number' ||
+          !Number.isInteger(localEffect.characterLorebookProjectionEpoch) ||
+          localEffect.characterLorebookProjectionEpoch < 0 ||
+          typeof localEffect.characterId !== 'string' ||
+          !isCharacterLorebookHydrated(localEffect.characterId) ||
+          hasCharacterRowProjectionEpochChanged(localEffect.characterId, localEffect.characterRowProjectionEpoch) ||
+          hasCharacterLorebookProjectionEpochChanged(
+            localEffect.characterId,
+            localEffect.characterLorebookProjectionEpoch,
+          )
+        ) {
+          return false
+        }
+      } else if (
+        localEffect.scope !== 'chat' ||
+        event.type !== 'lorebook.entries.replaced' ||
+        event.resource !== 'characterRow' ||
+        event.id !== localEffect.chatId ||
+        event.parentId !== localEffect.characterId ||
+        typeof localEffect.characterId !== 'string' ||
+        typeof localEffect.characterRowProjectionEpoch !== 'number' ||
+        !Number.isInteger(localEffect.characterRowProjectionEpoch) ||
+        localEffect.characterRowProjectionEpoch < 0 ||
+        hasCharacterRowProjectionEpochChanged(localEffect.characterId, localEffect.characterRowProjectionEpoch)
+      ) {
+        return false
+      }
+
+      return withServerResourceApply(() =>
+        applyLorebookMutationLocalEffect({
+          revision: event.revision,
+          scope: localEffect.scope,
+          operation: localEffect.operation,
+          lorebookId: localEffect.lorebookId,
+          characterId: localEffect.characterId,
+          chatId: localEffect.chatId,
+        }),
+      )
+    }
     case 'loadoutMutation': {
       const expectedType = localEffect.operation === 'favorite' ? 'loadout.favorited' : 'loadout.touched'
       if (

@@ -3867,6 +3867,298 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('emits strict opt-in local effects for scoped lorebook replace and entry deltas', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let revision = 30
+    const commandFetch = makeCommandFetch((url, init) => {
+      revision += 1
+      const scope = url.includes('/characters/') ? 'character' : url.includes('/chats/') ? 'chat' : 'global'
+      const targetId = scope === 'character' ? 'char-a' : scope === 'chat' ? 'chat-a' : 'book-a'
+      const targetKey = scope === 'character' ? 'characterId' : scope === 'chat' ? 'chatId' : 'lorebookId'
+      const entryMutation = url.includes('/entries/entry-b') && !url.endsWith('/reorder')
+      return {
+        revision,
+        event: {
+          type: 'lorebook.entries.replaced',
+          revision,
+          resource: scope === 'character' ? 'characterLorebook' : scope === 'chat' ? 'characterRow' : 'globalLorebook',
+          id: targetId,
+          ...(scope === 'chat' ? { parentId: 'char-a' } : {}),
+        },
+        [targetKey]: targetId,
+        ...(entryMutation
+          ? {
+              entryId: 'entry-b',
+              entryIndex: 1,
+              ...(init.method === 'PUT' ? { created: false } : {}),
+            }
+          : {}),
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const entryA = {
+      id: 'entry-a',
+      key: 'a',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'A',
+      content: 'A',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    const entryB = { ...entryA, id: 'entry-b', key: 'b', comment: 'B', content: 'B' }
+    const scopes = [
+      {
+        scope: 'global' as const,
+        metadata: { acknowledgeOptimistic: true, optimisticCollectionEpoch: 4 },
+        replace: (optimisticEntries: (typeof entryA)[]) =>
+          replaceGlobalLorebookEntriesCommand({
+            baseRevision: 1,
+            lorebookId: 'book-a',
+            entries: optimisticEntries,
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCollectionEpoch: 4,
+          }),
+        upsert: (optimisticEntries: (typeof entryA)[]) =>
+          upsertGlobalLorebookEntryCommand({
+            baseRevision: 1,
+            lorebookId: 'book-a',
+            entryId: 'entry-b',
+            entry: entryB,
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCollectionEpoch: 4,
+            optimisticEntryIndex: 1,
+            optimisticEntryCreated: false,
+          }),
+        delete: (optimisticEntries: (typeof entryA)[]) =>
+          deleteGlobalLorebookEntryCommand({
+            baseRevision: 1,
+            lorebookId: 'book-a',
+            entryId: 'entry-b',
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCollectionEpoch: 4,
+            optimisticEntryIndex: 1,
+          }),
+        reorder: (optimisticEntries: (typeof entryA)[]) =>
+          reorderGlobalLorebookEntriesCommand({
+            baseRevision: 1,
+            lorebookId: 'book-a',
+            entryIds: optimisticEntries.map((entry) => entry.id),
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCollectionEpoch: 4,
+          }),
+      },
+      {
+        scope: 'character' as const,
+        metadata: {
+          acknowledgeOptimistic: true,
+          optimisticRowEpoch: 5,
+          optimisticLorebookEpoch: 6,
+        },
+        replace: (optimisticEntries: (typeof entryA)[]) =>
+          replaceCharacterLorebooksCommand({
+            baseRevision: 1,
+            characterId: 'char-a',
+            entries: optimisticEntries,
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticRowEpoch: 5,
+            optimisticLorebookEpoch: 6,
+          }),
+        upsert: (optimisticEntries: (typeof entryA)[]) =>
+          upsertCharacterLorebookEntryCommand({
+            baseRevision: 1,
+            characterId: 'char-a',
+            entryId: 'entry-b',
+            entry: entryB,
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticRowEpoch: 5,
+            optimisticLorebookEpoch: 6,
+            optimisticEntryIndex: 1,
+            optimisticEntryCreated: false,
+          }),
+        delete: (optimisticEntries: (typeof entryA)[]) =>
+          deleteCharacterLorebookEntryCommand({
+            baseRevision: 1,
+            characterId: 'char-a',
+            entryId: 'entry-b',
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticRowEpoch: 5,
+            optimisticLorebookEpoch: 6,
+            optimisticEntryIndex: 1,
+          }),
+        reorder: (optimisticEntries: (typeof entryA)[]) =>
+          reorderCharacterLorebookEntriesCommand({
+            baseRevision: 1,
+            characterId: 'char-a',
+            entryIds: optimisticEntries.map((entry) => entry.id),
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticRowEpoch: 5,
+            optimisticLorebookEpoch: 6,
+          }),
+      },
+      {
+        scope: 'chat' as const,
+        metadata: { acknowledgeOptimistic: true, optimisticCharacterId: 'char-a', optimisticRowEpoch: 7 },
+        replace: (optimisticEntries: (typeof entryA)[]) =>
+          replaceChatLorebooksCommand({
+            baseRevision: 1,
+            chatId: 'chat-a',
+            entries: optimisticEntries,
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCharacterId: 'char-a',
+            optimisticRowEpoch: 7,
+          }),
+        upsert: (optimisticEntries: (typeof entryA)[]) =>
+          upsertChatLorebookEntryCommand({
+            baseRevision: 1,
+            chatId: 'chat-a',
+            entryId: 'entry-b',
+            entry: entryB,
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCharacterId: 'char-a',
+            optimisticRowEpoch: 7,
+            optimisticEntryIndex: 1,
+            optimisticEntryCreated: false,
+          }),
+        delete: (optimisticEntries: (typeof entryA)[]) =>
+          deleteChatLorebookEntryCommand({
+            baseRevision: 1,
+            chatId: 'chat-a',
+            entryId: 'entry-b',
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCharacterId: 'char-a',
+            optimisticRowEpoch: 7,
+            optimisticEntryIndex: 1,
+          }),
+        reorder: (optimisticEntries: (typeof entryA)[]) =>
+          reorderChatLorebookEntriesCommand({
+            baseRevision: 1,
+            chatId: 'chat-a',
+            entryIds: optimisticEntries.map((entry) => entry.id),
+            optimisticEntries,
+            acknowledgeOptimistic: true,
+            optimisticCharacterId: 'char-a',
+            optimisticRowEpoch: 7,
+          }),
+      },
+    ]
+
+    for (const scope of scopes) {
+      await scope.replace([entryA, entryB])
+      await scope.upsert([entryA, entryB])
+      await scope.delete([entryA])
+      await scope.reorder([entryB, entryA])
+    }
+
+    expect(observedEffects).toEqual(
+      scopes.flatMap(({ scope, metadata }) =>
+        (['replace', 'upsert', 'delete', 'reorder'] as const).map((operation) => ({
+          kind: 'lorebookMutation',
+          scope,
+          operation,
+          ...(scope === 'global'
+            ? { lorebookId: 'book-a', collectionProjectionEpoch: metadata.optimisticCollectionEpoch }
+            : scope === 'character'
+              ? {
+                  characterId: 'char-a',
+                  characterRowProjectionEpoch: metadata.optimisticRowEpoch,
+                  characterLorebookProjectionEpoch: metadata.optimisticLorebookEpoch,
+                }
+              : {
+                  characterId: 'char-a',
+                  chatId: 'chat-a',
+                  characterRowProjectionEpoch: metadata.optimisticRowEpoch,
+                }),
+        })),
+      ),
+    )
+  })
+
+  it('keeps non-opt-in, noncanonical, and mismatched scoped lorebook commands authoritative', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url) => ({
+      revision: 40,
+      event: {
+        type: 'lorebook.entries.replaced',
+        revision: 40,
+        resource: url.includes('/chats/') ? 'characterRow' : 'globalLorebook',
+        id: url.includes('/chats/') ? 'chat-a' : 'book-a',
+        ...(url.includes('/chats/') ? { parentId: 'wrong-character' } : {}),
+      },
+      lorebookId: 'book-a',
+      chatId: 'chat-a',
+      ...(url.endsWith('/entries/entry-a') ? { entryId: 'entry-a', entryIndex: 1, created: false } : {}),
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const malformedEntry = { id: 'entry-a', key: 'missing canonical fields' }
+    const canonicalEntry = {
+      id: 'entry-a',
+      key: 'entry-a',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Entry A',
+      content: 'A',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    await replaceGlobalLorebookEntriesCommand({
+      baseRevision: 1,
+      lorebookId: 'book-a',
+      entries: [],
+    })
+    await replaceGlobalLorebookEntriesCommand({
+      baseRevision: 1,
+      lorebookId: 'book-a',
+      entries: [malformedEntry],
+      optimisticEntries: [malformedEntry],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+    })
+    await replaceChatLorebooksCommand({
+      baseRevision: 1,
+      chatId: 'chat-a',
+      entries: [],
+      optimisticEntries: [],
+      acknowledgeOptimistic: true,
+      optimisticCharacterId: 'char-a',
+      optimisticRowEpoch: 1,
+    })
+    await upsertGlobalLorebookEntryCommand({
+      baseRevision: 1,
+      lorebookId: 'book-a',
+      entryId: 'entry-a',
+      entry: canonicalEntry,
+      optimisticEntries: [canonicalEntry],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+      optimisticEntryIndex: 0,
+      optimisticEntryCreated: true,
+    })
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('dispatches script and trigger definition commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url.includes('/scripts')) {

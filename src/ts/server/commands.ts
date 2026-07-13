@@ -123,6 +123,18 @@ export interface ModuleEnabledLocalEffect {
   enabled: boolean
 }
 
+export interface LorebookMutationLocalEffect {
+  kind: 'lorebookMutation'
+  scope: 'global' | 'character' | 'chat'
+  operation: 'replace' | 'upsert' | 'delete' | 'reorder'
+  lorebookId?: string
+  characterId?: string
+  chatId?: string
+  collectionProjectionEpoch?: number
+  characterRowProjectionEpoch?: number
+  characterLorebookProjectionEpoch?: number
+}
+
 export interface LoadoutMutationLocalEffect {
   kind: 'loadoutMutation'
   operation: 'favorite' | 'touch'
@@ -178,6 +190,7 @@ export type ServerCommandLocalEffect =
   | PluginProviderLocalEffect
   | ModuleCollectionMutationLocalEffect
   | ModuleEnabledLocalEffect
+  | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
   | CharacterDefinitionMutationLocalEffect
   | MessageTranslationLocalEffect
@@ -840,65 +853,100 @@ export interface SelectGlobalLorebookCommandInput extends LorebookCommandInput {
   lorebookId: string
 }
 
-export interface ReplaceGlobalLorebookEntriesCommandInput extends LorebookCommandInput {
+interface GlobalLorebookOptimisticMutationInput {
+  acknowledgeOptimistic?: boolean
+  optimisticEntries?: LorebookEntrySnapshot[]
+  optimisticCollectionEpoch?: number
+  optimisticEntryIndex?: number
+  optimisticEntryCreated?: boolean
+}
+
+interface CharacterLorebookOptimisticMutationInput {
+  acknowledgeOptimistic?: boolean
+  optimisticEntries?: LorebookEntrySnapshot[]
+  optimisticRowEpoch?: number
+  optimisticLorebookEpoch?: number
+  optimisticEntryIndex?: number
+  optimisticEntryCreated?: boolean
+}
+
+interface ChatLorebookOptimisticMutationInput {
+  acknowledgeOptimistic?: boolean
+  optimisticEntries?: LorebookEntrySnapshot[]
+  optimisticCharacterId?: string
+  optimisticRowEpoch?: number
+  optimisticEntryIndex?: number
+  optimisticEntryCreated?: boolean
+}
+
+export interface ReplaceGlobalLorebookEntriesCommandInput
+  extends LorebookCommandInput, GlobalLorebookOptimisticMutationInput {
   lorebookId: string
   entries: LorebookEntrySnapshot[]
 }
 
-export interface UpsertGlobalLorebookEntryCommandInput extends LorebookCommandInput {
+export interface UpsertGlobalLorebookEntryCommandInput
+  extends LorebookCommandInput, GlobalLorebookOptimisticMutationInput {
   lorebookId: string
   entryId: string
   entry: LorebookEntrySnapshot
 }
 
-export interface DeleteGlobalLorebookEntryCommandInput extends LorebookCommandInput {
+export interface DeleteGlobalLorebookEntryCommandInput
+  extends LorebookCommandInput, GlobalLorebookOptimisticMutationInput {
   lorebookId: string
   entryId: string
 }
 
-export interface ReorderGlobalLorebookEntriesCommandInput extends LorebookCommandInput {
+export interface ReorderGlobalLorebookEntriesCommandInput
+  extends LorebookCommandInput, GlobalLorebookOptimisticMutationInput {
   lorebookId: string
   entryIds: string[]
 }
 
-export interface ReplaceCharacterLorebooksCommandInput extends LorebookCommandInput {
+export interface ReplaceCharacterLorebooksCommandInput
+  extends LorebookCommandInput, CharacterLorebookOptimisticMutationInput {
   characterId: string
   entries: LorebookEntrySnapshot[]
 }
 
-export interface UpsertCharacterLorebookEntryCommandInput extends LorebookCommandInput {
+export interface UpsertCharacterLorebookEntryCommandInput
+  extends LorebookCommandInput, CharacterLorebookOptimisticMutationInput {
   characterId: string
   entryId: string
   entry: LorebookEntrySnapshot
 }
 
-export interface DeleteCharacterLorebookEntryCommandInput extends LorebookCommandInput {
+export interface DeleteCharacterLorebookEntryCommandInput
+  extends LorebookCommandInput, CharacterLorebookOptimisticMutationInput {
   characterId: string
   entryId: string
 }
 
-export interface ReorderCharacterLorebookEntriesCommandInput extends LorebookCommandInput {
+export interface ReorderCharacterLorebookEntriesCommandInput
+  extends LorebookCommandInput, CharacterLorebookOptimisticMutationInput {
   characterId: string
   entryIds: string[]
 }
 
-export interface ReplaceChatLorebooksCommandInput extends LorebookCommandInput {
+export interface ReplaceChatLorebooksCommandInput extends LorebookCommandInput, ChatLorebookOptimisticMutationInput {
   chatId: string
   entries: LorebookEntrySnapshot[]
 }
 
-export interface UpsertChatLorebookEntryCommandInput extends LorebookCommandInput {
+export interface UpsertChatLorebookEntryCommandInput extends LorebookCommandInput, ChatLorebookOptimisticMutationInput {
   chatId: string
   entryId: string
   entry: LorebookEntrySnapshot
 }
 
-export interface DeleteChatLorebookEntryCommandInput extends LorebookCommandInput {
+export interface DeleteChatLorebookEntryCommandInput extends LorebookCommandInput, ChatLorebookOptimisticMutationInput {
   chatId: string
   entryId: string
 }
 
-export interface ReorderChatLorebookEntriesCommandInput extends LorebookCommandInput {
+export interface ReorderChatLorebookEntriesCommandInput
+  extends LorebookCommandInput, ChatLorebookOptimisticMutationInput {
   chatId: string
   entryIds: string[]
 }
@@ -2853,6 +2901,17 @@ export async function replaceGlobalLorebookEntriesCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLorebookMutationLocalEffect(body, event, {
+            scope: 'global',
+            operation: 'replace',
+            expectedTargetId: input.lorebookId,
+            expectedEntries: input.entries,
+            optimisticEntries: input.optimisticEntries,
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2871,6 +2930,20 @@ export async function upsertGlobalLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: input.acknowledgeOptimistic
+        ? (body, event) =>
+            readLorebookMutationLocalEffect(body, event, {
+              scope: 'global',
+              operation: 'upsert',
+              expectedTargetId: input.lorebookId,
+              expectedEntryId: input.entryId,
+              expectedEntry: input.entry,
+              expectedEntryIndex: input.optimisticEntryIndex,
+              expectedEntryCreated: input.optimisticEntryCreated,
+              optimisticEntries: input.optimisticEntries,
+              collectionProjectionEpoch: input.optimisticCollectionEpoch,
+            })
+        : undefined,
     },
   )
 }
@@ -2889,6 +2962,18 @@ export async function deleteGlobalLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: input.acknowledgeOptimistic
+        ? (body, event) =>
+            readLorebookMutationLocalEffect(body, event, {
+              scope: 'global',
+              operation: 'delete',
+              expectedTargetId: input.lorebookId,
+              expectedEntryId: input.entryId,
+              expectedEntryIndex: input.optimisticEntryIndex,
+              optimisticEntries: input.optimisticEntries,
+              collectionProjectionEpoch: input.optimisticCollectionEpoch,
+            })
+        : undefined,
     },
   )
 }
@@ -2906,6 +2991,17 @@ export async function reorderGlobalLorebookEntriesCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLorebookMutationLocalEffect(body, event, {
+            scope: 'global',
+            operation: 'reorder',
+            expectedTargetId: input.lorebookId,
+            expectedEntryIds: input.entryIds,
+            optimisticEntries: input.optimisticEntries,
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2922,6 +3018,18 @@ export async function replaceCharacterLorebooksCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLorebookMutationLocalEffect(body, event, {
+            scope: 'character',
+            operation: 'replace',
+            expectedTargetId: input.characterId,
+            expectedEntries: input.entries,
+            optimisticEntries: input.optimisticEntries,
+            characterRowProjectionEpoch: input.optimisticRowEpoch,
+            characterLorebookProjectionEpoch: input.optimisticLorebookEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2940,6 +3048,21 @@ export async function upsertCharacterLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: input.acknowledgeOptimistic
+        ? (body, event) =>
+            readLorebookMutationLocalEffect(body, event, {
+              scope: 'character',
+              operation: 'upsert',
+              expectedTargetId: input.characterId,
+              expectedEntryId: input.entryId,
+              expectedEntry: input.entry,
+              expectedEntryIndex: input.optimisticEntryIndex,
+              expectedEntryCreated: input.optimisticEntryCreated,
+              optimisticEntries: input.optimisticEntries,
+              characterRowProjectionEpoch: input.optimisticRowEpoch,
+              characterLorebookProjectionEpoch: input.optimisticLorebookEpoch,
+            })
+        : undefined,
     },
   )
 }
@@ -2958,6 +3081,19 @@ export async function deleteCharacterLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: input.acknowledgeOptimistic
+        ? (body, event) =>
+            readLorebookMutationLocalEffect(body, event, {
+              scope: 'character',
+              operation: 'delete',
+              expectedTargetId: input.characterId,
+              expectedEntryId: input.entryId,
+              expectedEntryIndex: input.optimisticEntryIndex,
+              optimisticEntries: input.optimisticEntries,
+              characterRowProjectionEpoch: input.optimisticRowEpoch,
+              characterLorebookProjectionEpoch: input.optimisticLorebookEpoch,
+            })
+        : undefined,
     },
   )
 }
@@ -2975,6 +3111,18 @@ export async function reorderCharacterLorebookEntriesCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLorebookMutationLocalEffect(body, event, {
+            scope: 'character',
+            operation: 'reorder',
+            expectedTargetId: input.characterId,
+            expectedEntryIds: input.entryIds,
+            optimisticEntries: input.optimisticEntries,
+            characterRowProjectionEpoch: input.optimisticRowEpoch,
+            characterLorebookProjectionEpoch: input.optimisticLorebookEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2991,6 +3139,18 @@ export async function replaceChatLorebooksCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLorebookMutationLocalEffect(body, event, {
+            scope: 'chat',
+            operation: 'replace',
+            expectedTargetId: input.chatId,
+            expectedEntries: input.entries,
+            optimisticEntries: input.optimisticEntries,
+            expectedCharacterId: input.optimisticCharacterId,
+            characterRowProjectionEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -3009,6 +3169,21 @@ export async function upsertChatLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: input.acknowledgeOptimistic
+        ? (body, event) =>
+            readLorebookMutationLocalEffect(body, event, {
+              scope: 'chat',
+              operation: 'upsert',
+              expectedTargetId: input.chatId,
+              expectedEntryId: input.entryId,
+              expectedEntry: input.entry,
+              expectedEntryIndex: input.optimisticEntryIndex,
+              expectedEntryCreated: input.optimisticEntryCreated,
+              optimisticEntries: input.optimisticEntries,
+              expectedCharacterId: input.optimisticCharacterId,
+              characterRowProjectionEpoch: input.optimisticRowEpoch,
+            })
+        : undefined,
     },
   )
 }
@@ -3027,6 +3202,19 @@ export async function deleteChatLorebookEntryCommand(
       },
       signal,
       keepalive,
+      readLocalEffect: input.acknowledgeOptimistic
+        ? (body, event) =>
+            readLorebookMutationLocalEffect(body, event, {
+              scope: 'chat',
+              operation: 'delete',
+              expectedTargetId: input.chatId,
+              expectedEntryId: input.entryId,
+              expectedEntryIndex: input.optimisticEntryIndex,
+              optimisticEntries: input.optimisticEntries,
+              expectedCharacterId: input.optimisticCharacterId,
+              characterRowProjectionEpoch: input.optimisticRowEpoch,
+            })
+        : undefined,
     },
   )
 }
@@ -3044,6 +3232,18 @@ export async function reorderChatLorebookEntriesCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLorebookMutationLocalEffect(body, event, {
+            scope: 'chat',
+            operation: 'reorder',
+            expectedTargetId: input.chatId,
+            expectedEntryIds: input.entryIds,
+            optimisticEntries: input.optimisticEntries,
+            expectedCharacterId: input.optimisticCharacterId,
+            characterRowProjectionEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -4005,6 +4205,142 @@ function readPluginProviderLocalEffect(
     return undefined
   }
   return { kind: 'pluginProvider', provider: expectedProvider }
+}
+
+interface ReadLorebookMutationLocalEffectOptions {
+  scope: LorebookMutationLocalEffect['scope']
+  operation: LorebookMutationLocalEffect['operation']
+  expectedTargetId: unknown
+  expectedCharacterId?: unknown
+  expectedEntries?: unknown
+  expectedEntryId?: unknown
+  expectedEntry?: unknown
+  expectedEntryIndex?: unknown
+  expectedEntryCreated?: unknown
+  expectedEntryIds?: unknown
+  optimisticEntries?: unknown
+  collectionProjectionEpoch?: unknown
+  characterRowProjectionEpoch?: unknown
+  characterLorebookProjectionEpoch?: unknown
+}
+
+function readLorebookMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadLorebookMutationLocalEffectOptions,
+): LorebookMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (!nonEmptyString(options.expectedTargetId)) return undefined
+  if (!isCanonicalLorebookEntryArray(options.optimisticEntries)) return undefined
+
+  const optimisticEntries = options.optimisticEntries as LorebookEntrySnapshot[]
+  const optimisticIds = optimisticEntries.map((entry) => entry.id as string)
+  if (options.operation === 'replace') {
+    if (
+      !isCanonicalLorebookEntryArray(options.expectedEntries) ||
+      !isJsonValueEqual(options.expectedEntries, optimisticEntries)
+    ) {
+      return undefined
+    }
+  } else if (options.operation === 'upsert') {
+    if (
+      !nonEmptyString(options.expectedEntryId) ||
+      !isCanonicalLorebookEntry(options.expectedEntry) ||
+      (options.expectedEntry as LorebookEntrySnapshot).id !== options.expectedEntryId ||
+      !Number.isInteger(options.expectedEntryIndex) ||
+      (options.expectedEntryIndex as number) < 0 ||
+      typeof options.expectedEntryCreated !== 'boolean'
+    ) {
+      return undefined
+    }
+    const optimisticMatches = optimisticEntries.filter((entry) => entry.id === options.expectedEntryId)
+    if (
+      optimisticMatches.length !== 1 ||
+      !isJsonValueEqual(optimisticMatches[0], options.expectedEntry) ||
+      optimisticEntries.findIndex((entry) => entry.id === options.expectedEntryId) !== options.expectedEntryIndex
+    ) {
+      return undefined
+    }
+  } else if (options.operation === 'delete') {
+    if (
+      !nonEmptyString(options.expectedEntryId) ||
+      !Number.isInteger(options.expectedEntryIndex) ||
+      (options.expectedEntryIndex as number) < 0 ||
+      optimisticEntries.some((entry) => entry.id === options.expectedEntryId)
+    ) {
+      return undefined
+    }
+  } else if (
+    !isUniqueStringArray(options.expectedEntryIds) ||
+    !isJsonValueEqual(options.expectedEntryIds, optimisticIds)
+  ) {
+    return undefined
+  }
+
+  const record = body as Record<string, unknown>
+  const targetResponseKey =
+    options.scope === 'global' ? 'lorebookId' : options.scope === 'character' ? 'characterId' : 'chatId'
+  const expectedResource =
+    options.scope === 'global' ? 'globalLorebook' : options.scope === 'character' ? 'characterLorebook' : 'characterRow'
+  if (
+    event.type !== 'lorebook.entries.replaced' ||
+    event.resource !== expectedResource ||
+    event.id !== options.expectedTargetId ||
+    record[targetResponseKey] !== options.expectedTargetId
+  ) {
+    return undefined
+  }
+
+  if (options.scope === 'chat') {
+    if (!nonEmptyString(options.expectedCharacterId) || event.parentId !== options.expectedCharacterId) {
+      return undefined
+    }
+  } else if (event.parentId !== undefined) {
+    return undefined
+  }
+
+  if (options.operation === 'upsert' || options.operation === 'delete') {
+    if (
+      record.entryId !== options.expectedEntryId ||
+      record.entryIndex !== options.expectedEntryIndex ||
+      (options.operation === 'upsert' ? record.created !== options.expectedEntryCreated : record.created !== undefined)
+    ) {
+      return undefined
+    }
+  }
+
+  if (options.scope === 'global') {
+    if (!isProjectionEpoch(options.collectionProjectionEpoch)) return undefined
+    return {
+      kind: 'lorebookMutation',
+      scope: options.scope,
+      operation: options.operation,
+      lorebookId: options.expectedTargetId,
+      collectionProjectionEpoch: options.collectionProjectionEpoch,
+    }
+  }
+
+  if (!isProjectionEpoch(options.characterRowProjectionEpoch)) return undefined
+  if (options.scope === 'character') {
+    if (!isProjectionEpoch(options.characterLorebookProjectionEpoch)) return undefined
+    return {
+      kind: 'lorebookMutation',
+      scope: options.scope,
+      operation: options.operation,
+      characterId: options.expectedTargetId,
+      characterRowProjectionEpoch: options.characterRowProjectionEpoch,
+      characterLorebookProjectionEpoch: options.characterLorebookProjectionEpoch,
+    }
+  }
+
+  return {
+    kind: 'lorebookMutation',
+    scope: options.scope,
+    operation: options.operation,
+    characterId: options.expectedCharacterId as string,
+    chatId: options.expectedTargetId,
+    characterRowProjectionEpoch: options.characterRowProjectionEpoch,
+  }
 }
 
 interface ReadModuleCollectionMutationLocalEffectOptions {

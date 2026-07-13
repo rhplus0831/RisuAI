@@ -34,7 +34,9 @@ import {
 } from '../server/scriptDefinitionBridge.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import {
+  captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
+  hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
 } from '../server/resourceState.svelte'
 import { runOptimisticCommandSequence } from '../chatCommands'
@@ -776,6 +778,7 @@ export async function applyModule() {
     return
   }
   const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
+  const optimisticLorebookEpoch = captureCharacterLorebookProjectionEpoch(characterId)
 
   const canApplyLorebooks =
     !!module.lorebook && (!getDatabase()?.enableLorebookStubs || isCharacterLorebookHydrated(characterId))
@@ -823,8 +826,20 @@ export async function applyModule() {
               baseRevision,
               characterId,
               entries: lorebookSnapshot,
+              acknowledgeOptimistic: true,
+              optimisticEntries: lorebookSnapshot,
+              optimisticRowEpoch,
+              optimisticLorebookEpoch,
             }),
-          () => rollbackCharacterLorebookReplacement(characterId, lorePrevious, attemptedLorebooks),
+          () => {
+            if (
+              hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch) ||
+              hasCharacterLorebookProjectionEpochChanged(characterId, optimisticLorebookEpoch)
+            ) {
+              return
+            }
+            rollbackCharacterLorebookReplacement(characterId, lorePrevious, attemptedLorebooks)
+          },
         ),
       )
     }

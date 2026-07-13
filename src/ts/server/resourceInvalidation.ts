@@ -26,6 +26,7 @@ import {
   applySettingsGroupResource,
   charactersResourceState,
   collectionsResourceState,
+  markCharacterLorebookProjectionApplied,
   settingsResourceState,
   type ServerCollectionName,
   type ServerCollectionsResourcePayload,
@@ -657,6 +658,7 @@ function applyCharacterLorebook(
   if (applied) {
     hooks.markCharacterLorebookHydrated?.(result.characterId)
     markCharacterBodyRevision(result.characterId, result.revision)
+    markCharacterLorebookProjectionApplied(result.characterId)
   }
   return applied
 }

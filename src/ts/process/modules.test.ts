@@ -38,6 +38,7 @@ const replaceCharacterScriptsCommand = vi.hoisted(() => vi.fn(async () => ({ sta
 const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })))
 const runOptimisticCommandSequence = vi.hoisted(() => vi.fn())
 const characterRowEpochState = vi.hoisted(() => ({ epoch: 0 }))
+const characterLorebookEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const testDatabaseState: { db: Record<string, any> } = {
   db: { modules: [], characters: [] },
 }
@@ -65,7 +66,10 @@ vi.mock('../storage/database.svelte', () => ({
 }))
 
 vi.mock('../server/resourceState.svelte', () => ({
+  captureCharacterLorebookProjectionEpoch: () => characterLorebookEpochState.epoch,
   captureCharacterRowProjectionEpoch: () => characterRowEpochState.epoch,
+  hasCharacterLorebookProjectionEpochChanged: (_characterId: string, epoch: number) =>
+    characterLorebookEpochState.epoch !== epoch,
   hasCharacterRowProjectionEpochChanged: (_characterId: string, epoch: number) =>
     characterRowEpochState.epoch !== epoch,
 }))
@@ -259,6 +263,7 @@ function installAttemptAwareRollbackMocks(): void {
 describe('module imports', () => {
   beforeEach(() => {
     characterRowEpochState.epoch = 0
+    characterLorebookEpochState.epoch = 0
     selectedFileState.file = null
     testDatabaseState.db = { modules: [], characters: [] }
     alertError.mockClear()
@@ -509,6 +514,13 @@ describe('module imports', () => {
         { comment: 'Existing lore', content: 'old' },
         { comment: 'Module lore', content: 'lore' },
       ],
+      acknowledgeOptimistic: true,
+      optimisticEntries: [
+        { comment: 'Existing lore', content: 'old' },
+        { comment: 'Module lore', content: 'lore' },
+      ],
+      optimisticRowEpoch: 0,
+      optimisticLorebookEpoch: 0,
     })
     await factories[1](11)
     expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith(
@@ -634,6 +646,39 @@ describe('module imports', () => {
     rollback()
 
     expect(rollbackScopedScriptDefinitionReplacement).not.toHaveBeenCalled()
+  })
+
+  it('does not roll back rejected lorebook apply over a newer dedicated lorebook projection', async () => {
+    alertModuleSelect.mockResolvedValue('mod-a')
+    const character = {
+      chaId: 'char-a',
+      globalLore: [{ comment: 'Existing lore', content: 'old' }],
+    } as unknown as character
+    testDatabaseState.db.characters = [character]
+    getCurrentCharacter.mockReturnValue(character)
+    getDatabase.mockReturnValue({
+      characters: [character],
+      modules: [
+        {
+          id: 'mod-a',
+          name: 'Module A',
+          description: '',
+          lorebook: [{ comment: 'Module lore', content: 'lore' }],
+        },
+      ],
+    })
+    replaceCharacterLorebooksCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
+
+    await applyModule()
+    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
+      Array<(baseRevision: number) => Promise<{ status: string }>>,
+      () => void,
+    ]
+    await factories[0](11)
+    characterLorebookEpochState.epoch += 1
+    rollback()
+
+    expect(rollbackCharacterLorebookReplacement).not.toHaveBeenCalled()
   })
 
   it('failure rollback preserves sibling characters and unrelated module/global state', async () => {

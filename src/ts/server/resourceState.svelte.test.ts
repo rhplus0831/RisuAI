@@ -26,17 +26,21 @@ import {
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
   applyLoadoutMutationLocalEffect,
+  applyLorebookMutationLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
   captureCharacterRowProjectionEpoch,
+  captureCharacterLorebookProjectionEpoch,
   captureCollectionProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
   hasCharacterRowProjectionEpochChanged,
+  hasCharacterLorebookProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
+  markCharacterLorebookProjectionApplied,
   replaceResourceDatabase,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
@@ -73,6 +77,20 @@ function canonicalLoadout(id = 'loadout-a') {
     promptPresetId: '',
     promptPresetName: '',
     personaId: '',
+  }
+}
+
+function canonicalLorebookEntry(id: string, content = id) {
+  return {
+    id,
+    key: id,
+    secondkey: '',
+    insertorder: 100,
+    comment: id,
+    content,
+    mode: 'normal' as const,
+    alwaysActive: false,
+    selective: false,
   }
 }
 
@@ -390,6 +408,121 @@ describe('resource-scoped database state', () => {
     ])
     expect(collectionsResourceState.revisions.modules).toBe(5)
     expect(collectionsResourceState.revision).toBe(5)
+  })
+
+  it('fences scoped lorebook mutations without replacing newer entries or advancing projection epochs', () => {
+    const globalEntry = canonicalLorebookEntry('global-entry', 'global newer')
+    const characterEntry = canonicalLorebookEntry('character-entry', 'character newer')
+    const chatEntry = canonicalLorebookEntry('chat-entry', 'chat newer')
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        loreBook: [{ id: 'book-a', name: 'Book A', data: [globalEntry] }] as never,
+      },
+    })
+    const ada = metadataCharacter('char-a', 'Ada')
+    ada.globalLore = [characterEntry] as never
+    ada.chats = [{ id: 'chat-a', message: [], localLore: [chatEntry] }] as never
+    applyCharactersResource({
+      revision: 3,
+      characters: [ada],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    const globalEpoch = captureCollectionProjectionEpoch('loreBook')
+    const rowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    const lorebookEpoch = captureCharacterLorebookProjectionEpoch('char-a')
+
+    expect(
+      applyLorebookMutationLocalEffect({
+        revision: 4,
+        scope: 'global',
+        operation: 'upsert',
+        lorebookId: 'book-a',
+      }),
+    ).toBe(true)
+    expect(
+      applyLorebookMutationLocalEffect({
+        revision: 5,
+        scope: 'character',
+        operation: 'replace',
+        characterId: 'char-a',
+      }),
+    ).toBe(true)
+    expect(
+      applyLorebookMutationLocalEffect({
+        revision: 6,
+        scope: 'chat',
+        operation: 'reorder',
+        characterId: 'char-a',
+        chatId: 'chat-a',
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().loreBook[0].data).toEqual([globalEntry])
+    expect(getResourceDatabase().characters[0].globalLore).toEqual([characterEntry])
+    expect(getResourceDatabase().characters[0].chats[0].localLore).toEqual([chatEntry])
+    expect(collectionsResourceState.revisions.loreBook).toBe(4)
+    expect(charactersResourceState.rowRevisions['char-a']).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('loreBook', globalEpoch)).toBe(false)
+    expect(hasCharacterRowProjectionEpochChanged('char-a', rowEpoch)).toBe(false)
+    expect(hasCharacterLorebookProjectionEpochChanged('char-a', lorebookEpoch)).toBe(false)
+
+    markCharacterLorebookProjectionApplied('char-a')
+    expect(hasCharacterLorebookProjectionEpochChanged('char-a', lorebookEpoch)).toBe(true)
+    expect(hasCharacterRowProjectionEpochChanged('char-a', rowEpoch)).toBe(false)
+  })
+
+  it('rejects lorebook acknowledgements for malformed or missing live targets', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        loreBook: [
+          { id: 'duplicate', name: 'A', data: [canonicalLorebookEntry('entry-a')] },
+          { id: 'duplicate', name: 'B', data: [canonicalLorebookEntry('entry-b')] },
+        ] as never,
+      },
+    })
+    const ada = metadataCharacter('char-a', 'Ada')
+    ada.globalLore = [{ id: 'malformed' }] as never
+    ada.chats = [{ id: 'chat-a', message: [], localLore: [canonicalLorebookEntry('chat-entry')] }] as never
+    applyCharactersResource({
+      revision: 3,
+      characters: [ada],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    expect(
+      applyLorebookMutationLocalEffect({
+        revision: 4,
+        scope: 'global',
+        operation: 'replace',
+        lorebookId: 'duplicate',
+      }),
+    ).toBe(false)
+    expect(
+      applyLorebookMutationLocalEffect({
+        revision: 4,
+        scope: 'character',
+        operation: 'replace',
+        characterId: 'char-a',
+      }),
+    ).toBe(false)
+    expect(
+      applyLorebookMutationLocalEffect({
+        revision: 4,
+        scope: 'chat',
+        operation: 'replace',
+        characterId: 'char-a',
+        chatId: 'missing-chat',
+      }),
+    ).toBe(false)
+    expect(collectionsResourceState.revisions.loreBook).toBe(3)
+    expect(charactersResourceState.rowRevisions['char-a']).toBe(3)
   })
 
   it('fences enabled modules as one settings slice and preserves it across an older full read', () => {
