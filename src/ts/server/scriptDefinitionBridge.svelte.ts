@@ -5,6 +5,10 @@ import { type Database, type character, type customscript, type triggerscript } 
 import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
+  mutateCharacterScriptsCommand,
+  mutateCharacterTriggersCommand,
+  mutateModuleScriptsCommand,
+  mutateModuleTriggersCommand,
   replaceCharacterScriptsCommand,
   replaceCharacterTriggersCommand,
   replaceModuleScriptsCommand,
@@ -24,6 +28,7 @@ import {
   hasCollectionProjectionEpochChanged,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
+import { classifyScriptDefinitionMutation, type ScriptDefinitionCollectionMutation } from './scriptDefinitionMutations'
 
 export interface ScriptDefinitionStateSnapshot {
   characters: character[]
@@ -71,7 +76,49 @@ interface PendingCollectionReplacement {
   ) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
+type ScriptDefinitionProjectionFence =
+  | { kind: 'character'; characterId: string; epoch: number }
+  | { kind: 'modules'; epoch: number }
+
+interface ScriptDefinitionMutationSafetyState {
+  fence: ScriptDefinitionProjectionFence
+  forceReplacement: boolean
+  crossProjectionTaint: boolean
+  unsettled: DispatchedScriptDefinitionAttempt[]
+}
+
+interface ScriptDefinitionCollectionBaseline {
+  rows: readonly unknown[]
+  fieldPresent: boolean
+}
+
+interface DispatchedScriptDefinitionAttempt {
+  key: string
+  kind: ScopedScriptDefinitionRollback['kind']
+  targetId: string
+  rollback: ScriptDefinitionRollback
+  attemptedRows: readonly unknown[]
+  fullReplacement: boolean
+  state: ScriptDefinitionMutationSafetyState
+  settled: boolean
+}
+
+export interface CharacterScriptDefinitionStructuralWriteAttempt {
+  readonly key: string
+}
+
+interface AbsorbedStructuralSnapshot {
+  snapshot: string
+  expiry: ReturnType<typeof setTimeout>
+}
+
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
+const mutationSafetyByKey = new Map<string, ScriptDefinitionMutationSafetyState>()
+const structuralWriteAttempts = new WeakMap<
+  CharacterScriptDefinitionStructuralWriteAttempt,
+  DispatchedScriptDefinitionAttempt
+>()
+const absorbedStructuralSnapshots = new Map<string, AbsorbedStructuralSnapshot>()
 let suppressRollbackDispatch = false
 
 // Mirror of the selected character id as $state so a `character`-scoped watcher
@@ -282,30 +329,14 @@ export function dispatchReplaceCharacterScripts(
     `characterScripts:${characterId}`,
     previous,
     (rollback, options = {}) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          replaceCharacterScriptsCommand(
-            {
-              baseRevision,
-              characterId,
-              scripts: scriptPayload,
-              optimisticRowEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'characterScripts',
-            characterId,
-            scripts: attemptedScripts,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      }),
+      runCharacterScriptsDefinitionCommand(
+        characterId,
+        scriptPayload,
+        attemptedScripts,
+        rollback,
+        optimisticRowEpoch,
+        options,
+      ),
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
   )
@@ -326,30 +357,14 @@ export function dispatchReplaceCharacterTriggers(
     `characterTriggers:${characterId}`,
     previous,
     (rollback, options = {}) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          replaceCharacterTriggersCommand(
-            {
-              baseRevision,
-              characterId,
-              triggers: triggerPayload,
-              optimisticRowEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'characterTriggers',
-            characterId,
-            triggers: attemptedTriggers,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      }),
+      runCharacterTriggersDefinitionCommand(
+        characterId,
+        triggerPayload,
+        attemptedTriggers,
+        rollback,
+        optimisticRowEpoch,
+        options,
+      ),
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
   )
@@ -370,30 +385,14 @@ export function dispatchReplaceModuleScripts(
     `moduleScripts:${moduleId}`,
     previous,
     (rollback, options = {}) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          replaceModuleScriptsCommand(
-            {
-              baseRevision,
-              moduleId,
-              scripts: scriptPayload,
-              optimisticCollectionEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'moduleScripts',
-            moduleId,
-            scripts: attemptedScripts,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      }),
+      runModuleScriptsDefinitionCommand(
+        moduleId,
+        scriptPayload,
+        attemptedScripts,
+        rollback,
+        optimisticCollectionEpoch,
+        options,
+      ),
     delayMs,
     undefined,
     optimisticCollectionEpoch,
@@ -415,34 +414,86 @@ export function dispatchReplaceModuleTriggers(
     `moduleTriggers:${moduleId}`,
     previous,
     (rollback, options = {}) =>
-      runServerCommand({
-        command: (baseRevision) =>
-          replaceModuleTriggersCommand(
-            {
-              baseRevision,
-              moduleId,
-              triggers: triggerPayload,
-              optimisticCollectionEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'moduleTriggers',
-            moduleId,
-            triggers: attemptedTriggers,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      }),
+      runModuleTriggersDefinitionCommand(
+        moduleId,
+        triggerPayload,
+        attemptedTriggers,
+        rollback,
+        optimisticCollectionEpoch,
+        options,
+      ),
     delayMs,
     undefined,
     optimisticCollectionEpoch,
   )
+}
+
+export function beginCharacterScriptDefinitionStructuralWrite(
+  kind: 'characterScripts' | 'characterTriggers',
+  characterId: string,
+  definitions: readonly unknown[],
+  rollback: Extract<ScopedScriptDefinitionRollback, { kind: typeof kind }>,
+  optimisticRowEpoch: number,
+): CharacterScriptDefinitionStructuralWriteAttempt {
+  const key = `${kind}:${characterId}`
+  if (!canUseServerCommands()) return Object.freeze({ key })
+
+  // Persist any earlier debounced edit before the structural full PUT. The
+  // global command queue serializes that write ahead of this external attempt,
+  // while attempt settlement rebases this rollback if the earlier write fails.
+  runPendingScriptDefinitionReplacement(key)
+
+  const state = mutationSafetyState(key, {
+    kind: 'character',
+    characterId,
+    epoch: optimisticRowEpoch,
+  })
+  const attempt = createScriptDefinitionAttempt({
+    key,
+    kind,
+    targetId: characterId,
+    rollback,
+    attemptedRows: definitions,
+    fullReplacement: true,
+    state,
+  })
+  state.unsettled.push(attempt)
+
+  // The structural PUT already carries this exact full snapshot. Absorb only
+  // the matching watcher observation; a newer local value falls through and is
+  // queued normally.
+  const existingAbsorption = absorbedStructuralSnapshots.get(key)
+  if (existingAbsorption) clearTimeout(existingAbsorption.expiry)
+  const absorption: AbsorbedStructuralSnapshot = {
+    snapshot: snapshotJson(definitions),
+    expiry: setTimeout(() => {
+      if (absorbedStructuralSnapshots.get(key) === absorption) absorbedStructuralSnapshots.delete(key)
+    }, 0),
+  }
+  absorbedStructuralSnapshots.set(key, absorption)
+
+  const handle: CharacterScriptDefinitionStructuralWriteAttempt = Object.freeze({ key })
+  structuralWriteAttempts.set(handle, attempt)
+  return handle
+}
+
+export function acknowledgeCharacterScriptDefinitionStructuralWrite(
+  handle: CharacterScriptDefinitionStructuralWriteAttempt,
+): void {
+  const attempt = structuralWriteAttempts.get(handle)
+  if (!attempt) return
+  structuralWriteAttempts.delete(handle)
+  settleScriptDefinitionAttempt(attempt, true)
+}
+
+export function rejectCharacterScriptDefinitionStructuralWrite(
+  handle: CharacterScriptDefinitionStructuralWriteAttempt,
+): void {
+  const attempt = structuralWriteAttempts.get(handle)
+  if (!attempt) return
+  structuralWriteAttempts.delete(handle)
+  attempt.state.forceReplacement = true
+  settleScriptDefinitionAttempt(attempt, false)
 }
 
 export function watchServerBackedScriptDefinitions(
@@ -474,6 +525,7 @@ export function watchServerBackedScriptDefinitions(
       const currentSnapshots = collectScriptDefinitionCollectionSnapshots(scope)
 
       if (suppressRollbackDispatch || !initialized || resourceApplyEpoch !== previousResourceApplyEpoch) {
+        reconcileAdoptedStructuralScriptDefinitionSnapshots(currentSnapshots, delayMs)
         initialized = true
         previousResourceApplyEpoch = resourceApplyEpoch
         previousSnapshots = currentSnapshots
@@ -484,6 +536,7 @@ export function watchServerBackedScriptDefinitions(
         const previousSnapshot = previousSnapshots.get(key)
         if (previousSnapshot === undefined) continue
         if (snapshot === previousSnapshot) continue
+        if (consumeStructuralScriptDefinitionSnapshot(key, snapshot)) continue
         // Build the rollback lazily from the prior per-key snapshot string, so a
         // failed replacement restores only this row — no whole-collection clone.
         untrack(() => dispatchWatchedReplacement(key, previousSnapshot, delayMs))
@@ -497,6 +550,29 @@ export function watchServerBackedScriptDefinitions(
     flushPendingServerBackedScriptDefinitionPatches()
     unsubscribeSelected?.()
     stop()
+  }
+}
+
+function consumeStructuralScriptDefinitionSnapshot(key: string, snapshot: string): boolean {
+  const expected = absorbedStructuralSnapshots.get(key)
+  if (!expected) return false
+  clearTimeout(expected.expiry)
+  absorbedStructuralSnapshots.delete(key)
+  return expected.snapshot === snapshot
+}
+
+function reconcileAdoptedStructuralScriptDefinitionSnapshots(
+  snapshots: ReadonlyMap<string, string>,
+  delayMs: number,
+): void {
+  for (const [key, snapshot] of snapshots) {
+    const expected = absorbedStructuralSnapshots.get(key)
+    if (!expected) continue
+    clearTimeout(expected.expiry)
+    absorbedStructuralSnapshots.delete(key)
+    if (expected.snapshot !== snapshot) {
+      untrack(() => dispatchWatchedReplacement(key, expected.snapshot, delayMs))
+    }
   }
 }
 
@@ -818,30 +894,14 @@ function queueWatchedCharacterScripts(characterId: string, previousSnapshot: str
       if (!scripts) return Promise.resolve({ status: 'unavailable' })
       const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
       const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-      return runServerCommand({
-        command: (baseRevision) =>
-          replaceCharacterScriptsCommand(
-            {
-              baseRevision,
-              characterId,
-              scripts: scriptPayload,
-              optimisticRowEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'characterScripts',
-            characterId,
-            scripts: attemptedScripts,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      })
+      return runCharacterScriptsDefinitionCommand(
+        characterId,
+        scriptPayload,
+        attemptedScripts,
+        rollback,
+        optimisticRowEpoch,
+        options,
+      )
     },
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
@@ -862,30 +922,14 @@ function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: st
       if (!triggers) return Promise.resolve({ status: 'unavailable' })
       const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
       const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
-      return runServerCommand({
-        command: (baseRevision) =>
-          replaceCharacterTriggersCommand(
-            {
-              baseRevision,
-              characterId,
-              triggers: triggerPayload,
-              optimisticRowEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'characterTriggers',
-            characterId,
-            triggers: attemptedTriggers,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      })
+      return runCharacterTriggersDefinitionCommand(
+        characterId,
+        triggerPayload,
+        attemptedTriggers,
+        rollback,
+        optimisticRowEpoch,
+        options,
+      )
     },
     delayMs,
     { characterId, epoch: optimisticRowEpoch },
@@ -906,30 +950,14 @@ function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, d
       if (!scripts) return Promise.resolve({ status: 'unavailable' })
       const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
       const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
-      return runServerCommand({
-        command: (baseRevision) =>
-          replaceModuleScriptsCommand(
-            {
-              baseRevision,
-              moduleId,
-              scripts: scriptPayload,
-              optimisticCollectionEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'moduleScripts',
-            moduleId,
-            scripts: attemptedScripts,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      })
+      return runModuleScriptsDefinitionCommand(
+        moduleId,
+        scriptPayload,
+        attemptedScripts,
+        rollback,
+        optimisticCollectionEpoch,
+        options,
+      )
     },
     delayMs,
     undefined,
@@ -951,35 +979,493 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
       if (!triggers) return Promise.resolve({ status: 'unavailable' })
       const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
       const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
-      return runServerCommand({
-        command: (baseRevision) =>
-          replaceModuleTriggersCommand(
-            {
-              baseRevision,
-              moduleId,
-              triggers: triggerPayload,
-              optimisticCollectionEpoch,
-            },
-            options.signal,
-            options.keepalive,
-            true,
-          ),
-        rollback: () => {
-          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
-          rollbackServerBackedScriptDefinitions(rollback, {
-            kind: 'moduleTriggers',
-            moduleId,
-            triggers: attemptedTriggers,
-          })
-        },
-        signal: options.signal,
-        keepalive: options.keepalive,
-      })
+      return runModuleTriggersDefinitionCommand(
+        moduleId,
+        triggerPayload,
+        attemptedTriggers,
+        rollback,
+        optimisticCollectionEpoch,
+        options,
+      )
     },
     delayMs,
     undefined,
     optimisticCollectionEpoch,
   )
+}
+
+function runCharacterScriptsDefinitionCommand(
+  characterId: string,
+  scripts: ScriptDefinitionSnapshot[],
+  attemptedScripts: customscript[],
+  rollback: ScriptDefinitionRollback,
+  optimisticRowEpoch: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return runDefinitionCollectionCommand({
+    key: `characterScripts:${characterId}`,
+    kind: 'characterScripts',
+    targetId: characterId,
+    fence: { kind: 'character', characterId, epoch: optimisticRowEpoch },
+    rollbackState: rollback,
+    finalDefinitions: scripts,
+    replaceCommand: (baseRevision) =>
+      replaceCharacterScriptsCommand(
+        { baseRevision, characterId, scripts, optimisticRowEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    mutateCommand: (baseRevision, mutation) =>
+      mutateCharacterScriptsCommand(
+        { baseRevision, characterId, mutation, expectedScripts: scripts, optimisticRowEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    rollback: () => {
+      if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
+      rollbackServerBackedScriptDefinitions(rollback, {
+        kind: 'characterScripts',
+        characterId,
+        scripts: attemptedScripts,
+      })
+    },
+    options,
+  })
+}
+
+function runCharacterTriggersDefinitionCommand(
+  characterId: string,
+  triggers: TriggerDefinitionSnapshot[],
+  attemptedTriggers: triggerscript[],
+  rollback: ScriptDefinitionRollback,
+  optimisticRowEpoch: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return runDefinitionCollectionCommand({
+    key: `characterTriggers:${characterId}`,
+    kind: 'characterTriggers',
+    targetId: characterId,
+    fence: { kind: 'character', characterId, epoch: optimisticRowEpoch },
+    rollbackState: rollback,
+    finalDefinitions: triggers,
+    replaceCommand: (baseRevision) =>
+      replaceCharacterTriggersCommand(
+        { baseRevision, characterId, triggers, optimisticRowEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    mutateCommand: (baseRevision, mutation) =>
+      mutateCharacterTriggersCommand(
+        { baseRevision, characterId, mutation, expectedTriggers: triggers, optimisticRowEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    rollback: () => {
+      if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
+      rollbackServerBackedScriptDefinitions(rollback, {
+        kind: 'characterTriggers',
+        characterId,
+        triggers: attemptedTriggers,
+      })
+    },
+    options,
+  })
+}
+
+function runModuleScriptsDefinitionCommand(
+  moduleId: string,
+  scripts: ScriptDefinitionSnapshot[],
+  attemptedScripts: customscript[],
+  rollback: ScriptDefinitionRollback,
+  optimisticCollectionEpoch: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return runDefinitionCollectionCommand({
+    key: `moduleScripts:${moduleId}`,
+    kind: 'moduleScripts',
+    targetId: moduleId,
+    fence: { kind: 'modules', epoch: optimisticCollectionEpoch },
+    rollbackState: rollback,
+    finalDefinitions: scripts,
+    replaceCommand: (baseRevision) =>
+      replaceModuleScriptsCommand(
+        { baseRevision, moduleId, scripts, optimisticCollectionEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    mutateCommand: (baseRevision, mutation) =>
+      mutateModuleScriptsCommand(
+        { baseRevision, moduleId, mutation, expectedScripts: scripts, optimisticCollectionEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    rollback: () => {
+      if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
+      rollbackServerBackedScriptDefinitions(rollback, {
+        kind: 'moduleScripts',
+        moduleId,
+        scripts: attemptedScripts,
+      })
+    },
+    options,
+  })
+}
+
+function runModuleTriggersDefinitionCommand(
+  moduleId: string,
+  triggers: TriggerDefinitionSnapshot[],
+  attemptedTriggers: triggerscript[],
+  rollback: ScriptDefinitionRollback,
+  optimisticCollectionEpoch: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return runDefinitionCollectionCommand({
+    key: `moduleTriggers:${moduleId}`,
+    kind: 'moduleTriggers',
+    targetId: moduleId,
+    fence: { kind: 'modules', epoch: optimisticCollectionEpoch },
+    rollbackState: rollback,
+    finalDefinitions: triggers,
+    replaceCommand: (baseRevision) =>
+      replaceModuleTriggersCommand(
+        { baseRevision, moduleId, triggers, optimisticCollectionEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    mutateCommand: (baseRevision, mutation) =>
+      mutateModuleTriggersCommand(
+        { baseRevision, moduleId, mutation, expectedTriggers: triggers, optimisticCollectionEpoch },
+        options.signal,
+        options.keepalive,
+        true,
+      ),
+    rollback: () => {
+      if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
+      rollbackServerBackedScriptDefinitions(rollback, {
+        kind: 'moduleTriggers',
+        moduleId,
+        triggers: attemptedTriggers,
+      })
+    },
+    options,
+  })
+}
+
+async function runDefinitionCollectionCommand<T extends Record<string, unknown>>(input: {
+  key: string
+  kind: ScopedScriptDefinitionRollback['kind']
+  targetId: string
+  fence: ScriptDefinitionProjectionFence
+  rollbackState: ScriptDefinitionRollback
+  finalDefinitions: readonly unknown[]
+  replaceCommand: (baseRevision: number) => Promise<ServerCommandResult<T>>
+  mutateCommand: (baseRevision: number, mutation: ScriptDefinitionCollectionMutation) => Promise<ServerCommandResult<T>>
+  rollback: () => void
+  options: ServerCommandTransportOptions
+}): Promise<ServerCommandResult<T>> {
+  const safety = mutationSafetyState(input.key, input.fence)
+  const attempt = createScriptDefinitionAttempt({
+    key: input.key,
+    kind: input.kind,
+    targetId: input.targetId,
+    rollback: input.rollbackState,
+    attemptedRows: input.finalDefinitions,
+    // Start conservatively; the classified transport plan below replaces this
+    // value before the attempt can settle.
+    fullReplacement: true,
+    state: safety,
+  })
+  safety.unsettled.push(attempt)
+  if (hasScriptDefinitionProjectionFenceChanged(input.fence)) {
+    discardScriptDefinitionAttempt(attempt)
+    return { status: 'unavailable' }
+  }
+
+  const baseline = readRollbackDefinitionBaseline(input.rollbackState, input.kind, input.targetId)
+  const hasOtherUnsettledAttempt = safety.unsettled.some((candidate) => candidate !== attempt)
+  const plan =
+    safety.forceReplacement || hasOtherUnsettledAttempt || baseline === null
+      ? ({ kind: 'replace' } as const)
+      : classifyScriptDefinitionMutation(baseline.rows, input.finalDefinitions)
+  if (plan.kind === 'none') {
+    discardScriptDefinitionAttempt(attempt)
+    return { status: 'unavailable' }
+  }
+
+  const fullReplacement = plan.kind === 'replace'
+  attempt.fullReplacement = fullReplacement
+  try {
+    const result = await runServerCommand<T>({
+      command: async (baseRevision) => {
+        try {
+          const result = fullReplacement
+            ? await input.replaceCommand(baseRevision)
+            : await input.mutateCommand(baseRevision, plan.mutation)
+          settleScriptDefinitionAttempt(attempt, result.status === 'ok')
+          return result
+        } catch (error) {
+          settleScriptDefinitionAttempt(attempt, false)
+          throw error
+        }
+      },
+      rollback: () => {
+        // A rejected or response-lost PATCH may already have reached the server.
+        // Taint before restoring the optimistic draft so the next same-scope
+        // write sends a full replacement even when the restored arrays compare
+        // as a local no-op.
+        safety.forceReplacement = true
+        settleScriptDefinitionAttempt(attempt, false)
+        input.rollback()
+      },
+      signal: input.options.signal,
+      keepalive: input.options.keepalive,
+    })
+    if (!attempt.settled) settleScriptDefinitionAttempt(attempt, result.status === 'ok')
+    return result
+  } catch (error) {
+    safety.forceReplacement = true
+    settleScriptDefinitionAttempt(attempt, false)
+    throw error
+  }
+}
+
+function mutationSafetyState(key: string, fence: ScriptDefinitionProjectionFence): ScriptDefinitionMutationSafetyState {
+  const existing = mutationSafetyByKey.get(key)
+  if (existing && sameScriptDefinitionProjectionFence(existing.fence, fence)) return existing
+
+  const created: ScriptDefinitionMutationSafetyState = {
+    fence,
+    // A completed taint is cleared by an authoritative projection. An older
+    // request that is still unsettled can nevertheless land after that read,
+    // so the first write in the new epoch must still be a full replacement.
+    forceReplacement: !!existing && (existing.crossProjectionTaint || existing.unsettled.length > 0),
+    crossProjectionTaint: false,
+    unsettled: [],
+  }
+  mutationSafetyByKey.set(key, created)
+  return created
+}
+
+function createScriptDefinitionAttempt(
+  input: Omit<DispatchedScriptDefinitionAttempt, 'settled'>,
+): DispatchedScriptDefinitionAttempt {
+  return {
+    ...input,
+    settled: false,
+  }
+}
+
+function deleteCleanMutationSafetyState(key: string, state: ScriptDefinitionMutationSafetyState): void {
+  if (state.unsettled.length === 0 && !state.forceReplacement && mutationSafetyByKey.get(key) === state) {
+    mutationSafetyByKey.delete(key)
+  }
+}
+
+function settleScriptDefinitionAttempt(attempt: DispatchedScriptDefinitionAttempt, accepted: boolean): void {
+  if (attempt.settled) return
+  attempt.settled = true
+
+  const state = attempt.state
+  const currentState = mutationSafetyByKey.get(attempt.key)
+  const settledAfterProjectionChanged = hasScriptDefinitionProjectionFenceChanged(state.fence)
+  const attemptIndex = state.unsettled.indexOf(attempt)
+  const laterAttempts = attemptIndex < 0 ? [] : state.unsettled.slice(attemptIndex + 1)
+  const settledBaseline = accepted
+    ? { rows: attempt.attemptedRows, fieldPresent: true }
+    : readRollbackDefinitionBaseline(attempt.rollback, attempt.kind, attempt.targetId)
+
+  if (settledBaseline) {
+    for (const laterAttempt of laterAttempts) {
+      rebaseScriptDefinitionRollback(laterAttempt.rollback, laterAttempt.kind, laterAttempt.targetId, settledBaseline)
+    }
+
+    const pending = pendingReplacements.get(attempt.key)
+    const pendingFence = pending ? scriptDefinitionPendingFence(pending) : null
+    const shouldRebasePending =
+      !!pendingFence &&
+      (accepted
+        ? !hasScriptDefinitionProjectionFenceChanged(pendingFence)
+        : sameScriptDefinitionProjectionFence(state.fence, pendingFence))
+    if (pending && shouldRebasePending) {
+      rebaseScriptDefinitionRollback(pending.previous, attempt.kind, attempt.targetId, settledBaseline)
+    }
+  }
+
+  if (currentState && currentState !== state) {
+    // The old request settled after a newer authoritative projection created a
+    // new ownership state. Its result is ordered before those queued writes but
+    // happened after their rollback baseline was read.
+    currentState.forceReplacement = true
+    if (hasScriptDefinitionProjectionFenceChanged(currentState.fence)) {
+      currentState.crossProjectionTaint = true
+    }
+    if (accepted) {
+      const acceptedBaseline: ScriptDefinitionCollectionBaseline = {
+        rows: attempt.attemptedRows,
+        fieldPresent: true,
+      }
+      for (const currentAttempt of currentState.unsettled) {
+        rebaseScriptDefinitionRollback(
+          currentAttempt.rollback,
+          currentAttempt.kind,
+          currentAttempt.targetId,
+          acceptedBaseline,
+        )
+      }
+    }
+  }
+
+  if (settledAfterProjectionChanged) {
+    state.forceReplacement = true
+    state.crossProjectionTaint = true
+  } else if (accepted && attempt.fullReplacement) {
+    state.forceReplacement = false
+  } else if (!accepted) {
+    state.forceReplacement = true
+  }
+
+  if (attemptIndex >= 0) state.unsettled.splice(attemptIndex, 1)
+  deleteCleanMutationSafetyState(attempt.key, state)
+}
+
+function discardScriptDefinitionAttempt(attempt: DispatchedScriptDefinitionAttempt): void {
+  if (attempt.settled) return
+  attempt.settled = true
+  const attemptIndex = attempt.state.unsettled.indexOf(attempt)
+  if (attemptIndex >= 0) attempt.state.unsettled.splice(attemptIndex, 1)
+  deleteCleanMutationSafetyState(attempt.key, attempt.state)
+}
+
+function sameScriptDefinitionProjectionFence(
+  left: ScriptDefinitionProjectionFence,
+  right: ScriptDefinitionProjectionFence,
+): boolean {
+  if (left.kind !== right.kind || left.epoch !== right.epoch) return false
+  return left.kind === 'modules' || (right.kind === 'character' && left.characterId === right.characterId)
+}
+
+function hasScriptDefinitionProjectionFenceChanged(fence: ScriptDefinitionProjectionFence): boolean {
+  return fence.kind === 'character'
+    ? hasCharacterRowProjectionEpochChanged(fence.characterId, fence.epoch)
+    : hasCollectionProjectionEpochChanged('modules', fence.epoch)
+}
+
+function readRollbackDefinitionBaseline(
+  rollback: ScriptDefinitionRollback,
+  kind: ScopedScriptDefinitionRollback['kind'],
+  targetId: string,
+): ScriptDefinitionCollectionBaseline | null {
+  if ('kind' in rollback) {
+    if (rollback.kind !== kind) return null
+    if ('characterId' in rollback && rollback.characterId !== targetId) return null
+    if ('moduleId' in rollback && rollback.moduleId !== targetId) return null
+    return {
+      rows: 'scripts' in rollback ? rollback.scripts : rollback.triggers,
+      fieldPresent:
+        rollback.kind === 'characterScripts'
+          ? rollback.hadScriptsField !== false
+          : rollback.kind === 'characterTriggers'
+            ? rollback.hadTriggersField !== false
+            : true,
+    }
+  }
+
+  if (kind === 'characterScripts' || kind === 'characterTriggers') {
+    const character = rollback.characters.find((candidate) => candidate.chaId === targetId)
+    if (!character) return null
+    const rows = kind === 'characterScripts' ? character.customscript : character.triggerscript
+    if (rows !== undefined && !Array.isArray(rows)) return null
+    const fieldName = kind === 'characterScripts' ? 'customscript' : 'triggerscript'
+    return {
+      rows: rows ?? [],
+      fieldPresent: Object.prototype.hasOwnProperty.call(character, fieldName),
+    }
+  }
+
+  const module = rollback.modules.find((candidate) => candidate.id === targetId)
+  if (!module) return null
+  const rows = kind === 'moduleScripts' ? module.regex : module.trigger
+  if (rows !== undefined && !Array.isArray(rows)) return null
+  const fieldName = kind === 'moduleScripts' ? 'regex' : 'trigger'
+  return {
+    rows: rows ?? [],
+    fieldPresent: Object.prototype.hasOwnProperty.call(module, fieldName),
+  }
+}
+
+function rebaseScriptDefinitionRollback(
+  rollback: ScriptDefinitionRollback,
+  kind: ScopedScriptDefinitionRollback['kind'],
+  targetId: string,
+  baseline: ScriptDefinitionCollectionBaseline,
+): void {
+  const rows = cloneJsonValue(baseline.rows)
+  if ('kind' in rollback) {
+    if (rollback.kind !== kind) return
+    if ('characterId' in rollback && rollback.characterId !== targetId) return
+    if ('moduleId' in rollback && rollback.moduleId !== targetId) return
+    switch (rollback.kind) {
+      case 'characterScripts':
+        rollback.scripts = rows as customscript[]
+        rollback.hadScriptsField = baseline.fieldPresent
+        return
+      case 'characterTriggers':
+        rollback.triggers = rows as triggerscript[]
+        rollback.hadTriggersField = baseline.fieldPresent
+        return
+      case 'moduleScripts':
+        rollback.scripts = rows as customscript[]
+        return
+      case 'moduleTriggers':
+        rollback.triggers = rows as triggerscript[]
+        return
+    }
+  }
+
+  if (kind === 'characterScripts' || kind === 'characterTriggers') {
+    const character = rollback.characters.find((candidate) => candidate.chaId === targetId)
+    if (!character) return
+    const fieldName = kind === 'characterScripts' ? 'customscript' : 'triggerscript'
+    if (!baseline.fieldPresent) {
+      delete character[fieldName]
+    } else if (kind === 'characterScripts') {
+      character.customscript = rows as customscript[]
+    } else {
+      character.triggerscript = rows as triggerscript[]
+    }
+    return
+  }
+
+  const module = rollback.modules.find((candidate) => candidate.id === targetId)
+  if (!module) return
+  const fieldName = kind === 'moduleScripts' ? 'regex' : 'trigger'
+  if (!baseline.fieldPresent) {
+    delete module[fieldName]
+  } else if (kind === 'moduleScripts') {
+    module.regex = rows as customscript[]
+  } else {
+    module.trigger = rows as triggerscript[]
+  }
+}
+
+function scriptDefinitionPendingFence(pending: PendingCollectionReplacement): ScriptDefinitionProjectionFence | null {
+  if (pending.characterRowProjection) {
+    return {
+      kind: 'character',
+      characterId: pending.characterRowProjection.characterId,
+      epoch: pending.characterRowProjection.epoch,
+    }
+  }
+  return pending.moduleCollectionProjectionEpoch === undefined
+    ? null
+    : { kind: 'modules', epoch: pending.moduleCollectionProjectionEpoch }
 }
 
 export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
@@ -993,6 +1479,21 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
   if (!pending) return
   if (pending.timer) clearTimeout(pending.timer)
   pendingReplacements.delete(key)
+  if (
+    pending.characterRowProjection &&
+    hasCharacterRowProjectionEpochChanged(
+      pending.characterRowProjection.characterId,
+      pending.characterRowProjection.epoch,
+    )
+  ) {
+    return
+  }
+  if (
+    pending.moduleCollectionProjectionEpoch !== undefined &&
+    hasCollectionProjectionEpochChanged('modules', pending.moduleCollectionProjectionEpoch)
+  ) {
+    return
+  }
   void pending.command(pending.previous, options)
 }
 

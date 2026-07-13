@@ -8,6 +8,7 @@ import type {
   ModelProfileRecordRuntimeOptions,
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
+import type { ScriptDefinitionCollectionMutation } from './scriptDefinitionMutations'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import { isCanonicalLoadout } from './loadoutCanonical'
 import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup } from './settingsGroups'
@@ -1081,9 +1082,23 @@ export interface ReplaceCharacterScriptsCommandInput extends ScriptDefinitionCom
   optimisticRowEpoch?: number
 }
 
+export interface MutateCharacterScriptsCommandInput extends ScriptDefinitionCommandInput {
+  characterId: string
+  mutation: ScriptDefinitionCollectionMutation
+  expectedScripts: ScriptDefinitionSnapshot[]
+  optimisticRowEpoch?: number
+}
+
 export interface ReplaceCharacterTriggersCommandInput extends ScriptDefinitionCommandInput {
   characterId: string
   triggers: TriggerDefinitionSnapshot[]
+  optimisticRowEpoch?: number
+}
+
+export interface MutateCharacterTriggersCommandInput extends ScriptDefinitionCommandInput {
+  characterId: string
+  mutation: ScriptDefinitionCollectionMutation
+  expectedTriggers: TriggerDefinitionSnapshot[]
   optimisticRowEpoch?: number
 }
 
@@ -1093,9 +1108,23 @@ export interface ReplaceModuleScriptsCommandInput extends ScriptDefinitionComman
   optimisticCollectionEpoch?: number
 }
 
+export interface MutateModuleScriptsCommandInput extends ScriptDefinitionCommandInput {
+  moduleId: string
+  mutation: ScriptDefinitionCollectionMutation
+  expectedScripts: ScriptDefinitionSnapshot[]
+  optimisticCollectionEpoch?: number
+}
+
 export interface ReplaceModuleTriggersCommandInput extends ScriptDefinitionCommandInput {
   moduleId: string
   triggers: TriggerDefinitionSnapshot[]
+  optimisticCollectionEpoch?: number
+}
+
+export interface MutateModuleTriggersCommandInput extends ScriptDefinitionCommandInput {
+  moduleId: string
+  mutation: ScriptDefinitionCollectionMutation
+  expectedTriggers: TriggerDefinitionSnapshot[]
   optimisticCollectionEpoch?: number
 }
 
@@ -3607,6 +3636,32 @@ export async function replaceCharacterScriptsCommand(
   })
 }
 
+export async function mutateCharacterScriptsCommand(
+  input: MutateCharacterScriptsCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+  acknowledgeOptimistic = false,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/scripts`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      mutation: input.mutation,
+    },
+    signal,
+    keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readCharacterDefinitionMutationLocalEffect(body, event, {
+            operation: 'scripts',
+            expectedCharacterId: input.characterId,
+            expectedDefinitions: input.expectedScripts,
+            optimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
+  })
+}
+
 export async function replaceCharacterTriggersCommand(
   input: ReplaceCharacterTriggersCommandInput,
   signal?: AbortSignal | null,
@@ -3627,6 +3682,32 @@ export async function replaceCharacterTriggersCommand(
             operation: 'triggers',
             expectedCharacterId: input.characterId,
             expectedDefinitions: input.triggers,
+            optimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
+  })
+}
+
+export async function mutateCharacterTriggersCommand(
+  input: MutateCharacterTriggersCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+  acknowledgeOptimistic = false,
+): Promise<ServerCommandResult<{ characterId: string }>> {
+  return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/triggers`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      mutation: input.mutation,
+    },
+    signal,
+    keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readCharacterDefinitionMutationLocalEffect(body, event, {
+            operation: 'triggers',
+            expectedCharacterId: input.characterId,
+            expectedDefinitions: input.expectedTriggers,
             optimisticRowEpoch: input.optimisticRowEpoch,
           })
       : undefined,
@@ -3659,6 +3740,32 @@ export async function replaceModuleScriptsCommand(
   })
 }
 
+export async function mutateModuleScriptsCommand(
+  input: MutateModuleScriptsCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+  acknowledgeOptimistic = false,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/scripts`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      mutation: input.mutation,
+    },
+    signal,
+    keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'scripts',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: isUniqueDefinitionArray(input.expectedScripts),
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+          })
+      : undefined,
+  })
+}
+
 export async function replaceModuleTriggersCommand(
   input: ReplaceModuleTriggersCommandInput,
   signal?: AbortSignal | null,
@@ -3679,6 +3786,32 @@ export async function replaceModuleTriggersCommand(
             operation: 'triggers',
             expectedModuleId: input.moduleId,
             hasCanonicalPayload: isUniqueDefinitionArray(input.triggers),
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+          })
+      : undefined,
+  })
+}
+
+export async function mutateModuleTriggersCommand(
+  input: MutateModuleTriggersCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+  acknowledgeOptimistic = false,
+): Promise<ServerCommandResult<{ moduleId: string }>> {
+  return requestCommandJson(`/modules/${encodeURIComponent(input.moduleId)}/triggers`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      mutation: input.mutation,
+    },
+    signal,
+    keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readModuleCollectionMutationLocalEffect(body, event, {
+            operation: 'triggers',
+            expectedModuleId: input.moduleId,
+            hasCanonicalPayload: isUniqueDefinitionArray(input.expectedTriggers),
             collectionProjectionEpoch: input.optimisticCollectionEpoch,
           })
       : undefined,
@@ -5066,6 +5199,9 @@ function readModuleCollectionMutationLocalEffect(
     return undefined
   }
 
+  const record = body as Record<string, unknown>
+  if (record.revision !== event.revision) return undefined
+
   if (options.operation === 'reorder') {
     if (event.id !== undefined || !isUniqueStringArray(options.expectedModuleIds)) return undefined
     return {
@@ -5076,7 +5212,6 @@ function readModuleCollectionMutationLocalEffect(
   }
 
   if (!nonEmptyString(options.expectedModuleId)) return undefined
-  const record = body as Record<string, unknown>
   if (record.moduleId !== options.expectedModuleId || event.id !== options.expectedModuleId) return undefined
   if (options.expectedEntryId !== undefined) {
     if (
@@ -5264,12 +5399,14 @@ function readCharacterDefinitionMutationLocalEffect(
     return undefined
   }
   const expectedType = options.operation === 'scripts' ? 'scriptDefinitions.replaced' : 'triggerDefinitions.replaced'
+  const record = body as Record<string, unknown>
   if (
+    record.revision !== event.revision ||
     event.type !== expectedType ||
     event.resource !== 'characterRow' ||
     event.id !== options.expectedCharacterId ||
     event.parentId !== undefined ||
-    (body as Record<string, unknown>).characterId !== options.expectedCharacterId
+    record.characterId !== options.expectedCharacterId
   ) {
     return undefined
   }

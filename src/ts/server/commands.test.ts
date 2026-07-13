@@ -64,6 +64,10 @@ import {
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
+  mutateCharacterScriptsCommand,
+  mutateCharacterTriggersCommand,
+  mutateModuleScriptsCommand,
+  mutateModuleTriggersCommand,
   persistGenerationResultCommand,
   duplicateAgentPresetCommand,
   duplicateAgentPresetStepCommand,
@@ -5225,6 +5229,173 @@ describe('server command API adapter', () => {
         body: { baseRevision: 4, triggers: [trigger] },
       },
     ])
+  })
+
+  it('sends compact definition mutations while keeping final arrays client-only', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let revision = 30
+    const commandFetch = makeCommandFetch((url) => {
+      revision += 1
+      const scripts = url.endsWith('/scripts')
+      const module = url.includes('/modules/')
+      return {
+        revision,
+        event: {
+          type: scripts ? 'scriptDefinitions.replaced' : 'triggerDefinitions.replaced',
+          revision,
+          resource: module ? (scripts ? 'moduleScriptDefinition' : 'moduleTriggerDefinition') : 'characterRow',
+          id: module ? 'mod-a' : 'char-a',
+        },
+        ...(module ? { moduleId: 'mod-a' } : { characterId: 'char-a' }),
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const largeClientOnlyBody = 'x'.repeat(64 * 1024)
+    await mutateCharacterScriptsCommand(
+      {
+        baseRevision: 1,
+        characterId: 'char-a',
+        mutation: { op: 'update', id: 'script-a', patch: { comment: 'small' }, deleteKeys: [] },
+        expectedScripts: [{ id: 'script-a', body: largeClientOnlyBody }],
+        optimisticRowEpoch: 4,
+      },
+      undefined,
+      true,
+      true,
+    )
+    await mutateCharacterTriggersCommand(
+      {
+        baseRevision: 2,
+        characterId: 'char-a',
+        mutation: { op: 'delete', id: 'trigger-a' },
+        expectedTriggers: [{ id: 'trigger-b', body: largeClientOnlyBody }],
+        optimisticRowEpoch: 4,
+      },
+      undefined,
+      false,
+      true,
+    )
+    await mutateModuleScriptsCommand(
+      {
+        baseRevision: 3,
+        moduleId: 'mod-a',
+        mutation: { op: 'create', row: { id: 'script-b', comment: 'small' }, index: 1 },
+        expectedScripts: [
+          { id: 'script-a', body: largeClientOnlyBody },
+          { id: 'script-b', comment: 'small' },
+        ],
+        optimisticCollectionEpoch: 7,
+      },
+      undefined,
+      false,
+      true,
+    )
+    await mutateModuleTriggersCommand(
+      {
+        baseRevision: 4,
+        moduleId: 'mod-a',
+        mutation: { op: 'reorder', ids: ['trigger-b', 'trigger-a'] },
+        expectedTriggers: [{ id: 'trigger-b', body: largeClientOnlyBody }, { id: 'trigger-a' }],
+        optimisticCollectionEpoch: 7,
+      },
+      undefined,
+      false,
+      true,
+    )
+
+    expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
+      {
+        url: '/api/v1/commands/characters/char-a/scripts',
+        method: 'PATCH',
+        body: {
+          baseRevision: 1,
+          mutation: { op: 'update', id: 'script-a', patch: { comment: 'small' }, deleteKeys: [] },
+        },
+      },
+      {
+        url: '/api/v1/commands/characters/char-a/triggers',
+        method: 'PATCH',
+        body: { baseRevision: 2, mutation: { op: 'delete', id: 'trigger-a' } },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/scripts',
+        method: 'PATCH',
+        body: {
+          baseRevision: 3,
+          mutation: { op: 'create', row: { id: 'script-b', comment: 'small' }, index: 1 },
+        },
+      },
+      {
+        url: '/api/v1/commands/modules/mod-a/triggers',
+        method: 'PATCH',
+        body: { baseRevision: 4, mutation: { op: 'reorder', ids: ['trigger-b', 'trigger-a'] } },
+      },
+    ])
+    expect(vi.mocked(commandFetch.fetch).mock.calls[0]?.[1]).toMatchObject({ keepalive: true })
+    expect(JSON.stringify(commandFetch.calls)).not.toContain(largeClientOnlyBody)
+    expect(observedEffects).toEqual([
+      {
+        kind: 'characterDefinitionMutation',
+        operation: 'scripts',
+        characterId: 'char-a',
+        optimisticRowEpoch: 4,
+      },
+      {
+        kind: 'characterDefinitionMutation',
+        operation: 'triggers',
+        characterId: 'char-a',
+        optimisticRowEpoch: 4,
+      },
+      {
+        kind: 'moduleCollectionMutation',
+        operation: 'scripts',
+        moduleId: 'mod-a',
+        collectionProjectionEpoch: 7,
+      },
+      {
+        kind: 'moduleCollectionMutation',
+        operation: 'triggers',
+        moduleId: 'mod-a',
+        collectionProjectionEpoch: 7,
+      },
+    ])
+  })
+
+  it('keeps mismatched definition response revisions authoritative', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 12,
+      event: {
+        type: 'scriptDefinitions.replaced',
+        revision: 11,
+        resource: 'characterRow',
+        id: 'char-a',
+      },
+      characterId: 'char-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await mutateCharacterScriptsCommand(
+      {
+        baseRevision: 1,
+        characterId: 'char-a',
+        mutation: { op: 'delete', id: 'script-a' },
+        expectedScripts: [],
+        optimisticRowEpoch: 4,
+      },
+      undefined,
+      false,
+      true,
+    )
+
+    expect(observedEffects).toEqual([])
   })
 
   it('emits opt-in character definition effects only for canonical matching commands', async () => {

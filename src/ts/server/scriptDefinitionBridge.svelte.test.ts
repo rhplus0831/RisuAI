@@ -19,6 +19,24 @@ const recorded = vi.hoisted(() => ({
     optimisticCollectionEpoch: unknown
     acknowledgeOptimistic: unknown
   }>,
+  compactDefinitionCalls: [] as Array<{
+    scope: 'character' | 'module'
+    kind: 'scripts' | 'triggers'
+    targetId: string
+    mutation: unknown
+    expectedDefinitions: unknown
+    keepalive: unknown
+  }>,
+  fullDefinitionCalls: [] as Array<{
+    scope: 'character' | 'module'
+    kind: 'scripts' | 'triggers'
+    targetId: string
+  }>,
+  commandResults: [] as Array<
+    | { status: 'ok'; revision: number }
+    | { status: 'error'; error: string }
+    | Promise<{ status: 'ok'; revision: number } | { status: 'error'; error: string }>
+  >,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const characterRowProjectionState = vi.hoisted(() => ({ epoch: 0 }))
@@ -32,64 +50,150 @@ vi.mock('../stores.svelte', async () => {
   }
 })
 
-vi.mock('./commands', () => ({
-  canUseServerCommands: () => true,
-  replaceCharacterScriptsCommand: async (
-    args: Record<string, unknown>,
-    _signal: unknown,
-    _keepalive: unknown,
-    acknowledgeOptimistic: unknown,
-  ) => {
-    const { optimisticRowEpoch, ...built } = args
-    recorded.characterDefinitionCalls.push({ kind: 'scripts', optimisticRowEpoch, acknowledgeOptimistic })
-    return { kind: 'replaceCharacterScripts', ...built }
-  },
-  replaceCharacterTriggersCommand: async (
-    args: Record<string, unknown>,
-    _signal: unknown,
-    _keepalive: unknown,
-    acknowledgeOptimistic: unknown,
-  ) => {
-    const { optimisticRowEpoch, ...built } = args
-    recorded.characterDefinitionCalls.push({ kind: 'triggers', optimisticRowEpoch, acknowledgeOptimistic })
-    return { kind: 'replaceCharacterTriggers', ...built }
-  },
-  replaceModuleScriptsCommand: async (
-    args: Record<string, unknown>,
-    _signal: unknown,
-    _keepalive: unknown,
-    acknowledgeOptimistic: unknown,
-  ) => {
-    const { optimisticCollectionEpoch, ...built } = args
-    recorded.moduleDefinitionCalls.push({ kind: 'scripts', optimisticCollectionEpoch, acknowledgeOptimistic })
-    return { kind: 'replaceModuleScripts', ...built }
-  },
-  replaceModuleTriggersCommand: async (
-    args: Record<string, unknown>,
-    _signal: unknown,
-    _keepalive: unknown,
-    acknowledgeOptimistic: unknown,
-  ) => {
-    const { optimisticCollectionEpoch, ...built } = args
-    recorded.moduleDefinitionCalls.push({ kind: 'triggers', optimisticCollectionEpoch, acknowledgeOptimistic })
-    return { kind: 'replaceModuleTriggers', ...built }
-  },
-  runServerCommand: vi.fn(
-    async (args: {
-      command: (baseRevision: number) => Promise<Record<string, unknown>>
-      rollback?: () => void
-      keepalive?: boolean
-    }) => {
-      const built = await args.command(1)
-      recorded.commands.push({
-        built,
-        rollback: args.rollback,
-        ...(args.keepalive ? { keepalive: args.keepalive } : {}),
-      })
-      return { status: 'ok', revision: 1 }
+vi.mock('./commands', () => {
+  const resolveCommand = async (built: Record<string, unknown>) => {
+    const configured = recorded.commandResults.shift()
+    const result = configured ? await configured : { status: 'ok' as const, revision: 1 }
+    return { ...result, __built: built }
+  }
+
+  return {
+    canUseServerCommands: () => true,
+    replaceCharacterScriptsCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      _keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticRowEpoch, ...built } = args
+      recorded.fullDefinitionCalls.push({ scope: 'character', kind: 'scripts', targetId: String(args.characterId) })
+      recorded.characterDefinitionCalls.push({ kind: 'scripts', optimisticRowEpoch, acknowledgeOptimistic })
+      return resolveCommand({ kind: 'replaceCharacterScripts', ...built })
     },
-  ),
-}))
+    replaceCharacterTriggersCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      _keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticRowEpoch, ...built } = args
+      recorded.fullDefinitionCalls.push({ scope: 'character', kind: 'triggers', targetId: String(args.characterId) })
+      recorded.characterDefinitionCalls.push({ kind: 'triggers', optimisticRowEpoch, acknowledgeOptimistic })
+      return resolveCommand({ kind: 'replaceCharacterTriggers', ...built })
+    },
+    replaceModuleScriptsCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      _keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticCollectionEpoch, ...built } = args
+      recorded.fullDefinitionCalls.push({ scope: 'module', kind: 'scripts', targetId: String(args.moduleId) })
+      recorded.moduleDefinitionCalls.push({ kind: 'scripts', optimisticCollectionEpoch, acknowledgeOptimistic })
+      return resolveCommand({ kind: 'replaceModuleScripts', ...built })
+    },
+    replaceModuleTriggersCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      _keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticCollectionEpoch, ...built } = args
+      recorded.fullDefinitionCalls.push({ scope: 'module', kind: 'triggers', targetId: String(args.moduleId) })
+      recorded.moduleDefinitionCalls.push({ kind: 'triggers', optimisticCollectionEpoch, acknowledgeOptimistic })
+      return resolveCommand({ kind: 'replaceModuleTriggers', ...built })
+    },
+    mutateCharacterScriptsCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticRowEpoch, expectedScripts, mutation, ...built } = args
+      recorded.characterDefinitionCalls.push({ kind: 'scripts', optimisticRowEpoch, acknowledgeOptimistic })
+      recorded.compactDefinitionCalls.push({
+        scope: 'character',
+        kind: 'scripts',
+        targetId: String(args.characterId),
+        mutation,
+        expectedDefinitions: expectedScripts,
+        keepalive,
+      })
+      return resolveCommand({ kind: 'replaceCharacterScripts', ...built, scripts: expectedScripts })
+    },
+    mutateCharacterTriggersCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticRowEpoch, expectedTriggers, mutation, ...built } = args
+      recorded.characterDefinitionCalls.push({ kind: 'triggers', optimisticRowEpoch, acknowledgeOptimistic })
+      recorded.compactDefinitionCalls.push({
+        scope: 'character',
+        kind: 'triggers',
+        targetId: String(args.characterId),
+        mutation,
+        expectedDefinitions: expectedTriggers,
+        keepalive,
+      })
+      return resolveCommand({ kind: 'replaceCharacterTriggers', ...built, triggers: expectedTriggers })
+    },
+    mutateModuleScriptsCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticCollectionEpoch, expectedScripts, mutation, ...built } = args
+      recorded.moduleDefinitionCalls.push({ kind: 'scripts', optimisticCollectionEpoch, acknowledgeOptimistic })
+      recorded.compactDefinitionCalls.push({
+        scope: 'module',
+        kind: 'scripts',
+        targetId: String(args.moduleId),
+        mutation,
+        expectedDefinitions: expectedScripts,
+        keepalive,
+      })
+      return resolveCommand({ kind: 'replaceModuleScripts', ...built, scripts: expectedScripts })
+    },
+    mutateModuleTriggersCommand: async (
+      args: Record<string, unknown>,
+      _signal: unknown,
+      keepalive: unknown,
+      acknowledgeOptimistic: unknown,
+    ) => {
+      const { optimisticCollectionEpoch, expectedTriggers, mutation, ...built } = args
+      recorded.moduleDefinitionCalls.push({ kind: 'triggers', optimisticCollectionEpoch, acknowledgeOptimistic })
+      recorded.compactDefinitionCalls.push({
+        scope: 'module',
+        kind: 'triggers',
+        targetId: String(args.moduleId),
+        mutation,
+        expectedDefinitions: expectedTriggers,
+        keepalive,
+      })
+      return resolveCommand({ kind: 'replaceModuleTriggers', ...built, triggers: expectedTriggers })
+    },
+    runServerCommand: vi.fn(
+      async (args: {
+        command: (baseRevision: number) => Promise<Record<string, unknown>>
+        rollback?: () => void
+        keepalive?: boolean
+      }) => {
+        const rawResult = await args.command(1)
+        const { __built, ...result } = rawResult
+        recorded.commands.push({
+          built: (__built ?? {}) as Record<string, unknown>,
+          rollback: args.rollback,
+          ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+        })
+        if (result.status !== 'ok') args.rollback?.()
+        return result
+      },
+    ),
+  }
+})
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
@@ -118,8 +222,10 @@ import { getDatabase, setDatabaseLite, type Database } from '../storage/database
 import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
+  acknowledgeCharacterScriptDefinitionStructuralWrite,
   applyModuleScriptDefinitionDraft,
   applyCharacterScriptDefinitionDraft,
+  beginCharacterScriptDefinitionStructuralWrite,
   clearDirtyScriptDefinitionFieldsMatchingProjection,
   collectScriptDefinitionCollectionSnapshots,
   currentScriptDefinitionStateSnapshot,
@@ -130,10 +236,26 @@ import {
   flushPendingServerBackedScriptDefinitionPatches,
   markDirtyScriptDefinitionRowFields,
   mergeScriptDefinitionProjectionRows,
+  rejectCharacterScriptDefinitionStructuralWrite,
   watchServerBackedScriptDefinitions,
 } from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
+
+function createDeferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
+async function drainDefinitionCommandMicrotasks(): Promise<void> {
+  for (let index = 0; index < 12; index += 1) await Promise.resolve()
+}
 
 const testDatabaseSetter = {
   set database(database: Record<string, unknown>) {
@@ -418,9 +540,13 @@ beforeEach(() => {
   recorded.commands.length = 0
   recorded.characterDefinitionCalls.length = 0
   recorded.moduleDefinitionCalls.length = 0
+  recorded.compactDefinitionCalls.length = 0
+  recorded.fullDefinitionCalls.length = 0
+  recorded.commandResults.length = 0
 })
 
-afterEach(() => {
+afterEach(async () => {
+  await drainDefinitionCommandMicrotasks()
   vi.useRealTimers()
   testDatabaseSetter.database = {}
 })
@@ -838,7 +964,7 @@ describe('character script definition draft bridge', () => {
     ])
   })
 
-  it('does not roll back a failed definition over an authoritative character row', async () => {
+  it('drops a queued definition write after an authoritative character row projection', async () => {
     setupScriptDefinitions()
     const previous = {
       kind: 'characterScripts' as const,
@@ -851,9 +977,9 @@ describe('character script definition draft bridge', () => {
     characterRowProjectionState.epoch += 1
     getDatabase().characters[0].customscript = [script('script-1', 'authoritative')]
     await vi.advanceTimersByTimeAsync(DELAY)
-    await Promise.resolve()
-    recorded.commands[0].rollback?.()
+    await drainDefinitionCommandMicrotasks()
 
+    expect(recorded.commands).toEqual([])
     expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'authoritative')])
   })
 
@@ -895,7 +1021,7 @@ describe('character script definition draft bridge', () => {
 })
 
 describe('module script definition projection fencing', () => {
-  it('does not roll back a failed replacement over an authoritative module collection', async () => {
+  it('drops a queued replacement after an authoritative module collection projection', async () => {
     setupScriptDefinitions()
     moduleCollectionProjectionState.epoch = 3
     getDatabase().modules[0].regex = [script('module-script-1', 'attempted')]
@@ -913,16 +1039,10 @@ describe('module script definition projection fencing', () => {
     moduleCollectionProjectionState.epoch = 4
     getDatabase().modules[0].regex = [script('module-script-1', 'authoritative')]
     await vi.advanceTimersByTimeAsync(DELAY)
-    await Promise.resolve()
+    await drainDefinitionCommandMicrotasks()
 
-    expect(recorded.moduleDefinitionCalls).toEqual([
-      {
-        kind: 'scripts',
-        optimisticCollectionEpoch: 3,
-        acknowledgeOptimistic: true,
-      },
-    ])
-    recorded.commands[0].rollback?.()
+    expect(recorded.moduleDefinitionCalls).toEqual([])
+    expect(recorded.commands).toEqual([])
 
     expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'authoritative')])
   })
@@ -970,6 +1090,451 @@ describe('module script definition projection fencing', () => {
     recorded.commands[0].rollback?.()
 
     expect(getDatabase().modules[0].trigger).toEqual(authoritativeBaseline)
+  })
+})
+
+describe('compact script definition mutations', () => {
+  it('classifies one sparse mutation for each definition scope', async () => {
+    setupScriptDefinitions()
+    getDatabase().modules[0].trigger = [
+      trigger('module-trigger-1', 'initial module trigger'),
+      trigger('module-trigger-2', 'second module trigger'),
+    ]
+
+    const previousCharacterScripts = [script('script-1', 'initial')]
+    getDatabase().characters[0].customscript = [script('script-1', 'edited')]
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      getDatabase().characters[0].customscript,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: previousCharacterScripts },
+      0,
+    )
+
+    const previousCharacterTriggers = [trigger('trigger-1', 'initial trigger')]
+    getDatabase().characters[0].triggerscript = []
+    dispatchReplaceCharacterTriggers(
+      'char-1',
+      getDatabase().characters[0].triggerscript,
+      { kind: 'characterTriggers', characterId: 'char-1', triggers: previousCharacterTriggers },
+      0,
+    )
+
+    const previousModuleScripts = [script('module-script-1', 'initial module')]
+    getDatabase().modules[0].regex = [...previousModuleScripts, script('module-script-2', 'created module script')]
+    dispatchReplaceModuleScripts(
+      'module-1',
+      getDatabase().modules[0].regex,
+      { kind: 'moduleScripts', moduleId: 'module-1', scripts: previousModuleScripts },
+      0,
+    )
+
+    const previousModuleTriggers = [
+      trigger('module-trigger-1', 'initial module trigger'),
+      trigger('module-trigger-2', 'second module trigger'),
+    ]
+    getDatabase().modules[0].trigger = [previousModuleTriggers[1], previousModuleTriggers[0]]
+    dispatchReplaceModuleTriggers(
+      'module-1',
+      getDatabase().modules[0].trigger,
+      { kind: 'moduleTriggers', moduleId: 'module-1', triggers: previousModuleTriggers },
+      0,
+    )
+
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(
+      recorded.compactDefinitionCalls.map(({ scope, kind, targetId, mutation }) => ({
+        scope,
+        kind,
+        targetId,
+        mutation,
+      })),
+    ).toEqual([
+      {
+        scope: 'character',
+        kind: 'scripts',
+        targetId: 'char-1',
+        mutation: { op: 'update', id: 'script-1', patch: { out: 'edited' }, deleteKeys: [] },
+      },
+      {
+        scope: 'character',
+        kind: 'triggers',
+        targetId: 'char-1',
+        mutation: { op: 'delete', id: 'trigger-1' },
+      },
+      {
+        scope: 'module',
+        kind: 'scripts',
+        targetId: 'module-1',
+        mutation: {
+          op: 'create',
+          row: script('module-script-2', 'created module script'),
+          index: 1,
+        },
+      },
+      {
+        scope: 'module',
+        kind: 'triggers',
+        targetId: 'module-1',
+        mutation: { op: 'reorder', ids: ['module-trigger-2', 'module-trigger-1'] },
+      },
+    ])
+    expect(recorded.fullDefinitionCalls).toEqual([])
+  })
+
+  it('coalesces create then edit into one final create mutation', async () => {
+    setupScriptDefinitions()
+    const baseline = [script('script-1', 'initial')]
+    const firstFinal = [...baseline, script('script-2', 'created')]
+    getDatabase().characters[0].customscript = firstFinal
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      firstFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      DELAY,
+    )
+
+    const editedFinal = [...baseline, script('script-2', 'edited before dispatch')]
+    getDatabase().characters[0].customscript = editedFinal
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      editedFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: firstFinal },
+      DELAY,
+    )
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toHaveLength(1)
+    expect(recorded.compactDefinitionCalls[0]).toMatchObject({
+      mutation: {
+        op: 'create',
+        row: script('script-2', 'edited before dispatch'),
+        index: 1,
+      },
+      expectedDefinitions: editedFinal,
+    })
+    expect(recorded.fullDefinitionCalls).toEqual([])
+  })
+
+  it('suppresses a debounced net revert but keeps ambiguous edits on full PUT', async () => {
+    setupScriptDefinitions()
+    const baseline = [script('script-1', 'initial')]
+    const edited = [script('script-1', 'temporary')]
+    getDatabase().characters[0].customscript = edited
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      edited,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      DELAY,
+    )
+    getDatabase().characters[0].customscript = baseline
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      baseline,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: edited },
+      DELAY,
+    )
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await drainDefinitionCommandMicrotasks()
+    expect(recorded.commands).toEqual([])
+
+    const twoRowBaseline = [script('script-1', 'initial'), script('script-2', 'second')]
+    const compoundFinal = [script('script-1', 'changed one'), script('script-2', 'changed two')]
+    getDatabase().characters[0].customscript = compoundFinal
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      compoundFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: twoRowBaseline },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'character', kind: 'scripts', targetId: 'char-1' }])
+  })
+
+  it('forces an unsettled successor to PUT and rebases its rollback after both requests fail', async () => {
+    setupScriptDefinitions()
+    const firstResult = createDeferred<{ status: 'error'; error: string }>()
+    const secondResult = createDeferred<{ status: 'error'; error: string }>()
+    recorded.commandResults.push(firstResult.promise, secondResult.promise)
+
+    const baseline = [script('script-1', 'initial')]
+    const firstFinal = [script('script-1', 'first')]
+    getDatabase().characters[0].customscript = firstFinal
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      firstFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    const secondFinal = [script('script-1', 'second')]
+    getDatabase().characters[0].customscript = secondFinal
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      secondFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: firstFinal },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toHaveLength(1)
+    expect(recorded.fullDefinitionCalls).toHaveLength(1)
+
+    firstResult.resolve({ status: 'error', error: 'lost first response' })
+    await drainDefinitionCommandMicrotasks()
+    secondResult.resolve({ status: 'error', error: 'lost second response' })
+    await drainDefinitionCommandMicrotasks()
+
+    expect(getDatabase().characters[0].customscript).toEqual(baseline)
+
+    const recovery = [script('script-1', 'recovered')]
+    getDatabase().characters[0].customscript = recovery
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      recovery,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+    expect(recorded.fullDefinitionCalls).toHaveLength(2)
+
+    const afterRecovery = [script('script-1', 'sparse again')]
+    getDatabase().characters[0].customscript = afterRecovery
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      afterRecovery,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: recovery },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+    expect(recorded.compactDefinitionCalls).toHaveLength(2)
+  })
+
+  it.each([
+    { accepted: true, expectedRollback: 'old accepted' },
+    { accepted: false, expectedRollback: 'authoritative' },
+  ])(
+    'rebases a newer-epoch full rollback when the old request accepted=$accepted',
+    async ({ accepted, expectedRollback }) => {
+      testDatabaseSetter.database = {
+        characters: [{ chaId: 'char-cross', customscript: [script('script-1', 'initial')] }],
+        modules: [],
+      }
+      const oldResult = createDeferred<{ status: 'ok'; revision: number } | { status: 'error'; error: string }>()
+      const newResult = createDeferred<{ status: 'error'; error: string }>()
+      recorded.commandResults.push(oldResult.promise, newResult.promise)
+
+      const initial = [script('script-1', 'initial')]
+      const oldAccepted = [script('script-1', 'old accepted')]
+      getDatabase().characters[0].customscript = oldAccepted
+      dispatchReplaceCharacterScripts(
+        'char-cross',
+        oldAccepted,
+        { kind: 'characterScripts', characterId: 'char-cross', scripts: initial },
+        0,
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      await drainDefinitionCommandMicrotasks()
+
+      characterRowProjectionState.epoch += 1
+      const authoritative = [script('script-1', 'authoritative')]
+      const newerFinal = [script('script-1', 'newer final')]
+      getDatabase().characters[0].customscript = newerFinal
+      dispatchReplaceCharacterScripts(
+        'char-cross',
+        newerFinal,
+        { kind: 'characterScripts', characterId: 'char-cross', scripts: authoritative },
+        0,
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      await drainDefinitionCommandMicrotasks()
+      expect(recorded.fullDefinitionCalls).toHaveLength(1)
+
+      oldResult.resolve(accepted ? { status: 'ok', revision: 2 } : { status: 'error', error: 'old rejected' })
+      await drainDefinitionCommandMicrotasks()
+      newResult.resolve({ status: 'error', error: 'new full rejected' })
+      await drainDefinitionCommandMicrotasks()
+
+      expect(getDatabase().characters[0].customscript).toEqual([script('script-1', expectedRollback)])
+    },
+  )
+
+  it('rebases a live newer-epoch pending rollback after an old request is accepted', async () => {
+    testDatabaseSetter.database = {
+      characters: [{ chaId: 'char-pending-cross', customscript: [script('script-1', 'initial')] }],
+      modules: [],
+    }
+    const oldResult = createDeferred<{ status: 'ok'; revision: number }>()
+    recorded.commandResults.push(oldResult.promise, { status: 'error', error: 'new full rejected' })
+
+    const initial = [script('script-1', 'initial')]
+    const oldAccepted = [script('script-1', 'old accepted')]
+    getDatabase().characters[0].customscript = oldAccepted
+    dispatchReplaceCharacterScripts(
+      'char-pending-cross',
+      oldAccepted,
+      { kind: 'characterScripts', characterId: 'char-pending-cross', scripts: initial },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    characterRowProjectionState.epoch += 1
+    const authoritative = [script('script-1', 'authoritative')]
+    const newerFinal = [script('script-1', 'newer final')]
+    getDatabase().characters[0].customscript = newerFinal
+    dispatchReplaceCharacterScripts(
+      'char-pending-cross',
+      newerFinal,
+      { kind: 'characterScripts', characterId: 'char-pending-cross', scripts: authoritative },
+      DELAY,
+    )
+
+    oldResult.resolve({ status: 'ok', revision: 2 })
+    await drainDefinitionCommandMicrotasks()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.fullDefinitionCalls).toHaveLength(1)
+    expect(getDatabase().characters[0].customscript).toEqual(oldAccepted)
+  })
+
+  it('carries a late old-request taint through an already stale mapped epoch', async () => {
+    testDatabaseSetter.database = {
+      characters: [{ chaId: 'char-multi-cross', customscript: [script('script-1', 'initial')] }],
+      modules: [],
+    }
+    const oldResult = createDeferred<{ status: 'error'; error: string }>()
+    const middleResult = createDeferred<{ status: 'error'; error: string }>()
+    recorded.commandResults.push(oldResult.promise, middleResult.promise)
+
+    const initial = [script('script-1', 'initial')]
+    const oldFinal = [script('script-1', 'old final')]
+    getDatabase().characters[0].customscript = oldFinal
+    dispatchReplaceCharacterScripts(
+      'char-multi-cross',
+      oldFinal,
+      { kind: 'characterScripts', characterId: 'char-multi-cross', scripts: initial },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    characterRowProjectionState.epoch += 1
+    const middleBaseline = [script('script-1', 'epoch one')]
+    const middleFinal = [script('script-1', 'middle final')]
+    getDatabase().characters[0].customscript = middleFinal
+    dispatchReplaceCharacterScripts(
+      'char-multi-cross',
+      middleFinal,
+      { kind: 'characterScripts', characterId: 'char-multi-cross', scripts: middleBaseline },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    middleResult.resolve({ status: 'error', error: 'middle rejected early' })
+    await drainDefinitionCommandMicrotasks()
+    characterRowProjectionState.epoch += 1
+    oldResult.resolve({ status: 'error', error: 'old rejected late' })
+    await drainDefinitionCommandMicrotasks()
+
+    const epochTwoBaseline = [script('script-1', 'epoch two')]
+    const epochTwoFinal = [script('script-1', 'epoch two final')]
+    getDatabase().characters[0].customscript = epochTwoFinal
+    dispatchReplaceCharacterScripts(
+      'char-multi-cross',
+      epochTwoFinal,
+      { kind: 'characterScripts', characterId: 'char-multi-cross', scripts: epochTwoBaseline },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.fullDefinitionCalls).toHaveLength(2)
+    expect(recorded.compactDefinitionCalls).toHaveLength(1)
+  })
+
+  it.each([
+    { accepted: true, expectedRollback: 'structural' },
+    { accepted: false, expectedRollback: 'initial' },
+  ])(
+    'rebases a later failed watcher write when structural accepted=$accepted',
+    async ({ accepted, expectedRollback }) => {
+      setupScriptDefinitions()
+      const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY })
+      flushSync()
+
+      const baseline = [script('script-1', 'initial')]
+      const structuralFinal = [script('script-1', 'structural')]
+      const structural = beginCharacterScriptDefinitionStructuralWrite(
+        'characterScripts',
+        'char-1',
+        structuralFinal,
+        { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+        0,
+      )
+      getDatabase().characters[0].customscript = structuralFinal
+      flushSync()
+      expect(recorded.commands).toEqual([])
+
+      const laterResult = createDeferred<{ status: 'error'; error: string }>()
+      recorded.commandResults.push(laterResult.promise)
+      const laterFinal = [script('script-1', 'later')]
+      getDatabase().characters[0].customscript = laterFinal
+      flushSync()
+      await vi.advanceTimersByTimeAsync(DELAY)
+      await drainDefinitionCommandMicrotasks()
+      expect(recorded.fullDefinitionCalls).toHaveLength(1)
+
+      if (accepted) {
+        acknowledgeCharacterScriptDefinitionStructuralWrite(structural)
+      } else {
+        rejectCharacterScriptDefinitionStructuralWrite(structural)
+      }
+      laterResult.resolve({ status: 'error', error: 'later rejected' })
+      await drainDefinitionCommandMicrotasks()
+      expect(getDatabase().characters[0].customscript).toEqual([script('script-1', expectedRollback)])
+      stop()
+    },
+  )
+
+  it('taints a never-run structural attempt before releasing a later full write', async () => {
+    setupScriptDefinitions()
+    const baseline = [script('script-1', 'initial')]
+    const structuralFinal = [script('script-1', 'structural')]
+    const structural = beginCharacterScriptDefinitionStructuralWrite(
+      'characterScripts',
+      'char-1',
+      structuralFinal,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      0,
+    )
+    getDatabase().characters[0].customscript = structuralFinal
+    rejectCharacterScriptDefinitionStructuralWrite(structural)
+
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      baseline,
+      { kind: 'characterScripts', characterId: 'char-1', scripts: baseline },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'character', kind: 'scripts', targetId: 'char-1' }])
   })
 })
 
@@ -1055,7 +1620,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     getDatabase().characters[0].customscript = [script('script-1', 'unload local')]
     flushSync()
     flushPendingServerBackedScriptDefinitionPatches({ keepalive: true })
-    await Promise.resolve()
+    await drainDefinitionCommandMicrotasks()
 
     expect(recorded.commands).toHaveLength(1)
     expect(recorded.commands[0].keepalive).toBe(true)
@@ -1079,7 +1644,7 @@ describe('watchServerBackedScriptDefinitions baselines', () => {
     getDatabase().characters[0].customscript = [script('script-1', 'teardown local')]
     flushSync()
     stop()
-    await Promise.resolve()
+    await drainDefinitionCommandMicrotasks()
 
     expect(recorded.commands).toHaveLength(1)
     expect(recorded.commands[0].keepalive).toBeUndefined()
@@ -1154,7 +1719,7 @@ describe('watchServerBackedScriptDefinitions clone cost (Phase 4)', () => {
     expect(instrumented.maxClonedSize).toBeLessThan(BIG_BODY.length)
 
     await vi.advanceTimersByTimeAsync(DELAY)
-    await Promise.resolve()
+    await drainDefinitionCommandMicrotasks()
     expect(recorded.commands.map((entry) => entry.built)).toEqual([
       {
         kind: 'replaceCharacterScripts',
@@ -1521,7 +2086,7 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
     expect(recorded.commands).toEqual([])
 
     await vi.advanceTimersByTimeAsync(DELAY)
-    await Promise.resolve()
+    await drainDefinitionCommandMicrotasks()
 
     expect(recorded.commands.map((entry) => entry.built)).toEqual([
       {
