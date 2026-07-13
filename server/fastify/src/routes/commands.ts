@@ -280,6 +280,7 @@ import {
   getChatMessages,
   replaceActiveChatMessages,
   resolveActiveMessageLocationById,
+  setChatHypaV3,
   truncateActiveChatMessages,
   updateActiveMessageById,
   writeGenerationChatMessage,
@@ -4277,6 +4278,7 @@ export function registerCommandRoutes(
           writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
           insertCharacterChatRow(innerDb, characterId, 0, chat as Record<string, unknown>)
           replaceActiveChatMessages(innerDb, chat.id, chatMessages)
+          setChatHypaV3(innerDb, chat.id, chat.hypaV3Data)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
@@ -4563,6 +4565,7 @@ export function registerCommandRoutes(
           writeCharacterChatRows(innerDb, characterId, character.chats as Record<string, unknown>[])
           insertCharacterChatRow(innerDb, characterId, 0, nextChat as Record<string, unknown>)
           replaceActiveChatMessages(innerDb, nextChat.id, forkedMessages)
+          setChatHypaV3(innerDb, nextChat.id, nextChat.hypaV3Data)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {

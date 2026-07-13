@@ -5884,6 +5884,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
       data: `created ${index}`,
       chatId: `created-${index}`,
     }))
+    const createdHypaV3Data = {
+      version: 3,
+      summaries: [{ text: 'created memory', start: 0, end: 4 }],
+    }
 
     const created = await harness.app.inject({
       method: 'POST',
@@ -5897,6 +5901,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           note: '',
           message: createdMessages,
           localLore: [],
+          hypaV3Data: createdHypaV3Data,
         },
       },
     })
@@ -5917,6 +5922,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 2,
       chatId: 'chat-created',
       message: createdMessages,
+      hypaV3Data: createdHypaV3Data,
     })
 
     const forkedMessages = Array.from({ length: 14 }, (_, index) => ({
@@ -5924,6 +5930,10 @@ describe('Phase 9-3b chat record and folder commands', () => {
       data: `forked ${index}`,
       chatId: `forked-${index}`,
     }))
+    const forkedHypaV3Data = {
+      version: 3,
+      summaries: [{ text: 'forked memory', start: 2, end: 8 }],
+    }
     const forked = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/commands/chats/chat-a/fork',
@@ -5936,6 +5946,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
           note: '',
           message: forkedMessages,
           localLore: [],
+          hypaV3Data: forkedHypaV3Data,
         },
       },
     })
@@ -5956,6 +5967,7 @@ describe('Phase 9-3b chat record and folder commands', () => {
       revision: 3,
       chatId: 'chat-forked',
       message: forkedMessages,
+      hypaV3Data: forkedHypaV3Data,
     })
   })
 
