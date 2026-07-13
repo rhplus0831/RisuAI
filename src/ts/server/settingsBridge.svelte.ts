@@ -4,12 +4,28 @@ import { mirrorTopLevelPresetField } from '../presetFieldMirror'
 import { getDatabase, setPreset } from '../storage/database.svelte'
 import {
   canUseServerCommands,
+  patchSettingsObjectFieldsCommand,
   patchServerBackedSettings,
+  runServerCommand,
   settingsGroupForKey,
   type SettingsPatch,
+  type SparseSettingsObjectUpdate,
   type ServerCommandTransportOptions,
 } from './commands'
-import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
+import { fetchServerSettingsGroup } from './resourceReads'
+import {
+  applySettingsGroupResource,
+  captureSettingsGroupProjectionEpoch,
+  hasSettingsGroupProjectionEpochChanged,
+  isSettingsGroupAcknowledgementTainted,
+  markSettingsGroupAcknowledgementTainted,
+} from './resourceState.svelte'
+import { SERVER_SETTINGS_KEYS_BY_GROUP, type SettingsGroup } from './settingsGroups'
+import {
+  getServerResourceApplyEpoch,
+  withServerResourceApply,
+  withTrustedResourceWrite,
+} from './resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './staleStateGuards'
 
 interface PendingSettingsPatch {
@@ -30,6 +46,19 @@ const pendingSettingsPatch: PendingSettingsPatch = {
   attempted: {},
   timer: null,
 }
+
+interface SparseObjectSettingQueue {
+  key: string
+  group: SettingsGroup
+  baseline: Record<string, unknown>
+  queued: SparseSettingsObjectUpdate | null
+  timer: ReturnType<typeof setTimeout> | null
+  running: boolean
+  superseded: boolean
+}
+
+const SPARSE_OBJECT_SETTING_KEYS = new Set(['NAIImgConfig', 'wavespeedImage', 'seperateParameters'])
+const sparseObjectSettingQueues = new Map<string, SparseObjectSettingQueue>()
 
 let suppressRollbackDispatch = false
 
@@ -263,6 +292,7 @@ export function watchServerBackedSettings(
 
 function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay: number): void {
   for (const [key, value] of Object.entries(patch)) {
+    if (queueSparseObjectSettingPatch(key, previous[key], value, delay)) continue
     if (!(key in pendingSettingsPatch.previous)) {
       pendingSettingsPatch.previous[key] = previous[key]
     }
@@ -289,6 +319,7 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
 function dropPendingSettingsPatchKeys(keys: readonly string[]): void {
   let dropped = false
   for (const key of keys) {
+    supersedeSparseObjectSettingQueue(key)
     if (
       key in pendingSettingsPatch.patch ||
       key in pendingSettingsPatch.previous ||
@@ -309,6 +340,13 @@ function dropPendingSettingsPatchKeys(keys: readonly string[]): void {
 
 export function flushPendingServerBackedSettingsPatch(options: ServerCommandTransportOptions = {}): void {
   dispatchPendingSettingsPatch(options)
+  for (const state of sparseObjectSettingQueues.values()) {
+    if (state.timer) {
+      clearTimeout(state.timer)
+      state.timer = null
+    }
+    void dispatchSparseObjectSettingQueue(state, options)
+  }
 }
 
 function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {}): void {
@@ -331,6 +369,283 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
     signal: options.signal,
     rollback: () => rollbackServerBackedSettings(commandPrevious, commandAttempted),
   })
+}
+
+function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted: unknown, delay: number): boolean {
+  const group = settingsGroupForKey(key)
+  if (!group || !SPARSE_OBJECT_SETTING_KEYS.has(key) || !isPlainJsonObject(previous) || !isPlainJsonObject(attempted)) {
+    return false
+  }
+
+  const intent = diffSparseObjectSetting(previous, attempted)
+  let state = sparseObjectSettingQueues.get(key)
+  if (!state) {
+    if (!intent) return true
+    state = {
+      key,
+      group,
+      baseline: cloneJsonValue(previous),
+      queued: intent,
+      timer: null,
+      running: false,
+      superseded: false,
+    }
+    sparseObjectSettingQueues.set(key, state)
+  } else if (intent) {
+    state.queued = mergeSparseObjectSettingUpdates(state.queued, intent)
+  }
+
+  if (!state.running && state.queued) {
+    const desired = applySparseObjectSettingUpdate(state.baseline, state.queued)
+    state.queued = diffSparseObjectSetting(state.baseline, desired)
+    if (!state.queued) {
+      if (state.timer) clearTimeout(state.timer)
+      sparseObjectSettingQueues.delete(key)
+      return true
+    }
+  }
+
+  if (state.timer) clearTimeout(state.timer)
+  state.timer = setTimeout(() => {
+    state!.timer = null
+    void dispatchSparseObjectSettingQueue(state!)
+  }, delay)
+  return true
+}
+
+function supersedeSparseObjectSettingQueue(key: string): void {
+  const state = sparseObjectSettingQueues.get(key)
+  if (!state) return
+  state.superseded = true
+  state.queued = null
+  if (state.timer) clearTimeout(state.timer)
+  state.timer = null
+  if (!state.running) sparseObjectSettingQueues.delete(key)
+}
+
+async function dispatchSparseObjectSettingQueue(
+  state: SparseObjectSettingQueue,
+  options: ServerCommandTransportOptions = {},
+): Promise<void> {
+  if (state.running || state.superseded || !state.queued) return
+  const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
+  const update = diffSparseObjectSetting(state.baseline, attemptedObject)
+  state.queued = null
+  if (!update) {
+    sparseObjectSettingQueues.delete(state.key)
+    return
+  }
+
+  state.running = true
+  const projectionEpoch = captureSettingsGroupProjectionEpoch(state.group)
+  let failed = false
+  const result = await runServerCommand({
+    signal: options.signal,
+    keepalive: options.keepalive,
+    command: (baseRevision) =>
+      patchSettingsObjectFieldsCommand(
+        {
+          baseRevision,
+          group: state.group,
+          key: state.key,
+          update,
+          attemptedObject,
+          optimisticProjectionEpoch: projectionEpoch,
+        },
+        options.signal,
+        options.keepalive,
+      ),
+    rollback: () => {
+      failed = true
+      markSettingsGroupAcknowledgementTainted(state.group)
+    },
+  })
+
+  await Promise.resolve()
+  let baseline: Record<string, unknown> | null = null
+  let usedAuthoritativeBaseline = false
+  if (result.status === 'ok') {
+    if (hasSettingsGroupProjectionEpochChanged(state.group, projectionEpoch)) {
+      const authoritative = currentSettingValue(state.key, null)
+      if (isPlainJsonObject(authoritative)) {
+        baseline = cloneJsonValue(authoritative)
+        usedAuthoritativeBaseline = true
+      }
+    } else if (!isSettingsGroupAcknowledgementTainted(state.group)) {
+      baseline = canonicalSparseObjectSettingResult(result, update, attemptedObject, state.group, state.key)
+    }
+  }
+  if (!baseline) {
+    baseline = await refreshSparseObjectSettingBaseline(state.group, state.key, options.signal)
+    usedAuthoritativeBaseline = baseline !== null
+  }
+  if (!baseline) baseline = cloneJsonValue(state.baseline)
+  state.baseline = baseline
+  state.running = false
+
+  if (state.superseded) {
+    sparseObjectSettingQueues.delete(state.key)
+    return
+  }
+
+  const queued = state.queued
+  if (queued) {
+    const desired = applySparseObjectSettingUpdate(state.baseline, queued)
+    writeSparseObjectSettingProjection(state.key, desired)
+    state.queued = diffSparseObjectSetting(state.baseline, desired)
+    if (state.queued) {
+      queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
+      return
+    }
+  } else if (
+    (failed || usedAuthoritativeBaseline) &&
+    isJsonSnapshotEqual(currentSettingValue(state.key, {}), attemptedObject)
+  ) {
+    writeSparseObjectSettingProjection(state.key, state.baseline)
+  }
+
+  sparseObjectSettingQueues.delete(state.key)
+}
+
+async function refreshSparseObjectSettingBaseline(
+  group: SettingsGroup,
+  key: string,
+  signal?: AbortSignal | null,
+): Promise<Record<string, unknown> | null> {
+  const result = await fetchServerSettingsGroup(group, signal)
+  if (result.status !== 'ok') return null
+  const applied = withServerResourceApply(() =>
+    applySettingsGroupResource(result, SERVER_SETTINGS_KEYS_BY_GROUP[group]),
+  )
+  if (!applied) return null
+  const value = currentSettingValue(key, null)
+  return isPlainJsonObject(value) ? cloneJsonValue(value) : null
+}
+
+function canonicalSparseObjectSettingResult(
+  result: Extract<Awaited<ReturnType<typeof patchSettingsObjectFieldsCommand>>, { status: 'ok' }>,
+  update: SparseSettingsObjectUpdate,
+  attemptedObject: Record<string, unknown>,
+  group: SettingsGroup,
+  key: string,
+): Record<string, unknown> | null {
+  if (
+    result.revision !== result.event.revision ||
+    result.event.type !== 'settings.updated' ||
+    result.event.resource !== 'settings' ||
+    result.event.id !== group ||
+    result.event.parentId !== undefined ||
+    result.certificate !== 'settings-object-patch-v1' ||
+    result.group !== group ||
+    result.key !== key ||
+    !isUniqueNonBlankStrings(result.patchedKeys) ||
+    !isUniqueNonBlankStrings(result.deletedKeys) ||
+    !isUniqueNonBlankStrings(result.canonicalDeletedKeys) ||
+    !isPlainJsonObject(result.canonicalValues) ||
+    !Object.values(result.canonicalValues).every((value) => isJsonValue(value)) ||
+    !isJsonSnapshotEqual([...result.patchedKeys].sort(), Object.keys(update.patch).sort()) ||
+    !isJsonSnapshotEqual([...result.deletedKeys].sort(), [...(update.deleteKeys ?? [])].sort())
+  ) {
+    return null
+  }
+  const requestedKeys = new Set([...Object.keys(update.patch), ...(update.deleteKeys ?? [])])
+  if (
+    Object.keys(result.canonicalValues).some((field) => !requestedKeys.has(field)) ||
+    result.canonicalDeletedKeys.some(
+      (field) => !requestedKeys.has(field) || Object.prototype.hasOwnProperty.call(result.canonicalValues, field),
+    )
+  ) {
+    return null
+  }
+  const canonical = cloneJsonValue(attemptedObject)
+  for (const [field, value] of Object.entries(result.canonicalValues)) canonical[field] = cloneJsonValue(value)
+  for (const field of result.canonicalDeletedKeys) delete canonical[field]
+  return canonical
+}
+
+function diffSparseObjectSetting(
+  previous: Record<string, unknown>,
+  attempted: Record<string, unknown>,
+): SparseSettingsObjectUpdate | null {
+  const patch: Record<string, unknown> = {}
+  const deleteKeys: string[] = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(attempted)])
+  for (const key of keys) {
+    const attemptedPresent = Object.prototype.hasOwnProperty.call(attempted, key) && attempted[key] !== undefined
+    if (!attemptedPresent) {
+      if (Object.prototype.hasOwnProperty.call(previous, key)) deleteKeys.push(key)
+      continue
+    }
+    if (!Object.prototype.hasOwnProperty.call(previous, key) || !isJsonSnapshotEqual(previous[key], attempted[key])) {
+      patch[key] = cloneJsonValue(attempted[key])
+    }
+  }
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) return null
+  return { patch, ...(deleteKeys.length ? { deleteKeys: deleteKeys.sort() } : {}) }
+}
+
+function mergeSparseObjectSettingUpdates(
+  current: SparseSettingsObjectUpdate | null,
+  next: SparseSettingsObjectUpdate,
+): SparseSettingsObjectUpdate {
+  const patch = { ...(current?.patch ?? {}) }
+  const deleteKeys = new Set(current?.deleteKeys ?? [])
+  for (const [key, value] of Object.entries(next.patch)) {
+    patch[key] = cloneJsonValue(value)
+    deleteKeys.delete(key)
+  }
+  for (const key of next.deleteKeys ?? []) {
+    delete patch[key]
+    deleteKeys.add(key)
+  }
+  return { patch, ...(deleteKeys.size ? { deleteKeys: [...deleteKeys].sort() } : {}) }
+}
+
+function applySparseObjectSettingUpdate(
+  baseline: Record<string, unknown>,
+  update: SparseSettingsObjectUpdate,
+): Record<string, unknown> {
+  const next = { ...cloneJsonValue(baseline), ...cloneJsonValue(update.patch) }
+  for (const key of update.deleteKeys ?? []) delete next[key]
+  return next
+}
+
+function writeSparseObjectSettingProjection(key: string, value: Record<string, unknown>): void {
+  withSuppressedSettingsWatcher(() => {
+    withTrustedResourceWrite(() => {
+      ;(getDatabase() as unknown as Record<string, unknown>)[key] = cloneJsonValue(value)
+    })
+  })
+}
+
+function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (!value || typeof value !== 'object' || ancestors.has(value)) return false
+
+  const prototype = Object.getPrototypeOf(value)
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false
+
+  ancestors.add(value)
+  const valid = Array.isArray(value)
+    ? value.every((entry, index) => Object.prototype.hasOwnProperty.call(value, index) && isJsonValue(entry, ancestors))
+    : Object.values(value).every((entry) => isJsonValue(entry, ancestors))
+  ancestors.delete(value)
+  return valid
+}
+
+function isUniqueNonBlankStrings(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => typeof entry === 'string' && entry.trim() !== '') &&
+    new Set(value).size === value.length
+  )
 }
 
 function rollbackServerBackedSettings(previous: SettingsPatch, attempted: SettingsPatch): void {

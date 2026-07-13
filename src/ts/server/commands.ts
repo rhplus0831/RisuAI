@@ -102,6 +102,11 @@ export interface SettingsPatchLocalEffect {
   settingsProjectionEpoch?: number
 }
 
+export interface SparseSettingsObjectUpdate {
+  patch: Record<string, unknown>
+  deleteKeys?: string[]
+}
+
 export interface PluginStorageLocalEffect {
   kind: 'pluginStorage'
   operation: 'put' | 'delete' | 'bulk'
@@ -405,6 +410,15 @@ export interface PatchSettingsGroupInput {
   patch: SettingsPatch
   acknowledgeOptimistic?: boolean
   optimisticProjectionEpoch?: number
+}
+
+export interface PatchSettingsObjectFieldsInput {
+  group: SettingsGroup
+  key: string
+  baseRevision: number
+  update: SparseSettingsObjectUpdate
+  attemptedObject: Record<string, unknown>
+  optimisticProjectionEpoch: number
 }
 
 export interface PatchServerBackedSettingsInput {
@@ -1796,6 +1810,34 @@ export async function patchSettingsGroup(
         ? undefined
         : (body, event) =>
             readSettingsPatchLocalEffect(body, event, input.group, input.patch, input.optimisticProjectionEpoch),
+  })
+}
+
+export async function patchSettingsObjectFieldsCommand(
+  input: PatchSettingsObjectFieldsInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<
+  ServerCommandResult<{
+    group: SettingsGroup
+    key: string
+    certificate?: string
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+    canonicalValues?: Record<string, unknown>
+    canonicalDeletedKeys?: string[]
+  }>
+> {
+  return requestCommandJson(`/settings/${encodeURIComponent(input.group)}/objects/${encodeURIComponent(input.key)}`, {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      patch: input.update.patch,
+      ...(input.update.deleteKeys?.length ? { deleteKeys: input.update.deleteKeys } : {}),
+    },
+    signal,
+    keepalive,
+    readLocalEffect: (body, event) => readSettingsObjectPatchLocalEffect(body, event, input),
   })
 }
 
@@ -4782,6 +4824,85 @@ function readSettingsPatchLocalEffect(
     attemptedPatch: cloneJsonValue(attemptedPatch),
     settings: canonicalSettings,
     ...(settingsProjectionEpoch === undefined ? {} : { settingsProjectionEpoch }),
+  }
+}
+
+const SPARSE_SETTINGS_OBJECT_KEYS = new Set(['NAIImgConfig', 'wavespeedImage', 'seperateParameters'])
+
+function readSettingsObjectPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: PatchSettingsObjectFieldsInput,
+): SettingsPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (
+    record.revision !== event.revision ||
+    record.certificate !== 'settings-object-patch-v1' ||
+    record.group !== input.group ||
+    record.key !== input.key ||
+    event.type !== 'settings.updated' ||
+    event.resource !== 'settings' ||
+    event.id !== input.group ||
+    event.parentId !== undefined ||
+    SERVER_SETTINGS_GROUP_BY_KEY[input.key] !== input.group ||
+    !SPARSE_SETTINGS_OBJECT_KEYS.has(input.key) ||
+    !isProjectionEpoch(input.optimisticProjectionEpoch) ||
+    !isPlainJsonRecord(input.update.patch) ||
+    !isJsonValue(input.update.patch) ||
+    !isPlainJsonRecord(input.attemptedObject) ||
+    !isJsonValue(input.attemptedObject)
+  ) {
+    return undefined
+  }
+
+  const requestedPatchedKeys = Object.keys(input.update.patch).sort()
+  const requestedDeletedKeys = [...(input.update.deleteKeys ?? [])].sort()
+  if (
+    requestedPatchedKeys.length + requestedDeletedKeys.length === 0 ||
+    requestedPatchedKeys.some((key) => !nonEmptyString(key)) ||
+    !isUniqueStringArray(input.update.deleteKeys ?? []) ||
+    requestedDeletedKeys.some((key) => Object.prototype.hasOwnProperty.call(input.update.patch, key)) ||
+    requestedPatchedKeys.some(
+      (key) =>
+        !Object.prototype.hasOwnProperty.call(input.attemptedObject, key) ||
+        !isJsonValueEqual(input.attemptedObject[key], input.update.patch[key]),
+    ) ||
+    requestedDeletedKeys.some((key) => Object.prototype.hasOwnProperty.call(input.attemptedObject, key)) ||
+    !isUniqueStringArray(record.patchedKeys) ||
+    !isUniqueStringArray(record.deletedKeys) ||
+    !isJsonValueEqual([...record.patchedKeys].sort(), requestedPatchedKeys) ||
+    !isJsonValueEqual([...record.deletedKeys].sort(), requestedDeletedKeys)
+  ) {
+    return undefined
+  }
+
+  if (!isPlainJsonRecord(record.canonicalValues) || !isJsonValue(record.canonicalValues)) return undefined
+  if (!isUniqueStringArray(record.canonicalDeletedKeys)) return undefined
+  const requestedKeySet = new Set([...requestedPatchedKeys, ...requestedDeletedKeys])
+  const canonicalValueKeys = Object.keys(record.canonicalValues)
+  const canonicalDeletedKeys = record.canonicalDeletedKeys
+  if (
+    canonicalValueKeys.some((key) => !requestedKeySet.has(key)) ||
+    canonicalDeletedKeys.some(
+      (key) => !requestedKeySet.has(key) || Object.prototype.hasOwnProperty.call(record.canonicalValues, key),
+    )
+  ) {
+    return undefined
+  }
+
+  const canonicalObject = cloneJsonValue(input.attemptedObject)
+  for (const [key, value] of Object.entries(record.canonicalValues)) {
+    canonicalObject[key] = cloneJsonValue(value)
+  }
+  for (const key of canonicalDeletedKeys) delete canonicalObject[key]
+
+  return {
+    kind: 'settingsPatch',
+    group: input.group,
+    attemptedPatch: { [input.key]: cloneJsonValue(input.attemptedObject) },
+    settings: { [input.key]: canonicalObject },
+    settingsProjectionEpoch: input.optimisticProjectionEpoch,
   }
 }
 

@@ -61,6 +61,7 @@ import {
   patchServerBackedSettings,
   patchRuntimeSettings,
   patchSettingsGroup,
+  patchSettingsObjectFieldsCommand,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
@@ -353,6 +354,163 @@ describe('server command API adapter', () => {
         settings: { customCSS },
       },
     ])
+  })
+
+  it('sends only shallow object changes while reconstructing the full optimistic settings value locally', async () => {
+    const attemptedObject = {
+      width: 832,
+      height: 768,
+      vibe_data: { thumbnail: 'x'.repeat(64 * 1024) },
+    }
+    const event = {
+      type: 'settings.updated',
+      revision: 3,
+      resource: 'settings',
+      id: 'media',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      group: 'media',
+      key: 'NAIImgConfig',
+      certificate: 'settings-object-patch-v1',
+      patchedKeys: ['width'],
+      deletedKeys: [],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await patchSettingsObjectFieldsCommand({
+      group: 'media',
+      key: 'NAIImgConfig',
+      baseRevision: 2,
+      update: { patch: { width: 832 } },
+      attemptedObject,
+      optimisticProjectionEpoch: 12,
+    })
+
+    expect(commandFetch.calls).toEqual([
+      {
+        url: '/api/v1/commands/settings/media/objects/NAIImgConfig',
+        method: 'PATCH',
+        authHeader: 'test-auth-token',
+        contentType: 'application/json',
+        body: { baseRevision: 2, patch: { width: 832 } },
+      },
+    ])
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'media',
+        attemptedPatch: { NAIImgConfig: attemptedObject },
+        settings: { NAIImgConfig: attemptedObject },
+        settingsProjectionEpoch: 12,
+      },
+    ])
+  })
+
+  it('applies a masked secret override from a compact shallow settings acknowledgement', async () => {
+    const attemptedObject = { key: 'new-secret', model: 'flux' }
+    const event = {
+      type: 'settings.updated',
+      revision: 3,
+      resource: 'settings',
+      id: 'media',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      group: 'media',
+      key: 'wavespeedImage',
+      certificate: 'settings-object-patch-v1',
+      patchedKeys: ['key'],
+      deletedKeys: [],
+      canonicalValues: { key: '__RISU_SECRET_MASKED__' },
+      canonicalDeletedKeys: [],
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await patchSettingsObjectFieldsCommand({
+      group: 'media',
+      key: 'wavespeedImage',
+      baseRevision: 2,
+      update: { patch: { key: 'new-secret' } },
+      attemptedObject,
+      optimisticProjectionEpoch: 4,
+    })
+
+    expect(commandFetch.calls[0].body).toEqual({ baseRevision: 2, patch: { key: 'new-secret' } })
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'media',
+        attemptedPatch: { wavespeedImage: attemptedObject },
+        settings: { wavespeedImage: { key: '__RISU_SECRET_MASKED__', model: 'flux' } },
+        settingsProjectionEpoch: 4,
+      },
+    ])
+  })
+
+  it('keeps malformed shallow settings acknowledgements on the authoritative fallback path', async () => {
+    const event = {
+      type: 'settings.updated',
+      revision: 3,
+      resource: 'settings',
+      id: 'media',
+    }
+    const malformedBodies = [
+      {
+        revision: 3,
+        event,
+        group: 'media',
+        key: 'NAIImgConfig',
+        certificate: 'settings-object-patch-v1',
+        patchedKeys: ['height'],
+        deletedKeys: [],
+        canonicalValues: {},
+        canonicalDeletedKeys: [],
+      },
+      {
+        revision: 3,
+        event,
+        group: 'media',
+        key: 'NAIImgConfig',
+        certificate: 'settings-object-patch-v1',
+        patchedKeys: ['width'],
+        deletedKeys: [],
+        canonicalValues: { height: 900 },
+        canonicalDeletedKeys: [],
+      },
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => malformedBodies[responseIndex++])
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    for (const _body of malformedBodies) {
+      await patchSettingsObjectFieldsCommand({
+        group: 'media',
+        key: 'NAIImgConfig',
+        baseRevision: 2,
+        update: { patch: { width: 832 } },
+        attemptedObject: { width: 832, height: 768 },
+        optimisticProjectionEpoch: 1,
+      })
+    }
+
+    expect(observedEffectCounts).toEqual([0, 0])
   })
 
   it('keeps malformed compact settings acknowledgements on the authoritative fallback path', async () => {

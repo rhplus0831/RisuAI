@@ -715,6 +715,10 @@ interface RuntimeSettingsCommandBody {
   patch?: unknown
 }
 
+interface SparseObjectSettingsCommandBody extends RuntimeSettingsCommandBody {
+  deleteKeys?: unknown
+}
+
 interface PresetCommandBody {
   baseRevision?: unknown
   preset?: unknown
@@ -1586,6 +1590,14 @@ const OBJECT_SETTING_KEYS = new Set([
   'wavespeedImage',
 ])
 
+const SPARSE_OBJECT_SETTING_GROUP_BY_KEY = {
+  NAIImgConfig: 'media',
+  wavespeedImage: 'media',
+  seperateParameters: 'runtime',
+} as const satisfies Record<string, SettingsGroup>
+
+type SparseObjectSettingKey = keyof typeof SPARSE_OBJECT_SETTING_GROUP_BY_KEY
+
 const SETTINGS_GROUP_KEY_SETS = Object.fromEntries(
   SETTINGS_GROUPS.map((group) => [group, new Set(SETTINGS_GROUP_KEYS[group])]),
 ) as Record<SettingsGroup, Set<string>>
@@ -1694,6 +1706,79 @@ export function registerCommandRoutes(
         event: result.event,
         ...result.extra,
       }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/settings/:group/objects/:key', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const params = req.params as { group?: unknown; key?: unknown }
+      const group = readSettingsGroup(params.group)
+      const key = readSparseObjectSettingKey(group, params.key)
+      const body = readJsonObject(req.body ?? {}, 'body') as SparseObjectSettingsCommandBody
+      const baseRevision = readBaseRevision(body)
+      const update = readSparseObjectSettingUpdate(body)
+      const result = applyTargetedCommandMutation<{
+        group: SettingsGroup
+        key: string
+        certificate?: string
+        patchedKeys?: string[]
+        deletedKeys?: string[]
+        canonicalValues?: Record<string, unknown>
+        canonicalDeletedKeys?: string[]
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        settingsScopedRead: true,
+        mutate(database, innerDb) {
+          const target = database as Record<string, unknown>
+          const current = isPlainObject(target[key]) ? target[key] : {}
+          const requested = { ...current, ...update.patch }
+          for (const deletedKey of update.deleteKeys) delete requested[deletedKey]
+
+          const resolved = resolveMaskedProviderSecretPlaceholders(database, { [key]: requested })
+          const sanitized = readSettingsGroupPatch(group, resolved)
+          validateSettingsAssetRefs(db, sanitized)
+          const resolvedRequested = sanitized[key] as Record<string, unknown>
+          const clientAttempted = maskSparseObjectSettingForReceipt(key, resolvedRequested)
+          for (const [field, value] of Object.entries(update.patch)) clientAttempted[field] = value
+          for (const deletedKey of update.deleteKeys) delete clientAttempted[deletedKey]
+
+          applySettingsPatch(database, sanitized)
+          writeSettingsOnly(innerDb, extractSettings(target))
+
+          const canonical = maskSparseObjectSettingForReceipt(key, target[key])
+          const receipt = compactSparseObjectSettingReceipt({
+            requested: clientAttempted,
+            canonical,
+            requestedKeys: new Set([...Object.keys(update.patch), ...update.deleteKeys]),
+          })
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.settingsUpdated, id: group },
+            extra: {
+              group,
+              key,
+              ...(receipt
+                ? {
+                    certificate: 'settings-object-patch-v1',
+                    patchedKeys: Object.keys(update.patch).sort(),
+                    deletedKeys: [...update.deleteKeys].sort(),
+                    canonicalValues: receipt.canonicalValues,
+                    canonicalDeletedKeys: receipt.canonicalDeletedKeys,
+                  }
+                : {}),
+            },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
     } catch (err) {
       return sendCommandError(reply, err)
     }
@@ -7585,6 +7670,88 @@ function readSettingsGroup(group: unknown): SettingsGroup {
     throw new ValidationError(`Unsupported settings group: ${String(group)}`)
   }
   return group as SettingsGroup
+}
+
+function readSparseObjectSettingKey(group: SettingsGroup, key: unknown): SparseObjectSettingKey {
+  if (
+    typeof key !== 'string' ||
+    !Object.prototype.hasOwnProperty.call(SPARSE_OBJECT_SETTING_GROUP_BY_KEY, key) ||
+    SPARSE_OBJECT_SETTING_GROUP_BY_KEY[key as keyof typeof SPARSE_OBJECT_SETTING_GROUP_BY_KEY] !== group
+  ) {
+    throw new ValidationError(`Unsupported sparse ${group} object setting: ${String(key)}`)
+  }
+  return key as SparseObjectSettingKey
+}
+
+function readSparseObjectSettingUpdate(body: SparseObjectSettingsCommandBody): {
+  patch: Record<string, unknown>
+  deleteKeys: string[]
+} {
+  const unsupportedKeys = Object.keys(body).filter(
+    (key) => key !== 'baseRevision' && key !== 'patch' && key !== 'deleteKeys',
+  )
+  if (unsupportedKeys.length > 0) {
+    throw new ValidationError(`Unsupported sparse object setting field: ${unsupportedKeys[0]}`)
+  }
+  const patch = body.patch === undefined ? {} : { ...readJsonObject(body.patch, 'patch') }
+  for (const [key, value] of Object.entries(patch)) {
+    if (key.trim() === '') throw new ValidationError('patch keys must be non-empty strings')
+    validateJsonValue(`patch.${key}`, value)
+  }
+  const rawDeleteKeys = body.deleteKeys
+  if (rawDeleteKeys !== undefined && !Array.isArray(rawDeleteKeys)) {
+    throw new ValidationError('deleteKeys must be an array')
+  }
+  const deleteKeyValues: unknown[] = Array.isArray(rawDeleteKeys) ? rawDeleteKeys : []
+  const deleteKeys = deleteKeyValues.map((key, index) => {
+    if (typeof key !== 'string' || key.trim() === '') {
+      throw new ValidationError(`deleteKeys[${index}] must be a non-empty string`)
+    }
+    return key
+  })
+  if (new Set(deleteKeys).size !== deleteKeys.length) {
+    throw new ValidationError('deleteKeys must not contain duplicates')
+  }
+  if (deleteKeys.some((key) => Object.prototype.hasOwnProperty.call(patch, key))) {
+    throw new ValidationError('patch and deleteKeys must not overlap')
+  }
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) {
+    throw new ValidationError('sparse object setting update must include at least one field')
+  }
+  return { patch, deleteKeys }
+}
+
+function maskSparseObjectSettingForReceipt(key: string, value: unknown): Record<string, unknown> {
+  const masked = maskProviderSecrets({ [key]: value }) as Record<string, unknown>
+  return isPlainObject(masked[key]) ? (masked[key] as Record<string, unknown>) : {}
+}
+
+function compactSparseObjectSettingReceipt(input: {
+  requested: Record<string, unknown>
+  canonical: Record<string, unknown>
+  requestedKeys: Set<string>
+}): { canonicalValues: Record<string, unknown>; canonicalDeletedKeys: string[] } | null {
+  const canonicalValues: Record<string, unknown> = {}
+  const canonicalDeletedKeys: string[] = []
+  const keys = new Set([...Object.keys(input.requested), ...Object.keys(input.canonical)])
+  for (const key of keys) {
+    const requestedPresent = Object.prototype.hasOwnProperty.call(input.requested, key)
+    const canonicalPresent = Object.prototype.hasOwnProperty.call(input.canonical, key)
+    if (
+      requestedPresent === canonicalPresent &&
+      (!requestedPresent || isDeepStrictEqual(input.requested[key], input.canonical[key]))
+    ) {
+      continue
+    }
+    if (!input.requestedKeys.has(key)) return null
+    if (canonicalPresent) canonicalValues[key] = input.canonical[key]
+    else canonicalDeletedKeys.push(key)
+  }
+  return { canonicalValues, canonicalDeletedKeys: canonicalDeletedKeys.sort() }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function readSettingsGroupPatch(group: SettingsGroup, patch: unknown): Record<string, unknown> {

@@ -845,6 +845,200 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(bootstrap.json().database.customCSS).toBe(customCSS)
   })
 
+  it('patches large settings objects by field without echoing or replacing untouched data', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const thumbnail = `data:image/png;base64,${'x'.repeat(64 * 1024)}`
+    const originalVibe = {
+      identifier: 'novelai-vibe-transfer',
+      version: 1,
+      type: 'image',
+      image: '',
+      id: 'vibe-a',
+      encodings: {},
+      name: 'Large vibe',
+      thumbnail,
+      createdAt: 1,
+      importInfo: { model: 'nai-diffusion-4-5-full', information_extracted: 1 },
+    }
+    const revision = await importDatabase(harness.app, assertion, {
+      NAIImgConfig: {
+        width: 512,
+        height: 768,
+        sampler: 'k_euler',
+        vibe_data: originalVibe,
+      },
+      seperateParameters: {
+        memory: { temperature: 0.4 },
+        emotion: { temperature: 0.2 },
+        translate: {},
+        otherAx: {},
+        scriptMain: {},
+        scriptAux: {},
+        overrides: { 'openrouter/model': { top_k: 42 } },
+      },
+    })
+
+    const imagePatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/media/objects/NAIImgConfig',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { width: 832 } },
+    })
+
+    expect(imagePatch.statusCode, imagePatch.body).toBe(200)
+    expect(imagePatch.json()).toEqual({
+      revision: revision + 1,
+      event: {
+        type: 'settings.updated',
+        revision: revision + 1,
+        resource: 'settings',
+        id: 'media',
+      },
+      group: 'media',
+      key: 'NAIImgConfig',
+      certificate: 'settings-object-patch-v1',
+      patchedKeys: ['width'],
+      deletedKeys: [],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    })
+    expect(imagePatch.body).not.toContain(thumbnail)
+
+    const parametersPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/runtime/objects/seperateParameters',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: imagePatch.json().revision,
+        patch: { memory: { temperature: 0.8 } },
+      },
+    })
+
+    expect(parametersPatch.statusCode, parametersPatch.body).toBe(200)
+    expect(parametersPatch.json()).toMatchObject({
+      certificate: 'settings-object-patch-v1',
+      patchedKeys: ['memory'],
+      deletedKeys: [],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.NAIImgConfig).toMatchObject({
+      width: 832,
+      height: 768,
+      sampler: 'k_euler',
+      vibe_data: originalVibe,
+    })
+    expect(bootstrap.json().database.seperateParameters).toEqual({
+      memory: { temperature: 0.8 },
+      emotion: { temperature: 0.2 },
+      translate: {},
+      otherAx: {},
+      scriptMain: {},
+      scriptAux: {},
+      overrides: { 'openrouter/model': { top_k: 42 } },
+    })
+  })
+
+  it('returns only the masked override when a shallow settings patch changes a secret', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      wavespeedImage: {
+        key: 'old-secret',
+        model: 'old-model',
+        loras: [{ path: 'owner/old', scale: 1 }],
+      },
+    })
+
+    const modelPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/media/objects/wavespeedImage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { model: 'flux' } },
+    })
+    expect(modelPatch.statusCode, modelPatch.body).toBe(200)
+    expect(modelPatch.json()).toMatchObject({
+      certificate: 'settings-object-patch-v1',
+      patchedKeys: ['model'],
+      canonicalValues: {},
+    })
+    expect(modelPatch.body).not.toContain('old-secret')
+
+    const secretPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/media/objects/wavespeedImage',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: modelPatch.json().revision, patch: { key: 'new-secret' } },
+    })
+    expect(secretPatch.statusCode, secretPatch.body).toBe(200)
+    expect(secretPatch.json()).toMatchObject({
+      certificate: 'settings-object-patch-v1',
+      patchedKeys: ['key'],
+      canonicalValues: { key: MASKED_PROVIDER_SECRET },
+    })
+    expect(secretPatch.body).not.toContain('new-secret')
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.wavespeedImage).toMatchObject({
+      key: MASKED_PROVIDER_SECRET,
+      model: 'flux',
+      loras: [{ path: 'owner/old', scale: 1 }],
+    })
+  })
+
+  it('rejects malformed shallow settings updates without advancing the revision', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      NAIImgConfig: { width: 512, height: 768 },
+    })
+    const attempts = [
+      {
+        url: '/api/v1/commands/settings/runtime/objects/NAIImgConfig',
+        payload: { baseRevision: revision, patch: { width: 832 } },
+      },
+      {
+        url: '/api/v1/commands/settings/media/objects/NAIImgConfig',
+        payload: { baseRevision: revision, patch: { width: 832 }, deleteKeys: ['width'] },
+      },
+      {
+        url: '/api/v1/commands/settings/media/objects/NAIImgConfig',
+        payload: { baseRevision: revision, patch: {} },
+      },
+      {
+        url: '/api/v1/commands/settings/media/objects/NAIImgConfig',
+        payload: { baseRevision: revision, patch: { width: 832 }, attemptedObject: { width: 832 } },
+      },
+    ]
+
+    for (const attempt of attempts) {
+      const response = await harness.app.inject({
+        method: 'PATCH',
+        url: attempt.url,
+        headers: { 'risu-auth': assertion },
+        payload: attempt.payload,
+      })
+      expect(response.statusCode, response.body).toBe(400)
+    }
+
+    const valid = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/media/objects/NAIImgConfig',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, patch: { width: 832 } },
+    })
+    expect(valid.statusCode, valid.body).toBe(200)
+    expect(valid.json().revision).toBe(revision + 1)
+  })
+
   it('returns only a normalized settings override alongside the acknowledged keys', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

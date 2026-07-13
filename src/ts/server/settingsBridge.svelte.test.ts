@@ -8,6 +8,15 @@ const recorded = vi.hoisted(() => ({
     rollback?: () => void
     keepalive?: boolean
   }>,
+  objectPatches: [] as Array<{
+    baseRevision: number
+    group: string
+    key: string
+    update: { patch: Record<string, unknown>; deleteKeys?: string[] }
+    attemptedObject: Record<string, unknown>
+  }>,
+  objectResults: [] as Array<unknown | Promise<unknown>>,
+  groupReads: [] as unknown[],
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const presetMocks = vi.hoisted(() => ({
@@ -34,14 +43,54 @@ const presetMocks = vi.hoisted(() => ({
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
+  patchSettingsObjectFieldsCommand: vi.fn(
+    async (args: {
+      baseRevision: number
+      group: string
+      key: string
+      update: { patch: Record<string, unknown>; deleteKeys?: string[] }
+      attemptedObject: Record<string, unknown>
+    }) => {
+      recorded.objectPatches.push(args)
+      const queued = recorded.objectResults.shift()
+      if (queued) return await queued
+      return {
+        status: 'ok',
+        revision: args.baseRevision + 1,
+        event: {
+          type: 'settings.updated',
+          revision: args.baseRevision + 1,
+          resource: 'settings',
+          id: args.group,
+        },
+        group: args.group,
+        key: args.key,
+        certificate: 'settings-object-patch-v1',
+        patchedKeys: Object.keys(args.update.patch),
+        deletedKeys: args.update.deleteKeys ?? [],
+        canonicalValues: {},
+        canonicalDeletedKeys: [],
+      }
+    },
+  ),
   patchServerBackedSettings: vi.fn(
     async (args: { patch: Record<string, unknown>; rollback?: () => void; keepalive?: boolean }) => {
       recorded.patches.push(args)
       return { status: 'ok', revision: 1 }
     },
   ),
-  settingsGroupForKey: (key: string) =>
-    new Set([
+  runServerCommand: vi.fn(
+    async (args: { command: (baseRevision: number) => Promise<{ status: string }>; rollback?: () => void }) => {
+      const result = await args.command(1)
+      if (result.status !== 'ok') args.rollback?.()
+      return result
+    },
+  ),
+  subscribeServerCommandLocalEffectApplied: () => () => {},
+  settingsGroupForKey: (key: string) => {
+    if (key === 'NAIImgConfig' || key === 'wavespeedImage') return 'media'
+    if (key === 'seperateParameters') return 'runtime'
+    return new Set([
       'aiModel',
       'apiType',
       'autoTranslate',
@@ -64,11 +113,20 @@ vi.mock('./commands', () => ({
       'useAutoTranslateInput',
     ]).has(key)
       ? 'test'
-      : null,
+      : null
+  },
+}))
+
+vi.mock('./resourceReads', () => ({
+  fetchServerSettingsGroup: vi.fn(async () => recorded.groupReads.shift() ?? { status: 'error', error: 'test' }),
 }))
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
+  withServerResourceApply: (fn: () => unknown) => {
+    resourceGuardState.epoch += 1
+    return fn()
+  },
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
 
@@ -93,6 +151,19 @@ import {
 } from './settingsBridge.svelte'
 
 const DELAY = 50
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve']
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 const testDatabaseState = {
   get db() {
@@ -148,6 +219,9 @@ async function applyProjectionSetting(key: string, value: unknown): Promise<void
 beforeEach(() => {
   vi.useFakeTimers()
   recorded.patches.length = 0
+  recorded.objectPatches.length = 0
+  recorded.objectResults.length = 0
+  recorded.groupReads.length = 0
   resourceGuardState.epoch = 0
   presetMocks.setPreset.mockClear()
 })
@@ -177,6 +251,15 @@ describe('settingsBridge coalescing', () => {
       useAutoTranslateInput: false,
       didFirstSetup: false,
       NAIsettings: {},
+      seperateParameters: {
+        emotion: {},
+        memory: {},
+        otherAx: {},
+        overrides: {},
+        scriptAux: {},
+        scriptMain: {},
+        translate: {},
+      },
     })
 
     applyOnboardingServerBackedSettings({
@@ -219,6 +302,15 @@ describe('settingsBridge coalescing', () => {
         translatorType: 'google',
         useAutoTranslateInput: true,
         didFirstSetup: true,
+        seperateParameters: {
+          emotion: {},
+          memory: {},
+          otherAx: {},
+          overrides: {},
+          scriptAux: {},
+          scriptMain: {},
+          translate: {},
+        },
       },
     ])
     expect(recorded.patches[0].patch).not.toHaveProperty('mainPrompt')
@@ -577,6 +669,73 @@ describe('settingsBridge coalescing', () => {
     await vi.advanceTimersByTimeAsync(DELAY)
 
     expect(recorded.patches.map((entry) => entry.patch)).toEqual([{ notification: true, useAutoSuggestions: true }])
+    stop()
+  })
+
+  it('sends only changed fields from large watched settings objects', async () => {
+    const original = {
+      width: 512,
+      height: 768,
+      vibe_data: { thumbnail: 'x'.repeat(20_000) },
+    }
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await flushAndSettle()
+
+    expect(recorded.patches).toHaveLength(0)
+    expect(recorded.objectPatches).toHaveLength(1)
+    expect(recorded.objectPatches[0]).toMatchObject({
+      group: 'media',
+      key: 'NAIImgConfig',
+      update: { patch: { width: 832 } },
+    })
+    expect(recorded.objectPatches[0].attemptedObject).toEqual({ ...original, width: 832 })
+    stop()
+  })
+
+  it('rebases a later field edit after an earlier sparse object write fails', async () => {
+    const original = {
+      width: 512,
+      height: 768,
+      vibe_data: { thumbnail: 'x'.repeat(20_000) },
+    }
+    const firstResult = createDeferred<unknown>()
+    recorded.objectResults.push(firstResult.promise)
+    recorded.groupReads.push({
+      status: 'ok',
+      revision: Number.MAX_SAFE_INTEGER,
+      group: 'media',
+      settings: { NAIImgConfig: original },
+    })
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await flushAndSettle()
+    expect(recorded.objectPatches).toHaveLength(1)
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = {
+      ...original,
+      width: 832,
+      height: 1024,
+    }
+    flushSync()
+    firstResult.resolve({ status: 'error', error: 'failed' })
+    for (let index = 0; index < 8; index += 1) await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(2)
+    expect(recorded.objectPatches[1]).toMatchObject({
+      group: 'media',
+      key: 'NAIImgConfig',
+      update: { patch: { height: 1024 } },
+      attemptedObject: { ...original, height: 1024 },
+    })
+    expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, height: 1024 })
     stop()
   })
 
