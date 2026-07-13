@@ -15,6 +15,7 @@ import {
   reorderCharacterModulesCommand,
   reorderModulesCommand,
   runServerCommand,
+  runServerCommandSequence,
   saveChatGenerationSettingsCommand,
   updateChatCommand,
   updateModuleCommand,
@@ -679,15 +680,19 @@ function runModuleCollectionPatchSteps(steps: ModuleCollectionPatchStep[]): void
   void (async () => {
     let currentStepIndex = 0
     try {
-      for (currentStepIndex = 0; currentStepIndex < operationSteps.length; currentStepIndex += 1) {
-        const step = operationSteps[currentStepIndex]
-        const result = await runServerCommand({ command: step.factory })
-        if (result.status !== 'ok') {
+      await runServerCommandSequence(
+        operationSteps.map((step, index) => async (baseRevision) => {
+          currentStepIndex = index
+          const result = await step.factory(baseRevision)
+          if (result.status === 'ok') {
+            clearGlobalModuleOperation(step.operation)
+          }
+          return result
+        }),
+        () => {
           rollbackModuleCollectionPatchSteps(operationSteps, currentStepIndex)
-          return
-        }
-        clearGlobalModuleOperation(step.operation)
-      }
+        },
+      )
     } catch (error) {
       console.error('Module collection command sequence rejected:', error)
       rollbackModuleCollectionPatchSteps(operationSteps, currentStepIndex)

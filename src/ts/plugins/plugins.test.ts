@@ -73,7 +73,11 @@ vi.mock('./pluginSafety', () => ({
   checkCodeSafety: vi.fn(async () => ({ isSafe: true, errors: [] })),
 }))
 
-import { clearCachedServerCommandRevision, type CommandEvent } from '../server/commands'
+import {
+  clearCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
+  type CommandEvent,
+} from '../server/commands'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
@@ -364,6 +368,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
 })
 
@@ -1178,6 +1183,10 @@ describe('plugin database command bridge', () => {
     // revision into the next command.
     let nextRevision = 100
     const captured: { url: string; body: { baseRevision?: number } }[] = []
+    const reconciledEventRevisions: number[][] = []
+    setServerCommandSuccessReconciler((_event, events) => {
+      reconciledEventRevisions.push(events.map((event) => event.revision))
+    })
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -1211,6 +1220,7 @@ describe('plugin database command bridge', () => {
 
     await vi.waitFor(() => {
       expect(captured.length).toBe(2)
+      expect(reconciledEventRevisions).toEqual([[101, 102]])
     })
     expect(captured[0].url).toBe('/api/v1/commands/modules/mod-a')
     expect(captured[0].body?.baseRevision).toBe(100)
