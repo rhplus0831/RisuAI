@@ -1,0 +1,165 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
+
+const playgroundState = vi.hoisted(() => ({
+  database: {
+    characters: [] as Array<Record<string, unknown>>,
+    currentChar: -1,
+  },
+  commandShouldFail: false,
+  persistedCharacter: null as Record<string, unknown> | null,
+}))
+
+const playgroundMocks = vi.hoisted(() => ({
+  applyCharactersResource: vi.fn(),
+  createAndSelectCharacterCommand: vi.fn(),
+  dispatchSelectCharacter: vi.fn(),
+  fetchServerCharacters: vi.fn(),
+  resetChatHydration: vi.fn(),
+  resetLorebookHydration: vi.fn(),
+  recordHydratedCharacterLorebooks: vi.fn(),
+  runServerCommand: vi.fn(),
+}))
+
+vi.mock('./util', () => ({
+  findCharacterIndexbyId: (characterId: string) =>
+    playgroundState.database.characters.findIndex((character) => character.chaId === characterId),
+}))
+
+vi.mock('./characters', () => ({
+  characterFormatUpdate: (character: Record<string, unknown>) => structuredClone(character),
+  createBlankChar: () => ({ chaId: 'blank', chats: [] }),
+}))
+
+vi.mock('./storage/database.svelte', () => ({
+  getDatabase: () => playgroundState.database,
+  setCharacterByIndex: (index: number, character: Record<string, unknown>) => {
+    playgroundState.database.characters[index] = character
+  },
+}))
+
+vi.mock('./stores.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    PlaygroundStore: writable(0),
+    selectedCharID: writable(-1),
+  }
+})
+
+vi.mock('./characterCommands', () => ({
+  currentCharacterSelectionSnapshot: () => ({}),
+  dispatchSelectCharacter: playgroundMocks.dispatchSelectCharacter,
+  toCharacterSnapshot: (character: Record<string, unknown>) => structuredClone(character),
+}))
+
+vi.mock('./server/resourceWriteGuard.svelte', () => ({
+  withTrustedResourceWrite: <T>(write: () => T) => write(),
+}))
+
+vi.mock('./server/commands', () => ({
+  canUseServerCommands: () => true,
+  createAndSelectCharacterCommand: playgroundMocks.createAndSelectCharacterCommand,
+  runServerCommand: playgroundMocks.runServerCommand,
+}))
+
+vi.mock('./server/resourceReads', () => ({
+  fetchServerCharacters: playgroundMocks.fetchServerCharacters,
+}))
+
+vi.mock('./server/resourceState.svelte', () => ({
+  applyCharactersResource: playgroundMocks.applyCharactersResource,
+}))
+
+vi.mock('./server/chatMessageHydration.svelte', () => ({
+  resetChatHydration: playgroundMocks.resetChatHydration,
+}))
+
+vi.mock('./server/lorebookBridge.svelte', () => ({
+  recordHydratedCharacterLorebooks: playgroundMocks.recordHydratedCharacterLorebooks,
+  resetLorebookHydration: playgroundMocks.resetLorebookHydration,
+}))
+
+import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
+import { PlaygroundStore, selectedCharID } from './stores.svelte'
+
+beforeEach(() => {
+  playgroundState.database.characters = []
+  playgroundState.database.currentChar = -1
+  playgroundState.commandShouldFail = false
+  playgroundState.persistedCharacter = null
+  selectedCharID.set(-1)
+  PlaygroundStore.set(0)
+
+  for (const mock of Object.values(playgroundMocks)) mock.mockReset()
+
+  playgroundMocks.createAndSelectCharacterCommand.mockImplementation(
+    async (input: { character: Record<string, unknown> }) => {
+      if (playgroundState.commandShouldFail) {
+        return { status: 'error', error: 'create failed' }
+      }
+      playgroundState.persistedCharacter = structuredClone(input.character)
+      return {
+        status: 'ok',
+        revision: 11,
+        event: { type: 'character.createdAndSelected', revision: 11, resource: 'character' },
+        characterId: PLAYGROUND_CHARACTER_ID,
+      }
+    },
+  )
+  playgroundMocks.fetchServerCharacters.mockImplementation(async () => ({
+    status: 'ok',
+    revision: 11,
+    characters: playgroundState.persistedCharacter ? [structuredClone(playgroundState.persistedCharacter)] : [],
+  }))
+  playgroundMocks.applyCharactersResource.mockImplementation(
+    (result: { characters: Array<Record<string, unknown>> }) => {
+      playgroundState.database.characters = structuredClone(result.characters)
+      return true
+    },
+  )
+  playgroundMocks.runServerCommand.mockImplementation(
+    async (input: { command: (baseRevision: number) => Promise<{ status: string }> }) => {
+      const result = await input.command(10)
+      if (result.status === 'ok') {
+        const characters = await playgroundMocks.fetchServerCharacters()
+        playgroundMocks.applyCharactersResource(characters)
+      }
+      return result
+    },
+  )
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
+describe('openPlaygroundChat', () => {
+  it('uses the character collection read completed by command reconciliation', async () => {
+    await openPlaygroundChat()
+
+    expect(playgroundMocks.fetchServerCharacters).toHaveBeenCalledTimes(1)
+    expect(playgroundMocks.createAndSelectCharacterCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseRevision: 10,
+        character: expect.objectContaining({ chaId: PLAYGROUND_CHARACTER_ID }),
+      }),
+    )
+    expect(get(selectedCharID)).toBe(0)
+    expect(get(PlaygroundStore)).toBe(2)
+  })
+
+  it('does not refresh or select a playground character after a failed create', async () => {
+    playgroundState.commandShouldFail = true
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await openPlaygroundChat()
+
+    expect(playgroundMocks.fetchServerCharacters).not.toHaveBeenCalled()
+    expect(playgroundState.database.characters).toEqual([])
+    expect(get(selectedCharID)).toBe(-1)
+    expect(warn).toHaveBeenCalledWith(
+      'Unable to create playground character',
+      expect.objectContaining({ status: 'error' }),
+    )
+  })
+})

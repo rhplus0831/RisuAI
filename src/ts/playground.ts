@@ -6,10 +6,6 @@ import { PlaygroundStore, selectedCharID } from './stores.svelte'
 import { currentCharacterSelectionSnapshot, dispatchSelectCharacter, toCharacterSnapshot } from './characterCommands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { canUseServerCommands, createAndSelectCharacterCommand, runServerCommand } from './server/commands'
-import { fetchServerCharacters } from './server/resourceReads'
-import { applyCharactersResource } from './server/resourceState.svelte'
-import { resetChatHydration } from './server/chatMessageHydration.svelte'
-import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 
 export const PLAYGROUND_CHARACTER_ID = '§playground'
 
@@ -57,8 +53,8 @@ export async function openPlaygroundChat(): Promise<void> {
     })
     if (result.status !== 'ok') {
       console.warn('Unable to create playground character', result)
+      return
     }
-    await refreshPlaygroundProjection()
     selectPlaygroundCharacter()
     return
   }
@@ -70,14 +66,6 @@ export async function openPlaygroundChat(): Promise<void> {
     ;(database as unknown as { currentChar?: number }).currentChar = index
     selectedCharID.set(index)
   })
-}
-
-async function refreshPlaygroundProjection(): Promise<void> {
-  const result = await fetchServerCharacters()
-  if (result.status !== 'ok' || !applyCharactersResource(result)) return
-  resetChatHydration()
-  resetLorebookHydration()
-  recordHydratedCharacterLorebooks(result.characters)
 }
 
 function selectPlaygroundCharacter(): void {
