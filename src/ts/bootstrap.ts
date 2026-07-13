@@ -28,6 +28,7 @@ import {
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
 import {
+  acknowledgeMessageMutationLocalEffect,
   applyMessageTranslationLocalEffect,
   hydrateActiveChat,
   resetChatHydration,
@@ -445,6 +446,27 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       return withServerResourceApply(() =>
         applyMessageTranslationLocalEffect(localEffect.chatId, localEffect.messageId, localEffect.translation),
       )
+    case 'messageMutation': {
+      const expectedType =
+        localEffect.operation === 'append'
+          ? 'message.appended'
+          : localEffect.operation === 'update'
+            ? 'message.updated'
+            : localEffect.operation === 'delete'
+              ? 'message.deleted'
+              : localEffect.operation === 'truncate'
+                ? 'message.truncated'
+                : 'messages.replaced'
+      if (
+        event.type !== expectedType ||
+        event.resource !== 'message' ||
+        event.parentId !== localEffect.chatId ||
+        (localEffect.messageId === undefined ? event.id !== undefined : event.id !== localEffect.messageId)
+      ) {
+        return false
+      }
+      return withServerResourceApply(() => acknowledgeMessageMutationLocalEffect(localEffect.chatId))
+    }
   }
 }
 

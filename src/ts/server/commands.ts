@@ -82,6 +82,13 @@ export interface MessageTranslationLocalEffect {
   translation: MessageTranslation
 }
 
+export interface MessageMutationLocalEffect {
+  kind: 'messageMutation'
+  operation: 'append' | 'update' | 'delete' | 'truncate' | 'replaceTail' | 'replaceAll'
+  chatId: string
+  messageId?: string
+}
+
 export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
@@ -90,6 +97,7 @@ export type ServerCommandLocalEffect =
   | SettingsPatchLocalEffect
   | PluginStorageLocalEffect
   | MessageTranslationLocalEffect
+  | MessageMutationLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -3126,6 +3134,12 @@ export async function appendMessageCommand(
       message: input.message,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readMessageMutationLocalEffect(body, event, {
+        operation: 'append',
+        expectedChatId: input.chatId,
+        expectedMessageId: input.message.chatId,
+      }),
   })
 }
 
@@ -3140,6 +3154,11 @@ export async function updateMessageCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readMessageMutationLocalEffect(body, event, {
+        operation: 'update',
+        expectedMessageId: input.messageId,
+      }),
   })
 }
 
@@ -3172,6 +3191,11 @@ export async function deleteMessageCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readMessageMutationLocalEffect(body, event, {
+        operation: 'delete',
+        expectedMessageId: input.messageId,
+      }),
   })
 }
 
@@ -3187,6 +3211,12 @@ export async function truncateMessagesCommand(
       ...(input.preserveRemovedAsAlternates ? { preserveRemovedAsAlternates: true } : {}),
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readMessageMutationLocalEffect(body, event, {
+        operation: 'truncate',
+        expectedChatId: input.chatId,
+        expectedAfterMessageId: input.afterMessageId ?? null,
+      }),
   })
 }
 
@@ -3204,6 +3234,13 @@ export async function replaceTailMessagesCommand(
       messages: input.messages,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readMessageMutationLocalEffect(body, event, {
+        operation: 'replaceTail',
+        expectedChatId: input.chatId,
+        expectedAfterMessageId: input.afterMessageId ?? null,
+        expectedMessageIds: input.messages.map((message) => message.chatId),
+      }),
   })
 }
 
@@ -3218,6 +3255,12 @@ export async function replaceMessagesCommand(
       messages: input.messages,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readMessageMutationLocalEffect(body, event, {
+        operation: 'replaceAll',
+        expectedChatId: input.chatId,
+        expectedMessageIds: input.messages.map((message) => message.chatId),
+      }),
   })
 }
 
@@ -3529,6 +3572,76 @@ function isMessageTranslation(value: unknown): value is MessageTranslation {
     typeof record.settingsHash === 'string' &&
     typeof record.updatedAt === 'number' &&
     Number.isFinite(record.updatedAt)
+  )
+}
+
+interface ReadMessageMutationLocalEffectOptions {
+  operation: MessageMutationLocalEffect['operation']
+  expectedChatId?: string
+  expectedMessageId?: string
+  expectedAfterMessageId?: string | null
+  expectedMessageIds?: Array<string | undefined>
+}
+
+function readMessageMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadMessageMutationLocalEffectOptions,
+): MessageMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const chatId = record.chatId
+  if (typeof chatId !== 'string' || chatId.trim() === '') return undefined
+  if (options.expectedChatId !== undefined && chatId !== options.expectedChatId) return undefined
+  if (event.resource !== 'message' || event.parentId !== chatId) return undefined
+
+  const expectedType =
+    options.operation === 'append'
+      ? 'message.appended'
+      : options.operation === 'update'
+        ? 'message.updated'
+        : options.operation === 'delete'
+          ? 'message.deleted'
+          : options.operation === 'truncate'
+            ? 'message.truncated'
+            : 'messages.replaced'
+  if (event.type !== expectedType) return undefined
+
+  if (options.operation === 'append' || options.operation === 'update' || options.operation === 'delete') {
+    const messageId = record.messageId
+    if (
+      typeof options.expectedMessageId !== 'string' ||
+      options.expectedMessageId.trim() === '' ||
+      messageId !== options.expectedMessageId ||
+      event.id !== options.expectedMessageId
+    ) {
+      return undefined
+    }
+    return { kind: 'messageMutation', operation: options.operation, chatId, messageId }
+  }
+
+  if (event.id !== undefined) return undefined
+  if (options.operation === 'truncate' || options.operation === 'replaceTail') {
+    if (record.afterMessageId !== options.expectedAfterMessageId) return undefined
+    if (!Number.isInteger(record.replacedCount ?? record.removedCount)) return undefined
+  }
+  if (options.operation === 'replaceTail') {
+    if (
+      !isNonEmptyStringArray(options.expectedMessageIds, true) ||
+      !isJsonValueEqual(record.messageIds, options.expectedMessageIds)
+    ) {
+      return undefined
+    }
+  }
+  if (options.operation === 'replaceAll' && !isNonEmptyStringArray(options.expectedMessageIds, true)) return undefined
+  return { kind: 'messageMutation', operation: options.operation, chatId }
+}
+
+function isNonEmptyStringArray(value: unknown, allowEmpty = false): value is string[] {
+  return (
+    Array.isArray(value) &&
+    (allowEmpty || value.length > 0) &&
+    value.every((entry) => typeof entry === 'string' && entry.trim() !== '')
   )
 }
 

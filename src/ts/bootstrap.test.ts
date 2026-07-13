@@ -31,6 +31,7 @@ const eventApi = vi.hoisted(() => ({
 }))
 
 const hydrationApi = vi.hoisted(() => ({
+  acknowledgeMessageMutationLocalEffect: vi.fn(() => true),
   applyMessageTranslationLocalEffect: vi.fn(() => true),
   hydrateActiveChat: vi.fn(async () => undefined),
   resetChatHydration: vi.fn(),
@@ -451,6 +452,37 @@ describe('API-backed client bootstrap', () => {
 
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(hydrationApi.applyMessageTranslationLocalEffect).toHaveBeenCalledWith('chat-a', 'message-a', translation)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('acknowledges a contiguous optimistic message append without fetching the transcript', async () => {
+    await loadWebInitialDatabase()
+    const event = {
+      type: 'message.appended',
+      revision: 6,
+      resource: 'message',
+      id: 'message-a',
+      parentId: 'chat-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'messageMutation',
+            operation: 'append',
+            chatId: 'chat-a',
+            messageId: 'message-a',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(hydrationApi.acknowledgeMessageMutationLocalEffect).toHaveBeenCalledWith('chat-a')
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 

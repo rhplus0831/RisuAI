@@ -526,6 +526,22 @@ export function applyMessageTranslationLocalEffect(
 }
 
 /**
+ * Acknowledge an accepted optimistic transcript mutation without downloading
+ * the transcript again. The row contents were already applied by the caller;
+ * advancing the epoch only prevents an older in-flight hydration from
+ * replacing them.
+ */
+export function acknowledgeMessageMutationLocalEffect(chatId: string): boolean {
+  if (!chatId) return false
+  const matches = getDatabase()
+    .characters?.flatMap((character) => character.chats ?? [])
+    .filter((candidate) => candidate.id === chatId)
+  if (matches?.length !== 1) return false
+  advanceChatProjectionEpoch(chatId)
+  return true
+}
+
+/**
  * Reactive: is the given chat's message history still being hydrated from the
  * server (so the UI should show a loading state instead of the greeting-only
  * stub)? True only while the open chat is an un-hydrated, empty stub whose first

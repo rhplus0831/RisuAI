@@ -2645,11 +2645,15 @@ describe('server command API adapter', () => {
   })
 
   it('dispatches message history commands through typed helpers', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/messages/truncate')) {
         return {
           revision: 4,
-          event: { type: 'message.truncated', revision: 4, resource: 'message' },
+          event: { type: 'message.truncated', revision: 4, resource: 'message', parentId: 'chat-a' },
           chatId: 'chat-a',
           afterMessageId: 'msg-a',
           removedCount: 2,
@@ -2658,7 +2662,7 @@ describe('server command API adapter', () => {
       if (url.endsWith('/messages/tail')) {
         return {
           revision: 5,
-          event: { type: 'messages.replaced', revision: 5, resource: 'message' },
+          event: { type: 'messages.replaced', revision: 5, resource: 'message', parentId: 'chat-a' },
           chatId: 'chat-a',
           afterMessageId: 'msg-a',
           messageIds: ['msg-b'],
@@ -2670,7 +2674,7 @@ describe('server command API adapter', () => {
         return method === 'PUT'
           ? {
               revision: 6,
-              event: { type: 'messages.replaced', revision: 6, resource: 'message' },
+              event: { type: 'messages.replaced', revision: 6, resource: 'message', parentId: 'chat-a' },
               chatId: 'chat-a',
             }
           : {
@@ -2680,6 +2684,7 @@ describe('server command API adapter', () => {
                 revision: 1,
                 resource: 'message',
                 id: 'msg-a',
+                parentId: 'chat-a',
               },
               chatId: 'chat-a',
               messageId: 'msg-a',
@@ -2695,6 +2700,7 @@ describe('server command API adapter', () => {
                 revision: 3,
                 resource: 'message',
                 id: 'msg-a',
+                parentId: 'chat-a',
               },
               chatId: 'chat-a',
               messageId: 'msg-a',
@@ -2706,6 +2712,7 @@ describe('server command API adapter', () => {
                 revision: 2,
                 resource: 'message',
                 id: 'msg-a',
+                parentId: 'chat-a',
               },
               chatId: 'chat-a',
               messageId: 'msg-a',
@@ -2792,6 +2799,15 @@ describe('server command API adapter', () => {
         },
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 7, messageId: 'gen-a' })
+
+    expect(observedEffects).toEqual([
+      { kind: 'messageMutation', operation: 'append', chatId: 'chat-a', messageId: 'msg-a' },
+      { kind: 'messageMutation', operation: 'update', chatId: 'chat-a', messageId: 'msg-a' },
+      { kind: 'messageMutation', operation: 'delete', chatId: 'chat-a', messageId: 'msg-a' },
+      { kind: 'messageMutation', operation: 'truncate', chatId: 'chat-a' },
+      { kind: 'messageMutation', operation: 'replaceTail', chatId: 'chat-a' },
+      { kind: 'messageMutation', operation: 'replaceAll', chatId: 'chat-a' },
+    ])
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
