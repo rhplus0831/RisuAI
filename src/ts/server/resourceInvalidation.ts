@@ -31,6 +31,7 @@ import {
   type ServerCollectionsResourcePayload,
 } from './resourceState.svelte'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
+import { createDestructiveRefreshToken } from './staleStateGuards'
 
 export const FULL_RESOURCE_REFRESH_MAX_ATTEMPTS = 3
 
@@ -131,6 +132,10 @@ export async function refreshAllServerResources(
     if (revisions.size !== 1) continue
 
     const revision = settings.revision
+    // Any full-refresh apply attempt can replace optimistic projections, even
+    // when a later slice rejects the response. Invalidate local-effect tokens
+    // before touching the first slice so partial failures also fail closed.
+    createDestructiveRefreshToken('full-server-resource-refresh')
     try {
       const mergedCollections = withPendingPluginStorage(collections, options.hooks?.mergePendingPluginStorage)
       const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => ({

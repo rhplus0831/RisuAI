@@ -59,6 +59,7 @@ import {
   getResourceDatabase,
   resetServerResourceState,
 } from './resourceState.svelte'
+import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 
 const hooks: ServerResourceInvalidationHooks = {
   mergePendingPluginStorage: sideEffects.mergePluginStorage,
@@ -162,6 +163,7 @@ describe('API-backed resource invalidation', () => {
   })
 
   it('retries inconsistent full reads and applies only a common revision', async () => {
+    const optimisticEpoch = captureDestructiveRefreshEpoch()
     api.settings
       .mockResolvedValueOnce({ status: 'ok', revision: 5, settings: { language: 'stale' } })
       .mockResolvedValueOnce({ status: 'ok', revision: 7, settings: { language: 'fresh' } })
@@ -187,6 +189,7 @@ describe('API-backed resource invalidation', () => {
     await expect(refreshAllServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 7, scope: 'full' })
     expect(api.settings).toHaveBeenCalledTimes(2)
     expect(getResourceDatabase().language).toBe('fresh')
+    expect(hasDestructiveRefreshEpochChanged(optimisticEpoch)).toBe(true)
   })
 
   it('fails after bounded revision mismatches without applying any response', async () => {
