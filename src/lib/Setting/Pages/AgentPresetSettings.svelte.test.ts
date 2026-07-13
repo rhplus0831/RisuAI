@@ -1,9 +1,22 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+type AgentPresetCommandMockResult = {
+  status: string
+  revision?: number
+  event?: { type: string; revision: number }
+  error?: string
+}
+
 const agentPresetSpies = vi.hoisted(() => ({
   createAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  updateAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  updateAgentPreset: vi.fn(
+    async (): Promise<AgentPresetCommandMockResult> => ({
+      status: 'ok',
+      revision: 1,
+      event: { type: 'ok', revision: 1 },
+    }),
+  ),
   duplicateAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
   deleteAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
   reorderAgentPresets: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
