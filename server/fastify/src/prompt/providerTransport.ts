@@ -20,6 +20,12 @@ export interface ProviderPostGenerationResult {
 
 export interface ProviderChunkTransportOptions {
   doneMetadata?: ProviderDoneMetadata
+  /**
+   * Omit `done.result` after non-empty token frames already delivered the same
+   * completion. This is safe only for a negotiated, connection-scoped stream;
+   * durable/replayable transports must retain the terminal result.
+   */
+  omitResultWhenStreamed?: boolean
   sideEffects?: (result: string) => PromptChatEvent[]
   errorRestoration?: () => ErrorEvent['restoration']
   /**
@@ -89,9 +95,10 @@ export async function emitProviderChunks(
         postGeneration = postGenerationResult as PostGenerationFrame
       }
     }
+    const omitStreamedResult = normalizedOptions.omitResultWhenStreamed === true && result.length > 0
     emit({
       type: 'done',
-      result,
+      ...(!omitStreamedResult ? { result } : {}),
       ...(normalizedOptions.doneMetadata?.(result) ?? {}),
       ...(alternates.length > 0 ? { alternates } : {}),
       ...(postGeneration ? { postGeneration } : {}),

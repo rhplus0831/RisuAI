@@ -239,6 +239,11 @@ export interface ServerChatPostGeneration {
 
 export interface DoneEvent {
   type: 'done'
+  /**
+   * Full completion fallback. A negotiated inline stream may omit it after
+   * preceding token events delivered the same non-empty text. Durable streams
+   * retain it for replay and reattach.
+   */
   result?: string
   /** Additional provider choices returned by multi-generation (`genTime`). */
   alternates?: string[]

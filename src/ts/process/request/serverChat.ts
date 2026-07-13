@@ -41,6 +41,7 @@ const REQUEST_UID_HEADER = 'X-Request-UID'
 const SERVER_CHAT_CLIENT_CAPABILITIES = {
   compactPromptEvent: true,
   promptMetadataOnly: true,
+  omitDuplicateDoneResult: true,
 } as const
 
 function clearLiveGenerationProgress(): void {

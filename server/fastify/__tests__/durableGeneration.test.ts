@@ -834,7 +834,10 @@ describe('Durable generation (Milestone 1)', () => {
     providerImpl = gated.dispatchProvider
 
     const controller = newController()
-    const res = await postDurable({}, { signal: controller.signal })
+    const res = await postDurable(
+      { clientCapabilities: { omitDuplicateDoneResult: true } },
+      { signal: controller.signal },
+    )
     let jobId = ''
     const initialEvents = await readSse(res, (ev) => {
       if (ev.type === 'job_accepted') jobId = ev.data.jobId as string
@@ -862,6 +865,7 @@ describe('Durable generation (Milestone 1)', () => {
     expect(reEvents.some((e) => e.type === 'token' && e.data.content === 'Hel')).toBe(true)
     expect(reEvents.some((e) => e.type === 'token' && e.data.content === 'lo')).toBe(true)
     expect(reEvents.at(-1)?.type).toBe('done')
+    expect(reEvents.at(-1)?.data.result).toBe('Hello')
     reController.abort()
 
     // The job ran to completion server-side and persisted the full result.

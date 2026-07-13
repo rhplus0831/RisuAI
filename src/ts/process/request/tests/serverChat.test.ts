@@ -154,6 +154,11 @@ describe('requestServerChat', () => {
       mode: 'send',
       clientCapabilities: { compactPromptEvent: true },
     })
+    expect(calls[0]?.clientCapabilities).toEqual({
+      compactPromptEvent: true,
+      promptMetadataOnly: true,
+      omitDuplicateDoneResult: true,
+    })
   })
 
   it('labels preview prompt requests with x-risu-caller: preview-prompt', async () => {
@@ -438,6 +443,92 @@ describe('requestServerChat', () => {
         alternates: ['second reply', 'third reply'],
         generationId: 'uuid-0',
       },
+    })
+  })
+
+  it('reconstructs the full result when compact done omits the streamed duplicate', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const enc = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode('event: prompt\ndata: {"promptInfo":{}}\n\n'))
+          controller.enqueue(
+            enc.encode(
+              'event: info\ndata: {"generationId":"gen-compact","generationInfo":{"generationId":"gen-compact","model":"m"}}\n\n',
+            ),
+          )
+          controller.enqueue(enc.encode('event: token\ndata: {"content":"server "}\n\n'))
+          controller.enqueue(enc.encode('event: token\ndata: {"content":"reply"}\n\n'))
+          controller.enqueue(
+            enc.encode(
+              'event: done\ndata: {"generationId":"gen-compact","generationInfo":{"generationId":"gen-compact"}}\n\n',
+            ),
+          )
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok' || res.req.type !== 'streaming') return
+    const reader = res.req.result.getReader()
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'gen-compact': 'server ' },
+    })
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'gen-compact': 'server reply' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    const terminal = await res.terminal
+    expect(terminal.status).toBe('done')
+    expect(terminal.done).toMatchObject({ generationId: 'gen-compact' })
+    expect(Object.hasOwn(terminal.done ?? {}, 'result')).toBe(false)
+  })
+
+  it('uses done.result when a response has no token frames', async () => {
+    vi.stubGlobal('fetch', async () => {
+      const enc = new TextEncoder()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(enc.encode('event: prompt\ndata: {"promptInfo":{}}\n\n'))
+          controller.enqueue(
+            enc.encode(
+              'event: info\ndata: {"generationId":"gen-buffered","generationInfo":{"generationId":"gen-buffered","model":"m"}}\n\n',
+            ),
+          )
+          controller.enqueue(
+            enc.encode(
+              'event: done\ndata: {"result":"buffered reply","generationId":"gen-buffered","generationInfo":{"generationId":"gen-buffered"}}\n\n',
+            ),
+          )
+          controller.close()
+        },
+      })
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      })
+    })
+
+    const res = await requestServerChatGeneration(baseInput, null)
+    expect(res.status).toBe('ok')
+    if (res.status !== 'ok' || res.req.type !== 'streaming') return
+    const reader = res.req.result.getReader()
+    await expect(reader.read()).resolves.toEqual({
+      done: false,
+      value: { 'gen-buffered': 'buffered reply' },
+    })
+    await expect(reader.read()).resolves.toEqual({ done: true, value: undefined })
+    await expect(res.terminal).resolves.toMatchObject({
+      status: 'done',
+      done: { result: 'buffered reply', generationId: 'gen-buffered' },
     })
   })
 

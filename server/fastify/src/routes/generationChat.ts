@@ -127,6 +127,7 @@ type SuccessfulAssembleResult = AssembleResult & {
 interface GenerationClientCapabilities {
   compactPromptEvent: boolean
   promptMetadataOnly: boolean
+  omitDuplicateDoneResult: boolean
 }
 
 type PromptAssemblyRun = Awaited<ReturnType<typeof assemblePromptWithMetrics>>
@@ -475,6 +476,7 @@ function readClientCapabilities(body: ChatRequestBody): GenerationClientCapabili
   return {
     compactPromptEvent: isRecord(clientCapabilities) && clientCapabilities.compactPromptEvent === true,
     promptMetadataOnly: isRecord(clientCapabilities) && clientCapabilities.promptMetadataOnly === true,
+    omitDuplicateDoneResult: isRecord(clientCapabilities) && clientCapabilities.omitDuplicateDoneResult === true,
   }
 }
 
@@ -2001,6 +2003,9 @@ async function streamAssembly(
           }
           if (frames) {
             const transportResult = await emitProviderChunks(frames, emit, signal, {
+              // This inline stream cannot be reattached, so a capable client that
+              // received token deltas does not need the full text repeated on done.
+              omitResultWhenStreamed: clientCapabilities.omitDuplicateDoneResult,
               doneMetadata: () => {
                 const stageTiming = generationInfo.stageTiming as Record<string, unknown> | undefined
                 if (stageTiming) {

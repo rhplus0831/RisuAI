@@ -21,6 +21,24 @@ describe('terminal frame assertion helpers', () => {
     expect(done.data.result).toBe('hello')
   })
 
+  it('accepts compact inline success frames whose tokens carry the result', () => {
+    const body =
+      formatPromptChatFrame({ type: 'token', content: 'hel' }) +
+      formatPromptChatFrame({ type: 'token', content: 'lo' }) +
+      formatPromptChatFrame({ type: 'done', generationId: 'generation-1' })
+
+    const frames = parseEvents(body)
+    expect(
+      frames
+        .filter((frame) => frame.type === 'token')
+        .map((frame) => frame.data.content)
+        .join(''),
+    ).toBe('hello')
+    const done = expectTerminalDone(frames)
+    expect(done.data).toEqual({ generationId: 'generation-1' })
+    expect(Object.hasOwn(done.data, 'result')).toBe(false)
+  })
+
   it('passes current provider error then done terminal semantics', () => {
     const frames: PromptChatFrame[] = [
       { type: 'token', data: { content: 'partial' } },

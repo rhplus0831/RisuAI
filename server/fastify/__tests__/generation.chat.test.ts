@@ -2998,6 +2998,44 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     expect(persisted.at(-1)).toMatchObject({ role: 'char', data: 'server echo reply' })
   })
 
+  it('omits the duplicate done result for a negotiated inline token stream', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...fixtureDatabase,
+      aiModel: 'echo_model',
+      echoMessage: 'server echo reply',
+      echoDelay: 0,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        ...basePayload,
+        durable: false,
+        clientCapabilities: { omitDuplicateDoneResult: true },
+      },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const streamedText = events
+      .filter((event) => event.type === 'token')
+      .map((event) => String(event.data.content ?? ''))
+      .join('')
+    expect(streamedText).toBe('server echo reply')
+    const done = events.at(-1)
+    expect(done?.type).toBe('done')
+    expect(Object.hasOwn(done?.data ?? {}, 'result')).toBe(false)
+    expect(done?.data).toMatchObject({
+      generationId: expect.any(String),
+      generationInfo: { model: 'echo_model' },
+      postGeneration: { revision: 2 },
+    })
+    expect(res.body).not.toContain('"result":"server echo reply"')
+  })
+
   // Server post-generation pass (output trigger + editoutput).
   //
   // After provider completion, the server runs the run-var pass, the `'output'`

@@ -30,6 +30,40 @@ describe('emitProviderChunks', () => {
     expect(result).toEqual({ status: 'done', result: 'Hello', finishReason: 'stop' })
   })
 
+  it('omits a negotiated duplicate done result after token frames delivered it', async () => {
+    const events: PromptChatEvent[] = []
+
+    const result = await emitProviderChunks(
+      frames([
+        { kind: 'token', content: 'Hel' },
+        { kind: 'token', content: 'lo' },
+        { kind: 'done', finishReason: 'stop' },
+      ]),
+      (event) => events.push(event),
+      undefined,
+      { omitResultWhenStreamed: true },
+    )
+
+    expect(events).toEqual([{ type: 'token', content: 'Hel' }, { type: 'token', content: 'lo' }, { type: 'done' }])
+    expect(result).toEqual({ status: 'done', result: 'Hello', finishReason: 'stop' })
+    expect(JSON.stringify(events.at(-1))).not.toContain('Hello')
+    expect(JSON.stringify(events.at(-1))!.length).toBeLessThan(JSON.stringify({ type: 'done', result: 'Hello' }).length)
+  })
+
+  it('retains the done result when no non-empty token text was delivered', async () => {
+    const events: PromptChatEvent[] = []
+
+    const result = await emitProviderChunks(
+      frames([{ kind: 'done', finishReason: 'stop' }]),
+      (event) => events.push(event),
+      undefined,
+      { omitResultWhenStreamed: true },
+    )
+
+    expect(events).toEqual([{ type: 'done', result: '' }])
+    expect(result).toEqual({ status: 'done', result: '', finishReason: 'stop' })
+  })
+
   it('carries multi-generation alternates through post-generation and the terminal done event', async () => {
     const events: PromptChatEvent[] = []
     const postGenerationCalls: Array<{ result: string; alternates: readonly string[] }> = []
@@ -108,6 +142,8 @@ describe('emitProviderChunks', () => {
         { kind: 'error', error: 'upstream refused', status: 500, statusText: 'Bad Gateway', code: 'upstream_500' },
       ]),
       (event) => events.push(event),
+      undefined,
+      { omitResultWhenStreamed: true },
     )
 
     expect(events).toEqual([

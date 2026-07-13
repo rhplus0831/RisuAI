@@ -141,6 +141,11 @@ export interface PostGenerationFrame {
 
 export interface DoneEvent {
   type: 'done'
+  /**
+   * Full completion fallback. A negotiated inline stream may omit it when its
+   * preceding token events already delivered the same non-empty text. Durable
+   * streams retain it so replay and reattach remain self-contained.
+   */
   result?: string
   /** Additional provider choices returned by multi-generation (`genTime`). */
   alternates?: string[]
