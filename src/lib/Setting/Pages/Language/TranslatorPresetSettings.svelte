@@ -46,14 +46,15 @@
     timer: ReturnType<typeof setTimeout> | null
     presetId: string
     patch: TranslatorPresetSnapshot
-    previous: TranslatorPresetStateSnapshot | null
-    attempted: TranslatorPresetStateSnapshot | null
+    previous: TranslatorPresetSnapshot
+    attempted: TranslatorPresetSnapshot
   }
 
   const translatorPresetUpdateDelayMs = 250
   const translatorPresetDirtyFieldNames: readonly TranslatorPresetDirtyField[] = ['name', 'prompt', 'maxResponse']
   const pendingTranslatorPresetUpdates = new Map<string, PendingTranslatorPresetUpdate>()
   const translatorPresetDirtyFieldsById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
+  const unsettledTranslatorPresetFieldsById = new Map<string, Map<TranslatorPresetDirtyField, number>>()
 
   function translatorPresetRecord(preset: TranslatorPreset): Record<string, unknown> {
     return preset as unknown as Record<string, unknown>
@@ -103,6 +104,37 @@
     return Object.keys(patch).filter(isTranslatorPresetDirtyField)
   }
 
+  function markTranslatorPresetFieldsUnsettled(presetId: string, fields: readonly TranslatorPresetDirtyField[]): void {
+    let unsettledFields = unsettledTranslatorPresetFieldsById.get(presetId)
+    if (!unsettledFields) {
+      unsettledFields = new Map()
+      unsettledTranslatorPresetFieldsById.set(presetId, unsettledFields)
+    }
+
+    for (const field of fields) {
+      unsettledFields.set(field, (unsettledFields.get(field) ?? 0) + 1)
+    }
+  }
+
+  function clearTranslatorPresetFieldsUnsettled(presetId: string, fields: readonly TranslatorPresetDirtyField[]): void {
+    const unsettledFields = unsettledTranslatorPresetFieldsById.get(presetId)
+    if (!unsettledFields) return
+
+    for (const field of fields) {
+      const remaining = (unsettledFields.get(field) ?? 0) - 1
+      if (remaining > 0) unsettledFields.set(field, remaining)
+      else unsettledFields.delete(field)
+    }
+
+    if (unsettledFields.size === 0) {
+      unsettledTranslatorPresetFieldsById.delete(presetId)
+    }
+  }
+
+  function isTranslatorPresetFieldUnsettled(presetId: string, field: TranslatorPresetDirtyField): boolean {
+    return (unsettledTranslatorPresetFieldsById.get(presetId)?.get(field) ?? 0) > 0
+  }
+
   function markTranslatorPresetDirtyFields(presetId: string, patch: TranslatorPresetSnapshot): void {
     const dirtyPatchFields = translatorPresetPatchDirtyFields(patch)
     if (dirtyPatchFields.length === 0) return
@@ -139,7 +171,7 @@
 
   function translatorPresetDirtyRollbackFields(
     presetId: string,
-    attemptedPreset: TranslatorPreset,
+    attemptedPreset: TranslatorPresetSnapshot,
     patch: TranslatorPresetSnapshot,
   ): TranslatorPresetDirtyField[] {
     const dirtyFields = translatorPresetDirtyFieldsById.get(presetId)
@@ -234,19 +266,15 @@
 
   function restoreTranslatorPresetUpdateState(
     presetId: string,
-    previous: TranslatorPresetStateSnapshot | null,
-    attempted: TranslatorPresetStateSnapshot | null,
+    previous: TranslatorPresetSnapshot,
+    attempted: TranslatorPresetSnapshot,
     patch: TranslatorPresetSnapshot,
   ): void {
-    const attemptedPreset = translatorPresetFromSnapshot(attempted, presetId)
-    const previousPreset = translatorPresetFromSnapshot(previous, presetId)
     const currentPreset = currentTranslatorPresetById(presetId)
 
-    if (!attemptedPreset || !previousPreset || !currentPreset) {
-      return
-    }
+    if (!currentPreset) return
 
-    const rollbackFields = translatorPresetDirtyRollbackFields(presetId, attemptedPreset, patch)
+    const rollbackFields = translatorPresetDirtyRollbackFields(presetId, attempted, patch)
     if (rollbackFields.length === 0) return
 
     withTrustedResourceWrite(() => {
@@ -257,8 +285,8 @@
       const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as unknown as Record<string, unknown>
       const rolledBackFields = applyAttemptedFieldRollback({
         target: nextPreset,
-        previous: translatorPresetRecord(previousPreset),
-        attempted: translatorPresetRecord(attemptedPreset),
+        previous,
+        attempted,
         keys: rollbackFields,
       }) as TranslatorPresetDirtyField[]
       if (rolledBackFields.length === 0) return
@@ -270,11 +298,7 @@
         syncCurrentTranslatorPreset()
       }
 
-      clearTranslatorPresetDirtyFieldsMatchingValues(
-        presetId,
-        translatorPresetRecord(attemptedPreset),
-        rolledBackFields,
-      )
+      clearTranslatorPresetDirtyFieldsMatchingValues(presetId, attempted, rolledBackFields)
     })
   }
 
@@ -365,6 +389,8 @@
     const commandPatch = pending.patch
     const commandPrevious = pending.previous
     const commandAttempted = pending.attempted
+    const commandFields = translatorPresetPatchDirtyFields(commandPatch)
+    markTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
 
     const dispatch = () =>
       runServerCommand({
@@ -379,7 +405,9 @@
         },
       })
 
-    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain.then(dispatch, dispatch)
+    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain.then(dispatch, dispatch).finally(() => {
+      clearTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
+    })
     return translatorPresetUpdateDispatchChain
   }
 
@@ -402,18 +430,42 @@
       timer: null,
       presetId,
       patch: {},
-      previous: null,
-      attempted: null,
+      previous: {},
+      attempted: {},
     }
-    pending.previous ??= previous
-    pending.attempted = currentTranslatorPresetStateSnapshot()
-    pending.patch = {
-      ...pending.patch,
-      ...patch,
+    const previousPreset = translatorPresetFromSnapshot(previous, presetId)
+    const pendingPatch = pending.patch as Record<string, unknown>
+    const pendingPrevious = pending.previous as Record<string, unknown>
+    const pendingAttempted = pending.attempted as Record<string, unknown>
+
+    for (const field of translatorPresetPatchDirtyFields(patch)) {
+      if (!(field in pendingPrevious)) {
+        pendingPrevious[field] = cloneJsonValue(previousPreset?.[field])
+      }
+
+      const attemptedValue = cloneJsonValue(patch[field])
+      if (snapshotJson(attemptedValue) === snapshotJson(pendingPrevious[field])) {
+        delete pendingPatch[field]
+        delete pendingPrevious[field]
+        delete pendingAttempted[field]
+        if (!isTranslatorPresetFieldUnsettled(presetId, field)) {
+          clearTranslatorPresetDirtyFieldsMatchingValues(presetId, { [field]: attemptedValue }, [field])
+        }
+        continue
+      }
+
+      pendingPatch[field] = attemptedValue
+      pendingAttempted[field] = attemptedValue
     }
-    pendingTranslatorPresetUpdates.set(presetId, pending)
 
     if (pending.timer) clearTimeout(pending.timer)
+    if (translatorPresetPatchDirtyFields(pending.patch).length === 0) {
+      pending.timer = null
+      pendingTranslatorPresetUpdates.delete(presetId)
+      return
+    }
+
+    pendingTranslatorPresetUpdates.set(presetId, pending)
     pending.timer = setTimeout(() => {
       void dispatchPendingTranslatorPresetUpdate(pending)
     }, translatorPresetUpdateDelayMs)

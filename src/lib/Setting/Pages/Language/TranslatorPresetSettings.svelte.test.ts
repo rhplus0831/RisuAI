@@ -18,6 +18,7 @@ const commandSpies = vi.hoisted(() => {
     deferNextCreate: false,
     deferNextDelete: false,
     deferNextSelect: false,
+    deferNextUpdate: false,
     nextBaseRevision: 100,
     runInputs: [] as Array<{ rollback?: () => void }>,
     createInputs: [] as Array<{ baseRevision: number; preset: Record<string, unknown>; select?: boolean }>,
@@ -27,6 +28,7 @@ const commandSpies = vi.hoisted(() => {
     deferredCreateResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     deferredDeleteResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     deferredSelectResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
+    deferredUpdateResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     canUseServerCommands: vi.fn(() => true),
     runServerCommand: vi.fn(),
     createTranslatorPresetCommand: vi.fn(),
@@ -48,6 +50,12 @@ const commandSpies = vi.hoisted(() => {
   spies.updateTranslatorPresetCommand.mockImplementation(
     async (input: { baseRevision: number; presetId: string; patch: Record<string, unknown> }) => {
       spies.updateInputs.push(input)
+      if (spies.deferNextUpdate) {
+        spies.deferNextUpdate = false
+        const deferred = createDeferredCommandResult()
+        spies.deferredUpdateResults.push(deferred)
+        return deferred.promise
+      }
       if (spies.failNextUpdate) {
         spies.failNextUpdate = false
         return { status: 'error', error: 'forced failure' }
@@ -344,6 +352,7 @@ beforeEach(() => {
   commandSpies.deferNextCreate = false
   commandSpies.deferNextDelete = false
   commandSpies.deferNextSelect = false
+  commandSpies.deferNextUpdate = false
   commandSpies.nextBaseRevision = 100
   commandSpies.runInputs.length = 0
   commandSpies.createInputs.length = 0
@@ -353,6 +362,7 @@ beforeEach(() => {
   commandSpies.deferredCreateResults.length = 0
   commandSpies.deferredDeleteResults.length = 0
   commandSpies.deferredSelectResults.length = 0
+  commandSpies.deferredUpdateResults.length = 0
   commandSpies.canUseServerCommands.mockClear()
   commandSpies.runServerCommand.mockClear()
   commandSpies.createTranslatorPresetCommand.mockClear()
@@ -403,6 +413,40 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     ])
   })
 
+  it('drops a pending field patch when rapid edits return to the first baseline', async () => {
+    await editPrompt('temporary prompt A')
+    await editPrompt('old prompt A')
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(commandSpies.updateInputs).toHaveLength(0)
+  })
+
+  it('keeps disjoint pending fields while omitting a field that returns to its baseline', async () => {
+    await editPrompt('temporary prompt A')
+    await editMaxResponse(321)
+    await editPrompt('old prompt A')
+
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { maxResponse: 321 },
+      },
+    ])
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
+      prompt: 'old prompt A',
+      maxResponse: 321,
+    })
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(321)
+  })
+
   it('keeps independent pending edits when another preset is edited before debounce', async () => {
     await editPrompt('new prompt A')
     await switchProjectedPreset(1)
@@ -440,6 +484,48 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         patch: { prompt: 'rejected prompt A' },
       },
     ])
+    expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+  })
+
+  it('rolls back a failed coalesced field edit to its first baseline', async () => {
+    commandSpies.failNextUpdate = true
+
+    await editPrompt('intermediate prompt A')
+    await editPrompt('rejected final prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'rejected final prompt A' },
+      },
+    ])
+    expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+  })
+
+  it('keeps an unsettled field dirty when a later batch net-reverts to its attempted value', async () => {
+    commandSpies.deferNextUpdate = true
+
+    await editPrompt('unsettled prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+    await editPrompt('temporary later prompt A')
+    await editPrompt('unsettled prompt A')
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'unsettled prompt A' },
+      },
+    ])
+
+    await failDeferredCommand(commandSpies.deferredUpdateResults, 'forced update failure')
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(commandSpies.updateInputs).toHaveLength(1)
     expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
   })
