@@ -78,6 +78,9 @@ as other command routes:
 Plugin record `PATCH` requests contain only changed fields. Because JSON omits
 `undefined`, `null` is reserved as a deletion sentinel for optional plugin
 metadata; it is rejected for required fields and full plugin creation records.
+Module record patches use the same compact contract for optional module
+metadata, including CJS and asset references; omitted fields in partial MCP
+updates remain untouched.
 
 - `POST /api/v1/commands/plugins`
 - `PATCH /api/v1/commands/plugins/:pluginId`

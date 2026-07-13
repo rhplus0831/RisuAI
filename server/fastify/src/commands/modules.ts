@@ -15,6 +15,15 @@ export interface ModuleRecord extends JsonRecord {
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
+const MODULE_PATCH_DELETABLE_KEYS = new Set([
+  'namespace',
+  'lowLevelAccess',
+  'hideIcon',
+  'backgroundEmbedding',
+  'customModuleToggle',
+  'cjs',
+  'assets',
+])
 
 const MODULE_SCALAR_FIELD_TYPES = new Map<string, readonly string[]>([
   ['name', ['string']],
@@ -101,7 +110,7 @@ export function readModulePatch(input: unknown, options: { assetDb?: DatabaseSyn
   if (Object.keys(patch).length === 0) {
     throw new ValidationError('patch must include at least one module field')
   }
-  validateModulePatch(patch, 'patch', {}, options)
+  validateModulePatch(patch, 'patch', { allowDeleteSentinel: true }, options)
   return patch
 }
 
@@ -237,7 +246,7 @@ function validateModuleRecord(
 function validateModulePatch(
   record: JsonRecord,
   label: string,
-  options: { allowId?: boolean; allowChildren?: boolean; allowMcp?: boolean } = {},
+  options: { allowId?: boolean; allowChildren?: boolean; allowMcp?: boolean; allowDeleteSentinel?: boolean } = {},
   assetOptions: { assetDb?: DatabaseSync } = {},
 ): void {
   for (const key of Object.keys(record)) {
@@ -248,6 +257,12 @@ function validateModulePatch(
       if (options.allowMcp && key === 'mcp') continue
       throw new ValidationError(`${label}.${key} is owned by a later command slice`)
     }
+    if (record[key] === null) {
+      if (!options.allowDeleteSentinel || !MODULE_PATCH_DELETABLE_KEYS.has(key)) {
+        throw new ValidationError(`${label}.${key} cannot be deleted`)
+      }
+      continue
+    }
     if (!MODULE_SCALAR_FIELD_TYPES.has(key) && key !== 'id') continue
     const allowedTypes = MODULE_SCALAR_FIELD_TYPES.get(key)
     if (!allowedTypes) continue
@@ -257,7 +272,7 @@ function validateModulePatch(
       throw new ValidationError(`${label}.${key} must be ${describeTypes(allowedTypes)}`)
     }
   }
-  if (assetOptions.assetDb && 'assets' in record) {
+  if (assetOptions.assetDb && 'assets' in record && record.assets !== null) {
     validateAssetTriples(assetOptions.assetDb, record.assets, `${label}.assets`)
   }
 }

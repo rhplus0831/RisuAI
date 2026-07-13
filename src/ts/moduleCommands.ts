@@ -73,6 +73,15 @@ interface ModuleReferenceStateSnapshot {
 }
 
 const MODULE_PATCH_EXCLUDED_KEYS = new Set(['id', 'mcp', 'lorebook', 'regex', 'trigger'])
+const MODULE_PATCH_DELETABLE_KEYS = new Set([
+  'namespace',
+  'lowLevelAccess',
+  'hideIcon',
+  'backgroundEmbedding',
+  'customModuleToggle',
+  'cjs',
+  'assets',
+])
 let nextGlobalModuleOperationSequence = 0
 const pendingGlobalModuleOperationsByTarget = new Map<string, GlobalModuleOperationRecord[]>()
 
@@ -337,7 +346,7 @@ export function dispatchUpdateModule(
   patch: ModuleSnapshot,
   previous: GlobalModuleStateSnapshot,
 ): void {
-  const commandPatch = changedModulePatch(moduleId, patch, previous)
+  const commandPatch = changedModulePatch(moduleId, patch, previous, { complete: true })
   if (Object.keys(commandPatch).length === 0) return
   if (!canUseServerCommands()) return
   const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
@@ -592,7 +601,7 @@ export function dispatchModuleCollectionPatch(modules: RisuModule[], previous: G
       continue
     }
     const moduleId = module.id
-    const commandPatch = changedModulePatch(moduleId, toModuleSnapshot(module), previous)
+    const commandPatch = changedModulePatch(moduleId, toModuleSnapshot(module), previous, { complete: true })
     if (Object.keys(commandPatch).length === 0) continue
     const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
     if (rollbackEntries.length === 0) continue
@@ -718,7 +727,10 @@ function moduleFieldRollbackEntries(
   previous: GlobalModuleStateSnapshot,
 ): ModuleFieldRollbackEntry[] {
   return Object.entries(patch)
-    .map(([field, value]) => moduleFieldRollbackEntry(moduleId, field, previous, true, value))
+    .map(([field, value]) => {
+      const deletesField = value === null && MODULE_PATCH_DELETABLE_KEYS.has(field)
+      return moduleFieldRollbackEntry(moduleId, field, previous, !deletesField, deletesField ? undefined : value)
+    })
     .filter((entry): entry is ModuleFieldRollbackEntry => entry !== null)
 }
 
@@ -965,7 +977,7 @@ function rollbackModuleFieldIfLiveMatches(entry: ModuleFieldRollbackEntry): bool
   const liveExists = hasOwnRecordKey(liveModule, entry.field)
   if (entry.attemptedExists) {
     if (!liveExists || !isJsonValueEqual(liveModule[entry.field], entry.attemptedValue)) return false
-  } else if (liveExists) {
+  } else if (liveExists && liveModule[entry.field] !== undefined) {
     return false
   }
 
@@ -1333,7 +1345,9 @@ export function toggledModuleIds(current: readonly string[] | undefined, moduleI
 }
 
 export function toModuleSnapshot(module: RisuModule): ModuleSnapshot {
-  return cloneJsonValue(module) as ModuleSnapshot
+  return Object.fromEntries(
+    Object.entries(module as RisuModule & Record<string, unknown>).map(([key, value]) => [key, cloneJsonValue(value)]),
+  ) as ModuleSnapshot
 }
 
 export function sanitizeModulePatch(patch: ModuleSnapshot): ModuleSnapshot {
@@ -1349,6 +1363,7 @@ function changedModulePatch(
   moduleId: string,
   patch: ModuleSnapshot,
   previous: GlobalModuleStateSnapshot,
+  options: { complete?: boolean } = {},
 ): ModuleSnapshot {
   const sanitized = sanitizeModulePatch(patch)
   const before = previous.modules.find((module) => module.id === moduleId) as
@@ -1356,11 +1371,21 @@ function changedModulePatch(
     | undefined
   if (!before) return cloneJsonValue(sanitized)
 
-  return Object.fromEntries(
+  const changed = Object.fromEntries(
     Object.entries(sanitized)
       .filter(([key, value]) => !hasOwnRecordKey(before, key) || !isJsonValueEqual(before[key], value))
       .map(([key, value]) => [key, cloneJsonValue(value)]),
-  )
+  ) as Record<string, unknown>
+
+  for (const key of MODULE_PATCH_DELETABLE_KEYS) {
+    const explicitlyRemoved = hasOwnRecordKey(patch, key) && patch[key] === undefined
+    const omittedFromCompleteSnapshot = options.complete === true && !hasOwnRecordKey(patch, key)
+    if (hasOwnRecordKey(before, key) && (explicitlyRemoved || omittedFromCompleteSnapshot)) {
+      changed[key] = null
+    }
+  }
+
+  return changed as ModuleSnapshot
 }
 
 function hasOwnRecordKey(record: Record<string, unknown>, key: string): boolean {

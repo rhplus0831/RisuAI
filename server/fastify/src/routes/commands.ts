@@ -6139,7 +6139,13 @@ export function registerCommandRoutes(
           const target = ensureModuleCommandDatabase(database)
           const modules = ensureModuleRecords(target)
           const index = requireModuleIndex(modules, moduleId)
-          Object.assign(modules[index], patch)
+          for (const [key, value] of Object.entries(patch)) {
+            if (value === null) {
+              delete modules[index][key]
+            } else {
+              modules[index][key] = value
+            }
+          }
           writeSingleCollectionRow(innerDb, 'modules', index, modules[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.moduleUpdated, id: moduleId },

@@ -10010,6 +10010,66 @@ describe('Phase 9-4c module record and enablement commands', () => {
     expect(badMcpAdd.json().error).toBe('Unknown module id in moduleIds: mcp-a')
   })
 
+  it('deletes optional module fields through null patch sentinels', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      enabledModules: [],
+      modules: [
+        {
+          id: 'mod-a',
+          name: 'A',
+          description: '',
+          namespace: 'old-namespace',
+          backgroundEmbedding: 'old background',
+          cjs: 'old cjs',
+          assets: [],
+        },
+      ],
+    })
+
+    const patched = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { namespace: null, backgroundEmbedding: null, cjs: null, assets: null },
+      },
+    })
+    expect(patched.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('namespace')
+    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('backgroundEmbedding')
+    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('cjs')
+    expect(bootstrap.json().database.modules[0]).not.toHaveProperty('assets')
+
+    const invalidPatch = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/modules/mod-a',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision + 1, patch: { name: null } },
+    })
+    expect(invalidPatch.statusCode).toBe(400)
+    expect(invalidPatch.json().error).toBe('patch.name cannot be deleted')
+
+    const invalidCreate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/modules',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 1,
+        module: { id: 'mod-b', name: 'B', description: '', cjs: null },
+      },
+    })
+    expect(invalidCreate.statusCode).toBe(400)
+    expect(invalidCreate.json().error).toBe('module.cjs cannot be deleted')
+  })
+
   it('rejects malformed module commands without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

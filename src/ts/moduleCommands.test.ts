@@ -25,6 +25,7 @@ import {
   currentGlobalModuleStateSnapshot,
   createGlobalModule,
   deleteGlobalModule,
+  dispatchModuleInfoPatch,
   restoreCharacterModuleState,
   setGlobalModuleEnabled,
   toggledModuleIds,
@@ -490,12 +491,16 @@ describe('module command projection helpers', () => {
 
   it('optimistically applies global module textarea fields and rolls back on command failure', async () => {
     const calls = stubFailingCommandFetch()
+    const assets: [string, string, string][] = [['asset.png', 'a'.repeat(64), 'png']]
+    const regex = [{ in: 'x'.repeat(10_000), out: '', type: 'editoutput' }] as any
     getDatabase().modules[0] = {
       id: 'mod-a',
       name: 'Module A',
       description: '',
       backgroundEmbedding: 'old background',
       cjs: 'x'.repeat(10_000),
+      assets,
+      regex,
     } as any
     setResourceWriteGuardEnabled(true)
 
@@ -509,6 +514,8 @@ describe('module command projection helpers', () => {
       description: '',
       backgroundEmbedding: 'new background',
       cjs: 'x'.repeat(10_000),
+      assets,
+      regex,
     })
 
     expect(getDatabase().modules[0].backgroundEmbedding).toBe('new background')
@@ -527,6 +534,79 @@ describe('module command projection helpers', () => {
       },
     })
     expect(getDatabase().modules[0].backgroundEmbedding).toBe('old background')
+  })
+
+  it('encodes optional module-field removals and restores them when the command fails', async () => {
+    const calls = stubFailingCommandFetch()
+    const assets: [string, string, string][] = [['asset.png', 'b'.repeat(64), 'png']]
+    getDatabase().modules[0] = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: '',
+      backgroundEmbedding: 'old background',
+      cjs: 'old cjs',
+      assets,
+    } as any
+    setResourceWriteGuardEnabled(true)
+
+    updateGlobalModule('mod-a', { id: 'mod-a', name: 'Module A', description: '' })
+
+    expect(getDatabase().modules[0]).not.toHaveProperty('backgroundEmbedding')
+    expect(getDatabase().modules[0]).not.toHaveProperty('cjs')
+    expect(getDatabase().modules[0]).not.toHaveProperty('assets')
+
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/modules/mod-a',
+      method: 'PATCH',
+      authHeader: 'module-command-token',
+      body: {
+        baseRevision: 10,
+        patch: {
+          backgroundEmbedding: null,
+          cjs: null,
+          assets: null,
+        },
+      },
+    })
+    expect(getDatabase().modules[0]).toMatchObject({
+      backgroundEmbedding: 'old background',
+      cjs: 'old cjs',
+      assets,
+    })
+  })
+
+  it('keeps omitted optional fields untouched in a partial module-info patch', async () => {
+    const calls = stubCommandFetch()
+    const assets: [string, string, string][] = [['asset.png', 'c'.repeat(64), 'png']]
+    getDatabase().modules[0] = {
+      id: 'mod-a',
+      name: 'Module A',
+      description: '',
+      cjs: 'x'.repeat(10_000),
+      assets,
+    } as any
+    const previous = currentGlobalModuleStateSnapshot()
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().modules[0].name = 'Renamed A'
+    })
+
+    dispatchModuleInfoPatch('mod-a', { name: 'Renamed A' }, null, previous)
+
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/modules/mod-a',
+      method: 'PATCH',
+      authHeader: 'module-command-token',
+      body: {
+        baseRevision: 10,
+        patch: { name: 'Renamed A' },
+      },
+    })
+    expect(getDatabase().modules[0]).toMatchObject({ cjs: 'x'.repeat(10_000), assets })
   })
 
   it('optimistically applies global module create and rolls back on command failure', async () => {
