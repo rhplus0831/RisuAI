@@ -709,6 +709,28 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         }),
       )
     }
+    case 'characterDefinitionMutation': {
+      const expectedType =
+        localEffect.operation === 'scripts' ? 'scriptDefinitions.replaced' : 'triggerDefinitions.replaced'
+      if (
+        event.type !== expectedType ||
+        event.resource !== 'characterRow' ||
+        event.id !== localEffect.characterId ||
+        event.parentId !== undefined ||
+        !Number.isInteger(localEffect.optimisticRowEpoch) ||
+        localEffect.optimisticRowEpoch < 0 ||
+        hasCharacterRowProjectionEpochChanged(localEffect.characterId, localEffect.optimisticRowEpoch)
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyCharacterRowMutationLocalEffect({
+          revision: event.revision,
+          characterId: localEffect.characterId,
+          targetId: localEffect.characterId,
+        }),
+      )
+    }
     case 'messageTranslation':
       if (
         event.type !== 'message.updated' ||

@@ -132,6 +132,13 @@ export interface LoadoutMutationLocalEffect {
   loadedName?: string
 }
 
+export interface CharacterDefinitionMutationLocalEffect {
+  kind: 'characterDefinitionMutation'
+  operation: 'scripts' | 'triggers'
+  characterId: string
+  optimisticRowEpoch: number
+}
+
 export interface MessageTranslationLocalEffect {
   kind: 'messageTranslation'
   chatId: string
@@ -172,6 +179,7 @@ export type ServerCommandLocalEffect =
   | ModuleCollectionMutationLocalEffect
   | ModuleEnabledLocalEffect
   | LoadoutMutationLocalEffect
+  | CharacterDefinitionMutationLocalEffect
   | MessageTranslationLocalEffect
   | MessageMutationLocalEffect
   | CharacterRowMutationLocalEffect
@@ -923,11 +931,13 @@ export interface ScriptDefinitionCommandInput {
 export interface ReplaceCharacterScriptsCommandInput extends ScriptDefinitionCommandInput {
   characterId: string
   scripts: ScriptDefinitionSnapshot[]
+  optimisticRowEpoch?: number
 }
 
 export interface ReplaceCharacterTriggersCommandInput extends ScriptDefinitionCommandInput {
   characterId: string
   triggers: TriggerDefinitionSnapshot[]
+  optimisticRowEpoch?: number
 }
 
 export interface ReplaceModuleScriptsCommandInput extends ScriptDefinitionCommandInput {
@@ -3149,6 +3159,7 @@ export async function replaceCharacterScriptsCommand(
   input: ReplaceCharacterScriptsCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/scripts`, {
     method: 'PUT',
@@ -3158,6 +3169,15 @@ export async function replaceCharacterScriptsCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readCharacterDefinitionMutationLocalEffect(body, event, {
+            operation: 'scripts',
+            expectedCharacterId: input.characterId,
+            expectedDefinitions: input.scripts,
+            optimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -3165,6 +3185,7 @@ export async function replaceCharacterTriggersCommand(
   input: ReplaceCharacterTriggersCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
+  acknowledgeOptimistic = false,
 ): Promise<ServerCommandResult<{ characterId: string }>> {
   return requestCommandJson(`/characters/${encodeURIComponent(input.characterId)}/triggers`, {
     method: 'PUT',
@@ -3174,6 +3195,15 @@ export async function replaceCharacterTriggersCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: acknowledgeOptimistic
+      ? (body, event) =>
+          readCharacterDefinitionMutationLocalEffect(body, event, {
+            operation: 'triggers',
+            expectedCharacterId: input.characterId,
+            expectedDefinitions: input.triggers,
+            optimisticRowEpoch: input.optimisticRowEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -4146,6 +4176,42 @@ function isCanonicalModuleCreate(value: ModuleSnapshot): boolean {
     value.name.trim() !== '' &&
     typeof value.description === 'string'
   )
+}
+
+function readCharacterDefinitionMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: {
+    operation: CharacterDefinitionMutationLocalEffect['operation']
+    expectedCharacterId: unknown
+    expectedDefinitions: unknown
+    optimisticRowEpoch: unknown
+  },
+): CharacterDefinitionMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (
+    !nonEmptyString(options.expectedCharacterId) ||
+    !isUniqueDefinitionArray(options.expectedDefinitions) ||
+    !isProjectionEpoch(options.optimisticRowEpoch)
+  ) {
+    return undefined
+  }
+  const expectedType = options.operation === 'scripts' ? 'scriptDefinitions.replaced' : 'triggerDefinitions.replaced'
+  if (
+    event.type !== expectedType ||
+    event.resource !== 'characterRow' ||
+    event.id !== options.expectedCharacterId ||
+    event.parentId !== undefined ||
+    (body as Record<string, unknown>).characterId !== options.expectedCharacterId
+  ) {
+    return undefined
+  }
+  return {
+    kind: 'characterDefinitionMutation',
+    operation: options.operation,
+    characterId: options.expectedCharacterId,
+    optimisticRowEpoch: options.optimisticRowEpoch,
+  }
 }
 
 function isUniqueDefinitionArray(value: unknown): boolean {

@@ -16,7 +16,11 @@ import {
   type TriggerDefinitionSnapshot,
 } from './commands'
 import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import {
+  captureCharacterRowProjectionEpoch,
+  getResourceDatabase as getDatabase,
+  hasCharacterRowProjectionEpochChanged,
+} from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 export interface ScriptDefinitionStateSnapshot {
@@ -53,6 +57,7 @@ export type ScriptDefinitionRollback = ScriptDefinitionStateSnapshot | ScopedScr
 interface PendingCollectionReplacement {
   key: string
   previous: ScriptDefinitionRollback
+  characterRowProjection?: { characterId: string; epoch: number }
   timer: ReturnType<typeof setTimeout> | null
   // The command receives the coalesced rollback baseline at fire time rather than
   // closing over a per-dispatch value, so debounced same-key edits roll back to
@@ -266,6 +271,7 @@ export function dispatchReplaceCharacterScripts(
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
+  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   ensureClientScriptDefinitionIds(scripts)
   const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
   const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
@@ -280,20 +286,25 @@ export function dispatchReplaceCharacterScripts(
               baseRevision,
               characterId,
               scripts: scriptPayload,
+              optimisticRowEpoch,
             },
             options.signal,
             options.keepalive,
+            true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'characterScripts',
             characterId,
             scripts: attemptedScripts,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       }),
     delayMs,
+    { characterId, epoch: optimisticRowEpoch },
   )
 }
 
@@ -304,6 +315,7 @@ export function dispatchReplaceCharacterTriggers(
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
+  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   ensureClientTriggerDefinitionIds(triggers)
   const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
   const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
@@ -318,20 +330,25 @@ export function dispatchReplaceCharacterTriggers(
               baseRevision,
               characterId,
               triggers: triggerPayload,
+              optimisticRowEpoch,
             },
             options.signal,
             options.keepalive,
+            true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'characterTriggers',
             characterId,
             triggers: attemptedTriggers,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       }),
     delayMs,
+    { characterId, epoch: optimisticRowEpoch },
   )
 }
 
@@ -739,16 +756,24 @@ function queueReplacement(
     options?: ServerCommandTransportOptions,
   ) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
+  characterRowProjection?: { characterId: string; epoch: number },
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
 
+  const sameCharacterRowProjection =
+    existing?.characterRowProjection?.characterId === characterRowProjection?.characterId &&
+    existing?.characterRowProjection?.epoch === characterRowProjection?.epoch
+
   // Coalesced same-key edits keep the first dispatch's baseline, so a failed
   // final command rolls back to the pre-first-edit value rather than an
-  // intermediate edit that was never durably committed.
+  // intermediate edit that was never durably committed. An authoritative row
+  // replacement starts a new ownership epoch, so the next edit must also start
+  // a new rollback baseline.
   const pending: PendingCollectionReplacement = {
     key,
-    previous: existing?.previous ?? previous,
+    previous: existing && sameCharacterRowProjection ? existing.previous : previous,
+    ...(characterRowProjection ? { characterRowProjection } : {}),
     command,
     timer: null,
   }
@@ -757,6 +782,7 @@ function queueReplacement(
 }
 
 function queueWatchedCharacterScripts(characterId: string, previousSnapshot: string, delayMs: number): void {
+  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   queueReplacement(
     `characterScripts:${characterId}`,
     {
@@ -776,25 +802,31 @@ function queueWatchedCharacterScripts(characterId: string, previousSnapshot: str
               baseRevision,
               characterId,
               scripts: scriptPayload,
+              optimisticRowEpoch,
             },
             options.signal,
             options.keepalive,
+            true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'characterScripts',
             characterId,
             scripts: attemptedScripts,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       })
     },
     delayMs,
+    { characterId, epoch: optimisticRowEpoch },
   )
 }
 
 function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: string, delayMs: number): void {
+  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
   queueReplacement(
     `characterTriggers:${characterId}`,
     {
@@ -814,21 +846,26 @@ function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: st
               baseRevision,
               characterId,
               triggers: triggerPayload,
+              optimisticRowEpoch,
             },
             options.signal,
             options.keepalive,
+            true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'characterTriggers',
             characterId,
             triggers: attemptedTriggers,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       })
     },
     delayMs,
+    { characterId, epoch: optimisticRowEpoch },
   )
 }
 

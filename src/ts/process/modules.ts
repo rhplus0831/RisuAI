@@ -33,6 +33,10 @@ import {
   rollbackScopedScriptDefinitionReplacement,
 } from '../server/scriptDefinitionBridge.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import {
+  captureCharacterRowProjectionEpoch,
+  hasCharacterRowProjectionEpochChanged,
+} from '../server/resourceState.svelte'
 import { runOptimisticCommandSequence } from '../chatCommands'
 import {
   replaceCharacterLorebooksCommand,
@@ -771,6 +775,7 @@ export async function applyModule() {
   if (!characterId) {
     return
   }
+  const optimisticRowEpoch = captureCharacterRowProjectionEpoch(characterId)
 
   const canApplyLorebooks =
     !!module.lorebook && (!getDatabase()?.enableLorebookStubs || isCharacterLorebookHydrated(characterId))
@@ -831,12 +836,19 @@ export async function applyModule() {
       steps.push(
         createModuleApplyStep(
           (baseRevision) =>
-            replaceCharacterScriptsCommand({
-              baseRevision,
-              characterId,
-              scripts: scriptsSnapshot,
-            }),
-          () =>
+            replaceCharacterScriptsCommand(
+              {
+                baseRevision,
+                characterId,
+                scripts: scriptsSnapshot,
+                optimisticRowEpoch,
+              },
+              undefined,
+              false,
+              true,
+            ),
+          () => {
+            if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
             rollbackScopedScriptDefinitionReplacement(
               {
                 kind: 'characterScripts',
@@ -849,7 +861,8 @@ export async function applyModule() {
                 characterId,
                 scripts: attemptedScripts,
               },
-            ),
+            )
+          },
         ),
       )
     }
@@ -861,12 +874,19 @@ export async function applyModule() {
       steps.push(
         createModuleApplyStep(
           (baseRevision) =>
-            replaceCharacterTriggersCommand({
-              baseRevision,
-              characterId,
-              triggers: triggersSnapshot,
-            }),
-          () =>
+            replaceCharacterTriggersCommand(
+              {
+                baseRevision,
+                characterId,
+                triggers: triggersSnapshot,
+                optimisticRowEpoch,
+              },
+              undefined,
+              false,
+              true,
+            ),
+          () => {
+            if (hasCharacterRowProjectionEpochChanged(characterId, optimisticRowEpoch)) return
             rollbackScopedScriptDefinitionReplacement(
               {
                 kind: 'characterTriggers',
@@ -879,7 +899,8 @@ export async function applyModule() {
                 characterId,
                 triggers: attemptedTriggers,
               },
-            ),
+            )
+          },
         ),
       )
     }

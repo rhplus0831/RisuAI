@@ -720,6 +720,92 @@ describe('API-backed client bootstrap', () => {
     })
   })
 
+  it('acknowledges contiguous optimistic character definitions without reading the row', async () => {
+    await loadWebInitialDatabase()
+    const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].customscript = [{ id: 'script-newer', out: 'newer' }] as never
+      getDatabase().characters[0].triggerscript = [{ id: 'trigger-newer', comment: 'newer' }] as never
+    })
+    const scriptsEvent = {
+      type: 'scriptDefinitions.replaced',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'char-a',
+    }
+    const triggersEvent = {
+      type: 'triggerDefinitions.replaced',
+      revision: 7,
+      resource: 'characterRow',
+      id: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      triggersEvent,
+      [scriptsEvent, triggersEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterDefinitionMutation',
+            operation: 'scripts',
+            characterId: 'char-a',
+            optimisticRowEpoch,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'characterDefinitionMutation',
+            operation: 'triggers',
+            characterId: 'char-a',
+            optimisticRowEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().characters[0].customscript).toEqual([{ id: 'script-newer', out: 'newer' }])
+    expect(getDatabase().characters[0].triggerscript).toEqual([{ id: 'trigger-newer', comment: 'newer' }])
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('falls back when a character row changes before a definition acknowledgement', async () => {
+    await loadWebInitialDatabase()
+    const optimisticRowEpoch = captureCharacterRowProjectionEpoch('char-a')
+    const authoritativeCharacter = JSON.parse(JSON.stringify(getDatabase().characters[0]))
+    authoritativeCharacter.customscript = [{ id: 'script-authoritative', out: 'server' }]
+    applyCharacterResource({ revision: 6, character: authoritativeCharacter })
+    const event = {
+      type: 'scriptDefinitions.replaced',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterDefinitionMutation',
+            operation: 'scripts',
+            characterId: 'char-a',
+            optimisticRowEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('keeps mismatched module acknowledgements on authoritative reconciliation', async () => {
     await loadWebInitialDatabase()
     const event = {

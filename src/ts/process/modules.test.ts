@@ -37,6 +37,7 @@ const replaceCharacterLorebooksCommand = vi.hoisted(() => vi.fn(async () => ({ s
 const replaceCharacterScriptsCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 2, data: {} })))
 const replaceCharacterTriggersCommand = vi.hoisted(() => vi.fn(async () => ({ status: 'ok', revision: 3, data: {} })))
 const runOptimisticCommandSequence = vi.hoisted(() => vi.fn())
+const characterRowEpochState = vi.hoisted(() => ({ epoch: 0 }))
 const testDatabaseState: { db: Record<string, any> } = {
   db: { modules: [], characters: [] },
 }
@@ -61,6 +62,12 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase,
   setCurrentCharacter: vi.fn(),
   setDatabase: vi.fn(),
+}))
+
+vi.mock('../server/resourceState.svelte', () => ({
+  captureCharacterRowProjectionEpoch: () => characterRowEpochState.epoch,
+  hasCharacterRowProjectionEpochChanged: (_characterId: string, epoch: number) =>
+    characterRowEpochState.epoch !== epoch,
 }))
 
 vi.mock('../globalApi.svelte', () => ({
@@ -251,6 +258,7 @@ function installAttemptAwareRollbackMocks(): void {
 
 describe('module imports', () => {
   beforeEach(() => {
+    characterRowEpochState.epoch = 0
     selectedFileState.file = null
     testDatabaseState.db = { modules: [], characters: [] }
     alertError.mockClear()
@@ -503,23 +511,35 @@ describe('module imports', () => {
       ],
     })
     await factories[1](11)
-    expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith({
-      baseRevision: 11,
-      characterId: 'char-a',
-      scripts: [
-        { comment: 'Existing regex', in: 'old', out: 'old' },
-        { comment: 'Module regex', in: 'in', out: 'out' },
-      ],
-    })
+    expect(replaceCharacterScriptsCommand).toHaveBeenCalledWith(
+      {
+        baseRevision: 11,
+        characterId: 'char-a',
+        scripts: [
+          { comment: 'Existing regex', in: 'old', out: 'old' },
+          { comment: 'Module regex', in: 'in', out: 'out' },
+        ],
+        optimisticRowEpoch: expect.any(Number),
+      },
+      undefined,
+      false,
+      true,
+    )
     await factories[2](12)
-    expect(replaceCharacterTriggersCommand).toHaveBeenCalledWith({
-      baseRevision: 12,
-      characterId: 'char-a',
-      triggers: [
-        { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
-        { comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
-      ],
-    })
+    expect(replaceCharacterTriggersCommand).toHaveBeenCalledWith(
+      {
+        baseRevision: 12,
+        characterId: 'char-a',
+        triggers: [
+          { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
+          { comment: 'Module trigger', type: 'manual', conditions: [], effect: [] },
+        ],
+        optimisticRowEpoch: expect.any(Number),
+      },
+      undefined,
+      false,
+      true,
+    )
     expect(replaceCharacterLorebooksCommand.mock.invocationCallOrder[0]).toBeLessThan(
       replaceCharacterScriptsCommand.mock.invocationCallOrder[0],
     )
@@ -581,6 +601,39 @@ describe('module imports', () => {
     expect(character.triggerscript).toEqual([
       { comment: 'Existing trigger', type: 'manual', conditions: [], effect: [] },
     ])
+  })
+
+  it('does not roll back a rejected definition over a newer authoritative character row', async () => {
+    alertModuleSelect.mockResolvedValue('mod-a')
+    const character = {
+      chaId: 'char-a',
+      customscript: [{ comment: 'Existing regex', in: 'old', out: 'old' }],
+    } as unknown as character
+    testDatabaseState.db.characters = [character]
+    getCurrentCharacter.mockReturnValue(character)
+    getDatabase.mockReturnValue({
+      characters: [character],
+      modules: [
+        {
+          id: 'mod-a',
+          name: 'Module A',
+          description: '',
+          regex: [{ comment: 'Module regex', in: 'in', out: 'out' }],
+        },
+      ],
+    })
+    replaceCharacterScriptsCommand.mockResolvedValueOnce({ status: 'conflict', revision: 2, data: {} })
+
+    await applyModule()
+    const [factories, rollback] = runOptimisticCommandSequence.mock.calls[0] as [
+      Array<(baseRevision: number) => Promise<{ status: string }>>,
+      () => void,
+    ]
+    await factories[0](11)
+    characterRowEpochState.epoch += 1
+    rollback()
+
+    expect(rollbackScopedScriptDefinitionReplacement).not.toHaveBeenCalled()
   })
 
   it('failure rollback preserves sibling characters and unrelated module/global state', async () => {

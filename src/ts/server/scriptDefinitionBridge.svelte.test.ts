@@ -9,8 +9,14 @@ const recorded = vi.hoisted(() => ({
     rollback?: () => void
     keepalive?: boolean
   }>,
+  characterDefinitionCalls: [] as Array<{
+    kind: 'scripts' | 'triggers'
+    optimisticRowEpoch: unknown
+    acknowledgeOptimistic: unknown
+  }>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const characterRowProjectionState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('../stores.svelte', async () => {
   const { writable } = await import('svelte/store')
@@ -22,14 +28,26 @@ vi.mock('../stores.svelte', async () => {
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
-  replaceCharacterScriptsCommand: async (args: Record<string, unknown>) => ({
-    kind: 'replaceCharacterScripts',
-    ...args,
-  }),
-  replaceCharacterTriggersCommand: async (args: Record<string, unknown>) => ({
-    kind: 'replaceCharacterTriggers',
-    ...args,
-  }),
+  replaceCharacterScriptsCommand: async (
+    args: Record<string, unknown>,
+    _signal: unknown,
+    _keepalive: unknown,
+    acknowledgeOptimistic: unknown,
+  ) => {
+    const { optimisticRowEpoch, ...built } = args
+    recorded.characterDefinitionCalls.push({ kind: 'scripts', optimisticRowEpoch, acknowledgeOptimistic })
+    return { kind: 'replaceCharacterScripts', ...built }
+  },
+  replaceCharacterTriggersCommand: async (
+    args: Record<string, unknown>,
+    _signal: unknown,
+    _keepalive: unknown,
+    acknowledgeOptimistic: unknown,
+  ) => {
+    const { optimisticRowEpoch, ...built } = args
+    recorded.characterDefinitionCalls.push({ kind: 'triggers', optimisticRowEpoch, acknowledgeOptimistic })
+    return { kind: 'replaceCharacterTriggers', ...built }
+  },
   replaceModuleScriptsCommand: async (args: Record<string, unknown>) => ({
     kind: 'replaceModuleScripts',
     ...args,
@@ -59,6 +77,16 @@ vi.mock('./resourceWriteGuard.svelte', () => ({
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
 }))
+
+vi.mock('./resourceState.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('./resourceState.svelte')>()
+  return {
+    ...actual,
+    captureCharacterRowProjectionEpoch: () => characterRowProjectionState.epoch,
+    hasCharacterRowProjectionEpochChanged: (_characterId: string, epoch: number) =>
+      characterRowProjectionState.epoch !== epoch,
+  }
+})
 
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
@@ -357,7 +385,9 @@ describe('Phase 2 script definition dirty projection merge', () => {
 beforeEach(() => {
   vi.useFakeTimers()
   resourceGuardState.epoch = 0
+  characterRowProjectionState.epoch = 0
   recorded.commands.length = 0
+  recorded.characterDefinitionCalls.length = 0
 })
 
 afterEach(() => {
@@ -540,6 +570,18 @@ describe('character script definition draft bridge', () => {
         baseRevision: 1,
         characterId: 'char-1',
         triggers: [trigger('trigger-1', 'draft trigger')],
+      },
+    ])
+    expect(recorded.characterDefinitionCalls).toEqual([
+      {
+        kind: 'scripts',
+        optimisticRowEpoch: expect.any(Number),
+        acknowledgeOptimistic: true,
+      },
+      {
+        kind: 'triggers',
+        optimisticRowEpoch: expect.any(Number),
+        acknowledgeOptimistic: true,
       },
     ])
 
@@ -764,6 +806,61 @@ describe('character script definition draft bridge', () => {
         triggers: [trigger('trigger-1', 'queued trigger')],
       },
     ])
+  })
+
+  it('does not roll back a failed definition over an authoritative character row', async () => {
+    setupScriptDefinitions()
+    const previous = {
+      kind: 'characterScripts' as const,
+      characterId: 'char-1',
+      scripts: [script('script-1', 'initial')],
+    }
+    getDatabase().characters[0].customscript = [script('script-1', 'attempted')]
+    dispatchReplaceCharacterScripts('char-1', getDatabase().characters[0].customscript, previous, DELAY)
+
+    characterRowProjectionState.epoch += 1
+    getDatabase().characters[0].customscript = [script('script-1', 'authoritative')]
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    recorded.commands[0].rollback?.()
+
+    expect(getDatabase().characters[0].customscript).toEqual([script('script-1', 'authoritative')])
+  })
+
+  it('starts a new coalesced rollback baseline after an authoritative row epoch', async () => {
+    setupScriptDefinitions()
+    getDatabase().characters[0].customscript = [script('script-1', 'first attempt')]
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      getDatabase().characters[0].customscript,
+      {
+        kind: 'characterScripts',
+        characterId: 'char-1',
+        scripts: [script('script-1', 'initial')],
+      },
+      DELAY,
+    )
+
+    characterRowProjectionState.epoch += 1
+    getDatabase().characters[0].customscript = [script('script-1', 'authoritative')]
+    const authoritativeBaseline = [script('script-1', 'authoritative')]
+    getDatabase().characters[0].customscript = [script('script-1', 'second attempt')]
+    dispatchReplaceCharacterScripts(
+      'char-1',
+      getDatabase().characters[0].customscript,
+      {
+        kind: 'characterScripts',
+        characterId: 'char-1',
+        scripts: authoritativeBaseline,
+      },
+      DELAY,
+    )
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+    recorded.commands[0].rollback?.()
+
+    expect(getDatabase().characters[0].customscript).toEqual(authoritativeBaseline)
   })
 })
 

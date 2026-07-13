@@ -131,6 +131,7 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
+  type ServerCommandLocalEffect,
   updatePromptItemCommand,
 } from './commands'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './staleStateGuards'
@@ -3952,6 +3953,78 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/modules/mod-a/triggers',
         method: 'PUT',
         body: { baseRevision: 4, triggers: [trigger] },
+      },
+    ])
+  })
+
+  it('emits opt-in character definition effects only for canonical matching commands', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let revision = 20
+    const commandFetch = makeCommandFetch((url) => {
+      const scripts = url.endsWith('/scripts')
+      revision += 1
+      return {
+        revision,
+        event: {
+          type: scripts ? 'scriptDefinitions.replaced' : 'triggerDefinitions.replaced',
+          revision,
+          resource: 'characterRow',
+          id: 'char-a',
+        },
+        characterId: 'char-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await replaceCharacterScriptsCommand(
+      {
+        baseRevision: 1,
+        characterId: 'char-a',
+        scripts: [{ id: 'script-a' }],
+        optimisticRowEpoch: 4,
+      },
+      undefined,
+      false,
+      true,
+    )
+    await replaceCharacterTriggersCommand(
+      {
+        baseRevision: 2,
+        characterId: 'char-a',
+        triggers: [{ id: 'trigger-a' }],
+        optimisticRowEpoch: 4,
+      },
+      undefined,
+      false,
+      true,
+    )
+    await replaceCharacterScriptsCommand(
+      {
+        baseRevision: 3,
+        characterId: 'char-a',
+        scripts: [{ id: 'duplicate' }, { id: 'duplicate' }],
+        optimisticRowEpoch: 4,
+      },
+      undefined,
+      false,
+      true,
+    )
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'characterDefinitionMutation',
+        operation: 'scripts',
+        characterId: 'char-a',
+        optimisticRowEpoch: 4,
+      },
+      {
+        kind: 'characterDefinitionMutation',
+        operation: 'triggers',
+        characterId: 'char-a',
+        optimisticRowEpoch: 4,
       },
     ])
   })
