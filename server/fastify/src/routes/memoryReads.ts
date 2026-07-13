@@ -162,7 +162,7 @@ export function registerMemoryReadRoutes(app: FastifyInstance, db: DatabaseSync,
         })
         if (prefersMinimalResponse(req.headers.prefer)) {
           reply.header('preference-applied', PREFER_RETURN_MINIMAL)
-          return { summaryId: summary.id }
+          return { summaryId: req.params.summaryId }
         }
         return { summary }
       } catch (error) {
