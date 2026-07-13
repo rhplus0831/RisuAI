@@ -343,7 +343,17 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     plan.settingsGroups.clear()
   }
   const addSettingsGroup = (group: SettingsGroup): void => {
-    if (!plan.settings) plan.settingsGroups.add(group)
+    if (plan.settings) return
+    if (group === 'providers') {
+      // The writable provider group is a superset of the read-only model
+      // profile slice. One provider read therefore satisfies both
+      // invalidations, regardless of which event reached the plan first.
+      plan.settingsGroups.delete('models')
+      plan.settingsGroups.add(group)
+      return
+    }
+    if (group === 'models' && plan.settingsGroups.has('providers')) return
+    plan.settingsGroups.add(group)
   }
   const addLegacyPresetId = (presetId: string | undefined): void => {
     if (nonEmptyString(presetId)) plan.legacyPresetIds.add(presetId)

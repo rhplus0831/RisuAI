@@ -1236,6 +1236,63 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
+  it.each([
+    {
+      label: 'provider event first',
+      events: [
+        { type: 'settings.updated', revision: 2, resource: 'settings', id: 'providers' },
+        { type: 'modelProfile.updated', revision: 3, resource: 'modelProfile', id: 'profile-a' },
+      ],
+    },
+    {
+      label: 'model event first',
+      events: [
+        { type: 'modelProfile.updated', revision: 2, resource: 'modelProfile', id: 'profile-a' },
+        { type: 'settings.updated', revision: 3, resource: 'settings', id: 'providers' },
+      ],
+    },
+  ] satisfies Array<{ label: string; events: CommandEvent[] }>)(
+    'lets the provider superset dominate an overlapping models read: $label',
+    async ({ events }) => {
+      seedResources(1)
+      api.settingsGroup.mockImplementation(async (group: string) => ({
+        status: 'ok',
+        revision: 3,
+        group,
+        settings:
+          group === 'providers'
+            ? {
+                openAIKey: 'provider-key',
+                modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
+                modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+                modelRuntimeDefaults: { maxContext: 8_192 },
+              }
+            : {
+                modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
+                modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+                modelRuntimeDefaults: { maxContext: 8_192 },
+              },
+      }))
+
+      await expect(
+        refreshInvalidatedServerResources(events, {
+          appliedRevision: 1,
+          hooks,
+        }),
+      ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+      expect(api.settingsGroup).toHaveBeenCalledOnce()
+      expect(api.settingsGroup).toHaveBeenCalledWith('providers', undefined)
+      expect(api.settings).not.toHaveBeenCalled()
+      expect(getResourceDatabase()).toMatchObject({
+        openAIKey: 'provider-key',
+        modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+        modelRuntimeDefaults: { maxContext: 8_192 },
+      })
+    },
+  )
+
   it('does not treat a newer models slice as proof that unrelated provider settings are current', async () => {
     seedResources(1)
     applySettingsGroupResource(
