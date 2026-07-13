@@ -2670,6 +2670,69 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
+  it('applies strict prompt settings with sparse normalized acknowledgements', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      outputImageModal: false,
+      fallbackModels: {},
+      fallbackWhenBlankResponse: false,
+      doNotChangeFallbackModels: false,
+    })
+    const requestedFallbackModels = {
+      model: ['fallback-main', '', 7],
+      memory: ['fallback-memory'],
+    }
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/prompt',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          outputImageModal: true,
+          fallbackModels: requestedFallbackModels,
+          fallbackWhenBlankResponse: true,
+        },
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'settings.updated',
+        revision: 2,
+        resource: 'settings',
+        id: 'prompt',
+      },
+      acknowledgedKeys: ['outputImageModal', 'fallbackModels', 'fallbackWhenBlankResponse'],
+      settings: {
+        fallbackModels: {
+          model: ['fallback-main'],
+          memory: ['fallback-memory'],
+          emotion: [],
+          translate: [],
+          otherAx: [],
+          scriptMain: [],
+          scriptAux: [],
+        },
+      },
+    })
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database).toMatchObject({
+      outputImageModal: true,
+      fallbackModels: res.json().settings.fallbackModels,
+      fallbackWhenBlankResponse: true,
+      doNotChangeFallbackModels: false,
+    })
+  })
+
   it('rejects unknown setting keys without bumping revision', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {
@@ -2728,7 +2791,7 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
   })
 
-  it('rejects unsupported settings groups', async () => {
+  it('rejects collection fields through the strict prompt settings group', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
 
     const res = await harness.app.inject({
@@ -2739,7 +2802,21 @@ describe('Phase 9-2a scalar settings groups', () => {
     })
 
     expect(res.statusCode).toBe(400)
-    expect(res.json().error).toBe('Unsupported settings group: prompt')
+    expect(res.json().error).toBe('Unsupported prompt setting: promptTemplate')
+  })
+
+  it('rejects unsupported settings groups', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/prompt-template',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, patch: { mainPrompt: 'MAIN' } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Unsupported settings group: prompt-template')
   })
 })
 

@@ -42,8 +42,14 @@
   import ModelRoleList from './Model/ModelRoleList.svelte'
   import ModelSettingsShell from './Model/ModelSettingsShell.svelte'
   import { onDestroy, onMount, untrack } from 'svelte'
+  import { PROMPT_SETTINGS_KEYS } from 'src/ts/promptSettings'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+  import {
+    captureSettingsGroupProjectionEpoch,
+    hasSettingsGroupProjectionEpochChanged,
+    markSettingsGroupAcknowledgementTainted,
+  } from 'src/ts/server/resourceState.svelte'
   import {
     canUseServerCommands,
     enablePromptItemsCommand,
@@ -100,31 +106,10 @@
     patch: {} as SettingsPatch,
     previous: {} as SettingsPatch,
     attempted: {} as SettingsPatch,
+    projectionEpoch: null as number | null,
     timer: null as ReturnType<typeof setTimeout> | null,
   }
-  const PROMPT_SETTINGS_COMMAND_KEYS = new Set<string>([
-    'mainPrompt',
-    'jailbreak',
-    'globalNote',
-    'formatingOrder',
-    'promptPreprocess',
-    'presetRegex',
-    'promptSettings',
-    'jsonSchemaEnabled',
-    'jsonSchema',
-    'strictJsonSchema',
-    'extractJson',
-    'customPromptTemplateToggle',
-    'templateDefaultVariables',
-    'OAIPrediction',
-    'autoSuggestPrompt',
-    'systemContentReplacement',
-    'systemRoleReplacement',
-    'outputImageModal',
-    'fallbackModels',
-    'fallbackWhenBlankResponse',
-    'doNotChangeFallbackModels',
-  ])
+  const PROMPT_SETTINGS_COMMAND_KEYS = new Set<string>(PROMPT_SETTINGS_KEYS)
   const oobaDraft = createServerBackedSettingDraft<Record<string, any>>('ooba', { formating: {} })
   const promptOobaDraft = createPromptPresetModelOverrideDraft<Record<string, any>>('ooba', { formating: {} })
   const localStopStringsDraft = createServerBackedSettingDraft<string[] | null>('localStopStrings', null)
@@ -547,9 +532,11 @@
 
     if (pendingPromptFieldPatch.timer) clearTimeout(pendingPromptFieldPatch.timer)
     if (Object.keys(pendingPromptFieldPatch.patch).length === 0) {
+      pendingPromptFieldPatch.projectionEpoch = null
       pendingPromptFieldPatch.timer = null
       return
     }
+    pendingPromptFieldPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
     pendingPromptFieldPatch.timer = setTimeout(() => {
       dispatchPendingPromptFieldPatch()
     }, 250)
@@ -568,9 +555,11 @@
     const commandPatch = pendingPromptFieldPatch.patch
     const commandPrevious = pendingPromptFieldPatch.previous
     const commandAttempted = pendingPromptFieldPatch.attempted
+    const commandProjectionEpoch = pendingPromptFieldPatch.projectionEpoch
     pendingPromptFieldPatch.patch = {}
     pendingPromptFieldPatch.previous = {}
     pendingPromptFieldPatch.attempted = {}
+    pendingPromptFieldPatch.projectionEpoch = null
 
     if (Object.keys(commandPatch).length === 0) return
 
@@ -579,12 +568,20 @@
         patchPromptSettingsCommand({
           baseRevision,
           patch: commandPatch,
+          acknowledgeOptimistic: commandProjectionEpoch !== null,
+          optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
         }),
-      rollback: () => rollbackPromptFields(commandPrevious, commandAttempted),
+      rollback: () => rollbackPromptFields(commandPrevious, commandAttempted, commandProjectionEpoch),
     })
   }
 
-  function rollbackPromptFields(previous: SettingsPatch, attempted: SettingsPatch): void {
+  function rollbackPromptFields(
+    previous: SettingsPatch,
+    attempted: SettingsPatch,
+    projectionEpoch: number | null,
+  ): void {
+    markSettingsGroupAcknowledgementTainted('prompt')
+    if (projectionEpoch === null || hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)) return
     withTrustedResourceWrite(() => {
       const target = getDatabase() as unknown as Record<string, unknown>
       for (const [key, previousValue] of Object.entries(previous)) {

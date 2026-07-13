@@ -292,6 +292,23 @@ describe('Phase 2 settings-scalar mutation range', () => {
     expect(readSettings().mainPrompt).toBe('Prompt main')
   })
 
+  it('settings/:group prompt writes only the settings row', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const before = rowidSnapshot()
+
+    const { metric } = await runCommand({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/prompt',
+      payload: { baseRevision: revision, patch: { mainPrompt: 'Grouped prompt main' } },
+    })
+
+    expect(metric.mutationPath).toBe('targeted-settings')
+    expect(metric.writtenTables).toEqual(['settings'])
+    assertCommandMetricGate(metric)
+    expectNoCharacterOrChatChurn(before)
+    expect(readSettings().mainPrompt).toBe('Grouped prompt main')
+  })
+
   it('characters/reorder writes only the settings row (characterOrder)', async () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()

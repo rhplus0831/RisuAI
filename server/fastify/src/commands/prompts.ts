@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
+
+export { PROMPT_SETTINGS_KEYS } from '../../../../src/ts/promptSettings.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -12,30 +15,6 @@ export interface PromptItemPatch {
   patch: JsonRecord
   deleteKeys: string[]
 }
-
-export const PROMPT_SETTINGS_KEYS = [
-  'mainPrompt',
-  'jailbreak',
-  'globalNote',
-  'formatingOrder',
-  'promptPreprocess',
-  'presetRegex',
-  'promptSettings',
-  'jsonSchemaEnabled',
-  'jsonSchema',
-  'strictJsonSchema',
-  'extractJson',
-  'customPromptTemplateToggle',
-  'templateDefaultVariables',
-  'OAIPrediction',
-  'autoSuggestPrompt',
-  'systemContentReplacement',
-  'systemRoleReplacement',
-  'outputImageModal',
-  'fallbackModels',
-  'fallbackWhenBlankResponse',
-  'doNotChangeFallbackModels',
-] as const
 
 const PROMPT_SETTINGS_KEY_SET = new Set<string>(PROMPT_SETTINGS_KEYS)
 

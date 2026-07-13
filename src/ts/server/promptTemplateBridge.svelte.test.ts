@@ -19,10 +19,12 @@ const resourceGuardState = vi.hoisted(() => ({
 
 const commandMocks = vi.hoisted(() => ({
   canUseServerCommands: () => true,
-  patchPromptSettingsCommand: vi.fn(async (args: Record<string, unknown>) => ({
-    kind: 'patchPromptSettings',
-    ...args,
-  })),
+  patchPromptSettingsCommand: vi.fn(
+    async (args: Record<string, unknown>): Promise<Record<string, unknown>> => ({
+      kind: 'patchPromptSettings',
+      ...args,
+    }),
+  ),
   peekCachedServerCommandRevision: () => commandState.revision,
   runServerCommand: vi.fn(
     async (args: {
@@ -170,7 +172,13 @@ vi.mock('src/ts/server/promptTemplateHydration', () => ({
 import type { PromptItem, PromptSettings as PromptSettingsFixture } from '../process/prompt'
 import type { Database } from '../storage/database.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
-import { applyCollectionsResource, getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import {
+  applyCollectionsResource,
+  captureSettingsGroupProjectionEpoch,
+  getResourceDatabase,
+  isSettingsGroupAcknowledgementTainted,
+  replaceResourceDatabase,
+} from './resourceState.svelte'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
 import {
   createPromptItemCommand,
@@ -1557,6 +1565,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
   it('PromptSettings keeps a dirty prompt setting through a stale projection before debounce flush', async () => {
     seedPromptSettings({ customPromptTemplateToggle: 'server old' })
+    const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 
     const target = document.createElement('div')
     document.body.appendChild(target)
@@ -1582,6 +1591,8 @@ describe('flushPendingPromptTemplatePatches', () => {
         kind: 'patchPromptSettings',
         baseRevision: 1,
         patch: { customPromptTemplateToggle: 'local dirty' },
+        acknowledgeOptimistic: true,
+        optimisticProjectionEpoch: projectionEpoch,
       })
     } finally {
       if (component) await unmount(component)
@@ -1626,6 +1637,8 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(commandState.commands[0].built).toMatchObject({
         kind: 'patchPromptSettings',
         baseRevision: 1,
+        acknowledgeOptimistic: true,
+        optimisticProjectionEpoch: expect.any(Number),
         patch: {
           promptSettings: {
             postEndInnerFormat: 'local format',
@@ -1715,6 +1728,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
   it('M8: flushes pending prompt settings patches with keepalive and clears debounce', async () => {
     resourceDatabase.current = { jsonSchemaEnabled: true }
+    const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 
     queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
     flushPendingPromptTemplatePatches({ keepalive: true })
@@ -1726,6 +1740,8 @@ describe('flushPendingPromptTemplatePatches', () => {
       kind: 'patchPromptSettings',
       baseRevision: 1,
       patch: { jsonSchemaEnabled: false },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpoch: projectionEpoch,
     })
 
     await vi.advanceTimersByTimeAsync(500)
@@ -1740,6 +1756,52 @@ describe('flushPendingPromptTemplatePatches', () => {
     await vi.advanceTimersByTimeAsync(500)
 
     expect(commandState.commands).toHaveLength(0)
+  })
+
+  it('captures a fresh prompt settings epoch after a pending batch fully reverts', async () => {
+    resourceDatabase.current = { jsonSchemaEnabled: true }
+
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: true }, { jsonSchemaEnabled: false }, 500)
+    const abandonedEpoch = captureSettingsGroupProjectionEpoch('prompt')
+
+    resourceDatabase.current = { jsonSchemaEnabled: true }
+    const nextEpoch = captureSettingsGroupProjectionEpoch('prompt')
+    expect(nextEpoch).not.toBe(abandonedEpoch)
+
+    getResourceDatabase().jsonSchemaEnabled = false
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(commandState.commands[0].built).toMatchObject({
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpoch: nextEpoch,
+    })
+  })
+
+  it('taints acknowledgement and preserves a newer settings projection on command failure', async () => {
+    resourceDatabase.current = { jsonSchemaEnabled: true }
+    const attemptedEpoch = captureSettingsGroupProjectionEpoch('prompt')
+    getResourceDatabase().jsonSchemaEnabled = false
+    queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 0)
+    commandMocks.patchPromptSettingsCommand.mockResolvedValueOnce({ status: 'network-error' })
+    commandState.beforeBuild = () => {
+      resourceDatabase.current = { jsonSchemaEnabled: 'newer server value' }
+    }
+
+    await vi.advanceTimersByTimeAsync(0)
+    await flushMicrotasks()
+
+    expect(commandMocks.patchPromptSettingsCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        acknowledgeOptimistic: true,
+        optimisticProjectionEpoch: attemptedEpoch,
+      }),
+      undefined,
+      undefined,
+    )
+    expect(getResourceDatabase().jsonSchemaEnabled).toBe('newer server value')
+    expect(isSettingsGroupAcknowledgementTainted('prompt')).toBe(true)
   })
 })
 
@@ -1932,6 +1994,7 @@ describe('reconcilePromptTemplateDraft', () => {
 
   it('selection reset preserves pending prompt settings patches', async () => {
     resourceDatabase.current = { jsonSchemaEnabled: true }
+    const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
 
     queuePromptSettingsProjectionPatch({ jsonSchemaEnabled: false }, { jsonSchemaEnabled: true }, 500)
     resetPromptTemplateSelectionDirtyState()
@@ -1942,6 +2005,8 @@ describe('reconcilePromptTemplateDraft', () => {
       kind: 'patchPromptSettings',
       baseRevision: 1,
       patch: { jsonSchemaEnabled: false },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpoch: projectionEpoch,
     })
   })
 

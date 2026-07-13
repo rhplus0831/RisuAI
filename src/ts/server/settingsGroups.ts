@@ -1,3 +1,5 @@
+import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
+
 export const SETTINGS_GROUPS = [
   'providers',
   'runtime',
@@ -9,6 +11,7 @@ export const SETTINGS_GROUPS = [
   'advanced',
   'sidebar',
   'account',
+  'prompt',
 ] as const
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
@@ -83,7 +86,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   didFirstSetup: 'account',
   disableAutoPopupMessageEditor: 'sidebar',
   disableSeperateParameterChangeOnPresetChange: 'runtime',
-  doNotChangeFallbackModels: 'runtime',
   doNotChangeSeperateModels: 'runtime',
   doNotWarnExternalServers: 'advanced',
   dynamicAssets: 'media',
@@ -110,8 +112,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   falLoraScale: 'media',
   falModel: 'media',
   falToken: 'media',
-  fallbackModels: 'runtime',
-  fallbackWhenBlankResponse: 'runtime',
   fishSpeechKey: 'media',
   fixedChatTextarea: 'sidebar',
   font: 'display',
@@ -227,7 +227,6 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   openrouterProvider: 'providers',
   openrouterRequestModel: 'providers',
   useInstructPrompt: 'providers',
-  outputImageModal: 'media',
   personaNote: 'advanced',
   playMessage: 'display',
   playMessageOnTranslateEnd: 'display',
@@ -342,6 +341,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   wavespeedImage: 'media',
   webUiUrl: 'media',
   zoomsize: 'display',
+  ...Object.fromEntries(PROMPT_SETTINGS_KEYS.map((key) => [key, 'prompt'])),
 }
 
 export const SERVER_SETTINGS_KEYS_BY_GROUP = Object.fromEntries(

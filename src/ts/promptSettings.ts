@@ -1,0 +1,25 @@
+export const PROMPT_SETTINGS_KEYS = [
+  'mainPrompt',
+  'jailbreak',
+  'globalNote',
+  'formatingOrder',
+  'promptPreprocess',
+  'presetRegex',
+  'promptSettings',
+  'jsonSchemaEnabled',
+  'jsonSchema',
+  'strictJsonSchema',
+  'extractJson',
+  'customPromptTemplateToggle',
+  'templateDefaultVariables',
+  'OAIPrediction',
+  'autoSuggestPrompt',
+  'systemContentReplacement',
+  'systemRoleReplacement',
+  'outputImageModal',
+  'fallbackModels',
+  'fallbackWhenBlankResponse',
+  'doNotChangeFallbackModels',
+] as const
+
+export type PromptSettingKey = (typeof PROMPT_SETTINGS_KEYS)[number]

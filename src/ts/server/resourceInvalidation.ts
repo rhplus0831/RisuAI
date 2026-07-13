@@ -379,8 +379,10 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addSettingsGroup('providers')
       return
     case 'agentPreset':
-    case 'prompt':
       addFullSettings()
+      return
+    case 'prompt':
+      addSettingsGroup('prompt')
       return
     case 'moduleEnabled':
       addSettingsGroup('modules')

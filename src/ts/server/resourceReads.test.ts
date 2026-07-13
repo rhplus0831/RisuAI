@@ -123,6 +123,48 @@ describe('server resource read clients', () => {
     ])
   })
 
+  it('accepts all moved prompt fields only from the prompt settings group', async () => {
+    const promptSettings = {
+      mainPrompt: 'MAIN',
+      outputImageModal: true,
+      fallbackModels: ['model-a'],
+      fallbackWhenBlankResponse: true,
+      doNotChangeFallbackModels: false,
+    }
+    const responses = [
+      { revision: 11, group: 'prompt', settings: promptSettings },
+      { revision: 12, group: 'media', settings: { outputImageModal: true } },
+      { revision: 13, group: 'runtime', settings: { fallbackModels: ['model-a'] } },
+      { revision: 14, group: 'prompt', settings: { theme: 'smuggled' } },
+    ]
+    const calls = stubResourceFetch(() => responses.shift())
+
+    await expect(fetchServerSettingsGroup('prompt')).resolves.toEqual({
+      status: 'ok',
+      revision: 11,
+      group: 'prompt',
+      settings: promptSettings,
+    })
+    await expect(fetchServerSettingsGroup('media')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid media settings response',
+    })
+    await expect(fetchServerSettingsGroup('runtime')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid runtime settings response',
+    })
+    await expect(fetchServerSettingsGroup('prompt')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid prompt settings response',
+    })
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/settings/prompt',
+      '/api/v1/settings/media',
+      '/api/v1/settings/runtime',
+      '/api/v1/settings/prompt',
+    ])
+  })
+
   it('reads the complete and targeted collection envelopes', async () => {
     const calls = stubResourceFetch((url) =>
       url.endsWith('/modules')

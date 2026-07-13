@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
@@ -136,6 +137,7 @@ import {
   updatePromptItemCommand,
 } from './commands'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './staleStateGuards'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 
 interface CapturedFetch {
   url: string
@@ -727,6 +729,18 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('enableCustomFlags')).toBe('advanced')
     expect(settingsGroupForKey('customFlags')).toBe('advanced')
     expect(settingsGroupForKey('enabledModules')).toBe('modules')
+  })
+
+  it('owns the exact prompt settings projection, including the four moved fields', () => {
+    expect(PROMPT_SETTINGS_KEYS).toHaveLength(21)
+    expect(new Set(PROMPT_SETTINGS_KEYS)).toHaveProperty('size', 21)
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.prompt).toEqual([...PROMPT_SETTINGS_KEYS])
+    expect(PROMPT_SETTINGS_KEYS.every((key) => settingsGroupForKey(key) === 'prompt')).toBe(true)
+
+    expect(SERVER_SETTINGS_KEYS_BY_GROUP.media).not.toContain('outputImageModal')
+    for (const key of ['fallbackModels', 'fallbackWhenBlankResponse', 'doNotChangeFallbackModels']) {
+      expect(SERVER_SETTINGS_KEYS_BY_GROUP.runtime).not.toContain(key)
+    }
   })
 
   it('does not map retired Context Agent settings to command groups', () => {
@@ -1486,10 +1500,20 @@ describe('server command API adapter', () => {
 
   it('dispatches prompt settings and prompt item commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
-      if (url.endsWith('/prompt-settings')) {
+      if (url.endsWith('/settings/prompt')) {
         return {
           revision: 2,
-          event: { type: 'prompt.settings.updated', revision: 2, resource: 'prompt' },
+          event: { type: 'settings.updated', revision: 2, resource: 'settings', id: 'prompt' },
+          acknowledgedKeys: [
+            'mainPrompt',
+            'jailbreak',
+            'globalNote',
+            'formatingOrder',
+            'promptPreprocess',
+            'presetRegex',
+            'promptSettings',
+          ],
+          settings: {},
         }
       }
       if (url.endsWith('/prompt-items/reorder')) {
@@ -1586,7 +1610,7 @@ describe('server command API adapter', () => {
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
-        url: '/api/v1/commands/prompt-settings',
+        url: '/api/v1/commands/settings/prompt',
         method: 'PATCH',
         body: {
           baseRevision: 1,
@@ -1632,6 +1656,192 @@ describe('server command API adapter', () => {
         body: { baseRevision: 6, promptPresetId: 'prompt-preset-a', enabled: true },
       },
     ])
+  })
+
+  it('emits an exact prompt-settings acknowledgement without serializing client projection metadata', async () => {
+    const event = {
+      type: 'settings.updated',
+      revision: 2,
+      resource: 'settings',
+      id: 'prompt',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event,
+      acknowledgedKeys: ['mainPrompt', 'fallbackModels'],
+      settings: { mainPrompt: 'canonical' },
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await patchPromptSettingsCommand({
+      baseRevision: 1,
+      patch: { mainPrompt: 'optimistic', fallbackModels: ['model-a'] },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpoch: 17,
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'prompt',
+        attemptedPatch: { mainPrompt: 'optimistic', fallbackModels: ['model-a'] },
+        settings: { mainPrompt: 'canonical', fallbackModels: ['model-a'] },
+        settingsProjectionEpoch: 17,
+      },
+    ])
+    expect(commandFetch.calls).toEqual([
+      expect.objectContaining({
+        url: '/api/v1/commands/settings/prompt',
+        method: 'PATCH',
+        body: {
+          baseRevision: 1,
+          patch: { mainPrompt: 'optimistic', fallbackModels: ['model-a'] },
+        },
+      }),
+    ])
+    expect(commandFetch.calls[0]?.body).not.toHaveProperty('acknowledgeOptimistic')
+    expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticProjectionEpoch')
+  })
+
+  it('keeps untrusted prompt-settings acknowledgements on authoritative reconciliation', async () => {
+    const exactEvent = {
+      type: 'settings.updated',
+      revision: 2,
+      resource: 'settings',
+      id: 'prompt',
+    }
+    const cases: Array<{
+      label: string
+      body: Record<string, unknown>
+      epoch?: number
+    }> = [
+      {
+        label: 'missing projection epoch',
+        body: { revision: 2, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
+      },
+      {
+        label: 'negative projection epoch',
+        epoch: -1,
+        body: { revision: 2, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
+      },
+      {
+        label: 'fractional projection epoch',
+        epoch: 1.5,
+        body: { revision: 2, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
+      },
+      {
+        label: 'non-finite projection epoch',
+        epoch: Number.NaN,
+        body: { revision: 2, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
+      },
+      {
+        label: 'response/event revision mismatch',
+        epoch: 4,
+        body: { revision: 3, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
+      },
+      {
+        label: 'wrong event type',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: { ...exactEvent, type: 'prompt.settings.updated' },
+          acknowledgedKeys: ['mainPrompt'],
+          settings: {},
+        },
+      },
+      {
+        label: 'wrong event resource',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: { ...exactEvent, resource: 'prompt' },
+          acknowledgedKeys: ['mainPrompt'],
+          settings: {},
+        },
+      },
+      {
+        label: 'wrong event group',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: { ...exactEvent, id: 'runtime' },
+          acknowledgedKeys: ['mainPrompt'],
+          settings: {},
+        },
+      },
+      {
+        label: 'parent-scoped event',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: { ...exactEvent, parentId: 'unexpected' },
+          acknowledgedKeys: ['mainPrompt'],
+          settings: {},
+        },
+      },
+      {
+        label: 'inexact acknowledgement keys',
+        epoch: 4,
+        body: { revision: 2, event: exactEvent, acknowledgedKeys: ['mainPrompt', 'jailbreak'], settings: {} },
+      },
+      {
+        label: 'duplicate acknowledgement keys',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: exactEvent,
+          acknowledgedKeys: ['mainPrompt', 'mainPrompt'],
+          settings: {},
+        },
+      },
+      {
+        label: 'foreign canonical override',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: exactEvent,
+          acknowledgedKeys: ['mainPrompt'],
+          settings: { jailbreak: 'foreign' },
+        },
+      },
+      {
+        label: 'non-JSON canonical override',
+        epoch: 4,
+        body: {
+          revision: 2,
+          event: exactEvent,
+          acknowledgedKeys: ['mainPrompt'],
+          settings: { mainPrompt: Number.NaN },
+        },
+      },
+    ]
+    let responseIndex = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        const body = cases[responseIndex++].body
+        return { status: 200, ok: true, json: async () => body } as Response
+      }) as unknown as typeof fetch,
+    )
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    for (const testCase of cases) {
+      await patchPromptSettingsCommand({
+        baseRevision: 1,
+        patch: { mainPrompt: 'optimistic' },
+        acknowledgeOptimistic: true,
+        optimisticProjectionEpoch: testCase.epoch as number,
+      })
+    }
+
+    expect(observedEffectCounts, cases.map(({ label }) => label).join(', ')).toEqual(cases.map(() => 0))
   })
 
   it('emits exact prompt-item optimistic acknowledgements without serializing their snapshots or epochs', async () => {

@@ -187,7 +187,10 @@ import {
   collectionsResourceState,
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
+  isSettingsGroupAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
+  markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
   resetServerResourceState,
 } from './server/resourceState.svelte'
@@ -537,6 +540,128 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().theme).toBe('light')
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
+
+  it('acknowledges an exact prompt settings patch only against its unchanged untainted projection', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().mainPrompt = 'optimistic'
+    })
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
+    const event = {
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'prompt',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'settingsPatch',
+            group: 'prompt',
+            attemptedPatch: { mainPrompt: 'optimistic' },
+            settings: { mainPrompt: 'canonical' },
+            settingsProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().mainPrompt).toBe('canonical')
+    expect(hasSettingsGroupProjectionEpochChanged('prompt', settingsProjectionEpoch)).toBe(false)
+    expect(isSettingsGroupAcknowledgementTainted('prompt')).toBe(false)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it.each([
+    ['wrong event type', { type: 'prompt.settings.updated' }],
+    ['wrong event resource', { resource: 'prompt' }],
+    ['wrong event group', { id: 'runtime' }],
+    ['parent-scoped event', { parentId: 'unexpected' }],
+  ])('falls back when a prompt settings acknowledgement has a %s', async (_label, eventOverride) => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().mainPrompt = 'optimistic'
+    })
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
+    const event = {
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'prompt',
+      ...eventOverride,
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'settingsPatch',
+            group: 'prompt',
+            attemptedPatch: { mainPrompt: 'optimistic' },
+            settings: { mainPrompt: 'canonical' },
+            settingsProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it.each(['missing epoch', 'changed epoch', 'tainted projection'])(
+    '%s forces a prompt settings group fallback',
+    async (failure) => {
+      await loadWebInitialDatabase()
+      const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
+      if (failure === 'changed epoch') {
+        applySettingsGroupResource(
+          {
+            revision: 5,
+            group: 'prompt',
+            settings: { mainPrompt: 'authoritative' },
+          },
+          ['mainPrompt'],
+        )
+      } else if (failure === 'tainted projection') {
+        markSettingsGroupAcknowledgementTainted('prompt')
+      }
+      withTrustedResourceWrite(() => {
+        getDatabase().mainPrompt = 'optimistic'
+      })
+      const event = {
+        type: 'settings.updated',
+        revision: 6,
+        resource: 'settings',
+        id: 'prompt',
+      }
+      const localEffect = {
+        kind: 'settingsPatch',
+        group: 'prompt',
+        attemptedPatch: { mainPrompt: 'optimistic' },
+        settings: { mainPrompt: 'canonical' },
+        ...(failure === 'missing epoch' ? {} : { settingsProjectionEpoch }),
+      }
+
+      await commandApi.reconciler?.(event, [event], new Map([[6, localEffect]]))
+
+      expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+        appliedRevision: 5,
+        hooks: resourceApi.hooks,
+      })
+    },
+  )
 
   it('acknowledges contiguous optimistic plugin storage without fetching the full map', async () => {
     await loadWebInitialDatabase()

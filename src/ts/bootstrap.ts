@@ -75,6 +75,7 @@ import {
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
+  isSettingsGroupAcknowledgementTainted,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
@@ -588,8 +589,26 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return true
       })
     }
-    case 'settingsPatch':
-      if (event.id !== localEffect.group) return false
+    case 'settingsPatch': {
+      const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(localEffect.attemptedPatch, 'hypaV3Presets')
+      if (
+        event.type !== 'settings.updated' ||
+        event.resource !== (writesHypaV3Presets ? 'settingsWithHypaV3Presets' : 'settings') ||
+        event.id !== localEffect.group ||
+        event.parentId !== undefined
+      ) {
+        return false
+      }
+      if (
+        (localEffect.group === 'prompt' && localEffect.settingsProjectionEpoch === undefined) ||
+        (localEffect.settingsProjectionEpoch !== undefined &&
+          (!Number.isInteger(localEffect.settingsProjectionEpoch) ||
+            localEffect.settingsProjectionEpoch < 0 ||
+            hasSettingsGroupProjectionEpochChanged(localEffect.group, localEffect.settingsProjectionEpoch) ||
+            isSettingsGroupAcknowledgementTainted(localEffect.group)))
+      ) {
+        return false
+      }
       return withServerResourceApply(() =>
         applySettingsPatchLocalEffect({
           revision: event.revision,
@@ -598,6 +617,7 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           settings: localEffect.settings,
         }),
       )
+    }
     case 'pluginStorage': {
       const expectedType =
         localEffect.operation === 'put'

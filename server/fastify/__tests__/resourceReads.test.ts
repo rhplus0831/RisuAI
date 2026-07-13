@@ -8,6 +8,7 @@ import { buildApp } from '../src/app.js'
 import { COLLECTION_FIELDS } from '../src/repository.js'
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { setupAuthedClient } from './helpers/auth.js'
+import { PROMPT_SETTINGS_KEYS } from '../../../src/ts/promptSettings.js'
 
 interface Harness {
   app: FastifyInstance
@@ -48,6 +49,27 @@ beforeEach(async () => {
       database: {
         currentChar: 0,
         characterOrder: ['char-a', 'char-b'],
+        mainPrompt: 'Main prompt',
+        jailbreak: 'Jailbreak prompt',
+        globalNote: 'Global note',
+        formatingOrder: ['main', 'jailbreak', 'globalNote'],
+        promptPreprocess: true,
+        presetRegex: [],
+        promptSettings: { sendName: true },
+        jsonSchemaEnabled: true,
+        jsonSchema: '{"type":"object"}',
+        strictJsonSchema: true,
+        extractJson: 'value',
+        customPromptTemplateToggle: 'custom',
+        templateDefaultVariables: 'name=value',
+        OAIPrediction: 'prediction',
+        autoSuggestPrompt: 'suggestion',
+        systemContentReplacement: 'system: {{slot}}',
+        systemRoleReplacement: 'user',
+        outputImageModal: true,
+        fallbackModels: { model: ['fallback-main'] },
+        fallbackWhenBlankResponse: true,
+        doNotChangeFallbackModels: true,
         enableLorebookStubs: true,
         localNetworkMode: true,
         localNetworkTimeoutSec: 45,
@@ -180,6 +202,36 @@ describe('authenticated resource read routes', () => {
     })
     expect(runtime.statusCode).toBe(200)
     expect(runtime.json().settings).toMatchObject({ localNetworkMode: true, localNetworkTimeoutSec: 45 })
+    expect(runtime.json().settings).not.toHaveProperty('fallbackModels')
+    expect(runtime.json().settings).not.toHaveProperty('fallbackWhenBlankResponse')
+    expect(runtime.json().settings).not.toHaveProperty('doNotChangeFallbackModels')
+
+    const prompt = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/prompt',
+      headers: authHeaders(),
+    })
+    expect(prompt.statusCode).toBe(200)
+    expect(prompt.json()).toMatchObject({
+      revision,
+      group: 'prompt',
+      settings: {
+        mainPrompt: 'Main prompt',
+        outputImageModal: true,
+        fallbackModels: { model: ['fallback-main'] },
+        fallbackWhenBlankResponse: true,
+        doNotChangeFallbackModels: true,
+      },
+    })
+    expect(Object.keys(prompt.json().settings).sort()).toEqual([...PROMPT_SETTINGS_KEYS].sort())
+
+    const media = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/media',
+      headers: authHeaders(),
+    })
+    expect(media.statusCode).toBe(200)
+    expect(media.json().settings).not.toHaveProperty('outputImageModal')
 
     const sidebar = await harness.app.inject({
       method: 'GET',

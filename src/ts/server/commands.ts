@@ -91,6 +91,7 @@ export interface SettingsPatchLocalEffect {
   group: SettingsGroup
   attemptedPatch: SettingsPatch
   settings: SettingsPatch
+  settingsProjectionEpoch?: number
 }
 
 export interface PluginStorageLocalEffect {
@@ -256,6 +257,8 @@ export interface PatchSettingsGroupInput {
   group: SettingsGroup
   baseRevision: number
   patch: SettingsPatch
+  acknowledgeOptimistic?: boolean
+  optimisticProjectionEpoch?: number
 }
 
 export interface PatchServerBackedSettingsInput {
@@ -640,6 +643,8 @@ export interface ExtractLegacyBotPresetCommandInput {
 export interface PatchPromptSettingsCommandInput {
   baseRevision: number
   patch: SettingsPatch
+  acknowledgeOptimistic?: boolean
+  optimisticProjectionEpoch?: number
 }
 
 interface PromptItemOptimisticCommandInput {
@@ -1565,7 +1570,11 @@ export async function patchSettingsGroup(
     },
     signal,
     keepalive,
-    readLocalEffect: (body, event) => readSettingsPatchLocalEffect(body, event, input.group, input.patch),
+    readLocalEffect:
+      input.acknowledgeOptimistic === false
+        ? undefined
+        : (body, event) =>
+            readSettingsPatchLocalEffect(body, event, input.group, input.patch, input.optimisticProjectionEpoch),
   })
 }
 
@@ -2200,15 +2209,17 @@ export async function patchPromptSettingsCommand(
   signal?: AbortSignal | null,
   keepalive = false,
 ): Promise<ServerCommandResult> {
-  return requestCommandJson('/prompt-settings', {
-    method: 'PATCH',
-    body: {
+  return patchSettingsGroup(
+    {
+      group: 'prompt',
       baseRevision: input.baseRevision,
       patch: input.patch,
+      acknowledgeOptimistic: input.acknowledgeOptimistic === true,
+      optimisticProjectionEpoch: input.optimisticProjectionEpoch,
     },
     signal,
     keepalive,
-  })
+  )
 }
 
 export async function createPromptItemCommand(
@@ -4249,9 +4260,19 @@ function readSettingsPatchLocalEffect(
   event: CommandEvent,
   group: SettingsGroup,
   attemptedPatch: SettingsPatch,
+  optimisticProjectionEpoch?: unknown,
 ): SettingsPatchLocalEffect | undefined {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
   const record = body as Record<string, unknown>
+  if (record.revision !== event.revision) return undefined
+  if (
+    (group === 'prompt' && !isProjectionEpoch(optimisticProjectionEpoch)) ||
+    (optimisticProjectionEpoch !== undefined && !isProjectionEpoch(optimisticProjectionEpoch))
+  ) {
+    return undefined
+  }
+  const settingsProjectionEpoch =
+    optimisticProjectionEpoch === undefined ? undefined : (optimisticProjectionEpoch as number)
   const acknowledgedKeys = record.acknowledgedKeys
   const overrides = record.settings
   if (!isUniqueStringArray(acknowledgedKeys)) return undefined
@@ -4286,6 +4307,7 @@ function readSettingsPatchLocalEffect(
     group,
     attemptedPatch: cloneJsonValue(attemptedPatch),
     settings: canonicalSettings,
+    ...(settingsProjectionEpoch === undefined ? {} : { settingsProjectionEpoch }),
   }
 }
 

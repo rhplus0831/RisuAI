@@ -402,6 +402,38 @@ describe('API-backed resource invalidation', () => {
     expect(api.characters).not.toHaveBeenCalled()
   })
 
+  it('narrows the legacy prompt-settings event to the prompt settings group', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'prompt',
+      settings: { mainPrompt: 'authoritative', fallbackModels: ['model-a'] },
+    })
+    const legacyEvent: CommandEvent = {
+      type: 'prompt.settings.updated',
+      revision: 2,
+      resource: 'prompt',
+    }
+
+    await expect(
+      refreshInvalidatedServerResources(legacyEvent, {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('prompt', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({
+      mainPrompt: 'authoritative',
+      fallbackModels: ['model-a'],
+    })
+  })
+
   it.each([
     ['group then full', [event(2, 'settings', { id: 'display' }), event(3, 'agentPreset')]],
     ['full then group', [event(2, 'agentPreset'), event(3, 'settings', { id: 'display' })]],

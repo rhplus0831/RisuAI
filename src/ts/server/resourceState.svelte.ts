@@ -18,6 +18,7 @@ let lorebookPageProjectionEpoch = 0
 let nextSettingsProjectionEpoch = 0
 let settingsProjectionBaseline = 0
 const settingsGroupProjectionEpochs = new Map<SettingsGroup, number>()
+const settingsGroupAcknowledgementTaints = new Set<SettingsGroup>()
 
 function advanceCharacterRowProjectionEpoch(characterId: string): void {
   characterRowProjectionEpochs.set(characterId, ++nextCharacterRowProjectionEpoch)
@@ -89,11 +90,13 @@ export function hasLorebookPageProjectionEpochChanged(epoch: number): boolean {
 
 function advanceSettingsGroupProjectionEpoch(group: SettingsGroup): void {
   settingsGroupProjectionEpochs.set(group, ++nextSettingsProjectionEpoch)
+  settingsGroupAcknowledgementTaints.delete(group)
 }
 
 function advanceAllSettingsProjectionEpochs(): void {
   settingsProjectionBaseline = ++nextSettingsProjectionEpoch
   settingsGroupProjectionEpochs.clear()
+  settingsGroupAcknowledgementTaints.clear()
 }
 
 export function captureSettingsGroupProjectionEpoch(group: SettingsGroup): number {
@@ -102,6 +105,14 @@ export function captureSettingsGroupProjectionEpoch(group: SettingsGroup): numbe
 
 export function hasSettingsGroupProjectionEpochChanged(group: SettingsGroup, epoch: number): boolean {
   return captureSettingsGroupProjectionEpoch(group) !== epoch
+}
+
+export function isSettingsGroupAcknowledgementTainted(group: SettingsGroup): boolean {
+  return settingsGroupAcknowledgementTaints.has(group)
+}
+
+export function markSettingsGroupAcknowledgementTainted(group: SettingsGroup): void {
+  settingsGroupAcknowledgementTaints.add(group)
 }
 
 export const SERVER_COLLECTION_NAMES = [

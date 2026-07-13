@@ -22,8 +22,11 @@ import {
 } from './promptTemplateHydration'
 import {
   captureCollectionProjectionEpoch,
+  captureSettingsGroupProjectionEpoch,
   getResourceDatabase as getDatabase,
   hasCollectionProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
+  markSettingsGroupAcknowledgementTainted,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
@@ -141,6 +144,7 @@ interface PendingPromptSettingsPatch {
   patch: SettingsPatch
   previous: SettingsPatch
   attempted: SettingsPatch
+  projectionEpoch: number | null
   timer: ReturnType<typeof setTimeout> | null
 }
 
@@ -149,6 +153,7 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   patch: {},
   previous: {},
   attempted: {},
+  projectionEpoch: null,
   timer: null,
 }
 const promptItemDirtyFieldsByOwnerAndId = new Map<string, Set<string>>()
@@ -371,9 +376,11 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
 
   if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
   if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
+    pendingPromptSettingsPatch.projectionEpoch = null
     pendingPromptSettingsPatch.timer = null
     return
   }
+  pendingPromptSettingsPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
   pendingPromptSettingsPatch.timer = setTimeout(() => {
     runPendingPromptSettingsPatch()
   }, delayMs)
@@ -397,6 +404,9 @@ export function dropPendingPromptSettingsProjectionPatchKeys(keys: readonly stri
   if (dropped && pendingPromptSettingsPatch.timer && Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
     clearTimeout(pendingPromptSettingsPatch.timer)
     pendingPromptSettingsPatch.timer = null
+  }
+  if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
+    pendingPromptSettingsPatch.projectionEpoch = null
   }
 }
 
@@ -491,9 +501,11 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
   const commandPatch = pendingPromptSettingsPatch.patch
   const commandPrevious = pendingPromptSettingsPatch.previous
   const commandAttempted = pendingPromptSettingsPatch.attempted
+  const commandProjectionEpoch = pendingPromptSettingsPatch.projectionEpoch
   pendingPromptSettingsPatch.patch = {}
   pendingPromptSettingsPatch.previous = {}
   pendingPromptSettingsPatch.attempted = {}
+  pendingPromptSettingsPatch.projectionEpoch = null
 
   if (Object.keys(commandPatch).length === 0) return
 
@@ -503,11 +515,13 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
         {
           baseRevision,
           patch: commandPatch,
+          acknowledgeOptimistic: commandProjectionEpoch !== null,
+          optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
         },
         options.signal,
         options.keepalive,
       ),
-    rollback: () => rollbackPromptSettingsPatch(commandPrevious, commandAttempted),
+    rollback: () => rollbackPromptSettingsPatch(commandPrevious, commandAttempted, commandProjectionEpoch),
     signal: options.signal,
     keepalive: options.keepalive,
   })
@@ -619,7 +633,13 @@ function restoreAttemptedPromptItemFields(
   return restored
 }
 
-function rollbackPromptSettingsPatch(previous: SettingsPatch, attempted: SettingsPatch): void {
+function rollbackPromptSettingsPatch(
+  previous: SettingsPatch,
+  attempted: SettingsPatch,
+  projectionEpoch: number | null,
+): void {
+  markSettingsGroupAcknowledgementTainted('prompt')
+  if (projectionEpoch === null || hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)) return
   withTrustedResourceWrite(() => {
     const target = getDatabase() as unknown as Record<string, unknown>
     for (const [key, previousValue] of Object.entries(previous)) {

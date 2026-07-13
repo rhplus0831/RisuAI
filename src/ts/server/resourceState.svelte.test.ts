@@ -47,7 +47,9 @@ import {
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
+  isSettingsGroupAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
+  markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
@@ -417,6 +419,44 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase()).toMatchObject({ theme: 'light', zoomsize: 120 })
     expect(settingsResourceState.groupRevisions.display).toBe(4)
     expect(settingsResourceState.revision).toBe(4)
+  })
+
+  it('keeps prompt acknowledgement taint and projection epoch through local effects until an authoritative read', () => {
+    applySettingsResource({
+      revision: 1,
+      settings: { mainPrompt: 'optimistic' },
+    })
+    const projectionEpoch = captureSettingsGroupProjectionEpoch('prompt')
+    markSettingsGroupAcknowledgementTainted('prompt')
+
+    expect(
+      applySettingsPatchLocalEffect({
+        revision: 2,
+        group: 'prompt',
+        attemptedPatch: { mainPrompt: 'optimistic' },
+        settings: { mainPrompt: 'canonical' },
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().mainPrompt).toBe('canonical')
+    expect(hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)).toBe(false)
+    expect(isSettingsGroupAcknowledgementTainted('prompt')).toBe(true)
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 3,
+          group: 'prompt',
+          settings: { mainPrompt: 'authoritative' },
+        },
+        ['mainPrompt'],
+      ),
+    ).toBe(true)
+    expect(hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('prompt')).toBe(false)
+
+    markSettingsGroupAcknowledgementTainted('prompt')
+    expect(applySettingsResource({ revision: 4, settings: { mainPrompt: 'full' } })).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('prompt')).toBe(false)
   })
 
   it('fences the Hypa V3 preset collection included in a memory settings patch', () => {

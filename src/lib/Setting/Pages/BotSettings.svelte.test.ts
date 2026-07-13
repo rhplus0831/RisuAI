@@ -24,6 +24,20 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('if (snapshotJson(value) === snapshotJson(pendingPromptFieldPatch.previous[key]))')
   })
 
+  it('acknowledges sparse prompt-field writes against the epoch captured by the first batch edit', () => {
+    const source = botSettingsSource()
+
+    expect(source).toContain("import { PROMPT_SETTINGS_KEYS } from 'src/ts/promptSettings'")
+    expect(source).toContain('new Set<string>(PROMPT_SETTINGS_KEYS)')
+    expect(source).toContain(
+      "pendingPromptFieldPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')",
+    )
+    expect(source).toContain('acknowledgeOptimistic: commandProjectionEpoch !== null')
+    expect(source).toContain('optimisticProjectionEpoch: commandProjectionEpoch ?? undefined')
+    expect(source).toContain("markSettingsGroupAcknowledgementTainted('prompt')")
+    expect(source).toContain("hasSettingsGroupProjectionEpochChanged('prompt', projectionEpoch)")
+  })
+
   it('preserves dirty prompt-field drafts across stale projection applies', () => {
     const source = botSettingsSource()
 

@@ -42,6 +42,7 @@ import { normalizeAgentPresets } from '../../../../src/ts/agentPresetRecords.js'
 import {
   createPromptItemRecord,
   ensurePromptTemplateCollection,
+  PROMPT_SETTINGS_KEYS,
   readPromptItemId,
   readPromptItemPatch,
   readPromptSettingsPatch,
@@ -741,6 +742,7 @@ interface PluginStorageCommandBody {
 export const SETTINGS_GROUPS = [
   'providers',
   'runtime',
+  'prompt',
   'display',
   'language',
   'media',
@@ -855,9 +857,6 @@ export const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'deepseekReasoningEffort',
     'reasoningEffort',
     'verbosity',
-    'fallbackModels',
-    'doNotChangeFallbackModels',
-    'fallbackWhenBlankResponse',
     'seperateModelsForAxModels',
     'seperateModels',
     'doNotChangeSeperateModels',
@@ -886,6 +885,7 @@ export const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'simplifiedToolUse',
     'useAutoSuggestions',
   ],
+  prompt: PROMPT_SETTINGS_KEYS,
   display: [
     'theme',
     'guiHTML',
@@ -981,7 +981,6 @@ export const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'dynamicAssetsEditDisplay',
     'newImageHandlingBeta',
     'legacyMediaFindings',
-    'outputImageModal',
     'dallEQuality',
     'stabilityModel',
     'stabilityKey',
@@ -1484,7 +1483,7 @@ export function registerCommandRoutes(
       const group = readSettingsGroup((req.params as { group?: unknown }).group)
       const body = (req.body ?? {}) as RuntimeSettingsCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readSettingsGroupPatch(group, body.patch)
+      const patch = group === 'prompt' ? readPromptSettingsPatch(body.patch) : readSettingsGroupPatch(group, body.patch)
       const requestedPatch = body.patch as Record<string, unknown>
       const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(patch, 'hypaV3Presets')
       validateSettingsAssetRefs(db, patch)
