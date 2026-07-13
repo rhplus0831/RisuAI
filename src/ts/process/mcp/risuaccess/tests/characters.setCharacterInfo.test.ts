@@ -646,8 +646,19 @@ describe('MCP character writes optimistic projection', () => {
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/characters/char-1/triggers',
-      method: 'PUT',
+      method: 'PATCH',
+      body: {
+        mutation: {
+          op: 'update',
+          id: 'lua-trigger-id',
+          patch: {
+            effect: [{ type: 'triggerlua', code: 'print("new")' }],
+          },
+          deleteKeys: [],
+        },
+      },
     })
+    expect(calls[1].body).not.toHaveProperty('triggers')
   })
 
   it('failed Lua trigger writes roll back only target triggers and preserve other script domains', async () => {

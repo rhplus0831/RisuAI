@@ -684,8 +684,19 @@ describe('MCP module writes optimistic projection', () => {
     await waitForCallCount(calls, 2)
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/modules/module-a/triggers',
-      method: 'PUT',
+      method: 'PATCH',
+      body: {
+        mutation: {
+          op: 'update',
+          id: 'lua-trigger-id',
+          patch: {
+            effect: [{ type: 'triggerlua', code: 'print("new")' }],
+          },
+          deleteKeys: [],
+        },
+      },
     })
+    expect(calls[1].body).not.toHaveProperty('triggers')
     await waitForSettledCommands()
   })
 

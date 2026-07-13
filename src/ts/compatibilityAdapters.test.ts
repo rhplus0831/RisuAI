@@ -675,19 +675,24 @@ describe('Phase 9-3f compatibility adapters', () => {
       expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-a/scripts')).toBe(true)
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a/scripts')).toMatchObject({
-      method: 'PUT',
+      method: 'PATCH',
       body: {
         baseRevision: 10,
-        scripts: [
-          expect.objectContaining({
+        mutation: {
+          op: 'create',
+          index: 0,
+          row: expect.objectContaining({
             comment: 'Regex',
             in: 'in',
             out: 'out',
             type: 'editdisplay',
           }),
-        ],
+        },
       },
     })
+    expect(calls.find((call) => call.url === '/api/v1/commands/characters/char-a/scripts')?.body).not.toHaveProperty(
+      'scripts',
+    )
 
     const luaResult = await handler.setCharacterLuaScript('char-a', 'print("hi")')
     expect(luaResult[0]).toMatchObject({
@@ -744,19 +749,24 @@ describe('Phase 9-3f compatibility adapters', () => {
       expect(calls.some((call) => call.url === '/api/v1/commands/modules/mod-a/scripts')).toBe(true)
     })
     expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/scripts')).toMatchObject({
-      method: 'PUT',
+      method: 'PATCH',
       body: {
         baseRevision: 10,
-        scripts: [
-          expect.objectContaining({
+        mutation: {
+          op: 'create',
+          index: 0,
+          row: expect.objectContaining({
             comment: 'Regex',
             in: 'in',
             out: 'out',
             type: 'editdisplay',
           }),
-        ],
+        },
       },
     })
+    expect(calls.find((call) => call.url === '/api/v1/commands/modules/mod-a/scripts')?.body).not.toHaveProperty(
+      'scripts',
+    )
 
     const luaResult = await handler.setModuleLuaScript('mod-a', 'print("module")')
     expect(luaResult[0]).toMatchObject({
