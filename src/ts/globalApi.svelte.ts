@@ -273,6 +273,7 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
     method: 'POST',
     headers: {
       'content-type': SERVER_ASSET_BULK_BINARY_CONTENT_TYPE,
+      prefer: 'return=minimal',
       'risu-auth': auth,
       ...activeWriterSessionHeader(),
     },
@@ -294,23 +295,17 @@ async function uploadServerAssetsBatch(assets: readonly PreparedServerAssetUploa
   }
 
   const responseBody = (await response.json()) as {
-    assets?: unknown
+    assetIds?: unknown
     revision?: unknown
   }
-  if (!Array.isArray(responseBody.assets) || responseBody.assets.length !== assets.length) {
-    throw new Error('Server bulk asset upload response has invalid assets')
+  if (!Array.isArray(responseBody.assetIds) || responseBody.assetIds.length !== assets.length) {
+    throw new Error('Server bulk asset upload response has invalid asset ids')
   }
   advanceServerAssetRevision(responseBody.revision)
-  return responseBody.assets.map((asset, index) => {
-    if (!asset || typeof asset !== 'object') {
-      throw new Error(`Server bulk asset upload response asset[${index}] is invalid`)
-    }
-    const assetId = (asset as { assetId?: unknown }).assetId
+  return responseBody.assetIds.map((assetId, index) => {
     if (typeof assetId !== 'string') {
-      throw new Error(`Server bulk asset upload response asset[${index}] missing assetId`)
+      throw new Error(`Server bulk asset upload response assetIds[${index}] is invalid`)
     }
-    const revision = (asset as { revision?: unknown }).revision
-    advanceServerAssetRevision(revision)
     return assetId
   })
 }

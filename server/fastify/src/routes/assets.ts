@@ -20,6 +20,7 @@ import { emitProtocolMetric } from '../protocolMetrics.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
+const PREFER_RETURN_MINIMAL = 'return=minimal'
 export const ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
 
 interface ExistsBody {
@@ -76,6 +77,15 @@ function assetUploadResponse(result: AddAssetResult): {
     revision: result.revision,
     created: result.created,
   }
+}
+
+function prefersMinimalResponse(prefer: string | string[] | undefined): boolean {
+  const preferences = Array.isArray(prefer) ? prefer : [prefer]
+  return preferences.some((header) =>
+    header
+      ?.split(',')
+      .some((preference) => preference.trim().split(';', 1)[0]?.toLowerCase() === PREFER_RETURN_MINIMAL),
+  )
 }
 
 function readAttachedValidationError(req: { validationError?: unknown }): unknown {
@@ -251,6 +261,13 @@ export function registerAssetsRoutes(
         const results = addAssets(db, dataDir, uploads)
         reply.code(results.some((result) => result.created) ? 201 : 200)
         const revision = results.at(-1)?.revision ?? getSchemaState(db).revision
+        if (prefersMinimalResponse(req.headers.prefer)) {
+          reply.header('preference-applied', PREFER_RETURN_MINIMAL)
+          return {
+            assetIds: results.map((result) => result.entry.id),
+            revision,
+          }
+        }
         return {
           assets: results.map(assetUploadResponse),
           revision,

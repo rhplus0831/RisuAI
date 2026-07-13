@@ -507,6 +507,7 @@ describe('Phase 2C assets', () => {
       url: '/api/v1/assets/bulk',
       headers: {
         'content-type': ASSET_BULK_BINARY_CONTENT_TYPE,
+        prefer: 'return=minimal',
         'risu-auth': assertion,
       },
       payload: buildBinaryBulkAssetBody([
@@ -516,23 +517,9 @@ describe('Phase 2C assets', () => {
     })
 
     expect(res.statusCode).toBe(201)
+    expect(res.headers['preference-applied']).toBe('return=minimal')
     expect(res.json()).toEqual({
-      assets: [
-        {
-          assetId: PNG_SHA,
-          size: PNG_BYTES.length,
-          contentType: 'image/png',
-          revision: 0,
-          created: true,
-        },
-        {
-          assetId: OTHER_PNG_SHA,
-          size: OTHER_PNG_BYTES.length,
-          contentType: 'image/png',
-          revision: 0,
-          created: true,
-        },
-      ],
+      assetIds: [PNG_SHA, OTHER_PNG_SHA],
       revision: 0,
     })
     expect(harness.commandEvents.list()).toEqual([])

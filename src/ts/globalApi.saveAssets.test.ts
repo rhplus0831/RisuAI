@@ -85,7 +85,7 @@ beforeEach(() => {
       }
       if (input === '/api/v1/assets/bulk') {
         return responseJson({
-          assets: [{ assetId: missingId }, { assetId: otherMissingId }],
+          assetIds: [missingId, otherMissingId],
         })
       }
       throw new Error(`Unexpected fetch: ${String(input)}`)
@@ -117,6 +117,7 @@ describe('saveAssets server bulk upload', () => {
     expect(fetchCalls[1].input).toBe('/api/v1/assets/bulk')
     expect(fetchCalls[1].init?.headers).toMatchObject({
       'content-type': 'application/vnd.risu.assets-bulk',
+      prefer: 'return=minimal',
       'risu-auth': 'proxy-auth-token',
     })
     const bulkBody = await readBulkBinaryBody(fetchCalls[1].init)
