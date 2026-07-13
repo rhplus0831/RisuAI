@@ -3,11 +3,12 @@
   import { language } from 'src/lang'
   import type { SerializableHypaV3Data } from 'src/ts/process/memory/hypav3'
   import type { TagManagerState } from './types'
+  import type { ServerSummaryPatchField } from './server-summary-patch'
 
   interface Props {
     tagManagerState: TagManagerState
     hypaV3Data: SerializableHypaV3Data
-    onSummaryChanged?: (index: number) => void | Promise<void>
+    onSummaryChanged?: (index: number, field: ServerSummaryPatchField) => void | Promise<void>
   }
 
   let { tagManagerState = $bindable(), hypaV3Data, onSummaryChanged }: Props = $props()
@@ -40,7 +41,7 @@
 
     if (!summary.tags.includes(tagName.trim())) {
       summary.tags.push(tagName.trim())
-      void onSummaryChanged?.(summaryIndex)
+      void onSummaryChanged?.(summaryIndex, 'tags')
     }
   }
 
@@ -49,7 +50,7 @@
     if (!summary) return
     if (summary.tags && tagIndex >= 0 && tagIndex < summary.tags.length) {
       summary.tags.splice(tagIndex, 1)
-      void onSummaryChanged?.(summaryIndex)
+      void onSummaryChanged?.(summaryIndex, 'tags')
     }
   }
 
@@ -66,7 +67,7 @@
     if (!summary) return
     if (summary.tags && tagManagerState.editingTagIndex < summary.tags.length) {
       summary.tags[tagManagerState.editingTagIndex] = tagManagerState.editingTag.trim()
-      void onSummaryChanged?.(summaryIndex)
+      void onSummaryChanged?.(summaryIndex, 'tags')
     }
 
     tagManagerState.editingTag = ''

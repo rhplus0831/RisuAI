@@ -161,20 +161,14 @@ describe('server memory API adapter', () => {
     const memoryFetch = makeMemoryFetch((_url, init) => {
       expect((init.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
       expect((init.headers as Record<string, string>)['content-type']).toBe('application/json')
+      expect((init.headers as Record<string, string>).prefer).toBe('return=minimal')
       expect(JSON.parse(String(init.body))).toEqual({
         text: 'edited',
         isImportant: true,
         categoryId: 'story',
         tags: ['plot'],
       })
-      return {
-        summary: {
-          ...baseSummary,
-          text: 'edited',
-          metadata: { isImportant: true, categoryId: 'story', tags: ['plot'] },
-          tokens: 0,
-        },
-      }
+      return { summaryId: 'summary-1' }
     })
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
@@ -185,10 +179,7 @@ describe('server memory API adapter', () => {
       tags: ['plot'],
     })
 
-    expect(result).toMatchObject({
-      status: 'ok',
-      summary: { id: 'summary-1', text: 'edited', metadata: { isImportant: true }, tokens: 0 },
-    })
+    expect(result).toEqual({ status: 'ok', summaryId: 'summary-1' })
     expect(memoryFetch.calls[0]).toEqual({
       url: '/api/v1/memory/summaries/summary%2F1',
       method: 'PATCH',
@@ -200,13 +191,14 @@ describe('server memory API adapter', () => {
   it('deletes summaries through the active-writer API', async () => {
     const memoryFetch = makeMemoryFetch((_url, init) => {
       expect((init.headers as Record<string, string>)['risu-writer-session']).toBe('writer-session-1')
-      return { summary: baseSummary }
+      expect((init.headers as Record<string, string>).prefer).toBe('return=minimal')
+      return { summaryId: 'summary-1' }
     })
     vi.stubGlobal('fetch', memoryFetch.fetch)
 
     const result = await deleteServerMemorySummary('summary/1')
 
-    expect(result).toEqual({ status: 'ok', summary: baseSummary })
+    expect(result).toEqual({ status: 'ok', summaryId: 'summary-1' })
     expect(memoryFetch.calls[0]).toEqual({
       url: '/api/v1/memory/summaries/summary%2F1',
       method: 'DELETE',

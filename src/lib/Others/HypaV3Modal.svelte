@@ -21,6 +21,7 @@
     deleteServerMemorySummary,
     listServerMemorySummaries,
     patchServerMemorySummary,
+    type PatchServerMemorySummaryInput,
     type ServerMemorySummary,
   } from 'src/ts/process/request/serverMemory'
   import { subscribeServerMemoryJobEvents } from 'src/ts/server/memoryJobEvents'
@@ -39,6 +40,7 @@
   } from './HypaV3Modal/types'
 
   import { shouldShowSummary, isGuidLike, parseSelectionInput } from './HypaV3Modal/utils'
+  import { buildServerSummaryPatch, type ServerSummaryPatchField } from './HypaV3Modal/server-summary-patch'
   import type { OpenAIChat } from 'src/ts/process/index.svelte'
 
   const currentCharacter = $derived(getCharacterByIndex($selectedCharID))
@@ -184,18 +186,13 @@
     return next
   }
 
-  async function handleServerSummaryChanged(summaryIndex: number): Promise<void> {
+  async function handleServerSummaryChanged(summaryIndex: number, field: ServerSummaryPatchField): Promise<void> {
     if (!serverBackedMemoryMode) return
     const summary = serverHypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined
     if (!summary) return
     const summaryId = summary.serverId
     const editVersion = markServerSummaryEdited(summaryId)
-    const patch = {
-      text: summary.text,
-      isImportant: summary.isImportant,
-      categoryId: summary.categoryId ?? null,
-      tags: summary.tags ?? null,
-    }
+    const patch: PatchServerMemorySummaryInput = buildServerSummaryPatch(summary, field)
 
     await queueServerSummaryMutation(summaryId, async () => {
       const result = await patchServerMemorySummary(summaryId, patch)
@@ -206,7 +203,10 @@
       }
       acknowledgeServerSummaryEdit(summaryId, editVersion)
       serverMemoryError = result.status === 'error' ? result.error : language.errors.networkFetch
-      await refreshServerSummaries(currentChatId)
+      // A later queued field patch no longer contains this field. Reconcile
+      // after the queue drains so a failed earlier patch cannot leave the
+      // client ahead of the server, and avoid an intermediate stale read.
+      pendingServerSummaryRefreshChatId = currentChatId
     })
   }
 

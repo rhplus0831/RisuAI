@@ -297,6 +297,40 @@ describe('Phase 8-7a memory read routes', () => {
     })
   })
 
+  it('returns compact summary mutation responses when requested', async () => {
+    seedMemoryRows(harness.dataDir)
+
+    const edited = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/memory/summaries/summary-a',
+      headers: { 'risu-auth': assertion, prefer: 'return=minimal' },
+      payload: { tags: [' favorite ', 'favorite', ' plot '] },
+    })
+
+    expect(edited.statusCode).toBe(200)
+    expect(edited.headers['preference-applied']).toBe('return=minimal')
+    expect(edited.json()).toEqual({ summaryId: 'summary-a' })
+
+    const summaries = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/memory/summaries/chat-1',
+      headers: { 'risu-auth': assertion },
+    })
+    const stored = (summaries.json() as { summaries: MemorySummary[] }).summaries.find(
+      (summary) => summary.id === 'summary-a',
+    )
+    expect(stored?.metadata).toEqual({ chatMemos: ['msg-1'], tags: ['favorite', 'plot'] })
+
+    const deleted = await harness.app.inject({
+      method: 'DELETE',
+      url: '/api/v1/memory/summaries/summary-a',
+      headers: { 'risu-auth': assertion, prefer: 'return=minimal' },
+    })
+    expect(deleted.statusCode).toBe(200)
+    expect(deleted.headers['preference-applied']).toBe('return=minimal')
+    expect(deleted.json()).toEqual({ summaryId: 'summary-a' })
+  })
+
   it('deletes one server summary and leaves its chunk available for later regeneration', async () => {
     seedMemoryRows(harness.dataDir)
 

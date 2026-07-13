@@ -25,6 +25,7 @@
   import { alertConfirm } from 'src/ts/alert'
   import type { SummaryItemState, ExpandedMessageState, SearchState, Category, BulkEditState, UIState } from './types'
   import { alertConfirmTwice, handleDualAction, getFirstMessage, processRegexScript, getCategoryName } from './utils'
+  import type { ServerSummaryPatchField } from './server-summary-patch'
 
   interface Props {
     summaryIndex: number
@@ -42,7 +43,7 @@
     onOpenTagManager?: (index: number) => void
     onToggleCollapse?: (index: number) => void
     onSummaryInput?: (index: number) => void
-    onSummaryChanged?: (index: number) => void | Promise<void>
+    onSummaryChanged?: (index: number, field: ServerSummaryPatchField) => void | Promise<void>
     onDeleteSummary?: (index: number) => void | Promise<void>
     onDeleteAfter?: (index: number) => void | Promise<void>
   }
@@ -137,7 +138,7 @@
 
   function toggleImportant(): void {
     summary.isImportant = !summary.isImportant
-    void onSummaryChanged?.(summaryIndex)
+    void onSummaryChanged?.(summaryIndex, 'isImportant')
   }
 
   function isOrphan(): boolean {
@@ -262,7 +263,7 @@
 
   function applyRerolled(): void {
     summary.text = rerolled
-    void onSummaryChanged?.(summaryIndex)
+    void onSummaryChanged?.(summaryIndex, 'text')
     translation = null
     rerolled = null
     rerolledTranslation = null
@@ -368,7 +369,7 @@
             value={summary.categoryId ?? ''}
             onchange={(event) => {
               summary.categoryId = event.currentTarget.value || undefined
-              void onSummaryChanged?.(summaryIndex)
+              void onSummaryChanged?.(summaryIndex, 'categoryId')
             }}>
             {#each categories as category}
               <option value={category.id}>{category.name}</option>
@@ -488,7 +489,7 @@
       bind:value={summary.text}
       readonly={readOnly}
       oninput={() => onSummaryInput?.(summaryIndex)}
-      onchange={() => void onSummaryChanged?.(summaryIndex)}
+      onchange={() => void onSummaryChanged?.(summaryIndex, 'text')}
       onfocus={() => {
         if (searchState && !searchState.isNavigating) {
           searchState.requestedSearchFromIndex = summaryIndex

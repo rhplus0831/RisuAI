@@ -180,12 +180,12 @@ export async function patchServerMemorySummary(
   summaryId: string,
   patch: PatchServerMemorySummaryInput,
   signal?: AbortSignal | null,
-): Promise<ServerMemoryResult<{ summary: ServerMemorySummary }>> {
-  return requestMemoryJson<{ summary: ServerMemorySummary }>(
+): Promise<ServerMemoryResult<{ summaryId: string }>> {
+  return requestMemoryJson<{ summaryId: string }>(
     `${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(summaryId)}`,
     {
       method: 'PATCH',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', prefer: 'return=minimal' },
       body: JSON.stringify(patch),
       signal: signal ?? undefined,
     },
@@ -196,10 +196,10 @@ export async function patchServerMemorySummary(
 export async function deleteServerMemorySummary(
   summaryId: string,
   signal?: AbortSignal | null,
-): Promise<ServerMemoryResult<{ summary: ServerMemorySummary }>> {
-  return requestMemoryJson<{ summary: ServerMemorySummary }>(
+): Promise<ServerMemoryResult<{ summaryId: string }>> {
+  return requestMemoryJson<{ summaryId: string }>(
     `${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(summaryId)}`,
-    { method: 'DELETE', signal: signal ?? undefined },
+    { method: 'DELETE', headers: { prefer: 'return=minimal' }, signal: signal ?? undefined },
     { activeWriter: true },
   )
 }

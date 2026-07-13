@@ -184,16 +184,7 @@ describe('server resource guarded UI paths', () => {
     })
     vi.mocked(patchServerMemorySummary).mockResolvedValue({
       status: 'ok',
-      summary: {
-        id: 'server-summary-1',
-        chatId: 'chat-1',
-        chunkId: 'chunk-1',
-        model: 'summary-model',
-        text: 'Edited server summary',
-        metadata: { chatMemos: ['msg-1'], isImportant: true, categoryId: 'story', tags: ['live'] },
-        tokens: 0,
-        createdAt: '2026-07-12T00:00:00.000Z',
-      },
+      summaryId: 'server-summary-1',
     })
     hypaV3ModalOpen.set(true)
     setResourceWriteGuardEnabled(true)
@@ -218,12 +209,7 @@ describe('server resource guarded UI paths', () => {
     for (let attempt = 0; attempt < 40 && vi.mocked(patchServerMemorySummary).mock.calls.length === 0; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
-    expect(patchServerMemorySummary).toHaveBeenCalledWith('server-summary-1', {
-      text: 'Edited server summary',
-      isImportant: true,
-      categoryId: 'story',
-      tags: ['live'],
-    })
+    expect(patchServerMemorySummary).toHaveBeenCalledWith('server-summary-1', { text: 'Edited server summary' })
 
     const importantButton = target.querySelector<HTMLButtonElement>('button[data-summary-action="important"]')
     expect(importantButton).not.toBeNull()
@@ -231,15 +217,7 @@ describe('server resource guarded UI paths', () => {
     for (let attempt = 0; attempt < 40 && vi.mocked(patchServerMemorySummary).mock.calls.length < 2; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
-    expect(vi.mocked(patchServerMemorySummary).mock.calls.at(-1)).toEqual([
-      'server-summary-1',
-      {
-        text: 'Edited server summary',
-        isImportant: false,
-        categoryId: 'story',
-        tags: ['live'],
-      },
-    ])
+    expect(vi.mocked(patchServerMemorySummary).mock.calls.at(-1)).toEqual(['server-summary-1', { isImportant: false }])
     expect(getDatabase().characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 

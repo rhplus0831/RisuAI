@@ -11,6 +11,8 @@ import {
 } from '../memoryRepository.js'
 import { ValidationError } from '../repository.js'
 
+const PREFER_RETURN_MINIMAL = 'return=minimal'
+
 interface MemoryReadParams {
   chatId: string
 }
@@ -40,6 +42,15 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function hasOwn(value: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function prefersMinimalResponse(prefer: string | string[] | undefined): boolean {
+  const preferences = Array.isArray(prefer) ? prefer : [prefer]
+  return preferences.some((header) =>
+    header
+      ?.split(',')
+      .some((preference) => preference.trim().split(';', 1)[0]?.toLowerCase() === PREFER_RETURN_MINIMAL),
+  )
 }
 
 export function registerMemoryReadRoutes(app: FastifyInstance, db: DatabaseSync, authState: AuthState): void {
@@ -149,6 +160,10 @@ export function registerMemoryReadRoutes(app: FastifyInstance, db: DatabaseSync,
           ...(typeof req.body.text === 'string' ? { text: req.body.text, tokens: 0 } : {}),
           ...(metadataPatchRequested ? { metadata } : {}),
         })
+        if (prefersMinimalResponse(req.headers.prefer)) {
+          reply.header('preference-applied', PREFER_RETURN_MINIMAL)
+          return { summaryId: summary.id }
+        }
         return { summary }
       } catch (error) {
         if (error instanceof ValidationError) {
@@ -170,6 +185,10 @@ export function registerMemoryReadRoutes(app: FastifyInstance, db: DatabaseSync,
     if (!summary) {
       reply.code(404)
       return badRequest('memory summary not found')
+    }
+    if (prefersMinimalResponse(req.headers.prefer)) {
+      reply.header('preference-applied', PREFER_RETURN_MINIMAL)
+      return { summaryId: summary.id }
     }
     return { summary }
   })
