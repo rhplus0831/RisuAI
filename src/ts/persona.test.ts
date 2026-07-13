@@ -394,6 +394,37 @@ describe('persona ID read and command preparation', () => {
     })
   })
 
+  it('sends only fields changed by a direct profile save and skips a repeated no-op', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Old prompt',
+          note: 'Old note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Old prompt'
+    getDatabase().userNote = 'New note'
+
+    saveUserPersona()
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledTimes(2)
+    })
+
+    const updateBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))
+    expect(updateBody.patch).toEqual({ note: 'New note' })
+
+    saveUserPersona()
+    await flushCommandEffects()
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('failed trigger prompt save preserves newer same-row profile edits', async () => {
     seedPersonaState(
       [
@@ -417,6 +448,8 @@ describe('persona ID read and command preparation', () => {
     await vi.waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(2)
     })
+    const updateBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))
+    expect(updateBody.patch).toEqual({ personaPrompt: 'Trigger prompt' })
 
     updateSelectedPersonaField('username', 'Newer Persona A name')
     failure.resolve()
@@ -436,6 +469,30 @@ describe('persona ID read and command preparation', () => {
       personaPrompt: 'Old prompt',
       note: 'Old note',
     })
+  })
+
+  it('skips a trigger prompt write when the selected profile is unchanged', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          icon: 'a.png',
+          personaPrompt: 'Current prompt',
+          note: 'Current note',
+        }),
+      ],
+      0,
+    )
+    getDatabase().username = 'Persona A'
+    getDatabase().userIcon = 'a.png'
+    getDatabase().personaPrompt = 'Current prompt'
+    getDatabase().userNote = 'Current note'
+
+    setSelectedPersonaPromptFromTrigger('Current prompt')
+    await flushCommandEffects()
+
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('failed select preserves newer selection/profile changes while rolling back only the attempted save-current row', async () => {

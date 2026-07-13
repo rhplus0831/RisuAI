@@ -55,7 +55,13 @@ import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
 import './stores.svelte'
 import { getDatabase, setDatabaseLite } from './storage/database.svelte'
-import { importUserPersona, selectUserImg, updateSelectedPersonaField } from './persona'
+import {
+  importUserPersona,
+  selectUserImg,
+  updateSelectedPersonaDisplayName,
+  updateSelectedPersonaField,
+  updateSelectedPersonaLargePortrait,
+} from './persona'
 import { PngChunk } from './pngChunk'
 
 interface CapturedFetch {
@@ -265,6 +271,7 @@ describe('Phase 3 persona icon upload freshness', () => {
           icon: 'old-icon',
           personaPrompt: 'Old prompt',
           note: 'Old note',
+          displayName: 'Old display name',
           largePortrait: true,
         }),
       ],
@@ -279,6 +286,8 @@ describe('Phase 3 persona icon upload freshness', () => {
     updateSelectedPersonaField('username', 'Edited Name')
     updateSelectedPersonaField('personaPrompt', 'Edited prompt')
     updateSelectedPersonaField('userNote', 'Edited note')
+    updateSelectedPersonaDisplayName('Edited display name')
+    updateSelectedPersonaLargePortrait(false)
     upload.resolve('fresh-icon')
     await operation
 
@@ -298,16 +307,19 @@ describe('Phase 3 persona icon upload freshness', () => {
       icon: 'fresh-icon',
       personaPrompt: 'Edited prompt',
       note: 'Edited note',
-      largePortrait: true,
+      displayName: 'Edited display name',
+      largePortrait: false,
     })
     expect(commandCalls(calls)[0].body).toMatchObject({
-      patch: {
-        name: 'Edited Name',
-        icon: 'fresh-icon',
-        personaPrompt: 'Edited prompt',
-        note: 'Edited note',
-      },
       mirrorLegacyProfile: true,
+    })
+    expect((commandCalls(calls)[0].body as { patch: unknown }).patch).toEqual({
+      name: 'Edited Name',
+      icon: 'fresh-icon',
+      personaPrompt: 'Edited prompt',
+      note: 'Edited note',
+      displayName: 'Edited display name',
+      largePortrait: false,
     })
   })
 
@@ -352,6 +364,9 @@ describe('Phase 3 persona icon upload freshness', () => {
     const operation = selectUserImg()
     await vi.waitFor(() => {
       expect(commandCalls(calls)).toHaveLength(1)
+    })
+    expect((commandCalls(calls)[0].body as { patch: unknown }).patch).toEqual({
+      icon: 'attempted-icon',
     })
 
     getDatabase().personas[0] = {

@@ -589,6 +589,42 @@ function changedSelectedPersonaPatch(
   return changed
 }
 
+function changedPersonaProfilePatch(
+  personaId: string,
+  previous: PersonaStateSnapshot,
+  attempted: PersonaStateSnapshot,
+): PersonaSnapshot {
+  const previousPersona = personaRowFromSnapshot(previous, personaId)
+  const attemptedPersona = personaRowFromSnapshot(attempted, personaId)
+  if (!attemptedPersona) return {}
+
+  const previousRow: PersonaSnapshot | null = previousPersona
+    ? {
+        name: previousPersona.name ?? '',
+        displayName: previousPersona.displayName ?? '',
+        icon: previousPersona.icon ?? '',
+        personaPrompt: previousPersona.personaPrompt ?? '',
+        note: previousPersona.note ?? '',
+        largePortrait: previousPersona.largePortrait ?? false,
+      }
+    : null
+  const attemptedRow: PersonaSnapshot = {
+    name: attemptedPersona.name ?? '',
+    displayName: attemptedPersona.displayName ?? '',
+    icon: attemptedPersona.icon ?? '',
+    personaPrompt: attemptedPersona.personaPrompt ?? '',
+    note: attemptedPersona.note ?? '',
+    largePortrait: attemptedPersona.largePortrait ?? false,
+  }
+  const changed = changedSelectedPersonaPatch(personaId, previous, attempted)
+  for (const [key, value] of Object.entries(attemptedRow)) {
+    if (!previousRow || snapshotPersonaJson(previousRow[key]) !== snapshotPersonaJson(value)) {
+      changed[key] = cloneJsonValue(value)
+    }
+  }
+  return changed
+}
+
 function selectedPersonaProfileRowField(field: SelectedPersonaProfileField): 'name' | 'note' | 'personaPrompt' {
   if (field === 'username') return 'name'
   if (field === 'userNote') return 'note'
@@ -986,6 +1022,7 @@ export async function selectUserImg() {
     personas: getDatabase().personas,
   })
   if (!target) return
+  const commandBaseline = currentPersonaStateSnapshot()
 
   let operation: PersonaIconUploadOperation | null = null
   try {
@@ -1044,7 +1081,10 @@ export async function selectUserImg() {
       return
     }
 
-    const patch = cloneJsonValue(personaPatchFromLegacyProfile()) as PersonaSnapshot
+    const patch = changedPersonaProfilePatch(operation.personaId, commandBaseline, attempted)
+    if (Object.keys(patch).length === 0) {
+      return
+    }
     runPersonaCommand(
       (baseRevision) =>
         updatePersonaCommand({
@@ -1083,9 +1123,10 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
   })
   if (!dispatch) return
   const attempted = currentPersonaStateSnapshot()
-  const patch = cloneJsonValue(personaPatchFromLegacyProfile()) as PersonaSnapshot
   const personaId = selectedPersonaId()
   if (personaId) {
+    const patch = changedPersonaProfilePatch(personaId, previous, attempted)
+    if (Object.keys(patch).length === 0) return
     runPersonaCommand(
       (baseRevision) =>
         updatePersonaCommand({
@@ -1099,7 +1140,7 @@ export function saveUserPersona(options: { dispatch?: boolean } = {}) {
           personaId,
           previous,
           attempted,
-          rowKeys: personaRowProfileFields,
+          rowKeys: personaRowRollbackKeysForPatch(patch),
           legacyKeys: [],
         }),
     )
@@ -1124,7 +1165,8 @@ export function setSelectedPersonaPromptFromTrigger(value: string): void {
   })
 
   const attempted = currentPersonaStateSnapshot()
-  const patch = cloneJsonValue(personaPatchFromLegacyProfile()) as PersonaSnapshot
+  const patch = changedPersonaProfilePatch(personaId, previous, attempted)
+  if (Object.keys(patch).length === 0) return
   runPersonaCommand(
     (baseRevision) =>
       updatePersonaCommand({
@@ -1138,8 +1180,8 @@ export function setSelectedPersonaPromptFromTrigger(value: string): void {
         personaId,
         previous,
         attempted,
-        rowKeys: personaRowProfileFields,
-        legacyKeys: ['personaPrompt'],
+        rowKeys: personaRowRollbackKeysForPatch(patch),
+        legacyKeys: Object.prototype.hasOwnProperty.call(patch, 'personaPrompt') ? ['personaPrompt'] : [],
       }),
   )
 }
