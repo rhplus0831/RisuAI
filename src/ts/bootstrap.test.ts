@@ -150,7 +150,9 @@ import {
   clearCachedServerCommandRevision,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
+  withDirectServerCommandEventReconciliation,
 } from './server/commands'
+import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
 import { replaceResourceDatabase, resetServerResourceState } from './server/resourceState.svelte'
 import { selectedCharID } from './stores.svelte'
@@ -299,6 +301,54 @@ describe('API-backed client bootstrap', () => {
       hooks: resourceApi.hooks,
     })
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
+  })
+
+  it('deduplicates an own direct event before, during, and after response resource reconciliation', async () => {
+    await loadWebInitialDatabase()
+    const event = {
+      type: 'character.created',
+      revision: 6,
+      resource: 'character',
+      id: 'char-imported',
+      origin: { writerSessionId: getActiveWriterSessionId() },
+    }
+    let startRead!: () => void
+    const readStarted = new Promise<void>((resolve) => {
+      startRead = resolve
+    })
+    let finishRead!: () => void
+    const readFinished = new Promise<void>((resolve) => {
+      finishRead = resolve
+    })
+    let characterReadCount = 0
+    resourceApi.refreshInvalidated.mockImplementation(async (_events, options) => {
+      if (event.revision <= (options?.appliedRevision ?? -1)) {
+        return { status: 'ok', revision: options?.appliedRevision ?? event.revision, scope: 'none' }
+      }
+      characterReadCount += 1
+      startRead()
+      await readFinished
+      return { status: 'ok', revision: event.revision, scope: 'targeted' }
+    })
+
+    await withDirectServerCommandEventReconciliation(
+      (candidate) => candidate.type === 'character.created' && candidate.resource === 'character',
+      async (reconcileResponseEvent) => {
+        eventApi.subscriptions[0].onCommandEvent(event)
+        const applyingResponse = reconcileResponseEvent(event)
+        await readStarted
+        eventApi.subscriptions[0].onCommandEvent(event)
+        finishRead()
+        await applyingResponse
+      },
+    )
+
+    expect(characterReadCount).toBe(1)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+
+    eventApi.subscriptions[0].onCommandEvent(event)
+    await vi.waitFor(() => expect(resourceApi.refreshInvalidated).toHaveBeenCalledTimes(2))
+    expect(characterReadCount).toBe(1)
   })
 
   it('applies contiguous generation-settings command effects without a resource read and preserves a newer edit', async () => {

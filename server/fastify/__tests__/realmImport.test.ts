@@ -11,6 +11,7 @@ import { buildApp, type BuildAppOptions } from '../src/app.js'
 import { DatabaseSync } from 'node:sqlite'
 import { getAllAssetMetadata, loadPersisted, type Persisted } from '../src/repository.js'
 import { getSchemaState, openDatabase } from '../src/db.js'
+import { createCommandEventSink, type CommandEventSink } from '../src/commands/events.js'
 
 const cryptoMock = vi.hoisted(() => ({
   randomUuidOverride: undefined as string | undefined,
@@ -281,11 +282,13 @@ function startEcho(): Promise<EchoServer> {
 interface Harness {
   app: FastifyInstance
   dataDir: string
+  commandEvents: CommandEventSink
 }
 
 async function startHarness(upstreamUrl: string, realmImport?: BuildAppOptions['realmImport']): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-realm-import-'))
+  const commandEvents = createCommandEventSink()
   const { app } = await buildApp({
     config: {
       host: '127.0.0.1',
@@ -298,9 +301,10 @@ async function startHarness(upstreamUrl: string, realmImport?: BuildAppOptions['
       realmUrl: upstreamUrl,
     },
     assetGc: false,
+    commandEvents,
     realmImport: { maxExpandedImportBytes: 1024 * 1024, ...realmImport },
   })
-  return { app, dataDir }
+  return { app, dataDir, commandEvents }
 }
 
 async function stopHarness(h: Harness): Promise<void> {
@@ -824,6 +828,11 @@ describe('Realm character import route', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.json().event).toMatchObject({ type: 'character.created', resource: 'character' })
+    expect(harness.commandEvents.list().at(-1)).toMatchObject({
+      type: 'character.created',
+      resource: 'character',
+      origin: { writerSessionId: 'writer-a' },
+    })
     expect(echo.requests.map((req) => req.url)).toEqual([
       '/api/v1/download/dynamic/realm-id?cors=true',
       '/resource/main-img',

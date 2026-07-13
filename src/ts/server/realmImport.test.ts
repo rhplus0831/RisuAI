@@ -4,6 +4,7 @@ const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
 const commandState = vi.hoisted(() => ({
   baseRevision: 7 as number | null,
   cachedRevision: null as number | null,
+  reconciledEvents: [] as unknown[],
 }))
 
 vi.mock('../platform', async (importActual) => {
@@ -30,6 +31,13 @@ vi.mock('./commands', () => ({
   setCachedServerCommandRevision: (revision: number) => {
     commandState.cachedRevision = revision
   },
+  withDirectServerCommandEventReconciliation: async (
+    _matches: (event: unknown) => boolean,
+    operation: (reconcile: (event: unknown) => Promise<void>) => Promise<unknown>,
+  ) =>
+    operation(async (event) => {
+      commandState.reconciledEvents.push(event)
+    }),
 }))
 
 import { importRealmCharacterFromServer } from './realmImport'
@@ -78,6 +86,7 @@ beforeEach(() => {
   platformState.isFastifyServer = true
   commandState.baseRevision = 7
   commandState.cachedRevision = null
+  commandState.reconciledEvents = []
 })
 
 afterEach(() => {
@@ -94,7 +103,7 @@ describe('Realm import server adapter', () => {
             'data: {"phase":"download","message":"Downloading Realm character","percent":12}',
             '',
             'event: done',
-            'data: {"revision":9,"event":{"type":"character.created","resource":"character","revision":9},"characterId":"char-1"}',
+            'data: {"revision":9,"event":{"type":"character.created","resource":"character","revision":9,"id":"char-1"},"characterId":"char-1"}',
             '',
             '',
           ].join('\n'),
@@ -120,13 +129,16 @@ describe('Realm import server adapter', () => {
       body: { id: 'realm-id', baseRevision: 7, allowLowLevelAccess: false },
     })
     expect(commandState.cachedRevision).toBe(9)
+    expect(commandState.reconciledEvents).toEqual([
+      { type: 'character.created', resource: 'character', revision: 9, id: 'char-1' },
+    ])
   })
 
   it('falls back to JSON parsing when progress is requested but JSON is returned', async () => {
     stubRealmFetch(
       jsonResponse({
         revision: 11,
-        event: { type: 'character.created', resource: 'character', revision: 11 },
+        event: { type: 'character.created', resource: 'character', revision: 11, id: 'char-json' },
         characterId: 'char-json',
       }),
     )
@@ -141,7 +153,7 @@ describe('Realm import server adapter', () => {
     const calls = stubRealmFetch(
       jsonResponse({
         revision: 12,
-        event: { type: 'character.created', resource: 'character', revision: 12 },
+        event: { type: 'character.created', resource: 'character', revision: 12, id: 'char-confirmed' },
         characterId: 'char-confirmed',
       }),
     )

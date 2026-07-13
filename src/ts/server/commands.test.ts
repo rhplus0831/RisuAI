@@ -107,6 +107,7 @@ import {
   touchLoadoutCommand,
   truncateMessagesCommand,
   translateMessageCommand,
+  withDirectServerCommandEventReconciliation,
   updateCharacterCommand,
   updateChatCommand,
   updateChatFolderCommand,
@@ -2656,6 +2657,93 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('keeps a direct event scope active before and during response reconciliation, then releases it', async () => {
+    const event = {
+      type: 'character.created',
+      revision: 2,
+      resource: 'character',
+      id: 'char-imported',
+    }
+    const reconciliationStarted = createDeferred<void>()
+    const releaseReconciliation = createDeferred<void>()
+    const reconciled: number[] = []
+    setServerCommandSuccessReconciler(async (commandEvent) => {
+      reconciled.push(commandEvent.revision)
+      reconciliationStarted.resolve()
+      await releaseReconciliation.promise
+    })
+
+    const pending = withDirectServerCommandEventReconciliation(
+      (candidate) => candidate.type === 'character.created' && candidate.resource === 'character',
+      async (reconcileResponseEvent) => {
+        // The SSE echo can lead the raw HTTP response.
+        expect(deferOwnServerCommandReconciliation(event)).toBe(true)
+        const applyingResponse = reconcileResponseEvent(event)
+        await reconciliationStarted.promise
+
+        // Keep buffering the same echo while the response-triggered resource
+        // read is in flight, otherwise it could launch a duplicate read.
+        expect(deferOwnServerCommandReconciliation(event)).toBe(true)
+        releaseReconciliation.resolve()
+        await applyingResponse
+      },
+    )
+
+    await expect(pending).resolves.toBeUndefined()
+    expect(reconciled).toEqual([2])
+    // An echo delivered after the response reconciliation is no longer held;
+    // bootstrap will see the advanced applied cursor and treat it as a no-op.
+    expect(deferOwnServerCommandReconciliation(event)).toBe(false)
+  })
+
+  it('releases unmatched and failed direct events through ordinary reconciliation', async () => {
+    const unrelatedEvent = {
+      type: 'character.created',
+      revision: 2,
+      resource: 'character',
+      id: 'char-unrelated',
+    }
+    const confirmedEvent = {
+      type: 'character.created',
+      revision: 3,
+      resource: 'character',
+      id: 'char-imported',
+    }
+    const laterEvent = {
+      type: 'character.created',
+      revision: 4,
+      resource: 'character',
+      id: 'char-later',
+    }
+    const failedRequestEvent = {
+      type: 'character.created',
+      revision: 5,
+      resource: 'character',
+      id: 'char-after-failure',
+    }
+    const reconciled: number[][] = []
+    setServerCommandSuccessReconciler((_event, events) => {
+      reconciled.push(events.map((event) => event.revision))
+    })
+    const matchesCreatedCharacter = (event: { type: string; resource: string }) =>
+      event.type === 'character.created' && event.resource === 'character'
+
+    await withDirectServerCommandEventReconciliation(matchesCreatedCharacter, async (reconcileResponseEvent) => {
+      expect(deferOwnServerCommandReconciliation(unrelatedEvent)).toBe(true)
+      expect(deferOwnServerCommandReconciliation(laterEvent)).toBe(true)
+      await reconcileResponseEvent(confirmedEvent)
+    })
+
+    await expect(
+      withDirectServerCommandEventReconciliation(matchesCreatedCharacter, async () => {
+        expect(deferOwnServerCommandReconciliation(failedRequestEvent)).toBe(true)
+        throw new Error('request failed')
+      }),
+    ).rejects.toThrow('request failed')
+
+    expect(reconciled).toEqual([[2], [3], [4], [5]])
+  })
+
   it('dispatches message history commands through typed helpers', async () => {
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
@@ -3655,13 +3743,7 @@ describe('server command API adapter', () => {
       }
 
       const operation =
-        method === 'DELETE'
-          ? 'delete'
-          : url.endsWith('/enable')
-            ? 'enable'
-            : method === 'POST'
-              ? 'create'
-              : 'update'
+        method === 'DELETE' ? 'delete' : url.endsWith('/enable') ? 'enable' : method === 'POST' ? 'create' : 'update'
       return {
         revision: 10,
         event: {

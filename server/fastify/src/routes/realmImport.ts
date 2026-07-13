@@ -8,9 +8,15 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import * as fflate from 'fflate'
 import type { AuthState } from '../auth.js'
+import { readActiveWriterSessionId } from '../activeWriter.js'
 import { requireAuth } from '../http.js'
 import { getSchemaState } from '../db.js'
-import { COMMAND_EVENT_CATALOG, persistRevisionedCommandEvent, type CommandEventSink } from '../commands/events.js'
+import {
+  COMMAND_EVENT_CATALOG,
+  persistRevisionedCommandEvent,
+  type CommandEventOrigin,
+  type CommandEventSink,
+} from '../commands/events.js'
 import {
   TARGETED_MUTATION_PATHS,
   applyTargetedCommandMutation,
@@ -198,12 +204,15 @@ export function registerRealmImportRoutes(
     const abort = createRealmImportAbort(req, reply, deadlineMs)
     try {
       const body = (req.body ?? {}) as RealmImportBody
+      const writerSessionId = readActiveWriterSessionId(req)
+      const eventOrigin = writerSessionId ? { writerSessionId } : undefined
       if (acceptsProgressStream(req.headers.accept)) {
         await streamRealmImport(reply, (reportProgress) =>
           runRealmImport({
             db,
             dataDir,
             eventSink,
+            eventOrigin,
             body,
             hubUrl,
             realmUrl,
@@ -222,6 +231,7 @@ export function registerRealmImportRoutes(
         db,
         dataDir,
         eventSink,
+        eventOrigin,
         body,
         hubUrl,
         realmUrl,
@@ -303,6 +313,7 @@ async function runRealmImport(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   body: RealmImportBody
   hubUrl: string
   realmUrl: string
@@ -347,6 +358,7 @@ async function runRealmImport(args: {
         db: args.db,
         dataDir: args.dataDir,
         eventSink: args.eventSink,
+        eventOrigin: args.eventOrigin,
         filePath: claimedImport.filePath,
         tempDir: claimedImport.tempDir,
         allowLowLevelAccess: true,
@@ -391,6 +403,7 @@ async function runRealmImport(args: {
         db: args.db,
         dataDir: args.dataDir,
         eventSink: args.eventSink,
+        eventOrigin: args.eventOrigin,
         body: args.body,
         dynamicBody: dynamic.body,
         hubUrl: args.hubUrl,
@@ -409,6 +422,7 @@ async function runRealmImport(args: {
           db: args.db,
           dataDir: args.dataDir,
           eventSink: args.eventSink,
+          eventOrigin: args.eventOrigin,
           filePath: dynamic.filePath,
           tempDir: dynamic.tempDir,
           allowLowLevelAccess: args.body.allowLowLevelAccess === true,
@@ -451,6 +465,7 @@ async function importRealmJsonCard(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   body: RealmImportBody
   dynamicBody: unknown
   hubUrl: string
@@ -527,6 +542,7 @@ async function importRealmJsonCard(args: {
         db: args.db,
         dataDir: args.dataDir,
         eventSink: args.eventSink,
+        eventOrigin: args.eventOrigin,
         character,
       })
     } catch (err) {
@@ -866,6 +882,7 @@ async function importRealmCharx(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   filePath: string
   tempDir: string
   allowLowLevelAccess: boolean
@@ -953,6 +970,7 @@ async function importRealmCharx(args: {
     db: args.db,
     dataDir: args.dataDir,
     eventSink: args.eventSink,
+    eventOrigin: args.eventOrigin,
     character,
   })
 }
@@ -961,6 +979,7 @@ function appendRealmCharacter(args: {
   db: DatabaseSync
   dataDir: string
   eventSink: CommandEventSink
+  eventOrigin?: CommandEventOrigin
   character: JsonRecord
 }): JsonCommandMutationResult<{ characterId: string }> {
   const baseRevision = getSchemaState(args.db).revision
@@ -980,6 +999,7 @@ function appendRealmCharacter(args: {
     dataDir: args.dataDir,
     baseRevision,
     eventSink: args.eventSink,
+    eventOrigin: args.eventOrigin,
     mutationPath: TARGETED_MUTATION_PATHS.characterRow,
     skipDatabaseLoad: true,
     mutate(_database, innerDb) {

@@ -1205,16 +1205,64 @@ function beginDirectServerCommandReconciliation(
 
 async function finishDirectServerCommandReconciliation(
   direct: DirectServerCommandReconciliation | null,
-  confirmedRevision: number | null,
+  confirmedEvent: CommandEvent | null,
 ): Promise<void> {
   if (!direct) return
   directServerCommandReconciliations.delete(direct)
+  await releaseDirectServerCommandEvents(direct, confirmedEvent)
+}
+
+async function releaseDirectServerCommandEvents(
+  direct: DirectServerCommandReconciliation,
+  confirmedEvent: CommandEvent | null,
+  reactivate = false,
+  beforeConfirmedOnly = false,
+): Promise<void> {
   const pendingEvents = Array.from(direct.pendingEvents.values())
-    .filter((event) => confirmedRevision === null || event.revision > confirmedRevision)
+    .filter(
+      (event) =>
+        confirmedEvent === null ||
+        (event.revision !== confirmedEvent.revision &&
+          (!beforeConfirmedOnly || event.revision < confirmedEvent.revision)),
+    )
     .sort((left, right) => left.revision - right.revision)
-  const latestEvent = pendingEvents.at(-1)
+  for (const event of pendingEvents) direct.pendingEvents.delete(event.revision)
+  const releasedEvents = pendingEvents.filter((event) => !deferOwnServerCommandReconciliation(event))
+  if (reactivate) directServerCommandReconciliations.add(direct)
+  const latestEvent = releasedEvents.at(-1)
   if (!latestEvent) return
-  await reconcileServerCommandSuccessEvents(latestEvent, pendingEvents)
+  await reconcileServerCommandSuccessEvents(latestEvent, releasedEvents)
+}
+
+/**
+ * Buffer matching own SSE echoes while a mutation outside the ordinary command
+ * transport is waiting for and applying its authoritative response. The scope
+ * remains active until response reconciliation finishes, so an echo arriving
+ * during the resulting resource read cannot launch a duplicate read.
+ *
+ * Matching events that are not the confirmed response event are released back
+ * through the normal reconciliation path. This keeps overlapping operations
+ * and failed requests from swallowing unrelated own events.
+ */
+export async function withDirectServerCommandEventReconciliation<T>(
+  matches: (event: CommandEvent) => boolean,
+  operation: (reconcileResponseEvent: (event: CommandEvent) => Promise<void>) => Promise<T>,
+): Promise<T> {
+  const direct = beginDirectServerCommandReconciliation(matches)
+  let confirmedEvent: CommandEvent | null = null
+  try {
+    return await operation(async (event) => {
+      confirmedEvent = event
+      // The Realm transport cannot know its new character id before parsing
+      // the response, so its provisional matcher is intentionally broader.
+      // Drain any unmatched earlier events first to preserve revision order.
+      directServerCommandReconciliations.delete(direct)
+      await releaseDirectServerCommandEvents(direct, confirmedEvent, true, true)
+      await notifyServerCommandSuccessReconciler(event, true)
+    })
+  } finally {
+    await finishDirectServerCommandReconciliation(direct, confirmedEvent)
+  }
 }
 
 export function canUseServerCommands(): boolean {
@@ -3415,7 +3463,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
   const directReconciliation = init.deferOwnEventUntilResponse
     ? beginDirectServerCommandReconciliation(init.deferOwnEventUntilResponse)
     : null
-  let confirmedRevision: number | null = null
+  let confirmedEvent: CommandEvent | null = null
   try {
     let response: Response
     try {
@@ -3471,13 +3519,13 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       if (event) {
         const localEffect = init.readLocalEffect?.(body, event)
         await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately, localEffect)
-        confirmedRevision = event.revision
+        confirmedEvent = event
       }
     }
 
     return { status: 'ok', ...(body as { revision: number; event: CommandEvent } & T) }
   } finally {
-    await finishDirectServerCommandReconciliation(directReconciliation, confirmedRevision)
+    await finishDirectServerCommandReconciliation(directReconciliation, confirmedEvent)
   }
 }
 
