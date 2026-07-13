@@ -282,7 +282,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
       },
       {
         testPath: 'server/fastify/__tests__/resourceReads.test.ts',
-        testName: 'returns full character/chat metadata without message or hypa bodies',
+        testName: 'returns character/chat metadata with matching chat and lorebook stubs',
       },
     ],
   ),

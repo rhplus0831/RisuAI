@@ -519,7 +519,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     [
       {
         testPath: 'server/fastify/__tests__/resourceReads.test.ts',
-        testName: 'serves single and bulk character lorebooks',
+        testName: 'serves full single and bulk character lorebooks while character rows are stubbed',
       },
     ],
   ),

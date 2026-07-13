@@ -1289,10 +1289,14 @@ describe('server load-count harness on the large-corpus fixture', () => {
     try {
       const broadDatabase = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
       for (const collection of ['plugins', 'modules', 'botPresets'] as const) {
+        const expectedCollection =
+          collection === 'botPresets'
+            ? [{ id: 'preset-a', name: 'Preset A' }]
+            : maskProviderSecrets({ [collection]: broadDatabase[collection] })[collection]
         const expected = {
           revision,
           collections: {
-            [collection]: maskProviderSecrets({ [collection]: broadDatabase[collection] })[collection],
+            [collection]: expectedCollection,
           },
         }
 
