@@ -102,6 +102,8 @@ beforeEach(async () => {
         ],
         promptTemplate: [{ id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' }],
         personas: [{ id: 'persona-a', name: 'Persona A' }],
+        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+        agentPresetDefaultId: 'agent-a',
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
         loreBook: [{ id: 'lorebook-a', name: 'Lorebook A', data: [] }],
         translatorPresets: [{ id: 'translator-a', name: 'Translator A' }],
@@ -261,6 +263,22 @@ describe('authenticated resource read routes', () => {
     expect(account.statusCode).toBe(200)
     expect(account.json().settings).not.toHaveProperty('localNetworkMode')
     expect(account.json().settings).not.toHaveProperty('localNetworkTimeoutSec')
+
+    const agents = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/agents',
+      headers: authHeaders(),
+    })
+    expect(agents.statusCode).toBe(200)
+    expect(agents.json()).toEqual({
+      revision,
+      group: 'agents',
+      settings: {
+        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+        agentPresetDefaultId: 'agent-a',
+      },
+    })
+    expect(agents.json().settings).not.toHaveProperty('theme')
 
     const unknown = await harness.app.inject({
       method: 'GET',

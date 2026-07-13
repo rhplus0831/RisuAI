@@ -379,7 +379,11 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addSettingsGroup('providers')
       return
     case 'agentPreset':
-      addFullSettings()
+      if (!isWellFormedAgentPresetEvent(event)) {
+        plan.full = true
+        return
+      }
+      addSettingsGroup('agents')
       return
     case 'prompt':
       addSettingsGroup('prompt')
@@ -577,7 +581,11 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('pluginCustomStorage')
       return
     case 'agentPresetDeleted':
-      addFullSettings()
+      if (!isWellFormedAgentPresetDeleteEvent(event)) {
+        plan.full = true
+        return
+      }
+      addSettingsGroup('agents')
       plan.collections.add('loadouts')
       addAllCharacters()
       return
@@ -586,6 +594,35 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
     default:
       plan.full = true
   }
+}
+
+function isWellFormedAgentPresetEvent(event: CommandEvent): boolean {
+  const hasId = nonEmptyString(event.id)
+  const hasParentId = nonEmptyString(event.parentId)
+  switch (event.type) {
+    case 'agentPreset.created':
+    case 'agentPreset.updated':
+      return hasId && event.parentId === undefined
+    case 'agentPreset.duplicated':
+      return hasId && hasParentId
+    case 'agentPreset.reordered':
+      return event.id === undefined && event.parentId === undefined
+    case 'agentPreset.default.updated':
+      return (event.id === undefined || hasId) && event.parentId === undefined
+    case 'agentPreset.step.created':
+    case 'agentPreset.step.updated':
+    case 'agentPreset.step.duplicated':
+    case 'agentPreset.step.deleted':
+      return hasId && hasParentId
+    case 'agentPreset.step.reordered':
+      return hasId && event.parentId === undefined
+    default:
+      return false
+  }
+}
+
+function isWellFormedAgentPresetDeleteEvent(event: CommandEvent): boolean {
+  return event.type === 'agentPreset.deleted' && nonEmptyString(event.id) && event.parentId === undefined
 }
 
 async function runTargetedReads(

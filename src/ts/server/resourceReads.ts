@@ -1,5 +1,5 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
-import { SERVER_SETTINGS_GROUP_BY_KEY, isSettingsGroup, type SettingsGroup } from './settingsGroups'
+import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
   SERVER_COLLECTION_NAMES,
   isServerCollectionName,
@@ -63,7 +63,9 @@ export async function fetchServerSettingsGroup(
   }
   if (
     containsNonSettingResource(record.settings) ||
-    Object.keys(record.settings).some((key) => key === 'hypaV3Presets' || SERVER_SETTINGS_GROUP_BY_KEY[key] !== group)
+    Object.keys(record.settings).some(
+      (key) => key === 'hypaV3Presets' || !SERVER_SETTINGS_KEYS_BY_GROUP[group].includes(key),
+    )
   ) {
     return { status: 'error', error: `Invalid ${group} settings response` }
   }

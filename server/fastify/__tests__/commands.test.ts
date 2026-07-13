@@ -2818,6 +2818,20 @@ describe('Phase 9-2a scalar settings groups', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().error).toBe('Unsupported settings group: prompt-template')
   })
+
+  it('keeps the readable Agent Preset group command-only', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const res = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/agents',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: 0, patch: { agentPresets: [] } },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('Unsupported settings group: agents')
+  })
 })
 
 describe('Phase 9-2b bot preset commands', () => {

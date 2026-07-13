@@ -402,6 +402,149 @@ describe('API-backed resource invalidation', () => {
     expect(api.characters).not.toHaveBeenCalled()
   })
 
+  it('coalesces well-formed Agent Preset events into one agents-group read', async () => {
+    seedResources(1)
+    const agentPresets = [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }]
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 11,
+      group: 'agents',
+      settings: { agentPresets, agentPresetDefaultId: 'agent-a' },
+    })
+    const events: CommandEvent[] = [
+      { type: 'agentPreset.created', revision: 2, resource: 'agentPreset', id: 'agent-a' },
+      { type: 'agentPreset.updated', revision: 3, resource: 'agentPreset', id: 'agent-a' },
+      {
+        type: 'agentPreset.duplicated',
+        revision: 4,
+        resource: 'agentPreset',
+        id: 'agent-b',
+        parentId: 'agent-a',
+      },
+      { type: 'agentPreset.reordered', revision: 5, resource: 'agentPreset' },
+      { type: 'agentPreset.default.updated', revision: 6, resource: 'agentPreset', id: 'agent-a' },
+      {
+        type: 'agentPreset.step.created',
+        revision: 7,
+        resource: 'agentPreset',
+        id: 'step-a',
+        parentId: 'agent-a',
+      },
+      {
+        type: 'agentPreset.step.updated',
+        revision: 8,
+        resource: 'agentPreset',
+        id: 'step-a',
+        parentId: 'agent-a',
+      },
+      {
+        type: 'agentPreset.step.duplicated',
+        revision: 9,
+        resource: 'agentPreset',
+        id: 'step-b',
+        parentId: 'agent-a',
+      },
+      {
+        type: 'agentPreset.step.deleted',
+        revision: 10,
+        resource: 'agentPreset',
+        id: 'step-b',
+        parentId: 'agent-a',
+      },
+      { type: 'agentPreset.step.reordered', revision: 11, resource: 'agentPreset', id: 'agent-a' },
+    ]
+
+    await expect(refreshInvalidatedServerResources(events, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 11,
+      scope: 'targeted',
+    })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('agents', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(api.characters).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({ agentPresets, agentPresetDefaultId: 'agent-a' })
+  })
+
+  it('refreshes the agents group plus deletion cascades for an Agent Preset delete', async () => {
+    seedResources(1)
+    applySettingsResource({
+      revision: 1,
+      settings: {
+        language: 'en',
+        agentPresets: [
+          { id: 'agent-delete', name: 'Delete', enabled: true, version: 1, steps: [] },
+          { id: 'agent-keep', name: 'Keep', enabled: true, version: 1, steps: [] },
+        ],
+        agentPresetDefaultId: 'agent-delete',
+      },
+    })
+    const agentPresets = [{ id: 'agent-keep', name: 'Keep', enabled: true, version: 1, steps: [] }]
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'agents',
+      settings: { agentPresets },
+    })
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { loadouts: [{ id: 'loadout-a', name: 'Loadout A' }] },
+    })
+    api.characters.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      characters: [metadataCharacter('char-a', 'Ada authoritative')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'agentPreset.deleted', revision: 2, resource: 'agentPresetDeleted', id: 'agent-delete' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledWith('agents', undefined)
+    expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
+    expect(api.characters).toHaveBeenCalledOnce()
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({ agentPresets, loadouts: [{ id: 'loadout-a' }] })
+    expect(getResourceDatabase()).not.toHaveProperty('agentPresetDefaultId')
+  })
+
+  it.each([
+    { type: 'agentPreset.future', revision: 2, resource: 'agentPreset', id: 'agent-a' },
+    { type: 'agentPreset.updated', revision: 2, resource: 'agentPreset' },
+    { type: 'agentPreset.reordered', revision: 2, resource: 'agentPreset', id: 'agent-a' },
+    { type: 'agentPreset.step.updated', revision: 2, resource: 'agentPreset', id: 'step-a' },
+    {
+      type: 'agentPreset.default.updated',
+      revision: 2,
+      resource: 'agentPreset',
+      parentId: 'unexpected-parent',
+    },
+    { type: 'agentPreset.updated', revision: 2, resource: 'agentPresetDeleted', id: 'agent-a' },
+    { type: 'agentPreset.deleted', revision: 2, resource: 'agentPresetDeleted' },
+  ] as CommandEvent[])('uses a full refresh for malformed Agent Preset event %#', async (commandEvent) => {
+    fullReadMocks(9)
+
+    await expect(refreshInvalidatedServerResources(commandEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 9,
+      scope: 'full',
+    })
+
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collections).toHaveBeenCalledOnce()
+    expect(api.characters).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).not.toHaveBeenCalled()
+  })
+
   it('narrows the legacy prompt-settings event to the prompt settings group', async () => {
     seedResources(1)
     api.settingsGroup.mockResolvedValue({
@@ -435,8 +578,30 @@ describe('API-backed resource invalidation', () => {
   })
 
   it.each([
-    ['group then full', [event(2, 'settings', { id: 'display' }), event(3, 'agentPreset')]],
-    ['full then group', [event(2, 'agentPreset'), event(3, 'settings', { id: 'display' })]],
+    [
+      'group then full',
+      [
+        event(2, 'settings', { id: 'display' }),
+        {
+          type: 'lorebook.selected',
+          revision: 3,
+          resource: 'globalLorebook',
+          id: 'lore-a',
+        } as CommandEvent,
+      ],
+    ],
+    [
+      'full then group',
+      [
+        {
+          type: 'lorebook.selected',
+          revision: 2,
+          resource: 'globalLorebook',
+          id: 'lore-a',
+        } as CommandEvent,
+        event(3, 'settings', { id: 'display' }),
+      ],
+    ],
   ])('lets a full settings read subsume a scoped read in either order: %s', async (_label, events) => {
     seedResources(1)
     api.settings.mockResolvedValue({ status: 'ok', revision: 3, settings: { theme: 'light' } })

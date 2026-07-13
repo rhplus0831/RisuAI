@@ -97,6 +97,15 @@ describe('server resource read clients', () => {
       { revision: 8, group: 'display', settings: { theme: 'dark', zoomsize: 90 } },
       { revision: 9, group: 'display', settings: { openAIKey: 'smuggled' } },
       { revision: 10, group: 'sidebar', settings: { lastLoadedLoadoutName: 'Loadout A' } },
+      {
+        revision: 11,
+        group: 'agents',
+        settings: {
+          agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+          agentPresetDefaultId: 'agent-a',
+        },
+      },
+      { revision: 12, group: 'agents', settings: { theme: 'smuggled' } },
     ]
     const calls = stubResourceFetch(() => responses.shift())
 
@@ -116,10 +125,25 @@ describe('server resource read clients', () => {
       group: 'sidebar',
       settings: { lastLoadedLoadoutName: 'Loadout A' },
     })
+    await expect(fetchServerSettingsGroup('agents')).resolves.toEqual({
+      status: 'ok',
+      revision: 11,
+      group: 'agents',
+      settings: {
+        agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+        agentPresetDefaultId: 'agent-a',
+      },
+    })
+    await expect(fetchServerSettingsGroup('agents')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid agents settings response',
+    })
     expect(calls.map((call) => call.url)).toEqual([
       '/api/v1/settings/display',
       '/api/v1/settings/display',
       '/api/v1/settings/sidebar',
+      '/api/v1/settings/agents',
+      '/api/v1/settings/agents',
     ])
   })
 

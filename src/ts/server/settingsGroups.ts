@@ -8,6 +8,7 @@ export const SETTINGS_GROUPS = [
   'media',
   'memory',
   'modules',
+  'agents',
   'advanced',
   'sidebar',
   'account',
@@ -347,9 +348,11 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
 export const SERVER_SETTINGS_KEYS_BY_GROUP = Object.fromEntries(
   SETTINGS_GROUPS.map((group) => [
     group,
-    Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
-      .filter(([, owner]) => owner === group)
-      .map(([key]) => key),
+    group === 'agents'
+      ? ['agentPresets', 'agentPresetDefaultId']
+      : Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
+          .filter(([, owner]) => owner === group)
+          .map(([key]) => key),
   ]),
 ) as Record<SettingsGroup, string[]>
 
