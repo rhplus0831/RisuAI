@@ -30,9 +30,11 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import AgentPresetSettings from './AgentPresetSettings.svelte'
+import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
 import { language } from 'src/lang'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import type { AgentPresetRecord, AgentPresetStepRecord } from 'src/ts/agentPresetRecords'
+import type { AgentPresetSnapshot } from 'src/ts/server/commands'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -94,6 +96,18 @@ function mountPage(): void {
   component = mount(AgentPresetSettings, { target })
 }
 
+function mountDrawer(record: AgentPresetRecord, onSave: (patch: AgentPresetSnapshot) => void | Promise<void>): void {
+  component = mount(AgentPresetEditorDrawer, {
+    target,
+    props: {
+      mode: 'edit',
+      preset: record,
+      onSave,
+      onCancel: vi.fn(),
+    },
+  })
+}
+
 function button(selector: string): HTMLButtonElement {
   const element = target.querySelector<HTMLButtonElement>(`${selector} button`)
   expect(element, selector).toBeTruthy()
@@ -115,6 +129,20 @@ function rowButton(presetId: string, selector: string): HTMLButtonElement {
 function nameInput(): HTMLInputElement {
   const input = target.querySelector<HTMLInputElement>('[data-risu-agent-preset-name-input] input')
   expect(input).toBeTruthy()
+  return input!
+}
+
+function descriptionInput(): HTMLTextAreaElement {
+  const input = target.querySelector<HTMLTextAreaElement>('[data-risu-agent-preset-description-input]')
+  expect(input).toBeTruthy()
+  return input!
+}
+
+function metadataCheckbox(name: string): HTMLInputElement {
+  const input = [...target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
+    (candidate) => candidate.alt === name,
+  )
+  expect(input, `metadata checkbox ${name}`).toBeTruthy()
   return input!
 }
 
@@ -253,16 +281,87 @@ describe('AgentPresetSettings', () => {
     button('[data-risu-agent-preset-save]').click()
     await flushAsyncWork()
 
-    expect(agentPresetSpies.updateAgentPreset).toHaveBeenCalledWith(
-      'ap_a',
-      expect.objectContaining({ name: 'Renamed Agent', enabled: true }),
-    )
+    expect(agentPresetSpies.updateAgentPreset).toHaveBeenCalledWith('ap_a', { name: 'Renamed Agent' })
 
     rowButton('ap_a', '[data-risu-agent-preset-delete]').click()
     await flushAsyncWork()
 
     expect(window.confirm).toHaveBeenCalledWith(language.agentPresets.deletePresetConfirm('Research Agent'))
     expect(agentPresetSpies.deleteAgentPreset).toHaveBeenCalledWith('ap_a')
+  })
+
+  it('disables and suppresses an unchanged metadata save', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', description: 'Existing description' })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+
+    const save = button('[data-risu-agent-preset-save]')
+    expect(save.disabled).toBe(true)
+    save.click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPreset).not.toHaveBeenCalled()
+  })
+
+  it('sends an explicit metadata clear without unchanged siblings', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        description: 'Existing description',
+        maxConcurrency: 6,
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+
+    const description = descriptionInput()
+    description.value = ''
+    description.dispatchEvent(new Event('input', { bubbles: true }))
+    metadataCheckbox(language.agentPresets.limitConcurrency).click()
+    await tick()
+
+    button('[data-risu-agent-preset-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPreset).toHaveBeenCalledWith('ap_a', {
+      description: null,
+      maxConcurrency: null,
+    })
+  })
+
+  it('resets metadata dirty state when the saved draft is reprojected', async () => {
+    const initial = preset({ id: 'ap_a', name: 'Research Agent', description: 'Existing description' })
+    seedDb([initial])
+    const onSave = vi.fn(async (patch: AgentPresetSnapshot) => {
+      const current = getDatabase().agentPresets[0]
+      getDatabase().agentPresets = [{ ...current, ...patch } as AgentPresetRecord]
+    })
+    mountDrawer(initial, onSave)
+    await tick()
+
+    const input = nameInput()
+    input.value = 'Reprojected Agent'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const save = button('[data-risu-agent-preset-save]')
+    expect(save.disabled).toBe(false)
+    save.click()
+    await flushAsyncWork()
+
+    expect(onSave).toHaveBeenCalledWith({ name: 'Reprojected Agent' })
+    expect(save.disabled).toBe(true)
+
+    save.click()
+    await flushAsyncWork()
+    expect(onSave).toHaveBeenCalledTimes(1)
   })
 
   it('renders disabled, invalid, and incomplete statuses from resolver helpers', async () => {

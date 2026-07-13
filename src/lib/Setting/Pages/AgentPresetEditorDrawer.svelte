@@ -52,11 +52,18 @@
   type StepEditorMode = 'new' | 'edit' | null
   type StepFailurePolicyMode = AgentPresetStepFailurePolicy['mode']
   type StepModelMode = AgentPresetStepModelSelection['mode']
+  type AgentPresetMetadataField = 'name' | 'description' | 'enabled' | 'maxConcurrency'
 
   const DEFAULT_STEP_TIMEOUT_MS = 30_000
   const DEFAULT_STEP_MAX_INPUT_CHARS = 24_000
   const DEFAULT_STEP_MAX_OUTPUT_CHARS = 1_200
   const DEFAULT_STEP_TEMPERATURE = 100
+  const AGENT_PRESET_METADATA_FIELDS: readonly AgentPresetMetadataField[] = [
+    'name',
+    'description',
+    'enabled',
+    'maxConcurrency',
+  ]
 
   let { mode, preset, busy = false, commandError = '', onSave, onCancel }: Props = $props()
 
@@ -68,7 +75,7 @@
   let draftEnabled = $state(initialPreset?.enabled ?? true)
   let limitConcurrency = $state(initialPreset?.maxConcurrency !== undefined)
   let draftMaxConcurrency = $state(initialPreset?.maxConcurrency ?? 4)
-  let initialSnapshot = $state('')
+  let initialMetadataSnapshot = $state<AgentPresetSnapshot | null>(null)
 
   let stepEditorMode = $state<StepEditorMode>(null)
   let editingStepId = $state<string | null>(null)
@@ -105,13 +112,16 @@
   let afterMainSteps = $derived(stepsForPhase(presetSteps, 'afterMain'))
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
   let activeStep = $derived(editingStepId ? presetSteps.find((step) => step.id === editingStepId) : undefined)
-  let metadataDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
+  let metadataPatch = $derived(
+    initialMetadataSnapshot ? sparseAgentPresetMetadataPatch(initialMetadataSnapshot, snapshotForSave()) : {},
+  )
+  let metadataDirty = $derived(Object.keys(metadataPatch).length > 0)
   let stepDirty = $derived(
     stepInitialSnapshotJson !== '' && stepInitialSnapshotJson !== snapshot(stepSnapshotForSave()),
   )
   let isDirty = $derived(metadataDirty || stepDirty)
   let outputKeyValid = $derived(isValidAgentPresetOutputKey(draftStepOutputKey.trim()))
-  let canSave = $derived(draftName.trim().length > 0 && !busy)
+  let canSave = $derived(draftName.trim().length > 0 && !busy && (mode === 'create' || metadataDirty))
   let canSaveStep = $derived(
     mode === 'edit' &&
       !!initialPresetId &&
@@ -129,11 +139,39 @@
   )
 
   $effect(() => {
-    if (!initialSnapshot) initialSnapshot = snapshot(snapshotForSave())
+    const draft = snapshotForSave()
+    const projection = mode === 'edit' && livePreset ? metadataSnapshotFromPreset(livePreset) : null
+    if (!initialMetadataSnapshot) {
+      initialMetadataSnapshot = projection ?? draft
+      return
+    }
+    if (!projection) return
+
+    const initialJson = snapshot(initialMetadataSnapshot)
+    const draftJson = snapshot(draft)
+    const projectionJson = snapshot(projection)
+    if (draftJson === projectionJson) {
+      if (initialJson !== projectionJson) initialMetadataSnapshot = projection
+      return
+    }
+    if (draftJson === initialJson) {
+      applyMetadataProjectionToDraft(projection)
+      initialMetadataSnapshot = projection
+    }
   })
 
   function snapshot(value: unknown): string {
     return JSON.stringify(value ?? {})
+  }
+
+  function snapshotValue(value: unknown): string {
+    const valueSnapshot = JSON.stringify(value)
+    return valueSnapshot === undefined ? '__undefined__' : valueSnapshot
+  }
+
+  function cloneJsonValue<T>(value: T): T {
+    if (value === undefined) return value
+    return JSON.parse(JSON.stringify(value)) as T
   }
 
   function setStepInitialSnapshot(value: AgentPresetStepSnapshot | null): void {
@@ -203,6 +241,46 @@
     }
 
     return next
+  }
+
+  function metadataSnapshotFromPreset(source: AgentPresetRecord): AgentPresetSnapshot {
+    const next: AgentPresetSnapshot = {
+      name: source.name.trim(),
+      enabled: source.enabled,
+      description: source.description?.trim() || null,
+      maxConcurrency:
+        typeof source.maxConcurrency === 'number'
+          ? clampInteger(source.maxConcurrency, AGENT_PRESET_MAX_CONCURRENCY_MIN, AGENT_PRESET_MAX_CONCURRENCY_MAX)
+          : null,
+    }
+    return next
+  }
+
+  function sparseAgentPresetMetadataPatch(
+    previous: AgentPresetSnapshot,
+    attempted: AgentPresetSnapshot,
+  ): AgentPresetSnapshot {
+    const patch: AgentPresetSnapshot = {}
+    const previousRecord = previous as Record<string, unknown>
+    const attemptedRecord = attempted as Record<string, unknown>
+    const patchRecord = patch as Record<string, unknown>
+    for (const field of AGENT_PRESET_METADATA_FIELDS) {
+      if (snapshotValue(previousRecord[field]) === snapshotValue(attemptedRecord[field])) continue
+      patchRecord[field] = cloneJsonValue(attemptedRecord[field])
+    }
+    return patch
+  }
+
+  function applyMetadataProjectionToDraft(projection: AgentPresetSnapshot): void {
+    draftName = typeof projection.name === 'string' ? projection.name : ''
+    draftDescription = typeof projection.description === 'string' ? projection.description : ''
+    draftEnabled = projection.enabled !== false
+    if (typeof projection.maxConcurrency === 'number') {
+      limitConcurrency = true
+      draftMaxConcurrency = projection.maxConcurrency
+    } else {
+      limitConcurrency = false
+    }
   }
 
   function stepSnapshotForSave(): AgentPresetStepSnapshot {
@@ -389,6 +467,11 @@
 
   async function savePreset(): Promise<void> {
     if (!canSave) return
+    if (mode === 'edit') {
+      if (Object.keys(metadataPatch).length === 0) return
+      await onSave(metadataPatch)
+      return
+    }
     await onSave(snapshotForSave())
   }
 
