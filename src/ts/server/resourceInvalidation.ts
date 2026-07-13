@@ -380,8 +380,10 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       return
     case 'agentPreset':
     case 'prompt':
-    case 'moduleEnabled':
       addFullSettings()
+      return
+    case 'moduleEnabled':
+      addSettingsGroup('modules')
       return
     case 'settingsWithHypaV3Presets':
       if (event.id !== 'memory') {

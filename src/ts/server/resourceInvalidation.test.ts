@@ -403,8 +403,8 @@ describe('API-backed resource invalidation', () => {
   })
 
   it.each([
-    ['group then full', [event(2, 'settings', { id: 'display' }), event(3, 'moduleEnabled', { id: 'module-a' })]],
-    ['full then group', [event(2, 'moduleEnabled', { id: 'module-a' }), event(3, 'settings', { id: 'display' })]],
+    ['group then full', [event(2, 'settings', { id: 'display' }), event(3, 'agentPreset')]],
+    ['full then group', [event(2, 'agentPreset'), event(3, 'settings', { id: 'display' })]],
   ])('lets a full settings read subsume a scoped read in either order: %s', async (_label, events) => {
     seedResources(1)
     api.settings.mockResolvedValue({ status: 'ok', revision: 3, settings: { theme: 'light' } })
@@ -417,6 +417,28 @@ describe('API-backed resource invalidation', () => {
 
     expect(api.settings).toHaveBeenCalledOnce()
     expect(api.settingsGroup).not.toHaveBeenCalled()
+  })
+
+  it('reads only enabled modules for foreign module enable events', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'modules',
+      settings: { enabledModules: ['module-a'] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'moduleEnabled', { id: 'module-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(getResourceDatabase().enabledModules).toEqual(['module-a'])
   })
 
   it('reads only the resource slices changed by each preset selection shape', async () => {

@@ -725,6 +725,7 @@ describe('server command API adapter', () => {
     expect(settingsGroupForKey('voyageApiKey')).toBe('memory')
     expect(settingsGroupForKey('enableCustomFlags')).toBe('advanced')
     expect(settingsGroupForKey('customFlags')).toBe('advanced')
+    expect(settingsGroupForKey('enabledModules')).toBe('modules')
   })
 
   it('does not map retired Context Agent settings to command groups', () => {

@@ -766,7 +766,33 @@ describe('resource-scoped database state', () => {
     expect(settingsResourceState.enabledModulesRevision).toBe(4)
 
     expect(
-      applySettingsResource({ revision: 5, settings: { enabledModules: ['server-module'], language: 'ja' } }),
+      applySettingsGroupResource(
+        {
+          revision: 3,
+          group: 'modules',
+          settings: { enabledModules: ['stale-module'] },
+        },
+        ['enabledModules'],
+      ),
+    ).toBe(false)
+    expect(getResourceDatabase().enabledModules).toEqual(['mod-b'])
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 5,
+          group: 'modules',
+          settings: { enabledModules: ['group-module'] },
+        },
+        ['enabledModules'],
+      ),
+    ).toBe(true)
+    expect(getResourceDatabase().enabledModules).toEqual(['group-module'])
+    expect(settingsResourceState.enabledModulesRevision).toBe(5)
+    expect(settingsResourceState.groupRevisions.modules).toBe(5)
+
+    expect(
+      applySettingsResource({ revision: 6, settings: { enabledModules: ['server-module'], language: 'ja' } }),
     ).toBe(true)
     expect(getResourceDatabase()).toMatchObject({ enabledModules: ['server-module'], language: 'ja' })
     expect(settingsResourceState.enabledModulesRevision).toBeNull()

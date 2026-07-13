@@ -745,6 +745,7 @@ export const SETTINGS_GROUPS = [
   'language',
   'media',
   'memory',
+  'modules',
   'advanced',
   'sidebar',
   'account',
@@ -1018,6 +1019,7 @@ export const SETTINGS_GROUP_KEYS: Record<SettingsGroup, readonly string[]> = {
     'hypaCustomSettings',
     'showMenuHypaMemoryModal',
   ],
+  modules: ['enabledModules'],
   advanced: [
     'loreBookDepth',
     'loreBookToken',
@@ -1388,6 +1390,7 @@ const ARRAY_SETTING_KEYS = new Set([
   'customModels',
   'chatGenerationTogglePresets',
   'customSidebarItems',
+  'enabledModules',
   'globalscript',
   'hotkeys',
   'modelProfiles',

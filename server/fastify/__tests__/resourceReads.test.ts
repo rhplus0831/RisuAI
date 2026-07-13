@@ -52,6 +52,7 @@ beforeEach(async () => {
         localNetworkMode: true,
         localNetworkTimeoutSec: 45,
         openAIKey: 'root-secret',
+        enabledModules: ['module-a'],
         modules: [{ id: 'module-a', name: 'Module A', cjs: 'module.exports = true' }],
         plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")' }],
         modelPresets: [{ id: 'model-a', name: 'Model A', openAIKey: 'model-secret' }],
@@ -187,6 +188,18 @@ describe('authenticated resource read routes', () => {
     })
     expect(sidebar.statusCode).toBe(200)
     expect(sidebar.json().settings).toMatchObject({ lastLoadedLoadoutName: '' })
+
+    const modules = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/modules',
+      headers: authHeaders(),
+    })
+    expect(modules.statusCode).toBe(200)
+    expect(modules.json()).toEqual({
+      revision,
+      group: 'modules',
+      settings: { enabledModules: ['module-a'] },
+    })
 
     const account = await harness.app.inject({
       method: 'GET',

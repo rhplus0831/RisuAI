@@ -443,6 +443,7 @@ export function applySettingsGroupResource(
   const currentRevision = Math.max(
     settingsResourceState.fullRevision ?? -1,
     settingsResourceState.groupRevisions[payload.group] ?? -1,
+    payload.group === 'modules' ? (settingsResourceState.enabledModulesRevision ?? -1) : -1,
   )
   if (payload.revision < currentRevision) return false
 
@@ -457,6 +458,7 @@ export function applySettingsGroupResource(
     }
   }
   settingsResourceState.groupRevisions[payload.group] = payload.revision
+  if (payload.group === 'modules') settingsResourceState.enabledModulesRevision = payload.revision
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
