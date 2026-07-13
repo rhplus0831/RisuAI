@@ -74,6 +74,23 @@ beforeEach(async () => {
         localNetworkMode: true,
         localNetworkTimeoutSec: 45,
         openAIKey: 'root-secret',
+        modelProfiles: [
+          {
+            id: 'profile-a',
+            name: 'Profile A',
+            providerId: 'vertex',
+            modelId: 'model-a',
+            providerOptions: {
+              apiKey: 'profile-secret',
+              vertex: {
+                projectId: 'project-a',
+                privateKey: 'vertex-secret',
+              },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+        modelRuntimeDefaults: { maxContext: 8_192 },
         enabledModules: ['module-a'],
         modules: [{ id: 'module-a', name: 'Module A', cjs: 'module.exports = true' }],
         plugins: [{ name: 'plugin-a', displayName: 'Plugin A', script: 'Risuai.log("plugin")' }],
@@ -183,7 +200,18 @@ describe('authenticated resource read routes', () => {
     expect(providers.json()).toMatchObject({
       revision,
       group: 'providers',
-      settings: { openAIKey: MASKED_PROVIDER_SECRET },
+      settings: {
+        openAIKey: MASKED_PROVIDER_SECRET,
+        modelProfiles: [
+          {
+            id: 'profile-a',
+            providerOptions: {
+              apiKey: MASKED_PROVIDER_SECRET,
+              vertex: { privateKey: MASKED_PROVIDER_SECRET },
+            },
+          },
+        ],
+      },
     })
     expect(providers.json().settings).not.toHaveProperty('enableLorebookStubs')
     expect(providers.json().settings).not.toHaveProperty('hypaV3Presets')
@@ -279,6 +307,34 @@ describe('authenticated resource read routes', () => {
       },
     })
     expect(agents.json().settings).not.toHaveProperty('theme')
+
+    const models = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/models',
+      headers: authHeaders(),
+    })
+    expect(models.statusCode).toBe(200)
+    expect(models.json()).toMatchObject({
+      revision,
+      group: 'models',
+      settings: {
+        modelProfiles: [
+          {
+            id: 'profile-a',
+            providerOptions: {
+              apiKey: MASKED_PROVIDER_SECRET,
+              vertex: { privateKey: MASKED_PROVIDER_SECRET },
+            },
+          },
+        ],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+        modelRuntimeDefaults: { maxContext: 8_192 },
+      },
+    })
+    expect(Object.keys(models.json().settings).sort()).toEqual(
+      ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'].sort(),
+    )
+    expect(models.json().settings).not.toHaveProperty('openAIKey')
 
     const unknown = await harness.app.inject({
       method: 'GET',

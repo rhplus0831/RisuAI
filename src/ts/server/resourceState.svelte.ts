@@ -2,7 +2,7 @@ import type { Database, character } from '../storage/database.svelte'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
-import type { SettingsGroup } from './settingsGroups'
+import { isModelProfileSettingsGroup, type SettingsGroup } from './settingsGroups'
 import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } from './commands'
 
 let nextCharacterRowProjectionEpoch = 0
@@ -562,9 +562,13 @@ export function applySettingsGroupResource(
   payload: ServerSettingsGroupResourcePayload,
   groupKeys: readonly string[],
 ): boolean {
+  const sharedModelProfileRevision = isModelProfileSettingsGroup(payload.group)
+    ? Math.max(settingsResourceState.groupRevisions.providers ?? -1, settingsResourceState.groupRevisions.models ?? -1)
+    : -1
   const currentRevision = Math.max(
     settingsResourceState.fullRevision ?? -1,
     settingsResourceState.groupRevisions[payload.group] ?? -1,
+    sharedModelProfileRevision,
     payload.group === 'modules' ? (settingsResourceState.enabledModulesRevision ?? -1) : -1,
   )
   if (payload.revision < currentRevision) return false
@@ -580,11 +584,13 @@ export function applySettingsGroupResource(
     }
   }
   settingsResourceState.groupRevisions[payload.group] = payload.revision
+  if (payload.group === 'providers') settingsResourceState.groupRevisions.models = payload.revision
   if (payload.group === 'modules') settingsResourceState.enabledModulesRevision = payload.revision
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   advanceSettingsGroupProjectionEpoch(payload.group)
+  if (payload.group === 'providers') advanceSettingsGroupProjectionEpoch('models')
   advanceSettingsProjectionEpoch()
   markResourceDatabaseChanged()
   return true

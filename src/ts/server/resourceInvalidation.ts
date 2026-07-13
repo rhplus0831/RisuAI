@@ -376,7 +376,7 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addSettingsGroup(event.id)
       return
     case 'modelProfile':
-      addSettingsGroup('providers')
+      addSettingsGroup('models')
       return
     case 'agentPreset':
       if (!isWellFormedAgentPresetEvent(event)) {

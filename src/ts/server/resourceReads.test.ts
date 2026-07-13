@@ -106,6 +106,16 @@ describe('server resource read clients', () => {
         },
       },
       { revision: 12, group: 'agents', settings: { theme: 'smuggled' } },
+      {
+        revision: 13,
+        group: 'models',
+        settings: {
+          modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
+          modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+          modelRuntimeDefaults: { maxContext: 8_192 },
+        },
+      },
+      { revision: 14, group: 'models', settings: { openAIKey: 'smuggled' } },
     ]
     const calls = stubResourceFetch(() => responses.shift())
 
@@ -138,12 +148,28 @@ describe('server resource read clients', () => {
       status: 'error',
       error: 'Invalid agents settings response',
     })
+    await expect(fetchServerSettingsGroup('models')).resolves.toEqual({
+      status: 'ok',
+      revision: 13,
+      group: 'models',
+      settings: {
+        modelProfiles: [{ id: 'profile-a', name: 'Profile A' }],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+        modelRuntimeDefaults: { maxContext: 8_192 },
+      },
+    })
+    await expect(fetchServerSettingsGroup('models')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid models settings response',
+    })
     expect(calls.map((call) => call.url)).toEqual([
       '/api/v1/settings/display',
       '/api/v1/settings/display',
       '/api/v1/settings/sidebar',
       '/api/v1/settings/agents',
       '/api/v1/settings/agents',
+      '/api/v1/settings/models',
+      '/api/v1/settings/models',
     ])
   })
 

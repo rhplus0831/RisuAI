@@ -73,6 +73,7 @@ import {
   SERVER_COLLECTION_NAMES,
   applyCharactersResource,
   applyCollectionsResource,
+  applySettingsGroupResource,
   applySettingsResource,
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
@@ -81,6 +82,7 @@ import {
   hasCharacterRowProjectionEpochChanged,
   resetServerResourceState,
 } from './resourceState.svelte'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 
 const hooks: ServerResourceInvalidationHooks = {
@@ -1197,12 +1199,12 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
-  it('reads only provider settings for model profile events', async () => {
+  it('coalesces model profile events into one models-only settings read', async () => {
     seedResources(1)
     api.settingsGroup.mockResolvedValue({
       status: 'ok',
       revision: 4,
-      group: 'providers',
+      group: 'models',
       settings: {
         modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
@@ -1225,13 +1227,48 @@ describe('API-backed resource invalidation', () => {
     ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
 
     expect(api.settingsGroup).toHaveBeenCalledOnce()
-    expect(api.settingsGroup).toHaveBeenCalledWith('providers', undefined)
+    expect(api.settingsGroup).toHaveBeenCalledWith('models', undefined)
     expect(api.settings).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({
       modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
       modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
       modelRuntimeDefaults: { maxContext: 8_192 },
     })
+  })
+
+  it('does not treat a newer models slice as proof that unrelated provider settings are current', async () => {
+    seedResources(1)
+    applySettingsGroupResource(
+      {
+        revision: 10,
+        group: 'models',
+        settings: { modelProfiles: [{ id: 'profile-newer', name: 'Newer Profile' }] },
+      },
+      SERVER_SETTINGS_KEYS_BY_GROUP.models,
+    )
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 9,
+      group: 'providers',
+      settings: {
+        openAIKey: 'provider-at-nine',
+        modelProfiles: [{ id: 'profile-stale', name: 'Stale Profile' }],
+      },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'settings.updated', revision: 9, resource: 'settings', id: 'providers' },
+        { appliedRevision: 8, hooks },
+      ),
+    ).resolves.toEqual({ status: 'error', error: 'Failed to apply server providers settings response' })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('providers', undefined)
+    expect(getResourceDatabase()).toMatchObject({
+      modelProfiles: [{ id: 'profile-newer', name: 'Newer Profile' }],
+    })
+    expect(getResourceDatabase()).not.toHaveProperty('openAIKey')
   })
 
   it('reads a preset-owned prompt body and only the root collection for root prompt item events', async () => {

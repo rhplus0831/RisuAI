@@ -2,6 +2,7 @@ import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
 
 export const SETTINGS_GROUPS = [
   'providers',
+  'models',
   'runtime',
   'display',
   'language',
@@ -16,6 +17,12 @@ export const SETTINGS_GROUPS = [
 ] as const
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
+
+export const MODEL_PROFILE_SETTINGS_KEYS = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'] as const
+
+export function isModelProfileSettingsGroup(group: SettingsGroup): group is 'providers' | 'models' {
+  return group === 'providers' || group === 'models'
+}
 
 export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   account: 'account',
@@ -350,9 +357,11 @@ export const SERVER_SETTINGS_KEYS_BY_GROUP = Object.fromEntries(
     group,
     group === 'agents'
       ? ['agentPresets', 'agentPresetDefaultId']
-      : Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
-          .filter(([, owner]) => owner === group)
-          .map(([key]) => key),
+      : group === 'models'
+        ? [...MODEL_PROFILE_SETTINGS_KEYS]
+        : Object.entries(SERVER_SETTINGS_GROUP_BY_KEY)
+            .filter(([, owner]) => owner === group)
+            .map(([key]) => key),
   ]),
 ) as Record<SettingsGroup, string[]>
 

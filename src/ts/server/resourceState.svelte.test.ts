@@ -4,6 +4,7 @@ import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
 } from './chatGenerationSettingsResourceGuard'
+import { normalizeModelRoleProfiles } from '../model/modelProfileRecords'
 import {
   SERVER_COLLECTION_NAMES,
   applyCharacterCollectionMutationLocalEffect,
@@ -67,6 +68,7 @@ import {
   settingsResourceState,
   withResourceDatabaseWrite,
 } from './resourceState.svelte'
+import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 
 function metadataCharacter(chaId: string, name: string): character {
   return {
@@ -872,6 +874,108 @@ describe('resource-scoped database state', () => {
     expect(settingsResourceState.revision).toBe(10)
     expect(applySettingsResource({ revision: 8, settings: { language: 'stale', theme: 'stale' } })).toBe(false)
     expect(getResourceDatabase()).toMatchObject({ language: 'ko', theme: 'light' })
+  })
+
+  it('fences overlapping model and provider reads while preserving unrelated provider settings', () => {
+    applySettingsResource({
+      revision: 1,
+      settings: {
+        openAIKey: 'provider-old',
+        modelProfiles: [{ id: 'profile-old', name: 'Old Profile' }],
+        modelRoleProfiles: normalizeModelRoleProfiles(undefined),
+        modelRuntimeDefaults: { maxContext: 4_096 },
+        theme: 'dark',
+      },
+    })
+    const initialProviderEpoch = captureSettingsGroupProjectionEpoch('providers')
+    const initialModelsEpoch = captureSettingsGroupProjectionEpoch('models')
+    markSettingsGroupAcknowledgementTainted('providers')
+    markSettingsGroupAcknowledgementTainted('models')
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 2,
+          group: 'providers',
+          settings: {
+            openAIKey: 'provider-new',
+            modelProfiles: [{ id: 'profile-provider', name: 'Provider Profile' }],
+            modelRoleProfiles: normalizeModelRoleProfiles({
+              chatMain: { mode: 'profile', profileId: 'profile-provider' },
+            }),
+            modelRuntimeDefaults: { maxContext: 8_192 },
+          },
+        },
+        SERVER_SETTINGS_KEYS_BY_GROUP.providers,
+      ),
+    ).toBe(true)
+    expect(settingsResourceState.groupRevisions).toMatchObject({ providers: 2, models: 2 })
+    expect(hasSettingsGroupProjectionEpochChanged('providers', initialProviderEpoch)).toBe(true)
+    expect(hasSettingsGroupProjectionEpochChanged('models', initialModelsEpoch)).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('providers')).toBe(false)
+    expect(isSettingsGroupAcknowledgementTainted('models')).toBe(false)
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 1,
+          group: 'models',
+          settings: { modelProfiles: [{ id: 'profile-stale', name: 'Stale Profile' }] },
+        },
+        SERVER_SETTINGS_KEYS_BY_GROUP.models,
+      ),
+    ).toBe(false)
+
+    const providerEpoch = captureSettingsGroupProjectionEpoch('providers')
+    const modelsEpoch = captureSettingsGroupProjectionEpoch('models')
+    markSettingsGroupAcknowledgementTainted('providers')
+    markSettingsGroupAcknowledgementTainted('models')
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 3,
+          group: 'models',
+          settings: {
+            modelProfiles: [{ id: 'profile-model', name: 'Model Profile' }],
+            modelRoleProfiles: normalizeModelRoleProfiles({
+              chatMain: { mode: 'profile', profileId: 'profile-model' },
+            }),
+            modelRuntimeDefaults: { maxContext: 16_384 },
+          },
+        },
+        SERVER_SETTINGS_KEYS_BY_GROUP.models,
+      ),
+    ).toBe(true)
+    expect(getResourceDatabase()).toMatchObject({
+      openAIKey: 'provider-new',
+      modelProfiles: [{ id: 'profile-model', name: 'Model Profile' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-model' } },
+      modelRuntimeDefaults: { maxContext: 16_384 },
+      theme: 'dark',
+    })
+    expect(settingsResourceState.groupRevisions).toMatchObject({ providers: 2, models: 3 })
+    expect(hasSettingsGroupProjectionEpochChanged('providers', providerEpoch)).toBe(false)
+    expect(hasSettingsGroupProjectionEpochChanged('models', modelsEpoch)).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('providers')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('models')).toBe(false)
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 2,
+          group: 'providers',
+          settings: {
+            openAIKey: 'provider-stale',
+            modelProfiles: [{ id: 'profile-stale', name: 'Stale Profile' }],
+          },
+        },
+        SERVER_SETTINGS_KEYS_BY_GROUP.providers,
+      ),
+    ).toBe(false)
+    expect(getResourceDatabase()).toMatchObject({
+      openAIKey: 'provider-new',
+      modelProfiles: [{ id: 'profile-model', name: 'Model Profile' }],
+    })
   })
 
   it('acknowledges a settings patch without replacing a newer queued field', () => {

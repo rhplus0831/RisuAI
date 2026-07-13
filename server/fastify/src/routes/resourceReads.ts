@@ -77,7 +77,8 @@ export function registerResourceReadRoutes(
     const keys = SETTINGS_GROUP_KEYS[group].filter(
       (key) =>
         key !== 'hypaV3Presets' &&
-        READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group,
+        (group === 'models' ||
+          READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group),
     )
     const { revision } = getSchemaState(db)
     return {

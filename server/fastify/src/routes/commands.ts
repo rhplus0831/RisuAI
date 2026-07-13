@@ -875,10 +875,11 @@ export const SETTINGS_GROUPS = [
 ] as const
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
-export const READ_ONLY_SETTINGS_GROUPS = ['agents'] as const
+export const READ_ONLY_SETTINGS_GROUPS = ['agents', 'models'] as const
 export const READABLE_SETTINGS_GROUPS = [...SETTINGS_GROUPS, ...READ_ONLY_SETTINGS_GROUPS] as const
 export type ReadableSettingsGroup = (typeof READABLE_SETTINGS_GROUPS)[number]
 type SettingValueKind = 'boolean' | 'number' | 'string' | 'stringOrNull' | 'object' | 'array' | 'arrayOrNull' | 'json'
+const MODEL_PROFILE_SETTINGS_KEYS = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'] as const
 
 export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[]> = {
   providers: [
@@ -960,6 +961,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'echoMessage',
     'echoDelay',
   ],
+  models: MODEL_PROFILE_SETTINGS_KEYS,
   runtime: [
     'useStreaming',
     'streamGeminiThoughts',

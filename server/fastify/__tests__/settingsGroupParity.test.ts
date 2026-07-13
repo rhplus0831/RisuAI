@@ -10,4 +10,18 @@ describe('settings group parity', () => {
     const clientGroups = SERVER_SETTINGS_KEYS_BY_GROUP as Record<string, string[]>
     expect(clientGroups.agents).toEqual([...SETTINGS_GROUP_KEYS.agents])
   })
+
+  it('keeps the model profile projection exact, read-only, and provider-write compatible', () => {
+    const modelProfileSettingsKeys = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults']
+    expect(READABLE_SETTINGS_GROUPS).toContain('models')
+    expect(SETTINGS_GROUPS).not.toContain('models')
+    expect(SETTINGS_GROUP_KEYS.models).toEqual(modelProfileSettingsKeys)
+    const clientGroups = SERVER_SETTINGS_KEYS_BY_GROUP as Record<string, string[]>
+    expect(clientGroups.models).toEqual(modelProfileSettingsKeys)
+
+    for (const key of modelProfileSettingsKeys) {
+      expect(SETTINGS_GROUP_KEYS.providers).toContain(key)
+      expect(clientGroups.providers).toContain(key)
+    }
+  })
 })
