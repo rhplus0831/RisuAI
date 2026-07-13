@@ -1751,6 +1751,7 @@ export async function createModelPresetCommand(
 export async function updateModelPresetCommand(
   input: UpdateModelPresetCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ modelPresetId: string }>> {
   return requestCommandJson(`/model-presets/${encodeURIComponent(input.modelPresetId)}`, {
     method: 'PATCH',
@@ -1759,6 +1760,7 @@ export async function updateModelPresetCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 
@@ -1835,6 +1837,7 @@ export async function createPromptPresetCommand(
 export async function updatePromptPresetCommand(
   input: UpdatePromptPresetCommandInput,
   signal?: AbortSignal | null,
+  keepalive = false,
 ): Promise<ServerCommandResult<{ promptPresetId: string }>> {
   return requestCommandJson(`/prompt-presets/${encodeURIComponent(input.promptPresetId)}`, {
     method: 'PATCH',
@@ -1843,6 +1846,7 @@ export async function updatePromptPresetCommand(
       patch: input.patch,
     },
     signal,
+    keepalive,
   })
 }
 

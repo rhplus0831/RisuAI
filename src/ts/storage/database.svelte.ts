@@ -63,6 +63,7 @@ import {
   peekCachedServerCommandRevision,
   type PromptPresetSnapshot,
   type PresetSnapshot,
+  type ServerCommandTransportOptions,
 } from '../server/commands'
 import { currentCharacterRowSnapshot, dispatchCompatibleCharacterUpdateScoped } from '../characterCommands'
 import {
@@ -92,6 +93,7 @@ import {
 import { fetchServerLegacyPreset } from '../server/hydrationReads'
 import { canUseServerResourceReads } from '../server/resourceReads'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from '../server/chatGenerationSettingsResourceGuard'
+import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
 import {
   createExtractedModelPreset,
   createExtractedPromptPreset,
@@ -102,6 +104,7 @@ import {
   PROMPT_PRESET_FIELDS,
   PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS,
   PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS,
+  PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY,
   promptPresetExportPayload,
   promptPresetOverridesModelParameters,
   resolvePromptPresetRegexField,
@@ -484,6 +487,36 @@ function snapshotSetPresetSettings(db: Database): Partial<Record<SetPresetRollba
 type SplitPresetKind = 'model' | 'prompt'
 type SplitPresetRow = ModelPreset | PromptPreset
 
+interface SplitPresetPatchFieldAttempt {
+  previousPresent: boolean
+  previousValue: unknown
+  attemptedValue: unknown
+}
+
+interface PendingSplitPresetPatch {
+  kind: SplitPresetKind
+  presetId: string
+  fields: Map<string, SplitPresetPatchFieldAttempt>
+  projectionFields: Map<string, SplitPresetPatchFieldAttempt>
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+interface DispatchedSplitPresetPatch {
+  kind: SplitPresetKind
+  presetId: string
+  fields: Map<string, SplitPresetPatchFieldAttempt>
+  projectionFields: Map<string, SplitPresetPatchFieldAttempt>
+  settled: boolean
+}
+
+const SPLIT_PRESET_PATCH_DELAY_MS = 250
+const pendingSplitPresetPatches = new Map<string, PendingSplitPresetPatch>()
+const unsettledSplitPresetPatches = new Map<string, DispatchedSplitPresetPatch[]>()
+const modelPresetFieldNames = new Set<string>(MODEL_PRESET_FIELDS)
+const promptPresetFieldNames = new Set<string>(PROMPT_PRESET_FIELDS)
+const promptPresetModelParameterFieldNames = new Set<string>(PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS)
+const promptPresetModelOthersFieldNames = new Set<string>(PROMPT_PRESET_MODEL_OTHERS_OVERRIDE_FIELDS)
+
 interface BotPresetListRollbackEntry {
   key: string
   previous: botPreset | null
@@ -517,6 +550,301 @@ interface SplitPresetSelectionRollback {
   attemptedSelectedId: string | null
   previousSettings: Partial<Record<SetPresetRollbackKey, unknown>>
   attemptedSettings: Partial<Record<SetPresetRollbackKey, unknown>>
+}
+
+function splitPresetPatchKey(kind: SplitPresetKind, presetId: string): string {
+  return `${kind}:${presetId}`
+}
+
+function cloneSplitPresetPatchFieldAttempt(field: SplitPresetPatchFieldAttempt): SplitPresetPatchFieldAttempt {
+  return {
+    previousPresent: field.previousPresent,
+    previousValue: safeStructuredClone(field.previousValue),
+    attemptedValue: safeStructuredClone(field.attemptedValue),
+  }
+}
+
+function queueSplitPresetPatch(
+  kind: SplitPresetKind,
+  presetId: string,
+  preset: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): PendingSplitPresetPatch | null {
+  if (!canUseServerCommands()) return null
+
+  const pendingKey = splitPresetPatchKey(kind, presetId)
+  let pending = pendingSplitPresetPatches.get(pendingKey)
+  if (!pending) {
+    pending = {
+      kind,
+      presetId,
+      fields: new Map(),
+      projectionFields: new Map(),
+      timer: null,
+    }
+    pendingSplitPresetPatches.set(pendingKey, pending)
+  }
+
+  for (const [fieldName, attemptedValue] of Object.entries(patch)) {
+    if (fieldName === 'id') continue
+    const existing = pending.fields.get(fieldName)
+    if (existing) {
+      existing.attemptedValue = safeStructuredClone(attemptedValue)
+      continue
+    }
+    pending.fields.set(fieldName, {
+      previousPresent: Object.prototype.hasOwnProperty.call(preset, fieldName),
+      previousValue: safeStructuredClone(preset[fieldName]),
+      attemptedValue: safeStructuredClone(attemptedValue),
+    })
+  }
+
+  if (pending.fields.size === 0) {
+    pendingSplitPresetPatches.delete(pendingKey)
+    return null
+  }
+  if (pending.timer) clearTimeout(pending.timer)
+  pending.timer = setTimeout(() => flushPendingSplitPresetPatch(kind, presetId), SPLIT_PRESET_PATCH_DELAY_MS)
+  return pending
+}
+
+function captureSplitPresetProjectionFields(
+  kind: SplitPresetKind,
+  patch: Record<string, unknown>,
+): Map<string, SplitPresetPatchFieldAttempt> {
+  const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
+  const database = getDatabase() as unknown as Record<string, unknown>
+  for (const fieldName of splitPresetProjectionFieldNames(kind, patch)) {
+    projectionFields.set(fieldName, {
+      previousPresent: Object.prototype.hasOwnProperty.call(database, fieldName),
+      previousValue: safeStructuredClone(database[fieldName]),
+      attemptedValue: undefined,
+    })
+  }
+  return projectionFields
+}
+
+function splitPresetProjectionFieldNames(kind: SplitPresetKind, patch: Record<string, unknown>): Set<string> {
+  const fieldNames = new Set<string>()
+  if (kind === 'model') {
+    for (const fieldName of Object.keys(patch)) {
+      if (modelPresetFieldNames.has(fieldName)) {
+        fieldNames.add(databaseKeyForModelPresetField(fieldName))
+      }
+    }
+    return fieldNames
+  }
+
+  for (const fieldName of Object.keys(patch)) {
+    if (fieldName === 'regex' || fieldName === 'presetRegex') {
+      fieldNames.add('presetRegex')
+    } else if (promptPresetFieldNames.has(fieldName)) {
+      fieldNames.add(fieldName)
+    }
+    if (promptPresetModelParameterFieldNames.has(fieldName) || promptPresetModelOthersFieldNames.has(fieldName)) {
+      fieldNames.add(databaseKeyForModelPresetField(fieldName))
+    }
+    if (fieldName === PROMPT_PRESET_MODEL_PARAMETERS_OVERRIDE_KEY) {
+      for (const parameterFieldName of PROMPT_PRESET_MODEL_PARAMETER_OVERRIDE_FIELDS) {
+        fieldNames.add(databaseKeyForModelPresetField(parameterFieldName))
+      }
+    }
+  }
+  return fieldNames
+}
+
+function recordSplitPresetProjectionFields(
+  pending: PendingSplitPresetPatch | null,
+  previousFields: Map<string, SplitPresetPatchFieldAttempt>,
+): void {
+  if (!pending) return
+  const database = getDatabase() as unknown as Record<string, unknown>
+  for (const [fieldName, previousField] of previousFields) {
+    const existing = pending.projectionFields.get(fieldName)
+    if (existing) {
+      existing.attemptedValue = safeStructuredClone(database[fieldName])
+      continue
+    }
+    pending.projectionFields.set(fieldName, {
+      previousPresent: previousField.previousPresent,
+      previousValue: previousField.previousValue,
+      attemptedValue: safeStructuredClone(database[fieldName]),
+    })
+  }
+}
+
+export function flushPendingSplitPresetPatch(
+  kind: SplitPresetKind,
+  presetId: string,
+  options: ServerCommandTransportOptions = {},
+): void {
+  const pendingKey = splitPresetPatchKey(kind, presetId)
+  const pending = pendingSplitPresetPatches.get(pendingKey)
+  if (!pending) return
+
+  pendingSplitPresetPatches.delete(pendingKey)
+  if (pending.timer) clearTimeout(pending.timer)
+  pending.timer = null
+  dispatchSplitPresetPatch(pending, options)
+}
+
+function flushPendingSplitPresetPatchesForKind(
+  kind: SplitPresetKind,
+  options: ServerCommandTransportOptions = {},
+): void {
+  for (const pending of Array.from(pendingSplitPresetPatches.values())) {
+    if (pending.kind === kind) {
+      flushPendingSplitPresetPatch(kind, pending.presetId, options)
+    }
+  }
+}
+
+export function flushPendingSplitPresetPatches(options: ServerCommandTransportOptions = {}): void {
+  for (const pending of Array.from(pendingSplitPresetPatches.values())) {
+    flushPendingSplitPresetPatch(pending.kind, pending.presetId, options)
+  }
+}
+
+registerPendingBridgePatchFlusher('split-preset-fields', flushPendingSplitPresetPatches)
+
+function dispatchSplitPresetPatch(pending: PendingSplitPresetPatch, options: ServerCommandTransportOptions): void {
+  const fields = new Map<string, SplitPresetPatchFieldAttempt>()
+  const patch: Record<string, unknown> = {}
+  for (const [fieldName, field] of pending.fields) {
+    if (!splitPresetPatchFieldIsNetChange(field)) continue
+    fields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
+    patch[fieldName] = safeStructuredClone(field.attemptedValue)
+  }
+  if (fields.size === 0) return
+
+  const projectionFields = new Map<string, SplitPresetPatchFieldAttempt>()
+  for (const [fieldName, field] of pending.projectionFields) {
+    if (!splitPresetPatchFieldIsNetChange(field)) continue
+    projectionFields.set(fieldName, cloneSplitPresetPatchFieldAttempt(field))
+  }
+
+  const attempt: DispatchedSplitPresetPatch = {
+    kind: pending.kind,
+    presetId: pending.presetId,
+    fields,
+    projectionFields,
+    settled: false,
+  }
+  const pendingKey = splitPresetPatchKey(attempt.kind, attempt.presetId)
+  const unsettled = unsettledSplitPresetPatches.get(pendingKey) ?? []
+  unsettled.push(attempt)
+  unsettledSplitPresetPatches.set(pendingKey, unsettled)
+
+  void runServerCommand({
+    command: async (baseRevision) => {
+      try {
+        const result =
+          attempt.kind === 'model'
+            ? await updateModelPresetCommand(
+                {
+                  baseRevision,
+                  modelPresetId: attempt.presetId,
+                  patch: safeStructuredClone(patch) as ModelPresetSnapshot,
+                },
+                options.signal,
+                options.keepalive,
+              )
+            : await updatePromptPresetCommand(
+                {
+                  baseRevision,
+                  promptPresetId: attempt.presetId,
+                  patch: safeStructuredClone(patch) as PromptPresetSnapshot,
+                },
+                options.signal,
+                options.keepalive,
+              )
+        settleSplitPresetPatchAttempt(attempt, result.status === 'ok')
+        return result
+      } catch (error) {
+        settleSplitPresetPatchAttempt(attempt, false)
+        throw error
+      }
+    },
+    rollback: () => {
+      settleSplitPresetPatchAttempt(attempt, false)
+      rollbackSplitPresetPatchAttempt(attempt)
+    },
+    signal: options.signal,
+    keepalive: options.keepalive,
+  })
+}
+
+function splitPresetPatchFieldIsNetChange(field: SplitPresetPatchFieldAttempt): boolean {
+  if (!field.previousPresent && field.attemptedValue === undefined) return false
+  return !field.previousPresent || jsonSnapshot(field.previousValue) !== jsonSnapshot(field.attemptedValue)
+}
+
+function settleSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch, accepted: boolean): void {
+  if (attempt.settled) return
+  attempt.settled = true
+
+  const pendingKey = splitPresetPatchKey(attempt.kind, attempt.presetId)
+  const unsettled = unsettledSplitPresetPatches.get(pendingKey) ?? []
+  const attemptIndex = unsettled.indexOf(attempt)
+  const laterAttempts = attemptIndex < 0 ? [] : unsettled.slice(attemptIndex + 1)
+  for (const laterAttempt of laterAttempts) {
+    rebaseSplitPresetPatchFields(laterAttempt.fields, attempt.fields, accepted)
+    rebaseSplitPresetPatchFields(laterAttempt.projectionFields, attempt.projectionFields, accepted)
+  }
+  const pending = pendingSplitPresetPatches.get(pendingKey)
+  if (pending) {
+    rebaseSplitPresetPatchFields(pending.fields, attempt.fields, accepted)
+    rebaseSplitPresetPatchFields(pending.projectionFields, attempt.projectionFields, accepted)
+  }
+
+  if (attemptIndex >= 0) unsettled.splice(attemptIndex, 1)
+  if (unsettled.length === 0) {
+    unsettledSplitPresetPatches.delete(pendingKey)
+  }
+}
+
+function rebaseSplitPresetPatchFields(
+  target: Map<string, SplitPresetPatchFieldAttempt>,
+  settled: Map<string, SplitPresetPatchFieldAttempt>,
+  accepted: boolean,
+): void {
+  for (const [fieldName, settledField] of settled) {
+    const targetField = target.get(fieldName)
+    if (!targetField) continue
+    targetField.previousPresent = accepted ? true : settledField.previousPresent
+    targetField.previousValue = safeStructuredClone(accepted ? settledField.attemptedValue : settledField.previousValue)
+  }
+}
+
+function rollbackSplitPresetPatchAttempt(attempt: DispatchedSplitPresetPatch): void {
+  withTrustedResourceWrite(() => {
+    const presets = splitPresetList(attempt.kind)
+    const index = presets.findIndex((preset) => preset?.id === attempt.presetId)
+    if (index >= 0) {
+      const preset = presets[index] as Record<string, unknown>
+      for (const [fieldName, field] of attempt.fields) {
+        if (!Object.prototype.hasOwnProperty.call(preset, fieldName)) continue
+        if (jsonSnapshot(preset[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
+        if (field.previousPresent) {
+          preset[fieldName] = safeStructuredClone(field.previousValue)
+        } else {
+          delete preset[fieldName]
+        }
+      }
+    }
+
+    if (currentSplitPresetSelectedId(attempt.kind) !== attempt.presetId) return
+    const database = getDatabase() as unknown as Record<string, unknown>
+    for (const [fieldName, field] of attempt.projectionFields) {
+      if (!Object.prototype.hasOwnProperty.call(database, fieldName)) continue
+      if (jsonSnapshot(database[fieldName]) !== jsonSnapshot(field.attemptedValue)) continue
+      if (field.previousPresent) {
+        database[fieldName] = safeStructuredClone(field.previousValue)
+      } else {
+        delete database[fieldName]
+      }
+    }
+  })
 }
 
 function botPresetIds(list: botPreset[]): string[] {
@@ -3549,6 +3877,7 @@ export function createModelPreset(preset: ModelPreset) {
   withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
+    flushPendingSplitPresetPatchesForKind('model')
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     db.modelPresets.push(newPreset)
@@ -3572,26 +3901,19 @@ export function updateModelPreset(id: number, patch: Partial<ModelPreset>) {
     const db = getDatabase()
     const modelPresetId = db.modelPresets[id]?.id
     if (!modelPresetId) return
-    const previous = splitPresetPatchSnapshot(
+    const attempted = omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch))
+    const previousProjectionFields = captureSplitPresetProjectionFields('model', attempted as Record<string, unknown>)
+    const pending = queueSplitPresetPatch(
+      'model',
+      modelPresetId,
       db.modelPresets[id] as unknown as Record<string, unknown>,
-      patch as Record<string, unknown>,
+      attempted as Record<string, unknown>,
     )
-    const attempted = safeStructuredClone(patch)
     Object.assign(db.modelPresets[id], attempted)
     if (db.modelPresetsId === id) {
       applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          updateModelPresetCommand({
-            baseRevision,
-            modelPresetId,
-            patch: safeStructuredClone({ ...attempted, id: modelPresetId }) as ModelPresetSnapshot,
-          }),
-      ],
-      () => rollbackModelPresetPatch(modelPresetId, previous, attempted),
-    )
+    recordSplitPresetProjectionFields(pending, previousProjectionFields)
   })
 }
 
@@ -3610,6 +3932,7 @@ export function deleteModelPreset(id: number, selectIndex = 0) {
         : db.modelPresets[selectIndex]
     const selectModelPresetId = nextSelectedPreset?.id
     if (!modelPresetId || !previousPreset) return
+    flushPendingSplitPresetPatches()
     db.modelPresets.splice(id, 1)
     db.modelPresets = db.modelPresets
     const selectedIndex = selectModelPresetId
@@ -3649,6 +3972,7 @@ export function selectModelPreset(id: number) {
     const previousSettings = snapshotSetPresetSettings(db)
     const modelPresetId = db.modelPresets[id]?.id
     if (!modelPresetId) return
+    flushPendingSplitPresetPatches()
     db.modelPresetsId = id
     applyModelPresetFieldsToDatabase(db, db.modelPresets[id])
     const selectionRollback: SplitPresetSelectionRollback = {
@@ -3679,6 +4003,7 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.modelPresets.length || toIndex > db.modelPresets.length) {
       return
     }
+    flushPendingSplitPresetPatchesForKind('model')
     const previousPresetIds = splitPresetIds(db.modelPresets)
     const modelPresets = [...db.modelPresets]
     const movedItem = modelPresets.splice(fromIndex, 1)[0]
@@ -3705,6 +4030,7 @@ export function createPromptPreset(preset: PromptPreset) {
   withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
+    flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(preset)
     newPreset.id ??= createClientPresetId()
     db.promptPresets.push(newPreset)
@@ -3727,6 +4053,7 @@ export function addImportedPromptPreset(preset: PromptPreset) {
   withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
+    flushPendingSplitPresetPatchesForKind('prompt')
     const newPreset = safeStructuredClone(promptPresetExportPayload(preset)) as PromptPreset
     newPreset.id ??= createClientPresetId()
     db.promptPresets.push(newPreset)
@@ -3749,6 +4076,7 @@ export function addImportedLegacyPreset(preset: botPreset) {
   withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeSplitPresetIds(db)
+    flushPendingSplitPresetPatches()
     const importedName = typeof preset.name === 'string' && preset.name.trim() ? preset.name.trim() : 'Imported'
     const modelPreset = createExtractedModelPreset(preset, {
       id: createClientPresetId(),
@@ -3804,8 +4132,11 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
     const db = getDatabase()
     const promptPresetId = db.promptPresets[id]?.id
     if (!promptPresetId) return
-    const attempted = normalizePromptPresetPatchAliases(safeStructuredClone(patch))
-    const previous = splitPresetPatchSnapshot(
+    const attempted = normalizePromptPresetPatchAliases(omitUndefinedSplitPresetPatchValues(safeStructuredClone(patch)))
+    const previousProjectionFields = captureSplitPresetProjectionFields('prompt', attempted as Record<string, unknown>)
+    const pending = queueSplitPresetPatch(
+      'prompt',
+      promptPresetId,
       db.promptPresets[id] as unknown as Record<string, unknown>,
       attempted as Record<string, unknown>,
     )
@@ -3813,18 +4144,15 @@ export function updatePromptPreset(id: number, patch: Partial<PromptPreset>) {
     if (db.promptPresetsId === id) {
       applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
     }
-    runOptimisticCommandSequence(
-      [
-        (baseRevision) =>
-          updatePromptPresetCommand({
-            baseRevision,
-            promptPresetId,
-            patch: safeStructuredClone({ ...attempted, id: promptPresetId }) as PromptPresetSnapshot,
-          }),
-      ],
-      () => rollbackPromptPresetPatch(promptPresetId, previous, attempted),
-    )
+    recordSplitPresetProjectionFields(pending, previousProjectionFields)
   })
+}
+
+function omitUndefinedSplitPresetPatchValues<T extends Record<string, unknown>>(patch: T): T {
+  for (const [fieldName, value] of Object.entries(patch)) {
+    if (value === undefined) delete patch[fieldName]
+  }
+  return patch
 }
 
 function normalizePromptPresetPatchAliases<T extends Partial<PromptPreset>>(patch: T): T {
@@ -3833,68 +4161,6 @@ function normalizePromptPresetPatchAliases<T extends Partial<PromptPreset>>(patc
     target.regex = []
   }
   return patch
-}
-
-function splitPresetPatchSnapshot(
-  preset: Record<string, unknown>,
-  patch: Record<string, unknown>,
-): Record<string, unknown> {
-  const previous: Record<string, unknown> = {}
-  for (const key of Object.keys(patch)) {
-    previous[key] = safeStructuredClone(preset[key])
-  }
-  return previous
-}
-
-function rollbackModelPresetPatch(
-  modelPresetId: string,
-  previous: Record<string, unknown>,
-  attempted: Partial<ModelPreset>,
-): void {
-  rollbackSplitPresetPatch('model', modelPresetId, previous, attempted as Record<string, unknown>)
-}
-
-function rollbackPromptPresetPatch(
-  promptPresetId: string,
-  previous: Record<string, unknown>,
-  attempted: Partial<PromptPreset>,
-): void {
-  rollbackSplitPresetPatch('prompt', promptPresetId, previous, attempted as Record<string, unknown>)
-}
-
-function rollbackSplitPresetPatch(
-  kind: 'model' | 'prompt',
-  presetId: string,
-  previous: Record<string, unknown>,
-  attempted: Record<string, unknown>,
-): void {
-  withTrustedResourceWrite(() => {
-    const presets = kind === 'model' ? getDatabase().modelPresets : getDatabase().promptPresets
-    const index = presets.findIndex((preset) => preset?.id === presetId)
-    if (index < 0) return
-
-    const preset = presets[index] as Record<string, unknown>
-    let changed = false
-    for (const key of Object.keys(attempted)) {
-      if (key === 'id') continue
-      if (jsonSnapshot(preset[key]) !== jsonSnapshot(attempted[key])) continue
-      if (previous[key] === undefined) {
-        delete preset[key]
-      } else {
-        preset[key] = safeStructuredClone(previous[key])
-      }
-      changed = true
-    }
-    if (!changed) return
-
-    if (kind === 'model') {
-      if (getDatabase().modelPresetsId === index) {
-        applyModelPresetFieldsToDatabase(getDatabase(), getDatabase().modelPresets[index])
-      }
-    } else if (getDatabase().promptPresetsId === index) {
-      applyPromptPresetFieldsToDatabase(getDatabase(), getDatabase().promptPresets[index])
-    }
-  })
 }
 
 function jsonSnapshot(value: unknown): string {
@@ -3917,6 +4183,7 @@ export function deletePromptPreset(id: number, selectIndex = 0) {
         : db.promptPresets[selectIndex]
     const selectPromptPresetId = nextSelectedPreset?.id
     if (!promptPresetId || !previousPreset) return
+    flushPendingSplitPresetPatches()
     db.promptPresets.splice(id, 1)
     db.promptPresets = db.promptPresets
     const selectedIndex = selectPromptPresetId
@@ -3956,6 +4223,7 @@ export function selectPromptPreset(id: number) {
     const previousSettings = snapshotSetPresetSettings(db)
     const promptPresetId = db.promptPresets[id]?.id
     if (!promptPresetId) return
+    flushPendingSplitPresetPatches()
     db.promptPresetsId = id
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
     const selectionRollback: SplitPresetSelectionRollback = {
@@ -3977,6 +4245,7 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= db.promptPresets.length || toIndex > db.promptPresets.length) {
       return
     }
+    flushPendingSplitPresetPatchesForKind('prompt')
     const previousPresetIds = splitPresetIds(db.promptPresets)
     const promptPresets = [...db.promptPresets]
     const movedItem = promptPresets.splice(fromIndex, 1)[0]
@@ -4031,6 +4300,7 @@ function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'p
     if (id < 0) return []
     const preset = db.botPresets[id]
     if (!botPresetHasHydratedSettings(preset)) return []
+    flushPendingSplitPresetPatches()
     const previousPreset = safeStructuredClone(preset)
     const previousSelectedId = botPresetSelectedId(db)
     const legacyName = typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'Legacy'

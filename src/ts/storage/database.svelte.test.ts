@@ -24,6 +24,8 @@ import {
   deletePreset,
   ensureBotPresetHydrated,
   extractLegacyBotPresetByIndex,
+  flushPendingSplitPresetPatch,
+  flushPendingSplitPresetPatches,
   getDatabase,
   mergeServerResourceCharacterRow,
   mergeServerResourceFields,
@@ -47,6 +49,7 @@ import {
   type ModelPreset,
   type PromptPreset,
 } from './database.svelte'
+import { flushRegisteredPendingBridgePatches } from '../server/pendingBridgeFlushRegistry'
 import { MODEL_ROLES } from '../model/modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
@@ -55,6 +58,7 @@ interface CapturedFetch {
   url: string
   method: string
   body: any
+  keepalive?: boolean
 }
 
 function seedDatabase(characters: Array<Record<string, unknown>>) {
@@ -120,9 +124,9 @@ function stubFailedPresetCommand(onCommand?: (call: CapturedFetch) => void): Cap
   return calls
 }
 
-function stubModelPresetRenameRace(): CapturedFetch[] {
+function stubSuccessfulSplitPresetCommands(): CapturedFetch[] {
   const calls: CapturedFetch[] = []
-  let modelPresetCommandCount = 0
+  let revision = 100
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -131,18 +135,42 @@ function stubModelPresetRenameRace(): CapturedFetch[] {
         url,
         method: init.method ?? 'GET',
         body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        keepalive: init.keepalive === true,
       }
       calls.push(call)
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
       if (url.startsWith('/api/v1/commands/model-presets/')) {
-        modelPresetCommandCount += 1
-        if (modelPresetCommandCount === 1) {
-          return jsonResponse({ error: 'forced stale rename failure' }, 500)
-        }
+        revision += 1
+        const isSelection = url.endsWith('/select')
+        const modelPresetId = isSelection
+          ? call.body.modelPresetId
+          : decodeURIComponent(url.slice('/api/v1/commands/model-presets/'.length))
         return jsonResponse({
-          revision: 101,
-          event: { type: 'modelPreset.updated', revision: 101, resource: 'preset', id: 'model-a' },
-          modelPresetId: 'model-a',
+          revision,
+          event: {
+            type: isSelection ? 'modelPreset.selected' : 'modelPreset.updated',
+            revision,
+            resource: 'preset',
+            id: modelPresetId,
+          },
+          modelPresetId,
+        })
+      }
+      if (url.startsWith('/api/v1/commands/prompt-presets/')) {
+        revision += 1
+        const isSelection = url.endsWith('/select')
+        const promptPresetId = isSelection
+          ? call.body.promptPresetId
+          : decodeURIComponent(url.slice('/api/v1/commands/prompt-presets/'.length))
+        return jsonResponse({
+          revision,
+          event: {
+            type: isSelection ? 'promptPreset.selected' : 'promptPreset.updated',
+            revision,
+            resource: 'preset',
+            id: promptPresetId,
+          },
+          promptPresetId,
         })
       }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
@@ -850,7 +878,7 @@ describe('preset command rollback (L21)', () => {
       expect(String(input)).toBe('/api/v1/commands/prompt-presets/prompt-a')
       expect(init.method).toBe('PATCH')
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
-      expect(body.patch).toMatchObject({ presetRegex: [], regex: [] })
+      expect(body.patch).toEqual({ name: 'Prompt A final', regex: [] })
       return jsonResponse({
         revision: 101,
         event: {
@@ -864,7 +892,10 @@ describe('preset command rollback (L21)', () => {
     })
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
+    updatePromptPreset(0, { name: 'Prompt A draft' })
+    updatePromptPreset(0, { name: 'Prompt A final' })
     updatePromptPreset(0, { presetRegex: [] } as any)
+    flushPendingSplitPresetPatches()
 
     expect(getDatabase().promptPresets[0]).toMatchObject({ regex: [], presetRegex: [] })
     expect(getDatabase().presetRegex).toEqual([])
@@ -1287,22 +1318,219 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
-  it('keeps a newer model preset rename visible when an older rename request fails', async () => {
+  it('coalesces same-owner rapid and disjoint field edits into one final sparse patch', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Alpha', { temperature: 11 }) as unknown as ModelPreset],
+      modelPresetsId: 0,
+      temperature: 11,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulSplitPresetCommands()
+
+    updateModelPreset(0, { name: 'Alph' })
+    updateModelPreset(0, { temperature: 22 })
+    updateModelPreset(0, { name: 'Alp' })
+
+    expect(getDatabase().modelPresets[0].name).toBe('Alp')
+    expect(getDatabase().modelPresets[0].temperature).toBe(22)
+    expect(getDatabase().temperature).toBe(22)
+    expect(calls).toHaveLength(0)
+
+    flushPendingSplitPresetPatch('model', 'model-a')
+
+    const command = await waitForPresetCommand(calls, '/model-presets/model-a')
+    expect(command.body.patch).toEqual({ name: 'Alp', temperature: 22 })
+    expect(command.body.patch).not.toHaveProperty('id')
+    await waitForState(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(1)
+      expect(getDatabase().modelPresets[0].name).toBe('Alp')
+    })
+  })
+
+  it('suppresses baseline reverts and omits undefined values from local and server patches', async () => {
     seedPresetDatabase({
       modelPresets: [makePreset('model-a', 'Alpha') as unknown as ModelPreset],
       modelPresetsId: 0,
     })
-    const calls = stubModelPresetRenameRace()
+    setCachedServerCommandRevision(100)
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
 
     updateModelPreset(0, { name: 'Alph' })
-    updateModelPreset(0, { name: 'Alp' })
+    updateModelPreset(0, { name: 'Alpha' })
+    updateModelPreset(0, {
+      optionalUnsetField: undefined,
+      temperature: undefined,
+    } as unknown as Partial<ModelPreset>)
+    flushPendingSplitPresetPatches()
+    await Promise.resolve()
 
-    expect(getDatabase().modelPresets[0].name).toBe('Alp')
+    expect(getDatabase().modelPresets[0].name).toBe('Alpha')
+    expect(getDatabase().modelPresets[0].temperature).toBe(30)
+    expect(getDatabase().modelPresets[0]).not.toHaveProperty('optionalUnsetField')
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('keeps unrelated owners on independent debounce timers', async () => {
+    vi.useFakeTimers()
+    try {
+      seedPresetDatabase({
+        modelPresets: [
+          makePreset('model-a', 'Alpha') as unknown as ModelPreset,
+          makePreset('model-b', 'Beta') as unknown as ModelPreset,
+        ],
+        modelPresetsId: 0,
+      })
+      setCachedServerCommandRevision(100)
+      const calls = stubSuccessfulSplitPresetCommands()
+
+      updateModelPreset(0, { name: 'Alpha queued' })
+      await vi.advanceTimersByTimeAsync(100)
+      updateModelPreset(1, { name: 'Beta queued' })
+
+      await vi.advanceTimersByTimeAsync(150)
+      expect(calls.map((call) => call.url)).toEqual(['/api/v1/commands/model-presets/model-a'])
+
+      await vi.advanceTimersByTimeAsync(100)
+      expect(calls.map((call) => call.url)).toEqual([
+        '/api/v1/commands/model-presets/model-a',
+        '/api/v1/commands/model-presets/model-b',
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rolls a failed coalesced patch back to the first baseline field by field', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Alpha', { temperature: 11 }) as unknown as ModelPreset],
+      modelPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand(() => {
+      getDatabase().modelPresets[0].temperature = 77
+      getDatabase().temperature = 77
+    })
+
+    updateModelPreset(0, { name: 'Alph', temperature: 22 })
+    updateModelPreset(0, { name: 'Alp', temperature: 33 })
+    flushPendingSplitPresetPatches()
+
+    const command = await waitForPresetCommand(calls, '/model-presets/model-a')
+    expect(command.body.patch).toEqual({ name: 'Alp', temperature: 33 })
+    await waitForState(() => {
+      expect(getDatabase().modelPresets[0]).toMatchObject({ name: 'Alpha', temperature: 77 })
+      expect(getDatabase().temperature).toBe(77)
+    })
+  })
+
+  it('restores a selected preset projection when its deferred patch fails', async () => {
+    seedPresetDatabase({
+      modelPresets: [makePreset('model-a', 'Alpha', { temperature: 11 }) as unknown as ModelPreset],
+      modelPresetsId: 0,
+      temperature: 11,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+
+    updateModelPreset(0, { temperature: 44 })
+    expect(getDatabase().temperature).toBe(44)
+    flushPendingSplitPresetPatches()
+
     await waitForPresetCommand(calls, '/model-presets/model-a')
     await waitForState(() => {
-      expect(calls.filter((call) => call.url === '/api/v1/commands/model-presets/model-a')).toHaveLength(2)
-      expect(getDatabase().modelPresets[0].name).toBe('Alp')
+      expect(getDatabase().modelPresets[0].temperature).toBe(11)
+      expect(getDatabase().temperature).toBe(11)
     })
+  })
+
+  it('queues a pending owner patch before a structural selection command', async () => {
+    seedPresetDatabase({
+      modelPresets: [
+        makePreset('model-a', 'Alpha') as unknown as ModelPreset,
+        makePreset('model-b', 'Beta') as unknown as ModelPreset,
+      ],
+      modelPresetsId: 0,
+      promptPresets: [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset],
+      promptPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulSplitPresetCommands()
+
+    updateModelPreset(0, { name: 'Alpha before select' })
+    updatePromptPreset(0, { name: 'Prompt before model select' })
+    selectModelPreset(1)
+
+    await waitForState(() => expect(calls).toHaveLength(3))
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/commands/model-presets/model-a',
+      '/api/v1/commands/prompt-presets/prompt-a',
+      '/api/v1/commands/model-presets/select',
+    ])
+    expect(calls[0].body.patch).toEqual({ name: 'Alpha before select' })
+    expect(calls[1].body.patch).toEqual({ name: 'Prompt before model select' })
+  })
+
+  it('flushes pending split-preset patches through the central registry with keepalive', async () => {
+    seedPresetDatabase({
+      promptPresets: [makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset],
+      promptPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulSplitPresetCommands()
+
+    updatePromptPreset(0, { name: 'Prompt before pagehide' })
+    flushRegisteredPendingBridgePatches({ keepalive: true })
+
+    const command = await waitForPresetCommand(calls, '/prompt-presets/prompt-a')
+    expect(command.body.patch).toEqual({ name: 'Prompt before pagehide' })
+    expect(command.keepalive).toBe(true)
+  })
+
+  it('rebases a later same-owner rollback after an unsettled earlier patch fails', async () => {
+    vi.useFakeTimers()
+    try {
+      seedPresetDatabase({
+        modelPresets: [makePreset('model-a', 'Alpha', { temperature: 30 }) as unknown as ModelPreset],
+        modelPresetsId: 0,
+        temperature: 30,
+      })
+      setCachedServerCommandRevision(100)
+      const firstResponse = deferred<Response>()
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          calls.push({
+            url: String(input),
+            method: init.method ?? 'GET',
+            body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+          })
+          if (calls.length === 1) return firstResponse.promise
+          return jsonResponse({ error: 'forced second patch failure' }, 500)
+        }) as unknown as typeof fetch,
+      )
+
+      updateModelPreset(0, { temperature: 40 })
+      await vi.advanceTimersByTimeAsync(250)
+      expect(calls).toHaveLength(1)
+
+      updateModelPreset(0, { temperature: 30 })
+      await vi.advanceTimersByTimeAsync(250)
+      expect(calls).toHaveLength(1)
+
+      firstResponse.resolve(jsonResponse({ error: 'forced first patch failure' }, 500))
+      await vi.runAllTimersAsync()
+      for (let attempt = 0; attempt < 10 && calls.length < 2; attempt += 1) {
+        await Promise.resolve()
+      }
+
+      expect(calls).toHaveLength(2)
+      expect(getDatabase().modelPresets[0].temperature).toBe(30)
+      expect(getDatabase().temperature).toBe(30)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('failed prompt create removes only the unchanged attempted row and preserves split siblings', async () => {
