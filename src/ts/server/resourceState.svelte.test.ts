@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { character } from '../storage/database.svelte'
+import type { AgentPresetStepRecord } from '../agentPresetRecords'
 import {
   clearPendingChatGenerationSettingsSave,
   registerPendingChatGenerationSettingsSave,
@@ -113,6 +114,25 @@ function canonicalLorebookEntry(id: string, content = id) {
     mode: 'normal' as const,
     alwaysActive: false,
     selective: false,
+  }
+}
+
+function canonicalAgentPresetStep(id: string, overrides: Partial<AgentPresetStepRecord> = {}): AgentPresetStepRecord {
+  return {
+    id,
+    name: id,
+    enabled: true,
+    phase: 'beforeMain',
+    dependencies: [],
+    instruction: '',
+    model: { mode: 'inheritMain' },
+    runtime: {},
+    inputScopes: [],
+    outputKey: id,
+    outputFormat: 'text',
+    destination: 'promptOutput',
+    failurePolicy: { mode: 'required' },
+    ...overrides,
   }
 }
 
@@ -746,6 +766,105 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().agentPresets[0].updatedAt).toBe(500)
     expect(settingsResourceState.groupRevisions.agents).toBe(5)
     expect(hasSettingsGroupProjectionEpochChanged('agents', epoch)).toBe(false)
+  })
+
+  it('accepts a step acknowledgement that is valid against the actual preset siblings', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        agentPresets: [
+          {
+            id: 'ap_a',
+            name: 'A',
+            enabled: true,
+            version: 1,
+            steps: [
+              canonicalAgentPresetStep('aps_source'),
+              canonicalAgentPresetStep('aps_target', {
+                dependencies: ['aps_source'],
+              }),
+            ],
+          },
+        ],
+      } as never,
+      3,
+    )
+
+    expect(
+      applyAgentPresetStepPatchLocalEffect({
+        revision: 4,
+        presetId: 'ap_a',
+        stepId: 'aps_target',
+        fields: {
+          dependencies: {
+            attempted: { present: true, value: ['aps_source'] },
+            canonical: { present: true, value: ['aps_source'] },
+          },
+        },
+        updatedAt: 400,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().agentPresets[0].steps[1].dependencies).toEqual(['aps_source'])
+    expect(getResourceDatabase().agentPresets[0].updatedAt).toBe(400)
+    expect(settingsResourceState.groupRevisions.agents).toBe(4)
+  })
+
+  it.each([
+    {
+      label: 'a missing dependency',
+      stepId: 'aps_target',
+      field: 'dependencies',
+      value: ['aps_missing'],
+      steps: [canonicalAgentPresetStep('aps_target', { dependencies: ['aps_missing'] })],
+    },
+    {
+      label: 'a sibling output-key collision introduced while the acknowledgement was in flight',
+      stepId: 'aps_target',
+      field: 'outputKey',
+      value: 'shared_output',
+      steps: [
+        canonicalAgentPresetStep('aps_source', { outputKey: 'shared_output' }),
+        canonicalAgentPresetStep('aps_target', { outputKey: 'shared_output' }),
+      ],
+    },
+    {
+      label: 'a dependency cycle introduced while the acknowledgement was in flight',
+      stepId: 'aps_target',
+      field: 'dependencies',
+      value: ['aps_source'],
+      steps: [
+        canonicalAgentPresetStep('aps_source', { dependencies: ['aps_target'] }),
+        canonicalAgentPresetStep('aps_target', { dependencies: ['aps_source'] }),
+      ],
+    },
+  ])('rejects a step acknowledgement when the resulting live preset has $label', ({ stepId, field, value, steps }) => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        agentPresets: [{ id: 'ap_a', name: 'A', enabled: true, version: 1, steps }],
+      } as never,
+      3,
+    )
+
+    expect(
+      applyAgentPresetStepPatchLocalEffect({
+        revision: 4,
+        presetId: 'ap_a',
+        stepId,
+        fields: {
+          [field]: {
+            attempted: { present: true, value },
+            canonical: { present: true, value },
+          },
+        },
+        updatedAt: 400,
+      }),
+    ).toBe(false)
+    expect(getResourceDatabase().agentPresets[0]).not.toHaveProperty('updatedAt')
+    expect(settingsResourceState.groupRevisions.agents).toBeUndefined()
+    expect(settingsResourceState.fullRevision).toBe(3)
   })
 
   it('rejects malformed or ambiguous Agent Preset field local effects', () => {

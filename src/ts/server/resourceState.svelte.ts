@@ -1,5 +1,6 @@
 import type { Database, character } from '../storage/database.svelte'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
+import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPresetRecords'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
 import { isModelProfileSettingsGroup, type SettingsGroup } from './settingsGroups'
@@ -1485,6 +1486,7 @@ function applyAgentPresetFieldPatchLocalEffect(
     else delete nextTarget[key]
   }
   nextPreset.updatedAt = payload.updatedAt
+  if (isStepPatch && !isCanonicalValidAgentPreset(nextPreset)) return false
   presets[presetIndex] = nextPreset
   settingsResourceState.groupRevisions.agents = payload.revision
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
@@ -1492,6 +1494,15 @@ function applyAgentPresetFieldPatchLocalEffect(
   settingsResourceState.error = null
   markResourceDatabaseChanged()
   return true
+}
+
+function isCanonicalValidAgentPreset(value: Record<string, unknown>): boolean {
+  const normalized = normalizeAgentPresets([value])
+  return (
+    normalized.length === 1 &&
+    isJsonValueEqual(value, normalized[0]) &&
+    validateAgentPresetRecord(normalized[0]).length === 0
+  )
 }
 
 function isUniqueAgentPresetProjection(value: readonly unknown[]): boolean {
