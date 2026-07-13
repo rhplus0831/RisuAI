@@ -135,6 +135,16 @@ export interface LorebookMutationLocalEffect {
   characterLorebookProjectionEpoch?: number
 }
 
+export interface GlobalLorebookMutationLocalEffect {
+  kind: 'globalLorebookMutation'
+  operation: 'create' | 'update' | 'delete' | 'reorder' | 'select'
+  lorebookId?: string
+  lorebookIds?: string[]
+  selectedLorebookId?: string | null
+  collectionProjectionEpoch?: number
+  pageProjectionEpoch?: number
+}
+
 export interface LoadoutMutationLocalEffect {
   kind: 'loadoutMutation'
   operation: 'favorite' | 'touch'
@@ -190,6 +200,7 @@ export type ServerCommandLocalEffect =
   | PluginProviderLocalEffect
   | ModuleCollectionMutationLocalEffect
   | ModuleEnabledLocalEffect
+  | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
   | CharacterDefinitionMutationLocalEffect
@@ -832,24 +843,36 @@ export interface LorebookCommandInput {
   baseRevision: number
 }
 
-export interface CreateGlobalLorebookCommandInput extends LorebookCommandInput {
+interface TopLevelGlobalLorebookOptimisticMutationInput {
+  acknowledgeOptimistic?: boolean
+  optimisticCollectionEpoch?: number
+  optimisticPageEpoch?: number
+  optimisticSelectedLorebookId?: string | null
+}
+
+export interface CreateGlobalLorebookCommandInput
+  extends LorebookCommandInput, TopLevelGlobalLorebookOptimisticMutationInput {
   lorebook: GlobalLorebookSnapshot
 }
 
-export interface UpdateGlobalLorebookCommandInput extends LorebookCommandInput {
+export interface UpdateGlobalLorebookCommandInput
+  extends LorebookCommandInput, TopLevelGlobalLorebookOptimisticMutationInput {
   lorebookId: string
   patch: Pick<GlobalLorebookSnapshot, 'name'>
 }
 
-export interface DeleteGlobalLorebookCommandInput extends LorebookCommandInput {
+export interface DeleteGlobalLorebookCommandInput
+  extends LorebookCommandInput, TopLevelGlobalLorebookOptimisticMutationInput {
   lorebookId: string
 }
 
-export interface ReorderGlobalLorebooksCommandInput extends LorebookCommandInput {
+export interface ReorderGlobalLorebooksCommandInput
+  extends LorebookCommandInput, TopLevelGlobalLorebookOptimisticMutationInput {
   lorebookIds: string[]
 }
 
-export interface SelectGlobalLorebookCommandInput extends LorebookCommandInput {
+export interface SelectGlobalLorebookCommandInput
+  extends LorebookCommandInput, TopLevelGlobalLorebookOptimisticMutationInput {
   lorebookId: string
 }
 
@@ -2831,6 +2854,14 @@ export async function createGlobalLorebookCommand(
       lorebook: input.lorebook,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readGlobalLorebookMutationLocalEffect(body, event, {
+            operation: 'create',
+            expectedLorebook: input.lorebook,
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2845,6 +2876,15 @@ export async function updateGlobalLorebookCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readGlobalLorebookMutationLocalEffect(body, event, {
+            operation: 'update',
+            expectedLorebookId: input.lorebookId,
+            expectedPatch: input.patch,
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2858,6 +2898,15 @@ export async function deleteGlobalLorebookCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readGlobalLorebookMutationLocalEffect(body, event, {
+            operation: 'delete',
+            expectedLorebookId: input.lorebookId,
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+            pageProjectionEpoch: input.optimisticPageEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2872,6 +2921,16 @@ export async function reorderGlobalLorebooksCommand(
       lorebookIds: input.lorebookIds,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readGlobalLorebookMutationLocalEffect(body, event, {
+            operation: 'reorder',
+            expectedLorebookIds: input.lorebookIds,
+            expectedSelectedLorebookId: input.optimisticSelectedLorebookId,
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
+            pageProjectionEpoch: input.optimisticPageEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2885,6 +2944,15 @@ export async function selectGlobalLorebookCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readGlobalLorebookMutationLocalEffect(body, event, {
+            operation: 'select',
+            expectedLorebookId: input.lorebookId,
+            expectedSelectedLorebookId: input.lorebookId,
+            pageProjectionEpoch: input.optimisticPageEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -4207,6 +4275,135 @@ function readPluginProviderLocalEffect(
   return { kind: 'pluginProvider', provider: expectedProvider }
 }
 
+interface ReadGlobalLorebookMutationLocalEffectOptions {
+  operation: GlobalLorebookMutationLocalEffect['operation']
+  expectedLorebook?: unknown
+  expectedLorebookId?: unknown
+  expectedLorebookIds?: unknown
+  expectedPatch?: unknown
+  expectedSelectedLorebookId?: unknown
+  collectionProjectionEpoch?: unknown
+  pageProjectionEpoch?: unknown
+}
+
+function readGlobalLorebookMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadGlobalLorebookMutationLocalEffectOptions,
+): GlobalLorebookMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+
+  const expectedType =
+    options.operation === 'create'
+      ? 'lorebook.created'
+      : options.operation === 'update'
+        ? 'lorebook.updated'
+        : options.operation === 'delete'
+          ? 'lorebook.deleted'
+          : options.operation === 'reorder'
+            ? 'lorebook.reordered'
+            : 'lorebook.selected'
+  if (event.type !== expectedType || event.resource !== 'globalLorebook' || event.parentId !== undefined) {
+    return undefined
+  }
+
+  const record = body as Record<string, unknown>
+  if (options.operation === 'create') {
+    if (!isCanonicalGlobalLorebookCreate(options.expectedLorebook)) return undefined
+    const lorebook = options.expectedLorebook as GlobalLorebookSnapshot
+    if (
+      record.lorebookId !== lorebook.id ||
+      event.id !== lorebook.id ||
+      !isProjectionEpoch(options.collectionProjectionEpoch)
+    ) {
+      return undefined
+    }
+    return {
+      kind: 'globalLorebookMutation',
+      operation: options.operation,
+      lorebookId: lorebook.id,
+      collectionProjectionEpoch: options.collectionProjectionEpoch,
+    }
+  }
+
+  if (options.operation === 'update') {
+    if (
+      !nonEmptyString(options.expectedLorebookId) ||
+      !isCanonicalGlobalLorebookNamePatch(options.expectedPatch) ||
+      record.lorebookId !== options.expectedLorebookId ||
+      event.id !== options.expectedLorebookId ||
+      !isProjectionEpoch(options.collectionProjectionEpoch)
+    ) {
+      return undefined
+    }
+    return {
+      kind: 'globalLorebookMutation',
+      operation: options.operation,
+      lorebookId: options.expectedLorebookId,
+      collectionProjectionEpoch: options.collectionProjectionEpoch,
+    }
+  }
+
+  if (options.operation === 'delete') {
+    if (
+      !nonEmptyString(options.expectedLorebookId) ||
+      record.lorebookId !== options.expectedLorebookId ||
+      event.id !== options.expectedLorebookId ||
+      !isProjectionEpoch(options.collectionProjectionEpoch) ||
+      !isProjectionEpoch(options.pageProjectionEpoch)
+    ) {
+      return undefined
+    }
+    return {
+      kind: 'globalLorebookMutation',
+      operation: options.operation,
+      lorebookId: options.expectedLorebookId,
+      collectionProjectionEpoch: options.collectionProjectionEpoch,
+      pageProjectionEpoch: options.pageProjectionEpoch,
+    }
+  }
+
+  if (options.operation === 'reorder') {
+    if (
+      event.id !== undefined ||
+      !isUniqueStringArray(options.expectedLorebookIds) ||
+      !isNullableNonEmptyString(options.expectedSelectedLorebookId) ||
+      (options.expectedSelectedLorebookId !== null &&
+        !options.expectedLorebookIds.includes(options.expectedSelectedLorebookId)) ||
+      record.selectedLorebookId !== options.expectedSelectedLorebookId ||
+      !isProjectionEpoch(options.collectionProjectionEpoch) ||
+      !isProjectionEpoch(options.pageProjectionEpoch)
+    ) {
+      return undefined
+    }
+    return {
+      kind: 'globalLorebookMutation',
+      operation: options.operation,
+      lorebookIds: [...options.expectedLorebookIds],
+      selectedLorebookId: options.expectedSelectedLorebookId,
+      collectionProjectionEpoch: options.collectionProjectionEpoch,
+      pageProjectionEpoch: options.pageProjectionEpoch,
+    }
+  }
+
+  if (
+    !nonEmptyString(options.expectedLorebookId) ||
+    options.expectedSelectedLorebookId !== options.expectedLorebookId ||
+    record.selectedLorebookId !== options.expectedLorebookId ||
+    event.id !== options.expectedLorebookId ||
+    !isProjectionEpoch(options.pageProjectionEpoch)
+  ) {
+    return undefined
+  }
+  return {
+    kind: 'globalLorebookMutation',
+    operation: options.operation,
+    lorebookId: options.expectedLorebookId,
+    selectedLorebookId: options.expectedLorebookId,
+    pageProjectionEpoch: options.pageProjectionEpoch,
+  }
+}
+
 interface ReadLorebookMutationLocalEffectOptions {
   scope: LorebookMutationLocalEffect['scope']
   operation: LorebookMutationLocalEffect['operation']
@@ -4503,6 +4700,26 @@ function readLoadoutMutationLocalEffect(
 
 function isProjectionEpoch(value: unknown): value is number {
   return Number.isInteger(value) && (value as number) >= 0
+}
+
+function isCanonicalGlobalLorebookCreate(value: unknown): value is GlobalLorebookSnapshot & {
+  id: string
+  name: string
+  data: LorebookEntrySnapshot[]
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as GlobalLorebookSnapshot
+  return nonEmptyString(record.id) && nonEmptyString(record.name) && isCanonicalLorebookEntryArray(record.data)
+}
+
+function isCanonicalGlobalLorebookNamePatch(value: unknown): value is Pick<GlobalLorebookSnapshot, 'name'> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return Object.keys(record).length === 1 && nonEmptyString(record.name)
+}
+
+function isNullableNonEmptyString(value: unknown): value is string | null {
+  return value === null || nonEmptyString(value)
 }
 
 function isCanonicalModuleCreate(value: ModuleSnapshot): boolean {

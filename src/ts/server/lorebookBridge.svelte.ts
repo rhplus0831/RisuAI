@@ -42,10 +42,12 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
+  captureLorebookPageProjectionEpoch,
   getResourceDatabase as getDatabase,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
+  hasLorebookPageProjectionEpochChanged,
 } from './resourceState.svelte'
 import {
   applyAttemptedFieldRollback,
@@ -914,6 +916,7 @@ export function deleteGlobalLorebook(index: number): boolean {
 // selection changes.
 export function dispatchCreateGlobalLorebook(lorebook: GlobalLorebook, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
   lorebook.id = typeof lorebook.id === 'string' && lorebook.id.trim() ? lorebook.id : v4()
   lorebook.data = ensureClientLorebookEntryIds(lorebook.data ?? [])
   const attempted = cloneJsonValue(lorebook)
@@ -928,8 +931,14 @@ export function dispatchCreateGlobalLorebook(lorebook: GlobalLorebook, previous:
       createGlobalLorebookCommand({
         baseRevision,
         lorebook: cloneJsonValue(attempted) as GlobalLorebookSnapshot,
+        acknowledgeOptimistic: true,
+        optimisticCollectionEpoch: collectionProjectionEpoch,
       }),
-    rollback: () => rollbackGlobalLorebookListEntry(rollbackEntry),
+    rollback: () => {
+      if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
+        rollbackGlobalLorebookListEntry(rollbackEntry)
+      }
+    },
   })
 }
 
@@ -939,6 +948,7 @@ export function dispatchUpdateGlobalLorebook(
   previous: LorebookStateSnapshot,
 ): void {
   if (!canUseServerCommands()) return
+  const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
   const attempted = cloneJsonValue(patch)
   const rollback = globalLorebookNameRollbackFromSnapshot(lorebookId, previous, attempted)
   void runServerCommand({
@@ -947,13 +957,21 @@ export function dispatchUpdateGlobalLorebook(
         baseRevision,
         lorebookId,
         patch: cloneJsonValue(attempted),
+        acknowledgeOptimistic: true,
+        optimisticCollectionEpoch: collectionProjectionEpoch,
       }),
-    rollback: () => rollbackGlobalLorebookName(rollback),
+    rollback: () => {
+      if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
+        rollbackGlobalLorebookName(rollback)
+      }
+    },
   })
 }
 
 export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
+  const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
   const previousIndex = previous.loreBook.findIndex((lorebook) => lorebook.id === lorebookId)
   const previousLorebook = previousIndex >= 0 ? previous.loreBook[previousIndex] : null
   const rollbackEntry: GlobalLorebookListRollbackEntry | null = previousLorebook
@@ -970,41 +988,81 @@ export function dispatchDeleteGlobalLorebook(lorebookId: string, previous: Globa
       deleteGlobalLorebookCommand({
         baseRevision,
         lorebookId,
+        acknowledgeOptimistic: true,
+        optimisticCollectionEpoch: collectionProjectionEpoch,
+        optimisticPageEpoch: pageProjectionEpoch,
       }),
-    rollback: () => rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback),
+    rollback: () =>
+      rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback, {
+        restoreRow: !hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch),
+        restoreSelection: !hasLorebookPageProjectionEpochChanged(pageProjectionEpoch),
+      }),
   })
 }
 
 export function dispatchReorderGlobalLorebooks(previous: LorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
+  const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
   const lorebookIds = ((getDatabase().loreBook ?? []) as GlobalLorebook[]).map((lorebook) => lorebook.id)
   if (!hasStableUniqueCommandIds(lorebookIds)) return
   const previousIds = previous.loreBook.map((lorebook) => lorebook.id)
   if (!hasStableUniqueCommandIds(previousIds)) return
+  const previousPage = previous.loreBookPage ?? 0
+  const selectedLorebookId = stableGlobalLorebookId(previous.loreBook[previousPage]?.id)
+  const selectedIndex = selectedLorebookId ? (lorebookIds as string[]).indexOf(selectedLorebookId) : -1
+  const acknowledgeOptimistic = selectedLorebookId !== null && selectedIndex >= 0
+  if (acknowledgeOptimistic) {
+    withSuppressedLorebookWatcher(() => {
+      withTrustedResourceWrite(() => {
+        getDatabase().loreBookPage = selectedIndex
+      })
+    })
+  }
   const rollback: GlobalLorebookOrderRollback = {
     previousIds: previousIds as string[],
     attemptedIds: lorebookIds as string[],
   }
+  const selectionRollback = globalLorebookSelectionRollbackFromSnapshot(previous)
   void runServerCommand({
     command: (baseRevision) =>
       reorderGlobalLorebooksCommand({
         baseRevision,
         lorebookIds: cloneJsonValue(rollback.attemptedIds),
+        acknowledgeOptimistic,
+        optimisticCollectionEpoch: collectionProjectionEpoch,
+        optimisticPageEpoch: pageProjectionEpoch,
+        optimisticSelectedLorebookId: acknowledgeOptimistic ? selectedLorebookId : undefined,
       }),
-    rollback: () => rollbackGlobalLorebookOrder(rollback),
+    rollback: () => {
+      if (!hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)) {
+        rollbackGlobalLorebookOrder(rollback)
+      }
+      if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
+        rollbackGlobalLorebookSelection(selectionRollback)
+      }
+    },
   })
 }
 
 export function dispatchSelectGlobalLorebook(lorebookId: string, previous: GlobalLorebookStateSnapshot): void {
   if (!canUseServerCommands()) return
+  const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
+  const stableIds = globalLorebookStableIds((getDatabase().loreBook ?? []) as GlobalLorebook[])
   const rollback = globalLorebookSelectionRollbackFromSnapshot(previous, lorebookId)
   void runServerCommand({
     command: (baseRevision) =>
       selectGlobalLorebookCommand({
         baseRevision,
         lorebookId,
+        acknowledgeOptimistic: !!stableIds?.includes(lorebookId),
+        optimisticPageEpoch: pageProjectionEpoch,
       }),
-    rollback: () => rollbackGlobalLorebookSelection(rollback),
+    rollback: () => {
+      if (!hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)) {
+        rollbackGlobalLorebookSelection(rollback)
+      }
+    },
   })
 }
 
@@ -2095,9 +2153,11 @@ function rollbackGlobalLorebookListEntry(rollbackEntry: GlobalLorebookListRollba
 function rollbackDeletedGlobalLorebook(
   rollbackEntry: GlobalLorebookListRollbackEntry | null,
   selectionRollback: GlobalLorebookSelectionRollback,
+  options: { restoreRow: boolean; restoreSelection: boolean } = { restoreRow: true, restoreSelection: true },
 ): void {
-  const shouldRestoreRow = rollbackEntry ? canApplyGlobalLorebookListRollback(rollbackEntry) : false
-  const shouldRestoreSelection = canApplyGlobalLorebookSelectionRollback(selectionRollback)
+  const shouldRestoreRow =
+    options.restoreRow && rollbackEntry ? canApplyGlobalLorebookListRollback(rollbackEntry) : false
+  const shouldRestoreSelection = options.restoreSelection && canApplyGlobalLorebookSelectionRollback(selectionRollback)
   if (!shouldRestoreRow && !shouldRestoreSelection) return
 
   const selectedLorebookId = currentSelectedGlobalLorebookId()
@@ -2122,7 +2182,7 @@ function rollbackDeletedGlobalLorebook(
   }
 
   withTrustedResourceWrite(() => {
-    const canRestoreSelection = canApplyGlobalLorebookSelectionRollback(selectionRollback)
+    const canRestoreSelection = options.restoreSelection && canApplyGlobalLorebookSelectionRollback(selectionRollback)
     if (canRestoreSelection) {
       restoreGlobalLorebookSelection(selectionRollback)
     } else if (restoredRow) {

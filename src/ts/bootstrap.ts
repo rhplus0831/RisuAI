@@ -66,11 +66,13 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
+  hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
@@ -682,6 +684,75 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           enabled: localEffect.enabled,
         }),
       )
+    case 'globalLorebookMutation': {
+      const expectedType =
+        localEffect.operation === 'create'
+          ? 'lorebook.created'
+          : localEffect.operation === 'update'
+            ? 'lorebook.updated'
+            : localEffect.operation === 'delete'
+              ? 'lorebook.deleted'
+              : localEffect.operation === 'reorder'
+                ? 'lorebook.reordered'
+                : 'lorebook.selected'
+      if (event.type !== expectedType || event.resource !== 'globalLorebook' || event.parentId !== undefined) {
+        return false
+      }
+
+      const changesCollection = localEffect.operation !== 'select'
+      const changesPage =
+        localEffect.operation === 'delete' || localEffect.operation === 'reorder' || localEffect.operation === 'select'
+      if (
+        changesCollection &&
+        (typeof localEffect.collectionProjectionEpoch !== 'number' ||
+          !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+          localEffect.collectionProjectionEpoch < 0 ||
+          hasCollectionProjectionEpochChanged('loreBook', localEffect.collectionProjectionEpoch))
+      ) {
+        return false
+      }
+      if (
+        changesPage &&
+        (typeof localEffect.pageProjectionEpoch !== 'number' ||
+          !Number.isInteger(localEffect.pageProjectionEpoch) ||
+          localEffect.pageProjectionEpoch < 0 ||
+          hasLorebookPageProjectionEpochChanged(localEffect.pageProjectionEpoch))
+      ) {
+        return false
+      }
+
+      if (localEffect.operation === 'reorder') {
+        if (
+          event.id !== undefined ||
+          !Array.isArray(localEffect.lorebookIds) ||
+          localEffect.lorebookIds.some((id) => typeof id !== 'string' || id.trim() === '') ||
+          new Set(localEffect.lorebookIds).size !== localEffect.lorebookIds.length ||
+          (localEffect.selectedLorebookId !== null &&
+            (typeof localEffect.selectedLorebookId !== 'string' ||
+              localEffect.selectedLorebookId.trim() === '' ||
+              !localEffect.lorebookIds.includes(localEffect.selectedLorebookId)))
+        ) {
+          return false
+        }
+      } else if (
+        typeof localEffect.lorebookId !== 'string' ||
+        localEffect.lorebookId.trim() === '' ||
+        event.id !== localEffect.lorebookId ||
+        (localEffect.operation === 'select' && localEffect.selectedLorebookId !== localEffect.lorebookId)
+      ) {
+        return false
+      }
+
+      return withServerResourceApply(() =>
+        applyGlobalLorebookMutationLocalEffect({
+          revision: event.revision,
+          operation: localEffect.operation,
+          lorebookId: localEffect.lorebookId,
+          lorebookIds: localEffect.lorebookIds,
+          selectedLorebookId: localEffect.selectedLorebookId,
+        }),
+      )
+    }
     case 'lorebookMutation': {
       if (
         localEffect.operation !== 'replace' &&

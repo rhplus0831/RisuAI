@@ -71,6 +71,8 @@ vi.mock('./resourceWriteGuard.svelte', () => ({
 
 import { selectedCharID } from '../stores.svelte'
 import {
+  applyCollectionsResource,
+  applySettingsResource,
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
@@ -576,21 +578,22 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   it('L24: global lorebook direct rollback parity routes every dispatcher through suppressed helpers', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/ts/server/lorebookBridge.svelte.ts'), 'utf8')
 
-    expect(exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')).toContain(
-      'rollback: () => rollbackGlobalLorebookListEntry(rollbackEntry)',
-    )
-    expect(exportedFunctionSource(source, 'dispatchDeleteGlobalLorebook')).toContain(
-      'rollback: () => rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback)',
-    )
-    expect(exportedFunctionSource(source, 'dispatchSelectGlobalLorebook')).toContain(
-      'rollback: () => rollbackGlobalLorebookSelection(rollback)',
-    )
-    expect(exportedFunctionSource(source, 'dispatchUpdateGlobalLorebook')).toContain(
-      'rollback: () => rollbackGlobalLorebookName(rollback)',
-    )
-    expect(exportedFunctionSource(source, 'dispatchReorderGlobalLorebooks')).toContain(
-      'rollback: () => rollbackGlobalLorebookOrder(rollback)',
-    )
+    const createDispatcher = exportedFunctionSource(source, 'dispatchCreateGlobalLorebook')
+    expect(createDispatcher).toContain("hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)")
+    expect(createDispatcher).toContain('rollbackGlobalLorebookListEntry(rollbackEntry)')
+    const deleteDispatcher = exportedFunctionSource(source, 'dispatchDeleteGlobalLorebook')
+    expect(deleteDispatcher).toContain('restoreRow: !hasCollectionProjectionEpochChanged')
+    expect(deleteDispatcher).toContain('restoreSelection: !hasLorebookPageProjectionEpochChanged')
+    expect(deleteDispatcher).toContain('rollbackDeletedGlobalLorebook(rollbackEntry, selectionRollback')
+    const selectDispatcher = exportedFunctionSource(source, 'dispatchSelectGlobalLorebook')
+    expect(selectDispatcher).toContain('hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)')
+    expect(selectDispatcher).toContain('rollbackGlobalLorebookSelection(rollback)')
+    const updateDispatcher = exportedFunctionSource(source, 'dispatchUpdateGlobalLorebook')
+    expect(updateDispatcher).toContain("hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)")
+    expect(updateDispatcher).toContain('rollbackGlobalLorebookName(rollback)')
+    const reorderDispatcher = exportedFunctionSource(source, 'dispatchReorderGlobalLorebooks')
+    expect(reorderDispatcher).toContain('rollbackGlobalLorebookOrder(rollback)')
+    expect(reorderDispatcher).toContain('rollbackGlobalLorebookSelection(selectionRollback)')
 
     const globalCreateRollback = localFunctionSource(source, 'rollbackGlobalLorebookListEntry')
     expect(globalCreateRollback).toContain('canApplyGlobalLorebookListRollback(rollbackEntry)')
@@ -780,6 +783,8 @@ describe('global lorebook modal bridge helpers', () => {
     const creates = globalCreateCommands()
     expect(creates).toHaveLength(1)
     expect(creates[0].a).toMatchObject({
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: expect.any(Number),
       lorebook: {
         id: lorebooks[1].id,
         name: 'New LoreBook',
@@ -835,7 +840,11 @@ describe('global lorebook modal bridge helpers', () => {
 
     const selects = globalSelectCommands()
     expect(selects).toHaveLength(1)
-    expect(selects[0].a).toMatchObject({ lorebookId: 'g2' })
+    expect(selects[0].a).toMatchObject({
+      lorebookId: 'g2',
+      acknowledgeOptimistic: true,
+      optimisticPageEpoch: expect.any(Number),
+    })
     expect(getDatabase().loreBookPage).toBe(1)
   })
 
@@ -899,7 +908,12 @@ describe('global lorebook modal bridge helpers', () => {
 
     const deletes = globalDeleteCommands()
     expect(deletes).toHaveLength(1)
-    expect(deletes[0].a).toMatchObject({ lorebookId: 'g2' })
+    expect(deletes[0].a).toMatchObject({
+      lorebookId: 'g2',
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: expect.any(Number),
+      optimisticPageEpoch: expect.any(Number),
+    })
 
     deletes[0].rollback?.()
     expect(globalLorebookIds()).toEqual(['g1', 'g2'])
@@ -987,6 +1001,62 @@ describe('global lorebook modal bridge helpers', () => {
     expect((getDatabase().loreBook as unknown as GlobalLorebookFixture[])[getDatabase().loreBookPage].id).toBe('g3')
   })
 
+  it('delete rollback restores the row but preserves a newer authoritative page projection', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+        { id: 'g3', name: 'Third', data: [] },
+      ],
+      2,
+    )
+
+    expect(deleteGlobalLorebook(1)).toBe(true)
+    await flushServerCommandRecording()
+    applySettingsResource({ revision: 1, settings: { loreBookPage: 0 } })
+
+    const deletes = globalDeleteCommands()
+    expect(deletes).toHaveLength(1)
+    deletes[0].rollback?.()
+
+    expect(globalLorebookIds()).toEqual(['g1', 'g2', 'g3'])
+    expect(getDatabase().loreBookPage).toBe(0)
+  })
+
+  it('delete rollback preserves a newer authoritative collection while restoring the untouched page slice', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+        { id: 'g3', name: 'Third', data: [] },
+      ],
+      2,
+    )
+
+    expect(deleteGlobalLorebook(1)).toBe(true)
+    await flushServerCommandRecording()
+    applyCollectionsResource(
+      {
+        revision: 1,
+        collections: {
+          loreBook: [
+            { id: 'g1', name: 'Projected Initial', data: [] },
+            { id: 'g3', name: 'Projected Third', data: [] },
+          ] as never,
+        },
+      },
+      'loreBook',
+    )
+
+    const deletes = globalDeleteCommands()
+    expect(deletes).toHaveLength(1)
+    deletes[0].rollback?.()
+
+    expect(globalLorebookIds()).toEqual(['g1', 'g3'])
+    expect(getDatabase().loreBook[0].name).toBe('Projected Initial')
+    expect(getDatabase().loreBookPage).toBe(1)
+  })
+
   it('does not delete the only global lorebook', async () => {
     setupGlobalLorebooks()
 
@@ -1015,6 +1085,8 @@ describe('global lorebook modal bridge helpers', () => {
       expect(updates[0].a).toMatchObject({
         lorebookId: 'g1',
         patch: { name: 'Renamed' },
+        acknowledgeOptimistic: true,
+        optimisticCollectionEpoch: expect.any(Number),
       })
 
       updates[0].rollback?.()
@@ -1048,6 +1120,59 @@ describe('global lorebook modal bridge helpers', () => {
 
     expect(getDatabase().loreBook[0].name).toBe('Newer Same Row Edit')
     expect(getDatabase().loreBook[1].name).toBe('Sibling Edit')
+  })
+
+  it('reorders while preserving the pre-reorder selected lorebook id and opts into local acknowledgement', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+        { id: 'g3', name: 'Third', data: [] },
+      ],
+      1,
+    )
+    const previous = currentLorebookStateSnapshot()
+    getDatabase().loreBook = [getDatabase().loreBook[1], getDatabase().loreBook[2], getDatabase().loreBook[0]] as never
+
+    dispatchReorderGlobalLorebooks(previous)
+    expect(getDatabase().loreBookPage).toBe(0)
+    expect((getDatabase().loreBook as unknown as GlobalLorebookFixture[])[getDatabase().loreBookPage].id).toBe('g2')
+    await flushServerCommandRecording()
+
+    const reorders = globalReorderCommands()
+    expect(reorders).toHaveLength(1)
+    expect(reorders[0].a).toMatchObject({
+      lorebookIds: ['g2', 'g3', 'g1'],
+      acknowledgeOptimistic: true,
+      optimisticSelectedLorebookId: 'g2',
+      optimisticCollectionEpoch: expect.any(Number),
+      optimisticPageEpoch: expect.any(Number),
+    })
+  })
+
+  it('still dispatches reorder authoritatively when the previous selected lorebook is not stable', async () => {
+    setupGlobalLorebooks(
+      [
+        { id: 'g1', name: 'Initial', data: [] },
+        { id: 'g2', name: 'Second', data: [] },
+      ],
+      0,
+    )
+    const previous = currentLorebookStateSnapshot()
+    previous.loreBookPage = 99
+    getDatabase().loreBook = [getDatabase().loreBook[1], getDatabase().loreBook[0]] as never
+    getDatabase().loreBookPage = 1
+
+    dispatchReorderGlobalLorebooks(previous)
+    expect(getDatabase().loreBookPage).toBe(1)
+    await flushServerCommandRecording()
+
+    const reorders = globalReorderCommands()
+    expect(reorders).toHaveLength(1)
+    expect(reorders[0].a).toMatchObject({
+      lorebookIds: ['g2', 'g1'],
+      acknowledgeOptimistic: false,
+    })
   })
 
   it('failed reorder restores only the attempted order and preserves row content', async () => {

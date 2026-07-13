@@ -748,6 +748,94 @@ describe('API-backed resource invalidation', () => {
     expect(api.collections).not.toHaveBeenCalled()
   })
 
+  it.each(['lorebook.created', 'lorebook.updated', 'lorebook.entries.replaced'])(
+    'refreshes only the lorebook collection for foreign %s events',
+    async (type) => {
+      seedResources(1)
+      api.collection.mockResolvedValue({
+        status: 'ok',
+        revision: 2,
+        collections: { loreBook: [{ id: 'book-a', name: 'Book A', data: [] }] },
+      })
+
+      await expect(
+        refreshInvalidatedServerResources(
+          { type, revision: 2, resource: 'globalLorebook', id: 'book-a' },
+          { appliedRevision: 1, hooks },
+        ),
+      ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+      expect(api.collection).toHaveBeenCalledWith('loreBook', undefined)
+      expect(api.settings).not.toHaveBeenCalled()
+      expect(api.collections).not.toHaveBeenCalled()
+    },
+  )
+
+  it('refreshes only settings for a foreign top-level lorebook selection', async () => {
+    seedResources(1)
+    api.settings.mockResolvedValue({ status: 'ok', revision: 2, settings: { loreBookPage: 0, language: 'ko' } })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'lorebook.selected', revision: 2, resource: 'globalLorebook', id: 'book-a' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collection).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+  })
+
+  it.each([{ type: 'lorebook.deleted', id: 'book-a' }, { type: 'lorebook.reordered' }])(
+    'refreshes the lorebook collection and settings for a foreign $type event',
+    async ({ type, id }) => {
+      seedResources(1)
+      api.settings.mockResolvedValue({ status: 'ok', revision: 2, settings: { loreBookPage: 0 } })
+      api.collection.mockResolvedValue({
+        status: 'ok',
+        revision: 2,
+        collections: { loreBook: [{ id: 'book-b', name: 'Book B', data: [] }] },
+      })
+
+      await expect(
+        refreshInvalidatedServerResources(
+          { type, revision: 2, resource: 'globalLorebook', ...(id ? { id } : {}) },
+          { appliedRevision: 1, hooks },
+        ),
+      ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+      expect(api.settings).toHaveBeenCalledOnce()
+      expect(api.collection).toHaveBeenCalledWith('loreBook', undefined)
+      expect(api.collections).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    { type: 'lorebook.future', revision: 2, resource: 'globalLorebook', id: 'book-a' },
+    {
+      type: 'lorebook.created',
+      revision: 2,
+      resource: 'globalLorebook',
+      id: 'book-a',
+      parentId: 'unexpected-parent',
+    },
+    { type: 'lorebook.deleted', revision: 2, resource: 'globalLorebook' },
+    { type: 'lorebook.reordered', revision: 2, resource: 'globalLorebook', id: 'unexpected-id' },
+  ] as CommandEvent[])('uses a full refresh for malformed global lorebook event %#', async (commandEvent) => {
+    fullReadMocks(9)
+
+    await expect(refreshInvalidatedServerResources(commandEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 9,
+      scope: 'full',
+    })
+
+    expect(api.settings).toHaveBeenCalledOnce()
+    expect(api.collections).toHaveBeenCalledOnce()
+    expect(api.characters).toHaveBeenCalledOnce()
+  })
+
   it.each([
     ['a revision gap', event(4, 'settings'), 1],
     ['a settings event without a group', event(2, 'settings'), 1],

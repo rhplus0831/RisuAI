@@ -3867,6 +3867,204 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('emits strict opt-in local effects for top-level lorebook mutations without sending acknowledgement metadata', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let revision = 20
+    const commandFetch = makeCommandFetch((url, init) => {
+      revision += 1
+      if (url.endsWith('/lorebooks/reorder')) {
+        return {
+          revision,
+          event: { type: 'lorebook.reordered', revision, resource: 'globalLorebook' },
+          selectedLorebookId: 'book-b',
+        }
+      }
+      if (url.endsWith('/lorebooks/book-b/select')) {
+        return {
+          revision,
+          event: { type: 'lorebook.selected', revision, resource: 'globalLorebook', id: 'book-b' },
+          selectedLorebookId: 'book-b',
+        }
+      }
+      const operation = url.endsWith('/lorebooks') ? 'created' : init.method === 'PATCH' ? 'updated' : 'deleted'
+      const lorebookId = operation === 'created' ? 'book-c' : 'book-a'
+      return {
+        revision,
+        event: { type: `lorebook.${operation}`, revision, resource: 'globalLorebook', id: lorebookId },
+        lorebookId,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const canonicalEntry = {
+      id: 'entry-a',
+      key: 'a',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'A',
+      content: 'A',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    await createGlobalLorebookCommand({
+      baseRevision: 1,
+      lorebook: { id: 'book-c', name: 'Book C', data: [canonicalEntry] },
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 11,
+    })
+    await updateGlobalLorebookCommand({
+      baseRevision: 2,
+      lorebookId: 'book-a',
+      patch: { name: 'Renamed A' },
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 12,
+    })
+    await deleteGlobalLorebookCommand({
+      baseRevision: 3,
+      lorebookId: 'book-a',
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 13,
+      optimisticPageEpoch: 14,
+    })
+    await reorderGlobalLorebooksCommand({
+      baseRevision: 4,
+      lorebookIds: ['book-b', 'book-a'],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 15,
+      optimisticPageEpoch: 16,
+      optimisticSelectedLorebookId: 'book-b',
+    })
+    await selectGlobalLorebookCommand({
+      baseRevision: 5,
+      lorebookId: 'book-b',
+      acknowledgeOptimistic: true,
+      optimisticPageEpoch: 17,
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'globalLorebookMutation',
+        operation: 'create',
+        lorebookId: 'book-c',
+        collectionProjectionEpoch: 11,
+      },
+      {
+        kind: 'globalLorebookMutation',
+        operation: 'update',
+        lorebookId: 'book-a',
+        collectionProjectionEpoch: 12,
+      },
+      {
+        kind: 'globalLorebookMutation',
+        operation: 'delete',
+        lorebookId: 'book-a',
+        collectionProjectionEpoch: 13,
+        pageProjectionEpoch: 14,
+      },
+      {
+        kind: 'globalLorebookMutation',
+        operation: 'reorder',
+        lorebookIds: ['book-b', 'book-a'],
+        selectedLorebookId: 'book-b',
+        collectionProjectionEpoch: 15,
+        pageProjectionEpoch: 16,
+      },
+      {
+        kind: 'globalLorebookMutation',
+        operation: 'select',
+        lorebookId: 'book-b',
+        selectedLorebookId: 'book-b',
+        pageProjectionEpoch: 17,
+      },
+    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      { baseRevision: 1, lorebook: { id: 'book-c', name: 'Book C', data: [canonicalEntry] } },
+      { baseRevision: 2, patch: { name: 'Renamed A' } },
+      { baseRevision: 3 },
+      { baseRevision: 4, lorebookIds: ['book-b', 'book-a'] },
+      { baseRevision: 5 },
+    ])
+  })
+
+  it('keeps noncanonical or mismatched top-level lorebook acknowledgements authoritative', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let call = 0
+    const commandFetch = makeCommandFetch((url, init) => {
+      call += 1
+      if (url.endsWith('/reorder')) {
+        return {
+          revision: 30 + call,
+          event: { type: 'lorebook.reordered', revision: 30 + call, resource: 'globalLorebook' },
+          selectedLorebookId: call === 5 ? 'book-a' : 'book-b',
+        }
+      }
+      const operation = url.endsWith('/lorebooks') ? 'created' : init.method === 'PATCH' ? 'updated' : 'selected'
+      const id = operation === 'created' ? 'book-c' : 'book-a'
+      return {
+        revision: 30 + call,
+        event: {
+          type: `lorebook.${operation}`,
+          revision: 30 + call,
+          resource: 'globalLorebook',
+          id,
+          ...(call === 6 ? { parentId: 'unexpected-parent' } : {}),
+        },
+        lorebookId: id,
+        selectedLorebookId: id,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createGlobalLorebookCommand({
+      baseRevision: 1,
+      lorebook: { id: 'book-c', name: 'Book C', data: [] },
+    })
+    await createGlobalLorebookCommand({
+      baseRevision: 2,
+      lorebook: { id: 'book-c', name: '', data: [] },
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+    })
+    await updateGlobalLorebookCommand({
+      baseRevision: 3,
+      lorebookId: 'book-a',
+      patch: { name: '' },
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+    })
+    await reorderGlobalLorebooksCommand({
+      baseRevision: 4,
+      lorebookIds: ['book-a', 'book-a'],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+      optimisticPageEpoch: 2,
+      optimisticSelectedLorebookId: 'book-a',
+    })
+    await reorderGlobalLorebooksCommand({
+      baseRevision: 5,
+      lorebookIds: ['book-a', 'book-b'],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+      optimisticPageEpoch: 2,
+      optimisticSelectedLorebookId: 'book-b',
+    })
+    await selectGlobalLorebookCommand({
+      baseRevision: 6,
+      lorebookId: 'book-a',
+      acknowledgeOptimistic: true,
+      optimisticPageEpoch: 2,
+    })
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('emits strict opt-in local effects for scoped lorebook replace and entry deltas', async () => {
     const observedEffects: ServerCommandLocalEffect[] = []
     setServerCommandSuccessReconciler((_event, _events, localEffects) => {

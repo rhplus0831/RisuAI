@@ -160,11 +160,15 @@ import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } f
 import {
   applyCollectionsResource,
   applyCharacterResource,
+  applySettingsResource,
   applySettingsGroupResource,
   captureCollectionProjectionEpoch,
+  captureLorebookPageProjectionEpoch,
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
+  hasCollectionProjectionEpochChanged,
+  hasLorebookPageProjectionEpochChanged,
   markCharacterLorebookProjectionApplied,
   replaceResourceDatabase,
   resetServerResourceState,
@@ -696,6 +700,166 @@ describe('API-backed client bootstrap', () => {
     expect(getDatabase().characters[0].globalLore[0].content).toBe('character newer')
     expect(getDatabase().characters[0].chats[0].localLore[0].content).toBe('chat newer')
     expect(peekAppliedServerResourceRevision()).toBe(8)
+  })
+
+  it('acknowledges contiguous top-level lorebook mutations without re-reading collection or settings', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBook = [
+        { id: 'book-b', name: 'Newer B', data: [] },
+        { id: 'book-c', name: 'Newer C', data: [] },
+      ] as never
+      getDatabase().loreBookPage = 0
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
+    const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
+    const events = [
+      { type: 'lorebook.created', revision: 6, resource: 'globalLorebook', id: 'book-c' },
+      { type: 'lorebook.updated', revision: 7, resource: 'globalLorebook', id: 'book-b' },
+      { type: 'lorebook.selected', revision: 8, resource: 'globalLorebook', id: 'book-c' },
+      { type: 'lorebook.reordered', revision: 9, resource: 'globalLorebook' },
+      { type: 'lorebook.deleted', revision: 10, resource: 'globalLorebook', id: 'book-a' },
+    ]
+
+    await commandApi.reconciler?.(
+      events.at(-1),
+      events,
+      new Map([
+        [
+          6,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'create',
+            lorebookId: 'book-c',
+            collectionProjectionEpoch,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'update',
+            lorebookId: 'book-b',
+            collectionProjectionEpoch,
+          },
+        ],
+        [
+          8,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'select',
+            lorebookId: 'book-c',
+            selectedLorebookId: 'book-c',
+            pageProjectionEpoch,
+          },
+        ],
+        [
+          9,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'reorder',
+            lorebookIds: ['book-b', 'book-c'],
+            selectedLorebookId: 'book-b',
+            collectionProjectionEpoch,
+            pageProjectionEpoch,
+          },
+        ],
+        [
+          10,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'delete',
+            lorebookId: 'book-a',
+            collectionProjectionEpoch,
+            pageProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().loreBook).toEqual([
+      { id: 'book-b', name: 'Newer B', data: [] },
+      { id: 'book-c', name: 'Newer C', data: [] },
+    ])
+    expect(getDatabase().loreBookPage).toBe(0)
+    expect(hasCollectionProjectionEpochChanged('loreBook', collectionProjectionEpoch)).toBe(false)
+    expect(hasLorebookPageProjectionEpochChanged(pageProjectionEpoch)).toBe(false)
+    expect(peekAppliedServerResourceRevision()).toBe(10)
+  })
+
+  it('falls back when an authoritative lorebook collection supersedes a top-level local effect', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBook = [{ id: 'book-a', name: 'Book A', data: [] }] as never
+      getDatabase().loreBookPage = 0
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('loreBook')
+    applyCollectionsResource(
+      {
+        revision: 6,
+        collections: { loreBook: [{ id: 'book-a', name: 'Projected A', data: [] }] as never },
+      },
+      'loreBook',
+    )
+    const event = { type: 'lorebook.updated', revision: 6, resource: 'globalLorebook', id: 'book-a' }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'update',
+            lorebookId: 'book-a',
+            collectionProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it('falls back when authoritative settings supersede a top-level lorebook page effect', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().loreBook = [
+        { id: 'book-a', name: 'Book A', data: [] },
+        { id: 'book-b', name: 'Book B', data: [] },
+      ] as never
+      getDatabase().loreBookPage = 1
+    })
+    const pageProjectionEpoch = captureLorebookPageProjectionEpoch()
+    applySettingsResource({ revision: 6, settings: { loreBookPage: 0 } })
+    const event = { type: 'lorebook.selected', revision: 6, resource: 'globalLorebook', id: 'book-b' }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'globalLorebookMutation',
+            operation: 'select',
+            lorebookId: 'book-b',
+            selectedLorebookId: 'book-b',
+            pageProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
   })
 
   it('falls back when a dedicated character-lorebook projection supersedes an optimistic effect', async () => {

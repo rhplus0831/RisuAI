@@ -12,6 +12,7 @@ const characterLorebookProjectionEpochs = new Map<string, number>()
 let nextCollectionProjectionEpoch = 0
 let collectionProjectionBaseline = 0
 const collectionProjectionEpochs = new Map<ServerCollectionName, number>()
+let lorebookPageProjectionEpoch = 0
 let nextSettingsProjectionEpoch = 0
 let settingsProjectionBaseline = 0
 const settingsGroupProjectionEpochs = new Map<SettingsGroup, number>()
@@ -70,6 +71,18 @@ export function captureCollectionProjectionEpoch(name: ServerCollectionName): nu
 
 export function hasCollectionProjectionEpochChanged(name: ServerCollectionName, epoch: number): boolean {
   return captureCollectionProjectionEpoch(name) !== epoch
+}
+
+function advanceLorebookPageProjectionEpoch(): void {
+  lorebookPageProjectionEpoch += 1
+}
+
+export function captureLorebookPageProjectionEpoch(): number {
+  return lorebookPageProjectionEpoch
+}
+
+export function hasLorebookPageProjectionEpochChanged(epoch: number): boolean {
+  return captureLorebookPageProjectionEpoch() !== epoch
 }
 
 function advanceSettingsGroupProjectionEpoch(group: SettingsGroup): void {
@@ -238,6 +251,14 @@ export interface ServerLorebookMutationLocalEffectPayload {
   chatId?: string
 }
 
+export interface ServerGlobalLorebookMutationLocalEffectPayload {
+  revision: number
+  operation: 'create' | 'update' | 'delete' | 'reorder' | 'select'
+  lorebookId?: string
+  lorebookIds?: readonly string[]
+  selectedLorebookId?: string | null
+}
+
 export interface ServerCharacterRowMutationLocalEffectPayload {
   revision: number
   characterId: string
@@ -256,6 +277,7 @@ export interface SettingsResourceState {
   revision: number | null
   fullRevision: number | null
   enabledModulesRevision: number | null
+  loreBookPageRevision: number | null
   groupRevisions: Partial<Record<SettingsGroup, number>>
   status: ServerResourceStatus
   error: string | null
@@ -292,6 +314,7 @@ export const settingsResourceState = $state<SettingsResourceState>({
   revision: null,
   fullRevision: null,
   enabledModulesRevision: null,
+  loreBookPageRevision: null,
   groupRevisions: {},
   status: 'idle',
   error: null,
@@ -363,21 +386,35 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   const liveEnabledModules = preserveEnabledModules
     ? cloneJsonValue((settingsResourceState.value as Record<string, unknown>).enabledModules)
     : undefined
+  const preserveLoreBookPage = (settingsResourceState.loreBookPageRevision ?? -1) > payload.revision
+  const liveSettings = settingsResourceState.value as Record<string, unknown>
+  const hasLiveLoreBookPage = Object.prototype.hasOwnProperty.call(liveSettings, 'loreBookPage')
+  const liveLoreBookPage = preserveLoreBookPage ? cloneJsonValue(liveSettings.loreBookPage) : undefined
   settingsResourceState.value = cloneJsonValue(payload.settings)
   if (preserveEnabledModules) {
     ;(settingsResourceState.value as Record<string, unknown>).enabledModules = liveEnabledModules
   }
-  settingsResourceState.revision = preserveEnabledModules
-    ? maxRevision(settingsResourceState.revision, payload.revision)
-    : payload.revision
+  if (preserveLoreBookPage) {
+    if (hasLiveLoreBookPage) {
+      ;(settingsResourceState.value as Record<string, unknown>).loreBookPage = liveLoreBookPage
+    } else {
+      delete (settingsResourceState.value as Record<string, unknown>).loreBookPage
+    }
+  }
+  settingsResourceState.revision =
+    preserveEnabledModules || preserveLoreBookPage
+      ? maxRevision(settingsResourceState.revision, payload.revision)
+      : payload.revision
   settingsResourceState.fullRevision = payload.revision
   settingsResourceState.enabledModulesRevision = preserveEnabledModules
     ? settingsResourceState.enabledModulesRevision
     : null
+  settingsResourceState.loreBookPageRevision = preserveLoreBookPage ? settingsResourceState.loreBookPageRevision : null
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   advanceAllSettingsProjectionEpochs()
+  if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
   markResourceDatabaseChanged()
   return true
 }
@@ -569,6 +606,66 @@ export function applyModuleCollectionMutationLocalEffect(
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.modules = 'ready'
   delete collectionsResourceState.errors.modules
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence response-confirmed optimistic top-level lorebook mutations. The list
+ * and its selected-page pointer are separate server resources, so each slice
+ * advances independently while retaining any newer queued optimistic value.
+ */
+export function applyGlobalLorebookMutationLocalEffect(
+  payload: ServerGlobalLorebookMutationLocalEffectPayload,
+): boolean {
+  if (!isGlobalLorebookMutationOperation(payload.operation)) return false
+
+  const changesCollection = payload.operation !== 'select'
+  const changesPage =
+    payload.operation === 'delete' || payload.operation === 'reorder' || payload.operation === 'select'
+  if (payload.operation === 'reorder') {
+    if (!isUniqueStringArray(payload.lorebookIds) || !isNullableNonEmptyString(payload.selectedLorebookId)) {
+      return false
+    }
+    if (payload.selectedLorebookId !== null && !payload.lorebookIds.includes(payload.selectedLorebookId)) return false
+  } else if (!nonEmptyString(payload.lorebookId)) {
+    return false
+  }
+  if (payload.operation === 'select' && payload.selectedLorebookId !== payload.lorebookId) return false
+
+  const knownCollectionRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.loreBook ?? -1,
+  )
+  const knownPageRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.loreBookPageRevision ?? -1,
+  )
+  const shouldFenceCollection = changesCollection && knownCollectionRevision < payload.revision
+  const shouldFencePage = changesPage && knownPageRevision < payload.revision
+  if (!shouldFenceCollection && !shouldFencePage) return true
+
+  if (
+    shouldFenceCollection &&
+    (collectionsResourceState.statuses.loreBook !== 'ready' ||
+      !isCanonicalGlobalLorebookCollectionProjection(collectionsResourceState.values.loreBook))
+  ) {
+    return false
+  }
+  if (shouldFencePage && !isStableGlobalLorebookPageProjection()) return false
+
+  if (shouldFenceCollection) {
+    collectionsResourceState.revisions.loreBook = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses.loreBook = 'ready'
+    delete collectionsResourceState.errors.loreBook
+  }
+  if (shouldFencePage) {
+    settingsResourceState.loreBookPageRevision = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+  }
   markResourceDatabaseChanged()
   return true
 }
@@ -1061,6 +1158,7 @@ export function resetServerResourceState(): void {
   settingsResourceState.revision = null
   settingsResourceState.fullRevision = null
   settingsResourceState.enabledModulesRevision = null
+  settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'idle'
   settingsResourceState.error = null
@@ -1087,6 +1185,7 @@ export function resetServerResourceState(): void {
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
   advanceAllSettingsProjectionEpochs()
+  advanceLorebookPageProjectionEpoch()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
@@ -1106,6 +1205,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   settingsResourceState.revision = nextRevision
   settingsResourceState.fullRevision = nextRevision
   settingsResourceState.enabledModulesRevision = null
+  settingsResourceState.loreBookPageRevision = null
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
@@ -1157,6 +1257,7 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
   advanceAllSettingsProjectionEpochs()
+  advanceLorebookPageProjectionEpoch()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
@@ -1463,6 +1564,47 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 
 function isLorebookMutationOperation(value: unknown): value is ServerLorebookMutationLocalEffectPayload['operation'] {
   return value === 'replace' || value === 'upsert' || value === 'delete' || value === 'reorder'
+}
+
+function isGlobalLorebookMutationOperation(
+  value: unknown,
+): value is ServerGlobalLorebookMutationLocalEffectPayload['operation'] {
+  return value === 'create' || value === 'update' || value === 'delete' || value === 'reorder' || value === 'select'
+}
+
+function isCanonicalGlobalLorebookCollectionProjection(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const record = candidate as Record<string, unknown>
+    if (!nonEmptyString(record.id) || ids.has(record.id)) return false
+    if (!nonEmptyString(record.name) || !isCanonicalLorebookEntries(record.data)) return false
+    ids.add(record.id)
+  }
+  return true
+}
+
+function isStableGlobalLorebookPageProjection(): boolean {
+  if (settingsResourceState.status !== 'ready' || collectionsResourceState.statuses.loreBook !== 'ready') return false
+  const lorebooks = collectionsResourceState.values.loreBook
+  if (!Array.isArray(lorebooks)) return false
+  const ids = new Set<string>()
+  for (const candidate of lorebooks) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const id = (candidate as Record<string, unknown>).id
+    if (!nonEmptyString(id) || ids.has(id)) return false
+    ids.add(id)
+  }
+  const page = (settingsResourceState.value as Record<string, unknown>).loreBookPage
+  return (
+    Number.isInteger(page) &&
+    (lorebooks.length === 0 ? page === 0 : (page as number) >= 0 && (page as number) < lorebooks.length)
+  )
+}
+
+function isNullableNonEmptyString(value: unknown): value is string | null {
+  return value === null || nonEmptyString(value)
 }
 
 function isCanonicalGlobalLorebookTarget(lorebookId: string): boolean {

@@ -25,6 +25,7 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
   areServerDatabaseResourcesReady,
@@ -32,6 +33,7 @@ import {
   captureCharacterRowProjectionEpoch,
   captureCharacterLorebookProjectionEpoch,
   captureCollectionProjectionEpoch,
+  captureLorebookPageProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
@@ -39,6 +41,7 @@ import {
   hasCharacterRowProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
+  hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
   markCharacterLorebookProjectionApplied,
   replaceResourceDatabase,
@@ -473,6 +476,118 @@ describe('resource-scoped database state', () => {
     markCharacterLorebookProjectionApplied('char-a')
     expect(hasCharacterLorebookProjectionEpochChanged('char-a', lorebookEpoch)).toBe(true)
     expect(hasCharacterRowProjectionEpochChanged('char-a', rowEpoch)).toBe(false)
+  })
+
+  it('fences top-level lorebook collection and page slices independently without replacing newer optimism', () => {
+    const lorebooks = [
+      { id: 'book-b', name: 'Newer B', data: [canonicalLorebookEntry('entry-b')] },
+      { id: 'book-a', name: 'Newer A', data: [canonicalLorebookEntry('entry-a')] },
+      { id: 'book-c', name: 'Newer C', data: [] },
+    ]
+    applySettingsResource({ revision: 3, settings: { loreBookPage: 0 } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: { ...completeCollections(), loreBook: lorebooks as never },
+    })
+    const collectionEpoch = captureCollectionProjectionEpoch('loreBook')
+    const pageEpoch = captureLorebookPageProjectionEpoch()
+
+    expect(applyGlobalLorebookMutationLocalEffect({ revision: 4, operation: 'create', lorebookId: 'book-c' })).toBe(
+      true,
+    )
+    expect(applyGlobalLorebookMutationLocalEffect({ revision: 5, operation: 'update', lorebookId: 'book-a' })).toBe(
+      true,
+    )
+    expect(
+      applyGlobalLorebookMutationLocalEffect({
+        revision: 6,
+        operation: 'select',
+        lorebookId: 'book-b',
+        selectedLorebookId: 'book-b',
+      }),
+    ).toBe(true)
+    expect(applyGlobalLorebookMutationLocalEffect({ revision: 7, operation: 'delete', lorebookId: 'book-a' })).toBe(
+      true,
+    )
+    expect(
+      applyGlobalLorebookMutationLocalEffect({
+        revision: 8,
+        operation: 'reorder',
+        lorebookIds: ['book-b', 'book-a', 'book-c'],
+        selectedLorebookId: 'book-b',
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().loreBook).toEqual(lorebooks)
+    expect(getResourceDatabase().loreBookPage).toBe(0)
+    expect(collectionsResourceState.revisions.loreBook).toBe(8)
+    expect(settingsResourceState.loreBookPageRevision).toBe(8)
+    expect(hasCollectionProjectionEpochChanged('loreBook', collectionEpoch)).toBe(false)
+    expect(hasLorebookPageProjectionEpochChanged(pageEpoch)).toBe(false)
+  })
+
+  it('preserves a newer fenced lorebook page across stale full settings and clears it on equal authority', () => {
+    applySettingsResource({ revision: 3, settings: { loreBookPage: 0, language: 'en' } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        loreBook: [
+          { id: 'book-a', name: 'Book A', data: [] },
+          { id: 'book-b', name: 'Book B', data: [] },
+        ] as never,
+      },
+    })
+    withResourceDatabaseWrite((database) => {
+      database.loreBookPage = 1
+    })
+    const pageEpoch = captureLorebookPageProjectionEpoch()
+    expect(
+      applyGlobalLorebookMutationLocalEffect({
+        revision: 5,
+        operation: 'select',
+        lorebookId: 'book-b',
+        selectedLorebookId: 'book-b',
+      }),
+    ).toBe(true)
+
+    expect(applySettingsResource({ revision: 4, settings: { loreBookPage: 0, language: 'ko' } })).toBe(true)
+    expect(getResourceDatabase()).toMatchObject({ loreBookPage: 1, language: 'ko' })
+    expect(settingsResourceState.loreBookPageRevision).toBe(5)
+    expect(hasLorebookPageProjectionEpochChanged(pageEpoch)).toBe(false)
+
+    expect(applySettingsResource({ revision: 5, settings: { loreBookPage: 0, language: 'ja' } })).toBe(true)
+    expect(getResourceDatabase()).toMatchObject({ loreBookPage: 0, language: 'ja' })
+    expect(settingsResourceState.loreBookPageRevision).toBeNull()
+    expect(hasLorebookPageProjectionEpochChanged(pageEpoch)).toBe(true)
+  })
+
+  it('rejects top-level lorebook fences for malformed owning projections', () => {
+    applySettingsResource({ revision: 3, settings: { loreBookPage: 0 } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        loreBook: [
+          { id: 'duplicate', name: 'A', data: [] },
+          { id: 'duplicate', name: 'B', data: [] },
+        ] as never,
+      },
+    })
+
+    expect(
+      applyGlobalLorebookMutationLocalEffect({
+        revision: 4,
+        operation: 'select',
+        lorebookId: 'duplicate',
+        selectedLorebookId: 'duplicate',
+      }),
+    ).toBe(false)
+    expect(applyGlobalLorebookMutationLocalEffect({ revision: 4, operation: 'create', lorebookId: 'book-c' })).toBe(
+      false,
+    )
+    expect(collectionsResourceState.revisions.loreBook).toBe(3)
+    expect(settingsResourceState.loreBookPageRevision).toBeNull()
   })
 
   it('rejects lorebook acknowledgements for malformed or missing live targets', () => {

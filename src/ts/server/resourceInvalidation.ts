@@ -426,8 +426,45 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('loadouts')
       return
     case 'globalLorebook':
-      addFullSettings()
-      plan.collections.add('loreBook')
+      if (event.parentId !== undefined) {
+        plan.full = true
+        return
+      }
+      if (
+        event.type === 'lorebook.created' ||
+        event.type === 'lorebook.updated' ||
+        event.type === 'lorebook.entries.replaced'
+      ) {
+        if (!nonEmptyString(event.id)) {
+          plan.full = true
+          return
+        }
+        plan.collections.add('loreBook')
+        return
+      }
+      if (event.type === 'lorebook.selected') {
+        if (!nonEmptyString(event.id)) {
+          plan.full = true
+          return
+        }
+        addFullSettings()
+        return
+      }
+      if (event.type === 'lorebook.deleted') {
+        if (!nonEmptyString(event.id)) {
+          plan.full = true
+          return
+        }
+        addFullSettings()
+        plan.collections.add('loreBook')
+        return
+      }
+      if (event.type === 'lorebook.reordered' && event.id === undefined) {
+        addFullSettings()
+        plan.collections.add('loreBook')
+        return
+      }
+      plan.full = true
       return
     case 'moduleCreated':
     case 'moduleUpdated':
