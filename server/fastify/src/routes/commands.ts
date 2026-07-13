@@ -182,6 +182,7 @@ import {
   validateUniqueMessageIds,
 } from '../commands/messages.js'
 import {
+  applyLorebookEntryWriteById,
   deleteLorebookEntryById,
   ensureGlobalLorebookCollection,
   normalizeSelectedCharacterLorebooks,
@@ -189,17 +190,16 @@ import {
   readCharacterId as readLorebookCharacterId,
   readChatId as readLorebookChatId,
   readGlobalLorebookPatch,
+  readLorebookEntryWrite,
   readLorebookId,
   readLorebookIdList,
   readModuleId,
   reorderLorebookEntriesById,
   requireGlobalLorebookIndex,
   requireModule,
-  upsertLorebookEntryById,
   validateFullLorebookOrder,
   validateGlobalLorebookCreate,
   validateLorebookEntries,
-  validateLorebookEntryForId,
   type ModuleRecord as LorebookModuleRecord,
 } from '../commands/lorebooks.js'
 import {
@@ -368,6 +368,33 @@ function readLiveMessageSource(
  *  path, which treats a non-array collection field as empty). */
 function asArray(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : []
+}
+
+function findJsonRecordById(
+  values: unknown,
+  id: string,
+  idKey: 'id' | 'chaId' = 'id',
+): Record<string, unknown> | undefined {
+  if (!Array.isArray(values)) return undefined
+  return values.find(
+    (candidate): candidate is Record<string, unknown> =>
+      !!candidate && typeof candidate === 'object' && !Array.isArray(candidate) && candidate[idKey] === id,
+  )
+}
+
+function findRawChatRecord(database: Record<string, unknown>, chatId: string): Record<string, unknown> | undefined {
+  if (!Array.isArray(database.characters)) return undefined
+  for (const candidate of database.characters) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const chat = findJsonRecordById((candidate as Record<string, unknown>).chats, chatId)
+    if (chat) return chat
+  }
+  return undefined
+}
+
+function cloneJsonForCommandCertificate<T>(value: T): T {
+  if (value === undefined) return value
+  return JSON.parse(JSON.stringify(value)) as T
 }
 
 function readGlobalLorebookCommandTarget(database: unknown): {
@@ -5936,14 +5963,16 @@ export function registerCommandRoutes(
       const params = req.params as { lorebookId?: unknown; entryId?: unknown }
       const lorebookId = readLorebookId(params.lorebookId)
       const entryId = readLorebookId(params.entryId, 'entryId')
-      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const entryWrite = readLorebookEntryWrite(body, entryId)
       const result = applyTargetedCommandMutation<{
         lorebookId: string
         entryId: string
         entryIndex: number
         created: boolean
+        patchedKeys?: string[]
+        deletedKeys?: string[]
       }>({
         db,
         dataDir,
@@ -5952,13 +5981,23 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         collectionScopedRead: COLLECTION_SCOPED_READS.lorebooks,
         mutate(database, innerDb) {
+          const rawTarget = readJsonObject(database, 'database')
+          const rawLorebook = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.loreBook, lorebookId))
           const { lorebooks } = readGlobalLorebookCommandTarget(database)
           const index = requireGlobalLorebookIndex(lorebooks, lorebookId)
-          const upserted = upsertLorebookEntryById(lorebooks[index].data, entryId, entry)
+          const normalizationIdentity = isDeepStrictEqual(rawLorebook, lorebooks[index])
+          const written = applyLorebookEntryWriteById(lorebooks[index].data, entryId, entryWrite)
+          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
           writeSingleCollectionRow(innerDb, 'loreBook', index, lorebooks[index])
           return {
             event: { ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced, id: lorebookId },
-            extra: { lorebookId, entryId, entryIndex: upserted.index, created: upserted.created },
+            extra: {
+              lorebookId,
+              entryId,
+              entryIndex: written.index,
+              created: written.created,
+              ...(certified ? { patchedKeys: written.patchedKeys, deletedKeys: written.deletedKeys } : {}),
+            },
           }
         },
       })
@@ -6104,14 +6143,16 @@ export function registerCommandRoutes(
       const params = req.params as { characterId?: unknown; entryId?: unknown }
       const characterId = readLorebookCharacterId(params.characterId)
       const entryId = readLorebookId(params.entryId, 'entryId')
-      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const entryWrite = readLorebookEntryWrite(body, entryId)
       const result = applyTargetedCommandMutation<{
         characterId: string
         entryId: string
         entryIndex: number
         created: boolean
+        patchedKeys?: string[]
+        deletedKeys?: string[]
       }>({
         db,
         dataDir,
@@ -6120,8 +6161,13 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
         characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
+          const rawTarget = readJsonObject(database, 'database')
+          const rawCharacter = findJsonRecordById(rawTarget.characters, characterId, 'chaId')
+          const rawCharacterSnapshot = cloneJsonForCommandCertificate(rawCharacter)
           const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
-          const upserted = upsertLorebookEntryById(entries, entryId, entry)
+          const normalizationIdentity = isDeepStrictEqual(rawCharacterSnapshot, character)
+          const written = applyLorebookEntryWriteById(entries, entryId, entryWrite)
+          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
             event: {
@@ -6129,7 +6175,13 @@ export function registerCommandRoutes(
               id: characterId,
               resource: 'characterLorebook',
             },
-            extra: { characterId, entryId, entryIndex: upserted.index, created: upserted.created },
+            extra: {
+              characterId,
+              entryId,
+              entryIndex: written.index,
+              created: written.created,
+              ...(certified ? { patchedKeys: written.patchedKeys, deletedKeys: written.deletedKeys } : {}),
+            },
           }
         },
       })
@@ -6281,14 +6333,16 @@ export function registerCommandRoutes(
       const params = req.params as { chatId?: unknown; entryId?: unknown }
       const chatId = readLorebookChatId(params.chatId)
       const entryId = readLorebookId(params.entryId, 'entryId')
-      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const entryWrite = readLorebookEntryWrite(body, entryId)
       const result = applyTargetedCommandMutation<{
         chatId: string
         entryId: string
         entryIndex: number
         created: boolean
+        patchedKeys?: string[]
+        deletedKeys?: string[]
       }>({
         db,
         dataDir,
@@ -6297,8 +6351,13 @@ export function registerCommandRoutes(
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
         chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
+          const rawTarget = readJsonObject(database, 'database')
+          const rawChat = findRawChatRecord(rawTarget, chatId)
+          const rawChatSnapshot = cloneJsonForCommandCertificate(rawChat)
           const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
-          const upserted = upsertLorebookEntryById(chat.localLore, entryId, entry)
+          const normalizationIdentity = isDeepStrictEqual(rawChatSnapshot, chat)
+          const written = applyLorebookEntryWriteById(chat.localLore, entryId, entryWrite)
+          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
           writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
@@ -6307,7 +6366,13 @@ export function registerCommandRoutes(
               parentId,
               resource: 'characterRow',
             },
-            extra: { chatId, entryId, entryIndex: upserted.index, created: upserted.created },
+            extra: {
+              chatId,
+              entryId,
+              entryIndex: written.index,
+              created: written.created,
+              ...(certified ? { patchedKeys: written.patchedKeys, deletedKeys: written.deletedKeys } : {}),
+            },
           }
         },
       })
@@ -7054,14 +7119,16 @@ export function registerCommandRoutes(
       const params = req.params as { moduleId?: unknown; entryId?: unknown }
       const moduleId = readModuleId(params.moduleId)
       const entryId = readLorebookId(params.entryId, 'entryId')
-      const body = (req.body ?? {}) as { baseRevision?: unknown; entry?: unknown }
+      const body = (req.body ?? {}) as { baseRevision?: unknown }
       const baseRevision = readBaseRevision(body)
-      const entry = validateLorebookEntryForId(body.entry, entryId)
+      const entryWrite = readLorebookEntryWrite(body, entryId)
       const result = applyTargetedCommandMutation<{
         moduleId: string
         entryId: string
         entryIndex: number
         created: boolean
+        patchedKeys?: string[]
+        deletedKeys?: string[]
       }>({
         db,
         dataDir,
@@ -7069,10 +7136,14 @@ export function registerCommandRoutes(
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.collection,
         mutate(database, innerDb) {
+          const rawTarget = readJsonObject(database, 'database')
+          const rawModule = cloneJsonForCommandCertificate(findJsonRecordById(rawTarget.modules, moduleId))
           const { modules } = readModuleCollectionCommandTarget(database)
           const module = requireModule(modules, moduleId)
           module.lorebook ??= []
-          const upserted = upsertLorebookEntryById(module.lorebook, entryId, entry)
+          const normalizationIdentity = isDeepStrictEqual(rawModule, module)
+          const written = applyLorebookEntryWriteById(module.lorebook, entryId, entryWrite)
+          const certified = normalizationIdentity && written.patchedKeys && written.deletedKeys
           writeSingleCollectionRow(innerDb, 'modules', modules.indexOf(module), module)
           return {
             event: {
@@ -7080,7 +7151,13 @@ export function registerCommandRoutes(
               id: moduleId,
               resource: 'moduleUpdated',
             },
-            extra: { moduleId, entryId, entryIndex: upserted.index, created: upserted.created },
+            extra: {
+              moduleId,
+              entryId,
+              entryIndex: written.index,
+              created: written.created,
+              ...(certified ? { patchedKeys: written.patchedKeys, deletedKeys: written.deletedKeys } : {}),
+            },
           }
         },
       })

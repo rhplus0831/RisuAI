@@ -1,9 +1,21 @@
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
 import { ensureCharacterChats, readChatId } from './chats.js'
 
 type JsonRecord = Record<string, unknown>
+
+const REQUIRED_LOREBOOK_ENTRY_KEYS = new Set([
+  'key',
+  'secondkey',
+  'insertorder',
+  'comment',
+  'content',
+  'mode',
+  'alwaysActive',
+  'selective',
+])
 
 export interface LorebookEntryRecord extends JsonRecord {
   id: string
@@ -28,6 +40,17 @@ export interface ModuleRecord extends JsonRecord {
   id: string
   lorebook?: LorebookEntryRecord[]
   mcp?: unknown
+}
+
+export type LorebookEntryWrite =
+  | { kind: 'full'; entry: LorebookEntryRecord }
+  | { kind: 'sparse'; patch: JsonRecord; deleteKeys: string[] }
+
+export interface LorebookEntryWriteResult {
+  index: number
+  created: boolean
+  patchedKeys?: string[]
+  deletedKeys?: string[]
 }
 
 export function ensureLorebookDatabase(database: unknown): JsonRecord {
@@ -367,6 +390,76 @@ export function validateLorebookEntryForId(input: unknown, entryId: string, labe
   return entry
 }
 
+/**
+ * Read the backwards-compatible entry PUT body. A complete `entry` retains the
+ * historical upsert/create behavior; `patch`/`deleteKeys` is deliberately
+ * existing-row-only so a sparse editor write can never synthesize a row from
+ * server defaults.
+ */
+export function readLorebookEntryWrite(input: unknown, entryId: string): LorebookEntryWrite {
+  const body = readJsonObject(input, 'body')
+  const hasEntry = Object.prototype.hasOwnProperty.call(body, 'entry')
+  const hasPatch = Object.prototype.hasOwnProperty.call(body, 'patch')
+  const hasDeleteKeys = Object.prototype.hasOwnProperty.call(body, 'deleteKeys')
+
+  if (hasEntry) {
+    if (hasPatch || hasDeleteKeys) {
+      throw new ValidationError('entry cannot be combined with patch or deleteKeys')
+    }
+    return { kind: 'full', entry: validateLorebookEntryForId(body.entry, entryId) }
+  }
+
+  if (!hasPatch && !hasDeleteKeys) {
+    throw new ValidationError('lorebook entry write must include entry, patch, or deleteKeys')
+  }
+
+  const patch = hasPatch ? { ...readJsonObject(body.patch, 'patch') } : {}
+  if (Object.prototype.hasOwnProperty.call(patch, 'id')) {
+    throw new ValidationError('patch.id is not supported')
+  }
+  for (const key of Object.keys(patch)) {
+    if (key.trim() === '') {
+      throw new ValidationError('patch keys must be non-empty strings')
+    }
+  }
+
+  const deleteKeys = readLorebookEntryDeleteKeys(body.deleteKeys)
+  for (const key of deleteKeys) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      throw new ValidationError(`patch and deleteKeys must not overlap: ${key}`)
+    }
+  }
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) {
+    throw new ValidationError('sparse lorebook entry write must include at least one field')
+  }
+  return { kind: 'sparse', patch, deleteKeys }
+}
+
+function readLorebookEntryDeleteKeys(input: unknown): string[] {
+  if (input === undefined) return []
+  if (!Array.isArray(input)) {
+    throw new ValidationError('deleteKeys must be an array')
+  }
+
+  const seen = new Set<string>()
+  return input.map((key, index) => {
+    if (typeof key !== 'string' || key.trim() === '') {
+      throw new ValidationError(`deleteKeys[${index}] must be a non-empty string`)
+    }
+    if (key === 'id') {
+      throw new ValidationError('deleteKeys must not contain id')
+    }
+    if (REQUIRED_LOREBOOK_ENTRY_KEYS.has(key)) {
+      throw new ValidationError(`deleteKeys must not contain required field: ${key}`)
+    }
+    if (seen.has(key)) {
+      throw new ValidationError(`Duplicate delete key: ${key}`)
+    }
+    seen.add(key)
+    return key
+  })
+}
+
 export function upsertLorebookEntryById(
   entries: LorebookEntryRecord[],
   entryId: string,
@@ -379,6 +472,51 @@ export function upsertLorebookEntryById(
   }
   entries[index] = entry
   return { index, created: false }
+}
+
+export function patchLorebookEntryById(
+  entries: LorebookEntryRecord[],
+  entryId: string,
+  patch: JsonRecord,
+  deleteKeys: readonly string[],
+): { index: number; created: false; patchedKeys?: string[]; deletedKeys?: string[] } {
+  const index = entries.findIndex((candidate) => candidate.id === entryId)
+  if (index === -1) {
+    throw new EntityNotFoundError(`Lorebook entry not found: ${entryId}`)
+  }
+
+  const requested: JsonRecord = { ...entries[index], ...patch, id: entryId }
+  for (const key of deleteKeys) delete requested[key]
+  const validated = validateLorebookEntryForId(requested, entryId)
+  entries[index] = validated
+  const certificateSafe =
+    isDeepStrictEqual(requested, validated) && sparseLorebookEntryStateMatches(validated, patch, deleteKeys)
+  return {
+    index,
+    created: false,
+    ...(certificateSafe ? { patchedKeys: Object.keys(patch).sort(), deletedKeys: [...deleteKeys].sort() } : {}),
+  }
+}
+
+function sparseLorebookEntryStateMatches(
+  entry: LorebookEntryRecord,
+  patch: JsonRecord,
+  deleteKeys: readonly string[],
+): boolean {
+  for (const [key, value] of Object.entries(patch)) {
+    if (!Object.prototype.hasOwnProperty.call(entry, key) || !isDeepStrictEqual(entry[key], value)) return false
+  }
+  return deleteKeys.every((key) => !Object.prototype.hasOwnProperty.call(entry, key))
+}
+
+export function applyLorebookEntryWriteById(
+  entries: LorebookEntryRecord[],
+  entryId: string,
+  write: LorebookEntryWrite,
+): LorebookEntryWriteResult {
+  return write.kind === 'full'
+    ? upsertLorebookEntryById(entries, entryId, write.entry)
+    : patchLorebookEntryById(entries, entryId, write.patch, write.deleteKeys)
 }
 
 export function deleteLorebookEntryById(entries: LorebookEntryRecord[], entryId: string): { index: number } {

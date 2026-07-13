@@ -32,6 +32,7 @@ import {
   type LorebookEntrySnapshot,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
+  type SparseLorebookEntryUpdate,
 } from './commands'
 import {
   getServerResourceApplyEpoch,
@@ -1287,7 +1288,10 @@ function lorebookCollectionDeltaCommand(
       const entryId = delta.entry.id
       if (typeof entryId !== 'string' || entryId.trim() === '') return null
       const previousEntries = rollbackSnapshot.scopedValue as loreBook[]
+      const previousEntry = previousEntries.find((entry) => entry.id === entryId)
       const optimisticEntryIndex = entries.findIndex((entry) => entry.id === entryId)
+      const entrySnapshot = cloneJsonValue(delta.entry) as LorebookEntrySnapshot
+      const sparseUpdate = previousEntry ? sparseLorebookEntryUpdate(previousEntry, delta.entry) : null
       return lorebookScopedEntryCommand(
         scope,
         'upsert',
@@ -1300,7 +1304,8 @@ function lorebookCollectionDeltaCommand(
         },
         {
           entryId,
-          entry: cloneJsonValue(delta.entry) as LorebookEntrySnapshot,
+          entry: entrySnapshot,
+          ...(sparseUpdate ? { sparseUpdate } : {}),
         },
       )
     }
@@ -1364,6 +1369,41 @@ function detectLorebookCollectionDelta(
   }
 
   return null
+}
+
+function sparseLorebookEntryUpdate(
+  previousEntry: loreBook,
+  attemptedEntry: loreBook,
+): SparseLorebookEntryUpdate | null {
+  if (
+    !isStableCommandId(previousEntry.id) ||
+    !isStableCommandId(attemptedEntry.id) ||
+    previousEntry.id !== attemptedEntry.id
+  ) {
+    return null
+  }
+
+  const previous = previousEntry as unknown as Record<string, unknown>
+  const attempted = attemptedEntry as unknown as Record<string, unknown>
+  const patch: LorebookEntrySnapshot = {}
+  const deleteKeys: string[] = []
+  const keys = new Set([...Object.keys(previous), ...Object.keys(attempted)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+    const previousHasKey = Object.prototype.hasOwnProperty.call(previous, key)
+    const attemptedHasKey = Object.prototype.hasOwnProperty.call(attempted, key)
+    if (!attemptedHasKey || attempted[key] === undefined) {
+      if (previousHasKey) deleteKeys.push(key)
+      continue
+    }
+    if (!previousHasKey || snapshotJson(previous[key]) !== snapshotJson(attempted[key])) {
+      patch[key] = cloneJsonValue(attempted[key])
+    }
+  }
+
+  if (Object.keys(patch).length === 0 && deleteKeys.length === 0) return null
+  return { patch, ...(deleteKeys.length > 0 ? { deleteKeys } : {}) }
 }
 
 function lorebookEntryIds(entries: loreBook[]): string[] | null {
@@ -1436,7 +1476,7 @@ function lorebookScopedEntryCommand(
   baseRevision: number,
   options: ServerCommandTransportOptions,
   optimisticMetadata: LorebookOptimisticCommandMetadata,
-  payload: { entryId: string; entry: LorebookEntrySnapshot },
+  payload: { entryId: string; entry: LorebookEntrySnapshot; sparseUpdate?: SparseLorebookEntryUpdate },
 ): Promise<ServerCommandResult<Record<string, unknown>>>
 function lorebookScopedEntryCommand(
   scope: DiscreteLorebookEditScope,
@@ -1460,7 +1500,12 @@ function lorebookScopedEntryCommand(
   baseRevision: number,
   options: ServerCommandTransportOptions,
   optimisticMetadata: LorebookOptimisticCommandMetadata,
-  payload: { entryId?: string; entry?: LorebookEntrySnapshot; entryIds?: string[] },
+  payload: {
+    entryId?: string
+    entry?: LorebookEntrySnapshot
+    sparseUpdate?: SparseLorebookEntryUpdate
+    entryIds?: string[]
+  },
 ): Promise<ServerCommandResult<Record<string, unknown>>> {
   switch (scope.kind) {
     case 'character':
@@ -1471,6 +1516,7 @@ function lorebookScopedEntryCommand(
             characterId: scope.characterId,
             entryId: payload.entryId!,
             entry: payload.entry!,
+            sparseUpdate: payload.sparseUpdate,
             ...optimisticMetadata,
           },
           options.signal,
@@ -1497,6 +1543,7 @@ function lorebookScopedEntryCommand(
             chatId: scope.chatId,
             entryId: payload.entryId!,
             entry: payload.entry!,
+            sparseUpdate: payload.sparseUpdate,
             ...optimisticMetadata,
           },
           options.signal,
@@ -1523,6 +1570,7 @@ function lorebookScopedEntryCommand(
             lorebookId: scope.lorebookId,
             entryId: payload.entryId!,
             entry: payload.entry!,
+            sparseUpdate: payload.sparseUpdate,
             ...optimisticMetadata,
           },
           options.signal,
@@ -1549,6 +1597,7 @@ function lorebookScopedEntryCommand(
             moduleId: scope.moduleId,
             entryId: payload.entryId!,
             entry: payload.entry!,
+            sparseUpdate: payload.sparseUpdate,
           },
           options.signal,
           options.keepalive,
@@ -1588,6 +1637,9 @@ function lorebookEntryUpsertCommand(
   const entryId = entry?.id
   if (typeof entryId !== 'string' || entryId.trim() === '') return null
   const entrySnapshot = cloneJsonValue(entry) as LorebookEntrySnapshot
+  const sparseUpdate = rollbackSnapshot.previousEntry
+    ? sparseLorebookEntryUpdate(rollbackSnapshot.previousEntry, entry)
+    : null
   const optimisticEntryIndex = entries.findIndex((candidate) => candidate.id === entryId)
   if (optimisticEntryIndex < 0) return null
   const entryOptimisticMetadata: LorebookOptimisticCommandMetadata = {
@@ -1596,56 +1648,11 @@ function lorebookEntryUpsertCommand(
     optimisticEntryCreated: rollbackSnapshot.previousEntry === null,
   }
 
-  switch (scope.kind) {
-    case 'character':
-      return upsertCharacterLorebookEntryCommand(
-        {
-          baseRevision,
-          characterId: scope.characterId,
-          entryId,
-          entry: entrySnapshot,
-          ...entryOptimisticMetadata,
-        },
-        options.signal,
-        options.keepalive,
-      ) as Promise<ServerCommandResult<Record<string, unknown>>>
-    case 'chat':
-      return upsertChatLorebookEntryCommand(
-        {
-          baseRevision,
-          chatId: scope.chatId,
-          entryId,
-          entry: entrySnapshot,
-          ...entryOptimisticMetadata,
-        },
-        options.signal,
-        options.keepalive,
-      ) as Promise<ServerCommandResult<Record<string, unknown>>>
-    case 'global':
-      return upsertGlobalLorebookEntryCommand(
-        {
-          baseRevision,
-          lorebookId: scope.lorebookId,
-          entryId,
-          entry: entrySnapshot,
-          ...entryOptimisticMetadata,
-        },
-        options.signal,
-        options.keepalive,
-      ) as Promise<ServerCommandResult<Record<string, unknown>>>
-    case 'module':
-      return upsertModuleLorebookEntryCommand(
-        {
-          baseRevision,
-          moduleId: scope.moduleId,
-          entryId,
-          entry: entrySnapshot,
-        },
-        options.signal,
-        options.keepalive,
-        true,
-      ) as Promise<ServerCommandResult<Record<string, unknown>>>
-  }
+  return lorebookScopedEntryCommand(scope, 'upsert', baseRevision, options, entryOptimisticMetadata, {
+    entryId,
+    entry: entrySnapshot,
+    ...(sparseUpdate ? { sparseUpdate } : {}),
+  })
 }
 
 function currentEditedLorebookEntry(

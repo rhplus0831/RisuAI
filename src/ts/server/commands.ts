@@ -510,6 +510,11 @@ export type GlobalLorebookSnapshot = Record<string, unknown> & {
   data?: LorebookEntrySnapshot[]
 }
 
+export interface SparseLorebookEntryUpdate {
+  patch: LorebookEntrySnapshot
+  deleteKeys?: string[]
+}
+
 export type ModuleSnapshot = Record<string, unknown> & {
   id?: string
   name?: string
@@ -1108,6 +1113,7 @@ export interface UpsertGlobalLorebookEntryCommandInput
   lorebookId: string
   entryId: string
   entry: LorebookEntrySnapshot
+  sparseUpdate?: SparseLorebookEntryUpdate
 }
 
 export interface DeleteGlobalLorebookEntryCommandInput
@@ -1133,6 +1139,7 @@ export interface UpsertCharacterLorebookEntryCommandInput
   characterId: string
   entryId: string
   entry: LorebookEntrySnapshot
+  sparseUpdate?: SparseLorebookEntryUpdate
 }
 
 export interface DeleteCharacterLorebookEntryCommandInput
@@ -1156,6 +1163,7 @@ export interface UpsertChatLorebookEntryCommandInput extends LorebookCommandInpu
   chatId: string
   entryId: string
   entry: LorebookEntrySnapshot
+  sparseUpdate?: SparseLorebookEntryUpdate
 }
 
 export interface DeleteChatLorebookEntryCommandInput extends LorebookCommandInput, ChatLorebookOptimisticMutationInput {
@@ -1178,6 +1186,7 @@ export interface UpsertModuleLorebookEntryCommandInput extends LorebookCommandIn
   moduleId: string
   entryId: string
   entry: LorebookEntrySnapshot
+  sparseUpdate?: SparseLorebookEntryUpdate
 }
 
 export interface DeleteModuleLorebookEntryCommandInput extends LorebookCommandInput {
@@ -3357,19 +3366,40 @@ export async function replaceGlobalLorebookEntriesCommand(
   })
 }
 
+function lorebookEntryWriteBody(input: {
+  baseRevision: number
+  entry: LorebookEntrySnapshot
+  sparseUpdate?: SparseLorebookEntryUpdate
+}): Record<string, unknown> {
+  if (!input.sparseUpdate) {
+    return { baseRevision: input.baseRevision, entry: input.entry }
+  }
+  return {
+    baseRevision: input.baseRevision,
+    patch: input.sparseUpdate.patch,
+    ...(input.sparseUpdate.deleteKeys?.length ? { deleteKeys: input.sparseUpdate.deleteKeys } : {}),
+  }
+}
+
 export async function upsertGlobalLorebookEntryCommand(
   input: UpsertGlobalLorebookEntryCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
-): Promise<ServerCommandResult<{ lorebookId: string; entryId: string; entryIndex: number; created: boolean }>> {
+): Promise<
+  ServerCommandResult<{
+    lorebookId: string
+    entryId: string
+    entryIndex: number
+    created: boolean
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+  }>
+> {
   return requestCommandJson(
     `/lorebooks/${encodeURIComponent(input.lorebookId)}/entries/${encodeURIComponent(input.entryId)}`,
     {
       method: 'PUT',
-      body: {
-        baseRevision: input.baseRevision,
-        entry: input.entry,
-      },
+      body: lorebookEntryWriteBody(input),
       signal,
       keepalive,
       readLocalEffect: input.acknowledgeOptimistic
@@ -3380,6 +3410,7 @@ export async function upsertGlobalLorebookEntryCommand(
               expectedTargetId: input.lorebookId,
               expectedEntryId: input.entryId,
               expectedEntry: input.entry,
+              expectedSparseUpdate: input.sparseUpdate,
               expectedEntryIndex: input.optimisticEntryIndex,
               expectedEntryCreated: input.optimisticEntryCreated,
               optimisticEntries: input.optimisticEntries,
@@ -3479,15 +3510,21 @@ export async function upsertCharacterLorebookEntryCommand(
   input: UpsertCharacterLorebookEntryCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
-): Promise<ServerCommandResult<{ characterId: string; entryId: string; entryIndex: number; created: boolean }>> {
+): Promise<
+  ServerCommandResult<{
+    characterId: string
+    entryId: string
+    entryIndex: number
+    created: boolean
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+  }>
+> {
   return requestCommandJson(
     `/characters/${encodeURIComponent(input.characterId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
     {
       method: 'PUT',
-      body: {
-        baseRevision: input.baseRevision,
-        entry: input.entry,
-      },
+      body: lorebookEntryWriteBody(input),
       signal,
       keepalive,
       readLocalEffect: input.acknowledgeOptimistic
@@ -3498,6 +3535,7 @@ export async function upsertCharacterLorebookEntryCommand(
               expectedTargetId: input.characterId,
               expectedEntryId: input.entryId,
               expectedEntry: input.entry,
+              expectedSparseUpdate: input.sparseUpdate,
               expectedEntryIndex: input.optimisticEntryIndex,
               expectedEntryCreated: input.optimisticEntryCreated,
               optimisticEntries: input.optimisticEntries,
@@ -3600,15 +3638,21 @@ export async function upsertChatLorebookEntryCommand(
   input: UpsertChatLorebookEntryCommandInput,
   signal?: AbortSignal | null,
   keepalive = false,
-): Promise<ServerCommandResult<{ chatId: string; entryId: string; entryIndex: number; created: boolean }>> {
+): Promise<
+  ServerCommandResult<{
+    chatId: string
+    entryId: string
+    entryIndex: number
+    created: boolean
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+  }>
+> {
   return requestCommandJson(
     `/chats/${encodeURIComponent(input.chatId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
     {
       method: 'PUT',
-      body: {
-        baseRevision: input.baseRevision,
-        entry: input.entry,
-      },
+      body: lorebookEntryWriteBody(input),
       signal,
       keepalive,
       readLocalEffect: input.acknowledgeOptimistic
@@ -3619,6 +3663,7 @@ export async function upsertChatLorebookEntryCommand(
               expectedTargetId: input.chatId,
               expectedEntryId: input.entryId,
               expectedEntry: input.entry,
+              expectedSparseUpdate: input.sparseUpdate,
               expectedEntryIndex: input.optimisticEntryIndex,
               expectedEntryCreated: input.optimisticEntryCreated,
               optimisticEntries: input.optimisticEntries,
@@ -3719,15 +3764,21 @@ export async function upsertModuleLorebookEntryCommand(
   signal?: AbortSignal | null,
   keepalive = false,
   acknowledgeOptimistic = false,
-): Promise<ServerCommandResult<{ moduleId: string; entryId: string; entryIndex: number; created: boolean }>> {
+): Promise<
+  ServerCommandResult<{
+    moduleId: string
+    entryId: string
+    entryIndex: number
+    created: boolean
+    patchedKeys?: string[]
+    deletedKeys?: string[]
+  }>
+> {
   return requestCommandJson(
     `/modules/${encodeURIComponent(input.moduleId)}/lorebooks/entries/${encodeURIComponent(input.entryId)}`,
     {
       method: 'PUT',
-      body: {
-        baseRevision: input.baseRevision,
-        entry: input.entry,
-      },
+      body: lorebookEntryWriteBody(input),
       signal,
       keepalive,
       readLocalEffect: acknowledgeOptimistic
@@ -3737,7 +3788,10 @@ export async function upsertModuleLorebookEntryCommand(
               expectedModuleId: input.moduleId,
               expectedEntryId: input.entryId,
               entryResult: 'upsert',
-              hasCanonicalPayload: isCanonicalLorebookEntry(input.entry),
+              expectedSparseUpdate: input.sparseUpdate,
+              hasCanonicalPayload:
+                isCanonicalLorebookEntry(input.entry) &&
+                (!input.sparseUpdate || lorebookEntryMatchesSparseUpdate(input.entry, input.sparseUpdate)),
             })
         : undefined,
     },
@@ -5697,6 +5751,7 @@ interface ReadLorebookMutationLocalEffectOptions {
   expectedEntries?: unknown
   expectedEntryId?: unknown
   expectedEntry?: unknown
+  expectedSparseUpdate?: unknown
   expectedEntryIndex?: unknown
   expectedEntryCreated?: unknown
   expectedEntryIds?: unknown
@@ -5740,6 +5795,14 @@ function readLorebookMutationLocalEffect(
       optimisticMatches.length !== 1 ||
       !isJsonValueEqual(optimisticMatches[0], options.expectedEntry) ||
       optimisticEntries.findIndex((entry) => entry.id === options.expectedEntryId) !== options.expectedEntryIndex
+    ) {
+      return undefined
+    }
+    if (
+      options.expectedSparseUpdate !== undefined &&
+      (options.expectedEntryCreated !== false ||
+        !isCanonicalSparseLorebookEntryUpdate(options.expectedSparseUpdate) ||
+        !lorebookEntryMatchesSparseUpdate(options.expectedEntry as LorebookEntrySnapshot, options.expectedSparseUpdate))
     ) {
       return undefined
     }
@@ -5789,6 +5852,10 @@ function readLorebookMutationLocalEffect(
     ) {
       return undefined
     }
+    if (options.operation === 'upsert' && options.expectedSparseUpdate !== undefined) {
+      if (!isCanonicalSparseLorebookEntryUpdate(options.expectedSparseUpdate)) return undefined
+      if (!hasExactSparseLorebookEntryCertificate(record, options.expectedSparseUpdate)) return undefined
+    }
   }
 
   if (options.scope === 'global') {
@@ -5831,6 +5898,7 @@ interface ReadModuleCollectionMutationLocalEffectOptions {
   expectedModuleIds?: unknown
   expectedEntryId?: unknown
   entryResult?: 'upsert' | 'delete'
+  expectedSparseUpdate?: unknown
   hasCanonicalPayload?: boolean
   collectionProjectionEpoch?: unknown
 }
@@ -5894,6 +5962,14 @@ function readModuleCollectionMutationLocalEffect(
         : options.entryResult === 'delete'
           ? record.created !== undefined
           : false)
+    ) {
+      return undefined
+    }
+    if (
+      options.entryResult === 'upsert' &&
+      options.expectedSparseUpdate !== undefined &&
+      (!isCanonicalSparseLorebookEntryUpdate(options.expectedSparseUpdate) ||
+        !hasExactSparseLorebookEntryCertificate(record, options.expectedSparseUpdate))
     ) {
       return undefined
     }
@@ -6121,6 +6197,50 @@ function isCanonicalLorebookEntry(value: unknown): boolean {
     typeof record.alwaysActive === 'boolean' &&
     typeof record.selective === 'boolean' &&
     (record.folder === undefined || typeof record.folder === 'string')
+  )
+}
+
+function isCanonicalSparseLorebookEntryUpdate(value: unknown): value is SparseLorebookEntryUpdate {
+  if (!value || typeof value !== 'object' || Array.isArray(value) || !isJsonValue(value)) return false
+  const record = value as Record<string, unknown>
+  if (!Object.keys(record).every((key) => key === 'patch' || key === 'deleteKeys')) return false
+  if (!record.patch || typeof record.patch !== 'object' || Array.isArray(record.patch) || !isJsonValue(record.patch)) {
+    return false
+  }
+
+  const patch = record.patch as Record<string, unknown>
+  const patchedKeys = Object.keys(patch)
+  const deleteKeys = record.deleteKeys === undefined ? [] : record.deleteKeys
+  if (
+    !isUniqueStringArray(deleteKeys) ||
+    patchedKeys.some((key) => key.trim() === '' || key === 'id') ||
+    deleteKeys.some((key) => key === 'id' || Object.prototype.hasOwnProperty.call(patch, key))
+  ) {
+    return false
+  }
+  return patchedKeys.length > 0 || deleteKeys.length > 0
+}
+
+function lorebookEntryMatchesSparseUpdate(entry: LorebookEntrySnapshot, update: SparseLorebookEntryUpdate): boolean {
+  if (!isCanonicalSparseLorebookEntryUpdate(update)) return false
+  for (const [key, value] of Object.entries(update.patch)) {
+    if (!isJsonValueEqual(entry[key], value)) return false
+  }
+  for (const key of update.deleteKeys ?? []) {
+    if (Object.prototype.hasOwnProperty.call(entry, key)) return false
+  }
+  return true
+}
+
+function hasExactSparseLorebookEntryCertificate(
+  record: Record<string, unknown>,
+  update: SparseLorebookEntryUpdate,
+): boolean {
+  if (!isCanonicalSparseLorebookEntryUpdate(update) || record.created !== false) return false
+  if (!isUniqueStringArray(record.patchedKeys) || !isUniqueStringArray(record.deletedKeys)) return false
+  return (
+    isJsonValueEqual(record.patchedKeys, Object.keys(update.patch).sort()) &&
+    isJsonValueEqual(record.deletedKeys, [...(update.deleteKeys ?? [])].sort())
   )
 }
 

@@ -5657,6 +5657,216 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('sends sparse lorebook entry patches in every scope and accepts only exact compact receipts', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let revision = 30
+    const commandFetch = makeCommandFetch((url) => {
+      revision += 1
+      const scope = url.includes('/characters/')
+        ? 'character'
+        : url.includes('/chats/')
+          ? 'chat'
+          : url.includes('/modules/')
+            ? 'module'
+            : 'global'
+      const id =
+        scope === 'character' ? 'char-a' : scope === 'chat' ? 'chat-a' : scope === 'module' ? 'mod-a' : 'book-a'
+      return {
+        revision,
+        event: {
+          type: 'lorebook.entries.replaced',
+          revision,
+          resource:
+            scope === 'character'
+              ? 'characterLorebook'
+              : scope === 'chat'
+                ? 'characterRow'
+                : scope === 'module'
+                  ? 'moduleUpdated'
+                  : 'globalLorebook',
+          id,
+          ...(scope === 'chat' ? { parentId: 'char-a' } : {}),
+        },
+        ...(scope === 'character'
+          ? { characterId: id }
+          : scope === 'chat'
+            ? { chatId: id }
+            : scope === 'module'
+              ? { moduleId: id }
+              : { lorebookId: id }),
+        entryId: 'entry-a',
+        entryIndex: 0,
+        created: false,
+        patchedKeys: ['content', 'nullableExtension'],
+        deletedKeys: ['activationPercent'],
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    const entry = {
+      id: 'entry-a',
+      key: 'key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Lore',
+      content: 'edited',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+      nullableExtension: null,
+    }
+    const sparseUpdate = {
+      patch: { content: 'edited', nullableExtension: null },
+      deleteKeys: ['activationPercent'],
+    }
+
+    await upsertGlobalLorebookEntryCommand({
+      baseRevision: 1,
+      lorebookId: 'book-a',
+      entryId: 'entry-a',
+      entry,
+      sparseUpdate,
+      optimisticEntries: [entry],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+      optimisticEntryIndex: 0,
+      optimisticEntryCreated: false,
+    })
+    await upsertCharacterLorebookEntryCommand({
+      baseRevision: 2,
+      characterId: 'char-a',
+      entryId: 'entry-a',
+      entry,
+      sparseUpdate,
+      optimisticEntries: [entry],
+      acknowledgeOptimistic: true,
+      optimisticRowEpoch: 2,
+      optimisticLorebookEpoch: 3,
+      optimisticEntryIndex: 0,
+      optimisticEntryCreated: false,
+    })
+    await upsertChatLorebookEntryCommand({
+      baseRevision: 3,
+      chatId: 'chat-a',
+      entryId: 'entry-a',
+      entry,
+      sparseUpdate,
+      optimisticEntries: [entry],
+      acknowledgeOptimistic: true,
+      optimisticCharacterId: 'char-a',
+      optimisticRowEpoch: 4,
+      optimisticEntryIndex: 0,
+      optimisticEntryCreated: false,
+    })
+    await upsertModuleLorebookEntryCommand(
+      { baseRevision: 4, moduleId: 'mod-a', entryId: 'entry-a', entry, sparseUpdate },
+      null,
+      false,
+      true,
+    )
+
+    expect(commandFetch.calls.map(({ body }) => body)).toEqual([
+      { baseRevision: 1, patch: sparseUpdate.patch, deleteKeys: sparseUpdate.deleteKeys },
+      { baseRevision: 2, patch: sparseUpdate.patch, deleteKeys: sparseUpdate.deleteKeys },
+      { baseRevision: 3, patch: sparseUpdate.patch, deleteKeys: sparseUpdate.deleteKeys },
+      { baseRevision: 4, patch: sparseUpdate.patch, deleteKeys: sparseUpdate.deleteKeys },
+    ])
+    for (const call of commandFetch.calls) {
+      expect(call.body).not.toHaveProperty('entry')
+      expect(call.body).not.toHaveProperty('optimisticEntries')
+    }
+    expect(observedEffects).toEqual([
+      {
+        kind: 'lorebookMutation',
+        scope: 'global',
+        operation: 'upsert',
+        lorebookId: 'book-a',
+        collectionProjectionEpoch: 1,
+      },
+      {
+        kind: 'lorebookMutation',
+        scope: 'character',
+        operation: 'upsert',
+        characterId: 'char-a',
+        characterRowProjectionEpoch: 2,
+        characterLorebookProjectionEpoch: 3,
+      },
+      {
+        kind: 'lorebookMutation',
+        scope: 'chat',
+        operation: 'upsert',
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        characterRowProjectionEpoch: 4,
+      },
+      { kind: 'moduleCollectionMutation', operation: 'lorebooks', moduleId: 'mod-a' },
+    ])
+  })
+
+  it('withholds sparse lorebook local effects for mismatched or create receipts', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let call = 0
+    const commandFetch = makeCommandFetch((url) => {
+      call += 1
+      const module = url.includes('/modules/')
+      return {
+        revision: 40 + call,
+        event: {
+          type: 'lorebook.entries.replaced',
+          revision: 40 + call,
+          resource: module ? 'moduleUpdated' : 'globalLorebook',
+          id: module ? 'mod-a' : 'book-a',
+        },
+        ...(module ? { moduleId: 'mod-a' } : { lorebookId: 'book-a' }),
+        entryId: 'entry-a',
+        entryIndex: 0,
+        created: module,
+        patchedKeys: module ? ['content'] : [],
+        deletedKeys: [],
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const entry = {
+      id: 'entry-a',
+      key: 'key',
+      secondkey: '',
+      insertorder: 100,
+      comment: 'Lore',
+      content: 'edited',
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    }
+    const sparseUpdate = { patch: { content: 'edited' } }
+
+    await upsertGlobalLorebookEntryCommand({
+      baseRevision: 1,
+      lorebookId: 'book-a',
+      entryId: 'entry-a',
+      entry,
+      sparseUpdate,
+      optimisticEntries: [entry],
+      acknowledgeOptimistic: true,
+      optimisticCollectionEpoch: 1,
+      optimisticEntryIndex: 0,
+      optimisticEntryCreated: false,
+    })
+    await upsertModuleLorebookEntryCommand(
+      { baseRevision: 2, moduleId: 'mod-a', entryId: 'entry-a', entry, sparseUpdate },
+      null,
+      false,
+      true,
+    )
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('emits strict opt-in local effects for top-level lorebook mutations without sending acknowledgement metadata', async () => {
     const observedEffects: ServerCommandLocalEffect[] = []
     setServerCommandSuccessReconciler((_event, _events, localEffects) => {

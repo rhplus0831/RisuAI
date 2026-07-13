@@ -29,6 +29,7 @@ vi.mock('./commands', () => ({
       return { status: 'ok', revision: 1 }
     },
   ),
+  subscribeServerCommandLocalEffectApplied: () => () => {},
   // Builders: identity stubs that tag the command kind so the test can assert which
   // entity (if any) the watcher tried to persist.
   createGlobalLorebookCommand: async (a: unknown) => ({ kind: 'createGlobal', a }),
@@ -1474,8 +1475,40 @@ describe('K4 lorebook editor entry draft scope', () => {
       characterId: 'c-k4',
       entryId: 'entry-5',
       entry: { id: 'entry-5', content: 'final draft' },
+      sparseUpdate: { patch: { content: 'final draft' } },
     })
     expect(characterReplaceCommands()).toHaveLength(0)
+  })
+
+  it('K4: coalesces sparse fields against the original entry and distinguishes deletion from null', async () => {
+    setupK4EditorDb()
+    const entries = getDatabase().characters[0].globalLore as unknown as Array<Entry & Record<string, unknown>>
+    entries[5].activationPercent = 40
+
+    applyLorebookEntryDraftEdit(
+      { kind: 'character', characterId: 'c-k4' },
+      5,
+      { ...entries[5], comment: 'temporary comment', content: 'intermediate' } as any,
+      DELAY,
+    )
+    const finalEntry = {
+      ...entries[5],
+      comment: 'Entry 5',
+      content: 'final content',
+      nullableExtension: null,
+    } as Entry & Record<string, unknown>
+    delete finalEntry.activationPercent
+    applyLorebookEntryDraftEdit({ kind: 'character', characterId: 'c-k4' }, 5, finalEntry as any, DELAY)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    const command = characterEntryCommands()[0].a as Record<string, any>
+    expect(command.sparseUpdate).toEqual({
+      patch: { content: 'final content', nullableExtension: null },
+      deleteKeys: ['activationPercent'],
+    })
+    expect(command.sparseUpdate.patch).not.toHaveProperty('comment')
+    expect(command.sparseUpdate.patch).not.toHaveProperty('id')
   })
 
   it('K4: flushing a draft sends the final entry before the debounce delay', async () => {
@@ -1496,6 +1529,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       characterId: 'c-k4',
       entryId: 'entry-3',
       entry: { id: 'entry-3', content: 'blur final' },
+      sparseUpdate: { patch: { content: 'blur final' } },
     })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
@@ -1521,6 +1555,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       characterId: 'c-k4',
       entryId: 'entry-4',
       entry: { id: 'entry-4', content: 'unload final' },
+      sparseUpdate: { patch: { content: 'unload final' } },
     })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
@@ -1550,6 +1585,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       entryId: 'teardown-entry',
       entry: { id: 'teardown-entry', content: 'Teardown lore' },
     })
+    expect((cmds[0].a as Record<string, unknown>).sparseUpdate).toBeUndefined()
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(characterEntryCommands()).toHaveLength(1)
@@ -1578,6 +1614,7 @@ describe('K4 lorebook editor entry draft scope', () => {
         characterId: 'c-k4',
         entryId: 'entry-3',
         entry: { id: 'entry-3', content: 'blur final' },
+        sparseUpdate: { patch: { content: 'blur final' } },
       })
 
       await vi.advanceTimersByTimeAsync(DELAY)
@@ -1621,6 +1658,7 @@ describe('K4 lorebook editor entry draft scope', () => {
       moduleId: 'module-k4',
       entryId: 'module-entry-9',
       entry: { id: 'module-entry-9', content: 'module draft final' },
+      sparseUpdate: { patch: { content: 'module draft final' } },
     })
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
