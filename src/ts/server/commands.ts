@@ -62,11 +62,19 @@ export interface ChatPatchLocalEffect {
   select: boolean
 }
 
+export interface SettingsPatchLocalEffect {
+  kind: 'settingsPatch'
+  group: SettingsGroup
+  attemptedPatch: SettingsPatch
+  settings: SettingsPatch
+}
+
 export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
   | CharacterSelectionLocalEffect
   | ChatPatchLocalEffect
+  | SettingsPatchLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -1238,6 +1246,7 @@ export async function patchSettingsGroup(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) => readSettingsPatchLocalEffect(body, event, input.group, input.patch),
   })
 }
 
@@ -3353,6 +3362,34 @@ function readChatGenerationSettingsLocalEffect(
   }
 }
 
+function readSettingsPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  group: SettingsGroup,
+  attemptedPatch: SettingsPatch,
+): SettingsPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const settings = (body as Record<string, unknown>).settings
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return undefined
+  if (event.id !== group) return undefined
+
+  const attemptedKeys = Object.keys(attemptedPatch).sort()
+  const canonicalKeys = Object.keys(settings).sort()
+  if (attemptedKeys.length === 0 || !isJsonValueEqual(attemptedKeys, canonicalKeys)) return undefined
+  if (attemptedKeys.some((key) => SERVER_SETTINGS_GROUP_BY_KEY[key] !== group)) return undefined
+
+  const writesHypaV3Presets = Object.prototype.hasOwnProperty.call(attemptedPatch, 'hypaV3Presets')
+  const expectedResource = writesHypaV3Presets ? 'settingsWithHypaV3Presets' : 'settings'
+  if (event.resource !== expectedResource) return undefined
+
+  return {
+    kind: 'settingsPatch',
+    group,
+    attemptedPatch: cloneJsonValue(attemptedPatch),
+    settings: cloneJsonValue(settings as SettingsPatch),
+  }
+}
+
 function readCharacterPatchLocalEffect(
   body: unknown,
   event: CommandEvent,
@@ -3413,6 +3450,10 @@ function readChatPatchLocalEffect(
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isJsonValueEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 function readCommandEvent(body: unknown): CommandEvent | null {

@@ -356,6 +356,39 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
+  it('acknowledges a contiguous settings patch without re-reading its group', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().theme = 'LIGHT'
+    })
+    const event = {
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'display',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'settingsPatch',
+            group: 'display',
+            attemptedPatch: { theme: 'LIGHT' },
+            settings: { theme: 'light' },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().theme).toBe('light')
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('acknowledges a contiguous character patch without a resource read and preserves a newer edit', async () => {
     await loadWebInitialDatabase()
     withTrustedResourceWrite(() => {

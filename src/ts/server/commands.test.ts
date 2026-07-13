@@ -250,6 +250,40 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes the canonical settings patch as a response-confirmed local effect', async () => {
+    const event = {
+      type: 'settings.updated',
+      revision: 3,
+      resource: 'settings',
+      id: 'display',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      settings: { theme: 'light', zoomsize: 90 },
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await patchSettingsGroup({
+      group: 'display',
+      baseRevision: 2,
+      patch: { theme: 'LIGHT', zoomsize: 90 },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { theme: 'LIGHT', zoomsize: 90 },
+        settings: { theme: 'light', zoomsize: 90 },
+      },
+    ])
+  })
+
   it('notifies the command success reconciler before resolving an ok command', async () => {
     const event = { type: 'settings.updated', revision: 3, resource: 'settings', origin: { writerSessionId: 'w1' } }
     const commandFetch = makeCommandFetch(() => ({ revision: 3, event }))

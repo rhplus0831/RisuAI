@@ -94,6 +94,13 @@ export interface ServerChatPatchLocalEffectPayload {
   select: boolean
 }
 
+export interface ServerSettingsPatchLocalEffectPayload {
+  revision: number
+  group: SettingsGroup
+  attemptedPatch: Record<string, unknown>
+  settings: Record<string, unknown>
+}
+
 export type ServerResourceStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export interface SettingsResourceState {
@@ -236,6 +243,62 @@ export function applySettingsGroupResource(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Apply the canonical keys returned by an accepted settings command without
+ * re-reading the complete settings group. A later queued edit may already be
+ * visible, so canonicalize a key only while its live value still matches the
+ * value sent by this command; either way, advance the relevant revision fence.
+ */
+export function applySettingsPatchLocalEffect(payload: ServerSettingsPatchLocalEffectPayload): boolean {
+  const attemptedKeys = Object.keys(payload.attemptedPatch).sort()
+  const canonicalKeys = Object.keys(payload.settings).sort()
+  if (attemptedKeys.length === 0 || !isJsonValueEqual(attemptedKeys, canonicalKeys)) return false
+
+  const writesHypaV3Presets = attemptedKeys.includes('hypaV3Presets')
+  const knownSettingsRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions[payload.group] ?? -1,
+  )
+  const knownHypaV3PresetsRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.hypaV3Presets ?? -1,
+  )
+  if (
+    knownSettingsRevision >= payload.revision &&
+    (!writesHypaV3Presets || knownHypaV3PresetsRevision >= payload.revision)
+  ) {
+    return true
+  }
+
+  const settingsTarget = settingsResourceState.value as Record<string, unknown>
+  for (const key of attemptedKeys) {
+    if (key === 'hypaV3Presets') {
+      if (isJsonValueEqual(collectionsResourceState.values.hypaV3Presets, payload.attemptedPatch[key])) {
+        collectionsResourceState.values.hypaV3Presets = cloneJsonValue(payload.settings[key]) as never
+      }
+      continue
+    }
+    if (isJsonValueEqual(settingsTarget[key], payload.attemptedPatch[key])) {
+      settingsTarget[key] = cloneJsonValue(payload.settings[key])
+    }
+  }
+
+  if (knownSettingsRevision < payload.revision) {
+    settingsResourceState.groupRevisions[payload.group] = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+  }
+  if (writesHypaV3Presets && knownHypaV3PresetsRevision < payload.revision) {
+    collectionsResourceState.revisions.hypaV3Presets = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses.hypaV3Presets = 'ready'
+    delete collectionsResourceState.errors.hypaV3Presets
+  }
   markResourceDatabaseChanged()
   return true
 }

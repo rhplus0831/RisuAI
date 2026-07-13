@@ -514,6 +514,9 @@ describe('Phase 9-1 command foundation', () => {
         resource: 'settings',
         id: 'runtime',
       },
+      settings: {
+        streamGeminiThoughts: true,
+      },
     })
     expect(harness.commandEvents.list()).toEqual([res.json().event])
 
@@ -796,6 +799,10 @@ describe('Phase 9-2a scalar settings groups', () => {
         revision: 2,
         resource: 'settings',
         id: 'display',
+      },
+      settings: {
+        theme: 'light',
+        zoomsize: 88,
       },
     })
 
@@ -2341,6 +2348,15 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
     expect(memory.statusCode).toBe(200)
+    expect(memory.json().settings).toMatchObject({
+      hypaV3Key: MASKED_PROVIDER_SECRET,
+      hypaCustomSettings: {
+        url: 'https://embedding.example.test/v1/embeddings',
+        key: MASKED_PROVIDER_SECRET,
+        model: 'embedding-model',
+      },
+      voyageApiKey: MASKED_PROVIDER_SECRET,
+    })
 
     const account = await harness.app.inject({
       method: 'PATCH',
@@ -2548,6 +2564,7 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
     expect(settingsOnly.statusCode).toBe(200)
+    expect(settingsOnly.json().settings).toEqual({ hypaV3: true })
     expect(settingsOnly.json().event).toMatchObject({
       type: 'settings.updated',
       resource: 'settings',
@@ -2576,6 +2593,19 @@ describe('Phase 9-2a scalar settings groups', () => {
       },
     })
     expect(withPresets.statusCode).toBe(200)
+    expect(withPresets.json().settings).toEqual({
+      hypaV3Presets: [
+        {
+          name: 'Cross-resource memory',
+          settings: {
+            summarizationModel: 'subModel',
+            summarizationPrompt: 'Summarize',
+            recentMemoryRatio: 0.4,
+            similarMemoryRatio: 0.5,
+          },
+        },
+      ],
+    })
     expect(withPresets.json().event).toMatchObject({
       type: 'settings.updated',
       resource: 'settingsWithHypaV3Presets',

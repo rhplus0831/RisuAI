@@ -21,7 +21,7 @@ import {
   TARGETED_MUTATION_PATHS,
 } from '../commands/mutations.js'
 import { readActiveWriterSessionId } from '../activeWriter.js'
-import { resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
+import { maskProviderSecrets, resolveMaskedProviderSecretPlaceholders } from '../providerSecrets.js'
 import {
   normalizeLegacyFallbackModels,
   normalizeLegacySeperateModels,
@@ -1465,11 +1465,19 @@ export function registerCommandRoutes(
               (database as Record<string, unknown>).hypaV3Presets as readonly unknown[],
             )
           }
+          const target = database as Record<string, unknown>
+          const settings = Object.fromEntries(Object.keys(patch).map((key) => [key, target[key]]))
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.settingsUpdated,
               ...(writesHypaV3Presets ? { resource: SETTINGS_WITH_HYPA_V3_PRESETS_RESOURCE } : {}),
               id: group,
+            },
+            extra: {
+              // Return only the keys this command touched. The client can use
+              // this canonical, secret-masked patch to acknowledge its
+              // optimistic write without downloading the complete group.
+              settings: maskProviderSecrets(settings),
             },
           }
         },
@@ -1478,6 +1486,7 @@ export function registerCommandRoutes(
       return {
         revision: result.revision,
         event: result.event,
+        ...result.extra,
       }
     } catch (err) {
       return sendCommandError(reply, err)

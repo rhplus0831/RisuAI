@@ -45,6 +45,7 @@ import {
   applyCharacterSelectionLocalEffect,
   applyChatPatchLocalEffect,
   applyChatGenerationSettingsLocalEffect,
+  applySettingsPatchLocalEffect,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 
@@ -403,6 +404,16 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           chatId: localEffect.chatId,
           patch: localEffect.patch,
           select: localEffect.select,
+        }),
+      )
+    case 'settingsPatch':
+      if (event.id !== localEffect.group) return false
+      return withServerResourceApply(() =>
+        applySettingsPatchLocalEffect({
+          revision: event.revision,
+          group: localEffect.group,
+          attemptedPatch: localEffect.attemptedPatch,
+          settings: localEffect.settings,
         }),
       )
   }

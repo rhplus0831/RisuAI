@@ -16,6 +16,7 @@ import {
   applyCollectionsResource,
   applySettingsResource,
   applySettingsGroupResource,
+  applySettingsPatchLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
   collectionsResourceState,
@@ -212,6 +213,51 @@ describe('resource-scoped database state', () => {
     expect(settingsResourceState.revision).toBe(10)
     expect(applySettingsResource({ revision: 8, settings: { language: 'stale', theme: 'stale' } })).toBe(false)
     expect(getResourceDatabase()).toMatchObject({ language: 'ko', theme: 'light' })
+  })
+
+  it('acknowledges a settings patch without replacing a newer queued field', () => {
+    applySettingsResource({
+      revision: 3,
+      settings: { theme: 'LIGHT', zoomsize: 88 },
+    })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().zoomsize = 120
+    })
+
+    expect(
+      applySettingsPatchLocalEffect({
+        revision: 4,
+        group: 'display',
+        attemptedPatch: { theme: 'LIGHT', zoomsize: 88 },
+        settings: { theme: 'light', zoomsize: 88 },
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase()).toMatchObject({ theme: 'light', zoomsize: 120 })
+    expect(settingsResourceState.groupRevisions.display).toBe(4)
+    expect(settingsResourceState.revision).toBe(4)
+  })
+
+  it('fences the Hypa V3 preset collection included in a memory settings patch', () => {
+    applySettingsResource({ revision: 1, settings: { hypaV3: false } })
+    applyCollectionsResource({ revision: 1, collections: completeCollections() })
+    const presets = [{ name: 'Compact', settings: { summarizationPrompt: 'Summarize' } }]
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().hypaV3Presets = presets as never
+    })
+
+    expect(
+      applySettingsPatchLocalEffect({
+        revision: 2,
+        group: 'memory',
+        attemptedPatch: { hypaV3Presets: presets },
+        settings: { hypaV3Presets: presets },
+      }),
+    ).toBe(true)
+
+    expect(collectionsResourceState.values.hypaV3Presets).toEqual(presets)
+    expect(collectionsResourceState.revisions.hypaV3Presets).toBe(2)
+    expect(settingsResourceState.groupRevisions.memory).toBe(2)
   })
 
   it('merges character details by stable id and drops stale rows', () => {
