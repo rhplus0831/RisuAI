@@ -10,6 +10,7 @@ import {
   putPluginStorageCommand,
   reorderPluginsCommand,
   runServerCommand,
+  runServerCommandSequence,
   selectPluginProviderCommand,
   settingsGroupForKey,
   updatePluginCommand,
@@ -467,15 +468,19 @@ export function dispatchPluginCollectionPatch(plugins: RisuPlugin[], previous: P
   void (async () => {
     let currentStepIndex = 0
     try {
-      for (currentStepIndex = 0; currentStepIndex < operationSteps.length; currentStepIndex += 1) {
-        const step = operationSteps[currentStepIndex]
-        const result = await runServerCommand({ command: step.factory })
-        if (result.status !== 'ok') {
+      await runServerCommandSequence(
+        operationSteps.map((step, index) => async (baseRevision) => {
+          currentStepIndex = index
+          const result = await step.factory(baseRevision)
+          if (result.status === 'ok') {
+            clearPluginNonStorageOperation(step.operation)
+          }
+          return result
+        }),
+        () => {
           rollbackPluginCollectionPatchSteps(operationSteps, currentStepIndex)
-          return
-        }
-        clearPluginNonStorageOperation(step.operation)
-      }
+        },
+      )
     } catch (error) {
       console.error('Plugin collection command sequence rejected:', error)
       rollbackPluginCollectionPatchSteps(operationSteps, currentStepIndex)

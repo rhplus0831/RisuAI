@@ -1288,6 +1288,10 @@ describe('plugin database command bridge', () => {
   it('serializes plugin collection create/update/delete commands against advancing revisions', async () => {
     let nextRevision = 300
     const captured: { url: string; method: string; body: { baseRevision?: number; [key: string]: unknown } }[] = []
+    const reconciledEventRevisions: number[][] = []
+    setServerCommandSuccessReconciler((_event, events) => {
+      reconciledEventRevisions.push(events.map((event) => event.revision))
+    })
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
@@ -1321,6 +1325,7 @@ describe('plugin database command bridge', () => {
 
     await vi.waitFor(() => {
       expect(captured.length).toBe(3)
+      expect(reconciledEventRevisions).toEqual([[301, 302, 303]])
     })
     expect(captured[0]).toMatchObject({
       url: '/api/v1/commands/plugins/plugin-a',
