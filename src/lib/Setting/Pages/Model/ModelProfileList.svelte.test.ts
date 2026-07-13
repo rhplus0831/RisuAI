@@ -11,6 +11,7 @@ const commandSpies = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/server/commands', () => ({
+  subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
   runServerCommand: commandSpies.runServerCommand,
   createModelProfileCommand: commandSpies.createModelProfileCommand,
   updateModelProfileCommand: commandSpies.updateModelProfileCommand,
@@ -98,6 +99,24 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it('does not dispatch an unchanged profile save', async () => {
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!profileEditButton) throw new Error('Profile edit button not found')
+    profileEditButton.click()
+    await tick()
+
+    const save = buttonByText(language.modelProfiles.save)
+    expect(save.disabled).toBe(true)
+    save.click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelProfileCommand).not.toHaveBeenCalled()
+    expect(commandSpies.runServerCommand).not.toHaveBeenCalled()
+  })
+
   it('does not create a replacement when an edited profile disappears before save', async () => {
     component = mount(ModelProfileList, { target })
     await tick()
@@ -105,6 +124,12 @@ describe('ModelProfileList', () => {
     const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
     if (!profileEditButton) throw new Error('Profile edit button not found')
     profileEditButton.click()
+    await tick()
+
+    const nameInput = target.querySelector<HTMLInputElement>('input')
+    if (!nameInput) throw new Error('Profile name input not found')
+    nameInput.value = 'Edited profile'
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
     getDatabase().modelProfiles = []

@@ -107,6 +107,7 @@
       : usedByRoles.map((role) => language.modelRoles.roles[role]).join(', '),
   )
   let isDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
+  let canSave = $derived(!busy && (mode === 'create' || isDirty))
 
   $effect(() => {
     if (!initialSnapshot) initialSnapshot = snapshot(snapshotForSave())
@@ -321,7 +322,7 @@
   }
 
   async function saveProfile(): Promise<void> {
-    if (busy) return
+    if (!canSave) return
     await onSave(snapshotForSave())
   }
 </script>
@@ -441,7 +442,7 @@
       <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>
         <span class="inline-flex items-center gap-1"><XIcon size={14} />{language.modelProfiles.cancel}</span>
       </Button>
-      <Button size="sm" disabled={busy} onclick={saveProfile}>
+      <Button size="sm" disabled={!canSave} onclick={saveProfile}>
         <span class="inline-flex items-center gap-2"
           ><SaveIcon size={16} />{busy ? language.modelProfiles.saving : language.modelProfiles.save}</span>
       </Button>
