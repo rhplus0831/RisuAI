@@ -19,6 +19,7 @@ import {
   type LoadoutSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { isCanonicalLoadout, isCanonicalLoadoutCollection } from './server/loadoutCanonical'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   captureCollectionProjectionEpoch,
@@ -71,8 +72,9 @@ export function makeLoadout(options: { name: string }): Loadout {
   const modelPresetName = readablePresetName(modelPreset)
   const promptPresetName = readablePresetName(promptPreset)
   const agentPresetName = readablePresetName(agentPreset)
+  const selectedPersonaId = getDatabase().personas[getDatabase().selectedPersona]?.id
   return safeStructuredClone({
-    name: options.name,
+    name: options.name.trim() ? options.name : 'New Loadout',
     id: id,
     lastUsed: Date.now(),
     favorite: false,
@@ -86,7 +88,7 @@ export function makeLoadout(options: { name: string }): Loadout {
     promptPresetName,
     agentPresetId: nonBlankId(agentPreset?.id) ?? '',
     agentPresetName,
-    personaId: getDatabase().personas[getDatabase().selectedPersona]?.id,
+    personaId: typeof selectedPersonaId === 'string' ? selectedPersonaId : '',
   })
 }
 
@@ -388,7 +390,8 @@ function rollbackLoadoutListEntry(entry: LoadoutListRollbackEntry): void {
   })
 }
 
-function rollbackCreatedLoadout(attemptedLoadout: Loadout): void {
+function rollbackCreatedLoadout(attemptedLoadout: Loadout, loadoutsProjectionEpoch: number): void {
+  if (hasCollectionProjectionEpochChanged('loadouts', loadoutsProjectionEpoch)) return
   rollbackLoadoutListEntry({
     key: attemptedLoadout.id,
     previous: null,
@@ -396,7 +399,12 @@ function rollbackCreatedLoadout(attemptedLoadout: Loadout): void {
   })
 }
 
-function rollbackDeletedLoadout(previousLoadout: Loadout, previousIndex: number): void {
+function rollbackDeletedLoadout(
+  previousLoadout: Loadout,
+  previousIndex: number,
+  loadoutsProjectionEpoch: number,
+): void {
+  if (hasCollectionProjectionEpochChanged('loadouts', loadoutsProjectionEpoch)) return
   rollbackLoadoutListEntry({
     key: previousLoadout.id,
     previous: cloneJsonValue(previousLoadout),
@@ -727,26 +735,40 @@ function readablePresetName(preset: { name?: unknown } | undefined): string {
   return typeof preset?.name === 'string' ? preset.name : ''
 }
 
-function dispatchCreateLoadout(loadout: Loadout): void {
+function dispatchCreateLoadout(
+  loadout: Loadout,
+  acknowledgeOptimistic: boolean,
+  loadoutsProjectionEpoch: number,
+): void {
   const attemptedLoadout = cloneJsonValue(loadout)
   runLoadoutCommand(
     (baseRevision) =>
       createLoadoutCommand({
         baseRevision,
         loadout: toLoadoutSnapshot(attemptedLoadout),
+        acknowledgeOptimistic,
+        loadoutsProjectionEpoch,
       }),
-    () => rollbackCreatedLoadout(attemptedLoadout),
+    () => rollbackCreatedLoadout(attemptedLoadout, loadoutsProjectionEpoch),
   )
 }
 
-function dispatchDeleteLoadout(loadoutId: string, previousLoadout: Loadout, previousIndex: number): void {
+function dispatchDeleteLoadout(
+  loadoutId: string,
+  previousLoadout: Loadout,
+  previousIndex: number,
+  acknowledgeOptimistic: boolean,
+  loadoutsProjectionEpoch: number,
+): void {
   runLoadoutCommand(
     (baseRevision) =>
       deleteLoadoutCommand({
         baseRevision,
         loadoutId,
+        acknowledgeOptimistic,
+        loadoutsProjectionEpoch,
       }),
-    () => rollbackDeletedLoadout(previousLoadout, previousIndex),
+    () => rollbackDeletedLoadout(previousLoadout, previousIndex, loadoutsProjectionEpoch),
   )
 }
 
@@ -789,6 +811,8 @@ export function deleteLoadout(loadoutId: string): boolean {
   const index = getDatabase().loadouts?.findIndex((loadout) => loadout.id === loadoutId) ?? -1
   if (index === -1) return false
 
+  const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts)
+  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
   const previousLoadout = cloneJsonValue(getDatabase().loadouts[index])
   withTrustedResourceWrite(() => {
     const targetIndex = getDatabase().loadouts.findIndex((loadout) => loadout.id === loadoutId)
@@ -796,7 +820,7 @@ export function deleteLoadout(loadoutId: string): boolean {
       getDatabase().loadouts.splice(targetIndex, 1)
     }
   })
-  dispatchDeleteLoadout(loadoutId, previousLoadout, index)
+  dispatchDeleteLoadout(loadoutId, previousLoadout, index, acknowledgeOptimistic, loadoutsProjectionEpoch)
   return true
 }
 
@@ -1315,9 +1339,11 @@ export function applyLoadout(
 
 export function saveCurrentLoadout(name: string) {
   const loadout = makeLoadout({ name })
+  const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts) && isCanonicalLoadout(loadout)
+  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
   withTrustedResourceWrite(() => {
     getDatabase().loadouts.push(loadout)
   })
-  dispatchCreateLoadout(loadout)
+  dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
   return loadout
 }

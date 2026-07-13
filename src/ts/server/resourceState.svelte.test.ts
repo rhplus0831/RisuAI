@@ -664,7 +664,7 @@ describe('resource-scoped database state', () => {
     expect(settingsResourceState.enabledModulesRevision).toBeNull()
   })
 
-  it('fences optimistic loadout favorite and touch slices without advancing projection epochs', () => {
+  it('fences optimistic loadout mutation slices without advancing projection epochs', () => {
     applySettingsResource({ revision: 3, settings: { lastLoadedLoadoutName: 'Before' } })
     applyCollectionsResource({
       revision: 3,
@@ -680,8 +680,10 @@ describe('resource-scoped database state', () => {
       getResourceDatabase().lastLoadedLoadoutName = 'Newer Loadout'
     })
 
-    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'favorite', loadoutId: 'loadout-a' })).toBe(true)
-    expect(applyLoadoutMutationLocalEffect({ revision: 5, operation: 'touch', loadoutId: 'loadout-a' })).toBe(true)
+    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'create', loadoutId: 'loadout-b' })).toBe(true)
+    expect(applyLoadoutMutationLocalEffect({ revision: 5, operation: 'delete', loadoutId: 'loadout-c' })).toBe(true)
+    expect(applyLoadoutMutationLocalEffect({ revision: 6, operation: 'favorite', loadoutId: 'loadout-a' })).toBe(true)
+    expect(applyLoadoutMutationLocalEffect({ revision: 7, operation: 'touch', loadoutId: 'loadout-a' })).toBe(true)
 
     expect(getResourceDatabase().loadouts[0]).toMatchObject({
       favorite: true,
@@ -689,32 +691,36 @@ describe('resource-scoped database state', () => {
       characterIds: ['char-a', 'char-b'],
     })
     expect(getResourceDatabase().lastLoadedLoadoutName).toBe('Newer Loadout')
-    expect(collectionsResourceState.revisions.loadouts).toBe(5)
-    expect(settingsResourceState.groupRevisions.sidebar).toBe(5)
+    expect(collectionsResourceState.revisions.loadouts).toBe(7)
+    expect(settingsResourceState.groupRevisions.sidebar).toBe(7)
     expect(hasCollectionProjectionEpochChanged('loadouts', collectionEpoch)).toBe(false)
     expect(hasSettingsGroupProjectionEpochChanged('sidebar', settingsEpoch)).toBe(false)
 
     applyCollectionsResource(
-      { revision: 6, collections: { loadouts: [{ ...canonicalLoadout(), lastUsed: 600 }] } },
+      { revision: 8, collections: { loadouts: [{ ...canonicalLoadout(), lastUsed: 600 }] } },
       'loadouts',
     )
     expect(hasCollectionProjectionEpochChanged('loadouts', collectionEpoch)).toBe(true)
     expect(hasSettingsGroupProjectionEpochChanged('sidebar', settingsEpoch)).toBe(false)
     applySettingsGroupResource(
-      { revision: 7, group: 'sidebar', settings: { lastLoadedLoadoutName: 'Authoritative' } },
+      { revision: 9, group: 'sidebar', settings: { lastLoadedLoadoutName: 'Authoritative' } },
       ['lastLoadedLoadoutName'],
     )
     expect(hasSettingsGroupProjectionEpochChanged('sidebar', settingsEpoch)).toBe(true)
   })
 
-  it('rejects loadout acknowledgements for malformed collection or settings projections', () => {
+  it('rejects loadout acknowledgements for non-canonical collection or settings projections', () => {
     applySettingsResource({ revision: 3, settings: { lastLoadedLoadoutName: 'Before' } })
     applyCollectionsResource({
       revision: 3,
-      collections: { ...completeCollections(), loadouts: [canonicalLoadout(), canonicalLoadout()] },
+      collections: { ...completeCollections(), loadouts: [{ ...canonicalLoadout(), legacyMetadata: true } as never] },
     })
 
-    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'favorite', loadoutId: 'loadout-a' })).toBe(false)
+    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'create', loadoutId: 'loadout-b' })).toBe(false)
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().loadouts = [canonicalLoadout(), canonicalLoadout()] as never
+    })
+    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'delete', loadoutId: 'loadout-a' })).toBe(false)
     withResourceDatabaseWrite(() => {
       getResourceDatabase().loadouts = [canonicalLoadout()] as never
       delete (getResourceDatabase() as unknown as Record<string, unknown>).lastLoadedLoadoutName

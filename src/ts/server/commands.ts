@@ -9,6 +9,7 @@ import type {
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
+import { isCanonicalLoadout } from './loadoutCanonical'
 import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup } from './settingsGroups'
 import {
   captureDestructiveRefreshEpoch,
@@ -147,7 +148,7 @@ export interface GlobalLorebookMutationLocalEffect {
 
 export interface LoadoutMutationLocalEffect {
   kind: 'loadoutMutation'
-  operation: 'favorite' | 'touch'
+  operation: 'create' | 'delete' | 'favorite' | 'touch'
   loadoutId: string
   loadoutsProjectionEpoch: number
   settingsProjectionEpoch?: number
@@ -706,6 +707,8 @@ export interface LoadoutCommandInput {
 
 export interface CreateLoadoutCommandInput extends LoadoutCommandInput {
   loadout: LoadoutSnapshot
+  acknowledgeOptimistic?: boolean
+  loadoutsProjectionEpoch?: number
 }
 
 export interface UpdateLoadoutCommandInput extends LoadoutCommandInput {
@@ -715,6 +718,8 @@ export interface UpdateLoadoutCommandInput extends LoadoutCommandInput {
 
 export interface DeleteLoadoutCommandInput extends LoadoutCommandInput {
   loadoutId: string
+  acknowledgeOptimistic?: boolean
+  loadoutsProjectionEpoch?: number
 }
 
 export interface FavoriteLoadoutCommandInput extends LoadoutCommandInput {
@@ -2394,6 +2399,15 @@ export async function createLoadoutCommand(
       loadout: input.loadout,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLoadoutMutationLocalEffect(body, event, {
+            operation: 'create',
+            expectedLoadoutId: input.loadout.id,
+            expectedLoadout: input.loadout,
+            loadoutsProjectionEpoch: input.loadoutsProjectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2421,6 +2435,14 @@ export async function deleteLoadoutCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLoadoutMutationLocalEffect(body, event, {
+            operation: 'delete',
+            expectedLoadoutId: input.loadoutId,
+            loadoutsProjectionEpoch: input.loadoutsProjectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -4642,6 +4664,7 @@ function readModuleEnabledLocalEffect(
 interface ReadLoadoutMutationLocalEffectOptions {
   operation: LoadoutMutationLocalEffect['operation']
   expectedLoadoutId: unknown
+  expectedLoadout?: unknown
   expectedFavorite?: unknown
   expectedLastUsed?: unknown
   expectedCharacterId?: unknown
@@ -4658,7 +4681,12 @@ function readLoadoutMutationLocalEffect(
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
   if (!nonEmptyString(options.expectedLoadoutId)) return undefined
   if (!isProjectionEpoch(options.loadoutsProjectionEpoch)) return undefined
-  const expectedType = options.operation === 'favorite' ? 'loadout.favorited' : 'loadout.touched'
+  const expectedType = {
+    create: 'loadout.created',
+    delete: 'loadout.deleted',
+    favorite: 'loadout.favorited',
+    touch: 'loadout.touched',
+  }[options.operation]
   if (
     event.type !== expectedType ||
     event.resource !== 'loadout' ||
@@ -4667,6 +4695,27 @@ function readLoadoutMutationLocalEffect(
     (body as Record<string, unknown>).loadoutId !== options.expectedLoadoutId
   ) {
     return undefined
+  }
+
+  if (options.operation === 'create') {
+    if (!isCanonicalLoadout(options.expectedLoadout) || options.expectedLoadout.id !== options.expectedLoadoutId) {
+      return undefined
+    }
+    return {
+      kind: 'loadoutMutation',
+      operation: 'create',
+      loadoutId: options.expectedLoadoutId,
+      loadoutsProjectionEpoch: options.loadoutsProjectionEpoch,
+    }
+  }
+
+  if (options.operation === 'delete') {
+    return {
+      kind: 'loadoutMutation',
+      operation: 'delete',
+      loadoutId: options.expectedLoadoutId,
+      loadoutsProjectionEpoch: options.loadoutsProjectionEpoch,
+    }
   }
 
   if (options.operation === 'favorite') {

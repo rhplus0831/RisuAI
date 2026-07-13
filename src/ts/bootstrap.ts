@@ -825,7 +825,12 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       )
     }
     case 'loadoutMutation': {
-      const expectedType = localEffect.operation === 'favorite' ? 'loadout.favorited' : 'loadout.touched'
+      const expectedType = {
+        create: 'loadout.created',
+        delete: 'loadout.deleted',
+        favorite: 'loadout.favorited',
+        touch: 'loadout.touched',
+      }[localEffect.operation]
       if (
         event.type !== expectedType ||
         event.resource !== 'loadout' ||

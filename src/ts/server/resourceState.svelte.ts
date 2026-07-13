@@ -1,6 +1,7 @@
 import type { Database, character } from '../storage/database.svelte'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
+import { isCanonicalLoadoutCollection } from './loadoutCanonical'
 import type { SettingsGroup } from './settingsGroups'
 
 let nextCharacterRowProjectionEpoch = 0
@@ -238,7 +239,7 @@ export interface ServerModuleEnabledLocalEffectPayload {
 
 export interface ServerLoadoutMutationLocalEffectPayload {
   revision: number
-  operation: 'favorite' | 'touch'
+  operation: 'create' | 'delete' | 'favorite' | 'touch'
   loadoutId: string
 }
 
@@ -744,13 +745,13 @@ export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalE
   return true
 }
 
-/** Fence an accepted optimistic loadout favorite/touch without re-reading the collection or settings. */
+/** Fence an accepted optimistic loadout mutation without re-reading the collection or settings. */
 export function applyLoadoutMutationLocalEffect(payload: ServerLoadoutMutationLocalEffectPayload): boolean {
   if (!nonEmptyString(payload.loadoutId)) return false
-  if (payload.operation !== 'favorite' && payload.operation !== 'touch') return false
+  if (!['create', 'delete', 'favorite', 'touch'].includes(payload.operation)) return false
 
   const loadouts = collectionsResourceState.values.loadouts
-  if (collectionsResourceState.statuses.loadouts !== 'ready' || !isNormalizedLoadoutCollectionProjection(loadouts)) {
+  if (collectionsResourceState.statuses.loadouts !== 'ready' || !isCanonicalLoadoutCollection(loadouts)) {
     return false
   }
   if (
@@ -1522,44 +1523,6 @@ function shouldUseCharacterPointerResource(property: 'characterOrder' | 'current
   const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
   if (pointerRevision < 0) return false
   return settingsResourceState.fullRevision === null || pointerRevision >= settingsResourceState.fullRevision
-}
-
-function isNormalizedLoadoutCollectionProjection(value: unknown): boolean {
-  if (!Array.isArray(value)) return false
-  const ids = new Set<string>()
-  for (const candidate of value) {
-    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
-    const record = candidate as Record<string, unknown>
-    if (!nonEmptyString(record.id) || ids.has(record.id)) return false
-    if (!nonEmptyString(record.name)) return false
-    if (typeof record.lastUsed !== 'number' || !Number.isFinite(record.lastUsed)) return false
-    if (typeof record.favorite !== 'boolean') return false
-    if (!isStringArray(record.characterIds) || !isStringArray(record.modules)) return false
-    if (!isStringRecord(record.globalVariables)) return false
-    for (const key of ['presetName', 'personaId']) {
-      if (typeof record[key] !== 'string') return false
-    }
-    for (const key of ['modelPresetId', 'modelPresetName', 'promptPresetId', 'promptPresetName']) {
-      if (record[key] !== undefined && typeof record[key] !== 'string') return false
-    }
-    if (record.agentPresetId !== undefined && typeof record.agentPresetId !== 'string') return false
-    if (record.agentPresetName !== undefined && typeof record.agentPresetName !== 'string') return false
-    ids.add(record.id)
-  }
-  return true
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return (
-    !!value &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    Object.values(value).every((entry) => typeof entry === 'string')
-  )
 }
 
 function isLorebookMutationOperation(value: unknown): value is ServerLorebookMutationLocalEffectPayload['operation'] {

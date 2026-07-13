@@ -898,6 +898,108 @@ describe('API-backed client bootstrap', () => {
     })
   })
 
+  it('acknowledges contiguous optimistic loadout create and delete without resource reads', async () => {
+    await loadWebInitialDatabase()
+    const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
+    withTrustedResourceWrite(() => {
+      getDatabase().loadouts = [
+        {
+          ...getDatabase().loadouts[0],
+          id: 'loadout-b',
+          name: 'Created Loadout',
+        },
+      ]
+    })
+    const createEvent = {
+      type: 'loadout.created',
+      revision: 6,
+      resource: 'loadout',
+      id: 'loadout-b',
+    }
+    const deleteEvent = {
+      type: 'loadout.deleted',
+      revision: 7,
+      resource: 'loadout',
+      id: 'loadout-a',
+    }
+
+    await commandApi.reconciler?.(
+      deleteEvent,
+      [createEvent, deleteEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'loadoutMutation',
+            operation: 'create',
+            loadoutId: 'loadout-b',
+            loadoutsProjectionEpoch,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'loadoutMutation',
+            operation: 'delete',
+            loadoutId: 'loadout-a',
+            loadoutsProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().loadouts).toEqual([expect.objectContaining({ id: 'loadout-b', name: 'Created Loadout' })])
+    expect(hasCollectionProjectionEpochChanged('loadouts', loadoutsProjectionEpoch)).toBe(false)
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('falls back when the loadout collection epoch changes before a create/delete acknowledgement', async () => {
+    await loadWebInitialDatabase()
+    const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
+    applyCollectionsResource(
+      {
+        revision: 6,
+        collections: {
+          loadouts: [
+            {
+              ...getDatabase().loadouts[0],
+              name: 'Authoritative Loadout',
+            },
+          ],
+        },
+      },
+      'loadouts',
+    )
+    const event = {
+      type: 'loadout.deleted',
+      revision: 6,
+      resource: 'loadout',
+      id: 'loadout-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'loadoutMutation',
+            operation: 'delete',
+            loadoutId: 'loadout-a',
+            loadoutsProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('acknowledges contiguous optimistic loadout favorite and touch without resource reads', async () => {
     await loadWebInitialDatabase()
     const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')

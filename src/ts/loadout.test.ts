@@ -6,7 +6,8 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'loadout-command-token',
 }))
 
-import { clearCachedServerCommandRevision } from './server/commands'
+import { clearCachedServerCommandRevision, setServerCommandSuccessReconciler } from './server/commands'
+import { isCanonicalLoadout } from './server/loadoutCanonical'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   applyCollectionsResource,
@@ -72,6 +73,10 @@ function makeLoadout(overrides: Partial<Loadout>): Loadout {
     modules: ['module-a'],
     globalVariables: { mood: 'calm' },
     presetName: 'Preset A',
+    modelPresetId: '',
+    modelPresetName: '',
+    promptPresetId: '',
+    promptPresetName: '',
     personaId: 'persona-a',
     ...overrides,
   }
@@ -332,6 +337,14 @@ function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFet
           loadoutId: 'loadout-b',
         })
       }
+      if (url === '/api/v1/commands/loadouts') {
+        const loadoutId = (calls.at(-1)?.body as { loadout?: { id?: unknown } } | null)?.loadout?.id
+        return jsonResponse({
+          revision: 11,
+          event: { type: 'loadout.created', revision: 11, resource: 'loadout', id: loadoutId },
+          loadoutId,
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -423,11 +436,13 @@ async function flushCommandEffects(): Promise<void> {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
   seedLoadouts()
 })
 
 afterEach(() => {
+  setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
@@ -447,6 +462,40 @@ describe('LoadoutModal projection write cleanup', () => {
 })
 
 describe('loadout projection command helpers', () => {
+  it('canonicalizes blank create fields and acknowledges the exact optimistic row', async () => {
+    seedApplyLoadoutState()
+    testDatabaseState.db.personas = []
+    testDatabaseState.db.selectedPersona = 0
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+
+    const created = saveCurrentLoadout('   ')
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(created.name).toBe('New Loadout')
+    expect(created.personaId).toBe('')
+    expect(isCanonicalLoadout(created)).toBe(true)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/loadouts',
+      method: 'POST',
+      authHeader: 'loadout-command-token',
+      body: { baseRevision: 10, loadout: created },
+    })
+    expect(observedEffects).toEqual([
+      {
+        kind: 'loadoutMutation',
+        operation: 'create',
+        loadoutId: created.id,
+        loadoutsProjectionEpoch: expect.any(Number),
+      },
+    ])
+  })
+
   it('saves split model and prompt preset ids when no legacy bot preset is selected', async () => {
     seedSplitPresetLoadoutState()
     testDatabaseState.db.loadouts = []
@@ -1214,6 +1263,50 @@ describe('loadout projection command helpers', () => {
     })
   })
 
+  it('does not roll back a failed create across an authoritative loadout replacement', async () => {
+    seedApplyLoadoutState()
+    const failure = stubDeferredCommandFailure()
+    setResourceWriteGuardEnabled(true)
+
+    const created = saveCurrentLoadout('Created Loadout')
+    await waitForCallCount(failure.calls, 2)
+    const authoritativeLoadouts = [makeLoadout({ id: 'loadout-a', name: 'Authoritative A' }), cloneJsonValue(created)]
+    applyCollectionsResource(
+      {
+        revision: 11,
+        collections: { loadouts: authoritativeLoadouts },
+      },
+      'loadouts',
+    )
+    failure.reject()
+    await flushCommandEffects()
+
+    expect(testDatabaseState.db.loadouts).toEqual(authoritativeLoadouts)
+  })
+
+  it('does not roll back a failed delete across an authoritative loadout replacement', async () => {
+    const failure = stubDeferredCommandFailure()
+    setResourceWriteGuardEnabled(true)
+
+    expect(deleteLoadout('loadout-b')).toBe(true)
+    await waitForCallCount(failure.calls, 2)
+    const authoritativeLoadouts = [
+      makeLoadout({ id: 'loadout-a', name: 'Authoritative A' }),
+      makeLoadout({ id: 'loadout-c', name: 'Authoritative C' }),
+    ]
+    applyCollectionsResource(
+      {
+        revision: 11,
+        collections: { loadouts: authoritativeLoadouts },
+      },
+      'loadouts',
+    )
+    failure.reject()
+    await flushCommandEffects()
+
+    expect(testDatabaseState.db.loadouts).toEqual(authoritativeLoadouts)
+  })
+
   it('rolls back only touch settings after an authoritative loadout replacement', async () => {
     const loadout = seedApplyLoadoutState()
     const failure = stubDeferredCommandFailure()
@@ -1344,6 +1437,30 @@ describe('loadout projection command helpers', () => {
       name: 'Later Loadout',
     })
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
+  })
+
+  it('does not acknowledge delete when the pre-mutation collection is malformed', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const calls = stubCommandFetch()
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      ;(testDatabaseState.db.loadouts[0] as Loadout & { legacyMetadata?: string }).legacyMetadata = 'discarded'
+    })
+
+    expect(deleteLoadout('loadout-b')).toBe(true)
+    await waitForCallCount(calls, 2)
+    await flushCommandEffects()
+
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/loadouts/loadout-b',
+      method: 'DELETE',
+      authHeader: 'loadout-command-token',
+      body: { baseRevision: 10 },
+    })
+    expect(observedEffects).toEqual([])
   })
 
   it('failed delete skips rollback when the same loadout id was recreated', async () => {

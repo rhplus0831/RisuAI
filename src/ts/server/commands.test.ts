@@ -191,6 +191,24 @@ function makeCommandFetch(bodyForUrl: (url: string, init: RequestInit) => unknow
   }
 }
 
+function canonicalLoadoutSnapshot(id = 'loadout-a') {
+  return {
+    id,
+    name: 'A',
+    lastUsed: 100,
+    favorite: false,
+    characterIds: ['char-a'],
+    modules: ['module-a'],
+    globalVariables: { mood: 'bright' },
+    presetName: 'Preset A',
+    modelPresetId: '',
+    modelPresetName: '',
+    promptPresetId: '',
+    promptPresetName: '',
+    personaId: 'persona-a',
+  }
+}
+
 beforeEach(() => {
   clearAppliedServerResourceRevision()
   clearCachedServerCommandRevision()
@@ -1884,17 +1902,7 @@ describe('server command API adapter', () => {
     await expect(
       createLoadoutCommand({
         baseRevision: 1,
-        loadout: {
-          id: 'loadout-a',
-          name: 'A',
-          lastUsed: 100,
-          favorite: false,
-          characterIds: ['char-a'],
-          modules: ['module-a'],
-          globalVariables: { mood: 'bright' },
-          presetName: 'Preset A',
-          personaId: 'persona-a',
-        },
+        loadout: canonicalLoadoutSnapshot(),
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 2, loadoutId: 'loadout-a' })
 
@@ -1936,17 +1944,7 @@ describe('server command API adapter', () => {
         method: 'POST',
         body: {
           baseRevision: 1,
-          loadout: {
-            id: 'loadout-a',
-            name: 'A',
-            lastUsed: 100,
-            favorite: false,
-            characterIds: ['char-a'],
-            modules: ['module-a'],
-            globalVariables: { mood: 'bright' },
-            presetName: 'Preset A',
-            personaId: 'persona-a',
-          },
+          loadout: canonicalLoadoutSnapshot(),
         },
       },
       {
@@ -2060,6 +2058,102 @@ describe('server command API adapter', () => {
         loadedName: 'Loadout A',
       },
     ])
+  })
+
+  it('strictly validates optimistic loadout create/delete acknowledgements without transmitting metadata', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let revision = 20
+    let createCount = 0
+    let deleteCount = 0
+    const commandFetch = makeCommandFetch((url) => {
+      revision += 1
+      if (url === '/api/v1/commands/loadouts') {
+        createCount += 1
+        return {
+          revision,
+          event: { type: 'loadout.created', revision, resource: 'loadout', id: 'loadout-a' },
+          loadoutId: createCount === 5 ? 'mismatched-loadout' : 'loadout-a',
+        }
+      }
+      deleteCount += 1
+      return {
+        revision,
+        event: {
+          type: 'loadout.deleted',
+          revision,
+          resource: 'loadout',
+          id: deleteCount === 2 ? 'mismatched-loadout' : 'loadout-b',
+        },
+        loadoutId: 'loadout-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const canonicalLoadout = canonicalLoadoutSnapshot()
+    const missingPromptName = { ...canonicalLoadout }
+    Reflect.deleteProperty(missingPromptName, 'promptPresetName')
+
+    await createLoadoutCommand({
+      baseRevision: 1,
+      loadout: canonicalLoadout,
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 11,
+    })
+    await deleteLoadoutCommand({
+      baseRevision: 2,
+      loadoutId: 'loadout-b',
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 12,
+    })
+    await createLoadoutCommand({
+      baseRevision: 3,
+      loadout: { ...canonicalLoadout, legacyMetadata: true },
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 13,
+    })
+    await createLoadoutCommand({
+      baseRevision: 4,
+      loadout: missingPromptName,
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 14,
+    })
+    await createLoadoutCommand({
+      baseRevision: 5,
+      loadout: canonicalLoadout,
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: -1,
+    })
+    await createLoadoutCommand({
+      baseRevision: 6,
+      loadout: canonicalLoadout,
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 15,
+    })
+    await deleteLoadoutCommand({
+      baseRevision: 7,
+      loadoutId: 'loadout-b',
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 16,
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'loadoutMutation',
+        operation: 'create',
+        loadoutId: 'loadout-a',
+        loadoutsProjectionEpoch: 11,
+      },
+      {
+        kind: 'loadoutMutation',
+        operation: 'delete',
+        loadoutId: 'loadout-b',
+        loadoutsProjectionEpoch: 12,
+      },
+    ])
+    expect(commandFetch.calls[0].body).toEqual({ baseRevision: 1, loadout: canonicalLoadout })
+    expect(commandFetch.calls[1].body).toEqual({ baseRevision: 2 })
   })
 
   it('runs loadout commands with revision lookup and surfaces conflicts', async () => {
