@@ -501,6 +501,40 @@ function compactCanonicalOverrides(
   )
 }
 
+function compactCanonicalPresetReceipt(
+  canonicalSource: Record<string, unknown>,
+  optimisticSource: Record<string, unknown>,
+): { canonicalValues: Record<string, unknown>; canonicalDeletedKeys: string[] } {
+  const canonical = maskLegacyPresetReceiptRow(canonicalSource)
+  const optimistic = maskLegacyPresetReceiptRow(optimisticSource)
+  const canonicalValues: Record<string, unknown> = {}
+  const canonicalDeletedKeys: string[] = []
+  const keys = new Set([...Object.keys(optimistic), ...Object.keys(canonical)])
+
+  for (const key of keys) {
+    if (key === 'id') continue
+    const canonicalPresent = Object.prototype.hasOwnProperty.call(canonical, key)
+    const optimisticPresent = Object.prototype.hasOwnProperty.call(optimistic, key)
+    if (canonicalPresent === optimisticPresent && isDeepStrictEqual(canonical[key], optimistic[key])) continue
+    if (canonicalPresent) canonicalValues[key] = canonical[key]
+    else canonicalDeletedKeys.push(key)
+  }
+
+  return { canonicalValues, canonicalDeletedKeys }
+}
+
+function maskLegacyPresetReceiptRow(source: Record<string, unknown>): Record<string, unknown> {
+  const envelope = maskProviderSecrets({
+    botPresets: [source],
+    modelProfiles: Array.isArray(source.modelProfiles) ? source.modelProfiles : [],
+  }) as { botPresets: Record<string, unknown>[]; modelProfiles: unknown[] }
+  const preset = envelope.botPresets[0] ?? {}
+  if (Object.prototype.hasOwnProperty.call(source, 'modelProfiles')) {
+    preset.modelProfiles = envelope.modelProfiles
+  }
+  return preset
+}
+
 function hasSplitPresetProjectionChange(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
@@ -2115,11 +2149,17 @@ export function registerCommandRoutes(
       const presetId = readPresetId((req.params as { presetId?: unknown }).presetId)
       const body = (req.body ?? {}) as PresetCommandBody
       const baseRevision = readBaseRevision(body)
-      const patch = readPresetPatch(readJsonObject(body.patch, 'patch'), { assetDb: db })
+      const requestedPatch = readJsonObject(body.patch, 'patch')
+      const patch = readPresetPatch(requestedPatch, { assetDb: db })
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
-      const result = applyTargetedCommandMutation<{ presetId: string }>({
+      const result = applyTargetedCommandMutation<{
+        presetId: string
+        acknowledgedKeys: string[]
+        canonicalValues: Record<string, unknown>
+        canonicalDeletedKeys: string[]
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -2130,6 +2170,11 @@ export function registerCommandRoutes(
           const target = ensureDatabaseObject(database)
           const presets = ensurePresetCollection(target)
           const index = requirePresetIndex(presets, presetId)
+          const optimisticPreset = {
+            ...presets[index],
+            ...requestedPatch,
+            id: presetId,
+          }
           presets[index] = {
             ...presets[index],
             ...patch,
@@ -2137,9 +2182,14 @@ export function registerCommandRoutes(
           }
           normalizePresetAgentSettings(presets[index])
           writeSingleCollectionRow(innerDb, 'botPresets', index, presets[index])
+          const receipt = compactCanonicalPresetReceipt(presets[index], optimisticPreset)
           return {
             event: { ...COMMAND_EVENT_CATALOG.presetUpdated, id: presetId },
-            extra: { presetId },
+            extra: {
+              presetId,
+              acknowledgedKeys: Object.keys(requestedPatch),
+              ...receipt,
+            },
           }
         },
       })

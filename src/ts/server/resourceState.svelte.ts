@@ -204,6 +204,20 @@ export interface ServerLegacyPresetCollectionResourcePayload {
   baseline?: ServerLegacyPresetResourceBaseline
 }
 
+export type ServerJsonFieldState = { present: false } | { present: true; value: unknown }
+
+export interface ServerLegacyPresetPatchLocalEffectPayload {
+  revision: number
+  presetId: string
+  fields: Record<
+    string,
+    {
+      attempted: ServerJsonFieldState
+      canonical: ServerJsonFieldState
+    }
+  >
+}
+
 export interface ServerCharactersResourcePayload {
   revision: number
   characters: character[]
@@ -1089,6 +1103,65 @@ export function applyLegacyPresetRowResource(payload: ServerLegacyPresetRowResou
     isPlainRecord(candidate) && candidate.id === payload.presetId ? next : candidate,
   ) as never
   markLegacyPresetCollectionApplied(payload.revision)
+  return true
+}
+
+/**
+ * Apply only response-confirmed canonical legacy-preset fields while fencing
+ * the accepted row revision. This acknowledgement deliberately does not
+ * advance the collection projection epoch or clear its taint; only an
+ * authoritative collection/row projection can do that.
+ */
+export function applyLegacyPresetPatchLocalEffect(payload: ServerLegacyPresetPatchLocalEffectPayload): boolean {
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    !nonEmptyString(payload.presetId) ||
+    !isPlainRecord(payload.fields)
+  ) {
+    return false
+  }
+  for (const [key, field] of Object.entries(payload.fields)) {
+    if (
+      !nonEmptyString(key) ||
+      key === 'id' ||
+      !isPlainRecord(field) ||
+      !isCanonicalJsonFieldState(field.attempted) ||
+      !isCanonicalJsonFieldState(field.canonical)
+    ) {
+      return false
+    }
+  }
+
+  const knownRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.botPresets ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+  if (
+    collectionsResourceState.statuses.botPresets !== 'ready' ||
+    collectionsResourceState.revisions.botPresets === undefined
+  ) {
+    return false
+  }
+
+  const presets = collectionsResourceState.values.botPresets
+  if (!Array.isArray(presets) || !isUniquePresetCollection(presets)) return false
+  const matches = presets.filter((candidate) => isPlainRecord(candidate) && candidate.id === payload.presetId)
+  if (matches.length !== 1) return false
+  const preset = matches[0] as unknown as Record<string, unknown>
+
+  for (const [key, field] of Object.entries(payload.fields)) {
+    if (!jsonFieldStateMatches(preset, key, field.attempted)) continue
+    if (field.canonical.present) preset[key] = cloneJsonValue(field.canonical.value)
+    else delete preset[key]
+  }
+
+  collectionsResourceState.revisions.botPresets = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses.botPresets = 'ready'
+  delete collectionsResourceState.errors.botPresets
+  markResourceDatabaseChanged()
   return true
 }
 
@@ -2029,6 +2102,34 @@ function nonEmptyString(value: unknown): value is string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isCanonicalJsonFieldState(value: unknown): value is ServerJsonFieldState {
+  if (!isPlainRecord(value) || typeof value.present !== 'boolean') return false
+  const keys = Object.keys(value).sort()
+  if (!value.present) return isJsonValueEqual(keys, ['present'])
+  return isJsonValueEqual(keys, ['present', 'value']) && isJsonValue(value.value)
+}
+
+function jsonFieldStateMatches(record: Record<string, unknown>, key: string, state: ServerJsonFieldState): boolean {
+  const present = Object.prototype.hasOwnProperty.call(record, key)
+  if (present !== state.present) return false
+  return !state.present || isJsonValueEqual(record[key], state.value)
+}
+
+function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (!value || typeof value !== 'object' || ancestors.has(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false
+
+  ancestors.add(value)
+  const valid = Array.isArray(value)
+    ? value.every((entry, index) => Object.prototype.hasOwnProperty.call(value, index) && isJsonValue(entry, ancestors))
+    : Object.values(value).every((entry) => isJsonValue(entry, ancestors))
+  ancestors.delete(value)
+  return valid
 }
 
 function isUniquePresetCollection(value: readonly unknown[]): boolean {

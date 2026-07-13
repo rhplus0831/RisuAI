@@ -2975,6 +2975,12 @@ describe('Phase 9-2b bot preset commands', () => {
       resource: 'presetRow',
       id: 'preset-b',
     })
+    expect(updated.json()).toMatchObject({
+      presetId: 'preset-b',
+      acknowledgedKeys: ['name', 'agentPresets', 'agentPresetDefaultId'],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    })
 
     const updatedAgentList = await harness.app.inject({
       method: 'PATCH',
@@ -2988,6 +2994,12 @@ describe('Phase 9-2b bot preset commands', () => {
       },
     })
     expect(updatedAgentList.statusCode).toBe(200)
+    expect(updatedAgentList.json()).toMatchObject({
+      presetId: 'preset-b',
+      acknowledgedKeys: ['agentPresets'],
+      canonicalValues: {},
+      canonicalDeletedKeys: ['agentPresetDefaultId'],
+    })
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -3011,6 +3023,53 @@ describe('Phase 9-2b bot preset commands', () => {
       agentPresets: [{ id: 'agent-preset-c', name: 'Agent C', enabled: true, version: 1, steps: [] }],
     })
     expect(storedPreset.json().preset).not.toHaveProperty('agentPresetDefaultId')
+  })
+
+  it('returns masked sparse canonical preset values after normalization', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [{ id: 'preset-a', name: 'A' }],
+      botPresetsId: 0,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/presets/preset-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: {
+          modelProfiles: [
+            {
+              id: ' profile-a ',
+              name: ' Profile A ',
+              providerId: ' openai ',
+              modelId: ' gpt-5 ',
+              providerOptions: { apiKey: 'receipt-must-not-leak' },
+            },
+          ],
+        },
+      },
+    })
+
+    expect(updated.statusCode, updated.body).toBe(200)
+    expect(updated.json()).toMatchObject({
+      presetId: 'preset-a',
+      acknowledgedKeys: ['modelProfiles'],
+      canonicalValues: {
+        modelProfiles: [
+          {
+            id: 'profile-a',
+            name: 'Profile A',
+            providerId: 'openai',
+            modelId: 'gpt-5',
+            providerOptions: { apiKey: MASKED_PROVIDER_SECRET },
+          },
+        ],
+      },
+      canonicalDeletedKeys: [],
+    })
+    expect(updated.body).not.toContain('receipt-must-not-leak')
   })
 
   it('validates preset image asset references on create and patch', async () => {

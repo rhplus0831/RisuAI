@@ -61,6 +61,8 @@ import {
   updatePresetCommand,
   type ModelPresetSnapshot,
   peekCachedServerCommandRevision,
+  type JsonFieldState,
+  type LegacyPresetPatchOptimisticAcknowledgement,
   type PromptPresetSnapshot,
   type PresetSnapshot,
   type ServerCommandTransportOptions,
@@ -1043,11 +1045,15 @@ function legacyPresetSaveCommandPatch(
   // This is intentionally the historical request shape. The merge-only endpoint
   // cannot encode deletion even here, but falling back avoids claiming that a
   // presence-changing reconstruction was proven safe for sparse transport.
-  const fullPatch = () => safeStructuredClone(savedPreset) as unknown as PresetSnapshot
+  const fullPatch = () => {
+    const patch = safeStructuredClone(savedPreset) as unknown as PresetSnapshot
+    delete patch.id
+    return patch
+  }
   if (!baseline || baseline.preset.id !== savedPreset.id) return fullPatch()
 
   const saved = savedPreset as unknown as Record<string, unknown>
-  const patch: PresetSnapshot = { id: savedPreset.id }
+  const patch: PresetSnapshot = {}
   let changed = false
   const keys = new Set([...Object.keys(baseline.preset), ...Object.keys(saved)])
   for (const key of keys) {
@@ -1066,6 +1072,111 @@ function legacyPresetSaveCommandPatch(
     changed = true
   }
   return changed ? patch : null
+}
+
+const LEGACY_PRESET_NORMALIZED_SIDE_EFFECT_KEYS = ['agentPresets', 'agentPresetDefaultId'] as const
+
+function exactJsonRecordClone(value: unknown): Record<string, unknown> | null {
+  if (!isPlainRecord(value) || !isExactJsonValue(value)) return null
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>
+}
+
+function exactJsonRecordCloneOmittingUndefined(value: unknown): Record<string, unknown> | null {
+  if (!isPlainRecord(value)) return null
+  const projected: Record<string, unknown> = {}
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) continue
+    if (!isExactJsonValue(entry)) return null
+    projected[key] = JSON.parse(JSON.stringify(entry)) as unknown
+  }
+  return projected
+}
+
+function isExactJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (!value || typeof value !== 'object' || ancestors.has(value)) return false
+
+  const prototype = Object.getPrototypeOf(value)
+  if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) return false
+  if (Object.getOwnPropertySymbols(value).some((symbol) => Object.prototype.propertyIsEnumerable.call(value, symbol))) {
+    return false
+  }
+
+  ancestors.add(value)
+  let valid: boolean
+  if (Array.isArray(value)) {
+    const keys = Object.keys(value)
+    valid =
+      keys.length === value.length &&
+      value.every(
+        (entry, index) => Object.prototype.hasOwnProperty.call(value, index) && isExactJsonValue(entry, ancestors),
+      )
+  } else {
+    valid = Object.values(value).every((entry) => isExactJsonValue(entry, ancestors))
+  }
+  ancestors.delete(value)
+  return valid
+}
+
+function exactJsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (left === null || right === null || typeof left !== typeof right) return false
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((entry, index) => exactJsonValuesEqual(entry, right[index]))
+    )
+  }
+  if (!isPlainRecord(left) || !isPlainRecord(right)) return false
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) => Object.prototype.hasOwnProperty.call(right, key) && exactJsonValuesEqual(left[key], right[key]),
+    )
+  )
+}
+
+function legacyPresetPatchOptimisticAcknowledgement(input: {
+  preset: Record<string, unknown>
+  wirePatch: Record<string, unknown>
+  collectionProjectionEpoch: number
+  expectedPreset?: Record<string, unknown>
+}): LegacyPresetPatchOptimisticAcknowledgement | null {
+  if (
+    !Number.isInteger(input.collectionProjectionEpoch) ||
+    input.collectionProjectionEpoch < 0 ||
+    !isExactJsonValue(input.preset) ||
+    (input.expectedPreset !== undefined &&
+      (!isExactJsonValue(input.expectedPreset) || !exactJsonValuesEqual(input.preset, input.expectedPreset)))
+  ) {
+    return null
+  }
+
+  const attemptedFields: Record<string, JsonFieldState> = {}
+  const keys = new Set([...Object.keys(input.wirePatch), ...LEGACY_PRESET_NORMALIZED_SIDE_EFFECT_KEYS])
+  keys.delete('id')
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(input.preset, key)) {
+      const value = input.preset[key]
+      if (!isExactJsonValue(value)) return null
+      attemptedFields[key] = {
+        present: true,
+        value: JSON.parse(JSON.stringify(value)) as unknown,
+      }
+    } else {
+      attemptedFields[key] = { present: false }
+    }
+  }
+
+  return {
+    collectionProjectionEpoch: input.collectionProjectionEpoch,
+    attemptedFields,
+  }
 }
 
 function rollbackBotPresetListEntry(entry: BotPresetListRollbackEntry): void {
@@ -3711,7 +3822,33 @@ export function saveCurrentPreset() {
     if (!savedPreset?.id) return []
     const commandPatch = legacyPresetSaveCommandPatch(savedPreset, sparseBaseline)
     if (!commandPatch) return []
-    applyCurrentPresetSnapshot(savedPreset)
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
+    const wirePatch = exactJsonRecordClone(commandPatch)
+    const expectedPreset =
+      sparseBaseline && wirePatch
+        ? exactJsonRecordClone({
+            ...sparseBaseline.preset,
+            ...wirePatch,
+            id: savedPreset.id,
+          })
+        : null
+    const savedPresetProjection = exactJsonRecordCloneOmittingUndefined(savedPreset)
+    const acknowledgedPreset =
+      expectedPreset && savedPresetProjection && exactJsonValuesEqual(expectedPreset, savedPresetProjection)
+        ? expectedPreset
+        : null
+    applyCurrentPresetSnapshot((acknowledgedPreset ?? savedPreset) as botPreset)
+    const presetIndex = canonicalBotPresetIndexById(savedPreset.id)
+    const livePreset = presetIndex >= 0 ? getDatabase().botPresets[presetIndex] : undefined
+    const optimisticAcknowledgement =
+      wirePatch && acknowledgedPreset && livePreset
+        ? legacyPresetPatchOptimisticAcknowledgement({
+            preset: livePreset as unknown as Record<string, unknown>,
+            wirePatch,
+            collectionProjectionEpoch,
+            expectedPreset: acknowledgedPreset,
+          })
+        : null
     runOptimisticCommandSequence(
       [
         (baseRevision) =>
@@ -3719,9 +3856,13 @@ export function saveCurrentPreset() {
             baseRevision,
             presetId: savedPreset.id!,
             patch: safeStructuredClone(commandPatch) as PresetSnapshot,
+            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
           }),
       ],
-      () => rollbackBotPresetFields(rollback),
+      () => {
+        markCollectionAcknowledgementTainted('botPresets')
+        rollbackBotPresetFields(rollback)
+      },
     )
   })
 }
@@ -3879,26 +4020,44 @@ export function createPreset(preset: botPreset) {
 export function updatePreset(id: number, patch: Partial<botPreset>) {
   withTrustedResourceWrite(() => {
     const db = getDatabase()
+    const normalizedIds = !botPresetIdsNeedNormalization(db)
     normalizeBotPresetIds(db)
     const presetId = db.botPresets[id]?.id
     if (!presetId) return []
+    const acknowledgementEligible = normalizedIds && botPresetHasHydratedSettings(db.botPresets[id])
     const attempted = safeStructuredClone(patch)
+    delete attempted.id
+    const commandPatch = safeStructuredClone(attempted) as PresetSnapshot
+    if (Object.keys(commandPatch).length === 0) return []
+    const wirePatch = acknowledgementEligible ? exactJsonRecordClone(commandPatch) : null
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
     const rollback = botPresetFieldRollbackFromPatch(
       presetId,
       db.botPresets[id] as unknown as Record<string, unknown>,
       attempted as unknown as Record<string, unknown>,
     )
     Object.assign(db.botPresets[id], attempted)
+    const optimisticAcknowledgement = wirePatch
+      ? legacyPresetPatchOptimisticAcknowledgement({
+          preset: db.botPresets[id] as unknown as Record<string, unknown>,
+          wirePatch,
+          collectionProjectionEpoch,
+        })
+      : null
     runOptimisticCommandSequence(
       [
         (baseRevision) =>
           updatePresetCommand({
             baseRevision,
             presetId,
-            patch: safeStructuredClone({ ...attempted, id: presetId }) as PresetSnapshot,
+            patch: commandPatch,
+            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
           }),
       ],
-      () => rollbackBotPresetFields(rollback),
+      () => {
+        markCollectionAcknowledgementTainted('botPresets')
+        rollbackBotPresetFields(rollback)
+      },
     )
   })
 }

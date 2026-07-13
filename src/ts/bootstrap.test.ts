@@ -845,6 +845,120 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('acknowledges a contiguous legacy preset PATCH field-wise without re-reading the row', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          botPresets: [
+            {
+              id: 'preset-a',
+              name: 'Optimistic',
+              temperature: 0.6,
+              agentPresetDefaultId: 'missing-agent',
+            },
+          ] as never,
+        },
+      },
+      'botPresets',
+    )
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
+    withTrustedResourceWrite(() => {
+      getDatabase().botPresets[0].name = 'Newer local edit'
+    })
+    const event = {
+      type: 'preset.updated',
+      revision: 6,
+      resource: 'presetRow',
+      id: 'preset-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'legacyPresetPatch',
+            presetId: 'preset-a',
+            collectionProjectionEpoch,
+            fields: {
+              name: {
+                attempted: { present: true, value: 'Optimistic' },
+                canonical: { present: true, value: 'Canonical' },
+              },
+              temperature: {
+                attempted: { present: true, value: 0.6 },
+                canonical: { present: true, value: 0.5 },
+              },
+              agentPresetDefaultId: {
+                attempted: { present: true, value: 'missing-agent' },
+                canonical: { present: false },
+              },
+            },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().botPresets[0]).toMatchObject({
+      id: 'preset-a',
+      name: 'Newer local edit',
+      temperature: 0.5,
+    })
+    expect(getDatabase().botPresets[0].agentPresetDefaultId).toBeUndefined()
+    expect(collectionsResourceState.revisions.botPresets).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('botPresets', collectionProjectionEpoch)).toBe(false)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it.each(['changed epoch', 'tainted projection'])('%s forces a legacy preset PATCH fallback', async (failure) => {
+    await loadWebInitialDatabase()
+    const preset = { id: 'preset-a', name: 'Optimistic' }
+    applyCollectionsResource({ revision: 5, collections: { botPresets: [preset] as never } }, 'botPresets')
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
+    if (failure === 'changed epoch') {
+      applyCollectionsResource({ revision: 5, collections: { botPresets: [preset] as never } }, 'botPresets')
+    } else {
+      markCollectionAcknowledgementTainted('botPresets')
+    }
+    const event = {
+      type: 'preset.updated',
+      revision: 6,
+      resource: 'presetRow',
+      id: 'preset-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'legacyPresetPatch',
+            presetId: 'preset-a',
+            collectionProjectionEpoch,
+            fields: {
+              name: {
+                attempted: { present: true, value: 'Optimistic' },
+                canonical: { present: true, value: 'Canonical' },
+              },
+            },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('acknowledges metadata-only prompt preset PATCHes without owner hydration or settings reads', async () => {
     await loadWebInitialDatabase()
     applyCollectionsResource(

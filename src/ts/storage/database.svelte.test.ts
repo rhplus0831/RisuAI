@@ -9,7 +9,13 @@ vi.mock('../process/modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from '../server/commands'
+import {
+  clearCachedServerCommandRevision,
+  setCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
+  type ServerCommandLocalEffect,
+} from '../server/commands'
+import { isCollectionAcknowledgementTainted } from '../server/resourceState.svelte'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import {
   applyModelPresetFieldsToDatabase,
@@ -179,6 +185,44 @@ function stubSuccessfulSplitPresetCommands(): CapturedFetch[] {
   return calls
 }
 
+function stubSuccessfulLegacyPresetCommands(
+  canonicalReceipt: (call: CapturedFetch) => {
+    canonicalValues?: Record<string, unknown>
+    canonicalDeletedKeys?: string[]
+  } = () => ({}),
+): CapturedFetch[] {
+  const calls: CapturedFetch[] = []
+  let revision = 100
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const call = {
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      }
+      calls.push(call)
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 100 })
+      if (url.startsWith('/api/v1/commands/presets/')) {
+        revision += 1
+        const presetId = decodeURIComponent(url.slice('/api/v1/commands/presets/'.length))
+        const receipt = canonicalReceipt(call)
+        return jsonResponse({
+          revision,
+          event: { type: 'preset.updated', revision, resource: 'presetRow', id: presetId },
+          presetId,
+          acknowledgedKeys: Object.keys(call.body.patch),
+          canonicalValues: receipt.canonicalValues ?? {},
+          canonicalDeletedKeys: receipt.canonicalDeletedKeys ?? [],
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
 async function waitForPresetCommand(calls: CapturedFetch[], path: string): Promise<CapturedFetch> {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const match = calls.find((call) => call.url === `/api/v1/commands${path}`)
@@ -217,7 +261,7 @@ async function captureFullLegacyPresetSavePayload(settings: Partial<Database> = 
   saveCurrentPreset()
 
   const command = await waitForPresetCommand(calls, '/presets/preset-a')
-  return clonePlain(command.body.patch) as botPreset
+  return { ...clonePlain(command.body.patch), id: 'preset-a' } as botPreset
 }
 
 function makePreset(id: string, name: string, patch: Partial<botPreset> = {}): botPreset {
@@ -425,7 +469,6 @@ describe('model profile database normalization', () => {
 
     const command = await waitForPresetCommand(calls, '/presets/preset-a')
     expect(command.body.patch).toMatchObject({
-      id: 'preset-a',
       modelProfiles: [
         { id: 'profile-a', name: 'Profile A', modelId: 'gpt-5', providerOptions: { requestModel: 'wire-model' } },
       ],
@@ -690,11 +733,13 @@ function seedPresetDatabase(patch: Partial<Database> = {}): void {
 beforeEach(() => {
   vi.stubGlobal('safeStructuredClone', (value: unknown) => JSON.parse(JSON.stringify(value)))
   clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
 })
 
 afterEach(() => {
   setResourceWriteGuardEnabled(false)
+  setServerCommandSuccessReconciler(null)
   setDatabaseLite({
     characters: [],
     modules: [],
@@ -1269,8 +1314,160 @@ describe('preset command rollback (L21)', () => {
     saveCurrentPreset()
 
     const command = await waitForPresetCommand(calls, '/presets/preset-a')
-    expect(command.body.patch).toEqual({ id: 'preset-a', temperature: 45 })
+    expect(command.body.patch).toEqual({ temperature: 45 })
     expect(JSON.stringify(command.body)).not.toContain('Large unchanged profile')
+  })
+
+  it('attaches a client-only local acknowledgement to an exact legacy preset PATCH', async () => {
+    seedPresetDatabase()
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulLegacyPresetCommands(() => ({ canonicalValues: { temperature: 43 } }))
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    updatePreset(0, { temperature: 45 })
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    await waitForState(() => expect(observedEffects).toHaveLength(1))
+    expect(command.body).toEqual({
+      baseRevision: 100,
+      patch: { temperature: 45 },
+    })
+    expect(command.body).not.toHaveProperty('optimisticAcknowledgement')
+    expect(observedEffects).toEqual([
+      {
+        kind: 'legacyPresetPatch',
+        presetId: 'preset-a',
+        collectionProjectionEpoch: expect.any(Number),
+        fields: {
+          temperature: {
+            attempted: { present: true, value: 45 },
+            canonical: { present: true, value: 43 },
+          },
+        },
+      },
+    ])
+  })
+
+  it('attaches a local acknowledgement to an exact hydrated sparse current-preset save', async () => {
+    const agentSettings = {
+      agentPresets: [{ id: 'agent-a', name: 'Agent A', enabled: true, version: 1, steps: [] }],
+      agentPresetDefaultId: 'agent-a',
+    } as Partial<Database>
+    const baseline = await captureFullLegacyPresetSavePayload(agentSettings)
+    seedPresetDatabase({
+      ...agentSettings,
+      botPresets: [baseline, makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+      temperature: 45,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulLegacyPresetCommands()
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    await waitForState(() => expect(observedEffects).toHaveLength(1))
+    expect(command.body.patch).toEqual({ temperature: 45 })
+    expect(observedEffects).toEqual([
+      {
+        kind: 'legacyPresetPatch',
+        presetId: 'preset-a',
+        collectionProjectionEpoch: expect.any(Number),
+        fields: {},
+      },
+    ])
+  })
+
+  it('retains authoritative reconciliation for an unhydrated full current-preset save fallback', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-a', name: 'Alpha', image: 'img' } as botPreset],
+      botPresetsId: 0,
+      temperature: 45,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulLegacyPresetCommands()
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    await waitForState(() => expect(observedEffectCounts).toEqual([0]))
+    expect(Object.keys(command.body.patch).length).toBeGreaterThan(20)
+  })
+
+  it('retains authoritative reconciliation when a shell gains a hydration sentinel through updatePreset', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-a', name: 'Alpha', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulLegacyPresetCommands()
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    updatePreset(0, { temperature: 45 })
+
+    await waitForPresetCommand(calls, '/presets/preset-a')
+    await waitForState(() => expect(observedEffectCounts).toEqual([0]))
+  })
+
+  it('retains authoritative reconciliation when legacy preset ids needed optimistic repair', async () => {
+    const repaired = makePreset('temporary', 'Alpha')
+    delete repaired.id
+    seedPresetDatabase({ botPresets: [repaired], botPresetsId: 0 })
+    setCachedServerCommandRevision(100)
+    const calls = stubSuccessfulLegacyPresetCommands()
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    updatePreset(0, { temperature: 45 })
+
+    await waitForState(() => expect(calls.some((call) => call.url.startsWith('/api/v1/commands/presets/'))).toBe(true))
+    await waitForState(() => expect(observedEffectCounts).toEqual([0]))
+  })
+
+  it.each([
+    ['field update', () => updatePreset(0, { temperature: 45 })],
+    ['current save', () => saveCurrentPreset()],
+  ])('taints the legacy preset projection before rolling back a failed %s', async (_label, mutate) => {
+    seedPresetDatabase({ temperature: 45 })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+    expect(isCollectionAcknowledgementTainted('botPresets')).toBe(false)
+
+    mutate()
+
+    await waitForState(() => expect(calls.some((call) => call.url.startsWith('/api/v1/commands/presets/'))).toBe(true))
+    await waitForState(() => expect(isCollectionAcknowledgementTainted('botPresets')).toBe(true))
+  })
+
+  it('keeps legacy preset ids immutable across a mismatched-id update failure', async () => {
+    seedPresetDatabase()
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+
+    updatePreset(0, { id: 'renamed-on-client', temperature: 45 })
+
+    expect(getDatabase().botPresets[0].id).toBe('preset-a')
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch).toEqual({ temperature: 45 })
+    await waitForState(() => {
+      expect(getDatabase().botPresets[0]).toMatchObject({ id: 'preset-a', temperature: 11 })
+    })
   })
 
   it('preserves explicit null, empty collection, and empty string clears in sparse save patches', async () => {
@@ -1297,7 +1494,6 @@ describe('preset command rollback (L21)', () => {
 
     const command = await waitForPresetCommand(calls, '/presets/preset-a')
     expect(command.body.patch).toEqual({
-      id: 'preset-a',
       additionalParams: [],
       bias: [],
       customPromptTemplateToggle: '',
@@ -1355,7 +1551,7 @@ describe('preset command rollback (L21)', () => {
       const command = calls.find((call) => call.url.startsWith('/api/v1/commands/presets/'))!
       expect(command.body.patch.modelProfiles, scenario.name).toEqual(modelProfiles)
       expect(Object.keys(command.body.patch).length, scenario.name).toBeGreaterThan(20)
-      expect(command.body.patch.id, scenario.name).toBe(decodeURIComponent(command.url.split('/').at(-1)!))
+      expect(command.body.patch, scenario.name).not.toHaveProperty('id')
 
       vi.unstubAllGlobals()
     }
@@ -1396,7 +1592,6 @@ describe('preset command rollback (L21)', () => {
 
     const command = await waitForPresetCommand(calls, '/presets/preset-a')
     expect(command.body.patch).toMatchObject({
-      id: 'preset-a',
       name: 'Alpha',
       mainPrompt: 'live main',
     })

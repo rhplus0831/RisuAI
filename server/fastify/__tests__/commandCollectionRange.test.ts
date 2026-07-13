@@ -407,7 +407,7 @@ describe('Phase 4 presets collection range', () => {
     const before = rowidSnapshot()
     const beforeRowids = collectionRowidsByPosition('bot_presets')
 
-    const { metric } = await runCommand({
+    const { metric, body } = await runCommand({
       method: 'PATCH',
       url: '/api/v1/commands/presets/preset-1',
       payload: { baseRevision: revision, patch: { name: 'Renamed P1' } },
@@ -421,6 +421,12 @@ describe('Phase 4 presets collection range', () => {
     const presets = readCollection('bot_presets') as Array<{ id: string; name: string }>
     expect(presets[1]).toMatchObject({ id: 'preset-1', name: 'Renamed P1' })
     expect(presets[0].name).toBe('P0')
+    expect(body).toMatchObject({
+      presetId: 'preset-1',
+      acknowledgedKeys: ['name'],
+      canonicalValues: {},
+      canonicalDeletedKeys: [],
+    })
   })
 
   it('POST presets/:id/copy rewrites only the bot_presets table', async () => {

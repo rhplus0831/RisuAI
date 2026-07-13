@@ -141,6 +141,7 @@ import {
   type ServerCommandLocalEffect,
   updatePromptItemCommand,
   updatePromptPresetCommand,
+  updatePresetCommand,
 } from './commands'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './staleStateGuards'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
@@ -1944,6 +1945,158 @@ describe('server command API adapter', () => {
     ])
     expect(commandFetch.calls[0]?.body).toEqual({ baseRevision: 1, patch: { temperature: 0.6 } })
     expect(commandFetch.calls[1]?.body).toEqual({ baseRevision: 2, patch: { name: 'Prompt renamed' } })
+  })
+
+  it('emits an exact legacy-preset PATCH acknowledgement without serializing its optimistic proof', async () => {
+    const event = {
+      type: 'preset.updated',
+      revision: 2,
+      resource: 'presetRow',
+      id: 'preset-a',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 2,
+      event,
+      presetId: 'preset-a',
+      acknowledgedKeys: ['name'],
+      canonicalValues: { name: 'Canonical name' },
+      canonicalDeletedKeys: ['agentPresetDefaultId'],
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await updatePresetCommand({
+      baseRevision: 1,
+      presetId: 'preset-a',
+      patch: { name: 'Optimistic name' },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 17,
+        attemptedFields: {
+          name: { present: true, value: 'Optimistic name' },
+          agentPresets: { present: false },
+          agentPresetDefaultId: { present: true, value: 'missing-agent' },
+        },
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'legacyPresetPatch',
+        presetId: 'preset-a',
+        collectionProjectionEpoch: 17,
+        fields: {
+          name: {
+            attempted: { present: true, value: 'Optimistic name' },
+            canonical: { present: true, value: 'Canonical name' },
+          },
+          agentPresetDefaultId: {
+            attempted: { present: true, value: 'missing-agent' },
+            canonical: { present: false },
+          },
+        },
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).toEqual({
+      baseRevision: 1,
+      patch: { name: 'Optimistic name' },
+    })
+    expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticAcknowledgement')
+  })
+
+  it('keeps malformed legacy-preset PATCH receipts on authoritative reconciliation', async () => {
+    const exactEvent = {
+      type: 'preset.updated',
+      revision: 2,
+      resource: 'presetRow',
+      id: 'preset-a',
+    }
+    const exactBody = {
+      revision: 2,
+      event: exactEvent,
+      presetId: 'preset-a',
+      acknowledgedKeys: ['name'],
+      canonicalValues: { name: 'Canonical name' },
+      canonicalDeletedKeys: [] as string[],
+    }
+    const cases: Array<{
+      body?: Record<string, unknown>
+      acknowledgement?: {
+        collectionProjectionEpoch: number
+        attemptedFields: Record<string, unknown>
+      }
+    }> = [
+      { body: { ...exactBody, revision: 3 } },
+      { body: { ...exactBody, event: { ...exactEvent, resource: 'preset' } } },
+      { body: { ...exactBody, presetId: 'preset-b' } },
+      { body: { ...exactBody, acknowledgedKeys: ['name', 'extra'] } },
+      { body: { ...exactBody, canonicalValues: { id: 'preset-b' } } },
+      { body: { ...exactBody, canonicalValues: { foreign: true } } },
+      {
+        body: {
+          ...exactBody,
+          canonicalValues: { name: 'Canonical name' },
+          canonicalDeletedKeys: ['name'],
+        },
+      },
+      {
+        acknowledgement: {
+          collectionProjectionEpoch: 17,
+          attemptedFields: { name: { present: false, value: 'invalid' } },
+        },
+      },
+      {
+        acknowledgement: {
+          collectionProjectionEpoch: 17,
+          attemptedFields: {
+            name: { present: true, value: 'Optimistic name' },
+            agentPresetDefaultId: { present: false },
+          },
+        },
+      },
+      {
+        acknowledgement: {
+          collectionProjectionEpoch: 17,
+          attemptedFields: {
+            name: { present: true, value: 'Optimistic name' },
+            agentPresets: { present: false },
+            agentPresetDefaultId: { present: false },
+            foreign: { present: false },
+          },
+        },
+      },
+      { acknowledgement: { collectionProjectionEpoch: -1, attemptedFields: {} } },
+    ]
+    let responseIndex = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(cases[responseIndex].body ?? exactBody)) as unknown as typeof fetch,
+    )
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    for (const testCase of cases) {
+      await updatePresetCommand({
+        baseRevision: 1,
+        presetId: 'preset-a',
+        patch: { name: 'Optimistic name' },
+        optimisticAcknowledgement: (testCase.acknowledgement ?? {
+          collectionProjectionEpoch: 17,
+          attemptedFields: {
+            name: { present: true, value: 'Optimistic name' },
+            agentPresets: { present: false },
+            agentPresetDefaultId: { present: false },
+          },
+        }) as never,
+      })
+      responseIndex += 1
+    }
+
+    expect(observedEffectCounts).toEqual(cases.map(() => 0))
   })
 
   it('keeps malformed split-preset receipts on authoritative reconciliation', async () => {

@@ -23,6 +23,7 @@ import {
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
+  type LegacyPresetPatchLocalEffect,
   type ServerCommandLocalEffect,
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
@@ -67,6 +68,7 @@ import {
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
+  applyLegacyPresetPatchLocalEffect,
   applySplitPresetPatchLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
@@ -414,8 +416,35 @@ async function processServerCommandEvents(
   await flushPendingAuthoritativeEvents()
 }
 
+function applyLegacyPresetPatchAcknowledgement(
+  event: CommandEvent,
+  localEffect: LegacyPresetPatchLocalEffect,
+): boolean {
+  if (
+    event.type !== 'preset.updated' ||
+    event.resource !== 'presetRow' ||
+    event.id !== localEffect.presetId ||
+    event.parentId !== undefined ||
+    !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+    localEffect.collectionProjectionEpoch < 0 ||
+    hasCollectionProjectionEpochChanged('botPresets', localEffect.collectionProjectionEpoch) ||
+    isCollectionAcknowledgementTainted('botPresets')
+  ) {
+    return false
+  }
+  return withServerResourceApply(() =>
+    applyLegacyPresetPatchLocalEffect({
+      revision: event.revision,
+      presetId: localEffect.presetId,
+      fields: localEffect.fields,
+    }),
+  )
+}
+
 function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
   switch (localEffect.kind) {
+    case 'legacyPresetPatch':
+      return applyLegacyPresetPatchAcknowledgement(event, localEffect)
     case 'chatGenerationSettings':
       if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
       return withServerResourceApply(() =>

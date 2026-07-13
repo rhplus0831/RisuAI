@@ -183,6 +183,27 @@ export interface SplitPresetPatchLocalEffect {
   promptOwnerRevision?: number
 }
 
+export type JsonFieldState = { present: false } | { present: true; value: unknown }
+
+/** Client-only proof captured after one optimistic legacy-preset PATCH. */
+export interface LegacyPresetPatchOptimisticAcknowledgement {
+  collectionProjectionEpoch: number
+  attemptedFields: Record<string, JsonFieldState>
+}
+
+export interface LegacyPresetPatchLocalEffect {
+  kind: 'legacyPresetPatch'
+  presetId: string
+  collectionProjectionEpoch: number
+  fields: Record<
+    string,
+    {
+      attempted: JsonFieldState
+      canonical: JsonFieldState
+    }
+  >
+}
+
 export interface LorebookMutationLocalEffect {
   kind: 'lorebookMutation'
   scope: 'global' | 'character' | 'chat'
@@ -262,6 +283,7 @@ export type ServerCommandLocalEffect =
   | ModuleEnabledLocalEffect
   | PromptItemMutationLocalEffect
   | SplitPresetPatchLocalEffect
+  | LegacyPresetPatchLocalEffect
   | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
@@ -470,6 +492,7 @@ export interface CreatePresetCommandInput extends PresetCommandInput {
 export interface UpdatePresetCommandInput extends PresetCommandInput {
   presetId: string
   patch: PresetSnapshot
+  optimisticAcknowledgement?: LegacyPresetPatchOptimisticAcknowledgement
 }
 
 export interface DeletePresetCommandInput extends PresetCommandInput {
@@ -1720,6 +1743,12 @@ export async function updatePresetCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readLegacyPresetPatchLocalEffect(body, event, {
+        presetId: input.presetId,
+        attemptedPatch: input.patch,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -4500,6 +4529,99 @@ function readSettingsPatchLocalEffect(
   }
 }
 
+function readLegacyPresetPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: {
+    presetId: string
+    attemptedPatch: Record<string, unknown>
+    acknowledgement?: LegacyPresetPatchOptimisticAcknowledgement
+  },
+): LegacyPresetPatchLocalEffect | undefined {
+  const acknowledgement = input.acknowledgement
+  if (!acknowledgement || !body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (
+    record.revision !== event.revision ||
+    record.presetId !== input.presetId ||
+    event.type !== 'preset.updated' ||
+    event.resource !== 'presetRow' ||
+    event.id !== input.presetId ||
+    event.parentId !== undefined ||
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isPlainJsonRecord(acknowledgement.attemptedFields)
+  ) {
+    return undefined
+  }
+
+  const acknowledgedKeys = record.acknowledgedKeys
+  const canonicalValues = record.canonicalValues
+  const canonicalDeletedKeys = record.canonicalDeletedKeys
+  if (
+    !isUniqueStringArray(acknowledgedKeys) ||
+    !isPlainJsonRecord(canonicalValues) ||
+    !isUniqueStringArray(canonicalDeletedKeys)
+  ) {
+    return undefined
+  }
+
+  const attemptedKeys = Object.keys(input.attemptedPatch).sort()
+  if (
+    attemptedKeys.length === 0 ||
+    !isJsonValueEqual(attemptedKeys, [...acknowledgedKeys].sort()) ||
+    attemptedKeys.some((key) => !nonEmptyString(key) || !isJsonValue(input.attemptedPatch[key]))
+  ) {
+    return undefined
+  }
+
+  const attemptedFields: Record<string, JsonFieldState> = {}
+  for (const [key, state] of Object.entries(acknowledgement.attemptedFields)) {
+    if (!nonEmptyString(key) || key === 'id') return undefined
+    const parsedState = readJsonFieldState(state)
+    if (!parsedState) return undefined
+    attemptedFields[key] = parsedState
+  }
+  const expectedAttemptedFieldKeys = [
+    ...new Set([...attemptedKeys.filter((key) => key !== 'id'), 'agentPresets', 'agentPresetDefaultId']),
+  ].sort()
+  if (!isJsonValueEqual(Object.keys(attemptedFields).sort(), expectedAttemptedFieldKeys)) {
+    return undefined
+  }
+
+  const canonicalValueKeys = Object.keys(canonicalValues)
+  const canonicalDeletedKeySet = new Set(canonicalDeletedKeys)
+  const canonicalKeys = [...canonicalValueKeys, ...canonicalDeletedKeys]
+  if (
+    canonicalKeys.some(
+      (key) => !nonEmptyString(key) || key === 'id' || !Object.prototype.hasOwnProperty.call(attemptedFields, key),
+    ) ||
+    canonicalValueKeys.some((key) => canonicalDeletedKeySet.has(key) || !isJsonValue(canonicalValues[key]))
+  ) {
+    return undefined
+  }
+
+  const fields: LegacyPresetPatchLocalEffect['fields'] = {}
+  for (const key of canonicalValueKeys) {
+    fields[key] = {
+      attempted: cloneJsonValue(attemptedFields[key]),
+      canonical: { present: true, value: cloneJsonValue(canonicalValues[key]) },
+    }
+  }
+  for (const key of canonicalDeletedKeys) {
+    fields[key] = {
+      attempted: cloneJsonValue(attemptedFields[key]),
+      canonical: { present: false },
+    }
+  }
+
+  return {
+    kind: 'legacyPresetPatch',
+    presetId: input.presetId,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    fields,
+  }
+}
+
 function readSplitPresetPatchLocalEffect(
   body: unknown,
   event: CommandEvent,
@@ -5729,6 +5851,20 @@ function isNonEmptyStringArray(value: unknown, allowEmpty = false): value is str
 
 function isUniqueStringArray(value: unknown): value is string[] {
   return isNonEmptyStringArray(value, true) && new Set(value).size === value.length
+}
+
+function isPlainJsonRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function readJsonFieldState(value: unknown): JsonFieldState | null {
+  if (!isPlainJsonRecord(value) || typeof value.present !== 'boolean') return null
+  const keys = Object.keys(value).sort()
+  if (!value.present) return isJsonValueEqual(keys, ['present']) ? { present: false } : null
+  if (!isJsonValueEqual(keys, ['present', 'value']) || !isJsonValue(value.value)) return null
+  return { present: true, value: cloneJsonValue(value.value) }
 }
 
 function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {

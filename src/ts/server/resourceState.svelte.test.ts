@@ -18,6 +18,7 @@ import {
   applyChatPatchLocalEffect,
   applyCollectionsResource,
   applyLegacyPresetCollectionResource,
+  applyLegacyPresetPatchLocalEffect,
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
@@ -48,6 +49,8 @@ import {
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
   isSettingsGroupAcknowledgementTainted,
+  isCollectionAcknowledgementTainted,
+  markCollectionAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
   markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
@@ -316,6 +319,102 @@ describe('resource-scoped database state', () => {
       }),
     ).toBe(false)
     expect(JSON.stringify(getResourceDatabase().botPresets)).toBe(beforeMalformed)
+  })
+
+  it('applies canonical legacy preset fields without advancing or untainting the collection projection', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        botPresets: [
+          {
+            id: 'preset-a',
+            name: 'Optimistic name',
+            temperature: 99,
+            agentPresetDefaultId: 'agent-old',
+          },
+          { id: 'preset-b', name: 'Resident sibling' },
+        ] as never,
+      },
+    })
+    const epoch = captureCollectionProjectionEpoch('botPresets')
+    markCollectionAcknowledgementTainted('botPresets')
+
+    expect(
+      applyLegacyPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'preset-a',
+        fields: {
+          name: {
+            attempted: { present: true, value: 'Optimistic name' },
+            canonical: { present: true, value: 'Canonical name' },
+          },
+          temperature: {
+            attempted: { present: true, value: 40 },
+            canonical: { present: true, value: 41 },
+          },
+          agentPresetDefaultId: {
+            attempted: { present: true, value: 'agent-old' },
+            canonical: { present: false },
+          },
+        },
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().botPresets).toEqual([
+      { id: 'preset-a', name: 'Canonical name', temperature: 99 },
+      { id: 'preset-b', name: 'Resident sibling' },
+    ])
+    expect(collectionsResourceState.revisions.botPresets).toBe(4)
+    expect(hasCollectionProjectionEpochChanged('botPresets', epoch)).toBe(false)
+    expect(isCollectionAcknowledgementTainted('botPresets')).toBe(true)
+  })
+
+  it('rejects malformed or ambiguous legacy preset local effects', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        botPresets: [{ id: 'preset-a', name: 'A' }] as never,
+      },
+    })
+
+    expect(
+      applyLegacyPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'preset-a',
+        fields: {
+          id: {
+            attempted: { present: true, value: 'preset-a' },
+            canonical: { present: true, value: 'preset-a' },
+          },
+        },
+      }),
+    ).toBe(false)
+    expect(
+      applyLegacyPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'preset-a',
+        fields: {
+          name: {
+            attempted: { present: true } as never,
+            canonical: { present: true, value: 'Canonical' },
+          },
+        },
+      }),
+    ).toBe(false)
+
+    collectionsResourceState.values.botPresets = [
+      { id: 'preset-a', name: 'A' },
+      { id: 'preset-a', name: 'Duplicate' },
+    ] as never
+    expect(
+      applyLegacyPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'preset-a',
+        fields: {},
+      }),
+    ).toBe(false)
   })
 
   it('intentionally resets hydrated legacy bodies on a complete collection refresh', () => {
