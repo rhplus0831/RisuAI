@@ -54,6 +54,13 @@ export interface CharacterSelectionLocalEffect {
   lastInteraction: number
 }
 
+export interface CharacterCollectionMutationLocalEffect {
+  kind: 'characterCollectionMutation'
+  operation: 'create' | 'createAndSelect' | 'delete'
+  characterId: string
+  selectedCharacterId: string | null
+}
+
 export interface ChatPatchLocalEffect {
   kind: 'chatPatch'
   characterId: string
@@ -117,6 +124,7 @@ export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
   | CharacterSelectionLocalEffect
+  | CharacterCollectionMutationLocalEffect
   | ChatPatchLocalEffect
   | SettingsPatchLocalEffect
   | PluginStorageLocalEffect
@@ -2310,7 +2318,7 @@ export async function touchLoadoutCommand(
 export async function createCharacterCommand(
   input: CreateCharacterCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ characterId: string }>> {
+): Promise<ServerCommandResult<{ characterId: string; selectedCharacterId: string | null }>> {
   return requestCommandJson('/characters', {
     method: 'POST',
     body: {
@@ -2318,13 +2326,15 @@ export async function createCharacterCommand(
       character: characterCreatePayload(input.character),
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readCharacterCollectionMutationLocalEffect(body, event, 'create', input.character.chaId),
   })
 }
 
 export async function createAndSelectCharacterCommand(
   input: CreateAndSelectCharacterCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ characterId: string }>> {
+): Promise<ServerCommandResult<{ characterId: string; selectedCharacterId: string | null }>> {
   return requestCommandJson('/characters/create-and-select', {
     method: 'POST',
     body: {
@@ -2333,6 +2343,8 @@ export async function createAndSelectCharacterCommand(
       lastInteraction: input.lastInteraction,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readCharacterCollectionMutationLocalEffect(body, event, 'createAndSelect', input.character.chaId),
   })
 }
 
@@ -2369,6 +2381,8 @@ export async function deleteCharacterCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readCharacterCollectionMutationLocalEffect(body, event, 'delete', input.characterId),
   })
 }
 
@@ -3864,6 +3878,53 @@ function isUniqueStringArray(value: unknown): value is string[] {
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== ''
+}
+
+function readCharacterCollectionMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  operation: CharacterCollectionMutationLocalEffect['operation'],
+  expectedCharacterId: unknown,
+): CharacterCollectionMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (!nonEmptyString(expectedCharacterId)) return undefined
+
+  const record = body as Record<string, unknown>
+  const characterId = record.characterId
+  if (!nonEmptyString(characterId) || characterId !== expectedCharacterId) return undefined
+  let selectedCharacterId: string | null
+  if (record.selectedCharacterId === null) {
+    selectedCharacterId = null
+  } else if (nonEmptyString(record.selectedCharacterId)) {
+    selectedCharacterId = record.selectedCharacterId
+  } else {
+    return undefined
+  }
+
+  const expectedType =
+    operation === 'create'
+      ? 'character.created'
+      : operation === 'createAndSelect'
+        ? 'character.createdAndSelected'
+        : 'character.deleted'
+  if (
+    event.type !== expectedType ||
+    event.resource !== 'character' ||
+    event.id !== characterId ||
+    event.parentId !== undefined
+  ) {
+    return undefined
+  }
+  if (operation === 'createAndSelect' ? selectedCharacterId !== characterId : selectedCharacterId === characterId) {
+    return undefined
+  }
+
+  return {
+    kind: 'characterCollectionMutation',
+    operation,
+    characterId,
+    selectedCharacterId,
+  }
 }
 
 function readCharacterPatchLocalEffect(

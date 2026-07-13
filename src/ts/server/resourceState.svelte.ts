@@ -86,6 +86,13 @@ export interface ServerCharacterSelectionLocalEffectPayload {
   lastInteraction: number
 }
 
+export interface ServerCharacterCollectionMutationLocalEffectPayload {
+  revision: number
+  operation: 'create' | 'createAndSelect' | 'delete'
+  characterId: string
+  selectedCharacterId: string | null
+}
+
 export interface ServerChatPatchLocalEffectPayload {
   revision: number
   characterId: string
@@ -519,6 +526,51 @@ export function applyCharactersResource(
       .map((candidate) => [candidate.chaId, 'ready']),
   )
   charactersResourceState.rowErrors = {}
+  charactersResourceState.status = 'ready'
+  charactersResourceState.error = null
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence an accepted optimistic character create/delete without replacing the
+ * live collection. Later queued list, order, or selection edits may already be
+ * visible, so this only advances revision ownership after validating that the
+ * local projection remains a normalized collection with the expected target.
+ */
+export function applyCharacterCollectionMutationLocalEffect(
+  payload: ServerCharacterCollectionMutationLocalEffectPayload,
+): boolean {
+  if ((charactersResourceState.listRevision ?? -1) >= payload.revision) return true
+  if (charactersResourceState.status !== 'ready' || !nonEmptyString(payload.characterId)) return false
+  if (payload.selectedCharacterId !== null && !nonEmptyString(payload.selectedCharacterId)) return false
+  if (
+    payload.operation === 'createAndSelect'
+      ? payload.selectedCharacterId !== payload.characterId
+      : payload.selectedCharacterId === payload.characterId
+  ) {
+    return false
+  }
+  if (!isNormalizedCharacterCollectionProjection()) return false
+
+  const targetPresent = charactersResourceState.characters.some((candidate) => candidate?.chaId === payload.characterId)
+  if (payload.operation === 'delete' ? targetPresent : !targetPresent) return false
+
+  charactersResourceState.listRevision = maxRevision(charactersResourceState.listRevision, payload.revision)
+  charactersResourceState.orderRevision = maxRevision(charactersResourceState.orderRevision, payload.revision)
+  charactersResourceState.selectionRevision = maxRevision(charactersResourceState.selectionRevision, payload.revision)
+  charactersResourceState.rowRevisions[payload.characterId] = Math.max(
+    charactersResourceState.rowRevisions[payload.characterId] ?? -1,
+    payload.revision,
+  )
+  if (payload.operation === 'delete') {
+    delete charactersResourceState.rowStatuses[payload.characterId]
+    delete charactersResourceState.rowErrors[payload.characterId]
+  } else {
+    charactersResourceState.rowStatuses[payload.characterId] = 'ready'
+    delete charactersResourceState.rowErrors[payload.characterId]
+  }
+  charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
   markResourceDatabaseChanged()
@@ -1078,6 +1130,45 @@ function shouldUseCharacterPointerResource(property: 'characterOrder' | 'current
   const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
   if (pointerRevision < 0) return false
   return settingsResourceState.fullRevision === null || pointerRevision >= settingsResourceState.fullRevision
+}
+
+function isNormalizedCharacterCollectionProjection(): boolean {
+  const characters = charactersResourceState.characters
+  const characterOrder = charactersResourceState.characterOrder
+  const currentChar = charactersResourceState.currentChar
+  if (!Array.isArray(characters) || !Array.isArray(characterOrder) || !Number.isInteger(currentChar)) return false
+  if (characters.length === 0 ? currentChar !== -1 : currentChar < -1 || currentChar >= characters.length) return false
+
+  const characterIds = new Set<string>()
+  const activeIds = new Set<string>()
+  for (const candidate of characters) {
+    const characterId = candidate?.chaId
+    if (!nonEmptyString(characterId) || characterIds.has(characterId)) return false
+    characterIds.add(characterId)
+    if (characterId !== '§temp' && !candidate.trashTime) activeIds.add(characterId)
+  }
+
+  const seenCharacterIds = new Set<string>()
+  const seenFolderIds = new Set<string>()
+  for (const entry of characterOrder) {
+    if (typeof entry === 'string') {
+      if (!activeIds.has(entry) || seenCharacterIds.has(entry)) return false
+      seenCharacterIds.add(entry)
+      continue
+    }
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false
+    if (!nonEmptyString(entry.id) || seenFolderIds.has(entry.id)) return false
+    if (typeof entry.name !== 'string' || typeof entry.color !== 'string' || !Array.isArray(entry.data)) return false
+    if (entry.data.length === 0) return false
+    if (entry.imgFile !== undefined && entry.imgFile !== null && typeof entry.imgFile !== 'string') return false
+    if (entry.img !== undefined && typeof entry.img !== 'string') return false
+    seenFolderIds.add(entry.id)
+    for (const characterId of entry.data) {
+      if (!activeIds.has(characterId) || seenCharacterIds.has(characterId)) return false
+      seenCharacterIds.add(characterId)
+    }
+  }
+  return seenCharacterIds.size === activeIds.size
 }
 
 function isOlderRevision(revision: number, current: number | null): boolean {

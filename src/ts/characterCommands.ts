@@ -666,6 +666,7 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
 
 export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
   const rollback = characterCreateRollbackFromState(character, previous, false)
+  repairCharacterOrderOptimistically({ dispatchReorder: false })
   runCharacterCommand(
     (baseRevision) =>
       createCharacterCommand({
@@ -682,6 +683,7 @@ export function dispatchCreateAndSelectCharacter(
   lastInteraction: number,
 ): void {
   const rollback = characterCreateRollbackFromState(character, previous, true)
+  repairCharacterOrderOptimistically({ dispatchReorder: false })
   runCharacterCommand(
     (baseRevision) =>
       createAndSelectCharacterCommand({
@@ -911,6 +913,8 @@ export function applyCompatibleCharacterPatch(previousCharacter: character, patc
 
 export function dispatchDeleteCharacter(characterId: string, previous: CharacterStateSnapshot): void {
   const rollback = characterDeleteRollbackFromState(characterId, previous)
+  repairCharacterOrderOptimistically({ dispatchReorder: false })
+  normalizeCurrentCharacterPointerAfterDelete(characterId)
   runCharacterCommand(
     (baseRevision) =>
       deleteCharacterCommand({
@@ -919,6 +923,26 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
       }),
     () => restoreDeletedCharacterAttempt(rollback),
   )
+}
+
+function normalizeCurrentCharacterPointerAfterDelete(characterId: string): void {
+  const characters = getDatabase().characters ?? []
+  if (characters.some((candidate) => candidate?.chaId === characterId)) return
+
+  withTrustedResourceWrite(() => {
+    const database = getDatabase() as unknown as { currentChar?: number }
+    let currentChar = database.currentChar
+    if (!Number.isInteger(currentChar)) {
+      currentChar = characters.length > 0 ? 0 : -1
+    }
+    if ((currentChar as number) >= characters.length) {
+      currentChar = characters.length > 0 ? characters.length - 1 : -1
+    }
+    if ((currentChar as number) < -1) {
+      currentChar = characters.length > 0 ? 0 : -1
+    }
+    database.currentChar = currentChar
+  })
 }
 
 export function dispatchSelectCharacter(

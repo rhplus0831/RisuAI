@@ -3952,7 +3952,10 @@ export function registerCommandRoutes(
       const body = (req.body ?? {}) as CharacterCommandBody
       const baseRevision = readBaseRevision(body)
       const character = createCharacterRecord(body.character, { assetDb: db })
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{
+        characterId: string
+        selectedCharacterId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -3964,10 +3967,13 @@ export function registerCommandRoutes(
             throw new ValidationError(`Duplicate character id: ${character.chaId}`)
           }
           characters.push(character)
-          ensureCharacterCollection(target)
+          const normalizedCharacters = ensureCharacterCollection(target)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreated, id: character.chaId },
-            extra: { characterId: character.chaId },
+            extra: {
+              characterId: character.chaId,
+              selectedCharacterId: selectedCharacterId(target, normalizedCharacters),
+            },
           }
         },
       })
@@ -3991,7 +3997,10 @@ export function registerCommandRoutes(
       const character = createCharacterRecord(body.character, { assetDb: db })
       const lastInteraction = readSelectionLastInteraction(body.lastInteraction)
       character.lastInteraction = lastInteraction
-      const result = applyMessageFreeJsonCommandMutation<{ characterId: string }>({
+      const result = applyMessageFreeJsonCommandMutation<{
+        characterId: string
+        selectedCharacterId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -4007,7 +4016,10 @@ export function registerCommandRoutes(
           target.currentChar = requireCharacterIndex(normalizedCharacters, character.chaId)
           return {
             event: { ...COMMAND_EVENT_CATALOG.characterCreatedAndSelected, id: character.chaId },
-            extra: { characterId: character.chaId },
+            extra: {
+              characterId: character.chaId,
+              selectedCharacterId: selectedCharacterId(target, normalizedCharacters),
+            },
           }
         },
       })

@@ -47,6 +47,7 @@ import { enableChatCompletionPushNotifications } from './server/pushNotification
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
 import {
+  applyCharacterCollectionMutationLocalEffect,
   applyCharacterPatchLocalEffect,
   applyCharacterOrderLocalEffect,
   applyCharacterRowMutationLocalEffect,
@@ -410,6 +411,30 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           lastInteraction: localEffect.lastInteraction,
         }),
       )
+    case 'characterCollectionMutation': {
+      const expectedType =
+        localEffect.operation === 'create'
+          ? 'character.created'
+          : localEffect.operation === 'createAndSelect'
+            ? 'character.createdAndSelected'
+            : 'character.deleted'
+      if (
+        event.type !== expectedType ||
+        event.resource !== 'character' ||
+        event.id !== localEffect.characterId ||
+        event.parentId !== undefined
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyCharacterCollectionMutationLocalEffect({
+          revision: event.revision,
+          operation: localEffect.operation,
+          characterId: localEffect.characterId,
+          selectedCharacterId: localEffect.selectedCharacterId,
+        }),
+      )
+    }
     case 'chatPatch':
       if (
         event.resource !== 'characterRow' ||

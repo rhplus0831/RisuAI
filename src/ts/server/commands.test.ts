@@ -2016,8 +2016,10 @@ describe('server command API adapter', () => {
         type: url.endsWith('/create-and-select') ? 'character.createdAndSelected' : 'character.created',
         revision: url.endsWith('/create-and-select') ? 3 : 2,
         resource: 'character',
+        id: url.endsWith('/create-and-select') ? 'char-selected' : 'char-created',
       },
       characterId: url.endsWith('/create-and-select') ? 'char-selected' : 'char-created',
+      selectedCharacterId: url.endsWith('/create-and-select') ? 'char-selected' : null,
     }))
     vi.stubGlobal('fetch', commandFetch.fetch)
 
@@ -2082,6 +2084,80 @@ describe('server command API adapter', () => {
     expect(selectCharacter.chats).toEqual([selectChat])
   })
 
+  it('exposes exact character collection acknowledgements as compact local effects', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url, init) => {
+      if (url.endsWith('/create-and-select')) {
+        return {
+          revision: 3,
+          event: {
+            type: 'character.createdAndSelected',
+            revision: 3,
+            resource: 'character',
+            id: 'char-selected',
+          },
+          characterId: 'char-selected',
+          selectedCharacterId: 'char-selected',
+        }
+      }
+      if (init.method === 'DELETE') {
+        return {
+          revision: 4,
+          event: { type: 'character.deleted', revision: 4, resource: 'character', id: 'char-deleted' },
+          characterId: 'char-deleted',
+          selectedCharacterId: 'char-created',
+        }
+      }
+      const characterId = (JSON.parse(String(init.body)) as { character: { chaId: string } }).character.chaId
+      return {
+        revision: characterId === 'char-mismatched' ? 5 : 2,
+        event: {
+          type: 'character.created',
+          revision: characterId === 'char-mismatched' ? 5 : 2,
+          resource: 'character',
+          id: characterId,
+          ...(characterId === 'char-mismatched' ? { parentId: 'unexpected-parent' } : {}),
+        },
+        characterId,
+        selectedCharacterId: null,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createCharacterCommand({ baseRevision: 1, character: { chaId: 'char-created' } })
+    await createAndSelectCharacterCommand({
+      baseRevision: 2,
+      character: { chaId: 'char-selected' },
+      lastInteraction: 100,
+    })
+    await deleteCharacterCommand({ baseRevision: 3, characterId: 'char-deleted' })
+    await createCharacterCommand({ baseRevision: 4, character: { chaId: 'char-mismatched' } })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'characterCollectionMutation',
+        operation: 'create',
+        characterId: 'char-created',
+        selectedCharacterId: null,
+      },
+      {
+        kind: 'characterCollectionMutation',
+        operation: 'createAndSelect',
+        characterId: 'char-selected',
+        selectedCharacterId: 'char-selected',
+      },
+      {
+        kind: 'characterCollectionMutation',
+        operation: 'delete',
+        characterId: 'char-deleted',
+        selectedCharacterId: 'char-created',
+      },
+    ])
+  })
+
   it('dispatches character commands through typed helpers', async () => {
     const commandFetch = makeCommandFetch((url) => {
       if (url.endsWith('/characters/reorder')) {
@@ -2113,6 +2189,7 @@ describe('server command API adapter', () => {
             id: 'char-c',
           },
           characterId: 'char-c',
+          selectedCharacterId: 'char-c',
         }
       }
       if (url.endsWith('/characters/char-b')) {
@@ -2144,6 +2221,7 @@ describe('server command API adapter', () => {
         revision: 2,
         event: { type: 'character.created', revision: 2, resource: 'character', id: 'char-b' },
         characterId: 'char-b',
+        selectedCharacterId: 'char-a',
       }
     })
     vi.stubGlobal('fetch', commandFetch.fetch)

@@ -634,6 +634,163 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('acknowledges contiguous optimistic character collection mutations without a collection read', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
+      getDatabase().characters.push({ chaId: 'char-d', name: 'Dara', chats: [] } as never)
+      getDatabase().characters.splice(1, 1)
+      getDatabase().characterOrder = ['char-d', 'char-c', 'char-a']
+      ;(getDatabase() as unknown as { currentChar: number }).currentChar = 0
+    })
+    selectedCharID.set(0)
+    const created = {
+      type: 'character.created',
+      revision: 6,
+      resource: 'character',
+      id: 'char-c',
+    }
+    const createdAndSelected = {
+      type: 'character.createdAndSelected',
+      revision: 7,
+      resource: 'character',
+      id: 'char-d',
+    }
+    const deleted = {
+      type: 'character.deleted',
+      revision: 8,
+      resource: 'character',
+      id: 'char-b',
+    }
+
+    await commandApi.reconciler?.(
+      deleted,
+      [created, createdAndSelected, deleted],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterCollectionMutation',
+            operation: 'create',
+            characterId: 'char-c',
+            selectedCharacterId: 'char-b',
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'characterCollectionMutation',
+            operation: 'createAndSelect',
+            characterId: 'char-d',
+            selectedCharacterId: 'char-d',
+          },
+        ],
+        [
+          8,
+          {
+            kind: 'characterCollectionMutation',
+            operation: 'delete',
+            characterId: 'char-b',
+            selectedCharacterId: 'char-d',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().characters.map((candidate) => candidate.chaId)).toEqual(['char-a', 'char-c', 'char-d'])
+    expect(getDatabase().characterOrder).toEqual(['char-d', 'char-c', 'char-a'])
+    expect((getDatabase() as unknown as { currentChar: number }).currentChar).toBe(0)
+    expect(get(selectedCharID)).toBe(0)
+    expect(peekAppliedServerResourceRevision()).toBe(8)
+  })
+
+  it('keeps unsafe character collection effects on authoritative reconciliation', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
+    })
+    const event = {
+      type: 'character.created',
+      revision: 6,
+      resource: 'character',
+      id: 'char-c',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterCollectionMutation',
+            operation: 'create',
+            characterId: 'char-c',
+            selectedCharacterId: 'char-b',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it('keeps foreign character collection events on authoritative reconciliation', async () => {
+    await loadWebInitialDatabase()
+    const event = {
+      type: 'character.created',
+      revision: 6,
+      resource: 'character',
+      id: 'char-foreign',
+    }
+
+    await commandApi.reconciler?.(event, [event], new Map())
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it('does not apply a character collection effect across a revision gap', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters.push({ chaId: 'char-c', name: 'Cora', chats: [] } as never)
+      getDatabase().characterOrder = ['char-a', 'char-b', 'char-c']
+    })
+    const event = {
+      type: 'character.created',
+      revision: 7,
+      resource: 'character',
+      id: 'char-c',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          7,
+          {
+            kind: 'characterCollectionMutation',
+            operation: 'create',
+            characterId: 'char-c',
+            selectedCharacterId: 'char-b',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('fences contiguous nested character and order writes without resource reads', async () => {
     await loadWebInitialDatabase()
     const rowEvent = {

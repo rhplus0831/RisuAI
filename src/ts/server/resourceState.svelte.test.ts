@@ -6,6 +6,7 @@ import {
 } from './chatGenerationSettingsResourceGuard'
 import {
   SERVER_COLLECTION_NAMES,
+  applyCharacterCollectionMutationLocalEffect,
   applyCharacterPatchLocalEffect,
   applyCharacterOrderLocalEffect,
   applyCharacterRowMutationLocalEffect,
@@ -364,6 +365,126 @@ describe('resource-scoped database state', () => {
     expect(getResourceDatabase().characters[0].name).toBe('Newer queued edit')
     expect(charactersResourceState.rowRevisions).toEqual({ 'char-a': 4, 'char-b': 3 })
     expect(charactersResourceState.revision).toBe(4)
+  })
+
+  it('fences optimistic character collection mutations without replacing newer list, order, or selection edits', () => {
+    applyCharactersResource({
+      revision: 3,
+      characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characters.push(metadataCharacter('char-c', 'Cora'))
+      getResourceDatabase().characters.push(metadataCharacter('char-d', 'Dara'))
+      getResourceDatabase().characters.splice(1, 1)
+      getResourceDatabase().characterOrder = ['char-d', 'char-c', 'char-a']
+      ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 0
+    })
+
+    expect(
+      applyCharacterCollectionMutationLocalEffect({
+        revision: 4,
+        operation: 'create',
+        characterId: 'char-c',
+        selectedCharacterId: 'char-b',
+      }),
+    ).toBe(true)
+    expect(
+      applyCharacterCollectionMutationLocalEffect({
+        revision: 5,
+        operation: 'createAndSelect',
+        characterId: 'char-d',
+        selectedCharacterId: 'char-d',
+      }),
+    ).toBe(true)
+    expect(
+      applyCharacterCollectionMutationLocalEffect({
+        revision: 6,
+        operation: 'delete',
+        characterId: 'char-b',
+        selectedCharacterId: 'char-d',
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().characters.map((candidate) => candidate.chaId)).toEqual(['char-a', 'char-c', 'char-d'])
+    expect(getResourceDatabase().characterOrder).toEqual(['char-d', 'char-c', 'char-a'])
+    expect((getResourceDatabase() as unknown as { currentChar: number }).currentChar).toBe(0)
+    expect(charactersResourceState.listRevision).toBe(6)
+    expect(charactersResourceState.orderRevision).toBe(6)
+    expect(charactersResourceState.selectionRevision).toBe(6)
+    expect(charactersResourceState.rowRevisions).toEqual({
+      'char-a': 3,
+      'char-b': 6,
+      'char-c': 4,
+      'char-d': 5,
+    })
+  })
+
+  it('acknowledges a non-selecting first character create while retaining an empty selection', () => {
+    applyCharactersResource({
+      revision: 1,
+      characters: [],
+      characterOrder: [],
+      currentChar: -1,
+    })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characters.push(metadataCharacter('char-first', 'First'))
+      getResourceDatabase().characterOrder = ['char-first']
+    })
+
+    expect(
+      applyCharacterCollectionMutationLocalEffect({
+        revision: 2,
+        operation: 'create',
+        characterId: 'char-first',
+        selectedCharacterId: null,
+      }),
+    ).toBe(true)
+    expect((getResourceDatabase() as unknown as { currentChar: number }).currentChar).toBe(-1)
+    expect(charactersResourceState.listRevision).toBe(2)
+    expect(charactersResourceState.selectionRevision).toBe(2)
+  })
+
+  it('rejects character collection acknowledgements when the optimistic projection is unsafe', () => {
+    applyCharactersResource({
+      revision: 3,
+      characters: [metadataCharacter('char-a', 'Ada')],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characters.push(metadataCharacter('char-b', 'Bea'))
+    })
+    const effect = {
+      revision: 4,
+      operation: 'create' as const,
+      characterId: 'char-b',
+      selectedCharacterId: 'char-a',
+    }
+
+    expect(applyCharacterCollectionMutationLocalEffect(effect)).toBe(false)
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().characterOrder = ['char-a', 'char-b']
+      ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 9
+    })
+    expect(applyCharacterCollectionMutationLocalEffect(effect)).toBe(false)
+    withResourceDatabaseWrite(() => {
+      ;(getResourceDatabase() as unknown as { currentChar: number }).currentChar = 0
+    })
+    expect(
+      applyCharacterCollectionMutationLocalEffect({
+        ...effect,
+        operation: 'delete',
+      }),
+    ).toBe(false)
+    expect(
+      applyCharacterCollectionMutationLocalEffect({
+        ...effect,
+        characterId: 'char-missing',
+      }),
+    ).toBe(false)
+    expect(charactersResourceState.listRevision).toBe(3)
   })
 
   it('acknowledges a character patch after a newer optimistic delete removed the row', () => {

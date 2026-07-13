@@ -396,6 +396,30 @@ describe('character create command payloads', () => {
 })
 
 describe('character list create/delete rollback', () => {
+  it('normalizes character order before dispatching an optimistic create', async () => {
+    const calls = stubCharacterCollectionCommandFetch()
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-created', name: 'Created', chats: [] },
+      ],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    } as any
+    setResourceWriteGuardEnabled(true)
+    const previous = {
+      characters: [{ chaId: 'char-a', name: 'A', chats: [] }],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+      selectedCharID: 0,
+    } as any
+
+    dispatchCreateCharacter(testDatabaseState.db.characters[1], previous)
+
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-created'])
+    await waitForCallCount(calls, 2)
+  })
+
   it('failed optimistic create removes only unchanged attempted row and preserves sibling edits, selection changes, and folder metadata/order', async () => {
     const calls = stubCharacterCollectionCommandFetch({
       failCreate: true,
@@ -567,6 +591,30 @@ describe('character list create/delete rollback', () => {
     ])
     expect(get(selectedCharID)).toBe(1)
     expect((testDatabaseState.db as any).currentChar).toBe(1)
+  })
+
+  it('normalizes an out-of-range current character pointer during optimistic deletion', async () => {
+    const calls = stubCharacterCollectionCommandFetch()
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B deleted', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 1,
+    } as any
+    selectedCharID.set(1)
+    setResourceWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.splice(1, 1)
+    })
+    dispatchDeleteCharacter('char-b', previous)
+
+    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(testDatabaseState.db.characterOrder).toEqual(['char-a'])
+    await waitForCallCount(calls, 2)
   })
 
   it('failed permanent delete preserves a newer selection of the shifted next character after rollback', async () => {

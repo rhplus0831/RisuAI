@@ -5076,6 +5076,7 @@ describe('Phase 9-3a character commands', () => {
         id: 'char-b',
       },
       characterId: 'char-b',
+      selectedCharacterId: 'char-a',
     })
 
     const updated = await harness.app.inject({
@@ -5276,6 +5277,7 @@ describe('Phase 9-3a character commands', () => {
         id: 'char-b',
       },
       characterId: 'char-b',
+      selectedCharacterId: 'char-b',
     })
     expect(loadPersistedFromDir(harness.dataDir).database).toMatchObject({
       currentChar: 1,
