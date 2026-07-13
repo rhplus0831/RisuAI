@@ -28,6 +28,9 @@ import {
   hasPromptTemplateOwnerProjectionEpochChanged,
   invalidatePromptTemplateHydration,
   isPromptTemplateHydrated,
+  isPromptTemplateOwnerAcknowledgementTainted,
+  markPromptTemplateOwnerAcknowledgementTainted,
+  markPromptTemplateProjectionApplied,
   peekPromptTemplateOwnerRevision,
   resetPromptTemplateHydration,
 } from './promptTemplateHydration'
@@ -70,6 +73,30 @@ describe('promptTemplate hydration', () => {
     expect(testDatabaseState.db.promptTemplate).toEqual([item('p-1', 'settings template')])
     expect(isPromptTemplateHydrated()).toBe(true)
     expect(peekCachedServerCommandRevision()).toBe(7)
+  })
+
+  it('advances an acknowledged owner revision without advancing its projection epoch', async () => {
+    testDatabaseState.db.promptTemplate = [item('p-1', 'optimistic')]
+
+    await expect(ensurePromptTemplateHydrated({ minimumRevision: 3 })).resolves.toBe(true)
+    const ownerEpoch = capturePromptTemplateOwnerProjectionEpoch(null)
+    markPromptTemplateProjectionApplied(null, 4, { advanceProjectionEpoch: false })
+
+    expect(peekPromptTemplateOwnerRevision(null)).toBe(4)
+    expect(hasPromptTemplateOwnerProjectionEpochChanged(null, ownerEpoch)).toBe(false)
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('p-1', 'optimistic')])
+  })
+
+  it('keeps rollback taint through local acknowledgements and clears it on an authoritative projection', async () => {
+    testDatabaseState.db.promptTemplate = [item('p-1', 'optimistic')]
+    await expect(ensurePromptTemplateHydrated({ minimumRevision: 3 })).resolves.toBe(true)
+
+    markPromptTemplateOwnerAcknowledgementTainted(null)
+    markPromptTemplateProjectionApplied(null, 4, { advanceProjectionEpoch: false })
+    expect(isPromptTemplateOwnerAcknowledgementTainted(null)).toBe(true)
+
+    markPromptTemplateProjectionApplied(null, 5)
+    expect(isPromptTemplateOwnerAcknowledgementTainted(null)).toBe(false)
   })
 
   it('does not invent a top-level template when settings omit it', async () => {

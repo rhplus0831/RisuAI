@@ -124,6 +124,32 @@ export interface ModuleEnabledLocalEffect {
   enabled: boolean
 }
 
+export type PromptItemMutationOperation = 'create' | 'update' | 'delete' | 'reorder' | 'enable'
+
+export type PromptTemplateOwnerStateSnapshot = { enabled: true; items: PromptItemSnapshot[] } | { enabled: false }
+
+/**
+ * Client-only proof captured around one optimistic prompt-item write. It is
+ * deliberately omitted from the command request body.
+ */
+export interface PromptItemOptimisticAcknowledgement {
+  collectionProjectionEpoch: number
+  ownerProjectionEpoch: number
+  ownerState: PromptTemplateOwnerStateSnapshot
+}
+
+export interface PromptItemMutationLocalEffect {
+  kind: 'promptItemMutation'
+  operation: PromptItemMutationOperation
+  promptPresetId: string | null
+  itemId?: string
+  itemIds?: string[]
+  enabled?: boolean
+  collectionProjectionEpoch: number
+  ownerProjectionEpoch: number
+  ownerState: PromptTemplateOwnerStateSnapshot
+}
+
 export interface LorebookMutationLocalEffect {
   kind: 'lorebookMutation'
   scope: 'global' | 'character' | 'chat'
@@ -201,6 +227,7 @@ export type ServerCommandLocalEffect =
   | PluginProviderLocalEffect
   | ModuleCollectionMutationLocalEffect
   | ModuleEnabledLocalEffect
+  | PromptItemMutationLocalEffect
   | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
@@ -615,13 +642,17 @@ export interface PatchPromptSettingsCommandInput {
   patch: SettingsPatch
 }
 
-export interface CreatePromptItemCommandInput {
+interface PromptItemOptimisticCommandInput {
+  optimisticAcknowledgement?: PromptItemOptimisticAcknowledgement
+}
+
+export interface CreatePromptItemCommandInput extends PromptItemOptimisticCommandInput {
   baseRevision: number
   promptPresetId?: string
   promptItem: PromptItemSnapshot
 }
 
-export interface UpdatePromptItemCommandInput {
+export interface UpdatePromptItemCommandInput extends PromptItemOptimisticCommandInput {
   baseRevision: number
   promptPresetId?: string
   itemId: string
@@ -629,19 +660,19 @@ export interface UpdatePromptItemCommandInput {
   deleteKeys?: string[]
 }
 
-export interface DeletePromptItemCommandInput {
+export interface DeletePromptItemCommandInput extends PromptItemOptimisticCommandInput {
   baseRevision: number
   promptPresetId?: string
   itemId: string
 }
 
-export interface ReorderPromptItemsCommandInput {
+export interface ReorderPromptItemsCommandInput extends PromptItemOptimisticCommandInput {
   baseRevision: number
   promptPresetId?: string
   itemIds: string[]
 }
 
-export interface EnablePromptItemsCommandInput {
+export interface EnablePromptItemsCommandInput extends PromptItemOptimisticCommandInput {
   baseRevision: number
   promptPresetId?: string
   enabled: boolean
@@ -2192,6 +2223,14 @@ export async function createPromptItemCommand(
       promptItem: input.promptItem,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPromptItemMutationLocalEffect(body, event, {
+        operation: 'create',
+        promptPresetId: input.promptPresetId,
+        itemId: input.promptItem.id,
+        promptItem: input.promptItem,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -2210,6 +2249,15 @@ export async function updatePromptItemCommand(
     },
     signal,
     keepalive,
+    readLocalEffect: (body, event) =>
+      readPromptItemMutationLocalEffect(body, event, {
+        operation: 'update',
+        promptPresetId: input.promptPresetId,
+        itemId: input.itemId,
+        patch: input.patch,
+        deleteKeys: input.deleteKeys,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -2224,6 +2272,13 @@ export async function deletePromptItemCommand(
       ...(input.promptPresetId ? { promptPresetId: input.promptPresetId } : {}),
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPromptItemMutationLocalEffect(body, event, {
+        operation: 'delete',
+        promptPresetId: input.promptPresetId,
+        itemId: input.itemId,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -2239,6 +2294,13 @@ export async function reorderPromptItemsCommand(
       itemIds: input.itemIds,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPromptItemMutationLocalEffect(body, event, {
+        operation: 'reorder',
+        promptPresetId: input.promptPresetId,
+        itemIds: input.itemIds,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -2254,6 +2316,13 @@ export async function enablePromptItemsCommand(
       enabled: input.enabled,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPromptItemMutationLocalEffect(body, event, {
+        operation: 'enable',
+        promptPresetId: input.promptPresetId,
+        enabled: input.enabled,
+        acknowledgement: input.optimisticAcknowledgement,
+      }),
   })
 }
 
@@ -4218,6 +4287,190 @@ function readSettingsPatchLocalEffect(
     attemptedPatch: cloneJsonValue(attemptedPatch),
     settings: canonicalSettings,
   }
+}
+
+interface ReadPromptItemMutationLocalEffectOptions {
+  operation: PromptItemMutationOperation
+  promptPresetId?: unknown
+  itemId?: unknown
+  itemIds?: unknown
+  promptItem?: unknown
+  patch?: unknown
+  deleteKeys?: unknown
+  enabled?: unknown
+  acknowledgement?: PromptItemOptimisticAcknowledgement
+}
+
+function readPromptItemMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadPromptItemMutationLocalEffectOptions,
+): PromptItemMutationLocalEffect | undefined {
+  const acknowledgement = options.acknowledgement
+  if (!acknowledgement || !body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  let promptPresetId: string | null = null
+  if (options.promptPresetId !== undefined) {
+    if (!nonEmptyString(options.promptPresetId)) return undefined
+    promptPresetId = options.promptPresetId
+  }
+  if (
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isProjectionEpoch(acknowledgement.ownerProjectionEpoch) ||
+    !isCanonicalPromptTemplateOwnerState(acknowledgement.ownerState)
+  ) {
+    return undefined
+  }
+
+  const expectedType = {
+    create: 'prompt.item.created',
+    update: 'prompt.item.updated',
+    delete: 'prompt.item.deleted',
+    reorder: 'prompt.item.reordered',
+    enable: 'prompt.item.enabled',
+  }[options.operation]
+  const record = body as Record<string, unknown>
+  if (
+    record.revision !== event.revision ||
+    event.type !== expectedType ||
+    event.resource !== 'promptItem' ||
+    event.parentId !== (promptPresetId ?? undefined)
+  ) {
+    return undefined
+  }
+
+  const ownerItems = acknowledgement.ownerState.enabled ? acknowledgement.ownerState.items : null
+  const baseEffect = {
+    kind: 'promptItemMutation' as const,
+    operation: options.operation,
+    promptPresetId,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    ownerProjectionEpoch: acknowledgement.ownerProjectionEpoch,
+    ownerState: cloneJsonValue(acknowledgement.ownerState),
+  }
+
+  if (options.operation === 'create') {
+    if (
+      !nonEmptyString(options.itemId) ||
+      !isCanonicalPromptItem(options.promptItem) ||
+      options.promptItem.id !== options.itemId ||
+      record.itemId !== options.itemId ||
+      event.id !== options.itemId ||
+      !ownerItems
+    ) {
+      return undefined
+    }
+    const finalItem = ownerItems.find((item) => item.id === options.itemId)
+    if (!finalItem || !isJsonValueEqual(finalItem, options.promptItem)) return undefined
+    return { ...baseEffect, itemId: options.itemId }
+  }
+
+  if (options.operation === 'update') {
+    if (
+      !nonEmptyString(options.itemId) ||
+      !isCanonicalPromptItemPatch(options.patch, options.deleteKeys) ||
+      record.itemId !== options.itemId ||
+      event.id !== options.itemId ||
+      !ownerItems
+    ) {
+      return undefined
+    }
+    const finalItem = ownerItems.find((item) => item.id === options.itemId)
+    if (!finalItem || !promptItemMatchesSparseUpdate(finalItem, options.patch, options.deleteKeys)) return undefined
+    return { ...baseEffect, itemId: options.itemId }
+  }
+
+  if (options.operation === 'delete') {
+    if (
+      !nonEmptyString(options.itemId) ||
+      record.itemId !== options.itemId ||
+      event.id !== options.itemId ||
+      !ownerItems ||
+      ownerItems.some((item) => item.id === options.itemId)
+    ) {
+      return undefined
+    }
+    return { ...baseEffect, itemId: options.itemId }
+  }
+
+  if (options.operation === 'reorder') {
+    if (
+      event.id !== undefined ||
+      !isUniqueStringArray(options.itemIds) ||
+      !ownerItems ||
+      !isJsonValueEqual(
+        ownerItems.map((item) => item.id),
+        options.itemIds,
+      )
+    ) {
+      return undefined
+    }
+    return { ...baseEffect, itemIds: [...options.itemIds] }
+  }
+
+  if (
+    event.id !== undefined ||
+    typeof options.enabled !== 'boolean' ||
+    typeof record.enabled !== 'boolean' ||
+    record.enabled !== options.enabled ||
+    acknowledgement.ownerState.enabled !== options.enabled
+  ) {
+    return undefined
+  }
+  return { ...baseEffect, enabled: options.enabled }
+}
+
+function isCanonicalPromptTemplateOwnerState(value: unknown): value is PromptTemplateOwnerStateSnapshot {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  if (record.enabled === false) {
+    return Object.keys(record).length === 1
+  }
+  return record.enabled === true && Object.keys(record).length === 2 && isCanonicalPromptItemArray(record.items)
+}
+
+function isCanonicalPromptItemArray(value: unknown): value is PromptItemSnapshot[] {
+  if (!Array.isArray(value)) return false
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isCanonicalPromptItem(item) || seen.has(item.id)) return false
+    seen.add(item.id)
+  }
+  return true
+}
+
+function isCanonicalPromptItem(value: unknown): value is PromptItemSnapshot & { id: string } {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    isJsonValue(value) &&
+    nonEmptyString((value as PromptItemSnapshot).id)
+  )
+}
+
+function isCanonicalPromptItemPatch(patch: unknown, deleteKeys: unknown): patch is PromptItemSnapshot {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch) || !isJsonValue(patch)) return false
+  const patchKeys = Object.keys(patch)
+  const normalizedDeleteKeys = deleteKeys === undefined ? [] : deleteKeys
+  if (
+    !isUniqueStringArray(normalizedDeleteKeys) ||
+    patchKeys.some((key) => key.trim() === '' || key === 'id') ||
+    normalizedDeleteKeys.some((key) => key === 'id' || Object.prototype.hasOwnProperty.call(patch, key))
+  ) {
+    return false
+  }
+  return patchKeys.length > 0 || normalizedDeleteKeys.length > 0
+}
+
+function promptItemMatchesSparseUpdate(finalItem: PromptItemSnapshot, patch: unknown, deleteKeys: unknown): boolean {
+  const patchRecord = patch as Record<string, unknown>
+  for (const [key, value] of Object.entries(patchRecord)) {
+    if (!isJsonValueEqual(finalItem[key], value)) return false
+  }
+  for (const key of (deleteKeys === undefined ? [] : deleteKeys) as string[]) {
+    if (Object.prototype.hasOwnProperty.call(finalItem, key)) return false
+  }
+  return true
 }
 
 function readPluginStorageLocalEffect(

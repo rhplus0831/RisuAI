@@ -46,10 +46,13 @@ const commandMocks = vi.hoisted(() => ({
       return { status: 'ok', revision: 1 }
     },
   ),
-  updatePromptItemCommand: vi.fn(async (args: Record<string, unknown>) => ({
-    kind: 'updatePromptItem',
-    ...args,
-  })),
+  updatePromptItemCommand: vi.fn(async (args: Record<string, unknown>) => {
+    const { optimisticAcknowledgement: _optimisticAcknowledgement, ...request } = args
+    return {
+      kind: 'updatePromptItem',
+      ...request,
+    }
+  }),
   createPromptItemCommand: vi.fn(async (args: Record<string, unknown>) => ({
     kind: 'createPromptItem',
     ...args,
@@ -81,6 +84,8 @@ const hydrationState = vi.hoisted(() => {
   let ownerId: string | null = null
   let hydratedOwnerId: string | null | undefined = undefined
   const subscribers = new Set<(value: boolean) => void>()
+  const ownerEpochs = new Map<string | null, number>()
+  const taintedOwners = new Set<string | null>()
   return {
     ensure: vi.fn(
       async (options?: { promptPresetId?: string | null }) =>
@@ -91,6 +96,13 @@ const hydrationState = vi.hoisted(() => {
     isHydrated: (promptPresetId: string | null = ownerId) =>
       hydrated && (hydratedOwnerId === undefined || hydratedOwnerId === promptPresetId),
     currentOwner: () => ownerId,
+    captureOwnerEpoch: (owner: string | null = ownerId) => ownerEpochs.get(owner) ?? 0,
+    hasOwnerEpochChanged: (owner: string | null, epoch: number) => (ownerEpochs.get(owner) ?? 0) !== epoch,
+    advanceOwnerEpoch: (owner: string | null) => ownerEpochs.set(owner, (ownerEpochs.get(owner) ?? 0) + 1),
+    resetOwnerEpochs: () => ownerEpochs.clear(),
+    isTainted: (owner: string | null) => taintedOwners.has(owner),
+    markTainted: (owner: string | null) => taintedOwners.add(owner),
+    resetTaints: () => taintedOwners.clear(),
     setOwner: (value: string | null) => {
       ownerId = value
     },
@@ -137,33 +149,41 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
 }))
 
 vi.mock('./promptTemplateHydration', () => ({
+  capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
   currentPromptTemplateOwnerId: hydrationState.currentOwner,
+  hasPromptTemplateOwnerProjectionEpochChanged: hydrationState.hasOwnerEpochChanged,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
+  markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
   promptTemplateHydratedStore: hydrationState.store,
 }))
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
+  capturePromptTemplateOwnerProjectionEpoch: hydrationState.captureOwnerEpoch,
   currentPromptTemplateOwnerId: hydrationState.currentOwner,
+  hasPromptTemplateOwnerProjectionEpochChanged: hydrationState.hasOwnerEpochChanged,
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
+  markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
   promptTemplateHydratedStore: hydrationState.store,
 }))
 
 import type { PromptItem, PromptSettings as PromptSettingsFixture } from '../process/prompt'
 import type { Database } from '../storage/database.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
-import { getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import { applyCollectionsResource, getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
 import {
   createPromptItemCommand,
   deletePromptItemCommand,
   enablePromptItemsCommand,
   reorderPromptItemsCommand,
+  type PromptItemOptimisticAcknowledgement,
   type PromptItemSnapshot,
 } from './commands'
 import { queuePromptItemProjectionUpdate as queuePromptItemProjectionUpdateForPromptSettings } from 'src/ts/server/promptTemplateBridge.svelte'
 import {
   applyPromptItemProjectionWrite,
+  capturePromptTemplateOwnerMutationFence,
   cloneJsonValue,
   flushPendingPromptTemplatePatches,
   queuePromptItemProjectionUpdate,
@@ -350,6 +370,8 @@ beforeEach(() => {
   commandMocks.runServerCommand.mockClear()
   hydrationState.setHydrated(true)
   hydrationState.setOwner(null)
+  hydrationState.resetOwnerEpochs()
+  hydrationState.resetTaints()
   hydrationState.ensure.mockClear()
   hydrationState.ensure.mockImplementation(async (options?: { promptPresetId?: string | null }) =>
     hydrationState.isHydrated(
@@ -685,6 +707,35 @@ describe('prompt template collection rollback guards', () => {
     ])
   })
 
+  it('failed preset create also restores the canonical preset projection', () => {
+    hydrationState.setOwner('preset-a')
+    let draftItems = [item('p-0', 'first'), item('created', 'new')]
+    resourceDatabase.current = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', promptTemplate: cloneJsonValue(draftItems) }],
+      promptTemplate: cloneJsonValue(draftItems),
+    }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    rollbackFailedPromptTemplateItemCreate({
+      ownerId: 'preset-a',
+      binding,
+      itemId: 'created',
+      attemptedItem: item('created', 'new'),
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0'])
+    expect((getResourceDatabase().promptTemplate as PromptItem[]).map((promptItem) => promptItem.id)).toEqual(['p-0'])
+    expect(
+      (getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[]).map((promptItem) => promptItem.id),
+    ).toEqual(['p-0'])
+  })
+
   it('failed create skips rollback when the created row was edited after dispatch', () => {
     let draftItems = [item('p-0', 'first'), item('created', 'edited after dispatch')]
     resourceDatabase.current = { promptTemplate: cloneJsonValue(draftItems) }
@@ -843,6 +894,25 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(commandState.commands).toHaveLength(1)
   })
 
+  it('keeps whole-owner acknowledgement cloning off the per-keystroke queue path', () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    draftItems[0] = item('p-0', 'edited')
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    const instrumented = withCloneInstrumentation(() =>
+      queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500),
+    )
+
+    expect(instrumented.maxClonedSize).toBeLessThan(BIG.length)
+    resetPromptTemplateSelectionDirtyState()
+  })
+
   it('drops a debounced prompt item update when the selected prompt preset owner changes', async () => {
     seedTemplate()
     hydrationState.setOwner('prompt-a')
@@ -893,6 +963,54 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(textOf((getResourceDatabase().promptTemplate as PromptItem[])[0])).toBe('small')
   })
 
+  it('rolls back only failed update fields while preserving a newer different-field preset edit', async () => {
+    hydrationState.setOwner('preset-a')
+    const original = item('p-0', 'server text')
+    resourceDatabase.current = {
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', promptTemplate: [cloneJsonValue(original)] }],
+      promptTemplate: [cloneJsonValue(original)],
+    }
+    let draftItems = [cloneJsonValue(original)]
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = promptItemFixture({ ...draftItems[0], text: 'failed text' })
+    queuePromptItemProjectionUpdate(binding, 'p-0', original, 500, 'preset-a')
+    await vi.advanceTimersByTimeAsync(500)
+
+    const firstAttempt = cloneJsonValue(draftItems[0])
+    draftItems[0] = promptItemFixture({ ...draftItems[0], role: 'user' })
+    getResourceDatabase().promptPresets[0].promptTemplate = cloneJsonValue(draftItems) as never
+    queuePromptItemProjectionUpdate(binding, 'p-0', firstAttempt, 500, 'preset-a')
+    commandState.commands[0].rollback?.()
+
+    expect(draftItems[0]).toMatchObject({ text: 'server text', role: 'user' })
+    expect((getResourceDatabase().promptTemplate as PromptItem[])[0]).toMatchObject({
+      text: 'server text',
+      role: 'user',
+    })
+    expect((getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[])[0]).toMatchObject({
+      text: 'server text',
+      role: 'user',
+    })
+    expect(hydrationState.isTainted('preset-a')).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(500)
+    expect(commandState.commands[1].built).toMatchObject({ patch: { role: 'user' } })
+    const secondInput = commandMocks.updatePromptItemCommand.mock.calls[1][0] as {
+      optimisticAcknowledgement: PromptItemOptimisticAcknowledgement
+    }
+    expect(secondInput.optimisticAcknowledgement.ownerState).toEqual({
+      enabled: true,
+      items: [expect.objectContaining({ text: 'server text', role: 'user' })],
+    })
+  })
+
   it('omits very large unchanged fields from a debounced prompt item update', async () => {
     const previous = promptItemFixture({
       ...item('p-0', 'small'),
@@ -919,6 +1037,84 @@ describe('flushPendingPromptTemplatePatches', () => {
       patch: { text: 'edited' },
     })
     expect(snapshotJson(commandState.commands[0].built).length).toBeLessThan(BIG.length)
+  })
+
+  it('captures the exact post-write prompt owner state as client-only acknowledgement metadata', async () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    draftItems[0] = item('p-0', 'accepted optimistic edit')
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+    const projectionFence = capturePromptTemplateOwnerMutationFence(null)
+
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, null, projectionFence)
+    await vi.advanceTimersByTimeAsync(500)
+
+    const commandInput = commandMocks.updatePromptItemCommand.mock.calls[0][0]
+    expect(commandInput).toMatchObject({
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: projectionFence.collectionProjectionEpoch,
+        ownerProjectionEpoch: projectionFence.ownerProjectionEpoch,
+        ownerState: { enabled: true },
+      },
+    })
+    const optimisticAcknowledgement = commandInput.optimisticAcknowledgement as PromptItemOptimisticAcknowledgement
+    expect(optimisticAcknowledgement.ownerState.enabled).toBe(true)
+    if (!optimisticAcknowledgement.ownerState.enabled) throw new Error('expected an enabled owner')
+    expect(optimisticAcknowledgement.ownerState.items[0]).toEqual(item('p-0', 'accepted optimistic edit'))
+    expect(commandState.commands[0].built).not.toHaveProperty('optimisticAcknowledgement')
+  })
+
+  it('skips a failed item-update rollback after an authoritative owner collection projection', async () => {
+    seedTemplate()
+    let draftItems = draftCopy()
+    draftItems[0] = item('p-0', 'optimistic edit')
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+    const projectionFence = capturePromptTemplateOwnerMutationFence(null)
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, null, projectionFence)
+    await vi.advanceTimersByTimeAsync(500)
+    applyCollectionsResource(
+      { revision: 2, collections: { promptTemplate: [item('p-0', 'authoritative')] } },
+      'promptTemplate',
+    )
+
+    commandState.commands[0].rollback?.()
+
+    expect(textOf(draftItems[0])).toBe('optimistic edit')
+    expect(textOf((getResourceDatabase().promptTemplate as PromptItem[])[0])).toBe('authoritative')
+    expect(hydrationState.isTainted(null)).toBe(true)
+  })
+
+  it('skips a failed collection rollback after the owner hydration epoch changes', () => {
+    let draftItems = [item('p-0', 'first'), item('created', 'optimistic')]
+    resourceDatabase.current = { promptTemplate: cloneJsonValue(draftItems) }
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+    const projectionFence = capturePromptTemplateOwnerMutationFence(null)
+    hydrationState.advanceOwnerEpoch(null)
+
+    rollbackFailedPromptTemplateItemCreate({
+      ownerId: null,
+      binding,
+      itemId: 'created',
+      attemptedItem: item('created', 'optimistic'),
+      projectionFence,
+    })
+
+    expect(draftItems.map((promptItem) => promptItem.id)).toEqual(['p-0', 'created'])
   })
 
   it('sends removals through deleteKeys while retaining explicit null values', async () => {
@@ -1077,6 +1273,7 @@ describe('flushPendingPromptTemplatePatches', () => {
       await tick()
       await flushMicrotasks()
       await tick()
+      expect(hydrationState.isTainted('preset-a')).toBe(true)
 
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', ctrlKey: true, altKey: true }))
       await tick()
@@ -1195,6 +1392,9 @@ describe('flushPendingPromptTemplatePatches', () => {
       expect(commandMocks.updatePromptPresetCommand).toHaveBeenCalledTimes(1)
       expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
 
+      const syncedProjection = cloneJsonValue(presetSyncArgs.patch.promptTemplate)
+      getResourceDatabase().promptPresets[0].promptTemplate = cloneJsonValue(syncedProjection) as never
+      getResourceDatabase().promptTemplate = cloneJsonValue(syncedProjection) as never
       resolvePresetSync?.({ kind: 'updatePromptPreset', ...presetSyncArgs })
       await flushMicrotasks()
       await vi.advanceTimersByTimeAsync(250)
@@ -1209,6 +1409,16 @@ describe('flushPendingPromptTemplatePatches', () => {
           ([args]) => (args as { patch: { text?: string } }).patch.text,
         ),
       ).toEqual(['row B dirty'])
+      const updateInput = commandMocks.updatePromptItemCommand.mock.calls[0][0] as {
+        optimisticAcknowledgement: PromptItemOptimisticAcknowledgement
+      }
+      expect(updateInput.optimisticAcknowledgement.ownerState).toEqual({
+        enabled: true,
+        items: [expect.objectContaining({ text: 'row A dirty' }), expect.objectContaining({ text: 'row B dirty' })],
+      })
+      expect((getResourceDatabase().promptPresets[0].promptTemplate as PromptItem[])[1]).toMatchObject({
+        text: 'row B dirty',
+      })
     } finally {
       if (component) await unmount(component)
       target.remove()
@@ -1561,9 +1771,13 @@ describe('prompt settings draft dispatch contracts', () => {
 
     expect(source).toContain('queuePromptPresetTemplateIdServerSync(ownerId)')
     expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, promptItem)')
+    expect(source).toContain('syncSelectedPromptPresetItemProjection(itemId, currentItem)')
+    expect(source).toContain('queueRowPatch(capturePromptTemplateOwnerMutationFence(ownerId))')
     expect(source).toContain('queuePromptItemProjectionUpdate(')
     expect(source).toContain('syncSelectedPromptPresetTemplateProjection(templates)')
     expect(source).toContain('promptPresetId: promptTemplateOwnerCommandId(ownerId)')
+    expect(source).toContain('markPromptTemplateOwnerAcknowledgementTainted(ownerId)')
+    expect(source).toContain('markPromptTemplateOwnerAcknowledgementTainted(currentPromptTemplateOwnerId())')
   })
 })
 

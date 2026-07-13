@@ -3,6 +3,7 @@ import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
 import type { SettingsGroup } from './settingsGroups'
+import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } from './commands'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -251,6 +252,16 @@ export interface ServerModuleEnabledLocalEffectPayload {
   revision: number
   moduleId: string
   enabled: boolean
+}
+
+export interface ServerPromptItemMutationLocalEffectPayload {
+  revision: number
+  operation: PromptItemMutationOperation
+  promptPresetId: string | null
+  itemId?: string
+  itemIds?: readonly string[]
+  enabled?: boolean
+  ownerState: PromptTemplateOwnerStateSnapshot
 }
 
 export interface ServerLoadoutMutationLocalEffectPayload {
@@ -759,6 +770,48 @@ export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalE
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence an accepted optimistic prompt-owner mutation without replacing its
+ * resident body. Each write only validates its canonical structural outcome;
+ * unrelated row fields may already contain later accepted optimistic edits.
+ * Every ambiguous command failure taints the owner before a later response can
+ * take this path.
+ */
+export function applyPromptItemMutationLocalEffect(payload: ServerPromptItemMutationLocalEffectPayload): boolean {
+  if (
+    (payload.promptPresetId !== null && !nonEmptyString(payload.promptPresetId)) ||
+    !isPromptItemMutationOperation(payload.operation) ||
+    !isCanonicalPromptTemplateOwnerState(payload.ownerState) ||
+    !promptItemMutationMatchesOwnerState(payload)
+  ) {
+    return false
+  }
+
+  const collectionName: ServerCollectionName = payload.promptPresetId === null ? 'promptTemplate' : 'promptPresets'
+  const liveOwnerState = readCanonicalLivePromptTemplateOwnerState(payload.promptPresetId)
+  if (!liveOwnerState || !livePromptTemplateOwnerSupportsOperation(payload, liveOwnerState)) return false
+  if (
+    collectionsResourceState.status !== 'ready' ||
+    (payload.ownerState.enabled && collectionsResourceState.statuses[collectionName] !== 'ready') ||
+    (payload.promptPresetId !== null && collectionsResourceState.statuses.promptPresets !== 'ready')
+  ) {
+    return false
+  }
+
+  const knownRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions[collectionName] ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+
+  collectionsResourceState.revisions[collectionName] = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses[collectionName] = 'ready'
+  delete collectionsResourceState.errors[collectionName]
   markResourceDatabaseChanged()
   return true
 }
@@ -1844,6 +1897,100 @@ function cloneJsonValue<T>(value: T): T {
 
 function isUniqueStringArray(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((entry) => nonEmptyString(entry)) && new Set(value).size === value.length
+}
+
+function isPromptItemMutationOperation(value: unknown): value is PromptItemMutationOperation {
+  return value === 'create' || value === 'update' || value === 'delete' || value === 'reorder' || value === 'enable'
+}
+
+function isCanonicalPromptTemplateOwnerState(value: unknown): value is PromptTemplateOwnerStateSnapshot {
+  if (!isPlainRecord(value)) return false
+  if (value.enabled === false) return Object.keys(value).length === 1
+  return value.enabled === true && Object.keys(value).length === 2 && isCanonicalPromptItemArray(value.items)
+}
+
+function isCanonicalPromptItemArray(value: unknown): value is Array<Record<string, unknown> & { id: string }> {
+  if (!Array.isArray(value)) return false
+  const seen = new Set<string>()
+  for (const candidate of value) {
+    if (!isPlainRecord(candidate) || !nonEmptyString(candidate.id) || seen.has(candidate.id)) return false
+    seen.add(candidate.id)
+  }
+  return true
+}
+
+function promptItemMutationMatchesOwnerState(payload: ServerPromptItemMutationLocalEffectPayload): boolean {
+  const items = payload.ownerState.enabled ? payload.ownerState.items : null
+  if (payload.operation === 'create' || payload.operation === 'update') {
+    return nonEmptyString(payload.itemId) && !!items?.some((item) => item.id === payload.itemId)
+  }
+  if (payload.operation === 'delete') {
+    return nonEmptyString(payload.itemId) && !!items && items.every((item) => item.id !== payload.itemId)
+  }
+  if (payload.operation === 'reorder') {
+    return (
+      isUniqueStringArray(payload.itemIds) &&
+      !!items &&
+      isJsonValueEqual(
+        items.map((item) => item.id),
+        payload.itemIds,
+      )
+    )
+  }
+  return typeof payload.enabled === 'boolean' && payload.ownerState.enabled === payload.enabled
+}
+
+function readCanonicalLivePromptTemplateOwnerState(
+  promptPresetId: string | null,
+): PromptTemplateOwnerStateSnapshot | null {
+  if (promptPresetId === null) {
+    return readCanonicalPromptTemplateValue(
+      Object.prototype.hasOwnProperty.call(collectionsResourceState.values, 'promptTemplate'),
+      collectionsResourceState.values.promptTemplate,
+    )
+  }
+
+  const presets = collectionsResourceState.values.promptPresets
+  if (!Array.isArray(presets)) return null
+  const seen = new Set<string>()
+  let owner: Record<string, unknown> | null = null
+  for (const candidate of presets) {
+    if (!isPlainRecord(candidate) || !nonEmptyString(candidate.id) || seen.has(candidate.id)) return null
+    seen.add(candidate.id)
+    if (candidate.id === promptPresetId) owner = candidate
+  }
+  if (!owner) return null
+  return readCanonicalPromptTemplateValue(
+    Object.prototype.hasOwnProperty.call(owner, 'promptTemplate'),
+    owner.promptTemplate,
+  )
+}
+
+function readCanonicalPromptTemplateValue(enabled: boolean, value: unknown): PromptTemplateOwnerStateSnapshot | null {
+  if (!enabled) return { enabled: false }
+  return isCanonicalPromptItemArray(value) ? { enabled: true, items: value } : null
+}
+
+function livePromptTemplateOwnerSupportsOperation(
+  payload: ServerPromptItemMutationLocalEffectPayload,
+  liveOwnerState: PromptTemplateOwnerStateSnapshot,
+): boolean {
+  if (payload.operation === 'create' || payload.operation === 'update') {
+    return liveOwnerState.enabled && liveOwnerState.items.some((item) => item.id === payload.itemId)
+  }
+  if (payload.operation === 'delete') {
+    return !liveOwnerState.enabled || liveOwnerState.items.every((item) => item.id !== payload.itemId)
+  }
+  if (payload.operation === 'reorder') {
+    return (
+      liveOwnerState.enabled &&
+      isJsonValueEqual(
+        liveOwnerState.items.map((item) => item.id),
+        payload.itemIds,
+      )
+    )
+  }
+  return liveOwnerState.enabled === payload.enabled
 }
 
 function isJsonValueEqual(left: unknown, right: unknown): boolean {

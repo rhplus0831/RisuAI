@@ -70,6 +70,8 @@
   } from 'src/ts/promptPresetModelOverrides.svelte'
   import { promptPresetModelOverrideFieldForDatabaseKey, resolvePromptPresetRegexField } from 'src/ts/presetSplit'
   import {
+    capturePromptItemOptimisticAcknowledgement,
+    capturePromptTemplateOwnerMutationFence,
     promptTemplateOwnerCommandId,
     runPromptTemplateOwnerCommand,
     runPromptTemplateOwnerRollback,
@@ -630,9 +632,18 @@
     return `${selectedIndex}:${selectedId ?? ''}`
   }
 
-  function snapshotSelectedPromptPresetTemplate(): { hasTemplate: boolean; template: unknown } {
+  function snapshotPromptTemplateOwnerProjection(ownerId: string | null): {
+    hasTemplate: boolean
+    template: unknown
+  } {
+    if (ownerId === null) {
+      if (!Object.prototype.hasOwnProperty.call(getDatabase(), 'promptTemplate')) {
+        return { hasTemplate: false, template: undefined }
+      }
+      return { hasTemplate: true, template: cloneJsonValue(getDatabase().promptTemplate) }
+    }
     const preset = getDatabase().promptPresets?.[getDatabase().promptPresetsId] as Record<string, unknown> | undefined
-    if (!preset || !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
+    if (preset?.id !== ownerId || !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')) {
       return { hasTemplate: false, template: undefined }
     }
     return { hasTemplate: true, template: cloneJsonValue(preset.promptTemplate) }
@@ -665,8 +676,11 @@
     if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) return
     if (ownerId !== currentPromptTemplateOwnerId()) return
 
-    const previous = snapshotSelectedPromptPresetTemplate()
+    const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
+    const previous = snapshotPromptTemplateOwnerProjection(ownerId)
     setSelectedPromptPresetTemplateProjection(enabled)
+    const attempted = snapshotPromptTemplateOwnerProjection(ownerId)
+    const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     if (!canUseServerCommands()) return
 
     void runServerCommand({
@@ -676,10 +690,19 @@
             baseRevision,
             promptPresetId: promptTemplateOwnerCommandId(ownerId),
             enabled,
+            optimisticAcknowledgement,
           }),
         ),
       rollback: () =>
-        runPromptTemplateOwnerRollback(ownerId, () => restoreSelectedPromptPresetTemplateProjection(previous)),
+        runPromptTemplateOwnerRollback(
+          ownerId,
+          () => {
+            if (snapshotJson(snapshotPromptTemplateOwnerProjection(ownerId)) !== snapshotJson(attempted)) return false
+            restoreSelectedPromptPresetTemplateProjection(previous)
+            return true
+          },
+          projectionFence,
+        ),
     })
   }
 

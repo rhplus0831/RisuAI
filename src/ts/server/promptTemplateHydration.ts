@@ -13,6 +13,7 @@ let nextPromptTemplateOwnerProjectionEpoch = 0
 let promptTemplateOwnerProjectionBaseline = 0
 let promptTemplateOwnerProjectionEpochs = new Map<string | null, number>()
 let promptTemplateOwnerRevisions = new Map<string | null, number>()
+let promptTemplateOwnerAcknowledgementTaints = new Set<string | null>()
 
 export function currentPromptTemplateOwnerId(): string | null {
   const selectedIndex = getDatabase().promptPresetsId
@@ -42,6 +43,14 @@ export function peekPromptTemplateOwnerRevision(
   return promptTemplateOwnerRevisions.get(promptPresetId) ?? null
 }
 
+export function isPromptTemplateOwnerAcknowledgementTainted(promptPresetId: string | null): boolean {
+  return promptTemplateOwnerAcknowledgementTaints.has(promptPresetId)
+}
+
+export function markPromptTemplateOwnerAcknowledgementTainted(promptPresetId: string | null): void {
+  promptTemplateOwnerAcknowledgementTaints.add(promptPresetId)
+}
+
 export function resetPromptTemplateHydration(): void {
   promptTemplateHydrationGeneration += 1
   promptTemplateHydrationInFlight = new Map()
@@ -49,6 +58,7 @@ export function resetPromptTemplateHydration(): void {
   promptTemplateOwnerProjectionBaseline = ++nextPromptTemplateOwnerProjectionEpoch
   promptTemplateOwnerProjectionEpochs = new Map()
   promptTemplateOwnerRevisions = new Map()
+  promptTemplateOwnerAcknowledgementTaints = new Set()
   promptTemplateHydratedStore.set(false)
 }
 
@@ -64,9 +74,13 @@ export function invalidatePromptTemplateHydration(
 export function markPromptTemplateProjectionApplied(
   promptPresetId: string | null = currentPromptTemplateOwnerId(),
   revision?: number,
+  options: { advanceProjectionEpoch?: boolean } = {},
 ): void {
   promptTemplateHydratedOwnerIds.add(promptPresetId)
-  promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
+  if (options.advanceProjectionEpoch ?? true) {
+    promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
+    promptTemplateOwnerAcknowledgementTaints.delete(promptPresetId)
+  }
   if (Number.isInteger(revision) && (revision as number) >= 0) {
     promptTemplateOwnerRevisions.set(
       promptPresetId,

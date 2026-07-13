@@ -131,6 +131,7 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
+  type PromptItemSnapshot,
   type ServerCommandLocalEffect,
   updatePromptItemCommand,
 } from './commands'
@@ -1631,6 +1632,211 @@ describe('server command API adapter', () => {
         body: { baseRevision: 6, promptPresetId: 'prompt-preset-a', enabled: true },
       },
     ])
+  })
+
+  it('emits exact prompt-item optimistic acknowledgements without serializing their snapshots or epochs', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const responses = [
+      {
+        revision: 1,
+        event: {
+          type: 'prompt.item.created',
+          revision: 1,
+          resource: 'promptItem',
+          id: 'item-b',
+          parentId: 'prompt-preset-a',
+        },
+        itemId: 'item-b',
+      },
+      {
+        revision: 2,
+        event: {
+          type: 'prompt.item.updated',
+          revision: 2,
+          resource: 'promptItem',
+          id: 'item-b',
+          parentId: 'prompt-preset-a',
+        },
+        itemId: 'item-b',
+      },
+      {
+        revision: 3,
+        event: {
+          type: 'prompt.item.deleted',
+          revision: 3,
+          resource: 'promptItem',
+          id: 'item-a',
+          parentId: 'prompt-preset-a',
+        },
+        itemId: 'item-a',
+      },
+      {
+        revision: 4,
+        event: {
+          type: 'prompt.item.reordered',
+          revision: 4,
+          resource: 'promptItem',
+          parentId: 'prompt-preset-a',
+        },
+      },
+      {
+        revision: 5,
+        event: {
+          type: 'prompt.item.enabled',
+          revision: 5,
+          resource: 'promptItem',
+          parentId: 'prompt-preset-a',
+        },
+        enabled: false,
+      },
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => responses[responseIndex++])
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const itemA = { id: 'item-a', type: 'plain', text: 'A' }
+    const itemB = { id: 'item-b', type: 'memory', text: 'B' }
+    const acknowledgement = (ownerState: { enabled: true; items: PromptItemSnapshot[] } | { enabled: false }) => ({
+      collectionProjectionEpoch: 11,
+      ownerProjectionEpoch: 12,
+      ownerState,
+    })
+
+    await createPromptItemCommand({
+      baseRevision: 0,
+      promptPresetId: 'prompt-preset-a',
+      promptItem: itemB,
+      optimisticAcknowledgement: acknowledgement({ enabled: true, items: [itemA, itemB] }),
+    })
+    await updatePromptItemCommand({
+      baseRevision: 1,
+      promptPresetId: 'prompt-preset-a',
+      itemId: 'item-b',
+      patch: { type: 'description' },
+      deleteKeys: ['text'],
+      optimisticAcknowledgement: acknowledgement({
+        enabled: true,
+        items: [itemA, { id: 'item-b', type: 'description' }],
+      }),
+    })
+    await deletePromptItemCommand({
+      baseRevision: 2,
+      promptPresetId: 'prompt-preset-a',
+      itemId: 'item-a',
+      optimisticAcknowledgement: acknowledgement({ enabled: true, items: [{ id: 'item-b', type: 'description' }] }),
+    })
+    await reorderPromptItemsCommand({
+      baseRevision: 3,
+      promptPresetId: 'prompt-preset-a',
+      itemIds: ['item-b', 'item-a'],
+      optimisticAcknowledgement: acknowledgement({ enabled: true, items: [itemB, itemA] }),
+    })
+    await enablePromptItemsCommand({
+      baseRevision: 4,
+      promptPresetId: 'prompt-preset-a',
+      enabled: false,
+      optimisticAcknowledgement: acknowledgement({ enabled: false }),
+    })
+
+    expect(observedEffects).toEqual([
+      expect.objectContaining({ kind: 'promptItemMutation', operation: 'create', itemId: 'item-b' }),
+      expect.objectContaining({ kind: 'promptItemMutation', operation: 'update', itemId: 'item-b' }),
+      expect.objectContaining({ kind: 'promptItemMutation', operation: 'delete', itemId: 'item-a' }),
+      expect.objectContaining({
+        kind: 'promptItemMutation',
+        operation: 'reorder',
+        itemIds: ['item-b', 'item-a'],
+      }),
+      expect.objectContaining({ kind: 'promptItemMutation', operation: 'enable', enabled: false }),
+    ])
+    expect(
+      observedEffects.every(
+        (effect) => effect.kind !== 'promptItemMutation' || effect.promptPresetId === 'prompt-preset-a',
+      ),
+    ).toBe(true)
+    expect(
+      commandFetch.calls.every(
+        (call) => !Object.prototype.hasOwnProperty.call(call.body ?? {}, 'optimisticAcknowledgement'),
+      ),
+    ).toBe(true)
+  })
+
+  it('keeps malformed prompt-item acknowledgements on authoritative reconciliation', async () => {
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+    const responses = [
+      {
+        revision: 1,
+        event: { type: 'prompt.item.updated', revision: 1, resource: 'promptItem', id: 'wrong-item' },
+        itemId: 'item-a',
+      },
+      {
+        revision: 2,
+        event: {
+          type: 'prompt.item.updated',
+          revision: 2,
+          resource: 'promptItem',
+          id: 'item-a',
+          parentId: 'foreign-owner',
+        },
+        itemId: 'item-a',
+      },
+      {
+        revision: 3,
+        event: { type: 'prompt.item.reordered', revision: 3, resource: 'promptItem' },
+      },
+      {
+        revision: 4,
+        event: { type: 'prompt.item.enabled', revision: 4, resource: 'promptItem' },
+        enabled: true,
+      },
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => responses[responseIndex++])
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const baseAcknowledgement = {
+      collectionProjectionEpoch: 1,
+      ownerProjectionEpoch: 2,
+      ownerState: { enabled: true as const, items: [{ id: 'item-a', type: 'description' }] },
+    }
+
+    await updatePromptItemCommand({
+      baseRevision: 0,
+      itemId: 'item-a',
+      patch: { type: 'description' },
+      optimisticAcknowledgement: baseAcknowledgement,
+    })
+    await updatePromptItemCommand({
+      baseRevision: 1,
+      itemId: 'item-a',
+      patch: { type: 'description' },
+      optimisticAcknowledgement: baseAcknowledgement,
+    })
+    await reorderPromptItemsCommand({
+      baseRevision: 2,
+      itemIds: ['item-a'],
+      optimisticAcknowledgement: {
+        ...baseAcknowledgement,
+        ownerState: {
+          enabled: true,
+          items: [
+            { id: 'item-a', type: 'plain' },
+            { id: 'item-a', type: 'memory' },
+          ],
+        },
+      },
+    })
+    await enablePromptItemsCommand({
+      baseRevision: 3,
+      enabled: false,
+      optimisticAcknowledgement: { ...baseAcknowledgement, ownerState: { enabled: false } },
+    })
+
+    expect(observedEffectCounts).toEqual([0, 0, 0, 0])
   })
 
   it('runs prompt commands with revision lookup and surfaces conflicts', async () => {

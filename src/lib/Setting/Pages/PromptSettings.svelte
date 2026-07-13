@@ -27,6 +27,8 @@
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     dropPendingPromptSettingsProjectionPatchKeys,
+    capturePromptItemOptimisticAcknowledgement,
+    capturePromptTemplateOwnerMutationFence,
     flushPendingPromptTemplatePatches,
     queuePromptItemProjectionUpdate,
     queuePromptSettingsProjectionPatch,
@@ -39,12 +41,14 @@
     rollbackFailedPromptTemplateItemReorder,
     runPromptTemplateOwnerCommand,
     type PromptTemplateDraftBinding,
+    type PromptTemplateOwnerMutationFence,
   } from 'src/ts/server/promptTemplateBridge.svelte'
   import { mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
     currentPromptTemplateOwnerId,
     ensurePromptTemplateHydrated,
     isPromptTemplateHydrated,
+    markPromptTemplateOwnerAcknowledgementTainted,
     promptTemplateHydratedStore,
   } from 'src/ts/server/promptTemplateHydration'
   import {
@@ -323,11 +327,17 @@
     return itemIds
   }
 
-  function dispatchCreatePromptItem(ownerId: string | null, promptItem: PromptItem): void {
+  function dispatchCreatePromptItem(
+    ownerId: string | null,
+    promptItem: PromptItem,
+    projectionFence: PromptTemplateOwnerMutationFence,
+  ): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
+    if (projectionFence.ownerId !== ownerId) return
     const itemId = promptItemId(promptItem)
     const attemptedItem = cloneJsonValue(promptItem)
+    const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     void runServerCommand({
       command: (baseRevision) =>
         runPromptTemplateOwnerCommand(ownerId, () =>
@@ -335,6 +345,7 @@
             baseRevision,
             promptPresetId: promptTemplateOwnerCommandId(ownerId),
             promptItem: cloneJsonValue(attemptedItem) as PromptItemSnapshot,
+            optimisticAcknowledgement,
           }),
         ),
       rollback: () =>
@@ -343,16 +354,24 @@
           binding: promptTemplateDraftBinding,
           itemId,
           attemptedItem,
+          projectionFence,
         }),
     })
   }
 
-  function dispatchDeletePromptItem(ownerId: string | null, promptItem: PromptItem, previous: PromptItem[]): void {
+  function dispatchDeletePromptItem(
+    ownerId: string | null,
+    promptItem: PromptItem,
+    previous: PromptItem[],
+    projectionFence: PromptTemplateOwnerMutationFence,
+  ): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
+    if (projectionFence.ownerId !== ownerId) return
     const itemId = promptItemId(promptItem)
     const previousIndex = previous.findIndex((item) => item.id === itemId)
     const previousItem = previousIndex === -1 ? cloneJsonValue(promptItem) : previous[previousIndex]
+    const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     void runServerCommand({
       command: (baseRevision) =>
         runPromptTemplateOwnerCommand(ownerId, () =>
@@ -360,6 +379,7 @@
             baseRevision,
             promptPresetId: promptTemplateOwnerCommandId(ownerId),
             itemId,
+            optimisticAcknowledgement,
           }),
         ),
       rollback: () =>
@@ -369,18 +389,25 @@
           itemId,
           previousIndex,
           previousItem,
+          projectionFence,
         }),
     })
   }
 
-  function dispatchReorderPromptItems(ownerId: string | null, previous: PromptItem[]): void {
+  function dispatchReorderPromptItems(
+    ownerId: string | null,
+    previous: PromptItem[],
+    projectionFence: PromptTemplateOwnerMutationFence,
+  ): void {
     if (!promptTemplateHydrated) return
     if (!canUseServerCommands()) return
+    if (projectionFence.ownerId !== ownerId) return
     ensurePromptTemplateDraftIds(ownerId)
     const itemIds = promptTemplateItemIds(promptTemplateDraft.value)
     const previousItemIds = promptTemplateItemIds(previous)
     if (!itemIds || !previousItemIds) return
     const attemptedItemIds = [...itemIds]
+    const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(projectionFence)
     void runServerCommand({
       command: (baseRevision) =>
         runPromptTemplateOwnerCommand(ownerId, () =>
@@ -388,6 +415,7 @@
             baseRevision,
             promptPresetId: promptTemplateOwnerCommandId(ownerId),
             itemIds,
+            optimisticAcknowledgement,
           }),
         ),
       rollback: () =>
@@ -396,6 +424,7 @@
           binding: promptTemplateDraftBinding,
           previousItemIds,
           attemptedItemIds,
+          projectionFence,
         }),
     })
   }
@@ -403,10 +432,11 @@
   function queuePromptItemUpdate(promptItem: PromptItem, previousItem: PromptItem, originalIndex: number): void {
     if (!promptTemplateHydrated) return
     const ownerId = currentPromptTemplateOwnerId()
+    const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     const itemId = ensurePromptItemDraftId(promptItem, previousItem, originalIndex, ownerId)
     syncSelectedPromptPresetItemProjection(itemId, promptItem)
-    const queueRowPatch = () =>
-      queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem, 250, ownerId)
+    const queueRowPatch = (writeFence = projectionFence) =>
+      queuePromptItemProjectionUpdate(promptTemplateDraftBinding, itemId, previousItem, 250, ownerId, writeFence)
     const attemptedItemSnapshot = snapshotJson(promptItem)
     const templateIdSync = queuePromptPresetTemplateIdServerSync(ownerId)
     if (!templateIdSync) {
@@ -414,7 +444,11 @@
       return
     }
     void templateIdSync.completion.then((synced) => {
-      if (synced && templateIdSync.itemSnapshots.get(itemId) !== attemptedItemSnapshot) queueRowPatch()
+      if (synced && templateIdSync.itemSnapshots.get(itemId) !== attemptedItemSnapshot) {
+        const currentItem = promptTemplateDraft.value.find((item) => item.id === itemId)
+        if (currentItem) syncSelectedPromptPresetItemProjection(itemId, currentItem)
+        queueRowPatch(capturePromptTemplateOwnerMutationFence(ownerId))
+      }
     })
   }
 
@@ -460,6 +494,7 @@
   }
 
   function markPromptPresetTemplateIdsPendingServerSync(ownerId: string | null): void {
+    markPromptTemplateOwnerAcknowledgementTainted(ownerId)
     if (ownerId) promptPresetTemplateIdsPendingServerSync.add(ownerId)
   }
 
@@ -491,6 +526,7 @@
           promptPresetTemplateIdsPendingServerSync.delete(ownerId)
           return true
         }
+        markPromptTemplateOwnerAcknowledgementTainted(ownerId)
         return false
       })
       .finally(() => {
@@ -511,9 +547,10 @@
     templates[originalIndex] = templates[nextIndex]
     templates[nextIndex] = temp
     const ownerId = currentPromptTemplateOwnerId()
+    const projectionFence = capturePromptTemplateOwnerMutationFence(ownerId)
     promptTemplateDraft.value = templates
     syncSelectedPromptPresetTemplateProjection(templates)
-    dispatchReorderPromptItems(ownerId, previous)
+    dispatchReorderPromptItems(ownerId, previous, projectionFence)
   }
 
   function applyPromptTemplateDraft(templates: PromptItem[]): string | null {
@@ -858,6 +895,7 @@
     withTrustedResourceWrite(() => {
       normalizePromptTemplateIds(getResourceDatabase())
     })
+    markPromptTemplateOwnerAcknowledgementTainted(currentPromptTemplateOwnerId())
   })
 
   function getDisplayTemplate() {
@@ -892,6 +930,7 @@
 
     const templates = [...promptTemplateDraft.value]
     const previous = currentPromptTemplateSnapshot()
+    const projectionFence = capturePromptTemplateOwnerMutationFence()
     const [movedItem] = templates.splice(draggedIndex, 1)
 
     const adjustedDropIndex = draggedIndex < dragOverIndex ? dragOverIndex - 1 : dragOverIndex
@@ -918,7 +957,7 @@
     openedItemIndices = newOpenedIndices
 
     const ownerId = applyPromptTemplateDraft(templates)
-    dispatchReorderPromptItems(ownerId, previous)
+    dispatchReorderPromptItems(ownerId, previous, projectionFence)
     draggedIndex = -1
     dragOverIndex = -1
   }
@@ -1014,6 +1053,7 @@
             onDrop={handlePromptDrop}
             onRemove={() => {
               const previous = currentPromptTemplateSnapshot()
+              const projectionFence = capturePromptTemplateOwnerMutationFence()
               const removed = promptTemplateDraft.value[originalIndex]
               let templates = [...promptTemplateDraft.value]
               templates.splice(originalIndex, 1)
@@ -1033,7 +1073,7 @@
 
               draggedIndex = -1
               dragOverIndex = -1
-              dispatchDeletePromptItem(ownerId, removed, previous)
+              dispatchDeletePromptItem(ownerId, removed, previous, projectionFence)
             }}
             moveDown={() => {
               if (originalIndex === promptTemplateDraft.value.length - 1) {
@@ -1079,8 +1119,9 @@
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         const promptItem = createPromptItem()
+        const projectionFence = capturePromptTemplateOwnerMutationFence()
         const ownerId = applyPromptTemplateDraft([...(promptTemplateDraft.value ?? []), promptItem])
-        dispatchCreatePromptItem(ownerId, promptItem)
+        dispatchCreatePromptItem(ownerId, promptItem, projectionFence)
       }}><PlusIcon /></button>
 
     <span class="text-textcolor2 text-sm mt-2">{tokens} {language.fixedTokens}</span>

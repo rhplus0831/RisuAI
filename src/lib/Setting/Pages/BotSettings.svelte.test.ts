@@ -78,8 +78,9 @@ describe('BotSettings prompt edit persistence contracts', () => {
     expect(source).toContain('delete preset.promptTemplate')
     expect(source).toContain('delete (getDatabase() as unknown as Record<string, unknown>).promptTemplate')
     expect(source).toContain('rollback: () =>')
-    expect(source).toContain('runPromptTemplateOwnerRollback(ownerId, () =>')
+    expect(source).toContain('runPromptTemplateOwnerRollback(')
     expect(source).toContain('restoreSelectedPromptPresetTemplateProjection(previous)')
+    expect(source).toContain('projectionFence,')
   })
 })
 

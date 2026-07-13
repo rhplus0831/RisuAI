@@ -5,14 +5,26 @@ import {
   peekCachedServerCommandRevision,
   runServerCommand,
   updatePromptItemCommand,
+  type PromptItemOptimisticAcknowledgement,
   type PromptItemSnapshot,
+  type PromptTemplateOwnerStateSnapshot,
   type ServerCommandResult,
   type ServerCommandTransportOptions,
   type SettingsPatch,
 } from './commands'
 import { withTrustedResourceWrite } from './resourceWriteGuard.svelte'
-import { currentPromptTemplateOwnerId, isPromptTemplateHydrated } from './promptTemplateHydration'
-import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import {
+  capturePromptTemplateOwnerProjectionEpoch,
+  currentPromptTemplateOwnerId,
+  hasPromptTemplateOwnerProjectionEpochChanged,
+  isPromptTemplateHydrated,
+  markPromptTemplateOwnerAcknowledgementTainted,
+} from './promptTemplateHydration'
+import {
+  captureCollectionProjectionEpoch,
+  getResourceDatabase as getDatabase,
+  hasCollectionProjectionEpochChanged,
+} from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
 /**
@@ -43,6 +55,43 @@ export function snapshotJson(value: unknown): string {
   return snapshot === undefined ? '__undefined__' : snapshot
 }
 
+export interface PromptTemplateOwnerMutationFence {
+  ownerId: string | null
+  collectionProjectionEpoch: number
+  ownerProjectionEpoch: number
+}
+
+export function capturePromptTemplateOwnerMutationFence(
+  ownerId: string | null = currentPromptTemplateOwnerId(),
+): PromptTemplateOwnerMutationFence {
+  return {
+    ownerId,
+    collectionProjectionEpoch: captureCollectionProjectionEpoch(promptTemplateOwnerCollectionName(ownerId)),
+    ownerProjectionEpoch: capturePromptTemplateOwnerProjectionEpoch(ownerId),
+  }
+}
+
+export function hasPromptTemplateOwnerMutationFenceChanged(fence: PromptTemplateOwnerMutationFence): boolean {
+  return (
+    hasCollectionProjectionEpochChanged(
+      promptTemplateOwnerCollectionName(fence.ownerId),
+      fence.collectionProjectionEpoch,
+    ) || hasPromptTemplateOwnerProjectionEpochChanged(fence.ownerId, fence.ownerProjectionEpoch)
+  )
+}
+
+export function capturePromptItemOptimisticAcknowledgement(
+  fence: PromptTemplateOwnerMutationFence,
+): PromptItemOptimisticAcknowledgement | undefined {
+  const ownerState = captureCanonicalPromptTemplateOwnerState(fence.ownerId)
+  if (!ownerState) return undefined
+  return {
+    collectionProjectionEpoch: fence.collectionProjectionEpoch,
+    ownerProjectionEpoch: fence.ownerProjectionEpoch,
+    ownerState,
+  }
+}
+
 export interface PromptTemplateDraftBinding {
   getItems: () => PromptItem[]
   setItems: (items: PromptItem[]) => void
@@ -53,6 +102,7 @@ export interface FailedPromptTemplateItemCreateRollback {
   binding: PromptTemplateDraftBinding
   itemId: string
   attemptedItem: PromptItem
+  projectionFence?: PromptTemplateOwnerMutationFence
 }
 
 export interface FailedPromptTemplateItemDeleteRollback {
@@ -61,6 +111,7 @@ export interface FailedPromptTemplateItemDeleteRollback {
   itemId: string
   previousIndex: number
   previousItem: PromptItem
+  projectionFence?: PromptTemplateOwnerMutationFence
 }
 
 export interface FailedPromptTemplateItemReorderRollback {
@@ -68,6 +119,7 @@ export interface FailedPromptTemplateItemReorderRollback {
   binding: PromptTemplateDraftBinding
   previousItemIds: string[]
   attemptedItemIds: string[]
+  projectionFence?: PromptTemplateOwnerMutationFence
 }
 
 interface PendingPromptItemUpdate {
@@ -77,6 +129,7 @@ interface PendingPromptItemUpdate {
   attemptedItem: PromptItem
   binding: PromptTemplateDraftBinding
   timer: ReturnType<typeof setTimeout> | null
+  projectionFence: PromptTemplateOwnerMutationFence
 }
 
 interface SparsePromptItemUpdate {
@@ -149,6 +202,45 @@ export function promptTemplateOwnerCommandId(ownerId: string | null): string | u
   return ownerId ?? undefined
 }
 
+function promptTemplateOwnerCollectionName(ownerId: string | null): 'promptTemplate' | 'promptPresets' {
+  return ownerId === null ? 'promptTemplate' : 'promptPresets'
+}
+
+function captureCanonicalPromptTemplateOwnerState(ownerId: string | null): PromptTemplateOwnerStateSnapshot | null {
+  const database = getDatabase()
+  if (ownerId === null) {
+    if (!Object.prototype.hasOwnProperty.call(database, 'promptTemplate')) return { enabled: false }
+    return canonicalPromptTemplateEnabledState(database.promptTemplate)
+  }
+
+  const presets = database.promptPresets
+  if (!Array.isArray(presets)) return null
+  const seenPresetIds = new Set<string>()
+  let owner: Record<string, unknown> | null = null
+  for (const candidate of presets) {
+    const preset = candidate as unknown as Record<string, unknown>
+    const presetId = preset?.id
+    if (typeof presetId !== 'string' || presetId.trim() === '' || seenPresetIds.has(presetId)) return null
+    seenPresetIds.add(presetId)
+    if (presetId === ownerId) owner = preset
+  }
+  if (!owner) return null
+  if (!Object.prototype.hasOwnProperty.call(owner, 'promptTemplate')) return { enabled: false }
+  return canonicalPromptTemplateEnabledState(owner.promptTemplate)
+}
+
+function canonicalPromptTemplateEnabledState(value: unknown): PromptTemplateOwnerStateSnapshot | null {
+  if (!Array.isArray(value)) return null
+  const seenItemIds = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+    const itemId = (candidate as { id?: unknown }).id
+    if (typeof itemId !== 'string' || itemId.trim() === '' || seenItemIds.has(itemId)) return null
+    seenItemIds.add(itemId)
+  }
+  return { enabled: true, items: cloneJsonValue(value as PromptItemSnapshot[]) }
+}
+
 export function isCurrentPromptTemplateOwner(ownerId: string | null): boolean {
   return currentPromptTemplateOwnerId() === ownerId
 }
@@ -161,13 +253,25 @@ export async function runPromptTemplateOwnerCommand<T extends Record<string, unk
   return command()
 }
 
-export function runPromptTemplateOwnerRollback(ownerId: string | null, rollback: () => void): void {
+export function runPromptTemplateOwnerRollback(
+  ownerId: string | null,
+  rollback: () => boolean | void,
+  projectionFence?: PromptTemplateOwnerMutationFence,
+): void {
+  markPromptTemplateOwnerAcknowledgementTainted(ownerId)
   if (!isCurrentPromptTemplateOwner(ownerId)) return
+  if (projectionFence && projectionFence.ownerId !== ownerId) return
+  if (projectionFence && hasPromptTemplateOwnerMutationFenceChanged(projectionFence)) return
   rollback()
 }
 
 export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTemplateItemCreateRollback): void {
+  markPromptTemplateOwnerAcknowledgementTainted(input.ownerId)
   if (!isCurrentPromptTemplateOwner(input.ownerId)) return
+  if (input.projectionFence?.ownerId !== undefined && input.projectionFence.ownerId !== input.ownerId) return
+  if (input.projectionFence && hasPromptTemplateOwnerMutationFenceChanged(input.projectionFence)) {
+    return
+  }
   const liveItems = input.binding.getItems() ?? []
   const liveIndex = findPromptItemIndexById(liveItems, input.itemId)
   if (liveIndex === -1) return
@@ -175,23 +279,34 @@ export function rollbackFailedPromptTemplateItemCreate(input: FailedPromptTempla
 
   const nextItems = [...liveItems]
   nextItems.splice(liveIndex, 1)
-  applyPromptTemplateCollectionRollback(input.binding, nextItems)
+  applyPromptTemplateCollectionRollback(input.binding, input.ownerId, nextItems)
   promptItemDirtyFieldsByOwnerAndId.delete(promptItemStateKey(input.ownerId, input.itemId))
 }
 
 export function rollbackFailedPromptTemplateItemDelete(input: FailedPromptTemplateItemDeleteRollback): void {
+  markPromptTemplateOwnerAcknowledgementTainted(input.ownerId)
   if (!isCurrentPromptTemplateOwner(input.ownerId)) return
+  if (input.projectionFence?.ownerId !== undefined && input.projectionFence.ownerId !== input.ownerId) return
+  if (input.projectionFence && hasPromptTemplateOwnerMutationFenceChanged(input.projectionFence)) {
+    return
+  }
   const liveItems = input.binding.getItems() ?? []
-  if (findPromptItemIndexById(liveItems, input.itemId) !== -1) return
+  const liveIndex = findPromptItemIndexById(liveItems, input.itemId)
+  if (liveIndex !== -1) return
 
   const insertIndex = Math.max(0, Math.min(input.previousIndex, liveItems.length))
   const nextItems = [...liveItems]
   nextItems.splice(insertIndex, 0, cloneJsonValue(input.previousItem))
-  applyPromptTemplateCollectionRollback(input.binding, nextItems)
+  applyPromptTemplateCollectionRollback(input.binding, input.ownerId, nextItems)
 }
 
 export function rollbackFailedPromptTemplateItemReorder(input: FailedPromptTemplateItemReorderRollback): void {
+  markPromptTemplateOwnerAcknowledgementTainted(input.ownerId)
   if (!isCurrentPromptTemplateOwner(input.ownerId)) return
+  if (input.projectionFence?.ownerId !== undefined && input.projectionFence.ownerId !== input.ownerId) return
+  if (input.projectionFence && hasPromptTemplateOwnerMutationFenceChanged(input.projectionFence)) {
+    return
+  }
   const liveItems = input.binding.getItems() ?? []
   const liveItemIds = promptItemIdList(liveItems)
   if (!stringArraysEqual(liveItemIds, input.attemptedItemIds)) return
@@ -202,7 +317,7 @@ export function rollbackFailedPromptTemplateItemReorder(input: FailedPromptTempl
     .filter((item): item is PromptItem => Boolean(item))
   if (previousOrder.length !== liveItems.length) return
 
-  applyPromptTemplateCollectionRollback(input.binding, previousOrder)
+  applyPromptTemplateCollectionRollback(input.binding, input.ownerId, previousOrder)
 }
 
 export function queuePromptItemProjectionUpdate(
@@ -211,15 +326,19 @@ export function queuePromptItemProjectionUpdate(
   previousItem: PromptItem,
   delayMs = 250,
   promptPresetId: string | null = currentPromptTemplateOwnerId(),
+  projectionFence?: PromptTemplateOwnerMutationFence,
 ): void {
   if (!isPromptTemplateHydrated(promptPresetId)) return
+  if (projectionFence && projectionFence.ownerId !== promptPresetId) return
+  const pendingKey = promptItemStateKey(promptPresetId, itemId)
+  const existing = pendingPromptItemUpdates.get(pendingKey)
+  const effectiveProjectionFence =
+    existing?.projectionFence ?? projectionFence ?? capturePromptTemplateOwnerMutationFence(promptPresetId)
   const attemptedItem = applyPromptItemProjectionWrite(binding.getItems(), itemId)
   if (!attemptedItem) return
   markDirtyPromptItemFields(promptPresetId, itemId, previousItem, attemptedItem)
   if (!canUseServerCommands()) return
 
-  const pendingKey = promptItemStateKey(promptPresetId, itemId)
-  const existing = pendingPromptItemUpdates.get(pendingKey)
   if (existing?.timer) clearTimeout(existing.timer)
   const pending: PendingPromptItemUpdate = {
     ownerId: promptPresetId,
@@ -228,6 +347,7 @@ export function queuePromptItemProjectionUpdate(
     attemptedItem,
     binding,
     timer: null,
+    projectionFence: effectiveProjectionFence,
   }
   pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
   pendingPromptItemUpdates.set(pendingKey, pending)
@@ -320,6 +440,7 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
 
   const sparseUpdate = sparsePromptItemUpdate(pending.previousItem, pending.attemptedItem)
   if (!sparseUpdate) return
+  const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(pending.projectionFence)
 
   void runServerCommand({
     command: (baseRevision) =>
@@ -330,6 +451,7 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
           itemId: pending.itemId,
           patch: sparseUpdate.patch,
           ...(sparseUpdate.deleteKeys.length > 0 ? { deleteKeys: sparseUpdate.deleteKeys } : {}),
+          optimisticAcknowledgement,
         },
         options.signal,
         options.keepalive,
@@ -337,6 +459,7 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
     rollback: () => {
       if (!isCurrentPromptTemplateOwner(pending.ownerId)) {
         promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
+        markPromptTemplateOwnerAcknowledgementTainted(pending.ownerId)
         return
       }
       rollbackPendingPromptItemUpdate(
@@ -345,6 +468,7 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
         pending.itemId,
         pending.previousItem,
         pending.attemptedItem,
+        pending.projectionFence,
       )
     },
     signal: options.signal,
@@ -395,16 +519,104 @@ function rollbackPendingPromptItemUpdate(
   itemId: string,
   previousItem: PromptItem,
   attemptedItem: PromptItem,
+  projectionFence: PromptTemplateOwnerMutationFence,
 ): void {
+  markPromptTemplateOwnerAcknowledgementTainted(ownerId)
+  if (projectionFence.ownerId !== ownerId) return
+  if (hasPromptTemplateOwnerMutationFenceChanged(projectionFence)) return
   const draftItems = binding.getItems()
   const index = draftItems.findIndex((item) => item.id === itemId)
-  if (index === -1) return
-  if (snapshotJson(draftItems[index]) !== snapshotJson(attemptedItem)) return
-  const nextItems = [...draftItems]
-  nextItems[index] = cloneJsonValue(previousItem)
-  binding.setItems(nextItems)
-  restorePromptItemProjectionWrite(itemId, previousItem)
-  clearPromptItemDirtyFields(ownerId, itemId, changedPromptItemFields(previousItem, attemptedItem))
+  const changedFields = changedPromptItemFields(previousItem, attemptedItem)
+  if (index === -1 || changedFields.length === 0) return
+
+  const nextItem = cloneJsonValue(draftItems[index])
+  const restoredDraftFields = restoreAttemptedPromptItemFields(nextItem, previousItem, attemptedItem, changedFields)
+  if (restoredDraftFields.length > 0) {
+    const nextItems = [...draftItems]
+    nextItems[index] = nextItem
+    binding.setItems(nextItems)
+  }
+
+  restorePromptItemProjectionFields(ownerId, itemId, previousItem, attemptedItem, changedFields)
+
+  clearPromptItemDirtyFields(ownerId, itemId, restoredDraftFields)
+}
+
+function restorePromptItemProjectionFields(
+  ownerId: string | null,
+  itemId: string,
+  previousItem: PromptItem,
+  attemptedItem: PromptItem,
+  changedFields: readonly string[],
+): boolean {
+  let complete = true
+  withTrustedResourceWrite(() => {
+    const database = getDatabase()
+    const targets: PromptItem[][] = []
+    if (Array.isArray(database.promptTemplate)) {
+      targets.push(database.promptTemplate as PromptItem[])
+    } else {
+      complete = false
+    }
+
+    if (ownerId !== null) {
+      const owner = findCanonicalPromptTemplatePreset(ownerId)
+      const ownerTemplate = owner?.promptTemplate
+      if (!Array.isArray(ownerTemplate)) {
+        complete = false
+      } else if (!targets.includes(ownerTemplate as PromptItem[])) {
+        targets.push(ownerTemplate as PromptItem[])
+      }
+    }
+
+    for (const target of targets) {
+      const projectionIndex = target.findIndex((item) => item.id === itemId)
+      if (projectionIndex === -1) {
+        complete = false
+        continue
+      }
+      const nextProjectionItem = cloneJsonValue(target[projectionIndex])
+      const restoredFields = restoreAttemptedPromptItemFields(
+        nextProjectionItem,
+        previousItem,
+        attemptedItem,
+        changedFields,
+      )
+      if (restoredFields.length !== changedFields.length) complete = false
+      if (restoredFields.length > 0) target[projectionIndex] = nextProjectionItem
+    }
+  })
+  return complete
+}
+
+function restoreAttemptedPromptItemFields(
+  target: PromptItem,
+  previousItem: PromptItem,
+  attemptedItem: PromptItem,
+  fields: readonly string[],
+): string[] {
+  const targetRecord = promptItemAsRecord(target)
+  const previousRecord = promptItemAsRecord(previousItem)
+  const attemptedRecord = promptItemAsRecord(attemptedItem)
+  const restored: string[] = []
+
+  for (const field of fields) {
+    const targetHasField = Object.prototype.hasOwnProperty.call(targetRecord, field)
+    const attemptedHasField = Object.prototype.hasOwnProperty.call(attemptedRecord, field)
+    if (
+      targetHasField !== attemptedHasField ||
+      snapshotJson(targetRecord[field]) !== snapshotJson(attemptedRecord[field])
+    ) {
+      continue
+    }
+    if (Object.prototype.hasOwnProperty.call(previousRecord, field)) {
+      targetRecord[field] = cloneJsonValue(previousRecord[field])
+    } else {
+      delete targetRecord[field]
+    }
+    restored.push(field)
+  }
+  return restored
 }
 
 function rollbackPromptSettingsPatch(previous: SettingsPatch, attempted: SettingsPatch): void {
@@ -679,9 +891,38 @@ function promptItemsById(items: PromptItem[]): Map<string, PromptItem> {
   return itemsById
 }
 
-function applyPromptTemplateCollectionRollback(binding: PromptTemplateDraftBinding, nextItems: PromptItem[]): void {
+function findCanonicalPromptTemplatePreset(ownerId: string): Record<string, unknown> | null {
+  const presets = getDatabase().promptPresets
+  if (!Array.isArray(presets)) return null
+  const seenPresetIds = new Set<string>()
+  let owner: Record<string, unknown> | null = null
+  for (const candidate of presets) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+    const preset = candidate as unknown as Record<string, unknown>
+    const presetId = preset.id
+    if (typeof presetId !== 'string' || presetId.trim() === '' || seenPresetIds.has(presetId)) return null
+    seenPresetIds.add(presetId)
+    if (presetId === ownerId) owner = preset
+  }
+  return owner
+}
+
+function applyPromptTemplateCollectionRollback(
+  binding: PromptTemplateDraftBinding,
+  ownerId: string | null,
+  nextItems: PromptItem[],
+): boolean {
   binding.setItems(nextItems)
+  let complete = true
   withTrustedResourceWrite(() => {
     getDatabase().promptTemplate = cloneJsonValue(nextItems)
+    if (ownerId === null) return
+    const owner = findCanonicalPromptTemplatePreset(ownerId)
+    if (!owner) {
+      complete = false
+      return
+    }
+    owner.promptTemplate = cloneJsonValue(nextItems)
   })
+  return complete
 }

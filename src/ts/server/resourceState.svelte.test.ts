@@ -27,6 +27,7 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  applyPromptItemMutationLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
@@ -519,6 +520,136 @@ describe('resource-scoped database state', () => {
     ])
     expect(collectionsResourceState.revisions.modules).toBe(5)
     expect(collectionsResourceState.revision).toBe(5)
+  })
+
+  it('fences exact root and preset prompt-owner mutations without rewriting bodies or advancing epochs', () => {
+    const rootItems = [{ id: 'root-a', type: 'plain', text: 'root optimistic' }]
+    const presetItems = [{ id: 'preset-a-item', type: 'plain', text: 'preset optimistic' }]
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        promptTemplate: rootItems as never,
+        promptPresets: [{ id: 'preset-a', name: 'Preset A', promptTemplate: presetItems }] as never,
+      },
+    })
+    const rootEpoch = captureCollectionProjectionEpoch('promptTemplate')
+    const presetEpoch = captureCollectionProjectionEpoch('promptPresets')
+
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 4,
+        operation: 'update',
+        promptPresetId: null,
+        itemId: 'root-a',
+        ownerState: { enabled: true, items: rootItems },
+      }),
+    ).toBe(true)
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 5,
+        operation: 'create',
+        promptPresetId: 'preset-a',
+        itemId: 'preset-a-item',
+        ownerState: { enabled: true, items: presetItems },
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().promptTemplate).toEqual(rootItems)
+    expect(getResourceDatabase().promptPresets[0].promptTemplate).toEqual(presetItems)
+    expect(collectionsResourceState.revisions.promptTemplate).toBe(4)
+    expect(collectionsResourceState.revisions.promptPresets).toBe(5)
+    expect(hasCollectionProjectionEpochChanged('promptTemplate', rootEpoch)).toBe(false)
+    expect(hasCollectionProjectionEpochChanged('promptPresets', presetEpoch)).toBe(false)
+
+    withResourceDatabaseWrite((database) => {
+      delete (database as unknown as Record<string, unknown>).promptTemplate
+    })
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 6,
+        operation: 'enable',
+        promptPresetId: null,
+        enabled: false,
+        ownerState: { enabled: false },
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
+    expect(collectionsResourceState.revisions.promptTemplate).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('promptTemplate', rootEpoch)).toBe(false)
+  })
+
+  it('allows later prompt row fields while keeping operation outcomes and projections canonical', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        promptTemplate: [{ id: 'root-a', text: 'live' }] as never,
+        promptPresets: [
+          { id: 'preset-a', promptTemplate: [{ id: 'item-a' }] },
+          { id: 'preset-a', promptTemplate: [{ id: 'item-b' }] },
+        ] as never,
+      },
+    })
+
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 4,
+        operation: 'update',
+        promptPresetId: null,
+        itemId: 'root-a',
+        ownerState: { enabled: true, items: [{ id: 'root-a', text: 'not live' }] },
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().promptTemplate).toEqual([{ id: 'root-a', text: 'live' }])
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 5,
+        operation: 'reorder',
+        promptPresetId: null,
+        itemIds: ['root-a'],
+        ownerState: { enabled: true, items: [{ id: 'root-a', text: 'not live' }] },
+      }),
+    ).toBe(true)
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 6,
+        operation: 'create',
+        promptPresetId: null,
+        itemId: 'new-root',
+        ownerState: {
+          enabled: true,
+          items: [
+            { id: 'root-a', text: 'live' },
+            { id: 'new-root', text: 'missing locally' },
+          ],
+        },
+      }),
+    ).toBe(false)
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 4,
+        operation: 'create',
+        promptPresetId: 'preset-a',
+        itemId: 'item-a',
+        ownerState: { enabled: true, items: [{ id: 'item-a' }] },
+      }),
+    ).toBe(false)
+    expect(
+      applyPromptItemMutationLocalEffect({
+        revision: 4,
+        operation: 'reorder',
+        promptPresetId: null,
+        itemIds: ['root-a', 'root-a'],
+        ownerState: {
+          enabled: true,
+          items: [
+            { id: 'root-a', text: 'live' },
+            { id: 'root-a', text: 'duplicate' },
+          ],
+        },
+      }),
+    ).toBe(false)
   })
 
   it('fences scoped lorebook mutations without replacing newer entries or advancing projection epochs', () => {

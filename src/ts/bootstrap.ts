@@ -66,6 +66,7 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  applyPromptItemMutationLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
@@ -77,7 +78,14 @@ import {
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
-import { ensurePromptTemplateHydrated } from './server/promptTemplateHydration'
+import {
+  ensurePromptTemplateHydrated,
+  hasPromptTemplateOwnerProjectionEpochChanged,
+  isPromptTemplateOwnerAcknowledgementTainted,
+  isPromptTemplateHydrated,
+  markPromptTemplateProjectionApplied,
+  peekPromptTemplateOwnerRevision,
+} from './server/promptTemplateHydration'
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000
@@ -688,6 +696,58 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           enabled: localEffect.enabled,
         }),
       )
+    case 'promptItemMutation': {
+      const expectedType = {
+        create: 'prompt.item.created',
+        update: 'prompt.item.updated',
+        delete: 'prompt.item.deleted',
+        reorder: 'prompt.item.reordered',
+        enable: 'prompt.item.enabled',
+      }[localEffect.operation]
+      const collectionName = localEffect.promptPresetId === null ? 'promptTemplate' : 'promptPresets'
+      const itemOperation =
+        localEffect.operation === 'create' || localEffect.operation === 'update' || localEffect.operation === 'delete'
+      if (
+        expectedType === undefined ||
+        event.type !== expectedType ||
+        event.resource !== 'promptItem' ||
+        event.parentId !== (localEffect.promptPresetId ?? undefined) ||
+        (itemOperation ? event.id !== localEffect.itemId : event.id !== undefined) ||
+        (localEffect.promptPresetId !== null &&
+          (typeof localEffect.promptPresetId !== 'string' || localEffect.promptPresetId.trim() === '')) ||
+        !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+        localEffect.collectionProjectionEpoch < 0 ||
+        !Number.isInteger(localEffect.ownerProjectionEpoch) ||
+        localEffect.ownerProjectionEpoch < 0 ||
+        hasCollectionProjectionEpochChanged(collectionName, localEffect.collectionProjectionEpoch) ||
+        hasPromptTemplateOwnerProjectionEpochChanged(localEffect.promptPresetId, localEffect.ownerProjectionEpoch) ||
+        !isPromptTemplateHydrated(localEffect.promptPresetId) ||
+        isPromptTemplateOwnerAcknowledgementTainted(localEffect.promptPresetId) ||
+        peekPromptTemplateOwnerRevision(localEffect.promptPresetId) === null
+      ) {
+        return false
+      }
+
+      return withServerResourceApply(() => {
+        if (
+          !applyPromptItemMutationLocalEffect({
+            revision: event.revision,
+            operation: localEffect.operation,
+            promptPresetId: localEffect.promptPresetId,
+            itemId: localEffect.itemId,
+            itemIds: localEffect.itemIds,
+            enabled: localEffect.enabled,
+            ownerState: localEffect.ownerState,
+          })
+        ) {
+          return false
+        }
+        markPromptTemplateProjectionApplied(localEffect.promptPresetId, event.revision, {
+          advanceProjectionEpoch: false,
+        })
+        return true
+      })
+    }
     case 'globalLorebookMutation': {
       const expectedType =
         localEffect.operation === 'create'

@@ -48,6 +48,11 @@ const lorebookApi = vi.hoisted(() => ({
 
 const promptTemplateApi = vi.hoisted(() => ({
   ensure: vi.fn(async () => true),
+  hasOwnerEpochChanged: vi.fn(() => false),
+  isHydrated: vi.fn(() => true),
+  isTainted: vi.fn(() => false),
+  markProjectionApplied: vi.fn(),
+  peekOwnerRevision: vi.fn((): number | null => 5),
 }))
 
 const runtimeApi = vi.hoisted(() => ({
@@ -97,6 +102,11 @@ vi.mock('./server/chatMessageHydration.svelte', () => hydrationApi)
 vi.mock('./server/lorebookBridge.svelte', () => lorebookApi)
 vi.mock('./server/promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: promptTemplateApi.ensure,
+  hasPromptTemplateOwnerProjectionEpochChanged: promptTemplateApi.hasOwnerEpochChanged,
+  isPromptTemplateHydrated: promptTemplateApi.isHydrated,
+  isPromptTemplateOwnerAcknowledgementTainted: promptTemplateApi.isTainted,
+  markPromptTemplateProjectionApplied: promptTemplateApi.markProjectionApplied,
+  peekPromptTemplateOwnerRevision: promptTemplateApi.peekOwnerRevision,
 }))
 vi.mock('./server/bridgeFlush', () => ({
   startBridgePatchLifecycleFlush: bridgeApi.start,
@@ -174,6 +184,7 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   captureSettingsGroupProjectionEpoch,
+  collectionsResourceState,
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   markCharacterLorebookProjectionApplied,
@@ -258,6 +269,15 @@ beforeEach(() => {
   bridgeApi.start.mockReturnValue(bridgeApi.stop)
   promptTemplateApi.ensure.mockClear()
   promptTemplateApi.ensure.mockResolvedValue(true)
+  promptTemplateApi.hasOwnerEpochChanged.mockReset()
+  promptTemplateApi.hasOwnerEpochChanged.mockReturnValue(false)
+  promptTemplateApi.isHydrated.mockReset()
+  promptTemplateApi.isHydrated.mockReturnValue(true)
+  promptTemplateApi.isTainted.mockReset()
+  promptTemplateApi.isTainted.mockReturnValue(false)
+  promptTemplateApi.markProjectionApplied.mockReset()
+  promptTemplateApi.peekOwnerRevision.mockReset()
+  promptTemplateApi.peekOwnerRevision.mockReturnValue(5)
   bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap())
   bootstrapApi.fetchReadOnly.mockResolvedValue(runtimeBootstrap({ revision: 5 }))
   resourceApi.loadInitial.mockResolvedValue({ status: 'ok', revision: 5, scope: 'full' })
@@ -631,6 +651,226 @@ describe('API-backed client bootstrap', () => {
     ])
     expect(getDatabase().enabledModules).toEqual(['mod-b'])
     expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('acknowledges a contiguous exact preset-owned prompt item without fetching its owner', async () => {
+    await loadWebInitialDatabase()
+    const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
+    withTrustedResourceWrite(() => {
+      getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never
+      getDatabase().promptTemplate = ownerItems as never
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+    const event = {
+      type: 'prompt.item.created',
+      revision: 6,
+      resource: 'promptItem',
+      id: 'prompt-item-a',
+      parentId: 'prompt-preset-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'promptItemMutation',
+            operation: 'create',
+            promptPresetId: 'prompt-preset-a',
+            itemId: 'prompt-item-a',
+            collectionProjectionEpoch,
+            ownerProjectionEpoch: 19,
+            ownerState: { enabled: true, items: ownerItems },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().promptPresets[0].promptTemplate).toEqual(ownerItems)
+    expect(collectionsResourceState.revisions.promptPresets).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('promptPresets', collectionProjectionEpoch)).toBe(false)
+    expect(promptTemplateApi.markProjectionApplied).toHaveBeenCalledWith('prompt-preset-a', 6, {
+      advanceProjectionEpoch: false,
+    })
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('acknowledges overlapping accepted prompt updates against the final live row without fetching', async () => {
+    await loadWebInitialDatabase()
+    const firstOwnerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'first accepted edit', role: 'system' }]
+    const finalOwnerItems = [{ ...firstOwnerItems[0], role: 'user' }]
+    withTrustedResourceWrite(() => {
+      getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: finalOwnerItems }] as never
+      getDatabase().promptTemplate = finalOwnerItems as never
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+    const firstEvent = {
+      type: 'prompt.item.updated',
+      revision: 6,
+      resource: 'promptItem',
+      id: 'prompt-item-a',
+      parentId: 'prompt-preset-a',
+    }
+    const secondEvent = { ...firstEvent, revision: 7 }
+
+    await commandApi.reconciler?.(
+      secondEvent,
+      [firstEvent, secondEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'promptItemMutation',
+            operation: 'update',
+            promptPresetId: 'prompt-preset-a',
+            itemId: 'prompt-item-a',
+            collectionProjectionEpoch,
+            ownerProjectionEpoch: 19,
+            ownerState: { enabled: true, items: firstOwnerItems },
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'promptItemMutation',
+            operation: 'update',
+            promptPresetId: 'prompt-preset-a',
+            itemId: 'prompt-item-a',
+            collectionProjectionEpoch,
+            ownerProjectionEpoch: 19,
+            ownerState: { enabled: true, items: finalOwnerItems },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().promptPresets[0].promptTemplate).toEqual(finalOwnerItems)
+    expect(collectionsResourceState.revisions.promptPresets).toBe(7)
+    expect(promptTemplateApi.markProjectionApplied).toHaveBeenNthCalledWith(1, 'prompt-preset-a', 6, {
+      advanceProjectionEpoch: false,
+    })
+    expect(promptTemplateApi.markProjectionApplied).toHaveBeenNthCalledWith(2, 'prompt-preset-a', 7, {
+      advanceProjectionEpoch: false,
+    })
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it.each([
+    'collection epoch',
+    'owner epoch',
+    'unhydrated owner',
+    'tainted owner',
+    'missing owner revision',
+    'item mismatch',
+    'foreign owner',
+  ])('falls back for a prompt acknowledgement with an invalid %s', async (failure) => {
+    await loadWebInitialDatabase()
+    const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
+    withTrustedResourceWrite(() => {
+      getDatabase().promptPresets = [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptPresets')
+    if (failure === 'collection epoch') {
+      applyCollectionsResource(
+        {
+          revision: 5,
+          collections: {
+            promptPresets: [{ id: 'prompt-preset-a', name: 'A', promptTemplate: ownerItems }] as never,
+          },
+        },
+        'promptPresets',
+      )
+    } else if (failure === 'owner epoch') {
+      promptTemplateApi.hasOwnerEpochChanged.mockReturnValue(true)
+    } else if (failure === 'unhydrated owner') {
+      promptTemplateApi.isHydrated.mockReturnValue(false)
+    } else if (failure === 'tainted owner') {
+      promptTemplateApi.isTainted.mockReturnValue(true)
+    } else if (failure === 'missing owner revision') {
+      promptTemplateApi.peekOwnerRevision.mockReturnValue(null)
+    }
+    const event = {
+      type: 'prompt.item.updated',
+      revision: 6,
+      resource: 'promptItem',
+      id: failure === 'item mismatch' ? 'wrong-item' : 'prompt-item-a',
+      parentId: failure === 'foreign owner' ? 'prompt-preset-b' : 'prompt-preset-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'promptItemMutation',
+            operation: 'update',
+            promptPresetId: 'prompt-preset-a',
+            itemId: 'prompt-item-a',
+            collectionProjectionEpoch,
+            ownerProjectionEpoch: 19,
+            ownerState: { enabled: true, items: ownerItems },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+    expect(promptTemplateApi.markProjectionApplied).not.toHaveBeenCalled()
+  })
+
+  it('keeps gapped and foreign prompt events on authoritative owner reconciliation', async () => {
+    await loadWebInitialDatabase()
+    const ownerItems = [{ id: 'prompt-item-a', type: 'plain', text: 'optimistic' }]
+    withTrustedResourceWrite(() => {
+      getDatabase().promptTemplate = ownerItems as never
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('promptTemplate')
+    const gappedEvent = {
+      type: 'prompt.item.updated',
+      revision: 7,
+      resource: 'promptItem',
+      id: 'prompt-item-a',
+    }
+
+    await commandApi.reconciler?.(
+      gappedEvent,
+      [gappedEvent],
+      new Map([
+        [
+          7,
+          {
+            kind: 'promptItemMutation',
+            operation: 'update',
+            promptPresetId: null,
+            itemId: 'prompt-item-a',
+            collectionProjectionEpoch,
+            ownerProjectionEpoch: 3,
+            ownerState: { enabled: true, items: ownerItems },
+          },
+        ],
+      ]),
+    )
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([gappedEvent], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+
+    const foreignEvent = { ...gappedEvent, revision: 8 }
+    eventApi.subscriptions[0].onCommandEvent(foreignEvent)
+    await vi.waitFor(() => expect(resourceApi.refreshInvalidated).toHaveBeenCalledTimes(2))
+    expect(resourceApi.refreshInvalidated).toHaveBeenLastCalledWith([foreignEvent], {
+      appliedRevision: 7,
+      hooks: resourceApi.hooks,
+    })
   })
 
   it('acknowledges contiguous scoped lorebook mutations without replacing newer optimistic entries', async () => {
