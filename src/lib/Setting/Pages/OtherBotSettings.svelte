@@ -409,7 +409,6 @@
       if (!isCurrentSettingsMediaAssetUpload(operation)) return
 
       const imageData = img.data
-      const base64Image = Buffer.from(imageData).toString('base64')
       const saveId = await saveAsset(imageData)
       if (!isCurrentSettingsMediaAssetUpload(operation)) return
 
@@ -417,7 +416,6 @@
         operation,
         freshness: settingsMediaAssetUploadFreshness(operation),
         image: saveId,
-        base64Image,
       })
       if (!nextConfig) return
 

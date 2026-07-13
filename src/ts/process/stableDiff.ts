@@ -28,6 +28,35 @@ function mediaAbortError(): Error {
   return error
 }
 
+async function resolveStoredImageBase64(
+  assetReference: unknown,
+  legacyBase64: unknown,
+  fallbackAssetReference: unknown = '',
+): Promise<string> {
+  const reference = typeof assetReference === 'string' ? assetReference.trim() : ''
+  const inline = typeof legacyBase64 === 'string' ? legacyBase64 : ''
+
+  // Some imported databases only have the old inline field. Keep that shape
+  // usable without attempting an asset request for a reference that is absent.
+  if (!reference && inline) return inline
+
+  const fallbackReference = typeof fallbackAssetReference === 'string' ? fallbackAssetReference.trim() : ''
+  const referenceToRead = reference || fallbackReference
+  if (!referenceToRead) return inline
+
+  try {
+    const image = await readImage(referenceToRead)
+    if (image?.byteLength) {
+      return Buffer.from(image).toString('base64')
+    }
+  } catch {
+    // An imported asset reference may no longer be readable. Its legacy inline
+    // copy remains a valid compatibility fallback when one was persisted.
+  }
+
+  return inline
+}
+
 async function waitForPollInterval(ms: number, signal?: AbortSignal): Promise<boolean> {
   if (isImageGenerationAborted(signal)) return false
   return new Promise<boolean>((resolve) => {
@@ -369,16 +398,11 @@ export async function generateAIImage(
       db.NAIImgConfig.reference_mode === 'character' &&
       (db.NAIImgModel.includes('nai-diffusion-4-5-full') || db.NAIImgModel.includes('nai-diffusion-4-5-curated'))
     ) {
-      let base64img = ''
-      if (!db.NAIImgConfig.character_image || db.NAIImgConfig.character_image === '') {
-        const charimg = currentChar.image
-        const img = await readImage(charimg)
-        if (img) {
-          base64img = Buffer.from(img).toString('base64')
-        }
-      } else {
-        base64img = db.NAIImgConfig.character_base64image
-      }
+      let base64img = await resolveStoredImageBase64(
+        db.NAIImgConfig.character_image,
+        db.NAIImgConfig.character_base64image,
+        currentChar.image,
+      )
 
       try {
         const canvas = document.createElement('canvas')
@@ -439,17 +463,11 @@ export async function generateAIImage(
     if (db.NAII2I) {
       let seed = random(0, 1000000000)
 
-      let base64img = ''
-      if (!db.NAIImgConfig.image || db.NAIImgConfig.image === '') {
-        const charimg = currentChar.image
-
-        const img = await readImage(charimg)
-        if (img) {
-          base64img = Buffer.from(img).toString('base64')
-        }
-      } else {
-        base64img = db.NAIImgConfig.base64image
-      }
+      const base64img = await resolveStoredImageBase64(
+        db.NAIImgConfig.image,
+        db.NAIImgConfig.base64image,
+        currentChar.image,
+      )
 
       if (base64img) {
         reqlist = commonReq
@@ -938,14 +956,10 @@ export async function generateAIImage(
     let base64img = ''
     if (config.reference_mode === 'image') {
       // reference: uploaded image
-      base64img = config.reference_base64image
+      base64img = await resolveStoredImageBase64(config.reference_image, config.reference_base64image)
     } else if (config.reference_mode === 'character') {
       // reference: auto use the character's default image
-      const charimg = currentChar.image
-      const img = await readImage(charimg)
-      if (img) {
-        base64img = Buffer.from(img).toString('base64')
-      }
+      base64img = await resolveStoredImageBase64(currentChar.image, '')
     }
     if (base64img) {
       body.images = [base64img]

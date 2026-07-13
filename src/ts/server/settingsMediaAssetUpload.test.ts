@@ -89,7 +89,6 @@ function applyUpload(
     config: SettingsMediaAssetUploadConfig
     context: SettingsMediaAssetUploadContext
     image: string
-    base64Image: string
   }>,
 ): SettingsMediaAssetUploadConfig | null {
   return applyFreshSettingsMediaAssetUpload({
@@ -99,7 +98,6 @@ function applyUpload(
       context: freshness?.context ?? contextFor(operation.targetId),
     },
     image: freshness?.image ?? 'uploaded-asset',
-    base64Image: freshness?.base64Image ?? 'uploaded-base64',
   })
 }
 
@@ -188,17 +186,14 @@ describe('settings media asset upload freshness', () => {
       expect(
         applyUpload(newer, {
           image: 'newer-asset',
-          base64Image: 'newer-base64',
         }),
       ).toEqual({
         image: 'newer-asset',
-        base64image: 'newer-base64',
       })
 
       expect(
         applyUpload(older, {
           image: 'older-asset',
-          base64Image: 'older-base64',
         }),
       ).toBeNull()
     } finally {
@@ -221,11 +216,9 @@ describe('settings media asset upload freshness', () => {
       expect(
         applyUpload(older, {
           image: 'older-asset',
-          base64Image: 'older-base64',
         }),
       ).toEqual({
         reference_image: 'older-asset',
-        reference_base64image: 'older-base64',
       })
     } finally {
       clearSettingsMediaAssetUpload(older)
@@ -250,7 +243,6 @@ describe('settings media asset upload freshness', () => {
       const result = applyUpload(operation, {
         config,
         image: 'fresh-image',
-        base64Image: 'fresh-base64',
       })
 
       expect(result).toEqual({
@@ -258,10 +250,44 @@ describe('settings media asset upload freshness', () => {
         height: 1216,
         sampler: 'k_euler',
         image: 'fresh-image',
-        base64image: 'fresh-base64',
         character_image: 'untouched-character-reference',
       })
       expect(result).not.toBe(config)
+      expect(JSON.stringify({ ...result, width: 1024 })).not.toContain('old-base64')
+    } finally {
+      clearSettingsMediaAssetUpload(operation)
+    }
+  })
+
+  it.each([
+    ['nai-character-reference', 'character_image', 'character_base64image'],
+    ['nai-i2i-base', 'image', 'base64image'],
+    ['wavespeed-reference', 'reference_image', 'reference_base64image'],
+  ] as const)('stores only the durable asset reference for %s uploads', (targetId, imageKey, base64Key) => {
+    const operation = beginUpload({
+      targetId,
+      config: {
+        [imageKey]: 'old-asset',
+        [base64Key]: 'duplicated-image-bytes',
+        sibling: 'preserved',
+      },
+    })
+
+    try {
+      const result = applyUpload(operation, {
+        config: {
+          [imageKey]: 'old-asset',
+          [base64Key]: 'duplicated-image-bytes',
+          sibling: 'preserved',
+        },
+        image: 'new-asset',
+      })
+
+      expect(result).toEqual({
+        [imageKey]: 'new-asset',
+        sibling: 'preserved',
+      })
+      expect(result).not.toHaveProperty(base64Key)
     } finally {
       clearSettingsMediaAssetUpload(operation)
     }

@@ -88,13 +88,13 @@ export function applyFreshSettingsMediaAssetUpload(input: {
   operation: SettingsMediaAssetUploadOperation
   freshness: SettingsMediaAssetUploadFreshness
   image: unknown
-  base64Image: unknown
 }): SettingsMediaAssetUploadConfig | null {
   if (!isFreshSettingsMediaAssetUpload(input.operation, input.freshness)) return null
 
-  return {
+  const nextConfig = {
     ...normalizeConfig(input.freshness.config),
     [input.operation.fieldKeys.image]: input.image,
-    [input.operation.fieldKeys.base64image]: input.base64Image,
   }
+  delete nextConfig[input.operation.fieldKeys.base64image]
+  return nextConfig
 }

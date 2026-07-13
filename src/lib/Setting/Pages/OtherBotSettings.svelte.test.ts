@@ -77,6 +77,8 @@ describe('OtherBotSettings settings media upload wiring', () => {
     expect(secondFreshnessIndex).toBeGreaterThan(saveAssetIndex)
     expect(applyFreshIndex).toBeGreaterThan(secondFreshnessIndex)
     expect(writeConfigIndex).toBeGreaterThan(applyFreshIndex)
+    expect(uploadBody).not.toContain('Buffer.from(imageData)')
+    expect(uploadBody).not.toContain('base64Image')
   })
 
   it('does not write uploaded save ids directly into provider draft fields', () => {

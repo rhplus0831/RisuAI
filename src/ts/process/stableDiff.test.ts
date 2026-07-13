@@ -107,6 +107,138 @@ beforeEach(() => {
 })
 
 describe('stableDiff image-generation hygiene', () => {
+  it('resolves a saved NovelAI I2I asset only when constructing the provider request', async () => {
+    const char = makeCharacter()
+    seedNovelAiDb({
+      image: 'saved-i2i-asset',
+      base64image: undefined,
+    })
+    state.db.NAII2I = true
+    state.readImage.mockResolvedValueOnce(new Uint8Array([1, 2, 3]))
+    state.globalFetch.mockResolvedValueOnce({
+      ok: true,
+      data: new Uint8Array([9, 8, 7]),
+    })
+
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,zip-image')
+
+    expect(state.readImage).toHaveBeenCalledTimes(1)
+    expect(state.readImage).toHaveBeenCalledWith('saved-i2i-asset')
+    expect(state.globalFetch).toHaveBeenCalledWith(
+      'https://novelai.example.test/generate',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          action: 'img2img',
+          parameters: expect.objectContaining({
+            image: 'AQID',
+            strength: 0.7,
+            noise: 0,
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('keeps legacy base64-only NovelAI I2I settings working without an asset read', async () => {
+    const char = makeCharacter()
+    seedNovelAiDb({
+      image: '',
+      base64image: 'legacy-inline-image',
+    })
+    state.db.NAII2I = true
+    state.globalFetch.mockResolvedValueOnce({
+      ok: true,
+      data: new Uint8Array([9, 8, 7]),
+    })
+
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,zip-image')
+
+    expect(state.readImage).not.toHaveBeenCalled()
+    expect(state.globalFetch).toHaveBeenCalledWith(
+      'https://novelai.example.test/generate',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          parameters: expect.objectContaining({
+            image: 'legacy-inline-image',
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('falls back to legacy inline bytes when an imported asset reference is unreadable', async () => {
+    const char = makeCharacter()
+    seedNovelAiDb({
+      image: 'missing-imported-asset',
+      base64image: 'legacy-fallback-image',
+    })
+    state.db.NAII2I = true
+    state.readImage.mockRejectedValueOnce(new Error('asset missing'))
+    state.globalFetch.mockResolvedValueOnce({
+      ok: true,
+      data: new Uint8Array([9, 8, 7]),
+    })
+
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,zip-image')
+
+    expect(state.readImage).toHaveBeenCalledWith('missing-imported-asset')
+    expect(state.globalFetch).toHaveBeenCalledWith(
+      'https://novelai.example.test/generate',
+      expect.objectContaining({
+        body: expect.objectContaining({
+          parameters: expect.objectContaining({
+            image: 'legacy-fallback-image',
+          }),
+        }),
+      }),
+    )
+  })
+
+  it('resolves a saved WaveSpeed reference asset and preserves its image request shape', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'wavespeed',
+      wavespeedImage: {
+        key: 'wavespeed-key',
+        model: 'wavespeed/model-a',
+        loras: [],
+        reference_mode: 'image',
+        reference_image: 'saved-wavespeed-asset',
+      },
+    }
+    state.readImage.mockResolvedValueOnce(new Uint8Array([4, 5, 6]))
+    state.globalFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { data: { id: 'prediction-1' } },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: { data: { status: 'completed', outputs: ['https://images.example.test/result.png'] } },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        data: new Uint8Array([7, 8, 9]),
+        headers: { 'content-type': 'image/png' },
+      })
+
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,BwgJ')
+
+    expect(state.readImage).toHaveBeenCalledTimes(1)
+    expect(state.readImage).toHaveBeenCalledWith('saved-wavespeed-asset')
+    expect(state.globalFetch).toHaveBeenNthCalledWith(
+      1,
+      'https://api.wavespeed.ai/api/v3/wavespeed/model-a',
+      expect.objectContaining({
+        body: {
+          prompt: 'prompt',
+          images: ['BAUG'],
+          loras: [],
+        },
+      }),
+    )
+  })
+
   it('routes prompt generation through otherAx and forwards the stripped prompt to the image provider', async () => {
     const char = {
       ...makeCharacter(),
