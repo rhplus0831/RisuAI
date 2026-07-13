@@ -138,6 +138,24 @@ function hf503Response(estimatedTime = 0.001) {
   } as unknown as Response
 }
 
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn(async () => body),
+  } as unknown as Response
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (error?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 function makeCharacter(overrides: Partial<character> = {}): character {
   return {
     chaId: 'char-tts',
@@ -218,6 +236,125 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('TTS provider catalog request caching', () => {
+  it('dedupes ElevenLabs catalogs by API key and retries failed requests', async () => {
+    const pending = deferred<Response>()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(jsonResponse({ voices: [{ voice_id: 'voice-b', name: 'Voice B' }] }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'temporary' }, 503))
+      .mockResolvedValueOnce(jsonResponse({ voices: [{ voice_id: 'voice-c', name: 'Voice C' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { getElevenTTSVoices } = await importTTS()
+
+    const first = getElevenTTSVoices()
+    const concurrent = getElevenTTSVoices()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    pending.resolve(jsonResponse({ voices: [{ voice_id: 'voice-a', name: 'Voice A' }] }))
+
+    await expect(Promise.all([first, concurrent])).resolves.toEqual([
+      [{ voice_id: 'voice-a', name: 'Voice A' }],
+      [{ voice_id: 'voice-a', name: 'Voice A' }],
+    ])
+    await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-a', name: 'Voice A' }])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    testState.db.elevenLabKey = 'eleven-key-b'
+    await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-b', name: 'Voice B' }])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.elevenlabs.io/v1/voices', {
+      headers: { 'xi-api-key': 'eleven-key-b' },
+    })
+
+    testState.db.elevenLabKey = 'eleven-key-retry'
+    await expect(getElevenTTSVoices()).rejects.toThrow('ElevenLabs catalog request failed (503)')
+    await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-c', name: 'Voice C' }])
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('dedupes VOICEVOX catalogs by normalized URL and retries malformed responses', async () => {
+    testState.db.voicevoxUrl = 'https://voicevox-a.example.test///'
+    const pending = deferred<Response>()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(jsonResponse([{ name: 'Speaker B', styles: [{ name: 'Normal', id: '2' }] }]))
+      .mockResolvedValueOnce(jsonResponse({ speakers: [] }))
+      .mockResolvedValueOnce(jsonResponse([{ name: 'Speaker C', styles: [{ name: 'Normal', id: 3 }] }]))
+    vi.stubGlobal('fetch', fetchMock)
+    const { getVOICEVOXVoices } = await importTTS()
+
+    const first = getVOICEVOXVoices()
+    const concurrent = getVOICEVOXVoices()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    pending.resolve(jsonResponse([{ name: 'Speaker A', styles: [{ name: 'Normal', id: 1 }] }]))
+
+    const expectedFirst = [
+      { name: 'None', list: null },
+      { name: 'Speaker A', list: JSON.stringify([{ name: 'Normal', id: '1' }]) },
+    ]
+    await expect(Promise.all([first, concurrent])).resolves.toEqual([expectedFirst, expectedFirst])
+    testState.db.voicevoxUrl = 'https://voicevox-a.example.test'
+    await expect(getVOICEVOXVoices()).resolves.toEqual(expectedFirst)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenNthCalledWith(1, 'https://voicevox-a.example.test/speakers')
+
+    testState.db.voicevoxUrl = 'https://voicevox-b.example.test/'
+    await expect(getVOICEVOXVoices()).resolves.toEqual([
+      { name: 'None', list: null },
+      { name: 'Speaker B', list: JSON.stringify([{ name: 'Normal', id: '2' }]) },
+    ])
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://voicevox-b.example.test/speakers')
+
+    testState.db.voicevoxUrl = 'https://voicevox-retry.example.test'
+    await expect(getVOICEVOXVoices()).rejects.toThrow('VOICEVOX speaker catalog response was malformed')
+    await expect(getVOICEVOXVoices()).resolves.toEqual([
+      { name: 'None', list: null },
+      { name: 'Speaker C', list: JSON.stringify([{ name: 'Normal', id: '3' }]) },
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
+  it('dedupes Fish Speech catalogs by API key and retries failed requests', async () => {
+    testState.db.fishSpeechKey = 'fish-key-a'
+    const pending = deferred<Response>()
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => pending.promise)
+      .mockResolvedValueOnce(jsonResponse({ items: [{ _id: 'fish-b', title: 'Fish B', description: 'Second' }] }))
+      .mockResolvedValueOnce(jsonResponse({ error: 'temporary' }, 502))
+      .mockResolvedValueOnce(jsonResponse({ items: [{ _id: 'fish-c', title: 'Fish C', description: 'Retry' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { getFishSpeechModels } = await importTTS()
+
+    const first = getFishSpeechModels()
+    const concurrent = getFishSpeechModels()
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    pending.resolve(jsonResponse({ items: [{ _id: 'fish-a', title: 'Fish A', description: 'First' }] }))
+
+    const expectedFirst = [{ _id: 'fish-a', title: 'Fish A', description: 'First' }]
+    await expect(Promise.all([first, concurrent])).resolves.toEqual([expectedFirst, expectedFirst])
+    await expect(getFishSpeechModels()).resolves.toEqual(expectedFirst)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    testState.db.fishSpeechKey = 'fish-key-b'
+    await expect(getFishSpeechModels()).resolves.toEqual([{ _id: 'fish-b', title: 'Fish B', description: 'Second' }])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.fish.audio/model?self=true', {
+      headers: { Authorization: 'Bearer fish-key-b' },
+    })
+
+    testState.db.fishSpeechKey = 'fish-key-retry'
+    await expect(getFishSpeechModels()).rejects.toThrow('Fish Speech catalog request failed (502)')
+    await expect(getFishSpeechModels()).resolves.toEqual([{ _id: 'fish-c', title: 'Fish C', description: 'Retry' }])
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
 })
 
 describe('sayTTS AudioContext lifecycle', () => {

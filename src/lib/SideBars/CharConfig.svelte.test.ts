@@ -71,6 +71,7 @@ vi.mock('src/ts/server/commands', () => {
     }),
     saveChatGenerationSettingsCommand: command('saveChatGenerationSettings'),
     selectCharacterCommand: command('selectCharacter'),
+    subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
     truncateMessagesCommand: command('truncateMessages'),
     updateCharacterCommand: command('updateCharacter'),
     updateChatCommand: command('updateChat'),
@@ -193,6 +194,7 @@ vi.mock('src/ts/process/transformers', () => ({
 
 vi.mock('src/ts/process/tts', () => ({
   getElevenTTSVoices: vi.fn(() => []),
+  getFishSpeechModels: vi.fn(() => []),
   getNovelAIVoices: vi.fn(() => []),
   getVOICEVOXVoices: vi.fn(() => []),
   getWebSpeechTTSVoices: vi.fn(() => []),

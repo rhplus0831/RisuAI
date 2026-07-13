@@ -46,6 +46,7 @@
   import { exportChar } from 'src/ts/characterCards'
   import {
     getElevenTTSVoices,
+    getFishSpeechModels as loadFishSpeechModels,
     getWebSpeechTTSVoices,
     getVOICEVOXVoices,
     oaiVoices,
@@ -454,29 +455,10 @@
     }
   })
 
-  async function getFishSpeechModels() {
+  async function loadFishSpeechModelsIntoEditor() {
     try {
-      const res = await fetch(`https://api.fish.audio/model?self=true`, {
-        headers: {
-          Authorization: `Bearer ${getDatabase().fishSpeechKey}`,
-        },
-      })
-      const data = await res.json()
-      console.log(data.items)
-      console.log(getDatabase().characters[$selectedCharID])
-
-      if (Array.isArray(data.items)) {
-        fishSpeechModels = data.items.map((item) => ({
-          _id: item._id || '',
-          title: item.title || '',
-          description: item.description || '',
-        }))
-      } else {
-        console.error('Expected an array of items, but received:', data.items)
-        fishSpeechModels = []
-      }
-    } catch (error) {
-      console.error('Error fetching fish speech models:', error)
+      fishSpeechModels = await loadFishSpeechModels()
+    } catch {
       fishSpeechModels = []
     }
   }
@@ -1679,7 +1661,7 @@
         <OptionInput value="cut5">Cut 5 (Split by various punctuation marks)</OptionInput>
       </SelectInput>
     {:else if characterDraft.value.ttsMode === 'fishspeech'}
-      {#await getFishSpeechModels()}
+      {#await loadFishSpeechModelsIntoEditor()}
         <span class="text-textcolor">Loading...</span>
       {:then}
         <span class="text-textcolor">Model</span>

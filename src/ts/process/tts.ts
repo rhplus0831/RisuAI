@@ -2,6 +2,7 @@ import { alertError } from '../alert'
 import { getCurrentCharacter, getDatabase, type character } from '../storage/database.svelte'
 import { runTranslator, translateVox } from '../translator/translator'
 import { globalFetch, loadAsset } from '../globalApi.svelte'
+import { createKeyedRequestCache } from '../model/keyedRequestCache'
 import { language } from 'src/lang'
 import { sleep } from '../util'
 import { runVITS } from './transformers'
@@ -17,6 +18,33 @@ import {
 
 const HF_TTS_MAX_ATTEMPTS = 5
 const HF_TTS_MAX_TOTAL_RETRY_WAIT_MS = 120_000
+const TTS_CATALOG_CACHE_TTL_MS = 30_000
+
+export type ElevenTTSVoice = {
+  voice_id: string
+  name: string
+}
+
+export type VoicevoxSpeaker = {
+  name: string
+  list: string | null
+}
+
+export type FishSpeechModel = {
+  _id: string
+  title: string
+  description: string
+}
+
+const elevenVoiceCatalogRequests = createKeyedRequestCache<ElevenTTSVoice[]>({
+  ttlMs: TTS_CATALOG_CACHE_TTL_MS,
+})
+const voicevoxSpeakerCatalogRequests = createKeyedRequestCache<VoicevoxSpeaker[]>({
+  ttlMs: TTS_CATALOG_CACHE_TTL_MS,
+})
+const fishSpeechModelCatalogRequests = createKeyedRequestCache<FishSpeechModel[]>({
+  ttlMs: TTS_CATALOG_CACHE_TTL_MS,
+})
 
 let audioContext: AudioContext | null = null
 let sourceNode: AudioBufferSourceNode | null = null
@@ -541,31 +569,111 @@ export function getWebSpeechTTSVoices() {
   })
 }
 
-export async function getElevenTTSVoices() {
-  let db = getDatabase()
-
-  const data = await fetch('https://api.elevenlabs.io/v1/voices', {
-    headers: {
-      'xi-api-key': db.elevenLabKey || undefined,
-    },
-  })
-  const res = await data.json()
-
-  return res.voices
+function isCatalogRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-export async function getVOICEVOXVoices() {
+function requireCatalogResponse(response: Response, provider: string): void {
+  if (!response.ok) {
+    throw new Error(`${provider} catalog request failed (${response.status})`)
+  }
+}
+
+export async function getElevenTTSVoices(): Promise<ElevenTTSVoice[]> {
   const db = getDatabase()
-  const speakerData = await fetch(`${db.voicevoxUrl}/speakers`)
-  const speakerList = await speakerData.json()
-  const speakersInfo = speakerList.map((speaker) => {
-    const styles = speaker.styles.map((style) => {
-      return { name: style.name, id: `${style.id}` }
+  const apiKey = typeof db.elevenLabKey === 'string' ? db.elevenLabKey : ''
+
+  return elevenVoiceCatalogRequests.request(apiKey, async () => {
+    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
+      headers: apiKey ? { 'xi-api-key': apiKey } : {},
     })
-    return { name: speaker.name, list: JSON.stringify(styles) }
+    requireCatalogResponse(response, 'ElevenLabs')
+    const body: unknown = await response.json()
+    if (!isCatalogRecord(body) || !Array.isArray(body.voices)) {
+      throw new Error('ElevenLabs voice catalog response was malformed')
+    }
+
+    return body.voices.map((voice): ElevenTTSVoice => {
+      if (!isCatalogRecord(voice) || typeof voice.voice_id !== 'string' || typeof voice.name !== 'string') {
+        throw new Error('ElevenLabs voice catalog response was malformed')
+      }
+      return { voice_id: voice.voice_id, name: voice.name }
+    })
   })
-  speakersInfo.unshift({ name: 'None', list: null })
-  return speakersInfo
+}
+
+export async function getVOICEVOXVoices(): Promise<VoicevoxSpeaker[]> {
+  const db = getDatabase()
+  const configuredUrl = typeof db.voicevoxUrl === 'string' ? db.voicevoxUrl.trim() : ''
+  const baseUrl = configuredUrl.replace(/\/+$/, '')
+
+  return voicevoxSpeakerCatalogRequests.request(baseUrl, async () => {
+    const response = await fetch(`${baseUrl}/speakers`)
+    requireCatalogResponse(response, 'VOICEVOX')
+    const body: unknown = await response.json()
+    if (!Array.isArray(body)) {
+      throw new Error('VOICEVOX speaker catalog response was malformed')
+    }
+
+    const speakers = body.map((speaker): VoicevoxSpeaker => {
+      if (!isCatalogRecord(speaker) || typeof speaker.name !== 'string' || !Array.isArray(speaker.styles)) {
+        throw new Error('VOICEVOX speaker catalog response was malformed')
+      }
+      const styles = speaker.styles.map((style) => {
+        if (
+          !isCatalogRecord(style) ||
+          typeof style.name !== 'string' ||
+          (typeof style.id !== 'string' && typeof style.id !== 'number')
+        ) {
+          throw new Error('VOICEVOX speaker catalog response was malformed')
+        }
+        return { name: style.name, id: `${style.id}` }
+      })
+      return { name: speaker.name, list: JSON.stringify(styles) }
+    })
+    speakers.unshift({ name: 'None', list: null })
+    return speakers
+  })
+}
+
+export async function getFishSpeechModels(): Promise<FishSpeechModel[]> {
+  const db = getDatabase()
+  const apiKey = typeof db.fishSpeechKey === 'string' ? db.fishSpeechKey : ''
+
+  return fishSpeechModelCatalogRequests.request(apiKey, async () => {
+    const response = await fetch('https://api.fish.audio/model?self=true', {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    })
+    requireCatalogResponse(response, 'Fish Speech')
+    const body: unknown = await response.json()
+    if (!isCatalogRecord(body) || !Array.isArray(body.items)) {
+      throw new Error('Fish Speech model catalog response was malformed')
+    }
+
+    return body.items.map((item): FishSpeechModel => {
+      if (!isCatalogRecord(item)) {
+        throw new Error('Fish Speech model catalog response was malformed')
+      }
+      const id = item._id
+      const title = item.title
+      const description = item.description
+      if (
+        typeof id !== 'string' ||
+        id.length === 0 ||
+        (title !== undefined && typeof title !== 'string') ||
+        (description !== undefined && typeof description !== 'string')
+      ) {
+        throw new Error('Fish Speech model catalog response was malformed')
+      }
+      return {
+        _id: id,
+        title: typeof title === 'string' ? title : '',
+        description: typeof description === 'string' ? description : '',
+      }
+    })
+  })
 }
 
 export function getNovelAIVoices() {
