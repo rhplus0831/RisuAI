@@ -101,7 +101,7 @@ export function deleteAgentPreset(
 > {
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallyDeleteAgentPreset(presetId),
+    rollback: taintedAgentPresetRollback(optimisticallyDeleteAgentPreset(presetId)),
     command: (baseRevision) => deleteAgentPresetCommand({ baseRevision, presetId }, options.signal),
   })
 }
@@ -112,7 +112,7 @@ export function reorderAgentPresets(
 ): Promise<ServerCommandResult<{ agentPresetDefaultId: string | null }>> {
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallyReorderAgentPresets(presetIds),
+    rollback: taintedAgentPresetRollback(optimisticallyReorderAgentPresets(presetIds)),
     command: (baseRevision) => reorderAgentPresetsCommand({ baseRevision, presetIds }, options.signal),
   })
 }
@@ -123,7 +123,7 @@ export function setAgentPresetDefault(
 ): Promise<ServerCommandResult<{ agentPresetDefaultId: string | null }>> {
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallySetAgentPresetDefault(agentPresetId),
+    rollback: taintedAgentPresetRollback(optimisticallySetAgentPresetDefault(agentPresetId)),
     command: (baseRevision) => setAgentPresetDefaultCommand({ baseRevision, agentPresetId }, options.signal),
   })
 }
@@ -182,7 +182,7 @@ export function deleteAgentPresetStep(
 ): Promise<ServerCommandResult<{ presetId: string; stepId: string }>> {
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallyDeleteAgentPresetStep(presetId, stepId),
+    rollback: taintedAgentPresetRollback(optimisticallyDeleteAgentPresetStep(presetId, stepId)),
     command: (baseRevision) => deleteAgentPresetStepCommand({ baseRevision, presetId, stepId }, options.signal),
   })
 }
@@ -194,7 +194,7 @@ export function reorderAgentPresetSteps(
 ): Promise<ServerCommandResult<{ presetId: string }>> {
   return runServerCommand({
     signal: options.signal,
-    rollback: optimisticallyReorderAgentPresetSteps(presetId, stepIds),
+    rollback: taintedAgentPresetRollback(optimisticallyReorderAgentPresetSteps(presetId, stepIds)),
     command: (baseRevision) => reorderAgentPresetStepsCommand({ baseRevision, presetId, stepIds }, options.signal),
   })
 }

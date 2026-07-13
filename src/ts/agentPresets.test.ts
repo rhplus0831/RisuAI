@@ -16,7 +16,15 @@ vi.mock('./process/modules', () => ({
   refreshModules: vi.fn(),
 }))
 
-import { updateAgentPreset, updateAgentPresetStep } from './agentPresets'
+import {
+  deleteAgentPreset,
+  deleteAgentPresetStep,
+  reorderAgentPresets,
+  reorderAgentPresetSteps,
+  setAgentPresetDefault,
+  updateAgentPreset,
+  updateAgentPresetStep,
+} from './agentPresets'
 import type { AgentPresetRecord, AgentPresetStepRecord } from './agentPresetRecords'
 import {
   clearAppliedServerResourceRevision,
@@ -149,5 +157,106 @@ describe('Agent Preset optimistic field rollback', () => {
       instruction: 'Newer local instruction',
     })
     expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+  })
+
+  it.each([
+    ['preset delete', () => deleteAgentPreset('ap_a')],
+    ['preset reorder', () => reorderAgentPresets(['ap_b', 'ap_a'])],
+    ['default selection', () => setAgentPresetDefault('ap_b')],
+    ['step delete', () => deleteAgentPresetStep('ap_a', 'aps_a')],
+    ['step reorder', () => reorderAgentPresetSteps('ap_a', ['aps_b', 'aps_a'])],
+  ])('taints the agents projection before a failed optimistic %s rollback', async (_label, runCommand) => {
+    setResourceWriteGuardEnabled(false)
+    resetServerResourceState()
+    setDatabaseLite(
+      {
+        agentPresets: [
+          preset({ steps: [step(), step({ id: 'aps_b', name: 'Step B', outputKey: 'step_b' })] }),
+          preset({ id: 'ap_b', name: 'Preset B', steps: [] }),
+        ],
+        characters: [],
+      } as never,
+      1,
+    )
+    setResourceWriteGuardEnabled(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    await expect(runCommand()).resolves.toEqual({ status: 'error', error: 'rejected' })
+
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+  })
+
+  it('keeps a failed step reorder tainted when a later accepted field patch prevents whole-array rollback', async () => {
+    setResourceWriteGuardEnabled(false)
+    resetServerResourceState()
+    setDatabaseLite(
+      {
+        agentPresets: [preset({ steps: [step(), step({ id: 'aps_b', name: 'Step B', outputKey: 'step_b' })] })],
+        characters: [],
+      } as never,
+      1,
+    )
+    setResourceWriteGuardEnabled(true)
+    const pendingReorder = deferred<Response>()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/agent-presets/ap_a/steps/reorder')) return pendingReorder.promise
+      if (url.endsWith('/agent-presets/ap_a/steps/aps_b')) {
+        return Promise.resolve(
+          response(
+            {
+              revision: 3,
+              event: {
+                type: 'agentPreset.step.updated',
+                revision: 3,
+                resource: 'agentPreset',
+                id: 'aps_b',
+                parentId: 'ap_a',
+              },
+              presetId: 'ap_a',
+              stepId: 'aps_b',
+              acknowledgedKeys: ['instruction'],
+              canonicalValues: { instruction: 'Accepted instruction' },
+              canonicalDeletedKeys: [],
+              updatedAt: 300,
+            },
+            200,
+          ),
+        )
+      }
+      throw new Error(`Unexpected command URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const authoritativeAgentsRead = vi.fn()
+    const localRevisionFence = vi.fn()
+    setServerCommandSuccessReconciler((_event, events, localEffects) => {
+      const localEffect = [...localEffects.values()][0]
+      if (localEffect?.kind === 'agentPresetStepPatch' && isSettingsGroupAcknowledgementTainted('agents')) {
+        authoritativeAgentsRead(events)
+        return
+      }
+      localRevisionFence()
+    })
+
+    const reorderResult = reorderAgentPresetSteps('ap_a', ['aps_b', 'aps_a'])
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    const updateResult = updateAgentPresetStep('ap_a', 'aps_b', { instruction: 'Accepted instruction' })
+    expect(getDatabase().agentPresets[0].steps.map((candidate) => candidate.id)).toEqual(['aps_b', 'aps_a'])
+    expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Accepted instruction')
+
+    pendingReorder.resolve(response({ error: 'revision_conflict', currentRevision: 2 }, 409))
+
+    await expect(Promise.all([reorderResult, updateResult])).resolves.toEqual([
+      { status: 'conflict', currentRevision: 2 },
+      expect.objectContaining({ status: 'ok', revision: 3 }),
+    ])
+    expect(getDatabase().agentPresets[0].steps.map((candidate) => candidate.id)).toEqual(['aps_b', 'aps_a'])
+    expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Accepted instruction')
+    expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
+    expect(authoritativeAgentsRead).toHaveBeenCalledOnce()
+    expect(localRevisionFence).not.toHaveBeenCalled()
   })
 })

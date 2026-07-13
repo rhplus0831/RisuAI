@@ -1,6 +1,13 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
-import type { AgentPresetRecord, AgentPresetStepRecord } from '../agentPresetRecords'
+import {
+  AGENT_PRESET_SCHEMA_VERSION,
+  normalizeAgentPresets,
+  validateAgentPresetRecord,
+  validateAgentPresetStepRecord,
+  type AgentPresetRecord,
+  type AgentPresetStepRecord,
+} from '../agentPresetRecords'
 import type { MessageTranslation } from '../storage/database.svelte'
 import type { ModelRole } from '../model/modelRoles'
 import type {
@@ -5055,6 +5062,7 @@ function readAgentPresetPatchLocalEffect(
   ) {
     return undefined
   }
+  if (!isCanonicalAgentPresetPatchReceipt(input.kind, canonicalValues)) return undefined
 
   const fields: AgentPresetPatchLocalEffect['fields'] = {}
   for (const key of canonicalValueKeys) {
@@ -5079,6 +5087,74 @@ function readAgentPresetPatchLocalEffect(
   return input.kind === 'preset'
     ? { kind: 'agentPresetPatch', ...common }
     : { kind: 'agentPresetStepPatch', stepId: input.stepId, ...common }
+}
+
+function isCanonicalAgentPresetPatchReceipt(
+  kind: 'preset' | 'step',
+  canonicalValues: Record<string, unknown>,
+): boolean {
+  if (kind === 'preset') {
+    const candidate = {
+      id: '__receipt_preset__',
+      name: 'Receipt Preset',
+      enabled: true,
+      version: AGENT_PRESET_SCHEMA_VERSION,
+      steps: [],
+      ...cloneJsonValue(canonicalValues),
+    }
+    const normalized = normalizeAgentPresets([candidate])[0]
+    return (
+      !!normalized &&
+      validateAgentPresetRecord(normalized).length === 0 &&
+      canonicalFieldsMatchNormalizedRecord(canonicalValues, normalized as unknown as Record<string, unknown>)
+    )
+  }
+
+  const canonicalPhase = canonicalValues.phase
+  const phase =
+    canonicalPhase === 'afterMain' ||
+    (!Object.hasOwn(canonicalValues, 'phase') && canonicalValues.destination === 'finalOutput')
+      ? 'afterMain'
+      : 'beforeMain'
+  const step = {
+    id: '__receipt_step__',
+    name: 'Receipt Step',
+    enabled: true,
+    phase,
+    dependencies: [],
+    instruction: '',
+    model: { mode: 'inheritMain' },
+    runtime: {},
+    inputScopes: [],
+    outputKey: 'receipt_step',
+    outputFormat: 'text',
+    destination: phase === 'afterMain' ? 'intermediate' : 'promptOutput',
+    failurePolicy: { mode: 'required' },
+    ...cloneJsonValue(canonicalValues),
+  }
+  const normalized = normalizeAgentPresets([
+    {
+      id: '__receipt_preset__',
+      name: 'Receipt Preset',
+      enabled: true,
+      version: AGENT_PRESET_SCHEMA_VERSION,
+      steps: [step],
+    },
+  ])[0]?.steps[0]
+  return (
+    !!normalized &&
+    validateAgentPresetStepRecord(normalized).length === 0 &&
+    canonicalFieldsMatchNormalizedRecord(canonicalValues, normalized as unknown as Record<string, unknown>)
+  )
+}
+
+function canonicalFieldsMatchNormalizedRecord(
+  canonicalValues: Record<string, unknown>,
+  normalized: Record<string, unknown>,
+): boolean {
+  return Object.entries(canonicalValues).every(
+    ([key, value]) => Object.hasOwn(normalized, key) && isJsonValueEqual(normalized[key], value),
+  )
 }
 
 function isCanonicalTranslatorPreset(value: unknown): value is TranslatorPresetSnapshot & { id: string } {
