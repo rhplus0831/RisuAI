@@ -554,6 +554,41 @@ function selectedPersonaPatch(): PersonaSnapshot {
   }
 }
 
+function selectedPersonaPatchFromState(snapshot: PersonaStateSnapshot, personaId: string): PersonaSnapshot | null {
+  const personaIndex = findPersonaIndexById(snapshot.personas, personaId)
+  if (personaIndex < 0) return null
+  const persona = snapshot.personas[personaIndex]
+  const selectedId = uniquePersonaIdAt(snapshot.personas, snapshot.selectedPersona)
+  const selected = selectedId === personaId
+  return {
+    name: selected ? snapshot.username : persona.name,
+    displayName: persona.displayName ?? '',
+    icon: selected ? snapshot.userIcon : persona.icon,
+    personaPrompt: selected ? snapshot.personaPrompt : persona.personaPrompt,
+    note: selected ? snapshot.userNote : persona.note,
+    largePortrait: persona.largePortrait ?? false,
+  }
+}
+
+function changedSelectedPersonaPatch(
+  personaId: string,
+  previous: PersonaStateSnapshot,
+  attempted: PersonaStateSnapshot,
+): PersonaSnapshot {
+  const previousPatch = selectedPersonaPatchFromState(previous, personaId)
+  const attemptedPatch = selectedPersonaPatchFromState(attempted, personaId)
+  if (!attemptedPatch) return {}
+  if (!previousPatch) return cloneJsonValue(attemptedPatch)
+
+  const changed: PersonaSnapshot = {}
+  for (const [key, value] of Object.entries(attemptedPatch)) {
+    if (snapshotPersonaJson(previousPatch[key]) !== snapshotPersonaJson(value)) {
+      changed[key] = cloneJsonValue(value)
+    }
+  }
+  return changed
+}
+
 function selectedPersonaProfileRowField(field: SelectedPersonaProfileField): 'name' | 'note' | 'personaPrompt' {
   if (field === 'username') return 'name'
   if (field === 'userNote') return 'note'
@@ -754,12 +789,15 @@ export function queueSelectedPersonaUpdate(previous: PersonaStateSnapshot, attem
   if (pendingPersonaUpdate.personaId && pendingPersonaUpdate.personaId !== personaId) {
     clearPendingSelectedPersonaUpdate()
   }
-  const patch = cloneJsonValue(selectedPersonaPatch()) as PersonaSnapshot
   pendingPersonaUpdate.personaId = personaId
   pendingPersonaUpdate.previous ??= previous
   pendingPersonaUpdate.attempted = attempted
-  pendingPersonaUpdate.patch = patch
+  pendingPersonaUpdate.patch = changedSelectedPersonaPatch(personaId, pendingPersonaUpdate.previous, attempted)
   if (pendingPersonaUpdate.timer) clearTimeout(pendingPersonaUpdate.timer)
+  if (Object.keys(pendingPersonaUpdate.patch).length === 0) {
+    clearPendingSelectedPersonaUpdate()
+    return
+  }
   pendingPersonaUpdate.timer = setTimeout(() => {
     void flushPendingSelectedPersonaUpdate()
   }, 250)

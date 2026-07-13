@@ -228,8 +228,34 @@ describe('persona ID read and command preparation', () => {
 
     expect(result).toEqual({ status: 'error', error: 'persona save failed' })
     expect(fetch).toHaveBeenCalledTimes(2)
-    expect(updateBody.patch.displayName).toBe('Unsaved display name')
+    expect(updateBody.patch).toEqual({
+      displayName: 'Unsaved display name',
+      personaPrompt: 'Unsaved prompt',
+    })
     expect(currentPersonaStateSnapshot()).toEqual(previous)
+  })
+
+  it('drops a coalesced persona edit that returns to its baseline before dispatch', async () => {
+    seedPersonaState(
+      [
+        makePersona({
+          id: 'persona-a',
+          name: 'Persona A',
+          personaPrompt: 'Baseline prompt',
+        }),
+      ],
+      0,
+    )
+    getDatabase().personaPrompt = 'Baseline prompt'
+    const previous = currentPersonaStateSnapshot()
+
+    updateSelectedPersonaField('personaPrompt', 'Temporary prompt')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+    updateSelectedPersonaField('personaPrompt', 'Baseline prompt')
+    queueSelectedPersonaUpdate(previous, currentPersonaStateSnapshot())
+
+    await flushPendingSelectedPersonaUpdate()
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it('failed queued selected persona save preserves newer sibling edits and selection/profile changes', async () => {
