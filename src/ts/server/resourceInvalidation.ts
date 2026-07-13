@@ -333,6 +333,8 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addSettingsGroup(event.id)
       return
     case 'modelProfile':
+      addSettingsGroup('providers')
+      return
     case 'agentPreset':
     case 'prompt':
     case 'moduleEnabled':

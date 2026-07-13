@@ -750,6 +750,43 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
+  it('reads only provider settings for model profile events', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 4,
+      group: 'providers',
+      settings: {
+        modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
+        modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+        modelRuntimeDefaults: { maxContext: 8_192 },
+      },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [
+          { type: 'modelProfile.updated', revision: 2, resource: 'modelProfile', id: 'profile-a' },
+          { type: 'modelProfile.roles.updated', revision: 3, resource: 'modelProfile' },
+          { type: 'modelProfile.runtimeDefaults.updated', revision: 4, resource: 'modelProfile' },
+        ],
+        {
+          appliedRevision: 1,
+          hooks,
+        },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('providers', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({
+      modelProfiles: [{ id: 'profile-a', name: 'Profile A', modelId: 'model-a' }],
+      modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'profile-a' } },
+      modelRuntimeDefaults: { maxContext: 8_192 },
+    })
+  })
+
   it('reads a preset-owned prompt body and only the root collection for root prompt item events', async () => {
     seedResources(1)
     api.collection.mockImplementation(async (name: string) => ({
