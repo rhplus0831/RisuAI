@@ -13,7 +13,6 @@ import {
   reorderPersonasCommand,
   runServerCommand,
   selectPersonaCommand,
-  subscribeServerCommandLocalEffectApplied,
   updatePersonaCommand,
   type PersonaLegacyProfileProjection,
   type PersonaMutationOptimisticAcknowledgement,
@@ -22,6 +21,7 @@ import {
   type PersonaSnapshot,
   type ServerCommandResult,
 } from './server/commands'
+import { subscribeServerCommandLocalEffectApplied } from './server/commandLocalEffectEvents'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   beginPersonaIconUpload,

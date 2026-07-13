@@ -38,6 +38,12 @@ import {
   hasDestructiveRefreshEpochChanged,
   runRollbackUnlessDestructiveRefreshChanged,
 } from './staleStateGuards'
+import {
+  notifyServerCommandLocalEffectApplied,
+  subscribeServerCommandLocalEffectApplied,
+} from './commandLocalEffectEvents'
+
+export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
@@ -1472,7 +1478,6 @@ type ServerCommandSuccessReconciler = (
   coalescedEvents: readonly CommandEvent[],
   localEffects: ReadonlyMap<number, ServerCommandLocalEffect>,
 ) => Promise<void> | void
-type ServerCommandLocalEffectAppliedListener = (event: CommandEvent, localEffect: ServerCommandLocalEffect) => void
 
 interface ServerCommandReconciliationBatch {
   pendingEvents: Map<number, CommandEvent>
@@ -1489,7 +1494,6 @@ interface DirectServerCommandReconciliation {
 }
 
 let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
-const serverCommandLocalEffectAppliedListeners = new Set<ServerCommandLocalEffectAppliedListener>()
 // Every command domain shares one server revision. Keep high-level mutations in
 // one client queue so two unrelated optimistic edits cannot both dispatch with
 // the same base revision and make the later edit roll back with a self-conflict.
@@ -1762,32 +1766,6 @@ export function peekAppliedServerResourceRevision(): number | null {
 
 export function setServerCommandSuccessReconciler(reconciler: ServerCommandSuccessReconciler | null): void {
   serverCommandSuccessReconciler = reconciler
-}
-
-/**
- * Observe only local effects that passed every event/projection fence and were
- * actually applied. This is intentionally distinct from an HTTP 2xx receipt:
- * callers can safely settle optimistic dirty markers without weakening the
- * authoritative fallback path for malformed or stale acknowledgements.
- */
-export function subscribeServerCommandLocalEffectApplied(
-  listener: ServerCommandLocalEffectAppliedListener,
-): () => void {
-  serverCommandLocalEffectAppliedListeners.add(listener)
-  return () => serverCommandLocalEffectAppliedListeners.delete(listener)
-}
-
-export function notifyServerCommandLocalEffectApplied(
-  event: CommandEvent,
-  localEffect: ServerCommandLocalEffect,
-): void {
-  for (const listener of serverCommandLocalEffectAppliedListeners) {
-    try {
-      listener(event, localEffect)
-    } catch (error) {
-      console.warn('Server command local-effect listener failed', error)
-    }
-  }
 }
 
 /**
