@@ -1,6 +1,6 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
-  import { ensureBotPresetHydrated, getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
+  import { ensureBotPresetHydratedById, getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
   import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
   import type {
     PromptItem,
@@ -266,10 +266,17 @@
   $effect(() => {
     const first = firstPresetId
     const second = secondPresetId
-    void Promise.all([ensureBotPresetHydrated(first), ensureBotPresetHydrated(second)]).then(() => {
-      if (firstPresetId === first && secondPresetId === second) {
-        promptHydrationVersion += 1
-      }
+    const firstId = getDatabase().botPresets[first]?.id
+    const secondId = getDatabase().botPresets[second]?.id
+    if (!firstId || !secondId) return
+    void Promise.all([ensureBotPresetHydratedById(firstId), ensureBotPresetHydratedById(secondId)]).then((hydrated) => {
+      if (!hydrated.every(Boolean) || firstPresetId !== first || secondPresetId !== second) return
+      const nextFirst = getDatabase().botPresets.findIndex((preset) => preset?.id === firstId)
+      const nextSecond = getDatabase().botPresets.findIndex((preset) => preset?.id === secondId)
+      if (nextFirst < 0 || nextSecond < 0) return
+      firstPresetId = nextFirst
+      secondPresetId = nextSecond
+      promptHydrationVersion += 1
     })
   })
 

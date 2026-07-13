@@ -309,7 +309,14 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
   const presetId = presetIdAt(index)
   if (!presetId) return false
 
-  const preset = getDatabase().botPresets[index]
+  return ensureBotPresetHydratedById(presetId)
+}
+
+export async function ensureBotPresetHydratedById(presetId: string): Promise<boolean> {
+  const presetIndex = canonicalBotPresetIndexById(presetId)
+  if (presetIndex < 0) return false
+
+  const preset = getDatabase().botPresets[presetIndex]
   if (!presetNeedsHydration(preset)) return true
   if (!canUseServerResourceReads()) return false
 
@@ -324,17 +331,20 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
       presetHydrationWarning(presetId, result.status === 'error' ? result.error : 'server resource read unavailable')
       return false
     }
-    if (result.presetId !== presetId) {
+    if (result.presetId !== presetId || result.preset.id !== presetId) {
       presetHydrationWarning(presetId, `response was for preset ${result.presetId}`)
       return false
     }
     if (isOlderThanRevision(result.revision, baselineRevision)) {
-      return false
+      const currentIndex = canonicalBotPresetIndexById(presetId)
+      return currentIndex >= 0 && botPresetHasHydratedSettings(getDatabase().botPresets[currentIndex])
     }
     return withTrustedResourceWrite(() => {
-      const currentIndex = getDatabase().botPresets.findIndex((candidate) => candidate?.id === presetId)
+      const currentIndex = canonicalBotPresetIndexById(presetId)
       if (currentIndex < 0) return false
-      if (snapshotJson(getDatabase().botPresets[currentIndex]) !== targetSnapshot) return false
+      if (snapshotJson(getDatabase().botPresets[currentIndex]) !== targetSnapshot) {
+        return botPresetHasHydratedSettings(getDatabase().botPresets[currentIndex])
+      }
       getDatabase().botPresets[currentIndex] = result.preset as unknown as botPreset
       return true
     })
@@ -348,6 +358,21 @@ export async function ensureBotPresetHydrated(index: number): Promise<boolean> {
   return request
 }
 
+function canonicalBotPresetIndexById(presetId: string): number {
+  if (typeof presetId !== 'string' || presetId.trim() === '') return -1
+  const presets = getDatabase().botPresets
+  if (!Array.isArray(presets)) return -1
+  let targetIndex = -1
+  const seen = new Set<string>()
+  for (let index = 0; index < presets.length; index += 1) {
+    const candidateId = presets[index]?.id
+    if (typeof candidateId !== 'string' || candidateId.trim() === '' || seen.has(candidateId)) return -1
+    seen.add(candidateId)
+    if (candidateId === presetId) targetIndex = index
+  }
+  return targetIndex
+}
+
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
   return comparisonRevision !== null && revision < comparisonRevision
 }
@@ -355,13 +380,6 @@ function isOlderThanRevision(revision: number, comparisonRevision: number | null
 function snapshotJson(value: unknown): string {
   const snapshot = JSON.stringify(value)
   return snapshot === undefined ? '__undefined__' : snapshot
-}
-
-function getHydratedPresetIfReady(index: number): botPreset | undefined {
-  const preset = getDatabase().botPresets[index]
-  if (!presetNeedsHydration(preset)) return preset
-  void ensureBotPresetHydrated(index)
-  return undefined
 }
 
 function presetHydrationWarning(presetId: string, message: string): void {
@@ -1558,117 +1576,6 @@ export function mergeServerResourceFields(fields: Partial<Database>) {
       changeLanguage(fields.language)
     }
   })
-}
-
-export type ServerPresetResourceBaseline = ReadonlyMap<string, Record<string, unknown>>
-
-/**
- * Capture only the preset rows a targeted resource refresh may replace. A response
- * that arrives after another local edit overlays fields changed since this
- * baseline, so server reconciliation cannot rewind a newer queued input.
- */
-export function captureServerPresetResourceBaseline(
-  presetIds: readonly (string | undefined)[],
-): ServerPresetResourceBaseline {
-  const requestedIds = new Set(
-    presetIds.filter((presetId): presetId is string => typeof presetId === 'string' && presetId.length > 0),
-  )
-  const baseline = new Map<string, Record<string, unknown>>()
-  for (const preset of getDatabase().botPresets ?? []) {
-    if (!preset?.id || !requestedIds.has(preset.id)) continue
-    baseline.set(preset.id, safeStructuredClone(preset as unknown as Record<string, unknown>))
-  }
-  return baseline
-}
-
-/** Replace one hydrated legacy preset by stable id while retaining newer local fields. */
-export function mergeServerResourcePresetRow(
-  presetId: string,
-  preset: Record<string, unknown>,
-  baseline: ServerPresetResourceBaseline = new Map(),
-): boolean {
-  if (preset.id !== presetId) return false
-  const index = getDatabase().botPresets.findIndex((candidate) => candidate?.id === presetId)
-  if (index < 0) return false
-  const current = getDatabase().botPresets[index] as unknown as Record<string, unknown>
-  const next = overlayConcurrentPresetFields(preset, current, baseline.get(presetId))
-  withServerResourceApply(() => {
-    getDatabase().botPresets[index] = next as unknown as botPreset
-  })
-  return true
-}
-
-/**
- * Reconcile authoritative legacy-preset membership/order without re-stubbing
- * every already-hydrated row. Full rows named by the event replace their
- * matching entries; unchanged rows retain hydrated bodies while authoritative
- * list metadata is overlaid.
- */
-export function mergeServerResourcePresetCollection(
-  fields: Partial<Database>,
-  presetRows: readonly Record<string, unknown>[],
-  baseline: ServerPresetResourceBaseline = new Map(),
-): boolean {
-  if (!Array.isArray(fields.botPresets)) return false
-  const stubsById = uniquePresetRowsById(fields.botPresets)
-  const changedById = uniquePresetRowsById(presetRows)
-  const currentById = uniquePresetRowsById(getDatabase().botPresets)
-  if (!stubsById || !changedById || !currentById) return false
-  for (const presetId of changedById.keys()) {
-    if (!stubsById.has(presetId)) return false
-  }
-
-  const nextPresets = fields.botPresets.map((stub) => {
-    const presetId = stub.id!
-    const changed = changedById.get(presetId)
-    const current = currentById.get(presetId)
-    if (changed) {
-      return overlayConcurrentPresetFields(changed, current, baseline.get(presetId)) as unknown as botPreset
-    }
-    if (current) {
-      return {
-        ...current,
-        ...safeStructuredClone(stub as unknown as Record<string, unknown>),
-      } as unknown as botPreset
-    }
-    return safeStructuredClone(stub)
-  })
-
-  mergeServerResourceFields({ ...fields, botPresets: nextPresets })
-  return true
-}
-
-function uniquePresetRowsById(rows: readonly unknown[]): Map<string, Record<string, unknown>> | null {
-  const byId = new Map<string, Record<string, unknown>>()
-  for (const row of rows) {
-    if (!isPlainRecord(row) || typeof row.id !== 'string' || row.id.trim() === '' || byId.has(row.id)) {
-      return null
-    }
-    byId.set(row.id, row)
-  }
-  return byId
-}
-
-function overlayConcurrentPresetFields(
-  authoritative: Record<string, unknown>,
-  current: Record<string, unknown> | undefined,
-  baseline: Record<string, unknown> | undefined,
-): Record<string, unknown> {
-  const next = safeStructuredClone(authoritative)
-  if (!current || !baseline) return next
-
-  for (const key of new Set([...Object.keys(baseline), ...Object.keys(current)])) {
-    if (key === 'id') continue
-    const currentHasKey = Object.prototype.hasOwnProperty.call(current, key)
-    const baselineHasKey = Object.prototype.hasOwnProperty.call(baseline, key)
-    if (currentHasKey === baselineHasKey && snapshotJson(current[key]) === snapshotJson(baseline[key])) continue
-    if (currentHasKey) {
-      next[key] = safeStructuredClone(current[key])
-    } else {
-      delete next[key]
-    }
-  }
-  return next
 }
 
 export const SERVER_CHARACTER_SHELL_MARKER = '__serverCharacterShell'
@@ -3335,20 +3242,40 @@ export function saveCurrentPreset() {
 }
 
 export function copyPreset(id: number) {
+  const target = withTrustedResourceWrite(() => {
+    const db = getDatabase()
+    normalizeBotPresetIds(db)
+    const preset = db.botPresets[id]
+    return preset?.id
+      ? {
+          presetId: preset.id,
+          hydrated: botPresetHasHydratedSettings(preset),
+        }
+      : null
+  })
+  if (!target) return
+  if (!target.hydrated) {
+    void ensureBotPresetHydratedById(target.presetId).then((hydrated) => {
+      if (hydrated) copyPresetById(target.presetId)
+    })
+    return
+  }
+  copyPresetById(target.presetId)
+}
+
+function copyPresetById(sourcePresetId: string): void {
   withTrustedResourceWrite(() => {
     const db = getDatabase()
+    normalizeBotPresetIds(db)
+    const initialSourceIndex = canonicalBotPresetIndexById(sourcePresetId)
+    if (initialSourceIndex < 0 || !botPresetHasHydratedSettings(db.botPresets[initialSourceIndex])) return []
     const { rollback: saveCurrentRollback } = saveCurrentPresetLocalWithRollback()
     normalizeBotPresetIds(db)
-    let pres = db.botPresets
-    if (!getHydratedPresetIfReady(id)) {
-      void ensureBotPresetHydrated(id).then((hydrated) => {
-        if (hydrated) copyPreset(id)
-      })
-      return []
-    }
-    const newPres = safeStructuredClone(pres[id])
+    const sourceIndex = canonicalBotPresetIndexById(sourcePresetId)
+    const sourcePreset = sourceIndex >= 0 ? db.botPresets[sourceIndex] : undefined
+    if (!botPresetHasHydratedSettings(sourcePreset)) return []
+    const newPres = safeStructuredClone(sourcePreset)
     if (!newPres?.id) return []
-    const sourcePresetId = newPres.id
     newPres.id = createClientPresetId()
     newPres.name += ' Copy'
     db.botPresets.push(newPres)
@@ -3372,34 +3299,52 @@ export function copyPreset(id: number) {
   })
 }
 
+let legacyPresetSelectionIntent = 0
+
+export function beginLegacyPresetSelectionIntent(): number {
+  return ++legacyPresetSelectionIntent
+}
+
+export function isLegacyPresetSelectionIntentCurrent(intent: number): boolean {
+  return intent === legacyPresetSelectionIntent
+}
+
 export function changeToPreset(id = 0, savecurrent = true) {
-  withTrustedResourceWrite(() => {
+  const intent = beginLegacyPresetSelectionIntent()
+  const target = withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeBotPresetIds(db)
+    const preset = db.botPresets[id]
+    return preset?.id ? { presetId: preset.id, hydrated: botPresetHasHydratedSettings(preset) } : null
+  })
+  if (!target) return
+  if (!target.hydrated) {
+    void ensureBotPresetHydratedById(target.presetId).then((hydrated) => {
+      if (hydrated && isLegacyPresetSelectionIntentCurrent(intent)) {
+        changeToPresetById(target.presetId, savecurrent, intent)
+      }
+    })
+    return
+  }
+  changeToPresetById(target.presetId, savecurrent, intent)
+}
+
+function changeToPresetById(targetPresetId: string, savecurrent: boolean, intent: number): void {
+  withTrustedResourceWrite(() => {
+    if (!isLegacyPresetSelectionIntentCurrent(intent)) return
+    const db = getDatabase()
+    normalizeBotPresetIds(db)
+    const id = canonicalBotPresetIndexById(targetPresetId)
+    if (id < 0 || !botPresetHasHydratedSettings(db.botPresets[id])) return
     const previousSelectedId = botPresetSelectedId(db)
     const previousSettings = snapshotSetPresetSettings(db)
     const saveCurrentRollback = savecurrent ? saveCurrentPresetLocalWithRollback().rollback : null
     normalizeBotPresetIds(db)
-    let pres = db.botPresets
-    const newPres = pres[id]
-    const targetPresetId = newPres?.id
-    db.botPresetsId = id
-    if (newPres) {
-      const hydratedPreset = getHydratedPresetIfReady(id)
-      if (hydratedPreset) {
-        setPreset(db, hydratedPreset)
-      } else {
-        void ensureBotPresetHydrated(id).then((hydrated) => {
-          if (!hydrated) return
-          withTrustedResourceWrite(() => {
-            const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === targetPresetId)
-            if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
-            setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
-          })
-        })
-      }
-    }
-    if (!targetPresetId) return
+    const resolvedIndex = canonicalBotPresetIndexById(targetPresetId)
+    const newPres = resolvedIndex >= 0 ? db.botPresets[resolvedIndex] : undefined
+    if (!botPresetHasHydratedSettings(newPres)) return
+    db.botPresetsId = resolvedIndex
+    setPreset(db, newPres)
     const selectionRollback: BotPresetSelectionRollback = {
       previousSelectedId,
       attemptedSelectedId: botPresetSelectedId(db),
@@ -3474,20 +3419,50 @@ export function updatePreset(id: number, patch: Partial<botPreset>) {
 }
 
 export function deletePreset(id: number, selectIndex = 0, apply = true) {
-  withTrustedResourceWrite(() => {
+  const intent = beginLegacyPresetSelectionIntent()
+  const target = withTrustedResourceWrite(() => {
     const db = getDatabase()
     normalizeBotPresetIds(db)
-    if (db.botPresets.length <= 1) return []
+    if (db.botPresets.length <= 1) return null
     const presetId = db.botPresets[id]?.id
-    const previousPreset = db.botPresets[id] ? safeStructuredClone(db.botPresets[id]) : null
-    const previousSelectedId = botPresetSelectedId(db)
-    const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
+    if (!presetId) return null
     const nextSelectedPreset =
       db.botPresets[selectIndex]?.id === presetId
         ? db.botPresets.find((preset) => preset.id !== presetId)
         : db.botPresets[selectIndex]
-    const selectPresetId = nextSelectedPreset?.id
-    if (!presetId || !previousPreset) return []
+    return nextSelectedPreset?.id
+      ? {
+          presetId,
+          selectPresetId: nextSelectedPreset.id,
+          selectPresetHydrated: botPresetHasHydratedSettings(nextSelectedPreset),
+        }
+      : null
+  })
+  if (!target) return
+  if (apply && !target.selectPresetHydrated) {
+    void ensureBotPresetHydratedById(target.selectPresetId).then((hydrated) => {
+      if (hydrated && isLegacyPresetSelectionIntentCurrent(intent)) {
+        deletePresetByIds(target.presetId, target.selectPresetId, apply, intent)
+      }
+    })
+    return
+  }
+  deletePresetByIds(target.presetId, target.selectPresetId, apply, intent)
+}
+
+function deletePresetByIds(presetId: string, selectPresetId: string, apply: boolean, intent: number): void {
+  withTrustedResourceWrite(() => {
+    if (!isLegacyPresetSelectionIntentCurrent(intent)) return
+    const db = getDatabase()
+    normalizeBotPresetIds(db)
+    if (db.botPresets.length <= 1) return []
+    const id = canonicalBotPresetIndexById(presetId)
+    const selectedBeforeDelete = canonicalBotPresetIndexById(selectPresetId)
+    if (id < 0 || selectedBeforeDelete < 0) return []
+    if (apply && !botPresetHasHydratedSettings(db.botPresets[selectedBeforeDelete])) return []
+    const previousPreset = safeStructuredClone(db.botPresets[id])
+    const previousSelectedId = botPresetSelectedId(db)
+    const previousSettings = apply ? snapshotSetPresetSettings(db) : undefined
     let botPresets = db.botPresets
     botPresets.splice(id, 1)
     db.botPresets = botPresets
@@ -3495,19 +3470,7 @@ export function deletePreset(id: number, selectIndex = 0, apply = true) {
     if (selectedIndex >= 0) {
       db.botPresetsId = selectedIndex
       if (apply) {
-        const hydratedPreset = getHydratedPresetIfReady(selectedIndex)
-        if (hydratedPreset) {
-          setPreset(db, hydratedPreset)
-        } else {
-          void ensureBotPresetHydrated(selectedIndex).then((hydrated) => {
-            if (!hydrated) return
-            withTrustedResourceWrite(() => {
-              const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === selectPresetId)
-              if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
-              setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
-            })
-          })
-        }
+        setPreset(db, db.botPresets[selectedIndex])
       }
     } else if (db.botPresetsId >= db.botPresets.length) {
       db.botPresetsId = db.botPresets.length - 1
@@ -4036,14 +3999,38 @@ export function reorderPromptPresets(fromIndex: number, toIndex: number) {
   })
 }
 
+let legacyPresetExtractionIntent = 0
+
 export function extractLegacyBotPresetByIndex(id: number, mode: 'all' | 'model' | 'prompt') {
+  const intent = ++legacyPresetExtractionIntent
+  const target = withTrustedResourceWrite(() => {
+    const db = getDatabase()
+    normalizeBotPresetIds(db)
+    const preset = db.botPresets[id]
+    return preset?.id ? { presetId: preset.id, hydrated: botPresetHasHydratedSettings(preset) } : null
+  })
+  if (!target) return
+  if (!target.hydrated) {
+    void ensureBotPresetHydratedById(target.presetId).then((hydrated) => {
+      if (hydrated && intent === legacyPresetExtractionIntent) {
+        extractLegacyBotPresetById(target.presetId, mode, intent)
+      }
+    })
+    return
+  }
+  extractLegacyBotPresetById(target.presetId, mode, intent)
+}
+
+function extractLegacyBotPresetById(presetId: string, mode: 'all' | 'model' | 'prompt', intent: number): void {
   withTrustedResourceWrite(() => {
+    if (intent !== legacyPresetExtractionIntent) return
     const db = getDatabase()
     normalizeBotPresetIds(db)
     normalizeSplitPresetIds(db)
+    const id = canonicalBotPresetIndexById(presetId)
+    if (id < 0) return []
     const preset = db.botPresets[id]
-    const presetId = preset?.id
-    if (!presetId) return []
+    if (!botPresetHasHydratedSettings(preset)) return []
     const previousPreset = safeStructuredClone(preset)
     const previousSelectedId = botPresetSelectedId(db)
     const legacyName = typeof preset.name === 'string' && preset.name.trim() ? preset.name : 'Legacy'

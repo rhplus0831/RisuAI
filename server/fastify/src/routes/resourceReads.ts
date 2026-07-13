@@ -25,6 +25,14 @@ const PLUGIN_STORAGE_COLLECTION = 'pluginCustomStorage' as const
 const READABLE_COLLECTION_NAMES = [...COLLECTION_FIELDS, PLUGIN_STORAGE_COLLECTION] as const
 type ReadableCollectionName = (typeof READABLE_COLLECTION_NAMES)[number]
 const READABLE_COLLECTION_NAME_SET = new Set<string>(READABLE_COLLECTION_NAMES)
+const LEGACY_BOT_PRESET_SHELL_FIELDS = [
+  'id',
+  'name',
+  'image',
+  'metadata',
+  'customPromptTemplateToggle',
+  'moduleIntergration',
+] as const
 
 interface ChatMessageRangeQuery {
   start?: string
@@ -372,6 +380,17 @@ function loadCollections(
       // selected owner through /prompt-presets/:id/template.
       collections.promptTemplate = []
     }
+  }
+
+  if (Array.isArray(collections.botPresets)) {
+    collections.botPresets = collections.botPresets.map((candidate) => {
+      if (!isRecord(candidate)) return candidate
+      const shell: Record<string, unknown> = {}
+      for (const field of LEGACY_BOT_PRESET_SHELL_FIELDS) {
+        if (Object.prototype.hasOwnProperty.call(candidate, field)) shell[field] = candidate[field]
+      }
+      return shell
+    })
   }
 
   for (const name of names) {

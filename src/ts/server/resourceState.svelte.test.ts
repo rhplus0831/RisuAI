@@ -17,6 +17,8 @@ import {
   applyCharactersResource,
   applyChatPatchLocalEffect,
   applyCollectionsResource,
+  applyLegacyPresetCollectionResource,
+  applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
   applySettingsPatchLocalEffect,
@@ -34,6 +36,7 @@ import {
   captureCharacterLorebookProjectionEpoch,
   captureCollectionProjectionEpoch,
   captureLorebookPageProjectionEpoch,
+  captureLegacyPresetResourceBaseline,
   captureSettingsGroupProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
@@ -223,6 +226,111 @@ describe('resource-scoped database state', () => {
     expect(collectionsResourceState.values.modules).toEqual([{ id: 'new', name: 'New', description: '' }])
     expect(collectionsResourceState.revisions.modules).toBe(8)
     expect(collectionsResourceState.fullRevision).toBe(7)
+  })
+
+  it('reconciles legacy preset shells without discarding unaffected hydrated bodies', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        botPresets: [
+          { id: 'preset-a', name: 'A', mainPrompt: 'A resident', temperature: 10 },
+          { id: 'preset-b', name: 'B', mainPrompt: 'B resident', temperature: 20 },
+          { id: 'preset-c', name: 'C', mainPrompt: 'C resident', temperature: 30 },
+        ] as never,
+      },
+    })
+    const baseline = captureLegacyPresetResourceBaseline(['preset-a'])
+    const epoch = captureCollectionProjectionEpoch('botPresets')
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().botPresets[0].temperature = 99
+    })
+
+    expect(
+      applyLegacyPresetCollectionResource({
+        revision: 4,
+        shells: [
+          { id: 'preset-b', name: 'B renamed' },
+          { id: 'preset-a', name: 'A renamed' },
+          { id: 'preset-d', name: 'D' },
+        ],
+        presetRows: [{ id: 'preset-a', name: 'A renamed', mainPrompt: 'A authoritative', temperature: 40 }],
+        baseline,
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().botPresets).toEqual([
+      { id: 'preset-b', name: 'B renamed', mainPrompt: 'B resident', temperature: 20 },
+      { id: 'preset-a', name: 'A renamed', mainPrompt: 'A authoritative', temperature: 99 },
+      { id: 'preset-d', name: 'D' },
+    ])
+    expect(collectionsResourceState.revisions.botPresets).toBe(4)
+    expect(hasCollectionProjectionEpochChanged('botPresets', epoch)).toBe(true)
+  })
+
+  it('hydrates one exact legacy preset row and rejects malformed reconciliation payloads', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        botPresets: [
+          { id: 'preset-a', name: 'A' },
+          { id: 'preset-b', name: 'B', mainPrompt: 'B resident' },
+        ] as never,
+      },
+    })
+    const baseline = captureLegacyPresetResourceBaseline(['preset-a'])
+
+    expect(
+      applyLegacyPresetRowResource({
+        revision: 4,
+        presetId: 'preset-a',
+        preset: { id: 'preset-a', name: 'A', mainPrompt: 'A hydrated' },
+        baseline,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().botPresets).toEqual([
+      { id: 'preset-a', name: 'A', mainPrompt: 'A hydrated' },
+      { id: 'preset-b', name: 'B', mainPrompt: 'B resident' },
+    ])
+
+    const beforeMalformed = JSON.stringify(getResourceDatabase().botPresets)
+    expect(
+      applyLegacyPresetRowResource({
+        revision: 5,
+        presetId: 'preset-a',
+        preset: { id: 'preset-wrong', name: 'Wrong' },
+      }),
+    ).toBe(false)
+    expect(
+      applyLegacyPresetCollectionResource({
+        revision: 5,
+        shells: [
+          { id: 'preset-a', name: 'A' },
+          { id: 'preset-a', name: 'Duplicate' },
+        ],
+        presetRows: [],
+      }),
+    ).toBe(false)
+    expect(JSON.stringify(getResourceDatabase().botPresets)).toBe(beforeMalformed)
+  })
+
+  it('intentionally resets hydrated legacy bodies on a complete collection refresh', () => {
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        botPresets: [{ id: 'preset-a', name: 'A', mainPrompt: 'resident body' }] as never,
+      },
+    })
+
+    expect(
+      applyCollectionsResource({
+        revision: 4,
+        collections: { ...completeCollections(), botPresets: [{ id: 'preset-a', name: 'A shell' }] as never },
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().botPresets).toEqual([{ id: 'preset-a', name: 'A shell' }])
   })
 
   it('acknowledges optimistic plugin storage without replacing the live map', () => {

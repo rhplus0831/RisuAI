@@ -142,6 +142,22 @@ export interface ServerCollectionsResourcePayload {
   collections: Partial<ServerCollectionValues>
 }
 
+export type ServerLegacyPresetResourceBaseline = ReadonlyMap<string, Record<string, unknown>>
+
+export interface ServerLegacyPresetRowResourcePayload {
+  revision: number
+  presetId: string
+  preset: Record<string, unknown>
+  baseline?: ServerLegacyPresetResourceBaseline
+}
+
+export interface ServerLegacyPresetCollectionResourcePayload {
+  revision: number
+  shells: readonly unknown[]
+  presetRows: readonly Record<string, unknown>[]
+  baseline?: ServerLegacyPresetResourceBaseline
+}
+
 export interface ServerCharactersResourcePayload {
   revision: number
   characters: character[]
@@ -839,6 +855,118 @@ export function applyCollectionsResource(
     markResourceDatabaseChanged()
   }
   return applied
+}
+
+/**
+ * Snapshot the resident legacy-preset rows that a targeted read may replace.
+ * Fields edited while the read is in flight are retained when its response is
+ * reconciled, instead of being rewound to the request-time server value.
+ */
+export function captureLegacyPresetResourceBaseline(
+  presetIds: readonly (string | undefined)[],
+): ServerLegacyPresetResourceBaseline {
+  const requestedIds = new Set(presetIds.filter(nonEmptyString))
+  const baseline = new Map<string, Record<string, unknown>>()
+  const presets = collectionsResourceState.values.botPresets
+  if (!Array.isArray(presets)) return baseline
+
+  for (const candidate of presets) {
+    if (!isPlainRecord(candidate) || !nonEmptyString(candidate.id) || !requestedIds.has(candidate.id)) continue
+    baseline.set(candidate.id, cloneJsonValue(candidate))
+  }
+  return baseline
+}
+
+/** Apply one authoritative hydrated legacy-preset row by stable id. */
+export function applyLegacyPresetRowResource(payload: ServerLegacyPresetRowResourcePayload): boolean {
+  const currentRevision = collectionsResourceState.revisions.botPresets ?? null
+  if (isOlderRevision(payload.revision, currentRevision)) return false
+  if (!nonEmptyString(payload.presetId) || payload.preset.id !== payload.presetId) return false
+
+  const presets = collectionsResourceState.values.botPresets
+  if (!Array.isArray(presets)) return false
+  const currentById = uniqueLegacyPresetRowsById(presets)
+  if (!currentById) return false
+  const current = currentById.get(payload.presetId)
+  if (!current) return false
+
+  const next = overlayConcurrentLegacyPresetFields(payload.preset, current, payload.baseline?.get(payload.presetId))
+  collectionsResourceState.values.botPresets = presets.map((candidate) =>
+    isPlainRecord(candidate) && candidate.id === payload.presetId ? next : candidate,
+  ) as never
+  markLegacyPresetCollectionApplied(payload.revision)
+  return true
+}
+
+/**
+ * Reconcile authoritative legacy-preset membership and shell metadata while
+ * retaining already-hydrated bodies for rows that did not change.
+ */
+export function applyLegacyPresetCollectionResource(payload: ServerLegacyPresetCollectionResourcePayload): boolean {
+  const currentRevision = collectionsResourceState.revisions.botPresets ?? null
+  if (isOlderRevision(payload.revision, currentRevision)) return false
+
+  const shellsById = uniqueLegacyPresetRowsById(payload.shells)
+  const changedById = uniqueLegacyPresetRowsById(payload.presetRows)
+  const currentPresets = collectionsResourceState.values.botPresets
+  const currentById = Array.isArray(currentPresets) ? uniqueLegacyPresetRowsById(currentPresets) : new Map()
+  if (!shellsById || !changedById || !currentById) return false
+  for (const presetId of changedById.keys()) {
+    if (!shellsById.has(presetId)) return false
+  }
+
+  const nextPresets = payload.shells.map((candidate) => {
+    const shell = candidate as Record<string, unknown>
+    const presetId = shell.id as string
+    const changed = changedById.get(presetId)
+    const current = currentById.get(presetId)
+    if (changed) {
+      return overlayConcurrentLegacyPresetFields(changed, current, payload.baseline?.get(presetId))
+    }
+    if (current) return { ...cloneJsonValue(current), ...cloneJsonValue(shell) }
+    return cloneJsonValue(shell)
+  })
+
+  collectionsResourceState.values.botPresets = nextPresets as never
+  markLegacyPresetCollectionApplied(payload.revision)
+  return true
+}
+
+function markLegacyPresetCollectionApplied(revision: number): void {
+  collectionsResourceState.revisions.botPresets = revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, revision)
+  collectionsResourceState.statuses.botPresets = 'ready'
+  delete collectionsResourceState.errors.botPresets
+  advanceCollectionProjectionEpoch('botPresets')
+  markResourceDatabaseChanged()
+}
+
+function uniqueLegacyPresetRowsById(rows: readonly unknown[]): Map<string, Record<string, unknown>> | null {
+  const byId = new Map<string, Record<string, unknown>>()
+  for (const candidate of rows) {
+    if (!isPlainRecord(candidate) || !nonEmptyString(candidate.id) || byId.has(candidate.id)) return null
+    byId.set(candidate.id, candidate)
+  }
+  return byId
+}
+
+function overlayConcurrentLegacyPresetFields(
+  authoritative: Record<string, unknown>,
+  current: Record<string, unknown> | undefined,
+  baseline: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const next = cloneJsonValue(authoritative)
+  if (!current || !baseline) return next
+
+  for (const key of new Set([...Object.keys(baseline), ...Object.keys(current)])) {
+    if (key === 'id') continue
+    const currentHasKey = Object.prototype.hasOwnProperty.call(current, key)
+    const baselineHasKey = Object.prototype.hasOwnProperty.call(baseline, key)
+    if (currentHasKey === baselineHasKey && isJsonValueEqual(current[key], baseline[key])) continue
+    if (currentHasKey) next[key] = cloneJsonValue(current[key])
+    else delete next[key]
+  }
+  return next
 }
 
 export function beginCharactersResourceLoad(characterId?: string): void {
@@ -1701,6 +1829,10 @@ function normalizeOptionalRevision(revision: number | undefined): number | null 
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== ''
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function cloneJsonValue<T>(value: T): T {

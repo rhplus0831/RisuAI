@@ -32,10 +32,12 @@ import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
   applyModelPresetFieldsToDatabase,
   applyPromptPresetFieldsToDatabase,
+  beginLegacyPresetSelectionIntent,
   botPresetHasHydratedSettings,
-  ensureBotPresetHydrated,
+  ensureBotPresetHydratedById,
   getCurrentCharacter,
   getDatabase,
+  isLegacyPresetSelectionIntentCurrent,
   setPreset,
   type Database,
   type ModelPreset,
@@ -1045,10 +1047,50 @@ function changedModuleSteps(previousModules: string[], nextModules: string[]): L
   )
 }
 
+let loadoutApplyIntent = 0
+
 export function applyLoadout(
   loadout: Loadout,
   apply: LoadoutApplyOption[] = ['modules', 'globalVariables', 'preset', 'persona'],
-) {
+): void {
+  const intent = ++loadoutApplyIntent
+  const requested = new Set(apply)
+  const legacySelectionIntent = requested.has('preset') ? beginLegacyPresetSelectionIntent() : null
+  const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
+  const legacyPreset =
+    requested.has('preset') && !useSplitPresetSelection
+      ? withTrustedResourceWrite(() => {
+          ensureBotPresetCommandIds()
+          return getDatabase().botPresets?.find((preset) => preset.name === loadout.presetName)
+        })
+      : undefined
+  const legacyPresetId = nonBlankId(legacyPreset?.id)
+  if (legacyPreset && !legacyPresetId) return
+  if (legacyPresetId && !presetHasHydratedSettings(legacyPreset)) {
+    void ensureBotPresetHydratedById(legacyPresetId).then((hydrated) => {
+      if (
+        hydrated &&
+        intent === loadoutApplyIntent &&
+        legacySelectionIntent !== null &&
+        isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)
+      ) {
+        applyLoadoutNow(loadout, apply, legacyPresetId, intent, legacySelectionIntent)
+      }
+    })
+    return
+  }
+  applyLoadoutNow(loadout, apply, legacyPresetId, intent, legacySelectionIntent)
+}
+
+function applyLoadoutNow(
+  loadout: Loadout,
+  apply: LoadoutApplyOption[],
+  legacyPresetId: string | null,
+  intent: number,
+  legacySelectionIntent: number | null,
+): void {
+  if (intent !== loadoutApplyIntent) return
+  if (legacySelectionIntent !== null && !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)) return
   const requested = new Set(apply)
   const personaSelection = requested.has('persona') ? resolvePersonaSelection(loadout.personaId) : null
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
@@ -1062,8 +1104,13 @@ export function applyLoadout(
   const resolvedAgentPresetId = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : undefined
   const presetIndex =
     requested.has('preset') && !useSplitPresetSelection
-      ? (getDatabase().botPresets?.findIndex((preset) => preset.name === loadout.presetName) ?? -1)
+      ? (getDatabase().botPresets?.findIndex((preset) =>
+          legacyPresetId ? preset.id === legacyPresetId : preset.name === loadout.presetName,
+        ) ?? -1)
       : -1
+  if (legacyPresetId && (presetIndex < 0 || !presetHasHydratedSettings(getDatabase().botPresets[presetIndex]))) {
+    return
+  }
   const previousModules = cloneJsonValue(getDatabase().enabledModules ?? [])
   const nextModules = cloneJsonValue(loadout.modules ?? [])
   const previousGlobalChatVariables = cloneJsonValue(getDatabase().globalChatVariables ?? {})
@@ -1125,34 +1172,25 @@ export function applyLoadout(
     }
 
     if (presetIndex >= 0) {
-      const previousSettings = snapshotPresetSettings()
       ensureBotPresetCommandIds()
-      const previousSelectedId = currentBotPresetSelectedId()
-      const saveCurrentRollback = saveCurrentPresetSnapshotLocal()
-      const targetPreset = getDatabase().botPresets[presetIndex]
-      selectedLegacyPresetId = nonBlankId(targetPreset?.id)
-      getDatabase().botPresetsId = presetIndex
-      if (targetPreset) {
-        if (presetHasHydratedSettings(targetPreset)) {
-          setPreset(getDatabase(), targetPreset)
-        } else {
-          const targetPresetId = selectedLegacyPresetId
-          void ensureBotPresetHydrated(presetIndex).then((hydrated) => {
-            if (!hydrated || !targetPresetId) return
-            withTrustedResourceWrite(() => {
-              const nextIndex = getDatabase().botPresets.findIndex((preset) => preset?.id === targetPresetId)
-              if (nextIndex < 0 || getDatabase().botPresetsId !== nextIndex) return
-              setPreset(getDatabase(), getDatabase().botPresets[nextIndex])
-            })
-          })
+      const resolvedPresetIndex = legacyPresetId
+        ? getDatabase().botPresets.findIndex((preset) => preset?.id === legacyPresetId)
+        : presetIndex
+      const targetPreset = resolvedPresetIndex >= 0 ? getDatabase().botPresets[resolvedPresetIndex] : undefined
+      if (presetHasHydratedSettings(targetPreset)) {
+        const previousSettings = snapshotPresetSettings()
+        const previousSelectedId = currentBotPresetSelectedId()
+        const saveCurrentRollback = saveCurrentPresetSnapshotLocal()
+        selectedLegacyPresetId = nonBlankId(targetPreset.id)
+        getDatabase().botPresetsId = resolvedPresetIndex
+        setPreset(getDatabase(), targetPreset)
+        legacyPresetRollback = {
+          previousSelectedId,
+          attemptedSelectedId: currentBotPresetSelectedId(),
+          previous: previousSettings,
+          attempted: snapshotPresetSettings(),
+          saveCurrentRollback,
         }
-      }
-      legacyPresetRollback = {
-        previousSelectedId,
-        attemptedSelectedId: currentBotPresetSelectedId(),
-        previous: previousSettings,
-        attempted: snapshotPresetSettings(),
-        saveCurrentRollback,
       }
     }
 

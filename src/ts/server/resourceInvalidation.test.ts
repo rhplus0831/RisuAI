@@ -13,6 +13,7 @@ const api = vi.hoisted(() => ({
   characterSelection: vi.fn(),
   chat: vi.fn(),
   generationChat: vi.fn(),
+  legacyPreset: vi.fn(),
   lorebook: vi.fn(),
   lorebooks: vi.fn(),
 }))
@@ -48,6 +49,7 @@ vi.mock('./resourceReads', () => ({
 vi.mock('./hydrationReads', () => ({
   fetchServerChatMessages: api.chat,
   fetchServerGenerationChatMessages: api.generationChat,
+  fetchServerLegacyPreset: api.legacyPreset,
   fetchServerCharacterLorebook: api.lorebook,
   fetchServerBulkCharacterLorebooks: api.lorebooks,
 }))
@@ -433,6 +435,19 @@ describe('API-backed resource invalidation', () => {
     api.settings
       .mockResolvedValueOnce({ status: 'ok', revision: 3, settings: { botPresetsId: 0 } })
       .mockResolvedValueOnce({ status: 'ok', revision: 4, settings: { botPresetsId: 1 } })
+    api.legacyPreset
+      .mockResolvedValueOnce({
+        status: 'ok',
+        revision: 2,
+        presetId: 'preset-a',
+        preset: { id: 'preset-a', name: 'A', mainPrompt: 'A body' },
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        revision: 3,
+        presetId: 'preset-b',
+        preset: { id: 'preset-b', name: 'B', mainPrompt: 'B body' },
+      })
 
     await expect(
       refreshInvalidatedServerResources(event(2, 'presetCollection', { id: 'preset-a' }), {
@@ -454,7 +469,7 @@ describe('API-backed resource invalidation', () => {
     expect(api.settings).toHaveBeenCalledOnce()
     expect(getResourceDatabase()).toMatchObject({
       botPresetsId: 0,
-      botPresets: [{ id: 'preset-b', name: 'B' }],
+      botPresets: [{ id: 'preset-b', name: 'B', mainPrompt: 'B body' }],
     })
 
     await expect(
@@ -475,6 +490,178 @@ describe('API-backed resource invalidation', () => {
     ).resolves.toEqual({ status: 'ok', revision: 5, scope: 'targeted' })
     expect(api.settings).toHaveBeenCalledTimes(2)
     expect(api.collection).toHaveBeenCalledTimes(2)
+  })
+
+  it('hydrates an exact legacy preset row without replacing hydrated siblings', async () => {
+    seedResources(1)
+    applyCollectionsResource(
+      {
+        revision: 1,
+        collections: {
+          botPresets: [
+            { id: 'preset-a', name: 'A' },
+            { id: 'preset-b', name: 'B', mainPrompt: 'B resident' },
+          ] as never,
+        },
+      },
+      'botPresets',
+    )
+    api.legacyPreset.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      presetId: 'preset-a',
+      preset: { id: 'preset-a', name: 'A', mainPrompt: 'A hydrated' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'presetRow', { id: 'preset-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.collection).not.toHaveBeenCalled()
+    expect(api.legacyPreset).toHaveBeenCalledWith('preset-a', { signal: undefined })
+    expect(getResourceDatabase().botPresets).toEqual([
+      { id: 'preset-a', name: 'A', mainPrompt: 'A hydrated' },
+      { id: 'preset-b', name: 'B', mainPrompt: 'B resident' },
+    ])
+  })
+
+  it('preserves resident legacy bodies across reorder and hydrates only a newly created row', async () => {
+    seedResources(1)
+    applyCollectionsResource(
+      {
+        revision: 1,
+        collections: {
+          botPresets: [
+            { id: 'preset-a', name: 'A', mainPrompt: 'A resident' },
+            { id: 'preset-b', name: 'B', mainPrompt: 'B resident' },
+          ] as never,
+        },
+      },
+      'botPresets',
+    )
+    api.collection
+      .mockResolvedValueOnce({
+        status: 'ok',
+        revision: 2,
+        collections: {
+          botPresets: [
+            { id: 'preset-b', name: 'B renamed' },
+            { id: 'preset-a', name: 'A' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 'ok',
+        revision: 3,
+        collections: {
+          botPresets: [
+            { id: 'preset-b', name: 'B renamed' },
+            { id: 'preset-new', name: 'New' },
+            { id: 'preset-a', name: 'A' },
+          ],
+        },
+      })
+    api.legacyPreset.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      presetId: 'preset-new',
+      preset: { id: 'preset-new', name: 'New', mainPrompt: 'New hydrated' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'preset.reordered', revision: 2, resource: 'presetCollection' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(api.legacyPreset).not.toHaveBeenCalled()
+    expect(getResourceDatabase().botPresets).toEqual([
+      { id: 'preset-b', name: 'B renamed', mainPrompt: 'B resident' },
+      { id: 'preset-a', name: 'A', mainPrompt: 'A resident' },
+    ])
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'preset.created', revision: 3, resource: 'presetCollection', id: 'preset-new' },
+        { appliedRevision: 2, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+    expect(api.legacyPreset).toHaveBeenCalledOnce()
+    expect(api.legacyPreset).toHaveBeenCalledWith('preset-new', { signal: undefined })
+    expect(getResourceDatabase().botPresets).toEqual([
+      { id: 'preset-b', name: 'B renamed', mainPrompt: 'B resident' },
+      { id: 'preset-new', name: 'New', mainPrompt: 'New hydrated' },
+      { id: 'preset-a', name: 'A', mainPrompt: 'A resident' },
+    ])
+  })
+
+  it('filters a deleted legacy preset id before body reads', async () => {
+    seedResources(1)
+    applyCollectionsResource(
+      {
+        revision: 1,
+        collections: {
+          botPresets: [
+            { id: 'preset-a', name: 'A', mainPrompt: 'A resident' },
+            { id: 'preset-b', name: 'B', mainPrompt: 'B resident' },
+          ] as never,
+        },
+      },
+      'botPresets',
+    )
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { botPresets: [{ id: 'preset-b', name: 'B' }] },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'preset.deleted', revision: 2, resource: 'presetCollection', id: 'preset-a' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.legacyPreset).not.toHaveBeenCalled()
+    expect(getResourceDatabase().botPresets).toEqual([{ id: 'preset-b', name: 'B', mainPrompt: 'B resident' }])
+  })
+
+  it('fails closed when legacy shell and body revisions do not converge', async () => {
+    seedResources(1)
+    applyCollectionsResource(
+      {
+        revision: 1,
+        collections: { botPresets: [{ id: 'preset-a', name: 'A', mainPrompt: 'A resident' }] as never },
+      },
+      'botPresets',
+    )
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: { botPresets: [{ id: 'preset-new', name: 'New' }] },
+    })
+    api.legacyPreset.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      presetId: 'preset-new',
+      preset: { id: 'preset-new', name: 'New', mainPrompt: 'raced body' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'preset.created', revision: 2, resource: 'presetCollection', id: 'preset-new' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({
+      status: 'error',
+      error: `Legacy preset resource revisions did not converge after ${FULL_RESOURCE_REFRESH_MAX_ATTEMPTS} attempts`,
+    })
+    expect(api.collection).toHaveBeenCalledTimes(FULL_RESOURCE_REFRESH_MAX_ATTEMPTS)
+    expect(api.legacyPreset).toHaveBeenCalledTimes(FULL_RESOURCE_REFRESH_MAX_ATTEMPTS)
+    expect(getResourceDatabase().botPresets).toEqual([{ id: 'preset-a', name: 'A', mainPrompt: 'A resident' }])
   })
 
   it('uses narrow order and selection reads without fetching all characters', async () => {
@@ -945,6 +1132,7 @@ describe('API-backed resource invalidation', () => {
     ['a state event', event(2, 'state'), 1],
     ['an unknown resource', event(2, 'futureResource'), 1],
     ['a missing required id', event(2, 'characterRow'), 1],
+    ['a preset row missing its id', event(2, 'presetRow'), 1],
   ])('falls back to a full refresh for %s', async (_label, commandEvent, appliedRevision) => {
     fullReadMocks(9)
 

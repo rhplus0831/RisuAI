@@ -16,7 +16,6 @@ import {
   applyPromptPresetFieldsToDatabase,
   applyServerResourceDatabase,
   botPresetIdsNeedNormalization,
-  captureServerPresetResourceBaseline,
   changeToPreset,
   copyPreset,
   createPreset,
@@ -28,8 +27,6 @@ import {
   getDatabase,
   mergeServerResourceCharacterRow,
   mergeServerResourceFields,
-  mergeServerResourcePresetCollection,
-  mergeServerResourcePresetRow,
   normalizePromptTemplateIds,
   presetTemplate,
   promptTemplateIdsNeedNormalization,
@@ -806,88 +803,6 @@ describe('mergeServerResourceCharacterRow', () => {
 })
 
 describe('preset command rollback (L21)', () => {
-  it('merges a projected preset row by id without overwriting a newer local field', () => {
-    seedPresetDatabase({
-      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
-      botPresetsId: 0,
-    })
-    const siblingBefore = clonePlain(getDatabase().botPresets[1])
-    const baseline = captureServerPresetResourceBaseline(['preset-a'])
-    getDatabase().botPresets[0].name = 'Alpha edited while fetching'
-
-    const applied = mergeServerResourcePresetRow(
-      'preset-a',
-      makePreset('preset-a', 'Alpha from server', {
-        mainPrompt: 'authoritative prompt',
-        temperature: 44,
-      }) as unknown as Record<string, unknown>,
-      baseline,
-    )
-
-    expect(applied).toBe(true)
-    expect(getDatabase().botPresets[0]).toMatchObject({
-      id: 'preset-a',
-      name: 'Alpha edited while fetching',
-      mainPrompt: 'authoritative prompt',
-      temperature: 44,
-    })
-    expect(getDatabase().botPresets[1]).toEqual(siblingBefore)
-  })
-
-  it('merges preset membership by id while preserving hydrated and post-request fields', () => {
-    seedPresetDatabase({
-      botPresets: [makePreset('preset-a', 'Alpha'), makePreset('preset-b', 'Beta')],
-      botPresetsId: 0,
-      mainPrompt: 'old root prompt',
-    })
-    const baseline = captureServerPresetResourceBaseline(['preset-a', 'preset-b', 'preset-c'])
-    getDatabase().botPresets[1].name = 'Beta edited while fetching'
-
-    const applied = mergeServerResourcePresetCollection(
-      {
-        botPresets: [
-          { id: 'preset-b', name: 'Beta stub', image: 'beta.png' } as botPreset,
-          { id: 'preset-a', name: 'Alpha stub', image: 'alpha.png' } as botPreset,
-          { id: 'preset-c', name: 'Gamma stub', image: 'gamma.png' } as botPreset,
-        ],
-        botPresetsId: 0,
-        mainPrompt: 'applied root prompt',
-      },
-      [
-        makePreset('preset-a', 'Alpha snapshotted', { mainPrompt: 'saved live prompt' }) as unknown as Record<
-          string,
-          unknown
-        >,
-        makePreset('preset-b', 'Beta from server', { mainPrompt: 'selected prompt' }) as unknown as Record<
-          string,
-          unknown
-        >,
-        makePreset('preset-c', 'Gamma from server', { mainPrompt: 'gamma prompt' }) as unknown as Record<
-          string,
-          unknown
-        >,
-      ],
-      baseline,
-    )
-
-    expect(applied).toBe(true)
-    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a', 'preset-c'])
-    expect(getDatabase().botPresets[0]).toMatchObject({
-      name: 'Beta edited while fetching',
-      mainPrompt: 'selected prompt',
-    })
-    expect(getDatabase().botPresets[1]).toMatchObject({
-      name: 'Alpha snapshotted',
-      mainPrompt: 'saved live prompt',
-    })
-    expect(getDatabase().botPresets[2]).toMatchObject({
-      name: 'Gamma from server',
-      mainPrompt: 'gamma prompt',
-    })
-    expect(getDatabase().botPresetsId).toBe(0)
-    expect(getDatabase().mainPrompt).toBe('applied root prompt')
-  })
-
   it('applies a prompt preset legacy regex alias when presetRegex is empty', async () => {
     const liveRegex = [{ id: 'live-regex', in: 'hi', out: 'LIVE', type: 'editinput' }]
     const selectedRegex = [{ id: 'selected-regex', in: 'hi', out: 'SELECTED', type: 'editinput' }]
@@ -1059,6 +974,161 @@ describe('preset command rollback (L21)', () => {
       mainPrompt: 'Hydrated prompt',
       promptTemplate: [{ id: 'hydrated-prompt', type: 'plain', text: 'hydrated prompt' }],
     })
+  })
+
+  it('rejects a legacy hydration body that omits the requested stable id', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-stub', name: 'Stub', image: 'img' } as botPreset],
+      botPresetsId: 0,
+    })
+    setResourceWriteGuardEnabled(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({
+          revision: 7,
+          preset: { name: 'Malformed', mainPrompt: 'must not apply' },
+        }),
+      ) as unknown as typeof fetch,
+    )
+
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(false)
+    expect(getDatabase().botPresets[0]).toEqual({ id: 'preset-stub', name: 'Stub', image: 'img' })
+  })
+
+  it('waits for stable-id hydration before selecting a legacy preset', async () => {
+    const alpha = makePreset('preset-a', 'Alpha')
+    const betaShell = { id: 'preset-b', name: 'Beta', image: 'beta.png' } as botPreset
+    seedPresetDatabase({ botPresets: [alpha, betaShell], botPresetsId: 0 })
+    setCachedServerCommandRevision(100)
+    setResourceWriteGuardEnabled(true)
+    const hydration = deferred<Response>()
+    const command = deferred<Response>()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
+        const call = {
+          url: String(input),
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        }
+        calls.push(call)
+        return call.url === '/api/v1/legacy-presets/preset-b' ? hydration.promise : command.promise
+      }) as unknown as typeof fetch,
+    )
+
+    changeToPreset(1, false)
+    await vi.waitFor(() => expect(calls.map((call) => call.url)).toEqual(['/api/v1/legacy-presets/preset-b']))
+    expect(getDatabase().botPresetsId).toBe(0)
+    expect(getDatabase().mainPrompt).toBe('live main')
+
+    mergeServerResourceFields({
+      botPresets: [betaShell, alpha],
+      botPresetsId: 1,
+    } as Partial<Database>)
+    hydration.resolve(jsonResponse({ revision: 100, preset: makePreset('preset-b', 'Beta') }))
+    const selection = await waitForPresetCommand(calls, '/presets/select')
+
+    expect(selection.body).toMatchObject({ presetId: 'preset-b', apply: true, saveCurrent: false })
+    expect(getDatabase().botPresetsId).toBe(0)
+    expect(getDatabase().mainPrompt).toBe('Beta prompt')
+    command.resolve(
+      jsonResponse({
+        revision: 101,
+        event: { type: 'preset.selected', revision: 101, resource: 'revisionOnly', id: 'preset-b' },
+        presetId: 'preset-b',
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('waits for the stable-id replacement body before deleting and applying', async () => {
+    const alpha = makePreset('preset-a', 'Alpha')
+    const betaShell = { id: 'preset-b', name: 'Beta', image: 'beta.png' } as botPreset
+    seedPresetDatabase({ botPresets: [alpha, betaShell], botPresetsId: 0 })
+    setCachedServerCommandRevision(100)
+    setResourceWriteGuardEnabled(true)
+    const hydration = deferred<Response>()
+    const command = deferred<Response>()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
+        const call = {
+          url: String(input),
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        }
+        calls.push(call)
+        return call.url === '/api/v1/legacy-presets/preset-b' ? hydration.promise : command.promise
+      }) as unknown as typeof fetch,
+    )
+
+    deletePreset(0, 1, true)
+    await vi.waitFor(() => expect(calls.map((call) => call.url)).toEqual(['/api/v1/legacy-presets/preset-b']))
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().mainPrompt).toBe('live main')
+
+    mergeServerResourceFields({
+      botPresets: [betaShell, alpha],
+      botPresetsId: 1,
+    } as Partial<Database>)
+    hydration.resolve(jsonResponse({ revision: 100, preset: makePreset('preset-b', 'Beta') }))
+    const deletion = await waitForPresetCommand(calls, '/presets/preset-a')
+
+    expect(deletion.body).toMatchObject({ presetId: 'preset-b', apply: true, saveCurrent: false })
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(getDatabase().mainPrompt).toBe('Beta prompt')
+    command.resolve(jsonResponse({ error: 'finish pending delete' }, 500))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  it('hydrates and re-resolves a legacy extraction target by stable id', async () => {
+    const alphaShell = { id: 'preset-a', name: 'Alpha', image: 'alpha.png' } as botPreset
+    const beta = makePreset('preset-b', 'Beta')
+    seedPresetDatabase({
+      botPresets: [alphaShell, beta],
+      botPresetsId: 0,
+      modelPresets: [],
+      promptPresets: [],
+    })
+    setCachedServerCommandRevision(100)
+    setResourceWriteGuardEnabled(true)
+    const hydration = deferred<Response>()
+    const command = deferred<Response>()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init: RequestInit = {}) => {
+        const call = {
+          url: String(input),
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        }
+        calls.push(call)
+        return call.url === '/api/v1/legacy-presets/preset-a' ? hydration.promise : command.promise
+      }) as unknown as typeof fetch,
+    )
+
+    extractLegacyBotPresetByIndex(0, 'all')
+    await vi.waitFor(() => expect(calls.map((call) => call.url)).toEqual(['/api/v1/legacy-presets/preset-a']))
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().modelPresets).toEqual([])
+    expect(getDatabase().promptPresets).toEqual([])
+
+    mergeServerResourceFields({
+      botPresets: [beta, alphaShell],
+      botPresetsId: 1,
+    } as Partial<Database>)
+    hydration.resolve(jsonResponse({ revision: 100, preset: makePreset('preset-a', 'Alpha') }))
+    await waitForPresetCommand(calls, '/legacy-bot-presets/preset-a/extract')
+
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(getDatabase().modelPresets.some((preset) => preset.name === 'Alpha Model')).toBe(true)
+    expect(getDatabase().promptPresets.some((preset) => preset.name === 'Alpha Prompt')).toBe(true)
+    command.resolve(jsonResponse({ error: 'finish pending extract' }, 500))
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 
   it('hydrates a stubbed preset after an unrelated projection advances the known revision', async () => {

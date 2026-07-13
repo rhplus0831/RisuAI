@@ -5,6 +5,7 @@ import {
   fetchServerCharacterLorebook,
   fetchServerChatMessages,
   fetchServerGenerationChatMessages,
+  fetchServerLegacyPreset,
 } from './hydrationReads'
 import {
   currentPromptTemplateOwnerId,
@@ -29,14 +30,18 @@ import {
   applyCharacterSelectionResource,
   applyCharactersResource,
   applyCollectionsResource,
+  applyLegacyPresetCollectionResource,
+  applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
+  captureLegacyPresetResourceBaseline,
   charactersResourceState,
   collectionsResourceState,
   markCharacterLorebookProjectionApplied,
   settingsResourceState,
   type ServerCollectionName,
   type ServerCollectionsResourcePayload,
+  type ServerLegacyPresetResourceBaseline,
 } from './resourceState.svelte'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from './staleStateGuards'
@@ -85,6 +90,7 @@ interface RefreshPlan {
   lorebookCharacterIds: Set<string>
   translatedMessageIds: Set<string>
   promptTemplateOwnerIds: Set<string>
+  legacyPresetIds: Set<string>
   refreshSelectedPromptTemplate: boolean
   full: boolean
 }
@@ -99,11 +105,29 @@ type CharacterSelectionReadResult = Awaited<ReturnType<typeof fetchServerCharact
 type ChatReadResult = Awaited<ReturnType<typeof fetchServerChatMessages>>
 type LorebookReadResult = Awaited<ReturnType<typeof fetchServerCharacterLorebook>>
 type BulkLorebookReadResult = Awaited<ReturnType<typeof fetchServerBulkCharacterLorebooks>>
+type LegacyPresetReadResult = Awaited<ReturnType<typeof fetchServerLegacyPreset>>
+type LegacyPresetCollectionReadResult =
+  | {
+      status: 'ok'
+      revision: number
+      shells: unknown[]
+      presetRows: Record<string, unknown>[]
+      baseline: ServerLegacyPresetResourceBaseline
+    }
+  | { status: 'error'; error: string }
+  | { status: 'unavailable' }
 
 type CompletedTargetedRead =
   | { kind: 'settings'; result: SettingsReadResult }
   | { kind: 'settingsGroup'; group: SettingsGroup; result: SettingsGroupReadResult }
   | { kind: 'collection'; name: ServerCollectionName; result: CollectionReadResult }
+  | {
+      kind: 'legacyPresetRow'
+      presetId: string
+      baseline: ServerLegacyPresetResourceBaseline
+      result: LegacyPresetReadResult
+    }
+  | { kind: 'legacyPresetCollection'; result: LegacyPresetCollectionReadResult }
   | { kind: 'characters'; result: CharactersReadResult }
   | { kind: 'character'; characterId: string; result: CharacterReadResult }
   | { kind: 'characterOrder'; result: CharacterOrderReadResult }
@@ -266,6 +290,7 @@ function createRefreshPlan(): RefreshPlan {
     lorebookCharacterIds: new Set(),
     translatedMessageIds: new Set(),
     promptTemplateOwnerIds: new Set(),
+    legacyPresetIds: new Set(),
     refreshSelectedPromptTemplate: false,
     full: false,
   }
@@ -319,6 +344,24 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
   }
   const addSettingsGroup = (group: SettingsGroup): void => {
     if (!plan.settings) plan.settingsGroups.add(group)
+  }
+  const addLegacyPresetId = (presetId: string | undefined): void => {
+    if (nonEmptyString(presetId)) plan.legacyPresetIds.add(presetId)
+  }
+  const addChangedLegacyPresetIds = (): void => {
+    switch (event.type) {
+      case 'preset.reordered':
+        return
+      case 'preset.selected':
+      case 'preset.deleted':
+        // Selection changes only snapshot the outgoing preset. A deletion id
+        // disappears from the authoritative shells and is filtered later.
+        addLegacyPresetId(event.parentId)
+        return
+      default:
+        addLegacyPresetId(event.id)
+        addLegacyPresetId(event.parentId)
+    }
   }
 
   switch (event.resource) {
@@ -387,20 +430,30 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       addLorebook(event.id)
       return
     case 'presetRow':
+      if (!nonEmptyString(event.id)) {
+        plan.full = true
+        return
+      }
+      addLegacyPresetId(event.id)
+      return
     case 'presetCollection':
       plan.collections.add('botPresets')
+      addChangedLegacyPresetIds()
       return
     case 'presetCollectionWithPointer':
       addFullSettings()
       plan.collections.add('botPresets')
+      addChangedLegacyPresetIds()
       return
     case 'presetPointer':
       addFullSettings()
+      addLegacyPresetId(event.parentId)
       return
     case 'preset':
     case 'presetApplied':
       addFullSettings()
       plan.collections.add('botPresets')
+      addChangedLegacyPresetIds()
       return
     case 'modelPreset':
       addFullSettings()
@@ -549,7 +602,29 @@ async function runTargetedReads(
     )
   }
   for (const name of plan.collections) {
+    if (name === 'botPresets') continue
     reads.push(fetchServerCollection(name, signal).then((result) => ({ kind: 'collection' as const, name, result })))
+  }
+  const legacyPresetIds = [...plan.legacyPresetIds]
+  const legacyPresetBaseline = captureLegacyPresetResourceBaseline(legacyPresetIds)
+  if (plan.collections.has('botPresets')) {
+    reads.push(
+      readLegacyPresetCollection(legacyPresetIds, legacyPresetBaseline, signal).then((result) => ({
+        kind: 'legacyPresetCollection' as const,
+        result,
+      })),
+    )
+  } else {
+    for (const presetId of legacyPresetIds) {
+      reads.push(
+        fetchServerLegacyPreset(presetId, { signal }).then((result) => ({
+          kind: 'legacyPresetRow' as const,
+          presetId,
+          baseline: legacyPresetBaseline,
+          result,
+        })),
+      )
+    }
   }
   if (plan.allCharacters) {
     reads.push(fetchServerCharacters(signal).then((result) => ({ kind: 'characters' as const, result })))
@@ -616,6 +691,58 @@ async function runTargetedReads(
   return Promise.all(reads)
 }
 
+async function readLegacyPresetCollection(
+  changedPresetIds: readonly string[],
+  baseline: ServerLegacyPresetResourceBaseline,
+  signal: AbortSignal | null | undefined,
+): Promise<LegacyPresetCollectionReadResult> {
+  for (let attempt = 0; attempt < FULL_RESOURCE_REFRESH_MAX_ATTEMPTS; attempt += 1) {
+    const collection = await fetchServerCollection('botPresets', signal)
+    if (collection.status !== 'ok') return collection
+    const shells = collection.collections.botPresets
+    if (!Array.isArray(shells)) {
+      return { status: 'error', error: 'Invalid legacy preset collection response' }
+    }
+    const shellIds = uniqueLegacyPresetIds(shells)
+    if (!shellIds) return { status: 'error', error: 'Invalid legacy preset collection response' }
+
+    const requestedIds = changedPresetIds.filter((presetId) => shellIds.has(presetId))
+    const presetReads = await Promise.all(requestedIds.map((presetId) => fetchServerLegacyPreset(presetId, { signal })))
+    const failed = presetReads.find((result) => result.status !== 'ok')
+    if (failed) return failed
+    const rows = presetReads as Array<Extract<LegacyPresetReadResult, { status: 'ok' }>>
+    if (rows.some((result) => result.revision !== collection.revision)) continue
+    if (
+      rows.some((result, index) => result.presetId !== requestedIds[index] || result.preset.id !== requestedIds[index])
+    ) {
+      return { status: 'error', error: 'Invalid legacy preset row response' }
+    }
+    return {
+      status: 'ok',
+      revision: collection.revision,
+      shells,
+      presetRows: rows.map((result) => result.preset),
+      baseline,
+    }
+  }
+
+  return {
+    status: 'error',
+    error: `Legacy preset resource revisions did not converge after ${FULL_RESOURCE_REFRESH_MAX_ATTEMPTS} attempts`,
+  }
+}
+
+function uniqueLegacyPresetIds(rows: readonly unknown[]): Set<string> | null {
+  const ids = new Set<string>()
+  for (const candidate of rows) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null
+    const presetId = (candidate as Record<string, unknown>).id
+    if (!nonEmptyString(presetId) || ids.has(presetId)) return null
+    ids.add(presetId)
+  }
+  return ids
+}
+
 function applyTargetedRead(
   entry: CompletedTargetedRead,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
@@ -647,6 +774,23 @@ function applyTargetedRead(
       }
       return applied || alreadyApplied
     }
+    case 'legacyPresetRow':
+      if (entry.result.status !== 'ok') return true
+      if (entry.result.presetId !== entry.presetId || entry.result.preset.id !== entry.presetId) return false
+      return (
+        applyLegacyPresetRowResource({
+          revision: entry.result.revision,
+          presetId: entry.presetId,
+          preset: entry.result.preset,
+          baseline: entry.baseline,
+        }) || (collectionsResourceState.revisions.botPresets ?? -1) > entry.result.revision
+      )
+    case 'legacyPresetCollection':
+      return (
+        entry.result.status !== 'ok' ||
+        applyLegacyPresetCollectionResource(entry.result) ||
+        (collectionsResourceState.revisions.botPresets ?? -1) > entry.result.revision
+      )
     case 'characters':
       return (
         entry.result.status !== 'ok' ||
@@ -827,6 +971,10 @@ function targetedReadLabel(entry: CompletedTargetedRead): string {
       return `${entry.group} settings`
     case 'collection':
       return `${entry.name} collection`
+    case 'legacyPresetRow':
+      return `legacy preset ${entry.presetId}`
+    case 'legacyPresetCollection':
+      return 'legacy preset collection'
     case 'characters':
       return 'characters'
     case 'character':

@@ -376,7 +376,11 @@ function stubDeferredCommandFailure() {
 }
 
 function stubApplyLoadoutFetch(
-  options: { failCommandNumber?: number; projectionPreset?: Record<string, unknown> } = {},
+  options: {
+    failCommandNumber?: number
+    projectionPreset?: Record<string, unknown>
+    projectionResponse?: Promise<Response>
+  } = {},
 ): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   let nextRevision = 10
@@ -395,6 +399,7 @@ function stubApplyLoadoutFetch(
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
       if (url === '/api/v1/legacy-presets/preset-b') {
+        if (options.projectionResponse) return options.projectionResponse
         return jsonResponse({
           revision: 100,
           preset: options.projectionPreset ?? {
@@ -427,6 +432,13 @@ async function waitForCallCount(calls: CapturedFetch[], expected: number): Promi
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   expect(calls).toHaveLength(expected)
+}
+
+async function waitForUrl(calls: CapturedFetch[], url: string): Promise<void> {
+  for (let attempt = 0; attempt < 20 && !calls.some((call) => call.url === url); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  expect(calls.map((call) => call.url)).toContain(url)
 }
 
 async function flushCommandEffects(): Promise<void> {
@@ -1131,21 +1143,34 @@ describe('loadout projection command helpers', () => {
       id: 'preset-b',
       name: 'Preset B',
     } as never
-    const calls = stubApplyLoadoutFetch({
-      projectionPreset: {
-        id: 'preset-b',
-        name: 'Preset B',
-        mainPrompt: 'hydrated preset-b main',
-        promptTemplate: [],
-      },
-    })
+    const hydration = deferred<Response>()
+    const calls = stubApplyLoadoutFetch({ projectionResponse: hydration.promise })
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setResourceWriteGuardEnabled(true)
 
     applyLoadout(loadout, ['preset'])
 
-    expect(testDatabaseState.db.botPresetsId).toBe(1)
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
     expect(testDatabaseState.db.mainPrompt).toBe('live main')
+    expect(calls.map((call) => call.url)).not.toContain('/api/v1/commands/presets/select')
+    expect(calls.map((call) => call.url)).not.toContain('/api/v1/commands/loadouts/loadout-a/touch')
+
+    await waitForUrl(calls, '/api/v1/legacy-presets/preset-b')
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.botPresets = [testDatabaseState.db.botPresets[1], testDatabaseState.db.botPresets[0]]
+      testDatabaseState.db.botPresetsId = 1
+    })
+    hydration.resolve(
+      jsonResponse({
+        revision: 100,
+        preset: {
+          id: 'preset-b',
+          name: 'Preset B',
+          mainPrompt: 'hydrated preset-b main',
+          promptTemplate: [],
+        },
+      }),
+    )
 
     await waitForCallCount(calls, 4)
     await flushCommandEffects()
@@ -1153,6 +1178,7 @@ describe('loadout projection command helpers', () => {
     expect(calls.map((call) => call.url)).toContain('/api/v1/legacy-presets/preset-b')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/presets/select')
     expect(calls.map((call) => call.url)).toContain('/api/v1/commands/loadouts/loadout-a/touch')
+    expect(testDatabaseState.db.botPresetsId).toBe(0)
     expect(testDatabaseState.db.mainPrompt).toBe('hydrated preset-b main')
     expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
   })

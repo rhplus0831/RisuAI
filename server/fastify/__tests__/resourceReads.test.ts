@@ -63,7 +63,20 @@ beforeEach(async () => {
           },
           { id: 'prompt-empty', name: 'Prompt Empty' },
         ],
-        botPresets: [{ id: 'legacy-a', name: 'Legacy A', openAIKey: 'legacy-secret', temperature: 0.7 }],
+        botPresets: [
+          {
+            id: 'legacy-a',
+            name: 'Legacy A',
+            image: 'legacy-a.png',
+            metadata: { source: 'test' },
+            customPromptTemplateToggle: 'mode=Mode=select=warm,cold',
+            moduleIntergration: 'legacy-module-space',
+            openAIKey: 'legacy-secret',
+            temperature: 0.7,
+            mainPrompt: 'Large legacy body'.repeat(2_000),
+            promptTemplate: [{ id: 'legacy-prompt', type: 'plain', text: 'Legacy prompt body' }],
+          },
+        ],
         promptTemplate: [{ id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' }],
         personas: [{ id: 'persona-a', name: 'Persona A' }],
         loadouts: [{ id: 'loadout-a', name: 'Loadout A' }],
@@ -213,6 +226,18 @@ describe('authenticated resource read routes', () => {
       { id: 'prompt-empty', name: 'Prompt Empty' },
     ])
     expect(aggregateBody.collections.promptTemplate).toEqual([])
+    expect(aggregateBody.collections.botPresets).toEqual([
+      {
+        id: 'legacy-a',
+        name: 'Legacy A',
+        image: 'legacy-a.png',
+        metadata: { source: 'test' },
+        customPromptTemplateToggle: 'mode=Mode=select=warm,cold',
+        moduleIntergration: 'legacy-module-space',
+      },
+    ])
+    expect(aggregate.payload).not.toContain('Large legacy body')
+    expect(aggregate.payload).not.toContain('legacy-secret')
 
     const targeted = await harness.app.inject({
       method: 'GET',
@@ -226,6 +251,30 @@ describe('authenticated resource read routes', () => {
         modelPresets: [expect.objectContaining({ id: 'model-a', openAIKey: MASKED_PROVIDER_SECRET })],
       },
     })
+
+    const legacyPresets = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections/botPresets',
+      headers: authHeaders(),
+    })
+    expect(legacyPresets.statusCode).toBe(200)
+    expect(legacyPresets.json()).toEqual({
+      revision,
+      collections: {
+        botPresets: [
+          {
+            id: 'legacy-a',
+            name: 'Legacy A',
+            image: 'legacy-a.png',
+            metadata: { source: 'test' },
+            customPromptTemplateToggle: 'mode=Mode=select=warm,cold',
+            moduleIntergration: 'legacy-module-space',
+          },
+        ],
+      },
+    })
+    expect(legacyPresets.payload).not.toContain('Large legacy body')
+    expect(legacyPresets.payload).not.toContain('legacy-secret')
 
     const promptPresets = await harness.app.inject({
       method: 'GET',
@@ -565,8 +614,11 @@ describe('authenticated resource read routes', () => {
         name: 'Legacy A',
         openAIKey: MASKED_PROVIDER_SECRET,
         temperature: 0.7,
+        mainPrompt: 'Large legacy body'.repeat(2_000),
+        promptTemplate: [{ id: 'legacy-prompt', type: 'plain', text: 'Legacy prompt body' }],
       }),
     })
+    expect(legacy.payload).not.toContain('legacy-secret')
 
     const template = await harness.app.inject({
       method: 'GET',
