@@ -27,6 +27,7 @@ import {
   type LegacyPresetPatchLocalEffect,
   type PersonaPatchLocalEffect,
   type ServerCommandLocalEffect,
+  type TranslatorPresetPatchLocalEffect,
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
@@ -72,6 +73,7 @@ import {
   applyPromptItemMutationLocalEffect,
   applyLegacyPresetPatchLocalEffect,
   applyPersonaPatchLocalEffect,
+  applyTranslatorPresetPatchLocalEffect,
   applySplitPresetPatchLocalEffect,
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
@@ -474,12 +476,50 @@ function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: Pers
   )
 }
 
+function applyTranslatorPresetPatchAcknowledgement(
+  event: CommandEvent,
+  localEffect: TranslatorPresetPatchLocalEffect,
+): boolean {
+  const database = getDatabase()
+  const selectedIndex = database.translatorPresetId
+  const selectedPreset = Number.isInteger(selectedIndex) ? database.translatorPresets?.[selectedIndex] : undefined
+  if (
+    event.type !== 'translatorPreset.updated' ||
+    event.resource !== 'translatorPreset' ||
+    event.id !== localEffect.presetId ||
+    event.parentId !== undefined ||
+    !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+    localEffect.collectionProjectionEpoch < 0 ||
+    !Number.isInteger(localEffect.languageSettingsProjectionEpoch) ||
+    localEffect.languageSettingsProjectionEpoch < 0 ||
+    selectedPreset?.id !== localEffect.selectedPresetId ||
+    hasCollectionProjectionEpochChanged('translatorPresets', localEffect.collectionProjectionEpoch) ||
+    isCollectionAcknowledgementTainted('translatorPresets') ||
+    hasSettingsGroupProjectionEpochChanged('language', localEffect.languageSettingsProjectionEpoch) ||
+    isSettingsGroupAcknowledgementTainted('language') ||
+    isSettingsAcknowledgementTainted()
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyTranslatorPresetPatchLocalEffect({
+      revision: event.revision,
+      presetId: localEffect.presetId,
+      attemptedPatch: localEffect.attemptedPatch,
+      attemptedPreset: localEffect.attemptedPreset,
+      selectedPresetId: localEffect.selectedPresetId,
+    }),
+  )
+}
+
 function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
   switch (localEffect.kind) {
     case 'legacyPresetPatch':
       return applyLegacyPresetPatchAcknowledgement(event, localEffect)
     case 'personaPatch':
       return applyPersonaPatchAcknowledgement(event, localEffect)
+    case 'translatorPresetPatch':
+      return applyTranslatorPresetPatchAcknowledgement(event, localEffect)
     case 'chatGenerationSettings':
       if (event.id !== localEffect.chatId || event.parentId !== localEffect.characterId) return false
       return withServerResourceApply(() =>

@@ -15,6 +15,7 @@ const commandSpies = vi.hoisted(() => {
     failNextDelete: false,
     failNextSelect: false,
     failNextUpdate: false,
+    contradictNextUpdateReceipt: false,
     deferNextCreate: false,
     deferNextDelete: false,
     deferNextSelect: false,
@@ -25,6 +26,8 @@ const commandSpies = vi.hoisted(() => {
     deleteInputs: [] as Array<{ baseRevision: number; presetId: string; selectPresetId?: string }>,
     selectInputs: [] as Array<{ baseRevision: number; presetId: string }>,
     updateInputs: [] as Array<{ baseRevision: number; presetId: string; patch: Record<string, unknown> }>,
+    updateAcknowledgements: [] as Array<Record<string, unknown> | undefined>,
+    localEffectListeners: new Set<(event: Record<string, unknown>, localEffect: Record<string, unknown>) => void>(),
     deferredCreateResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     deferredDeleteResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
     deferredSelectResults: [] as Array<ReturnType<typeof createDeferredCommandResult>>,
@@ -35,7 +38,15 @@ const commandSpies = vi.hoisted(() => {
     deleteTranslatorPresetCommand: vi.fn(),
     selectTranslatorPresetCommand: vi.fn(),
     updateTranslatorPresetCommand: vi.fn(),
+    subscribeServerCommandLocalEffectApplied: vi.fn(),
   }
+
+  spies.subscribeServerCommandLocalEffectApplied.mockImplementation(
+    (listener: (event: Record<string, unknown>, localEffect: Record<string, unknown>) => void) => {
+      spies.localEffectListeners.add(listener)
+      return () => spies.localEffectListeners.delete(listener)
+    },
+  )
 
   spies.runServerCommand.mockImplementation(
     async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
@@ -48,8 +59,15 @@ const commandSpies = vi.hoisted(() => {
     },
   )
   spies.updateTranslatorPresetCommand.mockImplementation(
-    async (input: { baseRevision: number; presetId: string; patch: Record<string, unknown> }) => {
-      spies.updateInputs.push(input)
+    async (input: {
+      baseRevision: number
+      presetId: string
+      patch: Record<string, unknown>
+      optimisticAcknowledgement?: Record<string, unknown>
+    }) => {
+      const { optimisticAcknowledgement, ...wireInput } = input
+      spies.updateInputs.push(wireInput)
+      spies.updateAcknowledgements.push(optimisticAcknowledgement)
       if (spies.deferNextUpdate) {
         spies.deferNextUpdate = false
         const deferred = createDeferredCommandResult()
@@ -60,6 +78,10 @@ const commandSpies = vi.hoisted(() => {
         spies.failNextUpdate = false
         return { status: 'error', error: 'forced failure' }
       }
+      const selectedPresetId = spies.contradictNextUpdateReceipt
+        ? 'contradictory-selection'
+        : optimisticAcknowledgement?.selectedPresetId
+      spies.contradictNextUpdateReceipt = false
       return {
         status: 'ok',
         revision: input.baseRevision + 1,
@@ -70,6 +92,8 @@ const commandSpies = vi.hoisted(() => {
           id: input.presetId,
         },
         presetId: input.presetId,
+        acknowledgedKeys: Object.keys(input.patch),
+        selectedPresetId,
       }
     },
   )
@@ -155,6 +179,7 @@ vi.mock('src/ts/server/commands', () => ({
   deleteTranslatorPresetCommand: commandSpies.deleteTranslatorPresetCommand,
   runServerCommand: commandSpies.runServerCommand,
   selectTranslatorPresetCommand: commandSpies.selectTranslatorPresetCommand,
+  subscribeServerCommandLocalEffectApplied: commandSpies.subscribeServerCommandLocalEffectApplied,
   updateTranslatorPresetCommand: commandSpies.updateTranslatorPresetCommand,
 }))
 
@@ -192,6 +217,11 @@ vi.mock('src/ts/util', async (importActual) => {
 import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { alertConfirm, alertInput } from 'src/ts/alert'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import {
+  isCollectionAcknowledgementTainted,
+  isSettingsGroupAcknowledgementTainted,
+  resetServerResourceState,
+} from 'src/ts/server/resourceState.svelte'
 import {
   setResourceWriteGuardEnabled,
   withServerResourceApply,
@@ -332,6 +362,26 @@ async function flushMicrotasks(): Promise<void> {
   await Promise.resolve()
 }
 
+function notifyTranslatorPresetPatchApplied(input: {
+  presetId: string
+  attemptedPatch: Record<string, unknown>
+  attemptedPreset: Record<string, unknown>
+}): void {
+  const event = {
+    type: 'translatorPreset.updated',
+    revision: 101,
+    resource: 'translatorPreset',
+    id: input.presetId,
+  }
+  const localEffect = {
+    kind: 'translatorPresetPatch',
+    presetId: input.presetId,
+    attemptedPatch: input.attemptedPatch,
+    attemptedPreset: input.attemptedPreset,
+  }
+  for (const listener of commandSpies.localEffectListeners) listener(event, localEffect)
+}
+
 async function failDeferredCommand(
   deferreds: Array<{ resolve: (result: Record<string, unknown>) => void }>,
   error: string,
@@ -349,6 +399,7 @@ beforeEach(() => {
   commandSpies.failNextDelete = false
   commandSpies.failNextSelect = false
   commandSpies.failNextUpdate = false
+  commandSpies.contradictNextUpdateReceipt = false
   commandSpies.deferNextCreate = false
   commandSpies.deferNextDelete = false
   commandSpies.deferNextSelect = false
@@ -359,6 +410,8 @@ beforeEach(() => {
   commandSpies.deleteInputs.length = 0
   commandSpies.selectInputs.length = 0
   commandSpies.updateInputs.length = 0
+  commandSpies.updateAcknowledgements.length = 0
+  commandSpies.localEffectListeners.clear()
   commandSpies.deferredCreateResults.length = 0
   commandSpies.deferredDeleteResults.length = 0
   commandSpies.deferredSelectResults.length = 0
@@ -369,10 +422,12 @@ beforeEach(() => {
   commandSpies.deleteTranslatorPresetCommand.mockClear()
   commandSpies.selectTranslatorPresetCommand.mockClear()
   commandSpies.updateTranslatorPresetCommand.mockClear()
+  commandSpies.subscribeServerCommandLocalEffectApplied.mockClear()
   vi.mocked(alertConfirm).mockClear()
   vi.mocked(alertInput).mockClear()
 
   setResourceWriteGuardEnabled(false)
+  resetServerResourceState()
   seedTranslatorPresets()
   setResourceWriteGuardEnabled(true)
 
@@ -411,6 +466,17 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         patch: { prompt: 'new prompt A' },
       },
     ])
+    expect(commandSpies.updateAcknowledgements[0]).toMatchObject({
+      collectionProjectionEpoch: expect.any(Number),
+      languageSettingsProjectionEpoch: expect.any(Number),
+      selectedPresetId: 'preset-a',
+      attemptedPreset: {
+        id: 'preset-a',
+        name: 'Preset A',
+        prompt: 'new prompt A',
+        maxResponse: 100,
+      },
+    })
   })
 
   it('drops a pending field patch when rapid edits return to the first baseline', async () => {
@@ -486,6 +552,8 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     ])
     expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
   })
 
   it('rolls back a failed coalesced field edit to its first baseline', async () => {
@@ -673,6 +741,76 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       maxResponse: 100,
     })
     expect(getDatabase().translatorPrompt).toBe('dirty prompt A')
+  })
+
+  it('does not settle a dirty prompt for a contradictory successful receipt', async () => {
+    commandSpies.contradictNextUpdateReceipt = true
+    await editPrompt('optimistic prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Projected A', prompt: 'stale prompt A', maxResponse: 100 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('optimistic prompt A')
+    expect(getDatabase().translatorPrompt).toBe('optimistic prompt A')
+  })
+
+  it('settles only after the matching local effect is actually applied', async () => {
+    await editPrompt('accepted prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+    notifyTranslatorPresetPatchApplied({
+      presetId: 'preset-a',
+      attemptedPatch: { prompt: 'accepted prompt A' },
+      attemptedPreset: {
+        id: 'preset-a',
+        name: 'Preset A',
+        prompt: 'accepted prompt A',
+        maxResponse: 100,
+      },
+    })
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'later server prompt A', maxResponse: 123 },
+        { id: 'preset-b', name: 'Server B', prompt: 'later server prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('later server prompt A')
+    expect(getDatabase().translatorPrompt).toBe('later server prompt A')
+  })
+
+  it('preserves a later dirty value when an earlier local effect is applied', async () => {
+    await editPrompt('first attempted prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+    await editPrompt('later dirty prompt A')
+    notifyTranslatorPresetPatchApplied({
+      presetId: 'preset-a',
+      attemptedPatch: { prompt: 'first attempted prompt A' },
+      attemptedPreset: {
+        id: 'preset-a',
+        name: 'Preset A',
+        prompt: 'first attempted prompt A',
+        maxResponse: 100,
+      },
+    })
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'first attempted prompt A', maxResponse: 123 },
+        { id: 'preset-b', name: 'Server B', prompt: 'server prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('later dirty prompt A')
+    expect(getDatabase().translatorPrompt).toBe('later dirty prompt A')
   })
 
   it('refreshes clean sibling fields while preserving a dirty prompt', async () => {

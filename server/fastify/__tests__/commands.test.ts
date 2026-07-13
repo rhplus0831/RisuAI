@@ -4897,10 +4897,17 @@ describe('Phase 9-2e translator preset commands', () => {
       },
     })
     expect(updated.statusCode).toBe(200)
-    expect(updated.json().event).toMatchObject({
-      type: 'translatorPreset.updated',
-      resource: 'translatorPreset',
-      id: 'translator-b',
+    expect(updated.json()).toEqual({
+      revision: 3,
+      event: {
+        type: 'translatorPreset.updated',
+        revision: 3,
+        resource: 'translatorPreset',
+        id: 'translator-b',
+      },
+      presetId: 'translator-b',
+      acknowledgedKeys: ['name', 'prompt', 'maxResponse'],
+      selectedPresetId: 'translator-b',
     })
 
     const selected = await harness.app.inject({
@@ -4988,6 +4995,18 @@ describe('Phase 9-2e translator preset commands', () => {
       },
     })
     expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'translatorPreset.updated',
+        revision: 2,
+        resource: 'translatorPreset',
+        id: 'translator-a',
+      },
+      presetId: 'translator-a',
+      acknowledgedKeys: ['prompt', 'maxResponse'],
+      selectedPresetId: 'translator-a',
+    })
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -4997,6 +5016,105 @@ describe('Phase 9-2e translator preset commands', () => {
     expect(bootstrap.json().database).toMatchObject({
       translatorPrompt: 'new prompt',
       translatorMaxResponse: 321,
+    })
+  })
+
+  it('returns the stable selection when updating a non-selected preset without echoing preset data', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorPresets: [
+        { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+        { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
+      ],
+      translatorPresetId: 0,
+      translatorPrompt: 'a prompt',
+      translatorMaxResponse: 100,
+    })
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/translator-b',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { prompt: 'a deliberately large prompt is not echoed' },
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'translatorPreset.updated',
+        revision: 2,
+        resource: 'translatorPreset',
+        id: 'translator-b',
+      },
+      presetId: 'translator-b',
+      acknowledgedKeys: ['prompt'],
+      selectedPresetId: 'translator-a',
+    })
+  })
+
+  it('withholds the PATCH acknowledgement when legacy baseline normalization changes sibling state', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      translatorPresets: [
+        { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+        { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
+      ],
+      translatorPresetId: 0,
+      translatorPrompt: 'a prompt',
+      translatorMaxResponse: 100,
+    })
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      db.prepare('UPDATE translator_presets SET data_json = ? WHERE position = 1').run(
+        JSON.stringify({
+          id: 'translator-b',
+          name: '',
+          prompt: 'b prompt',
+          maxResponse: 200,
+          droppedByNormalization: true,
+        }),
+      )
+    } finally {
+      db.close()
+    }
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/translator-presets/translator-a',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        patch: { prompt: 'updated a prompt' },
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'translatorPreset.updated',
+        revision: 2,
+        resource: 'translatorPreset',
+        id: 'translator-a',
+      },
+      presetId: 'translator-a',
+      acknowledgedKeys: [],
+      selectedPresetId: 'translator-a',
+    })
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.translatorPresets[1]).toEqual({
+      id: 'translator-b',
+      name: 'Preset 2',
+      prompt: 'b prompt',
+      maxResponse: 200,
     })
   })
 

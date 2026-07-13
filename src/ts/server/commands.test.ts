@@ -2814,6 +2814,175 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes an exact translator preset PATCH acknowledgement without serializing optimistic proof', async () => {
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 3,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 3,
+      event,
+      presetId: 'translator-b',
+      acknowledgedKeys: ['prompt', 'maxResponse'],
+      selectedPresetId: 'translator-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const attemptedPreset = {
+      id: 'translator-b',
+      name: 'B',
+      prompt: 'updated prompt',
+      maxResponse: 300,
+    }
+
+    await updateTranslatorPresetCommand({
+      baseRevision: 2,
+      presetId: 'translator-b',
+      patch: { prompt: 'updated prompt', maxResponse: 300 },
+      optimisticAcknowledgement: {
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPreset,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'translatorPresetPatch',
+        presetId: 'translator-b',
+        collectionProjectionEpoch: 11,
+        languageSettingsProjectionEpoch: 17,
+        selectedPresetId: 'translator-a',
+        attemptedPatch: { prompt: 'updated prompt', maxResponse: 300 },
+        attemptedPreset,
+      },
+    ])
+    expect(commandFetch.calls[0]?.body).toEqual({
+      baseRevision: 2,
+      patch: { prompt: 'updated prompt', maxResponse: 300 },
+    })
+    expect(commandFetch.calls[0]?.body).not.toHaveProperty('optimisticAcknowledgement')
+  })
+
+  it('keeps malformed or contradictory translator preset PATCH receipts on authoritative reconciliation', async () => {
+    const exactEvent = {
+      type: 'translatorPreset.updated',
+      revision: 3,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+    const exactAcknowledgement = {
+      collectionProjectionEpoch: 11,
+      languageSettingsProjectionEpoch: 17,
+      selectedPresetId: 'translator-a',
+      attemptedPreset: {
+        id: 'translator-b',
+        name: 'B',
+        prompt: 'updated prompt',
+        maxResponse: 200,
+      },
+    }
+    const cases = [
+      {
+        body: {
+          revision: 4,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: ['prompt'],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: ['name'],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: ['prompt', 'prompt'],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: ['prompt'],
+          selectedPresetId: 'translator-b',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
+      {
+        body: {
+          revision: 3,
+          event: { ...exactEvent, resource: 'settings' },
+          presetId: 'translator-b',
+          acknowledgedKeys: ['prompt'],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: exactAcknowledgement,
+      },
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: ['prompt'],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: {
+          ...exactAcknowledgement,
+          attemptedPreset: { ...exactAcknowledgement.attemptedPreset, prompt: 'different' },
+        },
+      },
+      {
+        body: {
+          revision: 3,
+          event: exactEvent,
+          presetId: 'translator-b',
+          acknowledgedKeys: ['prompt'],
+          selectedPresetId: 'translator-a',
+        },
+        acknowledgement: { ...exactAcknowledgement, languageSettingsProjectionEpoch: -1 },
+      },
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => cases[responseIndex++].body)
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    for (const testCase of cases) {
+      await updateTranslatorPresetCommand({
+        baseRevision: 2,
+        presetId: 'translator-b',
+        patch: { prompt: 'updated prompt' },
+        optimisticAcknowledgement: testCase.acknowledgement,
+      })
+    }
+
+    expect(observedEffectCounts).toEqual(cases.map(() => 0))
+  })
+
   it('runs translator preset commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {

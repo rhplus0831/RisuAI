@@ -12,10 +12,18 @@
     deleteTranslatorPresetCommand,
     runServerCommand,
     selectTranslatorPresetCommand,
+    subscribeServerCommandLocalEffectApplied,
     updateTranslatorPresetCommand,
     type ServerCommandResult,
+    type TranslatorPresetPatchOptimisticAcknowledgement,
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
+  import {
+    captureCollectionProjectionEpoch,
+    captureSettingsGroupProjectionEpoch,
+    markCollectionAcknowledgementTainted,
+    markSettingsGroupAcknowledgementTainted,
+  } from 'src/ts/server/resourceState.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
@@ -48,6 +56,9 @@
     patch: TranslatorPresetSnapshot
     previous: TranslatorPresetSnapshot
     attempted: TranslatorPresetSnapshot
+    collectionProjectionEpoch: number
+    languageSettingsProjectionEpoch: number
+    selectedPresetId: string | null
   }
 
   const translatorPresetUpdateDelayMs = 250
@@ -341,6 +352,49 @@
     return getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id ?? null
   }
 
+  function translatorPresetPatchOptimisticAcknowledgement(
+    pending: PendingTranslatorPresetUpdate,
+  ): TranslatorPresetPatchOptimisticAcknowledgement | undefined {
+    const currentPreset = currentTranslatorPresetById(pending.presetId)
+    const attemptedPreset = currentPreset
+      ? {
+          id: currentPreset.id,
+          name: currentPreset.name,
+          prompt: currentPreset.prompt,
+          maxResponse: currentPreset.maxResponse,
+        }
+      : null
+    const attemptedKeys = Object.keys(pending.patch)
+    if (
+      !attemptedPreset ||
+      attemptedPreset.id !== pending.presetId ||
+      !pending.selectedPresetId ||
+      attemptedKeys.length === 0 ||
+      attemptedKeys.some(
+        (key) =>
+          !isTranslatorPresetDirtyField(key) || snapshotJson(attemptedPreset[key]) !== snapshotJson(pending.patch[key]),
+      )
+    ) {
+      return undefined
+    }
+
+    return {
+      collectionProjectionEpoch: pending.collectionProjectionEpoch,
+      languageSettingsProjectionEpoch: pending.languageSettingsProjectionEpoch,
+      selectedPresetId: pending.selectedPresetId,
+      attemptedPreset,
+    }
+  }
+
+  const unsubscribeLocalEffectApplied = subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+    if (localEffect.kind !== 'translatorPresetPatch') return
+    clearTranslatorPresetDirtyFieldsMatchingValues(
+      localEffect.presetId,
+      localEffect.attemptedPatch,
+      translatorPresetPatchDirtyFields(localEffect.attemptedPatch),
+    )
+  })
+
   function runTranslatorPresetCommand<T extends Record<string, unknown>>(
     command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
     rollback?: () => void,
@@ -390,6 +444,7 @@
     const commandPrevious = pending.previous
     const commandAttempted = pending.attempted
     const commandFields = translatorPresetPatchDirtyFields(commandPatch)
+    const optimisticAcknowledgement = translatorPresetPatchOptimisticAcknowledgement(pending)
     markTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
 
     const dispatch = () =>
@@ -399,8 +454,11 @@
             baseRevision,
             presetId: commandPresetId,
             patch: commandPatch,
+            optimisticAcknowledgement,
           }),
         rollback: () => {
+          markCollectionAcknowledgementTainted('translatorPresets')
+          markSettingsGroupAcknowledgementTainted('language')
           restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted, commandPatch)
         },
       })
@@ -432,6 +490,9 @@
       patch: {},
       previous: {},
       attempted: {},
+      collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
+      languageSettingsProjectionEpoch: captureSettingsGroupProjectionEpoch('language'),
+      selectedPresetId: selectedTranslatorPresetId(),
     }
     const previousPreset = translatorPresetFromSnapshot(previous, presetId)
     const pendingPatch = pending.patch as Record<string, unknown>
@@ -480,6 +541,7 @@
   })
 
   onDestroy(() => {
+    unsubscribeLocalEffectApplied()
     void flushPendingTranslatorPresetUpdates()
   })
 </script>

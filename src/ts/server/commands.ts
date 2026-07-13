@@ -231,6 +231,24 @@ export interface PersonaPatchLocalEffect {
   legacyProfileProjectionApplied: boolean
 }
 
+/** Client-only proof captured after one optimistic translator-preset PATCH. */
+export interface TranslatorPresetPatchOptimisticAcknowledgement {
+  collectionProjectionEpoch: number
+  languageSettingsProjectionEpoch: number
+  selectedPresetId: string
+  attemptedPreset: TranslatorPresetSnapshot & { id: string }
+}
+
+export interface TranslatorPresetPatchLocalEffect {
+  kind: 'translatorPresetPatch'
+  presetId: string
+  collectionProjectionEpoch: number
+  languageSettingsProjectionEpoch: number
+  selectedPresetId: string
+  attemptedPatch: TranslatorPresetSnapshot
+  attemptedPreset: TranslatorPresetSnapshot & { id: string }
+}
+
 export interface LorebookMutationLocalEffect {
   kind: 'lorebookMutation'
   scope: 'global' | 'character' | 'chat'
@@ -312,6 +330,7 @@ export type ServerCommandLocalEffect =
   | SplitPresetPatchLocalEffect
   | LegacyPresetPatchLocalEffect
   | PersonaPatchLocalEffect
+  | TranslatorPresetPatchLocalEffect
   | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
   | LoadoutMutationLocalEffect
@@ -814,6 +833,7 @@ export interface CreateTranslatorPresetCommandInput extends TranslatorPresetComm
 export interface UpdateTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
   presetId: string
   patch: TranslatorPresetSnapshot
+  optimisticAcknowledgement?: TranslatorPresetPatchOptimisticAcknowledgement
 }
 
 export interface DeleteTranslatorPresetCommandInput extends TranslatorPresetCommandInput {
@@ -2607,7 +2627,7 @@ export async function createTranslatorPresetCommand(
 export async function updateTranslatorPresetCommand(
   input: UpdateTranslatorPresetCommandInput,
   signal?: AbortSignal | null,
-): Promise<ServerCommandResult<{ presetId: string }>> {
+): Promise<ServerCommandResult<{ presetId: string; acknowledgedKeys: string[]; selectedPresetId: string | null }>> {
   return requestCommandJson(`/translator-presets/${encodeURIComponent(input.presetId)}`, {
     method: 'PATCH',
     body: {
@@ -2615,6 +2635,14 @@ export async function updateTranslatorPresetCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: input.optimisticAcknowledgement
+      ? (body, event) =>
+          readTranslatorPresetPatchLocalEffect(body, event, {
+            presetId: input.presetId,
+            attemptedPatch: input.patch,
+            acknowledgement: input.optimisticAcknowledgement,
+          })
+      : undefined,
   })
 }
 
@@ -4771,6 +4799,78 @@ function readPersonaPatchLocalEffect(
     attemptedLegacyProfile: cloneJsonValue(attemptedLegacyProfile as PersonaLegacyProfileProjection),
     legacyProfileProjectionApplied: record.legacyProfileProjectionApplied,
   }
+}
+
+function readTranslatorPresetPatchLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: {
+    presetId: string
+    attemptedPatch: TranslatorPresetSnapshot
+    acknowledgement: TranslatorPresetPatchOptimisticAcknowledgement
+  },
+): TranslatorPresetPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const acknowledgement = input.acknowledgement
+  if (
+    record.revision !== event.revision ||
+    record.presetId !== input.presetId ||
+    event.type !== 'translatorPreset.updated' ||
+    event.resource !== 'translatorPreset' ||
+    event.id !== input.presetId ||
+    event.parentId !== undefined ||
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isProjectionEpoch(acknowledgement.languageSettingsProjectionEpoch) ||
+    !nonEmptyString(acknowledgement.selectedPresetId) ||
+    record.selectedPresetId !== acknowledgement.selectedPresetId
+  ) {
+    return undefined
+  }
+
+  const acknowledgedKeys = record.acknowledgedKeys
+  const attemptedKeys = Object.keys(input.attemptedPatch).sort()
+  const allowedKeys = new Set(['name', 'prompt', 'maxResponse'])
+  if (
+    !isUniqueStringArray(acknowledgedKeys) ||
+    attemptedKeys.length === 0 ||
+    !isJsonValueEqual(attemptedKeys, [...acknowledgedKeys].sort()) ||
+    attemptedKeys.some((key) => !allowedKeys.has(key) || !isJsonValue(input.attemptedPatch[key]))
+  ) {
+    return undefined
+  }
+
+  const attemptedPreset = acknowledgement.attemptedPreset
+  if (
+    !isCanonicalTranslatorPreset(attemptedPreset) ||
+    attemptedPreset.id !== input.presetId ||
+    attemptedKeys.some((key) => !isJsonValueEqual(attemptedPreset[key], input.attemptedPatch[key]))
+  ) {
+    return undefined
+  }
+
+  return {
+    kind: 'translatorPresetPatch',
+    presetId: input.presetId,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    languageSettingsProjectionEpoch: acknowledgement.languageSettingsProjectionEpoch,
+    selectedPresetId: acknowledgement.selectedPresetId,
+    attemptedPatch: cloneJsonValue(input.attemptedPatch),
+    attemptedPreset: cloneJsonValue(attemptedPreset),
+  }
+}
+
+function isCanonicalTranslatorPreset(value: unknown): value is TranslatorPresetSnapshot & { id: string } {
+  if (!isPlainJsonRecord(value)) return false
+  const record = value as Record<string, unknown>
+  return (
+    isJsonValueEqual(Object.keys(record).sort(), ['id', 'maxResponse', 'name', 'prompt']) &&
+    nonEmptyString(record.id) &&
+    typeof record.name === 'string' &&
+    typeof record.prompt === 'string' &&
+    typeof record.maxResponse === 'number' &&
+    Number.isFinite(record.maxResponse)
+  )
 }
 
 function readSplitPresetPatchLocalEffect(

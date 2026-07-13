@@ -3878,7 +3878,12 @@ export function registerCommandRoutes(
       if (Object.prototype.hasOwnProperty.call(patch, 'id') && patch.id !== presetId) {
         throw new ValidationError('patch.id must match presetId')
       }
-      const result = applyTargetedCommandMutation<{ presetId: string }>({
+      const requestedAcknowledgedKeys = Object.keys(patch)
+      const result = applyTargetedCommandMutation<{
+        presetId: string
+        acknowledgedKeys: string[]
+        selectedPresetId: string | null
+      }>({
         db,
         dataDir,
         baseRevision,
@@ -3887,7 +3892,17 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.translatorPresets,
         mutate(database, innerDb) {
           const target = ensureTranslatorPresetDatabaseObject(database)
+          const rawPresets = target.translatorPresets
+          const rawSelectedIndex = target.translatorPresetId
+          const rawPrompt = target.translatorPrompt
+          const rawMaxResponse = target.translatorMaxResponse
           const presets = ensureTranslatorPresetCollection(target)
+          const acknowledgementSafe =
+            Array.isArray(rawPresets) &&
+            isDeepStrictEqual(rawPresets, presets) &&
+            rawSelectedIndex === target.translatorPresetId &&
+            rawPrompt === target.translatorPrompt &&
+            rawMaxResponse === target.translatorMaxResponse
           const index = requireTranslatorPresetIndex(presets, presetId)
           presets[index] = {
             ...presets[index],
@@ -3900,7 +3915,15 @@ export function registerCommandRoutes(
           writeTranslatorPresetMutation(innerDb, target, presets)
           return {
             event: { ...COMMAND_EVENT_CATALOG.translatorPresetUpdated, id: presetId },
-            extra: { presetId },
+            extra: {
+              presetId,
+              // Collection normalization may repair sibling rows, selection,
+              // or legacy mirrors before applying the requested patch. An
+              // empty key certificate deliberately forces the client down the
+              // authoritative reconciliation path for that broader mutation.
+              acknowledgedKeys: acknowledgementSafe ? requestedAcknowledgedKeys : [],
+              selectedPresetId: selectedTranslatorPresetId(target, presets),
+            },
           }
         },
       })

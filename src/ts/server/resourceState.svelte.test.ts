@@ -20,6 +20,7 @@ import {
   applyLegacyPresetCollectionResource,
   applyLegacyPresetPatchLocalEffect,
   applyPersonaPatchLocalEffect,
+  applyTranslatorPresetPatchLocalEffect,
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
@@ -535,6 +536,117 @@ describe('resource-scoped database state', () => {
       { id: 'persona-a', name: 'Duplicate' },
     ] as never
     expect(applyPersonaPatchLocalEffect(baseEffect)).toBe(false)
+  })
+
+  it('fences an accepted translator preset PATCH while preserving later row and language edits', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        translatorPresets: [
+          { id: 'translator-a', name: 'A', prompt: 'newer local prompt', maxResponse: 321 },
+          { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
+        ],
+        translatorPresetId: 0,
+        translatorPrompt: 'newer local prompt',
+        translatorMaxResponse: 321,
+      } as never,
+      3,
+    )
+    const collectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
+    const languageEpoch = captureSettingsGroupProjectionEpoch('language')
+    markCollectionAcknowledgementTainted('translatorPresets')
+    markSettingsGroupAcknowledgementTainted('language')
+
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        revision: 4,
+        presetId: 'translator-a',
+        attemptedPatch: { prompt: 'attempted prompt', maxResponse: 300 },
+        attemptedPreset: {
+          id: 'translator-a',
+          name: 'A',
+          prompt: 'attempted prompt',
+          maxResponse: 300,
+        },
+        selectedPresetId: 'translator-a',
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase()).toMatchObject({
+      translatorPresetId: 0,
+      translatorPrompt: 'newer local prompt',
+      translatorMaxResponse: 321,
+    })
+    expect(getResourceDatabase().translatorPresets[0]).toMatchObject({
+      id: 'translator-a',
+      prompt: 'newer local prompt',
+      maxResponse: 321,
+    })
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(4)
+    expect(settingsResourceState.groupRevisions.language).toBe(4)
+    expect(settingsResourceState.fullRevision).toBe(3)
+    expect(hasCollectionProjectionEpochChanged('translatorPresets', collectionEpoch)).toBe(false)
+    expect(hasSettingsGroupProjectionEpochChanged('language', languageEpoch)).toBe(false)
+    expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
+  })
+
+  it('rejects malformed, unready, or selection-ambiguous translator preset PATCH local effects', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        translatorPresets: [
+          { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+          { id: 'translator-b', name: 'B', prompt: 'b prompt', maxResponse: 200 },
+        ],
+        translatorPresetId: 0,
+        translatorPrompt: 'a prompt',
+        translatorMaxResponse: 100,
+      } as never,
+      3,
+    )
+    const baseEffect = {
+      revision: 4,
+      presetId: 'translator-b',
+      attemptedPatch: { prompt: 'updated prompt' },
+      attemptedPreset: {
+        id: 'translator-b',
+        name: 'B',
+        prompt: 'updated prompt',
+        maxResponse: 200,
+      },
+      selectedPresetId: 'translator-a',
+    }
+
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        ...baseEffect,
+        attemptedPreset: { ...baseEffect.attemptedPreset, prompt: 'different' },
+      }),
+    ).toBe(false)
+    expect(
+      applyTranslatorPresetPatchLocalEffect({
+        ...baseEffect,
+        selectedPresetId: 'translator-b',
+      }),
+    ).toBe(false)
+
+    collectionsResourceState.statuses.translatorPresets = 'idle'
+    expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
+    collectionsResourceState.statuses.translatorPresets = 'ready'
+    settingsResourceState.status = 'idle'
+    expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
+
+    settingsResourceState.status = 'ready'
+    collectionsResourceState.values.translatorPresets = [
+      { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+      { id: 'translator-a', name: 'Duplicate', prompt: 'duplicate', maxResponse: 100 },
+    ] as never
+    expect(applyTranslatorPresetPatchLocalEffect(baseEffect)).toBe(false)
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(3)
+    expect(settingsResourceState.groupRevisions.language).toBeUndefined()
   })
 
   it('intentionally resets hydrated legacy bodies on a complete collection refresh', () => {

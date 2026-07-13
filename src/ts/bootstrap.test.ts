@@ -196,6 +196,7 @@ import {
   markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
   resetServerResourceState,
+  settingsResourceState,
 } from './server/resourceState.svelte'
 import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
@@ -1108,6 +1109,158 @@ describe('API-backed client bootstrap', () => {
       })
     },
   )
+
+  it('acknowledges a contiguous translator preset PATCH without collection/language reads or apply-epoch bumps', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          translatorPresets: [
+            { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+            { id: 'translator-b', name: 'B', prompt: 'attempted prompt', maxResponse: 200 },
+          ] as never,
+        },
+      },
+      'translatorPresets',
+    )
+    withTrustedResourceWrite(() => {
+      getDatabase().translatorPresetId = 0
+      getDatabase().translatorPrompt = 'a prompt'
+      getDatabase().translatorMaxResponse = 100
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
+    const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    withTrustedResourceWrite(() => {
+      getDatabase().translatorPresets[1].prompt = 'newer local prompt'
+    })
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 6,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'translatorPresetPatch',
+            presetId: 'translator-b',
+            collectionProjectionEpoch,
+            languageSettingsProjectionEpoch,
+            selectedPresetId: 'translator-a',
+            attemptedPatch: { prompt: 'attempted prompt' },
+            attemptedPreset: {
+              id: 'translator-b',
+              name: 'B',
+              prompt: 'attempted prompt',
+              maxResponse: 200,
+            },
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().translatorPresets[1].prompt).toBe('newer local prompt')
+    expect(collectionsResourceState.revisions.translatorPresets).toBe(6)
+    expect(settingsResourceState.groupRevisions.language).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('translatorPresets', collectionProjectionEpoch)).toBe(false)
+    expect(hasSettingsGroupProjectionEpochChanged('language', languageSettingsProjectionEpoch)).toBe(false)
+    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it.each([
+    'collection epoch',
+    'language epoch',
+    'collection taint',
+    'language taint',
+    'global settings taint',
+    'selection mismatch',
+    'collection unready',
+    'language unready',
+  ])('%s forces a translator preset PATCH authoritative fallback', async (failure) => {
+    await loadWebInitialDatabase()
+    const presets = [
+      { id: 'translator-a', name: 'A', prompt: 'a prompt', maxResponse: 100 },
+      { id: 'translator-b', name: 'B', prompt: 'attempted prompt', maxResponse: 200 },
+    ]
+    applyCollectionsResource({ revision: 5, collections: { translatorPresets: presets as never } }, 'translatorPresets')
+    withTrustedResourceWrite(() => {
+      getDatabase().translatorPresetId = 0
+      getDatabase().translatorPrompt = 'a prompt'
+      getDatabase().translatorMaxResponse = 100
+    })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
+    const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
+    if (failure === 'collection epoch') {
+      applyCollectionsResource(
+        { revision: 5, collections: { translatorPresets: presets as never } },
+        'translatorPresets',
+      )
+    } else if (failure === 'language epoch') {
+      applySettingsGroupResource(
+        {
+          revision: 5,
+          group: 'language',
+          settings: { translatorPresetId: 0, translatorPrompt: 'a prompt', translatorMaxResponse: 100 },
+        },
+        ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
+      )
+    } else if (failure === 'collection taint') {
+      markCollectionAcknowledgementTainted('translatorPresets')
+    } else if (failure === 'language taint') {
+      markSettingsGroupAcknowledgementTainted('language')
+    } else if (failure === 'global settings taint') {
+      markSettingsAcknowledgementTainted()
+    } else if (failure === 'selection mismatch') {
+      withTrustedResourceWrite(() => {
+        getDatabase().translatorPresetId = 1
+        getDatabase().translatorPrompt = 'attempted prompt'
+        getDatabase().translatorMaxResponse = 200
+      })
+    } else if (failure === 'collection unready') {
+      collectionsResourceState.statuses.translatorPresets = 'idle'
+    } else {
+      settingsResourceState.status = 'idle'
+    }
+    const event = {
+      type: 'translatorPreset.updated',
+      revision: 6,
+      resource: 'translatorPreset',
+      id: 'translator-b',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'translatorPresetPatch',
+            presetId: 'translator-b',
+            collectionProjectionEpoch,
+            languageSettingsProjectionEpoch,
+            selectedPresetId: 'translator-a',
+            attemptedPatch: { prompt: 'attempted prompt' },
+            attemptedPreset: presets[1],
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
 
   it('acknowledges metadata-only prompt preset PATCHes without owner hydration or settings reads', async () => {
     await loadWebInitialDatabase()

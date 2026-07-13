@@ -232,6 +232,14 @@ export interface ServerPersonaPatchLocalEffectPayload {
   legacyProfileProjectionApplied: boolean
 }
 
+export interface ServerTranslatorPresetPatchLocalEffectPayload {
+  revision: number
+  presetId: string
+  attemptedPatch: Record<string, unknown>
+  attemptedPreset: Record<string, unknown>
+  selectedPresetId: string
+}
+
 export interface ServerCharactersResourcePayload {
   revision: number
   characters: character[]
@@ -1271,6 +1279,86 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
 }
 
 /**
+ * Fence both tables written by one accepted translator-preset PATCH. The
+ * optimistic row and its selected legacy mirror are already resident, so this
+ * advances only the collection and language-group revision fences. Projection
+ * epochs and acknowledgement taints remain owned by authoritative reads.
+ */
+export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorPresetPatchLocalEffectPayload): boolean {
+  const attemptedKeys = isPlainRecord(payload.attemptedPatch) ? Object.keys(payload.attemptedPatch).sort() : []
+  const allowedKeys = new Set(['name', 'prompt', 'maxResponse'])
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    !nonEmptyString(payload.presetId) ||
+    !nonEmptyString(payload.selectedPresetId) ||
+    !isPlainRecord(payload.attemptedPatch) ||
+    attemptedKeys.length === 0 ||
+    attemptedKeys.some((key) => !allowedKeys.has(key) || !isJsonValue(payload.attemptedPatch[key])) ||
+    !isCanonicalTranslatorPresetRecord(payload.attemptedPreset) ||
+    payload.attemptedPreset.id !== payload.presetId ||
+    attemptedKeys.some((key) => !isJsonValueEqual(payload.attemptedPreset[key], payload.attemptedPatch[key]))
+  ) {
+    return false
+  }
+
+  const presets = collectionsResourceState.values.translatorPresets
+  const settings = settingsResourceState.value as Record<string, unknown>
+  const knownCollectionRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.translatorPresets ?? -1,
+  )
+  const knownLanguageRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions.language ?? -1,
+  )
+  if (
+    collectionsResourceState.statuses.translatorPresets !== 'ready' ||
+    collectionsResourceState.revisions.translatorPresets === undefined ||
+    settingsResourceState.status !== 'ready' ||
+    knownLanguageRevision < 0 ||
+    !Array.isArray(presets) ||
+    !isCanonicalTranslatorPresetCollection(presets)
+  ) {
+    return false
+  }
+
+  const targetMatches = presets.filter((preset) => preset.id === payload.presetId)
+  const selectedIndex = settings.translatorPresetId
+  if (
+    !Number.isInteger(selectedIndex) ||
+    (selectedIndex as number) < 0 ||
+    (selectedIndex as number) >= presets.length
+  ) {
+    return false
+  }
+  const selectedPreset = presets[selectedIndex as number]
+  if (
+    targetMatches.length !== 1 ||
+    selectedPreset.id !== payload.selectedPresetId ||
+    !isJsonValueEqual(settings.translatorPrompt, selectedPreset.prompt) ||
+    !isJsonValueEqual(settings.translatorMaxResponse, selectedPreset.maxResponse)
+  ) {
+    return false
+  }
+
+  if (knownCollectionRevision < payload.revision) {
+    collectionsResourceState.revisions.translatorPresets = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses.translatorPresets = 'ready'
+    delete collectionsResourceState.errors.translatorPresets
+  }
+  if (knownLanguageRevision < payload.revision) {
+    settingsResourceState.groupRevisions.language = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+  }
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
  * Reconcile authoritative legacy-preset membership and shell metadata while
  * retaining already-hydrated bodies for rows that did not change.
  */
@@ -2244,6 +2332,29 @@ function isUniquePresetCollection(value: readonly unknown[]): boolean {
     ids.add(candidate.id)
   }
   return true
+}
+
+function isCanonicalTranslatorPresetRecord(value: unknown): value is {
+  id: string
+  name: string
+  prompt: string
+  maxResponse: number
+} {
+  if (!isPlainRecord(value)) return false
+  return (
+    isJsonValueEqual(Object.keys(value).sort(), ['id', 'maxResponse', 'name', 'prompt']) &&
+    nonEmptyString(value.id) &&
+    typeof value.name === 'string' &&
+    typeof value.prompt === 'string' &&
+    typeof value.maxResponse === 'number' &&
+    Number.isFinite(value.maxResponse)
+  )
+}
+
+function isCanonicalTranslatorPresetCollection(
+  value: readonly unknown[],
+): value is Array<{ id: string; name: string; prompt: string; maxResponse: number }> {
+  return value.every(isCanonicalTranslatorPresetRecord) && isUniquePresetCollection(value)
 }
 
 function cloneJsonValue<T>(value: T): T {
