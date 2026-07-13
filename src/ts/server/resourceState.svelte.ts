@@ -233,6 +233,13 @@ export interface ServerPersonaPatchLocalEffectPayload {
   legacyProfileProjectionApplied: boolean
 }
 
+export interface ServerPersonaMutationLocalEffectPayload {
+  revision: number
+  operation: 'create' | 'delete' | 'select' | 'reorder'
+  collectionWritten: boolean
+  settingsWritten: boolean
+}
+
 export interface ServerTranslatorPresetPatchLocalEffectPayload {
   revision: number
   presetId: string
@@ -1299,6 +1306,85 @@ export function applyPersonaPatchLocalEffect(payload: ServerPersonaPatchLocalEff
   }
 
   markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence the exact slices written by an accepted optimistic persona structure
+ * mutation. The response certificate already proved the final ordering,
+ * selection, and any saved/mirrored profile, so retain newer optimistic values
+ * and advance only the collection/settings revisions the server actually wrote.
+ */
+export function applyPersonaMutationLocalEffect(payload: ServerPersonaMutationLocalEffectPayload): boolean {
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    !['create', 'delete', 'select', 'reorder'].includes(payload.operation) ||
+    typeof payload.collectionWritten !== 'boolean' ||
+    typeof payload.settingsWritten !== 'boolean' ||
+    ((payload.operation === 'create' || payload.operation === 'delete' || payload.operation === 'reorder') &&
+      !payload.collectionWritten)
+  ) {
+    return false
+  }
+
+  const knownCollectionRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.personas ?? -1,
+  )
+  const knownSettingsRevision = settingsResourceState.fullRevision ?? -1
+  if (
+    (payload.collectionWritten || payload.settingsWritten) &&
+    (!payload.collectionWritten || knownCollectionRevision >= payload.revision) &&
+    (!payload.settingsWritten || knownSettingsRevision >= payload.revision)
+  ) {
+    return true
+  }
+
+  const personas = collectionsResourceState.values.personas
+  if (
+    collectionsResourceState.statuses.personas !== 'ready' ||
+    collectionsResourceState.revisions.personas === undefined ||
+    !Array.isArray(personas) ||
+    !isUniquePresetCollection(personas)
+  ) {
+    return false
+  }
+
+  if (payload.settingsWritten) {
+    const settings = settingsResourceState.value as Record<string, unknown>
+    const selectedPersona = settings.selectedPersona
+    if (
+      settingsResourceState.status !== 'ready' ||
+      settingsResourceState.fullRevision === null ||
+      !Number.isInteger(selectedPersona) ||
+      (selectedPersona as number) < 0 ||
+      (selectedPersona as number) >= personas.length ||
+      typeof settings.username !== 'string' ||
+      typeof settings.userIcon !== 'string' ||
+      typeof settings.personaPrompt !== 'string' ||
+      typeof settings.userNote !== 'string'
+    ) {
+      return false
+    }
+  }
+
+  let changed = false
+  if (payload.collectionWritten && knownCollectionRevision < payload.revision) {
+    collectionsResourceState.revisions.personas = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses.personas = 'ready'
+    delete collectionsResourceState.errors.personas
+    changed = true
+  }
+  if (payload.settingsWritten && knownSettingsRevision < payload.revision) {
+    settingsResourceState.fullRevision = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+    changed = true
+  }
+  if (changed) markResourceDatabaseChanged()
   return true
 }
 

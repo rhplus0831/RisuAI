@@ -1,5 +1,10 @@
 import { runOptimisticCommandSequence } from './chatCommands'
-import { currentPersonaStateSnapshot, selectUserPersonaLocally, type PersonaStateSnapshot } from './persona'
+import {
+  currentPersonaStateSnapshot,
+  personaMutationOptimisticAcknowledgement,
+  selectUserPersonaLocally,
+  type PersonaStateSnapshot,
+} from './persona'
 import { safeStructuredClone } from './polyfill'
 import {
   canUseServerCommands,
@@ -17,6 +22,7 @@ import {
   settingsGroupForKey,
   touchLoadoutCommand,
   type LoadoutSnapshot,
+  type PersonaMutationOptimisticAcknowledgement,
   type ServerCommandResult,
 } from './server/commands'
 import { isCanonicalLoadout, isCanonicalLoadoutCollection } from './server/loadoutCanonical'
@@ -1141,6 +1147,7 @@ function applyLoadoutNow(
   let selectedModelPresetId: string | null = null
   let selectedPromptPresetId: string | null = null
   let personaRollback: LoadoutPersonaSelectionRollback | null = null
+  let personaOptimisticAcknowledgement: PersonaMutationOptimisticAcknowledgement | undefined
   let legacyPresetRollback: LegacyPresetSelectionRollback | null = null
   let modelPresetRollback: SplitPresetSelectionRollback | null = null
   let promptPresetRollback: SplitPresetSelectionRollback | null = null
@@ -1149,7 +1156,15 @@ function applyLoadoutNow(
   if (personaSelection) {
     const previousPersona = currentPersonaStateSnapshot()
     selectUserPersonaLocally(personaSelection.index, 'save')
-    personaRollback = personaSelectionRollback(previousPersona, currentPersonaStateSnapshot())
+    const attemptedPersona = currentPersonaStateSnapshot()
+    personaRollback = personaSelectionRollback(previousPersona, attemptedPersona)
+    personaOptimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+      operation: 'select',
+      previous: previousPersona,
+      attempted: attemptedPersona,
+      mirrorLegacyProfile: true,
+      saveCurrent: true,
+    })
   }
 
   withTrustedResourceWrite(() => {
@@ -1270,6 +1285,7 @@ function applyLoadoutNow(
             personaId: personaSelection.personaId,
             mirrorLegacyProfile: true,
             saveCurrent: true,
+            optimisticAcknowledgement: personaOptimisticAcknowledgement,
           }),
         () => rollbackPersonaSelection(personaRollback),
       ),

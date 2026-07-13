@@ -1111,6 +1111,145 @@ describe('API-backed client bootstrap', () => {
     },
   )
 
+  it.each([
+    ['create', 'persona.created', 'persona-b', true, true],
+    ['delete', 'persona.deleted', 'persona-a', true, true],
+    ['select', 'persona.selected', 'persona-b', false, true],
+    ['reorder', 'persona.reordered', undefined, true, true],
+  ] as const)(
+    'acknowledges a contiguous persona %s without collection/settings reads',
+    async (operation, eventType, targetPersonaId, collectionWritten, settingsWritten) => {
+      await loadWebInitialDatabase()
+      applyCollectionsResource(
+        {
+          revision: 5,
+          collections: {
+            personas: [
+              { id: 'persona-a', name: 'Newer A', icon: '', personaPrompt: 'A', note: '' },
+              { id: 'persona-b', name: 'Newer B', icon: '', personaPrompt: 'B', note: '' },
+            ] as never,
+          },
+        },
+        'personas',
+      )
+      withTrustedResourceWrite(() => {
+        getDatabase().selectedPersona = 1
+        getDatabase().username = 'Newer B'
+        getDatabase().userIcon = ''
+        getDatabase().personaPrompt = 'Newer B prompt'
+        getDatabase().userNote = 'Newer B note'
+      })
+      const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+      const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+      const resourceApplyEpoch = getServerResourceApplyEpoch()
+      const event = {
+        type: eventType,
+        revision: 6,
+        resource: 'persona',
+        ...(targetPersonaId ? { id: targetPersonaId } : {}),
+      }
+
+      await commandApi.reconciler?.(
+        event,
+        [event],
+        new Map([
+          [
+            6,
+            {
+              kind: 'personaMutation',
+              operation,
+              targetPersonaId: targetPersonaId ?? null,
+              collectionProjectionEpoch,
+              settingsProjectionEpoch,
+              collectionWritten,
+              settingsWritten,
+            },
+          ],
+        ]),
+      )
+
+      expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+      expect(collectionsResourceState.revisions.personas).toBe(collectionWritten ? 6 : 5)
+      expect(settingsResourceState.fullRevision).toBe(settingsWritten ? 6 : 5)
+      expect(getDatabase().personas).toEqual([
+        expect.objectContaining({ id: 'persona-a', name: 'Newer A' }),
+        expect.objectContaining({ id: 'persona-b', name: 'Newer B' }),
+      ])
+      expect(getDatabase().username).toBe('Newer B')
+      expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
+      expect(peekAppliedServerResourceRevision()).toBe(6)
+    },
+  )
+
+  it.each(['collection epoch', 'settings epoch', 'collection taint', 'settings taint', 'event identity'])(
+    '%s forces a structural persona acknowledgement fallback',
+    async (failure) => {
+      await loadWebInitialDatabase()
+      const personas = [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'A', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B', note: '' },
+      ]
+      applyCollectionsResource({ revision: 5, collections: { personas: personas as never } }, 'personas')
+      withTrustedResourceWrite(() => {
+        getDatabase().selectedPersona = 1
+        getDatabase().username = 'B'
+        getDatabase().userIcon = ''
+        getDatabase().personaPrompt = 'B'
+        getDatabase().userNote = ''
+      })
+      const collectionProjectionEpoch = captureCollectionProjectionEpoch('personas')
+      const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+      if (failure === 'collection epoch') {
+        applyCollectionsResource({ revision: 5, collections: { personas: personas as never } }, 'personas')
+      } else if (failure === 'settings epoch') {
+        applySettingsResource({
+          revision: 5,
+          settings: {
+            selectedPersona: 1,
+            username: 'B',
+            userIcon: '',
+            personaPrompt: 'B',
+            userNote: '',
+          },
+        })
+      } else if (failure === 'collection taint') {
+        markCollectionAcknowledgementTainted('personas')
+      } else if (failure === 'settings taint') {
+        markSettingsAcknowledgementTainted()
+      }
+      const event = {
+        type: 'persona.selected',
+        revision: 6,
+        resource: failure === 'event identity' ? 'settings' : 'persona',
+        id: 'persona-b',
+      }
+
+      await commandApi.reconciler?.(
+        event,
+        [event],
+        new Map([
+          [
+            6,
+            {
+              kind: 'personaMutation',
+              operation: 'select',
+              targetPersonaId: 'persona-b',
+              collectionProjectionEpoch,
+              settingsProjectionEpoch,
+              collectionWritten: false,
+              settingsWritten: true,
+            },
+          ],
+        ]),
+      )
+
+      expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+        appliedRevision: 5,
+        hooks: resourceApi.hooks,
+      })
+    },
+  )
+
   it('acknowledges Agent Preset fields locally and notifies settlement only after the effect applies', async () => {
     await loadWebInitialDatabase()
     withTrustedResourceWrite(() => {

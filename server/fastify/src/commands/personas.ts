@@ -1,7 +1,13 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { validateOptionalServerAssetRef } from './assets.js'
+import {
+  serializePersonaCollectionDigestInput,
+  serializePersonaIdsDigestInput,
+  serializePersonaProfileDigestInput,
+  type PersonaProfileDigestValue,
+} from '../../../../src/ts/personaMutationCertificate.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -13,6 +19,58 @@ export interface PersonaRecord extends JsonRecord {
   personaPrompt?: string
   note?: string
   largePortrait?: boolean
+}
+
+export type PersonaMutationOperation = 'create' | 'delete' | 'select' | 'reorder'
+
+export interface PersonaMutationCertificate extends Record<string, unknown> {
+  personaMutationCertificate: 'persona-mutation-v1'
+  operation: PersonaMutationOperation
+  personaProjectionDigest: string
+  selectedPersonaId: string | null
+  collectionWritten: boolean
+  settingsWritten: boolean
+  legacyProfileProjectionApplied: boolean
+  legacyProfileDigest: string | null
+}
+
+export function buildPersonaMutationCertificate(input: {
+  operation: PersonaMutationOperation
+  database: JsonRecord
+  personas: readonly PersonaRecord[]
+  collectionWritten: boolean
+  settingsWritten: boolean
+  legacyProfileProjectionApplied: boolean
+}): PersonaMutationCertificate {
+  return {
+    personaMutationCertificate: 'persona-mutation-v1',
+    operation: input.operation,
+    personaProjectionDigest: sha256Hex(
+      input.collectionWritten
+        ? serializePersonaCollectionDigestInput(input.personas)
+        : serializePersonaIdsDigestInput(input.personas.map((persona) => persona.id)),
+    ),
+    selectedPersonaId: selectedPersonaId(input.database, input.personas),
+    collectionWritten: input.collectionWritten,
+    settingsWritten: input.settingsWritten,
+    legacyProfileProjectionApplied: input.legacyProfileProjectionApplied,
+    legacyProfileDigest: input.legacyProfileProjectionApplied
+      ? sha256Hex(serializePersonaProfileDigestInput(personaProfileFromLegacySettings(input.database)))
+      : null,
+  }
+}
+
+function personaProfileFromLegacySettings(database: JsonRecord): PersonaProfileDigestValue {
+  return {
+    name: stringValue(database.username),
+    icon: stringValue(database.userIcon),
+    personaPrompt: stringValue(database.personaPrompt),
+    note: stringValue(database.userNote),
+  }
+}
+
+function sha256Hex(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex')
 }
 
 export function ensureDatabaseObject(database: unknown): JsonRecord {

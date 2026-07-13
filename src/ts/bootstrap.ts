@@ -27,6 +27,7 @@ import {
   type AgentPresetPatchLocalEffect,
   type AgentPresetStepPatchLocalEffect,
   type LegacyPresetPatchLocalEffect,
+  type PersonaMutationLocalEffect,
   type PersonaPatchLocalEffect,
   type ServerCommandLocalEffect,
   type TranslatorPresetPatchLocalEffect,
@@ -76,6 +77,7 @@ import {
   applyLegacyPresetPatchLocalEffect,
   applyAgentPresetPatchLocalEffect,
   applyAgentPresetStepPatchLocalEffect,
+  applyPersonaMutationLocalEffect,
   applyPersonaPatchLocalEffect,
   applyTranslatorPresetPatchLocalEffect,
   applySplitPresetPatchLocalEffect,
@@ -480,6 +482,41 @@ function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: Pers
   )
 }
 
+function applyPersonaMutationAcknowledgement(event: CommandEvent, localEffect: PersonaMutationLocalEffect): boolean {
+  const expectedEventType: Record<PersonaMutationLocalEffect['operation'], string> = {
+    create: 'persona.created',
+    delete: 'persona.deleted',
+    select: 'persona.selected',
+    reorder: 'persona.reordered',
+  }
+  const targetExpected = localEffect.operation !== 'reorder'
+  if (
+    event.type !== expectedEventType[localEffect.operation] ||
+    event.resource !== 'persona' ||
+    event.parentId !== undefined ||
+    (targetExpected ? event.id !== localEffect.targetPersonaId : event.id !== undefined) ||
+    (targetExpected ? typeof localEffect.targetPersonaId !== 'string' : localEffect.targetPersonaId !== null) ||
+    !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+    localEffect.collectionProjectionEpoch < 0 ||
+    !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+    localEffect.settingsProjectionEpoch < 0 ||
+    hasCollectionProjectionEpochChanged('personas', localEffect.collectionProjectionEpoch) ||
+    isCollectionAcknowledgementTainted('personas') ||
+    (localEffect.settingsWritten &&
+      (hasSettingsProjectionEpochChanged(localEffect.settingsProjectionEpoch) || isSettingsAcknowledgementTainted()))
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyPersonaMutationLocalEffect({
+      revision: event.revision,
+      operation: localEffect.operation,
+      collectionWritten: localEffect.collectionWritten,
+      settingsWritten: localEffect.settingsWritten,
+    }),
+  )
+}
+
 function applyAgentPresetPatchAcknowledgement(event: CommandEvent, localEffect: AgentPresetPatchLocalEffect): boolean {
   if (
     event.type !== 'agentPreset.updated' ||
@@ -578,6 +615,8 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       return applyLegacyPresetPatchAcknowledgement(event, localEffect)
     case 'personaPatch':
       return applyPersonaPatchAcknowledgement(event, localEffect)
+    case 'personaMutation':
+      return applyPersonaMutationAcknowledgement(event, localEffect)
     case 'translatorPresetPatch':
       return applyTranslatorPresetPatchAcknowledgement(event, localEffect)
     case 'chatGenerationSettings':

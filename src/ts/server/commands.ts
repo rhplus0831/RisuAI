@@ -6,6 +6,12 @@ import {
   type SparseChatGenerationSettingsUpdate,
 } from '../chatGenerationSettings'
 import {
+  serializePersonaCollectionDigestInput,
+  serializePersonaIdsDigestInput,
+  serializePersonaProfileDigestInput,
+  type PersonaProfileDigestValue,
+} from '../personaMutationCertificate'
+import {
   AGENT_PRESET_SCHEMA_VERSION,
   normalizeAgentPresets,
   validateAgentPresetRecord,
@@ -284,6 +290,34 @@ export interface PersonaPatchLocalEffect {
   legacyProfileProjectionApplied: boolean
 }
 
+export type PersonaMutationOperation = 'create' | 'delete' | 'select' | 'reorder'
+
+/** Client-only proof captured around one optimistic persona structure mutation. */
+export interface PersonaMutationOptimisticAcknowledgement {
+  operation: PersonaMutationOperation
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  beforePersonaIds: string[]
+  attemptedPersonaIds: string[]
+  attemptedPersonas: Array<PersonaSnapshot & { id: string }>
+  beforeSelectedPersonaId: string | null
+  attemptedSelectedPersonaId: string | null
+  collectionWritten: boolean
+  settingsWritten: boolean
+  legacyProfileProjectionExpected: boolean
+  attemptedLegacyProfile: PersonaProfileDigestValue | null
+}
+
+export interface PersonaMutationLocalEffect {
+  kind: 'personaMutation'
+  operation: PersonaMutationOperation
+  targetPersonaId: string | null
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  collectionWritten: boolean
+  settingsWritten: boolean
+}
+
 /** Client-only proof captured after one optimistic translator-preset PATCH. */
 export interface TranslatorPresetPatchOptimisticAcknowledgement {
   collectionProjectionEpoch: number
@@ -385,6 +419,7 @@ export type ServerCommandLocalEffect =
   | AgentPresetPatchLocalEffect
   | AgentPresetStepPatchLocalEffect
   | PersonaPatchLocalEffect
+  | PersonaMutationLocalEffect
   | TranslatorPresetPatchLocalEffect
   | GlobalLorebookMutationLocalEffect
   | LorebookMutationLocalEffect
@@ -866,6 +901,7 @@ export interface PersonaCommandInput {
 export interface CreatePersonaCommandInput extends PersonaCommandInput {
   persona: PersonaSnapshot
   mirrorLegacyProfile?: boolean
+  optimisticAcknowledgement?: PersonaMutationOptimisticAcknowledgement
 }
 
 export interface UpdatePersonaCommandInput extends PersonaCommandInput {
@@ -880,16 +916,19 @@ export interface DeletePersonaCommandInput extends PersonaCommandInput {
   selectPersonaId?: string
   mirrorLegacyProfile?: boolean
   saveCurrent?: boolean
+  optimisticAcknowledgement?: PersonaMutationOptimisticAcknowledgement
 }
 
 export interface SelectPersonaCommandInput extends PersonaCommandInput {
   personaId: string
   mirrorLegacyProfile?: boolean
   saveCurrent?: boolean
+  optimisticAcknowledgement?: PersonaMutationOptimisticAcknowledgement
 }
 
 export interface ReorderPersonasCommandInput extends PersonaCommandInput {
   personaIds: string[]
+  optimisticAcknowledgement?: PersonaMutationOptimisticAcknowledgement
 }
 
 export interface TranslatorPresetCommandInput {
@@ -2657,6 +2696,13 @@ export async function createPersonaCommand(
   input: CreatePersonaCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ personaId: string }>> {
+  const acknowledgement = await preparePersonaMutationAcknowledgement({
+    operation: 'create',
+    targetPersonaId: typeof input.persona.id === 'string' ? input.persona.id : null,
+    createdPersona: input.persona,
+    mirrorLegacyProfile: input.mirrorLegacyProfile === true,
+    acknowledgement: input.optimisticAcknowledgement,
+  })
   return requestCommandJson('/personas', {
     method: 'POST',
     body: {
@@ -2665,6 +2711,9 @@ export async function createPersonaCommand(
       mirrorLegacyProfile: input.mirrorLegacyProfile,
     },
     signal,
+    readLocalEffect: acknowledgement
+      ? (body, event) => readPersonaMutationLocalEffect(body, event, acknowledgement)
+      : undefined,
   })
 }
 
@@ -2694,6 +2743,14 @@ export async function deletePersonaCommand(
   input: DeletePersonaCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ personaId: string; selectedPersonaId: string | null }>> {
+  const acknowledgement = await preparePersonaMutationAcknowledgement({
+    operation: 'delete',
+    targetPersonaId: input.personaId,
+    requestedSelectedPersonaId: input.selectPersonaId,
+    mirrorLegacyProfile: input.mirrorLegacyProfile ?? true,
+    saveCurrent: input.saveCurrent ?? false,
+    acknowledgement: input.optimisticAcknowledgement,
+  })
   return requestCommandJson(`/personas/${encodeURIComponent(input.personaId)}`, {
     method: 'DELETE',
     body: {
@@ -2703,6 +2760,9 @@ export async function deletePersonaCommand(
       saveCurrent: input.saveCurrent,
     },
     signal,
+    readLocalEffect: acknowledgement
+      ? (body, event) => readPersonaMutationLocalEffect(body, event, acknowledgement)
+      : undefined,
   })
 }
 
@@ -2710,6 +2770,13 @@ export async function selectPersonaCommand(
   input: SelectPersonaCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ personaId: string }>> {
+  const acknowledgement = await preparePersonaMutationAcknowledgement({
+    operation: 'select',
+    targetPersonaId: input.personaId,
+    mirrorLegacyProfile: input.mirrorLegacyProfile ?? true,
+    saveCurrent: input.saveCurrent ?? true,
+    acknowledgement: input.optimisticAcknowledgement,
+  })
   return requestCommandJson('/personas/select', {
     method: 'POST',
     body: {
@@ -2719,6 +2786,9 @@ export async function selectPersonaCommand(
       saveCurrent: input.saveCurrent,
     },
     signal,
+    readLocalEffect: acknowledgement
+      ? (body, event) => readPersonaMutationLocalEffect(body, event, acknowledgement)
+      : undefined,
   })
 }
 
@@ -2726,6 +2796,12 @@ export async function reorderPersonasCommand(
   input: ReorderPersonasCommandInput,
   signal?: AbortSignal | null,
 ): Promise<ServerCommandResult<{ selectedPersonaId: string | null }>> {
+  const acknowledgement = await preparePersonaMutationAcknowledgement({
+    operation: 'reorder',
+    targetPersonaId: null,
+    requestedPersonaIds: input.personaIds,
+    acknowledgement: input.optimisticAcknowledgement,
+  })
   return requestCommandJson('/personas/reorder', {
     method: 'POST',
     body: {
@@ -2733,6 +2809,9 @@ export async function reorderPersonasCommand(
       personaIds: input.personaIds,
     },
     signal,
+    readLocalEffect: acknowledgement
+      ? (body, event) => readPersonaMutationLocalEffect(body, event, acknowledgement)
+      : undefined,
   })
 }
 
@@ -5191,6 +5270,284 @@ function readLegacyPresetPatchLocalEffect(
     presetId: input.presetId,
     collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
     fields,
+  }
+}
+
+type PersonaMutationAcknowledgementPreparation =
+  | {
+      operation: 'create'
+      targetPersonaId: string | null
+      createdPersona: PersonaSnapshot
+      mirrorLegacyProfile: boolean
+      acknowledgement?: PersonaMutationOptimisticAcknowledgement
+    }
+  | {
+      operation: 'delete'
+      targetPersonaId: string
+      requestedSelectedPersonaId?: string
+      mirrorLegacyProfile: boolean
+      saveCurrent: boolean
+      acknowledgement?: PersonaMutationOptimisticAcknowledgement
+    }
+  | {
+      operation: 'select'
+      targetPersonaId: string
+      mirrorLegacyProfile: boolean
+      saveCurrent: boolean
+      acknowledgement?: PersonaMutationOptimisticAcknowledgement
+    }
+  | {
+      operation: 'reorder'
+      targetPersonaId: null
+      requestedPersonaIds: string[]
+      acknowledgement?: PersonaMutationOptimisticAcknowledgement
+    }
+
+interface PreparedPersonaMutationAcknowledgement {
+  acknowledgement: PersonaMutationOptimisticAcknowledgement
+  targetPersonaId: string | null
+  personaProjectionDigest: string
+  legacyProfileDigest: string | null
+}
+
+const PERSONA_PROFILE_DIGEST_KEYS: readonly (keyof PersonaProfileDigestValue)[] = [
+  'name',
+  'icon',
+  'personaPrompt',
+  'note',
+]
+
+async function preparePersonaMutationAcknowledgement(
+  input: PersonaMutationAcknowledgementPreparation,
+): Promise<PreparedPersonaMutationAcknowledgement | undefined> {
+  const acknowledgement = input.acknowledgement
+  if (
+    !acknowledgement ||
+    acknowledgement.operation !== input.operation ||
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isProjectionEpoch(acknowledgement.settingsProjectionEpoch) ||
+    !isUniqueStringArray(acknowledgement.beforePersonaIds) ||
+    !isUniqueStringArray(acknowledgement.attemptedPersonaIds) ||
+    !Array.isArray(acknowledgement.attemptedPersonas) ||
+    !isJsonValue(acknowledgement.attemptedPersonas) ||
+    acknowledgement.attemptedPersonas.some((persona) => !isPlainJsonRecord(persona) || !nonEmptyString(persona.id)) ||
+    !isJsonValueEqual(
+      acknowledgement.attemptedPersonas.map((persona) => persona.id),
+      acknowledgement.attemptedPersonaIds,
+    ) ||
+    !isNullablePersonaId(acknowledgement.beforeSelectedPersonaId) ||
+    !isNullablePersonaId(acknowledgement.attemptedSelectedPersonaId) ||
+    !selectedPersonaIdBelongsToList(acknowledgement.beforePersonaIds, acknowledgement.beforeSelectedPersonaId) ||
+    !selectedPersonaIdBelongsToList(acknowledgement.attemptedPersonaIds, acknowledgement.attemptedSelectedPersonaId) ||
+    typeof acknowledgement.collectionWritten !== 'boolean' ||
+    typeof acknowledgement.settingsWritten !== 'boolean' ||
+    typeof acknowledgement.legacyProfileProjectionExpected !== 'boolean' ||
+    !isNullablePersonaProfileDigestValue(acknowledgement.attemptedLegacyProfile)
+  ) {
+    return undefined
+  }
+
+  const beforePersonaIds = [...acknowledgement.beforePersonaIds]
+  const attemptedPersonaIds = [...acknowledgement.attemptedPersonaIds]
+  const beforeSelectedPersonaId = acknowledgement.beforeSelectedPersonaId
+  let expectedSelectedPersonaId: string | null
+  let expectedCollectionWritten: boolean
+  let expectedLegacyProfileProjection: boolean
+
+  switch (input.operation) {
+    case 'create': {
+      if (
+        !nonEmptyString(input.targetPersonaId) ||
+        input.createdPersona.id !== input.targetPersonaId ||
+        beforePersonaIds.includes(input.targetPersonaId) ||
+        !isJsonValueEqual(attemptedPersonaIds, [...beforePersonaIds, input.targetPersonaId])
+      ) {
+        return undefined
+      }
+      expectedSelectedPersonaId = input.mirrorLegacyProfile ? input.targetPersonaId : beforeSelectedPersonaId
+      expectedCollectionWritten = true
+      expectedLegacyProfileProjection = input.mirrorLegacyProfile
+      if (
+        expectedLegacyProfileProjection &&
+        !isJsonValueEqual(
+          acknowledgement.attemptedLegacyProfile,
+          personaProfileDigestValueFromPersona(input.createdPersona),
+        )
+      ) {
+        return undefined
+      }
+      break
+    }
+    case 'delete': {
+      if (
+        !nonEmptyString(input.targetPersonaId) ||
+        !beforePersonaIds.includes(input.targetPersonaId) ||
+        !isJsonValueEqual(
+          attemptedPersonaIds,
+          beforePersonaIds.filter((personaId) => personaId !== input.targetPersonaId),
+        ) ||
+        attemptedPersonaIds.length === 0
+      ) {
+        return undefined
+      }
+      if (input.requestedSelectedPersonaId !== undefined) {
+        if (
+          !nonEmptyString(input.requestedSelectedPersonaId) ||
+          !attemptedPersonaIds.includes(input.requestedSelectedPersonaId)
+        ) {
+          return undefined
+        }
+        expectedSelectedPersonaId = input.requestedSelectedPersonaId
+      } else if (beforeSelectedPersonaId === input.targetPersonaId) {
+        expectedSelectedPersonaId = attemptedPersonaIds[0] ?? null
+      } else {
+        expectedSelectedPersonaId = beforeSelectedPersonaId ?? attemptedPersonaIds[0] ?? null
+      }
+      expectedCollectionWritten = true
+      expectedLegacyProfileProjection = input.mirrorLegacyProfile && expectedSelectedPersonaId !== null
+      break
+    }
+    case 'select': {
+      if (
+        !nonEmptyString(input.targetPersonaId) ||
+        !attemptedPersonaIds.includes(input.targetPersonaId) ||
+        !isJsonValueEqual(attemptedPersonaIds, beforePersonaIds)
+      ) {
+        return undefined
+      }
+      expectedSelectedPersonaId = input.targetPersonaId
+      expectedCollectionWritten = input.saveCurrent
+      expectedLegacyProfileProjection = input.mirrorLegacyProfile
+      break
+    }
+    case 'reorder': {
+      if (
+        !isJsonValueEqual(attemptedPersonaIds, input.requestedPersonaIds) ||
+        !isUniqueStringArray(input.requestedPersonaIds) ||
+        !isJsonValueEqual([...attemptedPersonaIds].sort(), [...beforePersonaIds].sort())
+      ) {
+        return undefined
+      }
+      expectedSelectedPersonaId = beforeSelectedPersonaId ?? attemptedPersonaIds[0] ?? null
+      expectedCollectionWritten = true
+      expectedLegacyProfileProjection = false
+      break
+    }
+  }
+
+  const beforeSelectedIndex = beforeSelectedPersonaId === null ? -1 : beforePersonaIds.indexOf(beforeSelectedPersonaId)
+  const attemptedSelectedIndex =
+    expectedSelectedPersonaId === null ? -1 : attemptedPersonaIds.indexOf(expectedSelectedPersonaId)
+  const expectedSettingsWritten =
+    expectedLegacyProfileProjection || (input.operation !== 'create' && attemptedSelectedIndex !== beforeSelectedIndex)
+  const expectedLegacyProfile = expectedLegacyProfileProjection
+  if (
+    acknowledgement.attemptedSelectedPersonaId !== expectedSelectedPersonaId ||
+    acknowledgement.collectionWritten !== expectedCollectionWritten ||
+    acknowledgement.settingsWritten !== expectedSettingsWritten ||
+    acknowledgement.legacyProfileProjectionExpected !== expectedLegacyProfileProjection ||
+    expectedLegacyProfile !== (acknowledgement.attemptedLegacyProfile !== null)
+  ) {
+    return undefined
+  }
+
+  const stableAcknowledgement: PersonaMutationOptimisticAcknowledgement = {
+    ...acknowledgement,
+    beforePersonaIds,
+    attemptedPersonaIds,
+    attemptedPersonas: cloneJsonValue(acknowledgement.attemptedPersonas),
+    attemptedLegacyProfile: acknowledgement.attemptedLegacyProfile
+      ? { ...acknowledgement.attemptedLegacyProfile }
+      : null,
+  }
+  const [personaProjectionDigest, legacyProfileDigest] = await Promise.all([
+    sha256HexUtf8(
+      stableAcknowledgement.collectionWritten
+        ? serializePersonaCollectionDigestInput(stableAcknowledgement.attemptedPersonas)
+        : serializePersonaIdsDigestInput(stableAcknowledgement.attemptedPersonaIds),
+    ),
+    stableAcknowledgement.attemptedLegacyProfile
+      ? sha256HexUtf8(serializePersonaProfileDigestInput(stableAcknowledgement.attemptedLegacyProfile))
+      : Promise.resolve(null),
+  ])
+
+  return {
+    acknowledgement: stableAcknowledgement,
+    targetPersonaId: input.targetPersonaId,
+    personaProjectionDigest,
+    legacyProfileDigest,
+  }
+}
+
+function readPersonaMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  prepared: PreparedPersonaMutationAcknowledgement,
+): PersonaMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const acknowledgement = prepared.acknowledgement
+  const expectedEventType: Record<PersonaMutationOperation, string> = {
+    create: 'persona.created',
+    delete: 'persona.deleted',
+    select: 'persona.selected',
+    reorder: 'persona.reordered',
+  }
+  const targetExpected = acknowledgement.operation !== 'reorder'
+  if (
+    record.revision !== event.revision ||
+    record.personaMutationCertificate !== 'persona-mutation-v1' ||
+    record.operation !== acknowledgement.operation ||
+    record.personaProjectionDigest !== prepared.personaProjectionDigest ||
+    record.selectedPersonaId !== acknowledgement.attemptedSelectedPersonaId ||
+    record.collectionWritten !== acknowledgement.collectionWritten ||
+    record.settingsWritten !== acknowledgement.settingsWritten ||
+    record.legacyProfileProjectionApplied !== acknowledgement.legacyProfileProjectionExpected ||
+    record.legacyProfileDigest !== prepared.legacyProfileDigest ||
+    event.type !== expectedEventType[acknowledgement.operation] ||
+    event.resource !== 'persona' ||
+    event.parentId !== undefined ||
+    (targetExpected
+      ? record.personaId !== prepared.targetPersonaId || event.id !== prepared.targetPersonaId
+      : record.personaId !== undefined || event.id !== undefined)
+  ) {
+    return undefined
+  }
+
+  return {
+    kind: 'personaMutation',
+    operation: acknowledgement.operation,
+    targetPersonaId: prepared.targetPersonaId,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    settingsProjectionEpoch: acknowledgement.settingsProjectionEpoch,
+    collectionWritten: acknowledgement.collectionWritten,
+    settingsWritten: acknowledgement.settingsWritten,
+  }
+}
+
+function isNullablePersonaId(value: unknown): value is string | null {
+  return value === null || nonEmptyString(value)
+}
+
+function selectedPersonaIdBelongsToList(personaIds: readonly string[], selectedPersonaId: string | null): boolean {
+  return selectedPersonaId === null || personaIds.includes(selectedPersonaId)
+}
+
+function isNullablePersonaProfileDigestValue(value: unknown): value is PersonaProfileDigestValue | null {
+  if (value === null) return true
+  if (!isPlainJsonRecord(value)) return false
+  return (
+    isJsonValueEqual(Object.keys(value).sort(), [...PERSONA_PROFILE_DIGEST_KEYS].sort()) &&
+    PERSONA_PROFILE_DIGEST_KEYS.every((key) => typeof value[key] === 'string')
+  )
+}
+
+function personaProfileDigestValueFromPersona(persona: PersonaSnapshot): PersonaProfileDigestValue {
+  return {
+    name: typeof persona.name === 'string' ? persona.name : '',
+    icon: typeof persona.icon === 'string' ? persona.icon : '',
+    personaPrompt: typeof persona.personaPrompt === 'string' ? persona.personaPrompt : '',
+    note: typeof persona.note === 'string' ? persona.note : '',
   }
 }
 

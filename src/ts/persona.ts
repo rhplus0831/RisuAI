@@ -16,6 +16,8 @@ import {
   subscribeServerCommandLocalEffectApplied,
   updatePersonaCommand,
   type PersonaLegacyProfileProjection,
+  type PersonaMutationOptimisticAcknowledgement,
+  type PersonaMutationOperation,
   type PersonaPatchOptimisticAcknowledgement,
   type PersonaSnapshot,
   type ServerCommandResult,
@@ -536,6 +538,98 @@ function personaPatchOptimisticAcknowledgement(input: {
   }
 }
 
+export function personaMutationOptimisticAcknowledgement(input: {
+  operation: PersonaMutationOperation
+  previous: PersonaStateSnapshot
+  attempted: PersonaStateSnapshot
+  mirrorLegacyProfile: boolean
+  saveCurrent: boolean
+  collectionProjectionEpoch?: number
+  settingsProjectionEpoch?: number
+}): PersonaMutationOptimisticAcknowledgement | undefined {
+  const beforePersonaIds = personaCommandIdList(input.previous.personas)
+  const attemptedPersonaIds = personaCommandIdList(input.attempted.personas)
+  if (!beforePersonaIds || !attemptedPersonaIds) return undefined
+  const attemptedPersonas: Array<PersonaSnapshot & { id: string }> = []
+  for (let index = 0; index < input.attempted.personas.length; index += 1) {
+    const persona = exactJsonRecordClone(input.attempted.personas[index])
+    if (!persona || persona.id !== attemptedPersonaIds[index]) return undefined
+    attemptedPersonas.push(persona as PersonaSnapshot & { id: string })
+  }
+
+  const beforeSelectedPersonaId = uniquePersonaIdAt(input.previous.personas, input.previous.selectedPersona)
+  const attemptedSelectedPersonaId = uniquePersonaIdAt(input.attempted.personas, input.attempted.selectedPersona)
+  if (input.mirrorLegacyProfile && !attemptedSelectedPersonaId) return undefined
+
+  const attemptedLegacyProfile = input.mirrorLegacyProfile ? personaProfileDigestValueFromState(input.attempted) : null
+  if (attemptedLegacyProfile && attemptedSelectedPersonaId) {
+    const selectedPersona = personaRowFromSnapshot(input.attempted, attemptedSelectedPersonaId)
+    if (!selectedPersona || !personaProfileDigestValueMatchesPersona(attemptedLegacyProfile, selectedPersona)) {
+      return undefined
+    }
+  }
+
+  const savedPersonaId = input.saveCurrent ? beforeSelectedPersonaId : null
+  const attemptedSavedPersonaProfile = savedPersonaId ? personaProfileDigestValueFromState(input.previous) : null
+  if (attemptedSavedPersonaProfile && input.operation !== 'delete') {
+    const savedPersona = personaRowFromSnapshot(input.attempted, savedPersonaId)
+    if (!savedPersona || !personaProfileDigestValueMatchesPersona(attemptedSavedPersonaProfile, savedPersona)) {
+      return undefined
+    }
+  }
+  if (attemptedSavedPersonaProfile && input.operation === 'delete' && attemptedPersonaIds.includes(savedPersonaId)) {
+    const savedPersona = personaRowFromSnapshot(input.attempted, savedPersonaId)
+    if (!savedPersona || !personaProfileDigestValueMatchesPersona(attemptedSavedPersonaProfile, savedPersona)) {
+      return undefined
+    }
+  }
+
+  const collectionWritten = input.operation !== 'select' || input.saveCurrent
+  const settingsWritten =
+    input.mirrorLegacyProfile ||
+    (input.operation !== 'create' && input.previous.selectedPersona !== input.attempted.selectedPersona)
+  return {
+    operation: input.operation,
+    collectionProjectionEpoch: input.collectionProjectionEpoch ?? captureCollectionProjectionEpoch('personas'),
+    settingsProjectionEpoch: input.settingsProjectionEpoch ?? captureSettingsProjectionEpoch(),
+    beforePersonaIds,
+    attemptedPersonaIds,
+    attemptedPersonas,
+    beforeSelectedPersonaId,
+    attemptedSelectedPersonaId,
+    collectionWritten,
+    settingsWritten,
+    legacyProfileProjectionExpected: input.mirrorLegacyProfile,
+    attemptedLegacyProfile,
+  }
+}
+
+function personaProfileDigestValueFromState(snapshot: PersonaStateSnapshot): {
+  name: string
+  icon: string
+  personaPrompt: string
+  note: string
+} {
+  return {
+    name: snapshot.username,
+    icon: snapshot.userIcon,
+    personaPrompt: snapshot.personaPrompt,
+    note: snapshot.userNote,
+  }
+}
+
+function personaProfileDigestValueMatchesPersona(
+  profile: ReturnType<typeof personaProfileDigestValueFromState>,
+  persona: Persona,
+): boolean {
+  return (
+    profile.name === (persona.name ?? '') &&
+    profile.icon === (persona.icon ?? '') &&
+    profile.personaPrompt === (persona.personaPrompt ?? '') &&
+    profile.note === (persona.note ?? '')
+  )
+}
+
 function applyPersonaRowFieldRollback(input: {
   personaId: string
   previous: Persona | null
@@ -937,13 +1031,22 @@ function dispatchCreatePersona(persona: Persona, previous: PersonaStateSnapshot)
   if (!createdPersonaId) return
   const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
   const attemptedProfile = currentProfileMirrorRollbackSnapshot()
+  const attempted = currentPersonaStateSnapshot()
   const attemptedCreatedPersona = cloneJsonValue(persona)
+  const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+    operation: 'create',
+    previous,
+    attempted,
+    mirrorLegacyProfile: true,
+    saveCurrent: false,
+  })
   void runServerCommand({
     command: (baseRevision) =>
       createPersonaCommand({
         baseRevision,
         persona: cloneJsonValue(attemptedCreatedPersona) as PersonaSnapshot,
         mirrorLegacyProfile: true,
+        optimisticAcknowledgement,
       }),
     rollback: personaCommandRollback({ personas: true, settings: true }, () =>
       applyCreatePersonaRollback({
@@ -967,6 +1070,14 @@ function dispatchDeletePersona(
   if (!previousPersona) return
   const previousProfile = profileMirrorRollbackSnapshotFromState(previous)
   const attemptedProfile = currentProfileMirrorRollbackSnapshot()
+  const attempted = currentPersonaStateSnapshot()
+  const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+    operation: 'delete',
+    previous,
+    attempted,
+    mirrorLegacyProfile: true,
+    saveCurrent: true,
+  })
   void runServerCommand({
     command: (baseRevision) =>
       deletePersonaCommand({
@@ -975,6 +1086,7 @@ function dispatchDeletePersona(
         selectPersonaId,
         mirrorLegacyProfile: true,
         saveCurrent: true,
+        optimisticAcknowledgement,
       }),
     rollback: personaCommandRollback({ personas: true, settings: true }, () =>
       applyDeletePersonaRollback({
@@ -995,12 +1107,21 @@ function dispatchReorderPersonas(previous: PersonaStateSnapshot): void {
   const previousPersonaIds = personaCommandIdList(previous.personas)
   if (!previousPersonaIds) return
   const attemptedPersonaIds = [...personaIds]
-  const settingsProjectionChanged = currentPersonaStateSnapshot().selectedPersona !== previous.selectedPersona
+  const attempted = currentPersonaStateSnapshot()
+  const settingsProjectionChanged = attempted.selectedPersona !== previous.selectedPersona
+  const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+    operation: 'reorder',
+    previous,
+    attempted,
+    mirrorLegacyProfile: false,
+    saveCurrent: false,
+  })
   void runServerCommand({
     command: (baseRevision) =>
       reorderPersonasCommand({
         baseRevision,
         personaIds,
+        optimisticAcknowledgement,
       }),
     rollback: personaCommandRollback({ personas: true, settings: settingsProjectionChanged }, () =>
       applyReorderPersonaRollback({
@@ -1452,6 +1573,13 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
   const previous = currentPersonaStateSnapshot()
   if (!selectUserPersonaLocally(id, save)) return
   const attempted = currentPersonaStateSnapshot()
+  const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+    operation: 'select',
+    previous,
+    attempted,
+    mirrorLegacyProfile: true,
+    saveCurrent: save === 'save',
+  })
   if (personaId) {
     runPersonaCommand(
       (baseRevision) =>
@@ -1460,6 +1588,7 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
           personaId,
           saveCurrent: save === 'save',
           mirrorLegacyProfile: true,
+          optimisticAcknowledgement,
         }),
       () =>
         applySelectPersonaRollback({
@@ -1560,15 +1689,25 @@ export async function importUserPersona() {
         note: data.note,
         id: v4(),
       }
+      const previous = currentPersonaStateSnapshot()
       const attemptedPersona = cloneJsonValue(persona)
       withTrustedResourceWrite(() => {
         getDatabase().personas.push(persona)
+      })
+      const attempted = currentPersonaStateSnapshot()
+      const optimisticAcknowledgement = personaMutationOptimisticAcknowledgement({
+        operation: 'create',
+        previous,
+        attempted,
+        mirrorLegacyProfile: false,
+        saveCurrent: false,
       })
       runPersonaCommand(
         (baseRevision) =>
           createPersonaCommand({
             baseRevision,
             persona: cloneJsonValue(attemptedPersona) as PersonaSnapshot,
+            optimisticAcknowledgement,
           }),
         () =>
           applyImportPersonaRollback({

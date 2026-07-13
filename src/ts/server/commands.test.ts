@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
+import {
+  serializePersonaCollectionDigestInput,
+  serializePersonaIdsDigestInput,
+  serializePersonaProfileDigestInput,
+} from '../personaMutationCertificate'
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
@@ -156,6 +161,11 @@ interface CapturedFetch {
   authHeader: string | null
   contentType: string | null
   body: unknown
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 interface Deferred<T> {
@@ -3224,6 +3234,269 @@ describe('server command API adapter', () => {
         body: { baseRevision: 5, personaIds: ['persona-b'] },
       },
     ])
+  })
+
+  it('exposes exact structural persona acknowledgements without serializing optimistic proof', async () => {
+    const profileA = { name: 'A', icon: 'asset-a', personaPrompt: 'Prompt A', note: 'Note A' }
+    const profileB = { name: 'B', icon: 'asset-b', personaPrompt: 'Prompt B', note: 'Note B' }
+    const personaA = { id: 'persona-a', ...profileA }
+    const personaB = { id: 'persona-b', ...profileB }
+    const [idsAB, collectionAB, collectionB, collectionBA, profileBDigest] = await Promise.all([
+      sha256Hex(serializePersonaIdsDigestInput(['persona-a', 'persona-b'])),
+      sha256Hex(serializePersonaCollectionDigestInput([personaA, personaB])),
+      sha256Hex(serializePersonaCollectionDigestInput([personaB])),
+      sha256Hex(serializePersonaCollectionDigestInput([personaB, personaA])),
+      sha256Hex(serializePersonaProfileDigestInput(profileB)),
+    ])
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/personas/select')) {
+        return {
+          revision: 4,
+          event: { type: 'persona.selected', revision: 4, resource: 'persona', id: 'persona-b' },
+          personaId: 'persona-b',
+          personaMutationCertificate: 'persona-mutation-v1',
+          operation: 'select',
+          personaProjectionDigest: idsAB,
+          selectedPersonaId: 'persona-b',
+          collectionWritten: false,
+          settingsWritten: true,
+          legacyProfileProjectionApplied: true,
+          legacyProfileDigest: profileBDigest,
+        }
+      }
+      if (url.endsWith('/personas/reorder')) {
+        return {
+          revision: 5,
+          event: { type: 'persona.reordered', revision: 5, resource: 'persona' },
+          personaMutationCertificate: 'persona-mutation-v1',
+          operation: 'reorder',
+          personaProjectionDigest: collectionBA,
+          selectedPersonaId: 'persona-a',
+          collectionWritten: true,
+          settingsWritten: true,
+          legacyProfileProjectionApplied: false,
+          legacyProfileDigest: null,
+        }
+      }
+      if (url.endsWith('/personas/persona-a')) {
+        return {
+          revision: 3,
+          event: { type: 'persona.deleted', revision: 3, resource: 'persona', id: 'persona-a' },
+          personaId: 'persona-a',
+          personaMutationCertificate: 'persona-mutation-v1',
+          operation: 'delete',
+          personaProjectionDigest: collectionB,
+          selectedPersonaId: 'persona-b',
+          collectionWritten: true,
+          settingsWritten: true,
+          legacyProfileProjectionApplied: true,
+          legacyProfileDigest: profileBDigest,
+        }
+      }
+      return {
+        revision: 2,
+        event: { type: 'persona.created', revision: 2, resource: 'persona', id: 'persona-b' },
+        personaId: 'persona-b',
+        personaMutationCertificate: 'persona-mutation-v1',
+        operation: 'create',
+        personaProjectionDigest: collectionAB,
+        selectedPersonaId: 'persona-b',
+        collectionWritten: true,
+        settingsWritten: true,
+        legacyProfileProjectionApplied: true,
+        legacyProfileDigest: profileBDigest,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await createPersonaCommand({
+      baseRevision: 1,
+      persona: personaB,
+      mirrorLegacyProfile: true,
+      optimisticAcknowledgement: {
+        operation: 'create',
+        collectionProjectionEpoch: 10,
+        settingsProjectionEpoch: 20,
+        beforePersonaIds: ['persona-a'],
+        attemptedPersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonas: [personaA, personaB],
+        beforeSelectedPersonaId: 'persona-a',
+        attemptedSelectedPersonaId: 'persona-b',
+        collectionWritten: true,
+        settingsWritten: true,
+        legacyProfileProjectionExpected: true,
+        attemptedLegacyProfile: profileB,
+      },
+    })
+    await deletePersonaCommand({
+      baseRevision: 2,
+      personaId: 'persona-a',
+      selectPersonaId: 'persona-b',
+      mirrorLegacyProfile: true,
+      saveCurrent: true,
+      optimisticAcknowledgement: {
+        operation: 'delete',
+        collectionProjectionEpoch: 11,
+        settingsProjectionEpoch: 21,
+        beforePersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonaIds: ['persona-b'],
+        attemptedPersonas: [personaB],
+        beforeSelectedPersonaId: 'persona-b',
+        attemptedSelectedPersonaId: 'persona-b',
+        collectionWritten: true,
+        settingsWritten: true,
+        legacyProfileProjectionExpected: true,
+        attemptedLegacyProfile: profileB,
+      },
+    })
+    await selectPersonaCommand({
+      baseRevision: 3,
+      personaId: 'persona-b',
+      mirrorLegacyProfile: true,
+      saveCurrent: false,
+      optimisticAcknowledgement: {
+        operation: 'select',
+        collectionProjectionEpoch: 12,
+        settingsProjectionEpoch: 22,
+        beforePersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonas: [{ ...personaA, displayName: 'Unsent unrelated edit' }, personaB],
+        beforeSelectedPersonaId: 'persona-a',
+        attemptedSelectedPersonaId: 'persona-b',
+        collectionWritten: false,
+        settingsWritten: true,
+        legacyProfileProjectionExpected: true,
+        attemptedLegacyProfile: profileB,
+      },
+    })
+    await reorderPersonasCommand({
+      baseRevision: 4,
+      personaIds: ['persona-b', 'persona-a'],
+      optimisticAcknowledgement: {
+        operation: 'reorder',
+        collectionProjectionEpoch: 13,
+        settingsProjectionEpoch: 23,
+        beforePersonaIds: ['persona-a', 'persona-b'],
+        attemptedPersonaIds: ['persona-b', 'persona-a'],
+        attemptedPersonas: [personaB, personaA],
+        beforeSelectedPersonaId: 'persona-a',
+        attemptedSelectedPersonaId: 'persona-a',
+        collectionWritten: true,
+        settingsWritten: true,
+        legacyProfileProjectionExpected: false,
+        attemptedLegacyProfile: null,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'personaMutation',
+        operation: 'create',
+        targetPersonaId: 'persona-b',
+        collectionProjectionEpoch: 10,
+        settingsProjectionEpoch: 20,
+        collectionWritten: true,
+        settingsWritten: true,
+      },
+      {
+        kind: 'personaMutation',
+        operation: 'delete',
+        targetPersonaId: 'persona-a',
+        collectionProjectionEpoch: 11,
+        settingsProjectionEpoch: 21,
+        collectionWritten: true,
+        settingsWritten: true,
+      },
+      {
+        kind: 'personaMutation',
+        operation: 'select',
+        targetPersonaId: 'persona-b',
+        collectionProjectionEpoch: 12,
+        settingsProjectionEpoch: 22,
+        collectionWritten: false,
+        settingsWritten: true,
+      },
+      {
+        kind: 'personaMutation',
+        operation: 'reorder',
+        targetPersonaId: null,
+        collectionProjectionEpoch: 13,
+        settingsProjectionEpoch: 23,
+        collectionWritten: true,
+        settingsWritten: true,
+      },
+    ])
+    expect(commandFetch.calls.every((call) => !Object.hasOwn(call.body as object, 'optimisticAcknowledgement'))).toBe(
+      true,
+    )
+  })
+
+  it('keeps malformed structural persona receipts and contradictory proofs on authoritative reconciliation', async () => {
+    const profileA = { name: 'A', icon: '', personaPrompt: 'A', note: '' }
+    const profileB = { name: 'B', icon: '', personaPrompt: 'B', note: '' }
+    const personaA = { id: 'persona-a', ...profileA }
+    const personaB = { id: 'persona-b', ...profileB }
+    const [personaProjectionDigest, profileBDigest] = await Promise.all([
+      sha256Hex(serializePersonaCollectionDigestInput([personaA, personaB])),
+      sha256Hex(serializePersonaProfileDigestInput(profileB)),
+    ])
+    const exactResponse = {
+      revision: 3,
+      event: { type: 'persona.selected', revision: 3, resource: 'persona', id: 'persona-b' },
+      personaId: 'persona-b',
+      personaMutationCertificate: 'persona-mutation-v1',
+      operation: 'select',
+      personaProjectionDigest,
+      selectedPersonaId: 'persona-b',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionApplied: true,
+      legacyProfileDigest: profileBDigest,
+    }
+    const responses = [
+      { ...exactResponse, personaProjectionDigest: '0'.repeat(64) },
+      { ...exactResponse, legacyProfileDigest: 'f'.repeat(64) },
+      { ...exactResponse, event: { ...exactResponse.event, resource: 'settings' } },
+      exactResponse,
+    ]
+    let responseIndex = 0
+    const commandFetch = makeCommandFetch(() => responses[responseIndex++])
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+    const acknowledgement = {
+      operation: 'select' as const,
+      collectionProjectionEpoch: 12,
+      settingsProjectionEpoch: 22,
+      beforePersonaIds: ['persona-a', 'persona-b'],
+      attemptedPersonaIds: ['persona-a', 'persona-b'],
+      attemptedPersonas: [personaA, personaB],
+      beforeSelectedPersonaId: 'persona-a',
+      attemptedSelectedPersonaId: 'persona-b',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionExpected: true,
+      attemptedLegacyProfile: profileB,
+    }
+
+    for (let index = 0; index < responses.length; index += 1) {
+      await selectPersonaCommand({
+        baseRevision: 2,
+        personaId: 'persona-b',
+        mirrorLegacyProfile: true,
+        saveCurrent: true,
+        optimisticAcknowledgement:
+          index === responses.length - 1 ? { ...acknowledgement, collectionWritten: false } : acknowledgement,
+      })
+    }
+
+    expect(observedEffectCounts).toEqual([0, 0, 0, 0])
   })
 
   it('exposes an exact persona PATCH acknowledgement without serializing optimistic proof', async () => {

@@ -29,6 +29,7 @@ import {
   currentPersonaStateSnapshot,
   deleteSelectedUserPersona,
   flushPendingSelectedPersonaUpdate,
+  personaMutationOptimisticAcknowledgement,
   queueSelectedPersonaUpdate,
   reconcileSelectedPersonaProjectionEpoch,
   reorderUserPersonasByIndices,
@@ -143,6 +144,100 @@ afterEach(() => {
 })
 
 describe('persona ID read and command preparation', () => {
+  it('builds exact optimistic proofs for structural persona mutations', () => {
+    const personaA = makePersona({
+      id: 'persona-a',
+      name: 'A row',
+      icon: 'a-row.png',
+      personaPrompt: 'A row prompt',
+      note: 'A row note',
+    })
+    const personaB = makePersona({
+      id: 'persona-b',
+      name: 'B',
+      icon: 'b.png',
+      personaPrompt: 'B prompt',
+      note: 'B note',
+    })
+    const previous = {
+      personas: [personaA, personaB],
+      selectedPersona: 0,
+      username: 'Edited A',
+      userIcon: 'edited-a.png',
+      personaPrompt: 'Edited A prompt',
+      userNote: 'Edited A note',
+    } as any
+    const attempted = {
+      personas: [
+        {
+          ...personaA,
+          name: 'Edited A',
+          icon: 'edited-a.png',
+          personaPrompt: 'Edited A prompt',
+          note: 'Edited A note',
+        },
+        personaB,
+      ],
+      selectedPersona: 1,
+      username: 'B',
+      userIcon: 'b.png',
+      personaPrompt: 'B prompt',
+      userNote: 'B note',
+    } as any
+
+    expect(
+      personaMutationOptimisticAcknowledgement({
+        operation: 'select',
+        previous,
+        attempted,
+        mirrorLegacyProfile: true,
+        saveCurrent: true,
+        collectionProjectionEpoch: 7,
+        settingsProjectionEpoch: 9,
+      }),
+    ).toEqual({
+      operation: 'select',
+      collectionProjectionEpoch: 7,
+      settingsProjectionEpoch: 9,
+      beforePersonaIds: ['persona-a', 'persona-b'],
+      attemptedPersonaIds: ['persona-a', 'persona-b'],
+      attemptedPersonas: attempted.personas,
+      beforeSelectedPersonaId: 'persona-a',
+      attemptedSelectedPersonaId: 'persona-b',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionExpected: true,
+      attemptedLegacyProfile: {
+        name: 'B',
+        icon: 'b.png',
+        personaPrompt: 'B prompt',
+        note: 'B note',
+      },
+    })
+
+    expect(
+      personaMutationOptimisticAcknowledgement({
+        operation: 'reorder',
+        previous: { ...attempted, selectedPersona: 1 },
+        attempted: { ...attempted, personas: [personaB, attempted.personas[0]], selectedPersona: 0 },
+        mirrorLegacyProfile: false,
+        saveCurrent: false,
+        collectionProjectionEpoch: 8,
+        settingsProjectionEpoch: 10,
+      }),
+    ).toMatchObject({
+      operation: 'reorder',
+      beforePersonaIds: ['persona-a', 'persona-b'],
+      attemptedPersonaIds: ['persona-b', 'persona-a'],
+      beforeSelectedPersonaId: 'persona-b',
+      attemptedSelectedPersonaId: 'persona-b',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionExpected: false,
+      attemptedLegacyProfile: null,
+    })
+  })
+
   it('mirrors selected text fields into the selected persona row immediately', () => {
     seedPersonaState(
       [

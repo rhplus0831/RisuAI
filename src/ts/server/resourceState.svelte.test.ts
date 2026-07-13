@@ -23,6 +23,7 @@ import {
   applyLegacyPresetPatchLocalEffect,
   applyAgentPresetPatchLocalEffect,
   applyAgentPresetStepPatchLocalEffect,
+  applyPersonaMutationLocalEffect,
   applyPersonaPatchLocalEffect,
   applyTranslatorPresetPatchLocalEffect,
   applyLegacyPresetRowResource,
@@ -560,6 +561,124 @@ describe('resource-scoped database state', () => {
       { id: 'persona-a', name: 'Duplicate' },
     ] as never
     expect(applyPersonaPatchLocalEffect(baseEffect)).toBe(false)
+  })
+
+  it('fences only persona mutation slices the server wrote while preserving newer optimistic values', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [
+          { id: 'persona-b', name: 'Newer B', icon: '', personaPrompt: 'B', note: '' },
+          { id: 'persona-a', name: 'Newer A', icon: '', personaPrompt: 'A', note: '' },
+        ],
+        selectedPersona: 0,
+        username: 'Newer B',
+        userIcon: '',
+        personaPrompt: 'Newer B prompt',
+        userNote: 'Newer B note',
+      } as never,
+      3,
+    )
+    const collectionEpoch = captureCollectionProjectionEpoch('personas')
+    const settingsEpoch = captureSettingsProjectionEpoch()
+    markCollectionAcknowledgementTainted('personas')
+    markSettingsAcknowledgementTainted()
+
+    expect(
+      applyPersonaMutationLocalEffect({
+        revision: 4,
+        operation: 'create',
+        collectionWritten: true,
+        settingsWritten: false,
+      }),
+    ).toBe(true)
+    expect(collectionsResourceState.revisions.personas).toBe(4)
+    expect(settingsResourceState.fullRevision).toBe(3)
+
+    expect(
+      applyPersonaMutationLocalEffect({
+        revision: 5,
+        operation: 'select',
+        collectionWritten: false,
+        settingsWritten: true,
+      }),
+    ).toBe(true)
+    expect(collectionsResourceState.revisions.personas).toBe(4)
+    expect(settingsResourceState.fullRevision).toBe(5)
+
+    expect(
+      applyPersonaMutationLocalEffect({
+        revision: 6,
+        operation: 'delete',
+        collectionWritten: true,
+        settingsWritten: true,
+      }),
+    ).toBe(true)
+    expect(collectionsResourceState.revisions.personas).toBe(6)
+    expect(settingsResourceState.fullRevision).toBe(6)
+    expect(getResourceDatabase()).toMatchObject({
+      selectedPersona: 0,
+      username: 'Newer B',
+      personaPrompt: 'Newer B prompt',
+      userNote: 'Newer B note',
+      personas: [
+        expect.objectContaining({ id: 'persona-b', name: 'Newer B' }),
+        expect.objectContaining({ id: 'persona-a', name: 'Newer A' }),
+      ],
+    })
+    expect(hasCollectionProjectionEpochChanged('personas', collectionEpoch)).toBe(false)
+    expect(hasSettingsProjectionEpochChanged(settingsEpoch)).toBe(false)
+    expect(isCollectionAcknowledgementTainted('personas')).toBe(true)
+    expect(isSettingsAcknowledgementTainted()).toBe(true)
+  })
+
+  it('rejects malformed or unresolvable persona mutation fences', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        personas: [{ id: 'persona-a', name: 'A', icon: '', personaPrompt: '', note: '' }],
+        selectedPersona: 0,
+        username: 'A',
+        userIcon: '',
+        personaPrompt: '',
+        userNote: '',
+      } as never,
+      3,
+    )
+    expect(
+      applyPersonaMutationLocalEffect({
+        revision: 4,
+        operation: 'create',
+        collectionWritten: false,
+        settingsWritten: false,
+      }),
+    ).toBe(false)
+
+    collectionsResourceState.values.personas = [
+      { id: 'persona-a', name: 'A' },
+      { id: 'persona-a', name: 'Duplicate' },
+    ] as never
+    expect(
+      applyPersonaMutationLocalEffect({
+        revision: 4,
+        operation: 'reorder',
+        collectionWritten: true,
+        settingsWritten: false,
+      }),
+    ).toBe(false)
+
+    collectionsResourceState.values.personas = [{ id: 'persona-a', name: 'A' }] as never
+    ;(settingsResourceState.value as Record<string, unknown>).selectedPersona = -1
+    expect(
+      applyPersonaMutationLocalEffect({
+        revision: 4,
+        operation: 'select',
+        collectionWritten: false,
+        settingsWritten: true,
+      }),
+    ).toBe(false)
   })
 
   it('fences an accepted translator preset PATCH while preserving later row and language edits', () => {

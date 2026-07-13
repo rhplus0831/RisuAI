@@ -50,6 +50,7 @@ import {
   validateFullPromptItemIdList,
 } from '../commands/prompts.js'
 import {
+  buildPersonaMutationCertificate,
   createPersonaRecord,
   ensureDatabaseObject as ensurePersonaDatabaseObject,
   ensurePersonaCollection,
@@ -62,6 +63,7 @@ import {
   saveSelectedPersonaSnapshot,
   selectedPersonaId,
   validateFullPersonaIdList,
+  type PersonaMutationCertificate,
 } from '../commands/personas.js'
 import {
   applyPreset,
@@ -3655,7 +3657,7 @@ export function registerCommandRoutes(
       const baseRevision = readBaseRevision(body)
       const persona = createPersonaRecord(body.persona, { assetDb: db })
       const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', false)
-      const result = applyTargetedCommandMutation<{ personaId: string }>({
+      const result = applyTargetedCommandMutation<{ personaId: string } & PersonaMutationCertificate>({
         db,
         dataDir,
         baseRevision,
@@ -3679,7 +3681,17 @@ export function registerCommandRoutes(
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaCreated, id: persona.id },
-            extra: { personaId: persona.id },
+            extra: {
+              personaId: persona.id,
+              ...buildPersonaMutationCertificate({
+                operation: 'create',
+                database: target,
+                personas,
+                collectionWritten: true,
+                settingsWritten: mirror,
+                legacyProfileProjectionApplied: mirror,
+              }),
+            },
           }
         },
       })
@@ -3766,10 +3778,7 @@ export function registerCommandRoutes(
         body.selectPersonaId === undefined ? undefined : readPersonaId(body.selectPersonaId, 'selectPersonaId')
       const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', false)
-      const result = applyTargetedCommandMutation<{
-        personaId: string
-        selectedPersonaId: string | null
-      }>({
+      const result = applyTargetedCommandMutation<{ personaId: string } & PersonaMutationCertificate>({
         db,
         dataDir,
         baseRevision,
@@ -3810,7 +3819,8 @@ export function registerCommandRoutes(
           writeSingleCollectionTable(innerDb, 'personas', personas)
           // `selectedPersona` + the mirror scalars are settings; co-write settings
           // when the pointer moved or mirroring rewrote the legacy profile.
-          if (mirrored || target.selectedPersona !== beforeSelected) {
+          const settingsWritten = mirrored || target.selectedPersona !== beforeSelected
+          if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
 
@@ -3818,7 +3828,14 @@ export function registerCommandRoutes(
             event: { ...COMMAND_EVENT_CATALOG.personaDeleted, id: personaId },
             extra: {
               personaId,
-              selectedPersonaId: selectedIndex >= 0 ? personas[selectedIndex].id : null,
+              ...buildPersonaMutationCertificate({
+                operation: 'delete',
+                database: target,
+                personas,
+                collectionWritten: true,
+                settingsWritten,
+                legacyProfileProjectionApplied: mirrored,
+              }),
             },
           }
         },
@@ -3843,7 +3860,7 @@ export function registerCommandRoutes(
       const personaId = readPersonaId(body.personaId, 'personaId')
       const mirror = readPersonaOptionalBoolean(body.mirrorLegacyProfile, 'mirrorLegacyProfile', true)
       const saveCurrent = readPersonaOptionalBoolean(body.saveCurrent, 'saveCurrent', true)
-      const result = applyTargetedCommandMutation<{ personaId: string }>({
+      const result = applyTargetedCommandMutation<{ personaId: string } & PersonaMutationCertificate>({
         db,
         dataDir,
         baseRevision,
@@ -3869,12 +3886,23 @@ export function registerCommandRoutes(
           if (saveCurrent) {
             writeSingleCollectionTable(innerDb, 'personas', personas)
           }
-          if (mirrored || target.selectedPersona !== beforeSelected) {
+          const settingsWritten = mirrored || target.selectedPersona !== beforeSelected
+          if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: { ...COMMAND_EVENT_CATALOG.personaSelected, id: personaId },
-            extra: { personaId },
+            extra: {
+              personaId,
+              ...buildPersonaMutationCertificate({
+                operation: 'select',
+                database: target,
+                personas,
+                collectionWritten: saveCurrent,
+                settingsWritten,
+                legacyProfileProjectionApplied: mirrored,
+              }),
+            },
           }
         },
       })
@@ -3899,7 +3927,7 @@ export function registerCommandRoutes(
         throw new ValidationError('personaIds must be an array')
       }
       const personaIds = body.personaIds
-      const result = applyTargetedCommandMutation<{ selectedPersonaId: string | null }>({
+      const result = applyTargetedCommandMutation<PersonaMutationCertificate>({
         db,
         dataDir,
         baseRevision,
@@ -3923,12 +3951,20 @@ export function registerCommandRoutes(
           writeSingleCollectionTable(innerDb, 'personas', reordered)
           // `selectedPersona` is a settings scalar; co-write settings only when
           // the reorder moved the selected persona to a new index.
-          if (target.selectedPersona !== beforeSelected) {
+          const settingsWritten = target.selectedPersona !== beforeSelected
+          if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: COMMAND_EVENT_CATALOG.personaReordered,
-            extra: { selectedPersonaId: selectedPersonaId(target, reordered) },
+            extra: buildPersonaMutationCertificate({
+              operation: 'reorder',
+              database: target,
+              personas: reordered,
+              collectionWritten: true,
+              settingsWritten,
+              legacyProfileProjectionApplied: false,
+            }),
           }
         },
       })

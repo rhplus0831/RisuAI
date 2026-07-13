@@ -20,12 +20,30 @@ import {
   serializeChatGenerationSettingsDigestInput,
   type ChatGenerationSettings,
 } from '../../../src/ts/chatGenerationSettings.js'
+import {
+  serializePersonaCollectionDigestInput,
+  serializePersonaIdsDigestInput,
+  serializePersonaProfileDigestInput,
+  type PersonaProfileDigestValue,
+} from '../../../src/ts/personaMutationCertificate.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
 
 function chatGenerationSettingsDigest(settings: ChatGenerationSettings | null | undefined): string {
   return createHash('sha256').update(serializeChatGenerationSettingsDigestInput(settings), 'utf8').digest('hex')
+}
+
+function personaCollectionDigest(personas: readonly unknown[]): string {
+  return createHash('sha256').update(serializePersonaCollectionDigestInput(personas), 'utf8').digest('hex')
+}
+
+function personaIdsDigest(personaIds: readonly string[]): string {
+  return createHash('sha256').update(serializePersonaIdsDigestInput(personaIds), 'utf8').digest('hex')
+}
+
+function personaProfileDigest(profile: PersonaProfileDigestValue): string {
+  return createHash('sha256').update(serializePersonaProfileDigestInput(profile), 'utf8').digest('hex')
 }
 
 interface Harness {
@@ -4910,6 +4928,24 @@ describe('Phase 9-2d persona commands', () => {
         id: 'persona-b',
       },
       personaId: 'persona-b',
+      personaMutationCertificate: 'persona-mutation-v1',
+      operation: 'create',
+      personaProjectionDigest: personaCollectionDigest([
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: 'a note' },
+        {
+          id: 'persona-b',
+          name: 'B',
+          displayName: 'Bee',
+          icon: personaIconId,
+          personaPrompt: 'b prompt',
+          note: 'b note',
+        },
+      ]),
+      selectedPersonaId: 'persona-a',
+      collectionWritten: true,
+      settingsWritten: false,
+      legacyProfileProjectionApplied: false,
+      legacyProfileDigest: null,
     })
 
     const updated = await harness.app.inject({
@@ -4952,7 +4988,25 @@ describe('Phase 9-2d persona commands', () => {
         revision: 4,
         resource: 'persona',
       },
+      personaMutationCertificate: 'persona-mutation-v1',
+      operation: 'reorder',
+      personaProjectionDigest: personaCollectionDigest([
+        {
+          id: 'persona-b',
+          name: 'B renamed',
+          displayName: 'Localized B',
+          icon: personaIconId,
+          personaPrompt: 'b prompt',
+          note: 'b note',
+          largePortrait: true,
+        },
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'a prompt', note: 'a note' },
+      ]),
       selectedPersonaId: 'persona-a',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionApplied: false,
+      legacyProfileDigest: null,
     })
 
     const deleted = await harness.app.inject({
@@ -4975,7 +5029,29 @@ describe('Phase 9-2d persona commands', () => {
         id: 'persona-a',
       },
       personaId: 'persona-a',
+      personaMutationCertificate: 'persona-mutation-v1',
+      operation: 'delete',
+      personaProjectionDigest: personaCollectionDigest([
+        {
+          id: 'persona-b',
+          name: 'B renamed',
+          displayName: 'Localized B',
+          icon: personaIconId,
+          personaPrompt: 'b prompt',
+          note: 'b note',
+          largePortrait: true,
+        },
+      ]),
       selectedPersonaId: 'persona-b',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionApplied: true,
+      legacyProfileDigest: personaProfileDigest({
+        name: 'B renamed',
+        icon: personaIconId,
+        personaPrompt: 'b prompt',
+        note: 'b note',
+      }),
     })
 
     const bootstrap = await harness.app.inject({
@@ -5046,6 +5122,34 @@ describe('Phase 9-2d persona commands', () => {
         id: 'persona-b',
       },
       personaId: 'persona-b',
+      personaMutationCertificate: 'persona-mutation-v1',
+      operation: 'select',
+      personaProjectionDigest: personaCollectionDigest([
+        {
+          id: 'persona-a',
+          name: 'Edited A',
+          icon: 'assets/edited-a.png',
+          personaPrompt: 'edited a prompt',
+          note: 'edited a note',
+        },
+        {
+          id: 'persona-b',
+          name: 'B',
+          icon: personaIconId,
+          personaPrompt: 'b prompt',
+          note: 'b note',
+        },
+      ]),
+      selectedPersonaId: 'persona-b',
+      collectionWritten: true,
+      settingsWritten: true,
+      legacyProfileProjectionApplied: true,
+      legacyProfileDigest: personaProfileDigest({
+        name: 'B',
+        icon: personaIconId,
+        personaPrompt: 'b prompt',
+        note: 'b note',
+      }),
     })
 
     const bootstrap = await harness.app.inject({
@@ -5066,6 +5170,58 @@ describe('Phase 9-2d persona commands', () => {
       icon: 'assets/edited-a.png',
       personaPrompt: 'edited a prompt',
       note: 'edited a note',
+    })
+  })
+
+  it('certifies a no-save persona selection with ordered IDs instead of hashing unrelated row bodies', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      username: 'A',
+      userIcon: '',
+      personaPrompt: 'A prompt',
+      userNote: '',
+      personas: [
+        { id: 'persona-a', name: 'A', icon: '', personaPrompt: 'A prompt', note: '' },
+        { id: 'persona-b', name: 'B', icon: '', personaPrompt: 'B prompt', note: '' },
+      ],
+      selectedPersona: 0,
+    })
+
+    const selected = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/personas/select',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        personaId: 'persona-b',
+        saveCurrent: false,
+        mirrorLegacyProfile: true,
+      },
+    })
+
+    expect(selected.statusCode).toBe(200)
+    expect(selected.json()).toEqual({
+      revision: 2,
+      event: {
+        type: 'persona.selected',
+        revision: 2,
+        resource: 'persona',
+        id: 'persona-b',
+      },
+      personaId: 'persona-b',
+      personaMutationCertificate: 'persona-mutation-v1',
+      operation: 'select',
+      personaProjectionDigest: personaIdsDigest(['persona-a', 'persona-b']),
+      selectedPersonaId: 'persona-b',
+      collectionWritten: false,
+      settingsWritten: true,
+      legacyProfileProjectionApplied: true,
+      legacyProfileDigest: personaProfileDigest({
+        name: 'B',
+        icon: '',
+        personaPrompt: 'B prompt',
+        note: '',
+      }),
     })
   })
 
