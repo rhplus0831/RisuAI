@@ -822,6 +822,41 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
     }
   })
 
+  it('can load an exact scoped chat row without repairing generation settings', async () => {
+    const fixture = buildLargeCorpusFixture()
+    await importDatabase(fixture.database)
+    const degradedGenerationSettings = {
+      configured: 'legacy',
+      sidebarToggles: { keep: 'on', invalid: 17 },
+      unknown: { nested: true },
+    }
+
+    const db = openDatabase(harness.dataDir)
+    try {
+      const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get(fixture.hot.chatId) as {
+        data_json: string
+      }
+      const chat = JSON.parse(row.data_json) as Record<string, unknown>
+      chat.generationSettings = degradedGenerationSettings
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), fixture.hot.chatId)
+
+      const repaired = loadPersistedForChatMutation(db, harness.dataDir, { chatId: fixture.hot.chatId })
+      const repairedChat = (repaired.database as { characters: Array<{ chats: Array<Record<string, unknown>> }> })
+        .characters[0].chats[0]
+      expect(repairedChat.generationSettings).not.toStrictEqual(degradedGenerationSettings)
+
+      const exact = loadPersistedForChatMutation(db, harness.dataDir, {
+        chatId: fixture.hot.chatId,
+        exactChatRow: true,
+      })
+      const exactChat = (exact.database as { characters: Array<{ chats: Array<Record<string, unknown>> }> })
+        .characters[0].chats[0]
+      expect(exactChat.generationSettings).toStrictEqual(degradedGenerationSettings)
+    } finally {
+      db.close()
+    }
+  })
+
   it('falls back to the broad load for an unknown chat id — the 404 contract is unchanged', async () => {
     const fixture = buildLargeCorpusFixture()
     const revision = await importDatabase(fixture.database)
@@ -853,9 +888,24 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       // duplicate chat id, the one state where the global dedup has work.
       db.exec('DELETE FROM chats')
       db.exec('DELETE FROM characters')
+      const embeddedGenerationSettings = {
+        configured: 'legacy',
+        sidebarToggles: { keep: 'on', invalid: 17 },
+        unknown: true,
+      }
       const embedded = {
         characters: [
-          { chaId: 'char-a', name: 'A', chats: [{ id: 'dup-chat', name: 'A1' }] },
+          {
+            chaId: 'char-a',
+            name: 'A',
+            chats: [
+              {
+                id: 'dup-chat',
+                name: 'A1',
+                generationSettings: embeddedGenerationSettings,
+              },
+            ],
+          },
           { chaId: 'char-b', name: 'B', chats: [{ id: 'dup-chat', name: 'B1' }] },
         ],
       }
@@ -869,6 +919,14 @@ describe('command-mutation read narrowing (M3/L5/L6) on the large-corpus fixture
       })
       const characters = (persisted.database as { characters: unknown[] }).characters
       expect(characters).toHaveLength(2)
+
+      const exactFallback = loadPersistedForChatMutation(db, harness.dataDir, {
+        chatId: 'dup-chat',
+        exactChatRow: true,
+      })
+      const exactChat = (exactFallback.database as { characters: Array<{ chats: Array<Record<string, unknown>> }> })
+        .characters[0].chats[0]
+      expect(exactChat.generationSettings).toStrictEqual(embeddedGenerationSettings)
 
       // …and `normalizeAllCharacterChats` still repairs the duplicate exactly
       // as on the never-narrowed path.

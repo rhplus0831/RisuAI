@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { type CharacterRecord, ensureCharacterCollection, readCharacterId, readJsonObject } from './characters.js'
-import { ensureCharacterChats, normalizeAllCharacterChats, readChatId, requireChatLocation } from './chats.js'
+import { ensureCharacterChats, readChatId } from './chats.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -265,33 +265,64 @@ export function repairLorebookEntries(input: unknown, label: string): LorebookEn
 }
 
 export function normalizeSelectedCharacterLorebooks(
-  database: JsonRecord,
+  database: unknown,
   characterId: string,
 ): { character: CharacterRecord; characterIndex: number; entries: LorebookEntryRecord[] } {
-  const characters = ensureCharacterCollection(database)
-  const characterIndex = characters.findIndex((character) => character.chaId === characterId)
-  if (characterIndex === -1) {
+  const target = readJsonObject(database, 'database')
+  const characters = Array.isArray(target.characters) ? target.characters : []
+  const matches: Array<{ character: CharacterRecord; characterIndex: number }> = []
+  for (let characterIndex = 0; characterIndex < characters.length; characterIndex++) {
+    const candidate = characters[characterIndex]
+    if (isJsonRecord(candidate) && candidate.chaId === characterId) {
+      matches.push({ character: candidate as CharacterRecord, characterIndex })
+    }
+  }
+  if (matches.length === 0) {
     throw new EntityNotFoundError(`Character not found: ${characterId}`)
   }
-  const character = characters[characterIndex]
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate character id: ${characterId}`)
+  }
+  const { character, characterIndex } = matches[0]
+  // Repair only the field this mutation owns. Character defaults, chat rows,
+  // folders, selection pointers, and every other sibling stay untouched.
   const entries = ensureCharacterLorebooks(character)
   return { character, characterIndex, entries }
 }
 
 export function normalizeSelectedChatLorebooks(
-  database: JsonRecord,
+  database: unknown,
   chatId: string,
 ): { character: CharacterRecord; chat: { localLore: LorebookEntryRecord[] }; parentId: string } {
-  // Globally-addressed chat lookup must run after id normalization; otherwise
-  // persisted cross-character duplicate chat ids could mutate the wrong row.
-  normalizeAllCharacterChats(database)
-  const characters = ensureCharacterCollection(database)
-  const location = requireChatLocation(characters, chatId)
-  location.chat.localLore = repairLorebookEntries(location.chat.localLore, `chat ${chatId}.localLore`)
+  const target = readJsonObject(database, 'database')
+  const characters = Array.isArray(target.characters) ? target.characters : []
+  const matches: Array<{ character: CharacterRecord; chat: JsonRecord }> = []
+  for (const rawCharacter of characters) {
+    if (!isJsonRecord(rawCharacter) || !Array.isArray(rawCharacter.chats)) continue
+    for (const rawChat of rawCharacter.chats) {
+      if (isJsonRecord(rawChat) && rawChat.id === chatId) {
+        matches.push({ character: rawCharacter as CharacterRecord, chat: rawChat })
+      }
+    }
+  }
+  if (matches.length === 0) {
+    throw new EntityNotFoundError(`Chat not found: ${chatId}`)
+  }
+  if (matches.length !== 1) {
+    throw new ValidationError(`Duplicate chat id: ${chatId}`)
+  }
+  const { character, chat } = matches[0]
+  const parentId = readCharacterId(character.chaId, `chat ${chatId} parent character id`)
+  // The exact chat loader and writer preserve every sibling field. Repair only
+  // the lorebook baseline before applying the requested entry mutation.
+  chat.localLore = repairLorebookEntries(
+    Array.isArray(chat.localLore) ? chat.localLore : [],
+    `chat ${chatId}.localLore`,
+  )
   return {
-    character: location.character,
-    chat: location.chat as { localLore: LorebookEntryRecord[] },
-    parentId: location.character.chaId,
+    character,
+    chat: chat as { localLore: LorebookEntryRecord[] },
+    parentId,
   }
 }
 
@@ -495,6 +526,10 @@ function readOptionalJsonObject(value: unknown): JsonRecord {
     return {}
   }
   return value as JsonRecord
+}
+
+function isJsonRecord(value: unknown): value is JsonRecord {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function validateJsonValue(label: string, value: unknown): void {

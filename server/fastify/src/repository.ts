@@ -283,6 +283,9 @@ export interface CharacterSelectionRows {
 
 export interface CharacterMutationTarget {
   characterId: string
+  /** Preserve the stored character payload without stamping its table id into
+   * the JSON row. Used when every non-target field must remain exact. */
+  exactCharacterRow?: boolean
 }
 
 export interface CharacterSelectionProjection {
@@ -291,7 +294,7 @@ export interface CharacterSelectionProjection {
   lastInteraction?: number
 }
 
-function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
+function loadCharactersFromSqlite(db: DatabaseSync, options: { exactChatRows?: boolean } = {}): unknown[] {
   const charRows = db
     .prepare('SELECT id, position, data_json FROM characters ORDER BY position')
     .all() as unknown as CharacterRow[]
@@ -303,7 +306,7 @@ function loadCharactersFromSqlite(db: DatabaseSync): unknown[] {
 
   const chatsByCharId = new Map<string, unknown[]>()
   for (const row of chatRows) {
-    const chat = parseStoredChatRow(row.data_json)
+    const chat = options.exactChatRows ? JSON.parse(row.data_json) : parseStoredChatRow(row.data_json)
     const list = chatsByCharId.get(row.character_id) ?? []
     list.push(chat)
     chatsByCharId.set(row.character_id, list)
@@ -463,8 +466,24 @@ export function insertCharacterRow(db: DatabaseSync, position: number, character
 /** `UPDATE chats WHERE id=?` for one chat row. `message` / `hypaV3Data` are
  *  stripped to match the storage contract (they live in the message store). */
 export function writeSingleChatRow(db: DatabaseSync, chatId: string, chat: JsonRecord): void {
+  writeSingleChatRowData(db, chatId, chat, true)
+}
+
+/** Lorebook mutations already own their target-field repair. Preserve every
+ * unrelated persisted chat field exactly while still respecting the storage
+ * split for messages and hypa data. */
+export function writeSingleChatRowExact(db: DatabaseSync, chatId: string, chat: JsonRecord): void {
+  writeSingleChatRowData(db, chatId, chat, false)
+}
+
+function writeSingleChatRowData(
+  db: DatabaseSync,
+  chatId: string,
+  chat: JsonRecord,
+  repairGenerationSettings: boolean,
+): void {
   const { message: _msg, hypaV3Data: _hypa, ...chatClean } = chat
-  repairStoredChatGenerationSettings(chatClean)
+  if (repairGenerationSettings) repairStoredChatGenerationSettings(chatClean)
   recordTableWrite('chats')
   const result = db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chatClean), chatId)
   if (Number(result.changes) === 0) {
@@ -807,7 +826,11 @@ export function emptyPersisted(): Persisted {
   return { _version: PERSISTED_VERSION, database: null, assets: [] }
 }
 
-function loadPersistedDatabase(db: DatabaseSync, _dataDir: string): unknown | null {
+function loadPersistedDatabase(
+  db: DatabaseSync,
+  _dataDir: string,
+  options: { exactChatRows?: boolean } = {},
+): unknown | null {
   let database: unknown = loadSettingsFromSqlite(db)
   if (database === null) return null
   const rec = database as Record<string, unknown>
@@ -815,7 +838,7 @@ function loadPersistedDatabase(db: DatabaseSync, _dataDir: string): unknown | nu
     if (field !== 'promptTemplate' && !(field in rec)) rec[field] = []
   }
   if (!('pluginCustomStorage' in rec)) rec.pluginCustomStorage = {}
-  const sqliteChars = loadCharactersFromSqlite(db)
+  const sqliteChars = loadCharactersFromSqlite(db, options)
   if (sqliteChars.length > 0 || !Array.isArray(rec.characters)) {
     rec.characters = sqliteChars
   }
@@ -825,6 +848,16 @@ function loadPersistedDatabase(db: DatabaseSync, _dataDir: string): unknown | nu
 
 export function loadPersisted(db: DatabaseSync, dataDir: string): Persisted {
   const database = loadPersistedDatabase(db, dataDir)
+  if (database === null) return emptyPersisted()
+  return {
+    _version: PERSISTED_VERSION,
+    database,
+    assets: getAllAssetMetadata(db),
+  }
+}
+
+function loadPersistedWithExactChatRows(db: DatabaseSync, dataDir: string): Persisted {
+  const database = loadPersistedDatabase(db, dataDir, { exactChatRows: true })
   if (database === null) return emptyPersisted()
   return {
     _version: PERSISTED_VERSION,
@@ -891,7 +924,7 @@ export function loadPersistedForCharacterMutation(
 
   const character = JSON.parse(charRow.data_json) as unknown
   if (!isRecord(character)) return loadPersisted(db, dataDir)
-  character.chaId = target.characterId
+  if (!target.exactCharacterRow) character.chaId = target.characterId
 
   return {
     _version: PERSISTED_VERSION,
@@ -1170,6 +1203,9 @@ export function loadPersistedWithMessages(db: DatabaseSync, dataDir: string): Pe
 export interface ChatMutationTarget {
   chatId?: string
   messageId?: string
+  /** Skip persisted chat-field repair on both the scoped read and its broad
+   * fallback. Used by mutations that must preserve every non-target field. */
+  exactChatRow?: boolean
 }
 
 /**
@@ -1193,6 +1229,8 @@ export interface ChatMutationTarget {
  * mutation helper guards this.
  */
 export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, target: ChatMutationTarget): Persisted {
+  const broadFallback = () =>
+    target.exactChatRow ? loadPersistedWithExactChatRows(db, dataDir) : loadPersisted(db, dataDir)
   let chatId = target.chatId
   if (chatId === undefined && target.messageId !== undefined) {
     // Id-only resolution (no payload column) of the message's parent chat.
@@ -1201,21 +1239,21 @@ export function loadPersistedForChatMutation(db: DatabaseSync, dataDir: string, 
       .get(target.messageId) as { chat_id: string } | undefined
     chatId = row?.chat_id
   }
-  if (chatId === undefined) return loadPersisted(db, dataDir)
+  if (chatId === undefined) return broadFallback()
 
   const chatRow = db
     .prepare('SELECT id, character_id, position, data_json FROM chats WHERE id = ?')
     .get(chatId) as unknown as ChatRow | undefined
-  if (!chatRow) return loadPersisted(db, dataDir)
+  if (!chatRow) return broadFallback()
 
   const charRow = db
     .prepare('SELECT id, position, data_json FROM characters WHERE id = ?')
     .get(chatRow.character_id) as unknown as CharacterRow | undefined
-  if (!charRow) return loadPersisted(db, dataDir)
+  if (!charRow) return broadFallback()
 
   const character = JSON.parse(charRow.data_json) as Record<string, unknown>
-  if (!isRecord(character)) return loadPersisted(db, dataDir)
-  const chat = parseStoredChatRow(chatRow.data_json)
+  if (!isRecord(character)) return broadFallback()
+  const chat = target.exactChatRow ? JSON.parse(chatRow.data_json) : parseStoredChatRow(chatRow.data_json)
   const chatRows = db
     .prepare('SELECT id, position FROM chats WHERE character_id = ? ORDER BY position')
     .all(chatRow.character_id) as unknown as Array<Pick<ChatRow, 'id' | 'position'>>

@@ -181,7 +181,6 @@ import {
 import {
   deleteLorebookEntryById,
   ensureGlobalLorebookCollection,
-  ensureLorebookDatabase,
   normalizeSelectedCharacterLorebooks,
   normalizeSelectedChatLorebooks,
   readCharacterId as readLorebookCharacterId,
@@ -304,6 +303,7 @@ import {
   writeSettingsOnly,
   writeSingleCharacterRow,
   writeSingleChatRow,
+  writeSingleChatRowExact,
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../repository.js'
@@ -5777,11 +5777,11 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { character } = normalizeSelectedCharacterLorebooks(target, characterId)
-          // `globalLore` lives in the character row; cross-character lorebook
-          // normalization is validate-only.
+          const { character } = normalizeSelectedCharacterLorebooks(database, characterId)
+          // Repair and replace only the owned lorebook field; sibling character
+          // fields are loaded and written without normalization.
           character.globalLore = entries
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -5829,9 +5829,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { character, entries } = normalizeSelectedCharacterLorebooks(target, characterId)
+          const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
           const upserted = upsertLorebookEntryById(entries, entryId, entry)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -5874,9 +5874,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { character, entries } = normalizeSelectedCharacterLorebooks(target, characterId)
+          const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
           const deleted = deleteLorebookEntryById(entries, entryId)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -5914,9 +5914,9 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.characterRow,
+        characterScopedRead: { characterId, exactCharacterRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { character, entries } = normalizeSelectedCharacterLorebooks(target, characterId)
+          const { character, entries } = normalizeSelectedCharacterLorebooks(database, characterId)
           reorderLorebookEntriesById(entries, entryIds)
           writeSingleCharacterRow(innerDb, characterId, character)
           return {
@@ -5954,13 +5954,13 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
-          // `localLore` lives in the chat row; cross-character lorebook
-          // normalization is validate-only.
+          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
+          // Repair and replace only the owned lorebook field; sibling chat
+          // fields are loaded and written without normalization.
           chat.localLore = entries
-          writeSingleChatRow(innerDb, chatId, chat)
+          writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             // `localLore` lives in one chat row, so refresh only its parent
             // character instead of the broad global lorebook projection.
@@ -6006,11 +6006,11 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
           const upserted = upsertLorebookEntryById(chat.localLore, entryId, entry)
-          writeSingleChatRow(innerDb, chatId, chat)
+          writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
@@ -6052,11 +6052,11 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
           const deleted = deleteLorebookEntryById(chat.localLore, entryId)
-          writeSingleChatRow(innerDb, chatId, chat)
+          writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,
@@ -6093,11 +6093,11 @@ export function registerCommandRoutes(
         baseRevision,
         ...commandMutationContext(req, eventSink),
         mutationPath: TARGETED_MUTATION_PATHS.chatRow,
+        chatScopedRead: { chatId, exactChatRow: true },
         mutate(database, innerDb) {
-          const target = ensureLorebookDatabase(database)
-          const { chat, parentId } = normalizeSelectedChatLorebooks(target, chatId)
+          const { chat, parentId } = normalizeSelectedChatLorebooks(database, chatId)
           reorderLorebookEntriesById(chat.localLore, entryIds)
-          writeSingleChatRow(innerDb, chatId, chat)
+          writeSingleChatRowExact(innerDb, chatId, chat)
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.lorebookEntriesReplaced,

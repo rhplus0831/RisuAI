@@ -516,6 +516,162 @@ describe('Phase 3 single chat-row paths', () => {
     expectNoChurn(before)
     expect(readChat('chat-a-1').localLore).toEqual([entry])
   })
+
+  it('preserves degraded sibling fields across every character/chat lorebook mutation', async () => {
+    let revision = await importDatabase(seedDatabase())
+    const entry = (id: string, content = id) => ({
+      id,
+      key: id,
+      secondkey: '',
+      insertorder: 100,
+      comment: id,
+      content,
+      mode: 'normal',
+      alwaysActive: false,
+      selective: false,
+    })
+    const withoutField = (row: Record<string, unknown>, field: string): Record<string, unknown> => {
+      const result = structuredClone(row)
+      delete result[field]
+      return result
+    }
+
+    mutateRawDb((db) => {
+      const characterRow = db.prepare('SELECT data_json FROM characters WHERE id = ?').get('char-a') as {
+        data_json: string
+      }
+      const character = JSON.parse(characterRow.data_json) as Record<string, unknown>
+      delete character.displayName
+      character.legacySibling = { nested: ['character', 1] }
+      character.globalLore = [{ id: 'legacy-character-entry' }]
+      db.prepare('UPDATE characters SET data_json = ? WHERE id = ?').run(JSON.stringify(character), 'char-a')
+
+      const chatRow = db.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-a-1') as {
+        data_json: string
+      }
+      const chat = JSON.parse(chatRow.data_json) as Record<string, unknown>
+      delete chat.name
+      delete chat.note
+      chat.generationSettings = {
+        configured: 'legacy',
+        sidebarToggles: { keep: 'on', invalid: 17 },
+        unknown: { nested: true },
+      }
+      chat.legacySibling = { nested: ['chat', 2] }
+      chat.localLore = [{ id: 'legacy-chat-entry' }]
+      db.prepare('UPDATE chats SET data_json = ? WHERE id = ?').run(JSON.stringify(chat), 'chat-a-1')
+    })
+
+    const characterSiblings = withoutField(readCharacter('char-a'), 'globalLore')
+    const chatSiblings = withoutField(readChat('chat-a-1'), 'localLore')
+    const before = rowidSnapshot()
+
+    const characterCommands: Array<{
+      method: 'DELETE' | 'POST' | 'PUT'
+      url: string
+      payload: Record<string, unknown>
+      expected?: Record<string, unknown>
+    }> = [
+      {
+        method: 'PUT',
+        url: '/api/v1/commands/characters/char-a/lorebooks/entries/char-c',
+        payload: { entry: entry('char-c', 'created') },
+        expected: { entryId: 'char-c', entryIndex: 1, created: true },
+      },
+      {
+        method: 'POST',
+        url: '/api/v1/commands/characters/char-a/lorebooks/entries/reorder',
+        payload: { entryIds: ['char-c', 'legacy-character-entry'] },
+      },
+      {
+        method: 'DELETE',
+        url: '/api/v1/commands/characters/char-a/lorebooks/entries/legacy-character-entry',
+        payload: {},
+        expected: { entryId: 'legacy-character-entry', entryIndex: 1 },
+      },
+      {
+        method: 'PUT',
+        url: '/api/v1/commands/characters/char-a/lorebooks',
+        payload: { entries: [entry('char-a'), entry('char-b')] },
+      },
+    ]
+
+    for (let index = 0; index < characterCommands.length; index++) {
+      const command = characterCommands[index]
+      const result = await runCommand({
+        method: command.method,
+        url: command.url,
+        payload: { ...command.payload, baseRevision: revision },
+      })
+      revision = result.revision
+      expect(result.metric.mutationPath).toBe('targeted-character-row')
+      expect(result.metric.writtenTables).toEqual(['characters'])
+      assertCommandMetricGate(result.metric)
+      expectNoChurn(before)
+      expect(withoutField(readCharacter('char-a'), 'globalLore')).toStrictEqual(characterSiblings)
+      if (index === 0) {
+        expect((readCharacter('char-a').globalLore as Array<Record<string, unknown>>)[0]).toMatchObject({
+          id: 'legacy-character-entry',
+          key: '',
+          mode: 'normal',
+        })
+      }
+      if (command.expected) expect(result.body).toMatchObject(command.expected)
+    }
+
+    const chatCommands: Array<{
+      method: 'DELETE' | 'POST' | 'PUT'
+      url: string
+      payload: Record<string, unknown>
+      expected?: Record<string, unknown>
+    }> = [
+      {
+        method: 'PUT',
+        url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/chat-c',
+        payload: { entry: entry('chat-c', 'created') },
+        expected: { entryId: 'chat-c', entryIndex: 1, created: true },
+      },
+      {
+        method: 'POST',
+        url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/reorder',
+        payload: { entryIds: ['chat-c', 'legacy-chat-entry'] },
+      },
+      {
+        method: 'DELETE',
+        url: '/api/v1/commands/chats/chat-a-1/lorebooks/entries/legacy-chat-entry',
+        payload: {},
+        expected: { entryId: 'legacy-chat-entry', entryIndex: 1 },
+      },
+      {
+        method: 'PUT',
+        url: '/api/v1/commands/chats/chat-a-1/lorebooks',
+        payload: { entries: [entry('chat-a'), entry('chat-b')] },
+      },
+    ]
+
+    for (let index = 0; index < chatCommands.length; index++) {
+      const command = chatCommands[index]
+      const result = await runCommand({
+        method: command.method,
+        url: command.url,
+        payload: { ...command.payload, baseRevision: revision },
+      })
+      revision = result.revision
+      expect(result.metric.mutationPath).toBe('targeted-chat-row')
+      expect(result.metric.writtenTables).toEqual(['chats'])
+      assertCommandMetricGate(result.metric)
+      expectNoChurn(before)
+      expect(withoutField(readChat('chat-a-1'), 'localLore')).toStrictEqual(chatSiblings)
+      if (index === 0) {
+        expect((readChat('chat-a-1').localLore as Array<Record<string, unknown>>)[0]).toMatchObject({
+          id: 'legacy-chat-entry',
+          key: '',
+          mode: 'normal',
+        })
+      }
+      if (command.expected) expect(result.body).toMatchObject(command.expected)
+    }
+  })
 })
 
 describe('Phase 3 character + chat-row cascade paths', () => {

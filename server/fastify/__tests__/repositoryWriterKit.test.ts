@@ -13,6 +13,7 @@ import {
   writeSettingsOnly,
   writeSingleCharacterRow,
   writeSingleChatRow,
+  writeSingleChatRowExact,
   writeSingleCollectionRow,
   writeSingleCollectionTable,
 } from '../src/repository.js'
@@ -188,6 +189,33 @@ describe('targeted writer kit', () => {
       data_json: string
     }
     expect((JSON.parse(chatA1.data_json) as Record<string, unknown>).name).toBe('A1')
+  })
+
+  it('writeSingleChatRowExact strips storage-owned bodies without repairing sibling fields', () => {
+    const generationSettings = {
+      configured: 'legacy',
+      sidebarToggles: { keep: 'on', invalid: 17 },
+      unknown: { nested: true },
+    }
+    const legacySibling = { nested: ['preserve', 1] }
+
+    writeSingleChatRowExact(db, 'chat-a-2', {
+      id: 'chat-a-2',
+      localLore: [{ id: 'entry-a' }],
+      generationSettings,
+      legacySibling,
+      message: [{ role: 'user', data: 'should be stripped' }],
+      hypaV3Data: { should: 'be stripped' },
+    })
+
+    const row = db.prepare('SELECT data_json FROM chats WHERE id = ?').get('chat-a-2') as {
+      data_json: string
+    }
+    const stored = JSON.parse(row.data_json) as Record<string, unknown>
+    expect(stored.generationSettings).toStrictEqual(generationSettings)
+    expect(stored.legacySibling).toStrictEqual(legacySibling)
+    expect(stored).not.toHaveProperty('message')
+    expect(stored).not.toHaveProperty('hypaV3Data')
   })
 
   it('writeSingleCollectionRow updates one row of one table, keeping rowids stable', () => {
