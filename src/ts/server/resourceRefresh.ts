@@ -3,7 +3,12 @@ import { selectedCharID } from '../stores.svelte'
 import { mergePendingPluginStorageResource } from '../pluginCommands'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
 import { applyServerChatMessagesResource, hydrateActiveChat, resetChatHydration } from './chatMessageHydration.svelte'
-import { setAppliedServerResourceRevision, setCachedServerCommandRevision } from './commands'
+import {
+  peekAppliedServerResourceRevision,
+  setAppliedServerResourceRevision,
+  setCachedServerCommandRevision,
+  type CommandEvent,
+} from './commands'
 import {
   applyServerCharacterLorebookResource,
   markCharacterLorebookHydrated,
@@ -14,7 +19,11 @@ import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { clearActiveMessageTranslation, setActiveMessageTranslations } from './messageTranslationJobs'
 import { fetchServerBootstrapReadOnly } from './bootstrap'
 import { recordFullResourceRefresh } from './protocolDiagnostics'
-import { refreshAllServerResources, type ServerResourceInvalidationHooks } from './resourceInvalidation'
+import {
+  refreshAllServerResources,
+  refreshInvalidatedServerResources,
+  type ServerResourceInvalidationHooks,
+} from './resourceInvalidation'
 
 export type ServerResourceRefreshResult =
   | { status: 'ok'; revision: number }
@@ -55,6 +64,55 @@ export async function forceServerResourceRefresh(
   }
 }
 
+/**
+ * Apply the character-list invalidation returned by a successful Realm import.
+ * The imported character originates on the server, so it still needs one
+ * authoritative character read, but unrelated settings, collections, runtime
+ * jobs, and already-hydrated chat bodies do not.
+ *
+ * A revision gap can contain an unrelated write that must not be skipped. Keep
+ * the complete-refresh fallback for that recovery case; the normal contiguous
+ * response and an event already applied from SSE stay narrow.
+ */
+export async function refreshServerRealmImportResources(input: {
+  revision: number
+  event: CommandEvent
+  characterId: string
+}): Promise<ServerResourceRefreshResult> {
+  const appliedRevision = peekAppliedServerResourceRevision()
+  if (!isMatchingRealmCharacterCreatedEvent(input) || appliedRevision === null) {
+    return forceServerResourceRefresh('realm-import', { resource: input.event.resource })
+  }
+  if (input.event.revision > appliedRevision + 1) {
+    return forceServerResourceRefresh('realm-import', { resource: input.event.resource })
+  }
+
+  const selectedIndex = get(selectedCharID)
+  const selectedCharacterId = selectedIndex >= 0 ? getDatabase().characters?.[selectedIndex]?.chaId : undefined
+  const result = await refreshInvalidatedServerResources(input.event, {
+    appliedRevision,
+    hooks: serverResourceInvalidationHooks,
+  })
+  if (result.status !== 'ok') return result
+
+  if (result.scope === 'full') {
+    // This is not expected for a validated, contiguous character.created
+    // event, but retain full-refresh hydration semantics if the invalidation
+    // planner broadens the event in the future.
+    recordFullResourceRefresh('realm-import', input.event.resource)
+    return completeFullServerResourceRefresh(result.revision, selectedIndex, selectedCharacterId)
+  }
+
+  if (result.scope === 'targeted') {
+    // Preserve existing hydration identities. Only mark characters whose
+    // character-list payload actually carried a resident lorebook.
+    recordHydratedCharacterLorebooks(getDatabase().characters)
+  }
+  setCachedServerCommandRevision(result.revision)
+  setAppliedServerResourceRevision(result.revision)
+  return { status: 'ok', revision: result.revision }
+}
+
 async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> {
   let latestResult: ServerResourceRefreshResult | null = null
 
@@ -68,23 +126,46 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
       continue
     }
 
-    syncSelectedCharacterAfterRefresh(selectedIndex, selectedCharacterId)
-    setCachedServerCommandRevision(result.revision)
-    setAppliedServerResourceRevision(result.revision)
-
-    // Full character reads intentionally carry message-free chat rows. Reset
-    // hydration identities so every chat is fetched again from its REST body
-    // endpoint, including same-id transcripts replaced by a backup restore.
-    resetChatHydration()
-    resetLorebookHydration()
-    recordHydratedCharacterLorebooks(getDatabase().characters)
-    void hydrateActiveChat({ force: true })
-    triggerOpenChatGenerationReattach()
-    await refreshRuntimeJobs()
-    latestResult = { status: 'ok', revision: result.revision }
+    latestResult = await completeFullServerResourceRefresh(result.revision, selectedIndex, selectedCharacterId)
   } while (serverResourceRefreshPending)
 
   return latestResult ?? { status: 'error', error: 'Server resource refresh did not complete' }
+}
+
+async function completeFullServerResourceRefresh(
+  revision: number,
+  selectedIndex: number,
+  selectedCharacterId: string | undefined,
+): Promise<ServerResourceRefreshResult> {
+  syncSelectedCharacterAfterRefresh(selectedIndex, selectedCharacterId)
+  setCachedServerCommandRevision(revision)
+  setAppliedServerResourceRevision(revision)
+
+  // Full character reads intentionally carry message-free chat rows. Reset
+  // hydration identities so every chat is fetched again from its REST body
+  // endpoint, including same-id transcripts replaced by a backup restore.
+  resetChatHydration()
+  resetLorebookHydration()
+  recordHydratedCharacterLorebooks(getDatabase().characters)
+  void hydrateActiveChat({ force: true })
+  triggerOpenChatGenerationReattach()
+  await refreshRuntimeJobs()
+  return { status: 'ok', revision }
+}
+
+function isMatchingRealmCharacterCreatedEvent(input: {
+  revision: number
+  event: CommandEvent
+  characterId: string
+}): boolean {
+  return (
+    Number.isInteger(input.revision) &&
+    input.revision >= 0 &&
+    input.event.revision === input.revision &&
+    input.event.type === 'character.created' &&
+    input.event.resource === 'character' &&
+    input.event.id === input.characterId
+  )
 }
 
 function syncSelectedCharacterAfterRefresh(previousIndex: number, previousCharacterId: string | undefined): void {

@@ -422,6 +422,50 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
+  it('refreshes only character shells for a character-created event and preserves resident bodies', async () => {
+    seedResources(20)
+    api.characters.mockResolvedValue({
+      status: 'ok',
+      revision: 21,
+      characters: [
+        metadataCharacter('char-a', 'Ada refreshed', 'chat-a'),
+        metadataCharacter('char-b', 'Bea refreshed', 'chat-b'),
+        metadataCharacter('char-imported', 'Imported', 'chat-imported'),
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-imported'],
+      currentChar: 0,
+    })
+    const createdEvent: CommandEvent = {
+      type: 'character.created',
+      resource: 'character',
+      revision: 21,
+      id: 'char-imported',
+    }
+
+    await expect(refreshInvalidatedServerResources(createdEvent, { appliedRevision: 20, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 21,
+      scope: 'targeted',
+    })
+
+    expect(api.characters).toHaveBeenCalledWith(undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.settingsGroup).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(api.collection).not.toHaveBeenCalled()
+    expect(api.character).not.toHaveBeenCalled()
+    expect(api.chat).not.toHaveBeenCalled()
+    expect(api.generationChat).not.toHaveBeenCalled()
+    expect(api.lorebook).not.toHaveBeenCalled()
+    expect(api.lorebooks).not.toHaveBeenCalled()
+    expect(sideEffects.reattach).not.toHaveBeenCalled()
+    expect(getResourceDatabase().characters).toMatchObject([
+      { chaId: 'char-a', name: 'Ada refreshed', chats: [{ message: [{ data: 'resident-a' }] }] },
+      { chaId: 'char-b', name: 'Bea refreshed', chats: [{ message: [{ data: 'resident-b' }] }] },
+      { chaId: 'char-imported', name: 'Imported', chats: [{ message: [] }] },
+    ])
+  })
+
   it('uses individual chat and bulk lorebook reads while applying hydration side effects', async () => {
     seedResources(1)
     api.chat.mockImplementation(async (chatId: string) => ({

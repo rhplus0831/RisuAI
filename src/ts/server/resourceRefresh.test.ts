@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
-const refreshApi = vi.hoisted(() => ({ refreshAll: vi.fn() }))
+const refreshApi = vi.hoisted(() => ({
+  refreshAll: vi.fn(),
+  refreshInvalidated: vi.fn(),
+}))
 const bootstrapApi = vi.hoisted(() => ({ fetchReadOnly: vi.fn() }))
 const sideEffects = vi.hoisted(() => ({
   hydrateActiveChat: vi.fn(async () => undefined),
@@ -24,6 +27,7 @@ vi.mock('../model/modellist', () => ({ getModelInfo: vi.fn(() => ({ type: 'chat'
 
 vi.mock('./resourceInvalidation', () => ({
   refreshAllServerResources: refreshApi.refreshAll,
+  refreshInvalidatedServerResources: refreshApi.refreshInvalidated,
 }))
 vi.mock('./bootstrap', () => ({ fetchServerBootstrapReadOnly: bootstrapApi.fetchReadOnly }))
 vi.mock('./chatMessageHydration.svelte', () => ({
@@ -50,12 +54,14 @@ vi.mock('./messageTranslationJobs', () => ({
 }))
 vi.mock('./protocolDiagnostics', () => ({ recordFullResourceRefresh: sideEffects.recordRefresh }))
 
-import { forceServerResourceRefresh } from './resourceRefresh'
+import { forceServerResourceRefresh, refreshServerRealmImportResources } from './resourceRefresh'
 import {
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
+  setAppliedServerResourceRevision,
+  setCachedServerCommandRevision,
 } from './commands'
 import { replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../storage/database.svelte'
@@ -95,6 +101,7 @@ beforeEach(() => {
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
   refreshApi.refreshAll.mockResolvedValue({ status: 'ok', revision: 5, scope: 'full' })
+  refreshApi.refreshInvalidated.mockResolvedValue({ status: 'ok', revision: 5, scope: 'targeted' })
   bootstrapApi.fetchReadOnly.mockResolvedValue({
     status: 'ok',
     bootstrap: {
@@ -103,6 +110,76 @@ beforeEach(() => {
       activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }],
       activeMessageTranslations: [{ chatId: 'chat-b', messageId: 'message-b' }],
     },
+  })
+})
+
+describe('Realm import resource refresh', () => {
+  it('applies a contiguous character-created event without destructive refresh side effects', async () => {
+    const event = {
+      type: 'character.created',
+      resource: 'character',
+      revision: 21,
+      id: 'char-imported',
+    }
+    setCachedServerCommandRevision(20)
+    setAppliedServerResourceRevision(20)
+    refreshApi.refreshInvalidated.mockImplementationOnce(async () => {
+      replaceResourceDatabase(
+        database([
+          { chaId: 'char-a', name: 'Ada' },
+          { chaId: 'char-b', name: 'Bea' },
+          { chaId: 'char-imported', name: 'Imported' },
+        ]),
+        21,
+      )
+      return { status: 'ok', revision: 21, scope: 'targeted' }
+    })
+
+    await expect(
+      refreshServerRealmImportResources({
+        revision: 21,
+        event,
+        characterId: 'char-imported',
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 21 })
+
+    expect(refreshApi.refreshInvalidated).toHaveBeenCalledWith(event, {
+      appliedRevision: 20,
+      hooks: expect.any(Object),
+    })
+    expect(refreshApi.refreshAll).not.toHaveBeenCalled()
+    expect(sideEffects.recordRefresh).not.toHaveBeenCalled()
+    expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
+    expect(sideEffects.resetChatHydration).not.toHaveBeenCalled()
+    expect(sideEffects.resetLorebooks).not.toHaveBeenCalled()
+    expect(sideEffects.hydrateActiveChat).not.toHaveBeenCalled()
+    expect(sideEffects.triggerReattach).not.toHaveBeenCalled()
+    expect(sideEffects.recordLorebooks).toHaveBeenCalledTimes(1)
+    expect(peekCachedServerCommandRevision()).toBe(21)
+    expect(peekAppliedServerResourceRevision()).toBe(21)
+  })
+
+  it('retains a complete refresh when the returned event crosses a revision gap', async () => {
+    setCachedServerCommandRevision(22)
+    setAppliedServerResourceRevision(20)
+    refreshApi.refreshAll.mockResolvedValueOnce({ status: 'ok', revision: 22, scope: 'full' })
+
+    await expect(
+      refreshServerRealmImportResources({
+        revision: 22,
+        event: {
+          type: 'character.created',
+          resource: 'character',
+          revision: 22,
+          id: 'char-imported',
+        },
+        characterId: 'char-imported',
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 22 })
+
+    expect(refreshApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(refreshApi.refreshAll).toHaveBeenCalledTimes(1)
+    expect(sideEffects.recordRefresh).toHaveBeenCalledWith('realm-import', 'character')
   })
 })
 

@@ -58,8 +58,12 @@ import {
   type RisuModule,
 } from './process/modules'
 import { currentCharacterStateSnapshot, dispatchCreateCharacter } from './characterCommands'
-import { importRealmCharacterFromServer, type ServerRealmImportProgress } from './server/realmImport'
-import { forceServerResourceRefresh } from './server/resourceRefresh'
+import {
+  importRealmCharacterFromServer,
+  type ServerRealmImportProgress,
+  type ServerRealmImportResult,
+} from './server/realmImport'
+import { refreshServerRealmImportResources } from './server/resourceRefresh'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 
 export const hubURL = '/api/v1/hub'
@@ -1808,7 +1812,7 @@ export async function downloadRisuHub(
           return
         }
       } else {
-        await finishServerRealmImport(retry.characterId, arg, realmImportOperationToken, onProgress)
+        await finishServerRealmImport(retry, arg, realmImportOperationToken, onProgress)
         return
       }
     } else if (imported.status !== 'ok') {
@@ -1819,7 +1823,7 @@ export async function downloadRisuHub(
         return
       }
     } else {
-      await finishServerRealmImport(imported.characterId, arg, realmImportOperationToken, onProgress)
+      await finishServerRealmImport(imported, arg, realmImportOperationToken, onProgress)
       return
     }
     const res = await fetch('https://realm.risuai.net/api/v1/download/dynamic/' + id + '?cors=true', {
@@ -1902,7 +1906,7 @@ export async function downloadRisuHub(
 }
 
 async function finishServerRealmImport(
-  characterId: string,
+  imported: Extract<ServerRealmImportResult, { status: 'ok' }>,
   arg: {
     forceRedirect?: boolean
   },
@@ -1917,9 +1921,9 @@ async function finishServerRealmImport(
     message: 'Refreshing imported character',
     percent: 96,
   })
-  let refreshResult: Awaited<ReturnType<typeof forceServerResourceRefresh>>
+  let refreshResult: Awaited<ReturnType<typeof refreshServerRealmImportResources>>
   try {
-    refreshResult = await forceServerResourceRefresh('realm-import')
+    refreshResult = await refreshServerRealmImportResources(imported)
   } catch (error) {
     if (isLatestRealmImportOperation(operationToken)) {
       alertError(error instanceof Error && error.message ? error.message : 'Server resource refresh failed')
@@ -1942,7 +1946,7 @@ async function finishServerRealmImport(
   })
   checkCharOrder()
   const db = getDatabase()
-  const index = db.characters.findIndex((character) => character.chaId === characterId)
+  const index = db.characters.findIndex((character) => character.chaId === imported.characterId)
   if (index !== -1 && (db.goCharacterOnImport || arg.forceRedirect)) {
     changeChar(index, {
       isFresh: () => isLatestRealmImportOperation(operationToken),
