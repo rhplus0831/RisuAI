@@ -135,6 +135,28 @@ function stepPhaseSelect(): HTMLSelectElement {
   return element!
 }
 
+function stepTextInput(value: string): HTMLInputElement {
+  const element = [...target.querySelectorAll<HTMLInputElement>('[data-risu-agent-preset-step-form] input')].find(
+    (input) => input.type === 'text' && input.value === value,
+  )
+  expect(element, `step text input with value ${value}`).toBeTruthy()
+  return element!
+}
+
+function stepInstructionInput(): HTMLTextAreaElement {
+  const element = target.querySelector<HTMLTextAreaElement>('[data-risu-agent-preset-step-form] textarea')
+  expect(element).toBeTruthy()
+  return element!
+}
+
+function stepCheckbox(name: string): HTMLInputElement {
+  const element = [...target.querySelectorAll<HTMLInputElement>('[data-risu-agent-preset-step-form] input')].find(
+    (input) => input.type === 'checkbox' && input.alt === name,
+  )
+  expect(element, `step checkbox ${name}`).toBeTruthy()
+  return element!
+}
+
 async function flushAsyncWork(): Promise<void> {
   await Promise.resolve()
   await new Promise((resolve) => setTimeout(resolve, 0))
@@ -403,14 +425,10 @@ describe('AgentPresetSettings', () => {
     button('[data-risu-agent-preset-step-save]').click()
     await flushAsyncWork()
 
-    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith(
-      'ap_a',
-      'aps_after',
-      expect.objectContaining({
-        phase: 'beforeMain',
-        inputScopes: [],
-      }),
-    )
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_after', {
+      phase: 'beforeMain',
+      inputScopes: [],
+    })
   })
 
   it('refreshes the open editor step list when projection replaces the preset record', async () => {
@@ -446,7 +464,7 @@ describe('AgentPresetSettings', () => {
     expect(target.querySelectorAll('[data-risu-agent-preset-step-row]')).toHaveLength(2)
   })
 
-  it('creates and updates steps through command helpers', async () => {
+  it('creates steps with the complete normalized row', async () => {
     seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
     mountPage()
     await tick()
@@ -459,42 +477,150 @@ describe('AgentPresetSettings', () => {
     button('[data-risu-agent-preset-step-save]').click()
     await flushAsyncWork()
 
-    expect(agentPresetSpies.createAgentPresetStep).toHaveBeenCalledWith(
-      'ap_a',
-      expect.objectContaining({
-        name: 'Step 2',
-        outputKey: 'step_2',
-        model: { mode: 'inheritMain' },
-        inputScopes: ['currentUserMessage'],
-      }),
-    )
+    expect(agentPresetSpies.createAgentPresetStep).toHaveBeenCalledWith('ap_a', {
+      name: 'Step 2',
+      enabled: true,
+      phase: 'beforeMain',
+      dependencies: [],
+      instruction: '',
+      model: { mode: 'inheritMain' },
+      runtime: {
+        timeoutMs: 30_000,
+        maxInputChars: 24_000,
+        maxOutputChars: 1_200,
+        temperature: 100,
+      },
+      inputScopes: ['currentUserMessage'],
+      outputKey: 'step_2',
+      outputFormat: 'text',
+      destination: 'promptOutput',
+      failurePolicy: { mode: 'required' },
+    })
+    expect(agentPresetSpies.updateAgentPresetStep).not.toHaveBeenCalled()
+  })
 
+  it('sends only a changed step name and omits large unchanged fields', async () => {
+    const instruction = 'Large unchanged agent instruction. '.repeat(10_000)
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep({
+            instruction,
+            runtime: {
+              timeoutMs: 120_000,
+              maxInputChars: 100_000,
+              maxOutputChars: 20_000,
+              temperature: 150,
+            },
+            inputScopes: ['recentChatTail', 'currentUserMessage'],
+            failurePolicy: { mode: 'fallbackText', text: 'Large fallback. '.repeat(2_000) },
+          }),
+        ],
+      }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
     stepEditButton().click()
     await tick()
-    const outputKeyInput = [...target.querySelectorAll<HTMLInputElement>('input')].find(
-      (input) => input.value === 'context',
-    )
-    expect(outputKeyInput).toBeTruthy()
-    outputKeyInput!.value = 'context_brief'
-    outputKeyInput!.dispatchEvent(new Event('input', { bubbles: true }))
+
+    const input = stepTextInput('Gather Context')
+    input.value = 'Renamed Context Step'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
     button('[data-risu-agent-preset-step-save]').click()
     await flushAsyncWork()
 
-    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith(
-      'ap_a',
-      'aps_a',
-      expect.objectContaining({
-        outputKey: 'context_brief',
-        runtime: expect.objectContaining({
-          timeoutMs: 30000,
-          maxInputChars: 24000,
-          maxOutputChars: 1200,
-          temperature: 100,
-        }),
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      name: 'Renamed Context Step',
+    })
+  })
+
+  it('sends multiple changed fields while preserving false and empty values', async () => {
+    seedDb([
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [baseStep({ inputScopes: ['currentUserMessage'] })],
       }),
+    ])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    stepCheckbox(language.agentPresets.stepEnabledLabel).click()
+    const instruction = stepInstructionInput()
+    instruction.value = ''
+    instruction.dispatchEvent(new Event('input', { bubbles: true }))
+    const currentUserMessage = target.querySelector<HTMLInputElement>(
+      '[data-risu-agent-preset-input-scope="currentUserMessage"] input[type="checkbox"]',
     )
+    expect(currentUserMessage).toBeTruthy()
+    currentUserMessage!.click()
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      enabled: false,
+      instruction: '',
+      inputScopes: [],
+    })
+  })
+
+  it('does not send an update when normalization returns the step to its initial snapshot', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const input = stepTextInput('Gather Context')
+    input.value = '  Gather Context  '
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-agent-preset-step-form]')).toBeNull()
+  })
+
+  it('sends only the changed output key for a normalized step with defaulted runtime fields', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const outputKeyInput = stepTextInput('context')
+    outputKeyInput.value = 'context_brief'
+    outputKeyInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      outputKey: 'context_brief',
+    })
   })
 
   it('reorders steps within the visible phase group', async () => {

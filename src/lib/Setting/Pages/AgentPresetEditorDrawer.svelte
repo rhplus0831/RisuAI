@@ -38,6 +38,7 @@
   } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot, AgentPresetStepSnapshot, ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { sparseAgentPresetStepPatch } from './agentPresetStepPatch'
 
   interface Props {
     mode: 'create' | 'edit'
@@ -71,7 +72,8 @@
 
   let stepEditorMode = $state<StepEditorMode>(null)
   let editingStepId = $state<string | null>(null)
-  let stepInitialSnapshot = $state('')
+  let stepInitialSnapshot = $state<AgentPresetStepSnapshot | null>(null)
+  let stepInitialSnapshotJson = $state('')
   let stepBusy = $state(false)
   let stepCommandError = $state('')
   let draftStepName = $state('')
@@ -104,7 +106,9 @@
   let modelProfiles = $derived(Array.isArray(getDatabase().modelProfiles) ? getDatabase().modelProfiles : [])
   let activeStep = $derived(editingStepId ? presetSteps.find((step) => step.id === editingStepId) : undefined)
   let metadataDirty = $derived(initialSnapshot !== '' && initialSnapshot !== snapshot(snapshotForSave()))
-  let stepDirty = $derived(stepInitialSnapshot !== '' && stepInitialSnapshot !== snapshot(stepSnapshotForSave()))
+  let stepDirty = $derived(
+    stepInitialSnapshotJson !== '' && stepInitialSnapshotJson !== snapshot(stepSnapshotForSave()),
+  )
   let isDirty = $derived(metadataDirty || stepDirty)
   let outputKeyValid = $derived(isValidAgentPresetOutputKey(draftStepOutputKey.trim()))
   let canSave = $derived(draftName.trim().length > 0 && !busy)
@@ -130,6 +134,11 @@
 
   function snapshot(value: unknown): string {
     return JSON.stringify(value ?? {})
+  }
+
+  function setStepInitialSnapshot(value: AgentPresetStepSnapshot | null): void {
+    stepInitialSnapshot = value
+    stepInitialSnapshotJson = value ? snapshot(value) : ''
   }
 
   function stepsForPhase(
@@ -293,7 +302,7 @@
     editingStepId = null
     stepCommandError = ''
     loadStepDraft(defaultStepDraft())
-    stepInitialSnapshot = snapshot(stepSnapshotForSave())
+    setStepInitialSnapshot(stepSnapshotForSave())
   }
 
   function beginEditStep(step: AgentPresetStepRecord): void {
@@ -301,7 +310,7 @@
     editingStepId = step.id
     stepCommandError = ''
     loadStepDraft(step)
-    stepInitialSnapshot = snapshot(stepSnapshotForSave())
+    setStepInitialSnapshot(stepSnapshotForSave())
   }
 
   function cancelStepEdit(): void {
@@ -312,7 +321,7 @@
   function clearStepEditor(): void {
     stepEditorMode = null
     editingStepId = null
-    stepInitialSnapshot = ''
+    setStepInitialSnapshot(null)
     stepCommandError = ''
   }
 
@@ -385,13 +394,19 @@
 
   async function saveStep(): Promise<void> {
     if (!canSaveStep || !initialPresetId || !stepEditorMode) return
+    const finalSnapshot = stepSnapshotForSave()
+    const patch = stepInitialSnapshot ? sparseAgentPresetStepPatch(stepInitialSnapshot, finalSnapshot) : finalSnapshot
+    if (stepEditorMode === 'edit' && editingStepId && Object.keys(patch).length === 0) {
+      clearStepEditor()
+      return
+    }
     stepBusy = true
     stepCommandError = ''
     const result =
       stepEditorMode === 'new'
-        ? await createAgentPresetStep(initialPresetId, stepSnapshotForSave())
+        ? await createAgentPresetStep(initialPresetId, finalSnapshot)
         : editingStepId
-          ? await updateAgentPresetStep(initialPresetId, editingStepId, stepSnapshotForSave())
+          ? await updateAgentPresetStep(initialPresetId, editingStepId, patch)
           : ({ status: 'error', error: language.agentPresets.editStepTargetMissing } as ServerCommandResult)
     stepBusy = false
     if (handleStepResult(result)) clearStepEditor()
