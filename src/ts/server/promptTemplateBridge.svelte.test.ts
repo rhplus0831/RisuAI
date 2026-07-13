@@ -157,6 +157,7 @@ vi.mock('./promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
   markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
+  peekPromptTemplateOwnerRevision: () => null,
   promptTemplateHydratedStore: hydrationState.store,
 }))
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
@@ -166,6 +167,7 @@ vi.mock('src/ts/server/promptTemplateHydration', () => ({
   ensurePromptTemplateHydrated: hydrationState.ensure,
   isPromptTemplateHydrated: hydrationState.isHydrated,
   markPromptTemplateOwnerAcknowledgementTainted: hydrationState.markTainted,
+  peekPromptTemplateOwnerRevision: () => null,
   promptTemplateHydratedStore: hydrationState.store,
 }))
 
@@ -1700,6 +1702,8 @@ describe('flushPendingPromptTemplatePatches', () => {
       component = await mountPromptSettingsComponent(target)
 
       await editPromptSettingsTextarea(target, 'dirty A')
+      await flushMicrotasks()
+      await vi.advanceTimersByTimeAsync(250)
       await flushMicrotasks()
 
       expect(getResourceDatabase().customPromptTemplateToggle).toBe('dirty A')
