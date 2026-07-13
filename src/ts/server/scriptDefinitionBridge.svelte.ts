@@ -18,8 +18,10 @@ import {
 import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import {
   captureCharacterRowProjectionEpoch,
+  captureCollectionProjectionEpoch,
   getResourceDatabase as getDatabase,
   hasCharacterRowProjectionEpochChanged,
+  hasCollectionProjectionEpochChanged,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 
@@ -58,6 +60,7 @@ interface PendingCollectionReplacement {
   key: string
   previous: ScriptDefinitionRollback
   characterRowProjection?: { characterId: string; epoch: number }
+  moduleCollectionProjectionEpoch?: number
   timer: ReturnType<typeof setTimeout> | null
   // The command receives the coalesced rollback baseline at fire time rather than
   // closing over a per-dispatch value, so debounced same-key edits roll back to
@@ -359,6 +362,7 @@ export function dispatchReplaceModuleScripts(
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
+  const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
   ensureClientScriptDefinitionIds(scripts)
   const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
   const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
@@ -373,21 +377,26 @@ export function dispatchReplaceModuleScripts(
               baseRevision,
               moduleId,
               scripts: scriptPayload,
+              optimisticCollectionEpoch,
             },
             options.signal,
             options.keepalive,
             true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'moduleScripts',
             moduleId,
             scripts: attemptedScripts,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       }),
     delayMs,
+    undefined,
+    optimisticCollectionEpoch,
   )
 }
 
@@ -398,6 +407,7 @@ export function dispatchReplaceModuleTriggers(
   delayMs = 250,
 ): void {
   if (!canUseServerCommands()) return
+  const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
   ensureClientTriggerDefinitionIds(triggers)
   const triggerPayload = cloneJsonValue(triggers) as TriggerDefinitionSnapshot[]
   const attemptedTriggers = cloneJsonValue(triggerPayload) as triggerscript[]
@@ -412,21 +422,26 @@ export function dispatchReplaceModuleTriggers(
               baseRevision,
               moduleId,
               triggers: triggerPayload,
+              optimisticCollectionEpoch,
             },
             options.signal,
             options.keepalive,
             true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'moduleTriggers',
             moduleId,
             triggers: attemptedTriggers,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       }),
     delayMs,
+    undefined,
+    optimisticCollectionEpoch,
   )
 }
 
@@ -757,6 +772,7 @@ function queueReplacement(
   ) => Promise<ServerCommandResult<Record<string, unknown>>>,
   delay: number,
   characterRowProjection?: { characterId: string; epoch: number },
+  moduleCollectionProjectionEpoch?: number,
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
@@ -764,6 +780,12 @@ function queueReplacement(
   const sameCharacterRowProjection =
     existing?.characterRowProjection?.characterId === characterRowProjection?.characterId &&
     existing?.characterRowProjection?.epoch === characterRowProjection?.epoch
+  const sameModuleCollectionProjection = existing?.moduleCollectionProjectionEpoch === moduleCollectionProjectionEpoch
+  const sameProjection = characterRowProjection
+    ? sameCharacterRowProjection
+    : moduleCollectionProjectionEpoch !== undefined
+      ? sameModuleCollectionProjection
+      : existing?.characterRowProjection === undefined && existing?.moduleCollectionProjectionEpoch === undefined
 
   // Coalesced same-key edits keep the first dispatch's baseline, so a failed
   // final command rolls back to the pre-first-edit value rather than an
@@ -772,8 +794,9 @@ function queueReplacement(
   // a new rollback baseline.
   const pending: PendingCollectionReplacement = {
     key,
-    previous: existing && sameCharacterRowProjection ? existing.previous : previous,
+    previous: existing && sameProjection ? existing.previous : previous,
     ...(characterRowProjection ? { characterRowProjection } : {}),
+    ...(moduleCollectionProjectionEpoch !== undefined ? { moduleCollectionProjectionEpoch } : {}),
     command,
     timer: null,
   }
@@ -870,6 +893,7 @@ function queueWatchedCharacterTriggers(characterId: string, previousSnapshot: st
 }
 
 function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, delayMs: number): void {
+  const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
   queueReplacement(
     `moduleScripts:${moduleId}`,
     {
@@ -889,26 +913,32 @@ function queueWatchedModuleScripts(moduleId: string, previousSnapshot: string, d
               baseRevision,
               moduleId,
               scripts: scriptPayload,
+              optimisticCollectionEpoch,
             },
             options.signal,
             options.keepalive,
             true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'moduleScripts',
             moduleId,
             scripts: attemptedScripts,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       })
     },
     delayMs,
+    undefined,
+    optimisticCollectionEpoch,
   )
 }
 
 function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, delayMs: number): void {
+  const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
   queueReplacement(
     `moduleTriggers:${moduleId}`,
     {
@@ -928,22 +958,27 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
               baseRevision,
               moduleId,
               triggers: triggerPayload,
+              optimisticCollectionEpoch,
             },
             options.signal,
             options.keepalive,
             true,
           ),
-        rollback: () =>
+        rollback: () => {
+          if (hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)) return
           rollbackServerBackedScriptDefinitions(rollback, {
             kind: 'moduleTriggers',
             moduleId,
             triggers: attemptedTriggers,
-          }),
+          })
+        },
         signal: options.signal,
         keepalive: options.keepalive,
       })
     },
     delayMs,
+    undefined,
+    optimisticCollectionEpoch,
   )
 }
 

@@ -5042,11 +5042,13 @@ describe('server command API adapter', () => {
       baseRevision: 3,
       moduleId: 'mod-a',
       scripts: [script],
+      optimisticCollectionEpoch: 9,
     })
     await replaceModuleTriggersCommand({
       baseRevision: 4,
       moduleId: 'mod-a',
       triggers: [trigger],
+      optimisticCollectionEpoch: 9,
     })
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
@@ -5321,13 +5323,23 @@ describe('server command API adapter', () => {
       true,
     )
     await replaceModuleScriptsCommand(
-      { baseRevision: 6, moduleId: 'mod-a', scripts: [{ id: 'script-a' }] },
+      {
+        baseRevision: 6,
+        moduleId: 'mod-a',
+        scripts: [{ id: 'script-a' }],
+        optimisticCollectionEpoch: 4,
+      },
       undefined,
       false,
       true,
     )
     await replaceModuleTriggersCommand(
-      { baseRevision: 7, moduleId: 'mod-a', triggers: [{ id: 'trigger-a' }] },
+      {
+        baseRevision: 7,
+        moduleId: 'mod-a',
+        triggers: [{ id: 'trigger-a' }],
+        optimisticCollectionEpoch: 4,
+      },
       undefined,
       false,
       true,
@@ -5344,10 +5356,72 @@ describe('server command API adapter', () => {
       { kind: 'moduleEnabled', moduleId: 'mod-a', enabled: true },
       { kind: 'moduleCollectionMutation', operation: 'reorder', moduleIds: ['mod-b', 'mod-a'] },
       { kind: 'moduleCollectionMutation', operation: 'lorebooks', moduleId: 'mod-a' },
-      { kind: 'moduleCollectionMutation', operation: 'scripts', moduleId: 'mod-a' },
-      { kind: 'moduleCollectionMutation', operation: 'triggers', moduleId: 'mod-a' },
+      {
+        kind: 'moduleCollectionMutation',
+        operation: 'scripts',
+        moduleId: 'mod-a',
+        collectionProjectionEpoch: 4,
+      },
+      {
+        kind: 'moduleCollectionMutation',
+        operation: 'triggers',
+        moduleId: 'mod-a',
+        collectionProjectionEpoch: 4,
+      },
       { kind: 'characterPatch', characterId: 'char-a', patch: { modules: ['mod-a'] } },
     ])
+  })
+
+  it('keeps module definition acknowledgements authoritative without a valid collection epoch', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url) => {
+      const scripts = url.endsWith('/scripts')
+      return {
+        revision: 10,
+        event: {
+          type: scripts ? 'scriptDefinitions.replaced' : 'triggerDefinitions.replaced',
+          revision: 10,
+          resource: scripts ? 'moduleScriptDefinition' : 'moduleTriggerDefinition',
+          id: 'mod-a',
+        },
+        moduleId: 'mod-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await replaceModuleScriptsCommand(
+      { baseRevision: 1, moduleId: 'mod-a', scripts: [{ id: 'script-a' }] },
+      undefined,
+      false,
+      true,
+    )
+    await replaceModuleTriggersCommand(
+      {
+        baseRevision: 2,
+        moduleId: 'mod-a',
+        triggers: [{ id: 'trigger-a' }],
+        optimisticCollectionEpoch: -1,
+      },
+      undefined,
+      false,
+      true,
+    )
+    await replaceModuleScriptsCommand(
+      {
+        baseRevision: 3,
+        moduleId: 'mod-a',
+        scripts: [{ id: 'script-b' }],
+        optimisticCollectionEpoch: 1.5,
+      },
+      undefined,
+      false,
+      true,
+    )
+
+    expect(observedEffects).toEqual([])
   })
 
   it('keeps module deletion, non-optimistic calls, and mismatched responses authoritative', async () => {

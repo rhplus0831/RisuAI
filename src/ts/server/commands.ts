@@ -117,6 +117,7 @@ export interface ModuleCollectionMutationLocalEffect {
   operation: 'create' | 'update' | 'reorder' | 'lorebooks' | 'scripts' | 'triggers'
   moduleId?: string
   moduleIds?: string[]
+  collectionProjectionEpoch?: number
 }
 
 export interface ModuleEnabledLocalEffect {
@@ -1056,11 +1057,13 @@ export interface ReplaceCharacterTriggersCommandInput extends ScriptDefinitionCo
 export interface ReplaceModuleScriptsCommandInput extends ScriptDefinitionCommandInput {
   moduleId: string
   scripts: ScriptDefinitionSnapshot[]
+  optimisticCollectionEpoch?: number
 }
 
 export interface ReplaceModuleTriggersCommandInput extends ScriptDefinitionCommandInput {
   moduleId: string
   triggers: TriggerDefinitionSnapshot[]
+  optimisticCollectionEpoch?: number
 }
 
 export interface ModuleCommandInput {
@@ -3603,6 +3606,7 @@ export async function replaceModuleScriptsCommand(
             operation: 'scripts',
             expectedModuleId: input.moduleId,
             hasCanonicalPayload: isUniqueDefinitionArray(input.scripts),
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
           })
       : undefined,
   })
@@ -3628,6 +3632,7 @@ export async function replaceModuleTriggersCommand(
             operation: 'triggers',
             expectedModuleId: input.moduleId,
             hasCanonicalPayload: isUniqueDefinitionArray(input.triggers),
+            collectionProjectionEpoch: input.optimisticCollectionEpoch,
           })
       : undefined,
   })
@@ -4865,6 +4870,7 @@ interface ReadModuleCollectionMutationLocalEffectOptions {
   expectedEntryId?: unknown
   entryResult?: 'upsert' | 'delete'
   hasCanonicalPayload?: boolean
+  collectionProjectionEpoch?: unknown
 }
 
 function readModuleCollectionMutationLocalEffect(
@@ -4928,10 +4934,14 @@ function readModuleCollectionMutationLocalEffect(
       return undefined
     }
   }
+  const definitionOperation = options.operation === 'scripts' || options.operation === 'triggers'
+  if (definitionOperation && !isProjectionEpoch(options.collectionProjectionEpoch)) return undefined
+
   return {
     kind: 'moduleCollectionMutation',
     operation: options.operation,
     moduleId: options.expectedModuleId,
+    ...(definitionOperation ? { collectionProjectionEpoch: options.collectionProjectionEpoch as number } : {}),
   }
 }
 

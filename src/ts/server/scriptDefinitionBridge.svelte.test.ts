@@ -14,9 +14,15 @@ const recorded = vi.hoisted(() => ({
     optimisticRowEpoch: unknown
     acknowledgeOptimistic: unknown
   }>,
+  moduleDefinitionCalls: [] as Array<{
+    kind: 'scripts' | 'triggers'
+    optimisticCollectionEpoch: unknown
+    acknowledgeOptimistic: unknown
+  }>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const characterRowProjectionState = vi.hoisted(() => ({ epoch: 0 }))
+const moduleCollectionProjectionState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('../stores.svelte', async () => {
   const { writable } = await import('svelte/store')
@@ -48,14 +54,26 @@ vi.mock('./commands', () => ({
     recorded.characterDefinitionCalls.push({ kind: 'triggers', optimisticRowEpoch, acknowledgeOptimistic })
     return { kind: 'replaceCharacterTriggers', ...built }
   },
-  replaceModuleScriptsCommand: async (args: Record<string, unknown>) => ({
-    kind: 'replaceModuleScripts',
-    ...args,
-  }),
-  replaceModuleTriggersCommand: async (args: Record<string, unknown>) => ({
-    kind: 'replaceModuleTriggers',
-    ...args,
-  }),
+  replaceModuleScriptsCommand: async (
+    args: Record<string, unknown>,
+    _signal: unknown,
+    _keepalive: unknown,
+    acknowledgeOptimistic: unknown,
+  ) => {
+    const { optimisticCollectionEpoch, ...built } = args
+    recorded.moduleDefinitionCalls.push({ kind: 'scripts', optimisticCollectionEpoch, acknowledgeOptimistic })
+    return { kind: 'replaceModuleScripts', ...built }
+  },
+  replaceModuleTriggersCommand: async (
+    args: Record<string, unknown>,
+    _signal: unknown,
+    _keepalive: unknown,
+    acknowledgeOptimistic: unknown,
+  ) => {
+    const { optimisticCollectionEpoch, ...built } = args
+    recorded.moduleDefinitionCalls.push({ kind: 'triggers', optimisticCollectionEpoch, acknowledgeOptimistic })
+    return { kind: 'replaceModuleTriggers', ...built }
+  },
   runServerCommand: vi.fn(
     async (args: {
       command: (baseRevision: number) => Promise<Record<string, unknown>>
@@ -85,6 +103,14 @@ vi.mock('./resourceState.svelte', async (importActual) => {
     captureCharacterRowProjectionEpoch: () => characterRowProjectionState.epoch,
     hasCharacterRowProjectionEpochChanged: (_characterId: string, epoch: number) =>
       characterRowProjectionState.epoch !== epoch,
+    captureCollectionProjectionEpoch: (name: string) =>
+      name === 'modules'
+        ? moduleCollectionProjectionState.epoch
+        : actual.captureCollectionProjectionEpoch(name as never),
+    hasCollectionProjectionEpochChanged: (name: string, epoch: number) =>
+      name === 'modules'
+        ? moduleCollectionProjectionState.epoch !== epoch
+        : actual.hasCollectionProjectionEpochChanged(name as never, epoch),
   }
 })
 
@@ -99,6 +125,8 @@ import {
   currentScriptDefinitionStateSnapshot,
   dispatchReplaceCharacterScripts,
   dispatchReplaceCharacterTriggers,
+  dispatchReplaceModuleScripts,
+  dispatchReplaceModuleTriggers,
   flushPendingServerBackedScriptDefinitionPatches,
   markDirtyScriptDefinitionRowFields,
   mergeScriptDefinitionProjectionRows,
@@ -386,8 +414,10 @@ beforeEach(() => {
   vi.useFakeTimers()
   resourceGuardState.epoch = 0
   characterRowProjectionState.epoch = 0
+  moduleCollectionProjectionState.epoch = 0
   recorded.commands.length = 0
   recorded.characterDefinitionCalls.length = 0
+  recorded.moduleDefinitionCalls.length = 0
 })
 
 afterEach(() => {
@@ -861,6 +891,85 @@ describe('character script definition draft bridge', () => {
     recorded.commands[0].rollback?.()
 
     expect(getDatabase().characters[0].customscript).toEqual(authoritativeBaseline)
+  })
+})
+
+describe('module script definition projection fencing', () => {
+  it('does not roll back a failed replacement over an authoritative module collection', async () => {
+    setupScriptDefinitions()
+    moduleCollectionProjectionState.epoch = 3
+    getDatabase().modules[0].regex = [script('module-script-1', 'attempted')]
+    dispatchReplaceModuleScripts(
+      'module-1',
+      getDatabase().modules[0].regex,
+      {
+        kind: 'moduleScripts',
+        moduleId: 'module-1',
+        scripts: [script('module-script-1', 'initial module')],
+      },
+      DELAY,
+    )
+
+    moduleCollectionProjectionState.epoch = 4
+    getDatabase().modules[0].regex = [script('module-script-1', 'authoritative')]
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.moduleDefinitionCalls).toEqual([
+      {
+        kind: 'scripts',
+        optimisticCollectionEpoch: 3,
+        acknowledgeOptimistic: true,
+      },
+    ])
+    recorded.commands[0].rollback?.()
+
+    expect(getDatabase().modules[0].regex).toEqual([script('module-script-1', 'authoritative')])
+  })
+
+  it('starts a new coalesced rollback baseline after an authoritative module projection', async () => {
+    setupScriptDefinitions()
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'first attempt')]
+    dispatchReplaceModuleTriggers(
+      'module-1',
+      getDatabase().modules[0].trigger,
+      {
+        kind: 'moduleTriggers',
+        moduleId: 'module-1',
+        triggers: [trigger('module-trigger-1', 'initial module trigger')],
+      },
+      DELAY,
+    )
+
+    moduleCollectionProjectionState.epoch += 1
+    const authoritativeBaseline = [trigger('module-trigger-1', 'authoritative')]
+    getDatabase().modules[0].trigger = authoritativeBaseline
+    getDatabase().modules[0].trigger = [trigger('module-trigger-1', 'second attempt')]
+    dispatchReplaceModuleTriggers(
+      'module-1',
+      getDatabase().modules[0].trigger,
+      {
+        kind: 'moduleTriggers',
+        moduleId: 'module-1',
+        triggers: authoritativeBaseline,
+      },
+      DELAY,
+    )
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await Promise.resolve()
+
+    expect(recorded.commands).toHaveLength(1)
+    expect(recorded.moduleDefinitionCalls).toEqual([
+      {
+        kind: 'triggers',
+        optimisticCollectionEpoch: 1,
+        acknowledgeOptimistic: true,
+      },
+    ])
+    recorded.commands[0].rollback?.()
+
+    expect(getDatabase().modules[0].trigger).toEqual(authoritativeBaseline)
   })
 })
 
@@ -1422,6 +1531,13 @@ describe('watchServerBackedScriptDefinitions debounced rollback baseline (Phase 
         triggers: [trigger('module-trigger-1', 'edit-B')],
       },
     ])
+    expect(recorded.moduleDefinitionCalls).toEqual([
+      {
+        kind: 'triggers',
+        optimisticCollectionEpoch: 0,
+        acknowledgeOptimistic: true,
+      },
+    ])
 
     recorded.commands[0].rollback?.()
     expect(getDatabase().modules[0].trigger).toEqual([trigger('module-trigger-1', 'initial module trigger')])
@@ -1643,6 +1759,18 @@ describe('applyModuleScriptDefinitionDraft', () => {
         baseRevision: 1,
         moduleId: liveModule.id,
         triggers: liveModule.trigger,
+      },
+    ])
+    expect(recorded.moduleDefinitionCalls).toEqual([
+      {
+        kind: 'scripts',
+        optimisticCollectionEpoch: 0,
+        acknowledgeOptimistic: true,
+      },
+      {
+        kind: 'triggers',
+        optimisticCollectionEpoch: 0,
+        acknowledgeOptimistic: true,
       },
     ])
   })

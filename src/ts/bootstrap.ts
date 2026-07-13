@@ -691,6 +691,16 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       if (localEffect.operation === 'reorder' ? event.id !== undefined : event.id !== localEffect.moduleId) {
         return false
       }
+      const definitionProjectionEpoch = localEffect.collectionProjectionEpoch
+      if (
+        (localEffect.operation === 'scripts' || localEffect.operation === 'triggers') &&
+        (typeof definitionProjectionEpoch !== 'number' ||
+          !Number.isInteger(definitionProjectionEpoch) ||
+          definitionProjectionEpoch < 0 ||
+          hasCollectionProjectionEpochChanged('modules', definitionProjectionEpoch))
+      ) {
+        return false
+      }
       return withServerResourceApply(() =>
         applyModuleCollectionMutationLocalEffect({
           revision: event.revision,

@@ -1585,6 +1585,141 @@ describe('API-backed client bootstrap', () => {
     })
   })
 
+  it('acknowledges exact module definition writes while their collection projection is current', async () => {
+    await loadWebInitialDatabase()
+    const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
+    withTrustedResourceWrite(() => {
+      getDatabase().modules = [
+        {
+          id: 'mod-a',
+          name: 'A',
+          description: '',
+          regex: [{ id: 'script-newer', out: 'newer' }],
+          trigger: [{ id: 'trigger-newer', comment: 'newer' }],
+        },
+      ] as never
+    })
+    const scriptsEvent = {
+      type: 'scriptDefinitions.replaced',
+      revision: 6,
+      resource: 'moduleScriptDefinition',
+      id: 'mod-a',
+    }
+    const triggersEvent = {
+      type: 'triggerDefinitions.replaced',
+      revision: 7,
+      resource: 'moduleTriggerDefinition',
+      id: 'mod-a',
+    }
+
+    await commandApi.reconciler?.(
+      triggersEvent,
+      [scriptsEvent, triggersEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'moduleCollectionMutation',
+            operation: 'scripts',
+            moduleId: 'mod-a',
+            collectionProjectionEpoch: optimisticCollectionEpoch,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'moduleCollectionMutation',
+            operation: 'triggers',
+            moduleId: 'mod-a',
+            collectionProjectionEpoch: optimisticCollectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().modules[0].regex).toEqual([{ id: 'script-newer', out: 'newer' }])
+    expect(getDatabase().modules[0].trigger).toEqual([{ id: 'trigger-newer', comment: 'newer' }])
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['negative', -1],
+    ['fractional', 1.5],
+  ])('falls back for a %s module definition projection epoch', async (_label, collectionProjectionEpoch) => {
+    await loadWebInitialDatabase()
+    const event = {
+      type: 'scriptDefinitions.replaced',
+      revision: 6,
+      resource: 'moduleScriptDefinition',
+      id: 'mod-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'moduleCollectionMutation',
+            operation: 'scripts',
+            moduleId: 'mod-a',
+            collectionProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
+  it('falls back when the module collection advances before a definition acknowledgement', async () => {
+    await loadWebInitialDatabase()
+    const optimisticCollectionEpoch = captureCollectionProjectionEpoch('modules')
+    applyCollectionsResource(
+      {
+        revision: 6,
+        collections: {
+          modules: [{ id: 'mod-a', name: 'Authoritative', description: '', regex: [], trigger: [] }],
+        },
+      },
+      'modules',
+    )
+    const event = {
+      type: 'triggerDefinitions.replaced',
+      revision: 7,
+      resource: 'moduleTriggerDefinition',
+      id: 'mod-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          7,
+          {
+            kind: 'moduleCollectionMutation',
+            operation: 'triggers',
+            moduleId: 'mod-a',
+            collectionProjectionEpoch: optimisticCollectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(hasCollectionProjectionEpochChanged('modules', optimisticCollectionEpoch)).toBe(true)
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('keeps mismatched module acknowledgements on authoritative reconciliation', async () => {
     await loadWebInitialDatabase()
     const event = {
