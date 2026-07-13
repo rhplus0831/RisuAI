@@ -31,6 +31,7 @@ const eventApi = vi.hoisted(() => ({
 }))
 
 const hydrationApi = vi.hoisted(() => ({
+  applyMessageTranslationLocalEffect: vi.fn(() => true),
   hydrateActiveChat: vi.fn(async () => undefined),
   resetChatHydration: vi.fn(),
   startChatMessageHydration: vi.fn(),
@@ -409,6 +410,47 @@ describe('API-backed client bootstrap', () => {
 
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(getDatabase().pluginCustomStorage).toEqual({ local: { nested: true } })
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('applies a contiguous canonical message translation without fetching the transcript', async () => {
+    await loadWebInitialDatabase()
+    const translation = {
+      source: 'raw',
+      text: 'translated',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm',
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const event = {
+      type: 'message.updated',
+      revision: 6,
+      resource: 'message',
+      id: 'message-a',
+      parentId: 'chat-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'messageTranslation',
+            chatId: 'chat-a',
+            messageId: 'message-a',
+            translation,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(hydrationApi.applyMessageTranslationLocalEffect).toHaveBeenCalledWith('chat-a', 'message-a', translation)
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 

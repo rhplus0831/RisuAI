@@ -27,7 +27,12 @@ import {
 } from './server/commands'
 import { peekActiveWriterSessionId } from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
-import { hydrateActiveChat, resetChatHydration, startChatMessageHydration } from './server/chatMessageHydration.svelte'
+import {
+  applyMessageTranslationLocalEffect,
+  hydrateActiveChat,
+  resetChatHydration,
+  startChatMessageHydration,
+} from './server/chatMessageHydration.svelte'
 import { recordHydratedCharacterLorebooks, resetLorebookHydration } from './server/lorebookBridge.svelte'
 import {
   setActiveGenerationJobs,
@@ -428,6 +433,18 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       if (localEffect.operation === 'bulk' ? event.id !== undefined : event.id !== localEffect.key) return false
       return withServerResourceApply(() => applyPluginStorageLocalEffect({ revision: event.revision }))
     }
+    case 'messageTranslation':
+      if (
+        event.type !== 'message.updated' ||
+        event.resource !== 'message' ||
+        event.id !== localEffect.messageId ||
+        event.parentId !== localEffect.chatId
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyMessageTranslationLocalEffect(localEffect.chatId, localEffect.messageId, localEffect.translation),
+      )
   }
 }
 

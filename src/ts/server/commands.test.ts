@@ -46,6 +46,7 @@ import {
   deletePersonaCommand,
   deletePluginCommand,
   deletePluginStorageCommand,
+  deferOwnServerCommandReconciliation,
   deletePromptItemCommand,
   deleteTranslatorPresetCommand,
   enablePromptItemsCommand,
@@ -2541,6 +2542,10 @@ describe('server command API adapter', () => {
       settingsHash: 'b'.repeat(64),
       updatedAt: 123,
     }
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
     const commandFetch = makeCommandFetch(() => ({
       revision: 2,
       event: {
@@ -2548,6 +2553,7 @@ describe('server command API adapter', () => {
         revision: 2,
         resource: 'message',
         id: 'msg-a',
+        parentId: 'chat-a',
       },
       chatId: 'chat-a',
       messageId: 'msg-a',
@@ -2562,6 +2568,15 @@ describe('server command API adapter', () => {
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 2, messageId: 'msg-a', translation })
 
+    expect(observedEffects).toEqual([
+      {
+        kind: 'messageTranslation',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        translation,
+      },
+    ])
+
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
         url: '/api/v1/commands/messages/msg-a/translate',
@@ -2569,6 +2584,62 @@ describe('server command API adapter', () => {
         body: {
           baseRevision: 1,
         },
+      },
+    ])
+  })
+
+  it('defers an own translation SSE echo until the canonical response arrives', async () => {
+    const response = createDeferred<Response>()
+    const translation = {
+      text: 'translated raw',
+      source: 'raw' as const,
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+    const event = {
+      type: 'message.updated',
+      revision: 2,
+      resource: 'message',
+      id: 'msg-a',
+      parentId: 'chat-a',
+    }
+    const commandFetch = vi.fn(() => response.promise)
+    vi.stubGlobal('fetch', commandFetch)
+    const reconciled: Array<{ revision: number; effects: unknown[] }> = []
+    setServerCommandSuccessReconciler((commandEvent, _events, localEffects) => {
+      reconciled.push({ revision: commandEvent.revision, effects: [...localEffects.values()] })
+    })
+
+    const pending = translateMessageCommand({ baseRevision: 1, messageId: 'msg-a' })
+    await vi.waitFor(() => expect(commandFetch).toHaveBeenCalledTimes(1))
+    expect(deferOwnServerCommandReconciliation(event)).toBe(true)
+    expect(reconciled).toEqual([])
+
+    response.resolve(
+      jsonResponse({
+        revision: 2,
+        event,
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        translation,
+      }),
+    )
+    await expect(pending).resolves.toMatchObject({ status: 'ok', revision: 2 })
+    expect(reconciled).toEqual([
+      {
+        revision: 2,
+        effects: [
+          {
+            kind: 'messageTranslation',
+            chatId: 'chat-a',
+            messageId: 'msg-a',
+            translation,
+          },
+        ],
       },
     ])
   })

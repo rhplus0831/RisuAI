@@ -75,6 +75,13 @@ export interface PluginStorageLocalEffect {
   key?: string
 }
 
+export interface MessageTranslationLocalEffect {
+  kind: 'messageTranslation'
+  chatId: string
+  messageId: string
+  translation: MessageTranslation
+}
+
 export type ServerCommandLocalEffect =
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
@@ -82,6 +89,7 @@ export type ServerCommandLocalEffect =
   | ChatPatchLocalEffect
   | SettingsPatchLocalEffect
   | PluginStorageLocalEffect
+  | MessageTranslationLocalEffect
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -984,6 +992,11 @@ interface ServerCommandReconciliationBatch {
   flushing: boolean
 }
 
+interface DirectServerCommandReconciliation {
+  matches: (event: CommandEvent) => boolean
+  pendingEvents: Map<number, CommandEvent>
+}
+
 let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
 // Every command domain shares one server revision. Keep high-level mutations in
 // one client queue so two unrelated optimistic edits cannot both dispatch with
@@ -991,6 +1004,7 @@ let serverCommandSuccessReconciler: ServerCommandSuccessReconciler | null = null
 let serverCommandExecutionTail: Promise<void> = Promise.resolve()
 let queuedServerCommandExecutionCount = 0
 let activeServerCommandReconciliationBatch: ServerCommandReconciliationBatch | null = null
+const directServerCommandReconciliations = new Set<DirectServerCommandReconciliation>()
 
 function enqueueServerCommandExecution<T>(task: () => Promise<T>): Promise<T> {
   const batch = getOrCreateServerCommandReconciliationBatch()
@@ -1131,9 +1145,40 @@ export function deferOwnServerCommandReconciliation(
   localEffect?: ServerCommandLocalEffect,
 ): boolean {
   const batch = activeServerCommandReconciliationBatch
-  if (!batch) return false
-  recordDeferredServerCommandSuccessEvent(batch, event, localEffect)
-  return true
+  if (batch) {
+    recordDeferredServerCommandSuccessEvent(batch, event, localEffect)
+    return true
+  }
+
+  let deferred = false
+  for (const direct of directServerCommandReconciliations) {
+    if (!direct.matches(event)) continue
+    direct.pendingEvents.set(event.revision, event)
+    deferred = true
+  }
+  return deferred
+}
+
+function beginDirectServerCommandReconciliation(
+  matches: (event: CommandEvent) => boolean,
+): DirectServerCommandReconciliation {
+  const direct = { matches, pendingEvents: new Map<number, CommandEvent>() }
+  directServerCommandReconciliations.add(direct)
+  return direct
+}
+
+async function finishDirectServerCommandReconciliation(
+  direct: DirectServerCommandReconciliation | null,
+  confirmedRevision: number | null,
+): Promise<void> {
+  if (!direct) return
+  directServerCommandReconciliations.delete(direct)
+  const pendingEvents = Array.from(direct.pendingEvents.values())
+    .filter((event) => confirmedRevision === null || event.revision > confirmedRevision)
+    .sort((left, right) => left.revision - right.revision)
+  const latestEvent = pendingEvents.at(-1)
+  if (!latestEvent) return
+  await reconcileServerCommandSuccessEvents(latestEvent, pendingEvents)
 }
 
 export function canUseServerCommands(): boolean {
@@ -3111,6 +3156,9 @@ export async function translateMessageCommand(
     // Raw translation deliberately runs outside the global mutation queue;
     // reconcile its accepted response even if unrelated queued edits exist.
     reconcileImmediately: true,
+    readLocalEffect: (body, event) => readMessageTranslationLocalEffect(body, event, input.messageId),
+    deferOwnEventUntilResponse: (event) =>
+      event.type === 'message.updated' && event.resource === 'message' && event.id === input.messageId,
   })
 }
 
@@ -3255,69 +3303,79 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     keepalive?: boolean
     reconcileImmediately?: boolean
     readLocalEffect?: (body: unknown, event: CommandEvent) => ServerCommandLocalEffect | undefined
+    deferOwnEventUntilResponse?: (event: CommandEvent) => boolean
   },
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
-  let response: Response
+  const directReconciliation = init.deferOwnEventUntilResponse
+    ? beginDirectServerCommandReconciliation(init.deferOwnEventUntilResponse)
+    : null
+  let confirmedRevision: number | null = null
   try {
-    const requestInit: RequestInit = {
-      method: init.method,
-      signal: init.signal ?? undefined,
-      headers: {
-        'content-type': 'application/json',
-        'risu-auth': auth,
-        ...activeWriterSessionHeader(),
-      },
-      body: JSON.stringify(init.body),
+    let response: Response
+    try {
+      const requestInit: RequestInit = {
+        method: init.method,
+        signal: init.signal ?? undefined,
+        headers: {
+          'content-type': 'application/json',
+          'risu-auth': auth,
+          ...activeWriterSessionHeader(),
+        },
+        body: JSON.stringify(init.body),
+      }
+      if (init.keepalive) requestInit.keepalive = true
+      response = await fetch(`${COMMAND_ENDPOINT}${path}`, requestInit)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { status: 'error', error: `Network error: ${message}` }
     }
-    if (init.keepalive) requestInit.keepalive = true
-    response = await fetch(`${COMMAND_ENDPOINT}${path}`, requestInit)
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { status: 'error', error: `Network error: ${message}` }
-  }
 
-  let body: unknown = null
-  try {
-    body = await response.json()
-  } catch {
-    // Non-JSON command errors are reported by HTTP status below.
-  }
-
-  if (response.status === 409) {
-    const currentRevision = readCurrentRevision(body)
-    if (currentRevision !== null) setCachedServerCommandRevision(currentRevision)
-    return currentRevision === null
-      ? { status: 'error', error: errorMessageFromBody(body, 'HTTP 409') }
-      : { status: 'conflict', currentRevision }
-  }
-
-  if (handleActiveWriterStaleResponse(response)) {
-    return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423') }
-  }
-
-  if (!response.ok) {
-    return {
-      status: 'error',
-      error: errorMessageFromBody(body, `HTTP ${response.status}`),
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      // Non-JSON command errors are reported by HTTP status below.
     }
-  }
 
-  if (body && typeof body === 'object') {
-    const revision = (body as { revision?: unknown }).revision
-    if (Number.isInteger(revision) && (revision as number) >= 0) {
-      setCachedServerCommandRevision(revision as number)
+    if (response.status === 409) {
+      const currentRevision = readCurrentRevision(body)
+      if (currentRevision !== null) setCachedServerCommandRevision(currentRevision)
+      return currentRevision === null
+        ? { status: 'error', error: errorMessageFromBody(body, 'HTTP 409') }
+        : { status: 'conflict', currentRevision }
     }
-    const event = readCommandEvent(body)
-    if (event) {
-      const localEffect = init.readLocalEffect?.(body, event)
-      await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately, localEffect)
-    }
-  }
 
-  return { status: 'ok', ...(body as { revision: number; event: CommandEvent } & T) }
+    if (handleActiveWriterStaleResponse(response)) {
+      return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423') }
+    }
+
+    if (!response.ok) {
+      return {
+        status: 'error',
+        error: errorMessageFromBody(body, `HTTP ${response.status}`),
+      }
+    }
+
+    if (body && typeof body === 'object') {
+      const revision = (body as { revision?: unknown }).revision
+      if (Number.isInteger(revision) && (revision as number) >= 0) {
+        setCachedServerCommandRevision(revision as number)
+      }
+      const event = readCommandEvent(body)
+      if (event) {
+        const localEffect = init.readLocalEffect?.(body, event)
+        await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately, localEffect)
+        confirmedRevision = event.revision
+      }
+    }
+
+    return { status: 'ok', ...(body as { revision: number; event: CommandEvent } & T) }
+  } finally {
+    await finishDirectServerCommandReconciliation(directReconciliation, confirmedRevision)
+  }
 }
 
 async function notifyServerCommandSuccessReconciler(
@@ -3425,6 +3483,53 @@ function readPluginStorageLocalEffect(
   const key = (body as Record<string, unknown>).key
   if (key !== expectedKey || event.id !== expectedKey) return undefined
   return { kind: 'pluginStorage', operation, key: expectedKey }
+}
+
+function readMessageTranslationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  expectedMessageId: string,
+): MessageTranslationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const chatId = record.chatId
+  const messageId = record.messageId
+  if (typeof chatId !== 'string' || chatId.trim() === '') return undefined
+  if (messageId !== expectedMessageId) return undefined
+  if (
+    event.type !== 'message.updated' ||
+    event.resource !== 'message' ||
+    event.id !== messageId ||
+    event.parentId !== chatId
+  ) {
+    return undefined
+  }
+  if (!isMessageTranslation(record.translation)) return undefined
+  return {
+    kind: 'messageTranslation',
+    chatId,
+    messageId,
+    translation: cloneJsonValue(record.translation),
+  }
+}
+
+function isMessageTranslation(value: unknown): value is MessageTranslation {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return (
+    record.source === 'raw' &&
+    typeof record.text === 'string' &&
+    typeof record.sourceHash === 'string' &&
+    typeof record.targetLanguage === 'string' &&
+    typeof record.inputLanguage === 'string' &&
+    (record.translatorType === 'google' ||
+      record.translatorType === 'deepl' ||
+      record.translatorType === 'deeplX' ||
+      record.translatorType === 'llm') &&
+    typeof record.settingsHash === 'string' &&
+    typeof record.updatedAt === 'number' &&
+    Number.isFinite(record.updatedAt)
+  )
 }
 
 function readCharacterPatchLocalEffect(

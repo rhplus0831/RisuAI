@@ -34,6 +34,7 @@ import {
   hydrateActiveChatFully,
   hydrateChatMessages,
   applyServerChatMessagesResource,
+  applyMessageTranslationLocalEffect,
   invalidateChatHydration,
   isChatMessageHydrationPending,
   resetChatHydration,
@@ -568,6 +569,31 @@ describe('chat message hydration bridge', () => {
         .flat()
         .map((message) => message.data),
     ).toEqual(['projected alternate', 'projected'])
+  })
+
+  it('applies a translation by stable ids and drops an older transcript hydration', async () => {
+    const oldHydration = deferred<ReturnType<typeof okResult>>()
+    projectionState.fetchChat.mockReturnValueOnce(oldHydration.promise)
+    const pendingHydration = hydrateActiveChatFully()
+    const resident = { role: 'user', data: 'hello', chatId: 'm-resident' }
+    db().characters[0].chats[0].message.push(resident)
+    const translation = {
+      source: 'raw' as const,
+      text: 'translated',
+      sourceHash: 'a'.repeat(64),
+      targetLanguage: 'ko',
+      inputLanguage: 'en',
+      translatorType: 'llm' as const,
+      settingsHash: 'b'.repeat(64),
+      updatedAt: 123,
+    }
+
+    expect(applyMessageTranslationLocalEffect('chat-1', 'm-resident', translation)).toBe(true)
+    oldHydration.resolve(okResult('chat-1', [{ role: 'user', data: 'stale', chatId: 'm-stale' }]))
+    await pendingHydration
+
+    expect(db().characters[0].chats[0].message).toEqual([{ ...resident, translation }])
+    expect(applyMessageTranslationLocalEffect('chat-2', 'm-resident', translation)).toBe(false)
   })
 
   it('does not let an older hydration erase an optimistic local message or settle its rolled-back stub', async () => {

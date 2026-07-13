@@ -7,6 +7,8 @@ import {
   hydrateServerChatMessages,
   isServerChatMessagePlaceholder,
   type Message,
+  type MessageTranslation,
+  withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
 import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
@@ -493,6 +495,33 @@ export function applyServerChatMessagesResource(
   if (activeChatId() === chatId) {
     seedRerollBufferFromAlternates(message, alternates)
   }
+  return true
+}
+
+/**
+ * Apply the canonical translation returned by this client's accepted command
+ * and invalidate older transcript hydration already in flight. The stable chat
+ * and message ids keep navigation changes from writing into the wrong row.
+ */
+export function applyMessageTranslationLocalEffect(
+  chatId: string,
+  messageId: string,
+  translation: MessageTranslation,
+): boolean {
+  if (!chatId || !messageId) return false
+  let applied = false
+  withTrustedResourceWrite(() => {
+    const chat = getDatabase()
+      .characters?.flatMap((character) => character.chats ?? [])
+      .find((candidate) => candidate.id === chatId)
+    if (!chat) return
+    const matches = (chat.message ?? []).filter((message) => message.chatId === messageId)
+    if (matches.length !== 1) return
+    matches[0].translation = JSON.parse(JSON.stringify(translation)) as MessageTranslation
+    applied = true
+  })
+  if (!applied) return false
+  advanceChatProjectionEpoch(chatId)
   return true
 }
 
