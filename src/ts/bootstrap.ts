@@ -138,7 +138,7 @@ export async function loadWebInitialDatabase() {
   }
   const runtime = firstBootstrap.bootstrap.initialized
     ? firstBootstrap.bootstrap
-    : await initializeFreshServerDatabase()
+    : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
 
   const resources = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
   if (resources.status !== 'ok') {
@@ -174,10 +174,12 @@ export async function loadWebInitialDatabase() {
 }
 
 /**
- * One-time first-run seed. Bootstrap reports only whether SQLite has been
- * initialized; all durable data is subsequently loaded through resource APIs.
+ * One-time first-run seed. The initialize response supplies the new revision,
+ * so the pre-initialize runtime metadata remains valid when this client wins
+ * the initialization race. A read-only bootstrap retry is only needed when a
+ * different client initialized the database first.
  */
-async function initializeFreshServerDatabase(): Promise<ServerBootstrapRuntime> {
+async function initializeFreshServerDatabase(initialRuntime: ServerBootstrapRuntime): Promise<ServerBootstrapRuntime> {
   if (!canUseServerCommands()) {
     throw new Error('Initial server database seed failed: server commands unavailable')
   }
@@ -185,6 +187,14 @@ async function initializeFreshServerDatabase(): Promise<ServerBootstrapRuntime> 
   const result = await initializeServerDatabase()
   if (result.status === 'ok') {
     setCachedServerCommandRevision(result.revision)
+    if (result.initialized === true) {
+      return {
+        ...initialRuntime,
+        initialized: true,
+        revision: result.revision,
+      }
+    }
+
     const bootstrap = await fetchServerBootstrapReadOnly()
     if (bootstrap.status !== 'ok') {
       throw new Error(bootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : bootstrap.error)

@@ -246,15 +246,35 @@ describe('API-backed client bootstrap', () => {
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
   })
 
-  it('initializes a fresh server, refetches runtime metadata, then loads resources', async () => {
+  it('initializes a fresh server without refetching unchanged runtime metadata', async () => {
     bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap({ initialized: false, revision: 0 }))
-    bootstrapApi.fetchReadOnly.mockResolvedValue(runtimeBootstrap({ initialized: true, revision: 1 }))
 
     await loadWebInitialDatabase()
 
     expect(commandApi.initialize).toHaveBeenCalledTimes(1)
-    expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(bootstrapApi.fetchReadOnly).not.toHaveBeenCalled()
     expect(resourceApi.loadInitial).toHaveBeenCalledTimes(1)
+    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-a', jobId: 'job-a' }])
+    expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([{ chatId: 'chat-a', messageId: 'message-a' }])
+  })
+
+  it('refetches runtime metadata when another client wins initialization', async () => {
+    bootstrapApi.fetch.mockResolvedValue(runtimeBootstrap({ initialized: false, revision: 0 }))
+    bootstrapApi.fetchReadOnly.mockResolvedValue(
+      runtimeBootstrap({
+        initialized: true,
+        revision: 1,
+        activeGenerationJobs: [{ chatId: 'chat-b', jobId: 'job-b' }],
+        activeMessageTranslations: [],
+      }),
+    )
+    commandApi.initialize.mockResolvedValue({ status: 'ok', revision: 1, initialized: false })
+
+    await loadWebInitialDatabase()
+
+    expect(bootstrapApi.fetchReadOnly).toHaveBeenCalledTimes(1)
+    expect(runtimeApi.setActiveGenerationJobs).toHaveBeenCalledWith([{ chatId: 'chat-b', jobId: 'job-b' }])
+    expect(runtimeApi.setActiveMessageTranslations).toHaveBeenCalledWith([])
   })
 
   it('rejects unavailable bootstrap and failed resource reads without starting events', async () => {
