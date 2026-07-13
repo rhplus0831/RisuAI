@@ -1171,6 +1171,29 @@ function chatFolderAssignmentValue(chat: Chat): string | null {
   return chat.folderId ?? null
 }
 
+function changedChatFolderAssignmentsFromState(
+  characterId: string,
+  attemptedFolderByChatId: Record<string, string | null>,
+  previous: ChatStateSnapshot,
+): Record<string, string | null> | undefined {
+  const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
+  if (!previousCharacter?.chats) {
+    return Object.keys(attemptedFolderByChatId).length > 0 ? cloneJsonValue(attemptedFolderByChatId) : undefined
+  }
+
+  const previousChatsById = new Map(
+    previousCharacter.chats.filter((chat) => chat.id).map((chat) => [chat.id as string, chat]),
+  )
+  const changed: Record<string, string | null> = {}
+  for (const [chatId, folderId] of Object.entries(attemptedFolderByChatId)) {
+    const previousChat = previousChatsById.get(chatId)
+    if (!previousChat || chatFolderAssignmentValue(previousChat) !== folderId) {
+      changed[chatId] = folderId
+    }
+  }
+  return Object.keys(changed).length > 0 ? changed : undefined
+}
+
 function chatReorderRollbackFromState(
   characterId: string,
   chatIds: string[],
@@ -2231,13 +2254,14 @@ export function dispatchReorderChatsByIds(
   const rollback = chatReorderRollbackFromState(characterId, chatIds, folderByChatId, previous)
   const attemptedIds = rollback?.attemptedIds ?? cloneJsonValue(chatIds)
   const attemptedFolderByChatId = rollback?.attemptedFolderByChatId ?? cloneJsonValue(folderByChatId)
+  const changedFolderByChatId = changedChatFolderAssignmentsFromState(characterId, attemptedFolderByChatId, previous)
   runChatCommand(
     (baseRevision) =>
       reorderChatsCommand({
         baseRevision,
         characterId,
         chatIds: attemptedIds,
-        folderByChatId: attemptedFolderByChatId,
+        folderByChatId: changedFolderByChatId,
         selectedChatId,
       }),
     () => restoreChatOrderAttempt(rollback),
@@ -2258,6 +2282,7 @@ export function dispatchReorderChatFoldersAndChatsByIds(
   const previousCharacter = locateSnapshotCharacterInState(previous, characterId)
   const previousFolderIds = previousCharacter ? chatFolderIds(previousCharacter.chatFolders) : null
   const chatRollback = chatReorderRollbackFromState(characterId, attemptedChatIds, attemptedFolderByChatId, previous)
+  const changedFolderByChatId = changedChatFolderAssignmentsFromState(characterId, attemptedFolderByChatId, previous)
   let folderAccepted = false
 
   runOptimisticCommandSequence(
@@ -2277,7 +2302,7 @@ export function dispatchReorderChatFoldersAndChatsByIds(
           baseRevision,
           characterId,
           chatIds: attemptedChatIds,
-          folderByChatId: attemptedFolderByChatId,
+          folderByChatId: changedFolderByChatId,
           selectedChatId,
         }),
     ],

@@ -5697,6 +5697,105 @@ describe('Phase 9-3b chat record and folder commands', () => {
     })
   })
 
+  it('preserves omitted folder assignments in sparse chat reorder patches', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'A',
+          chats: [
+            {
+              id: 'chat-a',
+              name: 'A chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-a',
+            },
+            {
+              id: 'chat-b',
+              name: 'B chat',
+              note: '',
+              message: [],
+              localLore: [],
+              folderId: 'folder-b',
+            },
+            { id: 'chat-c', name: 'C chat', note: '', message: [], localLore: [] },
+          ],
+          chatFolders: [
+            { id: 'folder-a', name: 'Folder A', folded: false },
+            { id: 'folder-b', name: 'Folder B', folded: false },
+          ],
+          chatPage: 0,
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+
+    const pureReorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        chatIds: ['chat-c', 'chat-b', 'chat-a'],
+        selectedChatId: 'chat-a',
+      },
+    })
+    expect(pureReorder.statusCode).toBe(200)
+
+    const afterPureReorder = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(
+      afterPureReorder
+        .json()
+        .database.characters[0].chats.map((chat: { id: string; folderId?: string | null }) => [
+          chat.id,
+          chat.folderId ?? null,
+        ]),
+    ).toEqual([
+      ['chat-c', null],
+      ['chat-b', 'folder-b'],
+      ['chat-a', 'folder-a'],
+    ])
+
+    const sparseReorder = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: pureReorder.json().revision,
+        chatIds: ['chat-a', 'chat-c', 'chat-b'],
+        folderByChatId: { 'chat-b': null },
+        selectedChatId: 'chat-a',
+      },
+    })
+    expect(sparseReorder.statusCode).toBe(200)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(
+      bootstrap
+        .json()
+        .database.characters[0].chats.map((chat: { id: string; folderId?: string | null }) => [
+          chat.id,
+          chat.folderId ?? null,
+        ]),
+    ).toEqual([
+      ['chat-a', 'folder-a'],
+      ['chat-c', null],
+      ['chat-b', null],
+    ])
+  })
+
   it('creates a chat at the head while select:false preserves the selected chat', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

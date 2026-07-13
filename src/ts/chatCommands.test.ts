@@ -723,7 +723,6 @@ describe('chat command projection helpers', () => {
         body: {
           baseRevision: expect.any(Number),
           chatIds: ['chat-b', 'chat-a'],
-          folderByChatId: { 'chat-a': null, 'chat-b': 'folder-a' },
           selectedChatId: 'chat-a',
         },
       },
@@ -1062,6 +1061,35 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats.map((chat) => chat.folderId)).toEqual([null, 'folder-a', 'folder-b'])
     expect(getDatabase().characters[0].chats[2].name).toBe('Newer Chat C')
     expect(getDatabase().characters[0].chats[getDatabase().characters[0].chatPage].id).toBe('chat-a')
+  })
+
+  it('sends only changed folder assignments in a combined folder and chat reorder', async () => {
+    const calls = stubCombinedReorderCommandFetch({ fail: 'chats' })
+    const previous = currentChatStateSnapshot()
+
+    dispatchReorderChatFoldersAndChatsByIds(
+      'char-a',
+      ['folder-a'],
+      ['chat-b', 'chat-a'],
+      {
+        'chat-a': 'folder-a',
+        'chat-b': 'folder-a',
+      },
+      previous,
+      'chat-a',
+    )
+
+    await waitForCallCount(calls, 3)
+    expect(calls[2]).toMatchObject({
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      method: 'POST',
+      body: {
+        baseRevision: 11,
+        chatIds: ['chat-b', 'chat-a'],
+        folderByChatId: { 'chat-a': 'folder-a' },
+        selectedChatId: 'chat-a',
+      },
+    })
   })
 
   it('rolls back both attempted orders narrowly when the combined folder reorder fails first', async () => {
@@ -1477,6 +1505,18 @@ describe('chat command projection helpers', () => {
     dispatchReorderChatsByIds('char-a', attemptedIds, attemptedFolderByChatId, previous, 'chat-a')
 
     await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/characters/char-a/chats/reorder',
+      method: 'POST',
+      body: {
+        chatIds: attemptedIds,
+        folderByChatId: {
+          'chat-b': null,
+          'chat-c': 'folder-a',
+        },
+        selectedChatId: 'chat-a',
+      },
+    })
     await vi.waitFor(() => {
       expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
     })
