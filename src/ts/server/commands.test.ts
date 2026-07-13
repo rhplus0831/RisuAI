@@ -1983,6 +1983,84 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes only opted-in matching loadout acknowledgements as scoped local effects', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    let touchCount = 0
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/favorite')) {
+        return {
+          revision: 5,
+          event: { type: 'loadout.favorited', revision: 5, resource: 'loadout', id: 'loadout-a' },
+          loadoutId: 'loadout-a',
+        }
+      }
+      touchCount += 1
+      return {
+        revision: 6 + touchCount,
+        event: {
+          type: 'loadout.touched',
+          revision: 6 + touchCount,
+          resource: 'loadout',
+          id: touchCount === 1 ? 'loadout-a' : 'mismatched-loadout',
+        },
+        loadoutId: 'loadout-a',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await favoriteLoadoutCommand({
+      baseRevision: 4,
+      loadoutId: 'loadout-a',
+      favorite: true,
+    })
+    await favoriteLoadoutCommand({
+      baseRevision: 5,
+      loadoutId: 'loadout-a',
+      favorite: true,
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 11,
+    })
+    await touchLoadoutCommand({
+      baseRevision: 6,
+      loadoutId: 'loadout-a',
+      lastUsed: 1234,
+      characterId: 'char-b',
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 11,
+      settingsProjectionEpoch: 17,
+      loadedName: 'Loadout A',
+    })
+    await touchLoadoutCommand({
+      baseRevision: 7,
+      loadoutId: 'loadout-a',
+      lastUsed: 1235,
+      acknowledgeOptimistic: true,
+      loadoutsProjectionEpoch: 11,
+      settingsProjectionEpoch: 17,
+      loadedName: 'Loadout A',
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'loadoutMutation',
+        operation: 'favorite',
+        loadoutId: 'loadout-a',
+        loadoutsProjectionEpoch: 11,
+      },
+      {
+        kind: 'loadoutMutation',
+        operation: 'touch',
+        loadoutId: 'loadout-a',
+        loadoutsProjectionEpoch: 11,
+        settingsProjectionEpoch: 17,
+        loadedName: 'Loadout A',
+      },
+    ])
+  })
+
   it('runs loadout commands with revision lookup and surfaces conflicts', async () => {
     let attempts = 0
     const commandFetch = makeCommandFetch((url) => {

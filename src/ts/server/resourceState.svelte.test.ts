@@ -25,13 +25,18 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  applyLoadoutMutationLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
   captureCharacterRowProjectionEpoch,
+  captureCollectionProjectionEpoch,
+  captureSettingsGroupProjectionEpoch,
   collectionsResourceState,
   composeResourceDatabaseSnapshot,
   getResourceDatabase,
   hasCharacterRowProjectionEpochChanged,
+  hasCollectionProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
   replaceResourceDatabase,
   resetServerResourceState,
   setResourceDatabaseWriteGuardEnabled,
@@ -51,6 +56,24 @@ function completeCollections() {
   return Object.fromEntries(
     SERVER_COLLECTION_NAMES.map((name) => [name, name === 'pluginCustomStorage' ? { counter: 1 } : []]),
   )
+}
+
+function canonicalLoadout(id = 'loadout-a') {
+  return {
+    id,
+    name: 'Loadout A',
+    lastUsed: 100,
+    favorite: false,
+    characterIds: ['char-a'],
+    modules: [],
+    globalVariables: {},
+    presetName: '',
+    modelPresetId: '',
+    modelPresetName: '',
+    promptPresetId: '',
+    promptPresetName: '',
+    personaId: '',
+  }
 }
 
 beforeEach(() => {
@@ -391,6 +414,66 @@ describe('resource-scoped database state', () => {
     ).toBe(true)
     expect(getResourceDatabase()).toMatchObject({ enabledModules: ['server-module'], language: 'ja' })
     expect(settingsResourceState.enabledModulesRevision).toBeNull()
+  })
+
+  it('fences optimistic loadout favorite and touch slices without advancing projection epochs', () => {
+    applySettingsResource({ revision: 3, settings: { lastLoadedLoadoutName: 'Before' } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: { ...completeCollections(), loadouts: [canonicalLoadout()] },
+    })
+    const collectionEpoch = captureCollectionProjectionEpoch('loadouts')
+    const settingsEpoch = captureSettingsGroupProjectionEpoch('sidebar')
+    withResourceDatabaseWrite(() => {
+      const loadout = getResourceDatabase().loadouts[0]
+      loadout.favorite = true
+      loadout.lastUsed = 300
+      loadout.characterIds.push('char-b')
+      getResourceDatabase().lastLoadedLoadoutName = 'Newer Loadout'
+    })
+
+    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'favorite', loadoutId: 'loadout-a' })).toBe(true)
+    expect(applyLoadoutMutationLocalEffect({ revision: 5, operation: 'touch', loadoutId: 'loadout-a' })).toBe(true)
+
+    expect(getResourceDatabase().loadouts[0]).toMatchObject({
+      favorite: true,
+      lastUsed: 300,
+      characterIds: ['char-a', 'char-b'],
+    })
+    expect(getResourceDatabase().lastLoadedLoadoutName).toBe('Newer Loadout')
+    expect(collectionsResourceState.revisions.loadouts).toBe(5)
+    expect(settingsResourceState.groupRevisions.sidebar).toBe(5)
+    expect(hasCollectionProjectionEpochChanged('loadouts', collectionEpoch)).toBe(false)
+    expect(hasSettingsGroupProjectionEpochChanged('sidebar', settingsEpoch)).toBe(false)
+
+    applyCollectionsResource(
+      { revision: 6, collections: { loadouts: [{ ...canonicalLoadout(), lastUsed: 600 }] } },
+      'loadouts',
+    )
+    expect(hasCollectionProjectionEpochChanged('loadouts', collectionEpoch)).toBe(true)
+    expect(hasSettingsGroupProjectionEpochChanged('sidebar', settingsEpoch)).toBe(false)
+    applySettingsGroupResource(
+      { revision: 7, group: 'sidebar', settings: { lastLoadedLoadoutName: 'Authoritative' } },
+      ['lastLoadedLoadoutName'],
+    )
+    expect(hasSettingsGroupProjectionEpochChanged('sidebar', settingsEpoch)).toBe(true)
+  })
+
+  it('rejects loadout acknowledgements for malformed collection or settings projections', () => {
+    applySettingsResource({ revision: 3, settings: { lastLoadedLoadoutName: 'Before' } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: { ...completeCollections(), loadouts: [canonicalLoadout(), canonicalLoadout()] },
+    })
+
+    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'favorite', loadoutId: 'loadout-a' })).toBe(false)
+    withResourceDatabaseWrite(() => {
+      getResourceDatabase().loadouts = [canonicalLoadout()] as never
+      delete (getResourceDatabase() as unknown as Record<string, unknown>).lastLoadedLoadoutName
+    })
+    expect(applyLoadoutMutationLocalEffect({ revision: 4, operation: 'touch', loadoutId: 'loadout-a' })).toBe(false)
+    expect(collectionsResourceState.revisions.loadouts).toBe(3)
+    expect(settingsResourceState.groupRevisions.sidebar).toBeUndefined()
   })
 
   it('rejects unsafe module acknowledgements so authoritative reads remain available', () => {

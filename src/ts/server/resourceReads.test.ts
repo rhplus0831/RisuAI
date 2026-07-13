@@ -96,6 +96,7 @@ describe('server resource read clients', () => {
     const responses = [
       { revision: 8, group: 'display', settings: { theme: 'dark', zoomsize: 90 } },
       { revision: 9, group: 'display', settings: { openAIKey: 'smuggled' } },
+      { revision: 10, group: 'sidebar', settings: { lastLoadedLoadoutName: 'Loadout A' } },
     ]
     const calls = stubResourceFetch(() => responses.shift())
 
@@ -109,7 +110,17 @@ describe('server resource read clients', () => {
       status: 'error',
       error: 'Invalid display settings response',
     })
-    expect(calls.map((call) => call.url)).toEqual(['/api/v1/settings/display', '/api/v1/settings/display'])
+    await expect(fetchServerSettingsGroup('sidebar')).resolves.toEqual({
+      status: 'ok',
+      revision: 10,
+      group: 'sidebar',
+      settings: { lastLoadedLoadoutName: 'Loadout A' },
+    })
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/v1/settings/display',
+      '/api/v1/settings/display',
+      '/api/v1/settings/sidebar',
+    ])
   })
 
   it('reads the complete and targeted collection envelopes', async () => {

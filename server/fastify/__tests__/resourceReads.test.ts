@@ -166,6 +166,14 @@ describe('authenticated resource read routes', () => {
     expect(runtime.statusCode).toBe(200)
     expect(runtime.json().settings).toMatchObject({ localNetworkMode: true, localNetworkTimeoutSec: 45 })
 
+    const sidebar = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/sidebar',
+      headers: authHeaders(),
+    })
+    expect(sidebar.statusCode).toBe(200)
+    expect(sidebar.json().settings).toMatchObject({ lastLoadedLoadoutName: '' })
+
     const account = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/settings/account',

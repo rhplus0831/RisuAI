@@ -123,6 +123,15 @@ export interface ModuleEnabledLocalEffect {
   enabled: boolean
 }
 
+export interface LoadoutMutationLocalEffect {
+  kind: 'loadoutMutation'
+  operation: 'favorite' | 'touch'
+  loadoutId: string
+  loadoutsProjectionEpoch: number
+  settingsProjectionEpoch?: number
+  loadedName?: string
+}
+
 export interface MessageTranslationLocalEffect {
   kind: 'messageTranslation'
   chatId: string
@@ -162,6 +171,7 @@ export type ServerCommandLocalEffect =
   | PluginProviderLocalEffect
   | ModuleCollectionMutationLocalEffect
   | ModuleEnabledLocalEffect
+  | LoadoutMutationLocalEffect
   | MessageTranslationLocalEffect
   | MessageMutationLocalEffect
   | CharacterRowMutationLocalEffect
@@ -678,12 +688,18 @@ export interface DeleteLoadoutCommandInput extends LoadoutCommandInput {
 export interface FavoriteLoadoutCommandInput extends LoadoutCommandInput {
   loadoutId: string
   favorite: boolean
+  acknowledgeOptimistic?: boolean
+  loadoutsProjectionEpoch?: number
 }
 
 export interface TouchLoadoutCommandInput extends LoadoutCommandInput {
   loadoutId: string
   lastUsed?: number
   characterId?: string
+  acknowledgeOptimistic?: boolean
+  loadoutsProjectionEpoch?: number
+  settingsProjectionEpoch?: number
+  loadedName?: string
 }
 
 export interface CharacterCommandInput {
@@ -2338,6 +2354,15 @@ export async function favoriteLoadoutCommand(
       favorite: input.favorite,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLoadoutMutationLocalEffect(body, event, {
+            operation: 'favorite',
+            expectedLoadoutId: input.loadoutId,
+            expectedFavorite: input.favorite,
+            loadoutsProjectionEpoch: input.loadoutsProjectionEpoch,
+          })
+      : undefined,
   })
 }
 
@@ -2353,6 +2378,18 @@ export async function touchLoadoutCommand(
       characterId: input.characterId,
     },
     signal,
+    readLocalEffect: input.acknowledgeOptimistic
+      ? (body, event) =>
+          readLoadoutMutationLocalEffect(body, event, {
+            operation: 'touch',
+            expectedLoadoutId: input.loadoutId,
+            expectedLastUsed: input.lastUsed,
+            expectedCharacterId: input.characterId,
+            loadoutsProjectionEpoch: input.loadoutsProjectionEpoch,
+            settingsProjectionEpoch: input.settingsProjectionEpoch,
+            loadedName: input.loadedName,
+          })
+      : undefined,
   })
 }
 
@@ -4037,6 +4074,69 @@ function readModuleEnabledLocalEffect(
     return undefined
   }
   return { kind: 'moduleEnabled', moduleId: expectedModuleId, enabled: expectedEnabled }
+}
+
+interface ReadLoadoutMutationLocalEffectOptions {
+  operation: LoadoutMutationLocalEffect['operation']
+  expectedLoadoutId: unknown
+  expectedFavorite?: unknown
+  expectedLastUsed?: unknown
+  expectedCharacterId?: unknown
+  loadoutsProjectionEpoch?: unknown
+  settingsProjectionEpoch?: unknown
+  loadedName?: unknown
+}
+
+function readLoadoutMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadLoadoutMutationLocalEffectOptions,
+): LoadoutMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (!nonEmptyString(options.expectedLoadoutId)) return undefined
+  if (!isProjectionEpoch(options.loadoutsProjectionEpoch)) return undefined
+  const expectedType = options.operation === 'favorite' ? 'loadout.favorited' : 'loadout.touched'
+  if (
+    event.type !== expectedType ||
+    event.resource !== 'loadout' ||
+    event.id !== options.expectedLoadoutId ||
+    event.parentId !== undefined ||
+    (body as Record<string, unknown>).loadoutId !== options.expectedLoadoutId
+  ) {
+    return undefined
+  }
+
+  if (options.operation === 'favorite') {
+    if (typeof options.expectedFavorite !== 'boolean') return undefined
+    return {
+      kind: 'loadoutMutation',
+      operation: 'favorite',
+      loadoutId: options.expectedLoadoutId,
+      loadoutsProjectionEpoch: options.loadoutsProjectionEpoch,
+    }
+  }
+
+  if (
+    typeof options.expectedLastUsed !== 'number' ||
+    !Number.isFinite(options.expectedLastUsed) ||
+    (options.expectedCharacterId !== undefined && !nonEmptyString(options.expectedCharacterId)) ||
+    !isProjectionEpoch(options.settingsProjectionEpoch) ||
+    !nonEmptyString(options.loadedName)
+  ) {
+    return undefined
+  }
+  return {
+    kind: 'loadoutMutation',
+    operation: 'touch',
+    loadoutId: options.expectedLoadoutId,
+    loadoutsProjectionEpoch: options.loadoutsProjectionEpoch,
+    settingsProjectionEpoch: options.settingsProjectionEpoch,
+    loadedName: options.loadedName,
+  }
+}
+
+function isProjectionEpoch(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
 }
 
 function isCanonicalModuleCreate(value: ModuleSnapshot): boolean {

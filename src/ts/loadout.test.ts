@@ -8,7 +8,12 @@ vi.mock('./storage/fastifyStorage', () => ({
 
 import { clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
+import {
+  applyCollectionsResource,
+  applySettingsGroupResource,
+  getResourceDatabase,
+  replaceResourceDatabase,
+} from './server/resourceState.svelte'
 import type { Database } from './storage/database.svelte'
 import { selectedCharID } from './stores.svelte'
 import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from './loadout'
@@ -36,6 +41,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 function cloneJsonValue<T>(value: T): T {
@@ -323,6 +336,30 @@ function stubCommandFetch(options: { failCommands?: boolean } = {}): CapturedFet
     }) as unknown as typeof fetch,
   )
   return calls
+}
+
+function stubDeferredCommandFailure() {
+  const calls: CapturedFetch[] = []
+  const command = deferred<Response>()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      return command.promise
+    }) as unknown as typeof fetch,
+  )
+  return {
+    calls,
+    reject: () => command.resolve(jsonResponse({ error: 'forced deferred failure' }, 500)),
+  }
 }
 
 function stubApplyLoadoutFetch(
@@ -711,6 +748,19 @@ describe('loadout projection command helpers', () => {
         lastUsed: 123456,
       },
     })
+  })
+
+  it('derives the touched loadout name from the live collection row', async () => {
+    const liveLoadout = seedApplyLoadoutState()
+    const staleArgument = { ...cloneJsonValue(liveLoadout), name: 'Stale caller name' }
+    const calls = stubApplyLoadoutFetch()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    applyLoadout(staleArgument, [])
+
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
+    await waitForCallCount(calls, 2)
   })
 
   it('applies split model and prompt preset selections without falling back to legacy presets', async () => {
@@ -1134,6 +1184,94 @@ describe('loadout projection command helpers', () => {
       name: 'Later Loadout',
     })
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Loadout A')
+  })
+
+  it('does not roll back a failed favorite across an authoritative loadout replacement', async () => {
+    const failure = stubDeferredCommandFailure()
+    setResourceWriteGuardEnabled(true)
+
+    expect(toggleLoadoutFavorite('loadout-a')).toBe(true)
+    await waitForCallCount(failure.calls, 2)
+    applyCollectionsResource(
+      {
+        revision: 11,
+        collections: {
+          loadouts: [
+            makeLoadout({ id: 'loadout-a', name: 'Authoritative A', favorite: true }),
+            makeLoadout({ id: 'loadout-b', name: 'Authoritative B', favorite: true }),
+          ],
+        },
+      },
+      'loadouts',
+    )
+    failure.reject()
+    await flushCommandEffects()
+
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
+      id: 'loadout-a',
+      name: 'Authoritative A',
+      favorite: true,
+    })
+  })
+
+  it('rolls back only touch settings after an authoritative loadout replacement', async () => {
+    const loadout = seedApplyLoadoutState()
+    const failure = stubDeferredCommandFailure()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    applyLoadout(loadout, [])
+    await waitForCallCount(failure.calls, 2)
+    applyCollectionsResource(
+      {
+        revision: 11,
+        collections: {
+          loadouts: [
+            makeLoadout({
+              id: 'loadout-a',
+              name: 'Battle Loadout',
+              lastUsed: 777,
+              characterIds: ['authoritative-char'],
+            }),
+          ],
+        },
+      },
+      'loadouts',
+    )
+    failure.reject()
+    await flushCommandEffects()
+
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
+      lastUsed: 777,
+      characterIds: ['authoritative-char'],
+    })
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
+  })
+
+  it('rolls back only touch collection fields after an authoritative sidebar replacement', async () => {
+    const loadout = seedApplyLoadoutState()
+    const failure = stubDeferredCommandFailure()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    applyLoadout(loadout, [])
+    await waitForCallCount(failure.calls, 2)
+    applySettingsGroupResource(
+      {
+        revision: 11,
+        group: 'sidebar',
+        settings: { lastLoadedLoadoutName: 'Authoritative loaded name' },
+      },
+      ['lastLoadedLoadoutName'],
+    )
+    failure.reject()
+    await flushCommandEffects()
+
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({
+      lastUsed: 100,
+      characterIds: [],
+    })
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Authoritative loaded name')
   })
 
   it('failed create removes only the unchanged attempted loadout and preserves later rows', async () => {

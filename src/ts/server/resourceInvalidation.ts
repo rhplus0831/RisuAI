@@ -411,7 +411,17 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('translatorPresets')
       return
     case 'loadout':
-      addFullSettings()
+      if (
+        event.type !== 'loadout.created' &&
+        event.type !== 'loadout.updated' &&
+        event.type !== 'loadout.deleted' &&
+        event.type !== 'loadout.favorited' &&
+        event.type !== 'loadout.touched'
+      ) {
+        plan.full = true
+        return
+      }
+      if (event.type === 'loadout.touched') addSettingsGroup('sidebar')
       plan.collections.add('loadouts')
       return
     case 'globalLorebook':

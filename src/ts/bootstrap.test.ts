@@ -157,8 +157,12 @@ import {
 import { getActiveWriterSessionId } from './server/activeWriterSession'
 import { getDatabase, setResourceWriteGuardEnabled, withTrustedResourceWrite } from './storage/database.svelte'
 import {
+  applyCollectionsResource,
   applyCharacterResource,
+  applySettingsGroupResource,
+  captureCollectionProjectionEpoch,
   captureCharacterRowProjectionEpoch,
+  captureSettingsGroupProjectionEpoch,
   replaceResourceDatabase,
   resetServerResourceState,
 } from './server/resourceState.svelte'
@@ -200,9 +204,27 @@ function seedResourceDatabase() {
       characterOrder: ['char-a', 'char-b'],
       currentChar: 1,
       modules: [],
+      loadouts: [
+        {
+          id: 'loadout-a',
+          name: 'Loadout A',
+          lastUsed: 100,
+          favorite: false,
+          characterIds: ['char-a'],
+          modules: [],
+          globalVariables: {},
+          presetName: '',
+          modelPresetId: '',
+          modelPresetName: '',
+          promptPresetId: '',
+          promptPresetName: '',
+          personaId: '',
+        },
+      ],
       personas: [],
       botPresets: [],
       language: 'en',
+      lastLoadedLoadoutName: 'Before',
     } as never,
     5,
   )
@@ -582,6 +604,120 @@ describe('API-backed client bootstrap', () => {
     ])
     expect(getDatabase().enabledModules).toEqual(['mod-b'])
     expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('acknowledges contiguous optimistic loadout favorite and touch without resource reads', async () => {
+    await loadWebInitialDatabase()
+    const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
+    withTrustedResourceWrite(() => {
+      const loadout = getDatabase().loadouts[0]
+      loadout.favorite = false
+      loadout.lastUsed = 300
+      loadout.characterIds.push('char-b')
+      getDatabase().lastLoadedLoadoutName = 'Newer loaded name'
+    })
+    const favoriteEvent = {
+      type: 'loadout.favorited',
+      revision: 6,
+      resource: 'loadout',
+      id: 'loadout-a',
+    }
+    const touchEvent = {
+      type: 'loadout.touched',
+      revision: 7,
+      resource: 'loadout',
+      id: 'loadout-a',
+    }
+
+    await commandApi.reconciler?.(
+      touchEvent,
+      [favoriteEvent, touchEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'loadoutMutation',
+            operation: 'favorite',
+            loadoutId: 'loadout-a',
+            loadoutsProjectionEpoch,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'loadoutMutation',
+            operation: 'touch',
+            loadoutId: 'loadout-a',
+            loadoutsProjectionEpoch,
+            settingsProjectionEpoch,
+            loadedName: 'Loadout A',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().loadouts[0]).toMatchObject({
+      favorite: false,
+      lastUsed: 300,
+      characterIds: ['char-a', 'char-b'],
+    })
+    expect(getDatabase().lastLoadedLoadoutName).toBe('Newer loaded name')
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('falls back when a targeted projection changes before a loadout acknowledgement', async () => {
+    await loadWebInitialDatabase()
+    const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
+    applyCollectionsResource(
+      {
+        revision: 6,
+        collections: {
+          loadouts: [
+            {
+              ...getDatabase().loadouts[0],
+              favorite: true,
+            },
+          ],
+        },
+      },
+      'loadouts',
+    )
+    applySettingsGroupResource(
+      { revision: 6, group: 'sidebar', settings: { lastLoadedLoadoutName: 'Authoritative' } },
+      ['lastLoadedLoadoutName'],
+    )
+    const event = {
+      type: 'loadout.touched',
+      revision: 6,
+      resource: 'loadout',
+      id: 'loadout-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'loadoutMutation',
+            operation: 'touch',
+            loadoutId: 'loadout-a',
+            loadoutsProjectionEpoch,
+            settingsProjectionEpoch,
+            loadedName: 'Loadout A',
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
   })
 
   it('keeps mismatched module acknowledgements on authoritative reconciliation', async () => {

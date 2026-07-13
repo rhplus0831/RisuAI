@@ -62,7 +62,10 @@ import {
   applyPluginStorageLocalEffect,
   applyModuleCollectionMutationLocalEffect,
   applyModuleEnabledLocalEffect,
+  applyLoadoutMutationLocalEffect,
   hasCharacterRowProjectionEpochChanged,
+  hasCollectionProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
 import { hasDestructiveRefreshEpochChanged } from './server/staleStateGuards'
@@ -673,6 +676,39 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
           enabled: localEffect.enabled,
         }),
       )
+    case 'loadoutMutation': {
+      const expectedType = localEffect.operation === 'favorite' ? 'loadout.favorited' : 'loadout.touched'
+      if (
+        event.type !== expectedType ||
+        event.resource !== 'loadout' ||
+        event.id !== localEffect.loadoutId ||
+        event.parentId !== undefined ||
+        typeof localEffect.loadoutsProjectionEpoch !== 'number' ||
+        !Number.isInteger(localEffect.loadoutsProjectionEpoch) ||
+        localEffect.loadoutsProjectionEpoch < 0 ||
+        hasCollectionProjectionEpochChanged('loadouts', localEffect.loadoutsProjectionEpoch)
+      ) {
+        return false
+      }
+      if (
+        localEffect.operation === 'touch' &&
+        (typeof localEffect.settingsProjectionEpoch !== 'number' ||
+          !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+          localEffect.settingsProjectionEpoch < 0 ||
+          typeof localEffect.loadedName !== 'string' ||
+          localEffect.loadedName.trim() === '' ||
+          hasSettingsGroupProjectionEpochChanged('sidebar', localEffect.settingsProjectionEpoch))
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyLoadoutMutationLocalEffect({
+          revision: event.revision,
+          operation: localEffect.operation,
+          loadoutId: localEffect.loadoutId,
+        }),
+      )
+    }
     case 'messageTranslation':
       if (
         event.type !== 'message.updated' ||

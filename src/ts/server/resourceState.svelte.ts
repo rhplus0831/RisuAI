@@ -6,6 +6,12 @@ import type { SettingsGroup } from './settingsGroups'
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
 const characterRowProjectionEpochs = new Map<string, number>()
+let nextCollectionProjectionEpoch = 0
+let collectionProjectionBaseline = 0
+const collectionProjectionEpochs = new Map<ServerCollectionName, number>()
+let nextSettingsProjectionEpoch = 0
+let settingsProjectionBaseline = 0
+const settingsGroupProjectionEpochs = new Map<SettingsGroup, number>()
 
 function advanceCharacterRowProjectionEpoch(characterId: string): void {
   characterRowProjectionEpochs.set(characterId, ++nextCharacterRowProjectionEpoch)
@@ -22,6 +28,40 @@ export function captureCharacterRowProjectionEpoch(characterId: string): number 
 
 export function hasCharacterRowProjectionEpochChanged(characterId: string, epoch: number): boolean {
   return captureCharacterRowProjectionEpoch(characterId) !== epoch
+}
+
+function advanceCollectionProjectionEpoch(name: ServerCollectionName): void {
+  collectionProjectionEpochs.set(name, ++nextCollectionProjectionEpoch)
+}
+
+function advanceAllCollectionProjectionEpochs(): void {
+  collectionProjectionBaseline = ++nextCollectionProjectionEpoch
+  collectionProjectionEpochs.clear()
+}
+
+export function captureCollectionProjectionEpoch(name: ServerCollectionName): number {
+  return collectionProjectionEpochs.get(name) ?? collectionProjectionBaseline
+}
+
+export function hasCollectionProjectionEpochChanged(name: ServerCollectionName, epoch: number): boolean {
+  return captureCollectionProjectionEpoch(name) !== epoch
+}
+
+function advanceSettingsGroupProjectionEpoch(group: SettingsGroup): void {
+  settingsGroupProjectionEpochs.set(group, ++nextSettingsProjectionEpoch)
+}
+
+function advanceAllSettingsProjectionEpochs(): void {
+  settingsProjectionBaseline = ++nextSettingsProjectionEpoch
+  settingsGroupProjectionEpochs.clear()
+}
+
+export function captureSettingsGroupProjectionEpoch(group: SettingsGroup): number {
+  return settingsGroupProjectionEpochs.get(group) ?? settingsProjectionBaseline
+}
+
+export function hasSettingsGroupProjectionEpochChanged(group: SettingsGroup, epoch: number): boolean {
+  return captureSettingsGroupProjectionEpoch(group) !== epoch
 }
 
 export const SERVER_COLLECTION_NAMES = [
@@ -156,6 +196,12 @@ export interface ServerModuleEnabledLocalEffectPayload {
   revision: number
   moduleId: string
   enabled: boolean
+}
+
+export interface ServerLoadoutMutationLocalEffectPayload {
+  revision: number
+  operation: 'favorite' | 'touch'
+  loadoutId: string
 }
 
 export interface ServerCharacterRowMutationLocalEffectPayload {
@@ -297,6 +343,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  advanceAllSettingsProjectionEpochs()
   markResourceDatabaseChanged()
   return true
 }
@@ -325,6 +372,7 @@ export function applySettingsGroupResource(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  advanceSettingsGroupProjectionEpoch(payload.group)
   markResourceDatabaseChanged()
   return true
 }
@@ -513,6 +561,50 @@ export function applyModuleEnabledLocalEffect(payload: ServerModuleEnabledLocalE
   return true
 }
 
+/** Fence an accepted optimistic loadout favorite/touch without re-reading the collection or settings. */
+export function applyLoadoutMutationLocalEffect(payload: ServerLoadoutMutationLocalEffectPayload): boolean {
+  if (!nonEmptyString(payload.loadoutId)) return false
+  if (payload.operation !== 'favorite' && payload.operation !== 'touch') return false
+
+  const loadouts = collectionsResourceState.values.loadouts
+  if (collectionsResourceState.statuses.loadouts !== 'ready' || !isNormalizedLoadoutCollectionProjection(loadouts)) {
+    return false
+  }
+  if (
+    payload.operation === 'touch' &&
+    (settingsResourceState.status !== 'ready' ||
+      typeof (settingsResourceState.value as Record<string, unknown>).lastLoadedLoadoutName !== 'string')
+  ) {
+    return false
+  }
+
+  const knownCollectionRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.loadouts ?? -1,
+  )
+  const knownSettingsRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions.sidebar ?? -1,
+  )
+  let changed = false
+  if (knownCollectionRevision < payload.revision) {
+    collectionsResourceState.revisions.loadouts = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses.loadouts = 'ready'
+    delete collectionsResourceState.errors.loadouts
+    changed = true
+  }
+  if (payload.operation === 'touch' && knownSettingsRevision < payload.revision) {
+    settingsResourceState.groupRevisions.sidebar = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+    changed = true
+  }
+  if (changed) markResourceDatabaseChanged()
+  return true
+}
+
 export function beginCollectionsResourceLoad(name?: ServerCollectionName): void {
   if (name) {
     collectionsResourceState.statuses[name] = 'loading'
@@ -549,6 +641,7 @@ export function applyCollectionsResource(
     collectionsResourceState.revisions[name] = payload.revision
     collectionsResourceState.statuses[name] = 'ready'
     delete collectionsResourceState.errors[name]
+    advanceCollectionProjectionEpoch(name)
     applied = true
   }
 
@@ -905,6 +998,8 @@ export function resetServerResourceState(): void {
   charactersResourceState.rowStatuses = {}
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  advanceAllSettingsProjectionEpochs()
+  advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
   markResourceDatabaseChanged()
 }
@@ -972,6 +1067,8 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   )
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  advanceAllSettingsProjectionEpochs()
+  advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
   markResourceDatabaseChanged()
 }
@@ -1234,6 +1331,44 @@ function shouldUseCharacterPointerResource(property: 'characterOrder' | 'current
   const pointerRevision = Math.max(charactersResourceState.listRevision ?? -1, targetedRevision ?? -1)
   if (pointerRevision < 0) return false
   return settingsResourceState.fullRevision === null || pointerRevision >= settingsResourceState.fullRevision
+}
+
+function isNormalizedLoadoutCollectionProjection(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+    const record = candidate as Record<string, unknown>
+    if (!nonEmptyString(record.id) || ids.has(record.id)) return false
+    if (!nonEmptyString(record.name)) return false
+    if (typeof record.lastUsed !== 'number' || !Number.isFinite(record.lastUsed)) return false
+    if (typeof record.favorite !== 'boolean') return false
+    if (!isStringArray(record.characterIds) || !isStringArray(record.modules)) return false
+    if (!isStringRecord(record.globalVariables)) return false
+    for (const key of ['presetName', 'personaId']) {
+      if (typeof record[key] !== 'string') return false
+    }
+    for (const key of ['modelPresetId', 'modelPresetName', 'promptPresetId', 'promptPresetName']) {
+      if (record[key] !== undefined && typeof record[key] !== 'string') return false
+    }
+    if (record.agentPresetId !== undefined && typeof record.agentPresetId !== 'string') return false
+    if (record.agentPresetName !== undefined && typeof record.agentPresetName !== 'string') return false
+    ids.add(record.id)
+  }
+  return true
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Object.values(value).every((entry) => typeof entry === 'string')
+  )
 }
 
 function isNormalizedModuleCollectionProjection(value: unknown): boolean {

@@ -259,6 +259,59 @@ describe('API-backed resource invalidation', () => {
     })
   })
 
+  it('reads only loadouts for favorite events and adds sidebar settings for touches', async () => {
+    seedResources(5)
+    const loadouts = [
+      {
+        id: 'loadout-a',
+        name: 'Loadout A',
+        lastUsed: 200,
+        favorite: true,
+        characterIds: [],
+        modules: [],
+        globalVariables: {},
+        presetName: '',
+        modelPresetId: '',
+        modelPresetName: '',
+        promptPresetId: '',
+        promptPresetName: '',
+        personaId: '',
+      },
+    ]
+    api.collection.mockImplementation(async (name: string) => ({
+      status: 'ok',
+      revision: 7,
+      collections: { [name]: loadouts },
+    }))
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      group: 'sidebar',
+      settings: { lastLoadedLoadoutName: 'Loadout A' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'loadout.favorited', revision: 6, resource: 'loadout', id: 'loadout-a' },
+        { appliedRevision: 5, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 6, scope: 'targeted' })
+    expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.settingsGroup).not.toHaveBeenCalled()
+
+    api.collection.mockClear()
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'loadout.touched', revision: 7, resource: 'loadout', id: 'loadout-a' },
+        { appliedRevision: 6, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 7, scope: 'targeted' })
+    expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
+    expect(api.settingsGroup).toHaveBeenCalledWith('sidebar', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+  })
+
   it('reads Hypa presets only for the cross-resource memory settings event', async () => {
     seedResources(1)
     api.settingsGroup

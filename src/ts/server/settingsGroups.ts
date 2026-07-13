@@ -159,6 +159,7 @@ export const SERVER_SETTINGS_GROUP_BY_KEY: Record<string, SettingsGroup> = {
   keiServerURL: 'advanced',
   koboldURL: 'providers',
   language: 'language',
+  lastLoadedLoadoutName: 'sidebar',
   legacyMediaFindings: 'media',
   legacyTranslation: 'language',
   lineHeight: 'display',

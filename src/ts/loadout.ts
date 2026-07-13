@@ -20,6 +20,12 @@ import {
   type ServerCommandResult,
 } from './server/commands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import {
+  captureCollectionProjectionEpoch,
+  captureSettingsGroupProjectionEpoch,
+  hasCollectionProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
+} from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
 import {
@@ -99,6 +105,7 @@ interface LoadoutFavoriteRollback {
   loadoutId: string
   previousFavorite: boolean
   attemptedFavorite: boolean
+  loadoutsProjectionEpoch: number
 }
 
 interface LoadoutTouchRollback {
@@ -107,6 +114,8 @@ interface LoadoutTouchRollback {
   attempted: Partial<Pick<Loadout, 'lastUsed' | 'characterIds'>>
   previousLastLoadedLoadoutName: string
   attemptedLastLoadedLoadoutName: string
+  loadoutsProjectionEpoch: number
+  settingsProjectionEpoch: number
 }
 
 interface LoadoutModuleMembershipRollback {
@@ -397,6 +406,7 @@ function rollbackDeletedLoadout(previousLoadout: Loadout, previousIndex: number)
 }
 
 function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
+  if (hasCollectionProjectionEpochChanged('loadouts', rollback.loadoutsProjectionEpoch)) return
   withTrustedResourceWrite(() => {
     const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
     if (!loadout) return
@@ -410,9 +420,14 @@ function rollbackLoadoutFavorite(rollback: LoadoutFavoriteRollback): void {
 }
 
 function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
+  const rollbackCollection = !hasCollectionProjectionEpochChanged('loadouts', rollback.loadoutsProjectionEpoch)
+  const rollbackSettings = !hasSettingsGroupProjectionEpochChanged('sidebar', rollback.settingsProjectionEpoch)
+  if (!rollbackCollection && !rollbackSettings) return
   withTrustedResourceWrite(() => {
-    const loadout = getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
-    if (loadout) {
+    const loadout = rollbackCollection
+      ? getDatabase().loadouts?.find((item) => item.id === rollback.loadoutId)
+      : undefined
+    if (loadout && rollbackCollection) {
       applyAttemptedFieldRollback({
         target: loadout as unknown as Record<string, unknown>,
         previous: rollback.previous as Record<string, unknown>,
@@ -421,7 +436,10 @@ function rollbackLoadoutTouch(rollback: LoadoutTouchRollback): void {
       })
     }
 
-    if (snapshotJson(getDatabase().lastLoadedLoadoutName) === snapshotJson(rollback.attemptedLastLoadedLoadoutName)) {
+    if (
+      rollbackSettings &&
+      snapshotJson(getDatabase().lastLoadedLoadoutName) === snapshotJson(rollback.attemptedLastLoadedLoadoutName)
+    ) {
       getDatabase().lastLoadedLoadoutName = rollback.previousLastLoadedLoadoutName
     }
   })
@@ -739,6 +757,8 @@ function dispatchFavoriteLoadout(rollback: LoadoutFavoriteRollback): void {
         baseRevision,
         loadoutId: rollback.loadoutId,
         favorite: rollback.attemptedFavorite,
+        acknowledgeOptimistic: true,
+        loadoutsProjectionEpoch: rollback.loadoutsProjectionEpoch,
       }),
     () => rollbackLoadoutFavorite(rollback),
   )
@@ -750,6 +770,7 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
 
   const previousFavorite = loadout.favorite
   const favorite = !loadout.favorite
+  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
   withTrustedResourceWrite(() => {
     const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadoutId)
     if (!targetLoadout) return
@@ -759,6 +780,7 @@ export function toggleLoadoutFavorite(loadoutId: string): boolean {
     loadoutId,
     previousFavorite,
     attemptedFavorite: favorite,
+    loadoutsProjectionEpoch,
   })
   return true
 }
@@ -1026,6 +1048,8 @@ export function applyLoadout(
   const currentCharacterId = getCurrentCharacter()?.chaId
   const lastUsed = Date.now()
   const previousLoadout = getDatabase().loadouts?.find((item) => item.id === loadout.id)
+  const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
+  const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('sidebar')
   const touchRollback: LoadoutTouchRollback = {
     loadoutId: loadout.id,
     previous: previousLoadout
@@ -1036,9 +1060,12 @@ export function applyLoadout(
       : {},
     attempted: {},
     previousLastLoadedLoadoutName: getDatabase().lastLoadedLoadoutName,
-    attemptedLastLoadedLoadoutName: loadout.name,
+    attemptedLastLoadedLoadoutName: previousLoadout?.name ?? loadout.name,
+    loadoutsProjectionEpoch,
+    settingsProjectionEpoch,
   }
   let addedCurrentCharacter = false
+  let touchedLiveLoadoutName: string | null = null
   let selectedLegacyPresetId: string | null = null
   let selectedModelPresetId: string | null = null
   let selectedPromptPresetId: string | null = null
@@ -1055,7 +1082,8 @@ export function applyLoadout(
   }
 
   withTrustedResourceWrite(() => {
-    const targetLoadout = getDatabase().loadouts.find((item) => item.id === loadout.id) ?? loadout
+    const liveTargetLoadout = getDatabase().loadouts.find((item) => item.id === loadout.id)
+    const targetLoadout = liveTargetLoadout ?? loadout
     targetLoadout.lastUsed = lastUsed
     if (currentCharacterId && !targetLoadout.characterIds.includes(currentCharacterId)) {
       targetLoadout.characterIds.push(currentCharacterId)
@@ -1066,6 +1094,10 @@ export function applyLoadout(
         lastUsed: targetLoadout.lastUsed,
         characterIds: cloneJsonValue(targetLoadout.characterIds ?? []),
       }
+    }
+    if (liveTargetLoadout && nonBlankId(liveTargetLoadout.name)) {
+      touchedLiveLoadoutName = liveTargetLoadout.name
+      touchRollback.attemptedLastLoadedLoadoutName = liveTargetLoadout.name
     }
 
     if (presetIndex >= 0) {
@@ -1163,7 +1195,7 @@ export function applyLoadout(
       getDatabase().globalChatVariables = cloneJsonValue(nextGlobalChatVariables)
     }
 
-    getDatabase().lastLoadedLoadoutName = loadout.name
+    getDatabase().lastLoadedLoadoutName = touchedLiveLoadoutName ?? loadout.name
   })
 
   const steps: LoadoutApplyStep[] = []
@@ -1266,6 +1298,10 @@ export function applyLoadout(
           loadoutId: loadout.id,
           lastUsed,
           characterId: addedCurrentCharacter ? currentCharacterId : undefined,
+          acknowledgeOptimistic: touchedLiveLoadoutName !== null,
+          loadoutsProjectionEpoch,
+          settingsProjectionEpoch,
+          loadedName: touchedLiveLoadoutName ?? undefined,
         }),
       () => rollbackLoadoutTouch(touchRollback),
     ),
