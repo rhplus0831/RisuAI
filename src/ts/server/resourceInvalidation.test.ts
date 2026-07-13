@@ -441,6 +441,47 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase().enabledModules).toEqual(['module-a'])
   })
 
+  it('reads only enabled modules alongside the required module deletion cascade', async () => {
+    seedResources(1)
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      group: 'modules',
+      settings: { enabledModules: [] },
+    })
+    api.collection.mockImplementation(async (name: string) => ({
+      status: 'ok',
+      revision: 2,
+      collections: { [name]: [] },
+    }))
+    api.characters.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      characters: [metadataCharacter('char-a', 'Ada'), metadataCharacter('char-b', 'Bea')],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    })
+
+    const deletedEvent: CommandEvent = {
+      type: 'module.deleted',
+      revision: 2,
+      resource: 'module',
+      id: 'module-a',
+    }
+    await expect(refreshInvalidatedServerResources(deletedEvent, { appliedRevision: 1, hooks })).resolves.toEqual({
+      status: 'ok',
+      revision: 2,
+      scope: 'targeted',
+    })
+
+    expect(api.settingsGroup).toHaveBeenCalledWith('modules', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collection).toHaveBeenCalledTimes(2)
+    expect(api.collection).toHaveBeenCalledWith('modules', undefined)
+    expect(api.collection).toHaveBeenCalledWith('loadouts', undefined)
+    expect(api.characters).toHaveBeenCalledWith(undefined)
+  })
+
   it('reads only the resource slices changed by each preset selection shape', async () => {
     seedResources(1)
     api.collection
