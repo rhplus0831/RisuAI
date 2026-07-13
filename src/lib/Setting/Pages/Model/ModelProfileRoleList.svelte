@@ -13,6 +13,7 @@
   import { getModelInfo } from 'src/ts/model/modellist'
   import { ProviderNames } from 'src/ts/model/types'
   import {
+    canUseServerCommands,
     runServerCommandSequence,
     updateModelPresetCommand,
     updateModelRoleProfilesCommand,
@@ -208,6 +209,10 @@
 
   async function applyDraft(): Promise<void> {
     if (!canApply) return
+    if (!canUseServerCommands()) {
+      commandError = commandErrorMessage({ status: 'unavailable' })
+      return
+    }
     applying = true
     commandError = ''
     const bindings = cloneJsonValue(changedBindings)

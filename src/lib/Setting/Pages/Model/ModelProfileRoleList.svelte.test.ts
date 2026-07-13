@@ -2,6 +2,7 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandSpies = vi.hoisted(() => ({
+  canUseServerCommands: vi.fn(),
   runServerCommandSequence: vi.fn(),
   updateModelPresetCommand: vi.fn(),
   updateModelRoleProfilesCommand: vi.fn(),
@@ -13,6 +14,7 @@ const storeMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/ts/server/commands', () => ({
+  canUseServerCommands: commandSpies.canUseServerCommands,
   runServerCommandSequence: commandSpies.runServerCommandSequence,
   subscribeServerCommandLocalEffectApplied: vi.fn(),
   updateModelPresetCommand: commandSpies.updateModelPresetCommand,
@@ -92,6 +94,8 @@ beforeEach(() => {
     modelPresetsId: 0,
   } as any)
   commandSpies.runServerCommandSequence.mockReset()
+  commandSpies.canUseServerCommands.mockReset()
+  commandSpies.canUseServerCommands.mockReturnValue(true)
   commandSpies.updateModelPresetCommand.mockReset()
   commandSpies.updateModelRoleProfilesCommand.mockReset()
   commandSpies.runServerCommandSequence.mockImplementation(
@@ -116,6 +120,23 @@ afterEach(() => {
 })
 
 describe('ModelProfileRoleList', () => {
+  it('reports an unavailable command transport without treating it as success', async () => {
+    commandSpies.canUseServerCommands.mockReturnValue(false)
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    const [chatMainModeSelect] = Array.from(target.querySelectorAll('select'))
+    if (!(chatMainModeSelect instanceof HTMLSelectElement)) throw new Error('Chat main binding mode select not found')
+    setSelectValue(chatMainModeSelect, 'profile')
+    await tick()
+
+    buttonByText(language.modelProfiles.apply).click()
+    await tick()
+
+    expect(target.textContent).toContain(language.modelProfiles.commandUnavailable)
+    expect(commandSpies.runServerCommandSequence).not.toHaveBeenCalled()
+  })
+
   it('patches the model preset selected when Apply was clicked after role bindings save', async () => {
     const roleCommand = createDeferred<{ status: 'ok' }>()
     commandSpies.updateModelRoleProfilesCommand.mockReturnValue(roleCommand.promise)
