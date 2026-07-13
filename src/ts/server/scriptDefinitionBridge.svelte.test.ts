@@ -20,7 +20,7 @@ const recorded = vi.hoisted(() => ({
     acknowledgeOptimistic: unknown
   }>,
   compactDefinitionCalls: [] as Array<{
-    scope: 'character' | 'module'
+    scope: 'global' | 'character' | 'module'
     kind: 'scripts' | 'triggers'
     targetId: string
     mutation: unknown
@@ -28,7 +28,7 @@ const recorded = vi.hoisted(() => ({
     keepalive: unknown
   }>,
   fullDefinitionCalls: [] as Array<{
-    scope: 'character' | 'module'
+    scope: 'global' | 'character' | 'module'
     kind: 'scripts' | 'triggers'
     targetId: string
   }>,
@@ -41,6 +41,7 @@ const recorded = vi.hoisted(() => ({
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const characterRowProjectionState = vi.hoisted(() => ({ epoch: 0 }))
 const moduleCollectionProjectionState = vi.hoisted(() => ({ epoch: 0 }))
+const settingsGroupProjectionState = vi.hoisted(() => ({ epoch: 0 }))
 
 vi.mock('../stores.svelte', async () => {
   const { writable } = await import('svelte/store')
@@ -59,6 +60,24 @@ vi.mock('./commands', () => {
 
   return {
     canUseServerCommands: () => true,
+    subscribeServerCommandLocalEffectApplied: () => () => {},
+    patchSettingsGroup: async (args: Record<string, unknown>) => {
+      const { optimisticProjectionEpoch: _optimisticProjectionEpoch, ...built } = args
+      recorded.fullDefinitionCalls.push({ scope: 'global', kind: 'scripts', targetId: 'globalscript' })
+      return resolveCommand({ kind: 'replaceGlobalScripts', ...built })
+    },
+    mutateGlobalScriptsCommand: async (args: Record<string, unknown>, _signal: unknown, keepalive: unknown) => {
+      const { expectedScripts, mutation, optimisticProjectionEpoch: _optimisticProjectionEpoch, ...built } = args
+      recorded.compactDefinitionCalls.push({
+        scope: 'global',
+        kind: 'scripts',
+        targetId: 'globalscript',
+        mutation,
+        expectedDefinitions: expectedScripts,
+        keepalive,
+      })
+      return resolveCommand({ kind: 'mutateGlobalScripts', ...built, scripts: expectedScripts })
+    },
     replaceCharacterScriptsCommand: async (
       args: Record<string, unknown>,
       _signal: unknown,
@@ -215,10 +234,18 @@ vi.mock('./resourceState.svelte', async (importActual) => {
       name === 'modules'
         ? moduleCollectionProjectionState.epoch !== epoch
         : actual.hasCollectionProjectionEpochChanged(name as never, epoch),
+    captureSettingsGroupProjectionEpoch: (group: string) =>
+      group === 'advanced'
+        ? settingsGroupProjectionState.epoch
+        : actual.captureSettingsGroupProjectionEpoch(group as never),
+    hasSettingsGroupProjectionEpochChanged: (group: string, epoch: number) =>
+      group === 'advanced'
+        ? settingsGroupProjectionState.epoch !== epoch
+        : actual.hasSettingsGroupProjectionEpochChanged(group as never, epoch),
   }
 })
 
-import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
+import { getDatabase, setDatabaseLite, type customscript, type Database } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
 import {
@@ -233,6 +260,7 @@ import {
   dispatchReplaceCharacterTriggers,
   dispatchReplaceModuleScripts,
   dispatchReplaceModuleTriggers,
+  ensureClientScriptDefinitionIds,
   flushPendingServerBackedScriptDefinitionPatches,
   markDirtyScriptDefinitionRowFields,
   mergeScriptDefinitionProjectionRows,
@@ -331,6 +359,7 @@ function triggerWithoutId(comment: string): {
 
 function setupScriptDefinitions(): void {
   testDatabaseSetter.database = {
+    globalscript: [script('global-script-1', 'initial global')],
     characters: [
       {
         chaId: 'char-1',
@@ -537,6 +566,7 @@ beforeEach(() => {
   resourceGuardState.epoch = 0
   characterRowProjectionState.epoch = 0
   moduleCollectionProjectionState.epoch = 0
+  settingsGroupProjectionState.epoch = 0
   recorded.commands.length = 0
   recorded.characterDefinitionCalls.length = 0
   recorded.moduleDefinitionCalls.length = 0
@@ -552,6 +582,21 @@ afterEach(async () => {
 })
 
 describe('P1 script definition watcher purity', () => {
+  it('preserves the first stable script id and repairs missing or duplicate ids', () => {
+    const rows: customscript[] = [
+      script('shared-id', 'first'),
+      script('shared-id', 'duplicate'),
+      scriptWithoutId('missing'),
+    ]
+
+    ensureClientScriptDefinitionIds(rows)
+
+    expect(rows[0].id).toBe('shared-id')
+    expect(rows[1].id).toEqual(expect.any(String))
+    expect(rows[2].id).toEqual(expect.any(String))
+    expect(new Set(rows.map((row) => row.id)).size).toBe(3)
+  })
+
   it('state snapshots clone malformed script data as-is without assigning ids or stub arrays', () => {
     testDatabaseSetter.database = {
       characters: [
@@ -1094,6 +1139,98 @@ describe('module script definition projection fencing', () => {
 })
 
 describe('compact script definition mutations', () => {
+  it('sends a compact field mutation for watched global scripts', async () => {
+    setupScriptDefinitions()
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY, scope: { kind: 'globalScripts' } })
+    flushSync()
+
+    getDatabase().globalscript = [script('global-script-1', 'edited global')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toEqual([
+      {
+        scope: 'global',
+        kind: 'scripts',
+        targetId: 'globalscript',
+        mutation: {
+          op: 'update',
+          id: 'global-script-1',
+          patch: { out: 'edited global' },
+          deleteKeys: [],
+        },
+        expectedDefinitions: [script('global-script-1', 'edited global')],
+        keepalive: undefined,
+      },
+    ])
+    expect(recorded.fullDefinitionCalls).toEqual([])
+    stop()
+  })
+
+  it('uses one full replacement to establish ids for legacy global scripts', async () => {
+    testDatabaseSetter.database = {
+      globalscript: [scriptWithoutId('legacy')],
+      characters: [],
+      modules: [],
+    }
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY, scope: { kind: 'globalScripts' } })
+    flushSync()
+
+    getDatabase().globalscript = [script('normalized-global', 'edited legacy')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toEqual([])
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'global', kind: 'scripts', targetId: 'globalscript' }])
+    expect(recorded.commands[0].built).toMatchObject({
+      kind: 'replaceGlobalScripts',
+      group: 'advanced',
+      patch: { globalscript: [script('normalized-global', 'edited legacy')] },
+    })
+    stop()
+  })
+
+  it('forces a full global-script replacement after an earlier compact write fails', async () => {
+    setupScriptDefinitions()
+    const firstResult = createDeferred<{ status: 'error'; error: string }>()
+    recorded.commandResults.push(firstResult.promise)
+    const stop = watchServerBackedScriptDefinitions({ delayMs: DELAY, scope: { kind: 'globalScripts' } })
+    flushSync()
+
+    getDatabase().globalscript = [script('global-script-1', 'first edit')]
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    getDatabase().globalscript = [
+      {
+        ...script('global-script-1', 'first edit'),
+        comment: 'later edit',
+      },
+    ]
+    flushSync()
+    firstResult.resolve({ status: 'error', error: 'failed' })
+    await drainDefinitionCommandMicrotasks()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await drainDefinitionCommandMicrotasks()
+
+    expect(recorded.compactDefinitionCalls).toHaveLength(1)
+    expect(recorded.fullDefinitionCalls).toEqual([{ scope: 'global', kind: 'scripts', targetId: 'globalscript' }])
+    expect(recorded.commands.at(-1)?.built).toMatchObject({
+      kind: 'replaceGlobalScripts',
+      patch: {
+        globalscript: [
+          {
+            ...script('global-script-1', 'first edit'),
+            comment: 'later edit',
+          },
+        ],
+      },
+    })
+    stop()
+  })
+
   it('classifies one sparse mutation for each definition scope', async () => {
     setupScriptDefinitions()
     getDatabase().modules[0].trigger = [

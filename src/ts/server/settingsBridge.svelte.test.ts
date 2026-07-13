@@ -826,6 +826,30 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
+  it('supports a normalized draft whose persistence is owned by a specialized bridge', async () => {
+    setupSettings({ globalscript: [{ in: 'old', out: '', type: 'editinput' }] })
+    let draft: ServerBackedSettingDraft<Array<Record<string, string>>> | undefined
+    const stop = $effect.root(() => {
+      draft = createServerBackedSettingDraft('globalscript', [], {
+        delayMs: DELAY,
+        dispatch: false,
+        normalizeDraft: (scripts) => scripts.map((script) => ({ id: script.id ?? 'generated-id', ...script })),
+      })
+    })
+    await flushAndSettle()
+
+    expect(draft?.value).toEqual([{ id: 'generated-id', in: 'old', out: '', type: 'editinput' }])
+    draft!.value = [{ id: 'generated-id', in: 'edited', out: '', type: 'editinput' }]
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(testDatabaseState.db.globalscript).toEqual([
+      { id: 'generated-id', in: 'edited', out: '', type: 'editinput' },
+    ])
+    expect(recorded.patches).toEqual([])
+    stop()
+  })
+
   it('reasserts a dirty setting draft value to testDatabaseState after a stale projection overwrites it', async () => {
     setupSettings({
       globalscript: [{ id: 'script-a', in: 'server old', out: '', type: 'editinput' }],

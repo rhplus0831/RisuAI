@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import { PROMPT_SETTINGS_KEYS } from '../promptSettings'
 import {
   serializePersonaCollectionDigestInput,
   serializePersonaIdsDigestInput,
   serializePersonaProfileDigestInput,
 } from '../personaMutationCertificate'
+import { serializeScriptDefinitionCollectionDigestInput } from './scriptDefinitionMutations'
 
 vi.mock('../platform', () => ({ isFastifyServer: true }))
 
@@ -71,6 +73,7 @@ import {
   peekCachedServerCommandRevision,
   importPresetCommand,
   mutateCharacterScriptsCommand,
+  mutateGlobalScriptsCommand,
   mutateCharacterTriggersCommand,
   mutateModuleScriptsCommand,
   mutateModuleTriggersCommand,
@@ -7049,6 +7052,65 @@ describe('server command API adapter', () => {
         url: '/api/v1/commands/modules/mod-a/triggers',
         method: 'PUT',
         body: { baseRevision: 4, triggers: [trigger] },
+      },
+    ])
+  })
+
+  it('keeps the final global-script array client-only for a compact mutation', async () => {
+    const expectedScripts = [
+      { id: 'script-a', comment: 'Edited', in: 'small', out: 'x'.repeat(64 * 1024), type: 'editinput' },
+    ]
+    const expectedDigest = createHash('sha256')
+      .update(serializeScriptDefinitionCollectionDigestInput(expectedScripts), 'utf8')
+      .digest('hex')
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 12,
+      event: {
+        type: 'settings.updated',
+        revision: 12,
+        resource: 'settings',
+        id: 'advanced',
+      },
+      group: 'advanced',
+      key: 'globalscript',
+      certificate: 'global-script-mutation-v1',
+      operation: 'update',
+      globalScriptsDigest: expectedDigest,
+      acknowledgedKeys: ['globalscript'],
+      settings: {},
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await mutateGlobalScriptsCommand({
+      baseRevision: 11,
+      mutation: { op: 'update', id: 'script-a', patch: { comment: 'Edited' }, deleteKeys: [] },
+      expectedScripts,
+      optimisticProjectionEpoch: 7,
+    })
+
+    expect(commandFetch.calls).toEqual([
+      {
+        url: '/api/v1/commands/settings/advanced/global-scripts',
+        method: 'PATCH',
+        authHeader: 'test-auth-token',
+        contentType: 'application/json',
+        body: {
+          baseRevision: 11,
+          mutation: { op: 'update', id: 'script-a', patch: { comment: 'Edited' }, deleteKeys: [] },
+        },
+      },
+    ])
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'advanced',
+        attemptedPatch: { globalscript: expectedScripts },
+        settings: { globalscript: expectedScripts },
+        settingsProjectionEpoch: 7,
       },
     ])
   })

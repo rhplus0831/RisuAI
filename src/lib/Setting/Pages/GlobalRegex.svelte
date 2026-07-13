@@ -7,8 +7,18 @@
   import { exportRegex, importRegex } from 'src/ts/process/scripts'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import {
+    ensureClientScriptDefinitionIds,
+    watchServerBackedScriptDefinitions,
+  } from 'src/ts/server/scriptDefinitionBridge.svelte'
+  import { onDestroy } from 'svelte'
 
-  const globalScriptDraft = createServerBackedSettingDraft('globalscript', getDatabase().globalscript)
+  const globalScriptDraft = createServerBackedSettingDraft('globalscript', getDatabase().globalscript, {
+    dispatch: false,
+    normalizeDraft: ensureClientScriptDefinitionIds,
+  })
+  const stopWatchingGlobalScripts = watchServerBackedScriptDefinitions({ scope: { kind: 'globalScripts' } })
+  onDestroy(stopWatchingGlobalScripts)
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">
@@ -20,7 +30,7 @@
   <button
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={() => {
-      globalScriptDraft.value = [
+      globalScriptDraft.value = ensureClientScriptDefinitionIds([
         ...globalScriptDraft.value,
         {
           comment: '',
@@ -28,7 +38,7 @@
           out: '',
           type: 'editinput',
         },
-      ]
+      ])
     }}><PlusIcon /></button>
   <button
     class="font-medium cursor-pointer hover:text-green-500"
@@ -38,6 +48,6 @@
   <button
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={async () => {
-      globalScriptDraft.value = await importRegex(globalScriptDraft.value)
+      globalScriptDraft.value = ensureClientScriptDefinitionIds(await importRegex(globalScriptDraft.value))
     }}><HardDriveUploadIcon /></button>
 </div>

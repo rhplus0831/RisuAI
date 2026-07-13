@@ -26,7 +26,10 @@ import type {
   ModelProfileRecordRuntimeOptions,
   ModelRoleProfileBinding,
 } from '../model/modelProfileRecords'
-import type { ScriptDefinitionCollectionMutation } from './scriptDefinitionMutations'
+import {
+  serializeScriptDefinitionCollectionDigestInput,
+  type ScriptDefinitionCollectionMutation,
+} from './scriptDefinitionMutations'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import { isCanonicalLoadout } from './loadoutCanonical'
 import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup } from './settingsGroups'
@@ -1264,6 +1267,12 @@ export interface ReorderModuleLorebookEntriesCommandInput extends LorebookComman
 
 export interface ScriptDefinitionCommandInput {
   baseRevision: number
+}
+
+export interface MutateGlobalScriptsCommandInput extends ScriptDefinitionCommandInput {
+  mutation: ScriptDefinitionCollectionMutation
+  expectedScripts: ScriptDefinitionSnapshot[]
+  optimisticProjectionEpoch: number
 }
 
 export interface ReplaceCharacterScriptsCommandInput extends ScriptDefinitionCommandInput {
@@ -4015,6 +4024,34 @@ export async function reorderModuleLorebookEntriesCommand(
             hasCanonicalPayload: isUniqueStringArray(input.entryIds),
           })
       : undefined,
+  })
+}
+
+export async function mutateGlobalScriptsCommand(
+  input: MutateGlobalScriptsCommandInput,
+  signal?: AbortSignal | null,
+  keepalive = false,
+): Promise<
+  ServerCommandResult<{
+    group: SettingsGroup
+    key: string
+    certificate?: string
+    operation?: string
+    globalScriptsDigest?: string
+    acknowledgedKeys?: string[]
+    settings?: Record<string, unknown>
+  }>
+> {
+  const expectedDigest = await sha256HexUtf8(serializeScriptDefinitionCollectionDigestInput(input.expectedScripts))
+  return requestCommandJson('/settings/advanced/global-scripts', {
+    method: 'PATCH',
+    body: {
+      baseRevision: input.baseRevision,
+      mutation: input.mutation,
+    },
+    signal,
+    keepalive,
+    readLocalEffect: (body, event) => readGlobalScriptMutationLocalEffect(body, event, input, expectedDigest),
   })
 }
 
@@ -6796,6 +6833,33 @@ function isCanonicalModuleCreate(value: ModuleSnapshot): boolean {
     typeof value.name === 'string' &&
     value.name.trim() !== '' &&
     typeof value.description === 'string'
+  )
+}
+
+function readGlobalScriptMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: MutateGlobalScriptsCommandInput,
+  expectedDigest: string,
+): SettingsPatchLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  if (
+    record.certificate !== 'global-script-mutation-v1' ||
+    record.group !== 'advanced' ||
+    record.key !== 'globalscript' ||
+    record.operation !== input.mutation.op ||
+    record.globalScriptsDigest !== expectedDigest ||
+    !isUniqueDefinitionArray(input.expectedScripts)
+  ) {
+    return undefined
+  }
+  return readSettingsPatchLocalEffect(
+    body,
+    event,
+    'advanced',
+    { globalscript: input.expectedScripts },
+    input.optimisticProjectionEpoch,
   )
 }
 

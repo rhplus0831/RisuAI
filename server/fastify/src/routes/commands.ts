@@ -213,6 +213,7 @@ import {
   readDefinitionCollectionMutation,
   readScriptDefinitions,
   readTriggerDefinitions,
+  scriptDefinitionCollectionDigest,
 } from '../commands/scriptDefinitions.js'
 import {
   createModuleRecord,
@@ -1777,6 +1778,55 @@ export function registerCommandRoutes(
                     canonicalDeletedKeys: receipt.canonicalDeletedKeys,
                   }
                 : {}),
+            },
+          }
+        },
+      })
+
+      return { revision: result.revision, event: result.event, ...result.extra }
+    } catch (err) {
+      return sendCommandError(reply, err)
+    }
+  })
+
+  app.patch('/api/v1/commands/settings/advanced/global-scripts', async (req, reply) => {
+    if (!(await requireAuth(authState, req, reply))) return
+
+    try {
+      const body = readScriptDefinitionMutationCommandBody(req.body ?? {})
+      const baseRevision = readBaseRevision(body)
+      const mutation = readDefinitionCollectionMutation(body.mutation)
+      const result = applyTargetedCommandMutation<{
+        group: 'advanced'
+        key: 'globalscript'
+        certificate: 'global-script-mutation-v1'
+        operation: typeof mutation.op
+        globalScriptsDigest: string
+        acknowledgedKeys: ['globalscript']
+        settings: Record<string, never>
+      }>({
+        db,
+        dataDir,
+        baseRevision,
+        ...commandMutationContext(req, eventSink),
+        mutationPath: TARGETED_MUTATION_PATHS.settings,
+        settingsScopedRead: true,
+        mutate(database, innerDb) {
+          const target = database as Record<string, unknown>
+          const scripts = applyScriptDefinitionCollectionMutation(target.globalscript, mutation, 'globalscript')
+          validateSettingsAssetRefs(db, { globalscript: scripts })
+          target.globalscript = scripts
+          writeSettingsOnly(innerDb, extractSettings(target))
+          return {
+            event: { ...COMMAND_EVENT_CATALOG.settingsUpdated, id: 'advanced' },
+            extra: {
+              group: 'advanced',
+              key: 'globalscript',
+              certificate: 'global-script-mutation-v1',
+              operation: mutation.op,
+              globalScriptsDigest: scriptDefinitionCollectionDigest(scripts),
+              acknowledgedKeys: ['globalscript'],
+              settings: {},
             },
           }
         },

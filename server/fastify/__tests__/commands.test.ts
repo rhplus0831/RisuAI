@@ -26,6 +26,7 @@ import {
   serializePersonaProfileDigestInput,
   type PersonaProfileDigestValue,
 } from '../../../src/ts/personaMutationCertificate.js'
+import { serializeScriptDefinitionCollectionDigestInput } from '../../../src/ts/server/scriptDefinitionMutations.js'
 import { installResourceDatabaseBootstrapAdapter } from './helpers/resourceDatabase.js'
 
 const subtle = webcrypto.subtle
@@ -1242,6 +1243,72 @@ describe('Phase 9-2a scalar settings groups', () => {
       ],
       hotkeys: [{ key: 'a', ctrl: true, action: 'home' }],
     })
+  })
+
+  it('applies compact global-script mutations without echoing the script corpus', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const largeBody = 'x'.repeat(64 * 1024)
+    const scripts = [
+      { id: 'script-a', comment: 'A', in: 'a', out: largeBody, type: 'editinput' },
+      { id: 'script-b', comment: 'B', in: 'b', out: largeBody, type: 'editoutput' },
+    ]
+    const revision = await importDatabase(harness.app, assertion, { globalscript: scripts })
+    const expectedScripts = [{ ...scripts[0], comment: 'Edited A' }, scripts[1]]
+
+    const updated = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/advanced/global-scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        mutation: {
+          op: 'update',
+          id: 'script-a',
+          patch: { comment: 'Edited A' },
+          deleteKeys: [],
+        },
+      },
+    })
+
+    expect(updated.statusCode).toBe(200)
+    expect(updated.json()).toEqual({
+      revision: revision + 1,
+      event: {
+        type: 'settings.updated',
+        revision: revision + 1,
+        resource: 'settings',
+        id: 'advanced',
+      },
+      group: 'advanced',
+      key: 'globalscript',
+      certificate: 'global-script-mutation-v1',
+      operation: 'update',
+      globalScriptsDigest: createHash('sha256')
+        .update(serializeScriptDefinitionCollectionDigestInput(expectedScripts), 'utf8')
+        .digest('hex'),
+      acknowledgedKeys: ['globalscript'],
+      settings: {},
+    })
+    expect(updated.body).not.toContain(largeBody)
+
+    const bootstrap = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(bootstrap.json().database.globalscript).toEqual(expectedScripts)
+
+    const unknown = await harness.app.inject({
+      method: 'PATCH',
+      url: '/api/v1/commands/settings/advanced/global-scripts',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision + 1,
+        mutation: { op: 'delete', id: 'missing-script' },
+      },
+    })
+    expect(unknown.statusCode).toBe(404)
+    expect(unknown.json()).toEqual({ error: 'Script definition not found: missing-script' })
   })
 
   it('rejects malformed custom sidebar setting rows before persistence', async () => {

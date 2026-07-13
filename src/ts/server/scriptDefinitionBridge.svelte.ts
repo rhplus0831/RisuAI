@@ -5,10 +5,12 @@ import { type Database, type character, type customscript, type triggerscript } 
 import { selectedCharID } from '../stores.svelte'
 import {
   canUseServerCommands,
+  mutateGlobalScriptsCommand,
   mutateCharacterScriptsCommand,
   mutateCharacterTriggersCommand,
   mutateModuleScriptsCommand,
   mutateModuleTriggersCommand,
+  patchSettingsGroup,
   replaceCharacterScriptsCommand,
   replaceCharacterTriggersCommand,
   replaceModuleScriptsCommand,
@@ -23,9 +25,11 @@ import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourc
 import {
   captureCharacterRowProjectionEpoch,
   captureCollectionProjectionEpoch,
+  captureSettingsGroupProjectionEpoch,
   getResourceDatabase as getDatabase,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
+  hasSettingsGroupProjectionEpochChanged,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
 import { classifyScriptDefinitionMutation, type ScriptDefinitionCollectionMutation } from './scriptDefinitionMutations'
@@ -43,12 +47,14 @@ export interface ScriptDefinitionStateSnapshot {
  * field restores to `[]`).
  */
 export type ScopedScriptDefinitionRollback =
+  | { kind: 'globalScripts'; scripts: customscript[]; hadScriptsField?: boolean }
   | { kind: 'characterScripts'; characterId: string; scripts: customscript[]; hadScriptsField?: boolean }
   | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[]; hadTriggersField?: boolean }
   | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
   | { kind: 'moduleTriggers'; moduleId: string; triggers: triggerscript[] }
 
 export type ScopedScriptDefinitionAttempt =
+  | { kind: 'globalScripts'; scripts: customscript[] }
   | { kind: 'characterScripts'; characterId: string; scripts: customscript[] }
   | { kind: 'characterTriggers'; characterId: string; triggers: triggerscript[] }
   | { kind: 'moduleScripts'; moduleId: string; scripts: customscript[] }
@@ -66,6 +72,7 @@ interface PendingCollectionReplacement {
   previous: ScriptDefinitionRollback
   characterRowProjection?: { characterId: string; epoch: number }
   moduleCollectionProjectionEpoch?: number
+  settingsGroupProjectionEpoch?: number
   timer: ReturnType<typeof setTimeout> | null
   // The command receives the coalesced rollback baseline at fire time rather than
   // closing over a per-dispatch value, so debounced same-key edits roll back to
@@ -79,6 +86,7 @@ interface PendingCollectionReplacement {
 type ScriptDefinitionProjectionFence =
   | { kind: 'character'; characterId: string; epoch: number }
   | { kind: 'modules'; epoch: number }
+  | { kind: 'settings'; group: 'advanced'; epoch: number }
 
 interface ScriptDefinitionMutationSafetyState {
   fence: ScriptDefinitionProjectionFence
@@ -134,11 +142,16 @@ let selectedCharMirror = $state(-1)
  * scripts/triggers on every reactive fire.
  *
  * - `all` (default): the original whole-DB scan (every character + every module).
+ * - `globalScripts`: only the Global Regex settings page.
  * - `character`: only the selected character's customscript/triggerscript (the
  *   CharConfig sidebar).
  * - `module`: only the open module's regex/trigger (the module `ModuleMenu`).
  */
-export type ScriptDefinitionWatchScope = { kind: 'all' } | { kind: 'character' } | { kind: 'module'; moduleId: string }
+export type ScriptDefinitionWatchScope =
+  | { kind: 'all' }
+  | { kind: 'globalScripts' }
+  | { kind: 'character' }
+  | { kind: 'module'; moduleId: string }
 
 export interface WatchServerBackedScriptDefinitionsOptions {
   delayMs?: number
@@ -301,17 +314,26 @@ export function applyModuleScriptDefinitionDraft(
 }
 
 export function ensureClientScriptDefinitionIds(scripts: customscript[]): customscript[] {
-  for (const script of scripts ?? []) {
-    script.id = typeof script.id === 'string' && script.id.trim() ? script.id : v4()
-  }
-  return scripts
+  return ensureUniqueClientDefinitionIds(scripts)
 }
 
 export function ensureClientTriggerDefinitionIds(triggers: triggerscript[]): triggerscript[] {
-  for (const trigger of triggers ?? []) {
-    trigger.id = typeof trigger.id === 'string' && trigger.id.trim() ? trigger.id : v4()
+  return ensureUniqueClientDefinitionIds(triggers)
+}
+
+function ensureUniqueClientDefinitionIds<T extends { id?: string }>(definitions: T[]): T[] {
+  const seen = new Set<string>()
+  for (const definition of definitions ?? []) {
+    let id = typeof definition.id === 'string' && definition.id.trim() ? definition.id : ''
+    if (!id || seen.has(id)) {
+      do {
+        id = v4()
+      } while (seen.has(id))
+      definition.id = id
+    }
+    seen.add(id)
   }
-  return triggers
+  return definitions
 }
 
 export function dispatchReplaceCharacterScripts(
@@ -577,6 +599,12 @@ function reconcileAdoptedStructuralScriptDefinitionSnapshots(
 }
 
 function dispatchWatchedReplacement(key: string, previousSnapshot: string, delayMs: number): void {
+  if (key === 'globalScripts') {
+    if (currentGlobalScriptsForWatchedCommand()) {
+      queueWatchedGlobalScripts(previousSnapshot, delayMs)
+    }
+    return
+  }
   if (key.startsWith('characterScripts:')) {
     const characterId = key.slice('characterScripts:'.length)
     if (currentCharacterScriptsForWatchedCommand(characterId)) {
@@ -618,6 +646,12 @@ export function collectScriptDefinitionCollectionSnapshots(
   scope: ScriptDefinitionWatchScope = { kind: 'all' },
 ): Map<string, string> {
   const snapshots = new Map<string, string>()
+
+  if (scope.kind === 'globalScripts') {
+    const scripts = getDatabase().globalscript
+    if (Array.isArray(scripts)) snapshots.set('globalScripts', snapshotJson(scripts))
+    return snapshots
+  }
 
   if (scope.kind === 'character') {
     // Track only the selected character's rows. Reading the $state mirror (not a
@@ -849,6 +883,7 @@ function queueReplacement(
   delay: number,
   characterRowProjection?: { characterId: string; epoch: number },
   moduleCollectionProjectionEpoch?: number,
+  settingsGroupProjectionEpoch?: number,
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
@@ -857,11 +892,16 @@ function queueReplacement(
     existing?.characterRowProjection?.characterId === characterRowProjection?.characterId &&
     existing?.characterRowProjection?.epoch === characterRowProjection?.epoch
   const sameModuleCollectionProjection = existing?.moduleCollectionProjectionEpoch === moduleCollectionProjectionEpoch
+  const sameSettingsGroupProjection = existing?.settingsGroupProjectionEpoch === settingsGroupProjectionEpoch
   const sameProjection = characterRowProjection
     ? sameCharacterRowProjection
     : moduleCollectionProjectionEpoch !== undefined
       ? sameModuleCollectionProjection
-      : existing?.characterRowProjection === undefined && existing?.moduleCollectionProjectionEpoch === undefined
+      : settingsGroupProjectionEpoch !== undefined
+        ? sameSettingsGroupProjection
+        : existing?.characterRowProjection === undefined &&
+          existing?.moduleCollectionProjectionEpoch === undefined &&
+          existing?.settingsGroupProjectionEpoch === undefined
 
   // Coalesced same-key edits keep the first dispatch's baseline, so a failed
   // final command rolls back to the pre-first-edit value rather than an
@@ -873,11 +913,42 @@ function queueReplacement(
     previous: existing && sameProjection ? existing.previous : previous,
     ...(characterRowProjection ? { characterRowProjection } : {}),
     ...(moduleCollectionProjectionEpoch !== undefined ? { moduleCollectionProjectionEpoch } : {}),
+    ...(settingsGroupProjectionEpoch !== undefined ? { settingsGroupProjectionEpoch } : {}),
     command,
     timer: null,
   }
   pending.timer = setTimeout(() => runPendingScriptDefinitionReplacement(key), delay)
   pendingReplacements.set(key, pending)
+}
+
+function queueWatchedGlobalScripts(previousSnapshot: string, delayMs: number): void {
+  const optimisticProjectionEpoch = captureSettingsGroupProjectionEpoch('advanced')
+  const previousScripts = parseSnapshotArray<customscript>(previousSnapshot)
+  queueReplacement(
+    'globalScripts',
+    {
+      kind: 'globalScripts',
+      scripts: previousScripts,
+      hadScriptsField: Object.prototype.hasOwnProperty.call(getDatabase(), 'globalscript'),
+    },
+    (rollback, options = {}) => {
+      const scripts = currentGlobalScriptsForWatchedCommand()
+      if (!scripts) return Promise.resolve({ status: 'unavailable' })
+      const scriptPayload = cloneJsonValue(scripts) as ScriptDefinitionSnapshot[]
+      const attemptedScripts = cloneJsonValue(scriptPayload) as customscript[]
+      return runGlobalScriptsDefinitionCommand(
+        scriptPayload,
+        attemptedScripts,
+        rollback,
+        optimisticProjectionEpoch,
+        options,
+      )
+    },
+    delayMs,
+    undefined,
+    undefined,
+    optimisticProjectionEpoch,
+  )
 }
 
 function queueWatchedCharacterScripts(characterId: string, previousSnapshot: string, delayMs: number): void {
@@ -992,6 +1063,48 @@ function queueWatchedModuleTriggers(moduleId: string, previousSnapshot: string, 
     undefined,
     optimisticCollectionEpoch,
   )
+}
+
+function runGlobalScriptsDefinitionCommand(
+  scripts: ScriptDefinitionSnapshot[],
+  attemptedScripts: customscript[],
+  rollback: ScriptDefinitionRollback,
+  optimisticProjectionEpoch: number,
+  options: ServerCommandTransportOptions,
+): Promise<ServerCommandResult<Record<string, unknown>>> {
+  return runDefinitionCollectionCommand({
+    key: 'globalScripts',
+    kind: 'globalScripts',
+    targetId: 'globalscript',
+    fence: { kind: 'settings', group: 'advanced', epoch: optimisticProjectionEpoch },
+    rollbackState: rollback,
+    finalDefinitions: scripts,
+    replaceCommand: (baseRevision) =>
+      patchSettingsGroup(
+        {
+          group: 'advanced',
+          baseRevision,
+          patch: { globalscript: scripts },
+          optimisticProjectionEpoch,
+        },
+        options.signal,
+        options.keepalive,
+      ),
+    mutateCommand: (baseRevision, mutation) =>
+      mutateGlobalScriptsCommand(
+        { baseRevision, mutation, expectedScripts: scripts, optimisticProjectionEpoch },
+        options.signal,
+        options.keepalive,
+      ),
+    rollback: () => {
+      if (hasSettingsGroupProjectionEpochChanged('advanced', optimisticProjectionEpoch)) return
+      rollbackServerBackedScriptDefinitions(rollback, {
+        kind: 'globalScripts',
+        scripts: attemptedScripts,
+      })
+    },
+    options,
+  })
 }
 
 function runCharacterScriptsDefinitionCommand(
@@ -1348,13 +1461,15 @@ function sameScriptDefinitionProjectionFence(
   right: ScriptDefinitionProjectionFence,
 ): boolean {
   if (left.kind !== right.kind || left.epoch !== right.epoch) return false
-  return left.kind === 'modules' || (right.kind === 'character' && left.characterId === right.characterId)
+  if (left.kind === 'modules') return true
+  if (left.kind === 'settings') return right.kind === 'settings' && left.group === right.group
+  return right.kind === 'character' && left.characterId === right.characterId
 }
 
 function hasScriptDefinitionProjectionFenceChanged(fence: ScriptDefinitionProjectionFence): boolean {
-  return fence.kind === 'character'
-    ? hasCharacterRowProjectionEpochChanged(fence.characterId, fence.epoch)
-    : hasCollectionProjectionEpochChanged('modules', fence.epoch)
+  if (fence.kind === 'character') return hasCharacterRowProjectionEpochChanged(fence.characterId, fence.epoch)
+  if (fence.kind === 'settings') return hasSettingsGroupProjectionEpochChanged(fence.group, fence.epoch)
+  return hasCollectionProjectionEpochChanged('modules', fence.epoch)
 }
 
 function readRollbackDefinitionBaseline(
@@ -1369,13 +1484,17 @@ function readRollbackDefinitionBaseline(
     return {
       rows: 'scripts' in rollback ? rollback.scripts : rollback.triggers,
       fieldPresent:
-        rollback.kind === 'characterScripts'
+        rollback.kind === 'globalScripts'
           ? rollback.hadScriptsField !== false
-          : rollback.kind === 'characterTriggers'
-            ? rollback.hadTriggersField !== false
-            : true,
+          : rollback.kind === 'characterScripts'
+            ? rollback.hadScriptsField !== false
+            : rollback.kind === 'characterTriggers'
+              ? rollback.hadTriggersField !== false
+              : true,
     }
   }
+
+  if (kind === 'globalScripts') return null
 
   if (kind === 'characterScripts' || kind === 'characterTriggers') {
     const character = rollback.characters.find((candidate) => candidate.chaId === targetId)
@@ -1412,6 +1531,10 @@ function rebaseScriptDefinitionRollback(
     if ('characterId' in rollback && rollback.characterId !== targetId) return
     if ('moduleId' in rollback && rollback.moduleId !== targetId) return
     switch (rollback.kind) {
+      case 'globalScripts':
+        rollback.scripts = rows as customscript[]
+        rollback.hadScriptsField = baseline.fieldPresent
+        return
       case 'characterScripts':
         rollback.scripts = rows as customscript[]
         rollback.hadScriptsField = baseline.fieldPresent
@@ -1428,6 +1551,8 @@ function rebaseScriptDefinitionRollback(
         return
     }
   }
+
+  if (kind === 'globalScripts') return
 
   if (kind === 'characterScripts' || kind === 'characterTriggers') {
     const character = rollback.characters.find((candidate) => candidate.chaId === targetId)
@@ -1463,9 +1588,12 @@ function scriptDefinitionPendingFence(pending: PendingCollectionReplacement): Sc
       epoch: pending.characterRowProjection.epoch,
     }
   }
-  return pending.moduleCollectionProjectionEpoch === undefined
+  if (pending.moduleCollectionProjectionEpoch !== undefined) {
+    return { kind: 'modules', epoch: pending.moduleCollectionProjectionEpoch }
+  }
+  return pending.settingsGroupProjectionEpoch === undefined
     ? null
-    : { kind: 'modules', epoch: pending.moduleCollectionProjectionEpoch }
+    : { kind: 'settings', group: 'advanced', epoch: pending.settingsGroupProjectionEpoch }
 }
 
 export function flushPendingServerBackedScriptDefinitionPatches(options: ServerCommandTransportOptions = {}): void {
@@ -1491,6 +1619,12 @@ function runPendingScriptDefinitionReplacement(key: string, options: ServerComma
   if (
     pending.moduleCollectionProjectionEpoch !== undefined &&
     hasCollectionProjectionEpochChanged('modules', pending.moduleCollectionProjectionEpoch)
+  ) {
+    return
+  }
+  if (
+    pending.settingsGroupProjectionEpoch !== undefined &&
+    hasSettingsGroupProjectionEpochChanged('advanced', pending.settingsGroupProjectionEpoch)
   ) {
     return
   }
@@ -1538,6 +1672,21 @@ function restoreScopedScriptDefinition(
 ): boolean {
   return withTrustedResourceWrite(() => {
     switch (rollback.kind) {
+      case 'globalScripts': {
+        if (
+          attempted &&
+          (attempted.kind !== 'globalScripts' ||
+            snapshotJson(getDatabase().globalscript) !== snapshotJson(attempted.scripts))
+        ) {
+          return false
+        }
+        if (rollback.hadScriptsField === false) {
+          delete (getDatabase() as Partial<Database>).globalscript
+        } else {
+          getDatabase().globalscript = cloneJsonValue(rollback.scripts)
+        }
+        return true
+      }
       case 'characterScripts': {
         const character = getDatabase().characters?.find((candidate) => candidate.chaId === rollback.characterId)
         if (!character) return false
@@ -1622,6 +1771,11 @@ function parseSnapshotArray<T>(snapshot: string): T[] {
   if (snapshot === '__undefined__') return []
   const parsed = JSON.parse(snapshot) as unknown
   return Array.isArray(parsed) ? (parsed as T[]) : []
+}
+
+function currentGlobalScriptsForWatchedCommand(): customscript[] | null {
+  const scripts = getDatabase().globalscript
+  return hasStableUniqueScriptDefinitionIds(scripts) ? scripts : null
 }
 
 function currentCharacterScriptsForWatchedCommand(characterId: string): customscript[] | null {

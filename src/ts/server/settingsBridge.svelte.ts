@@ -62,8 +62,10 @@ const sparseObjectSettingQueues = new Map<string, SparseObjectSettingQueue>()
 
 let suppressRollbackDispatch = false
 
-export interface WatchServerBackedSettingsOptions {
+export interface WatchServerBackedSettingsOptions<T = unknown> {
   delayMs?: number
+  dispatch?: boolean
+  normalizeDraft?: (value: T) => T
 }
 
 export interface ServerBackedSettingDraft<T> {
@@ -83,10 +85,14 @@ export function applyServerBackedSetting(key: string, value: unknown): void {
 export function createServerBackedSettingDraft<T>(
   key: string,
   fallback: T,
-  options: WatchServerBackedSettingsOptions = {},
+  options: WatchServerBackedSettingsOptions<T> = {},
 ): ServerBackedSettingDraft<T> {
   const initialValue = currentSettingValue(key, fallback)
-  const draft = $state<ServerBackedSettingDraft<T>>({ value: cloneJsonValue(initialValue) })
+  const cloneDraftValue = (value: T): T => {
+    const cloned = cloneJsonValue(value)
+    return options.normalizeDraft ? options.normalizeDraft(cloned) : cloned
+  }
+  const draft = $state<ServerBackedSettingDraft<T>>({ value: cloneDraftValue(initialValue) })
   const delayMs = options.delayMs ?? 250
   let initialized = false
   let suppressDraftDispatch = false
@@ -111,7 +117,7 @@ export function createServerBackedSettingDraft<T>(
         reassertDirtySettingDraftValue(key, draft.value)
       } else {
         dirty = false
-        draft.value = cloneJsonValue(serverValue)
+        draft.value = cloneDraftValue(serverValue)
       }
       queueMicrotask(() => {
         suppressDraftDispatch = false
@@ -141,7 +147,7 @@ export function createServerBackedSettingDraft<T>(
 
     untrack(() => {
       if (!settingsGroupForKey(key)) return
-      const attempted = cloneJsonValue(draft.value)
+      const attempted = cloneDraftValue(draft.value)
       const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
       withTrustedResourceWrite(() => {
         // Re-read the resource database inside the callback: the trusted write opens a
@@ -151,7 +157,7 @@ export function createServerBackedSettingDraft<T>(
         target[key] = attempted
       })
       const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
-      if (!mirroredToPreset) {
+      if (!mirroredToPreset && options.dispatch !== false) {
         queueSettingsPatch({ [key]: attempted }, { [key]: previous }, delayMs)
       }
       previousServerSnapshot = snapshot

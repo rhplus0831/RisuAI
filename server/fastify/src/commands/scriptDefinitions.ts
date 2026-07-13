@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { EntityNotFoundError, ValidationError } from '../repository.js'
 import { type CharacterRecord, readCharacterId, readJsonObject } from './characters.js'
 import { ensureModuleCollection, readModuleId, requireModule, type ModuleRecord } from './lorebooks.js'
+import { serializeScriptDefinitionCollectionDigestInput } from '../../../../src/ts/server/scriptDefinitionMutations.js'
 
 type JsonRecord = Record<string, unknown>
 
@@ -152,6 +153,10 @@ export function applyScriptDefinitionCollectionMutation(
   label = 'scripts',
 ): ScriptDefinitionRecord[] {
   return applyDefinitionCollectionMutation(input, mutation, label, 'script') as ScriptDefinitionRecord[]
+}
+
+export function scriptDefinitionCollectionDigest(definitions: readonly unknown[]): string {
+  return createHash('sha256').update(serializeScriptDefinitionCollectionDigestInput(definitions), 'utf8').digest('hex')
 }
 
 export function applyTriggerDefinitionCollectionMutation(
