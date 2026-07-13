@@ -561,6 +561,10 @@ interface BotPresetFieldRollback {
   attempted: Record<string, unknown>
 }
 
+interface LegacyPresetSparseSaveBaseline {
+  preset: Record<string, unknown>
+}
+
 interface BotPresetSelectionRollback {
   previousSelectedId: string | null
   attemptedSelectedId: string | null
@@ -999,16 +1003,26 @@ function botPresetFieldRollbackFromPatch(
   }
 }
 
-function saveCurrentPresetLocalWithRollback(): {
+function saveCurrentPresetLocalWithRollback(options: { apply?: boolean } = {}): {
   savedPreset: botPreset | null
   rollback: BotPresetFieldRollback | null
+  sparseBaseline: LegacyPresetSparseSaveBaseline | null
 } {
   const db = getDatabase()
+  const sparseBaselineEligible = !botPresetIdsNeedNormalization(db)
   normalizeBotPresetIds(db)
-  const previousPreset = db.botPresets[db.botPresetsId] ? safeStructuredClone(db.botPresets[db.botPresetsId]) : null
-  const savedPreset = saveCurrentPresetLocal()
+  const baselineIndex = db.botPresetsId
+  const previousLivePreset = db.botPresets[baselineIndex] ?? null
+  const previousPreset = previousLivePreset ? safeStructuredClone(previousLivePreset) : null
+  const sparseBaseline =
+    sparseBaselineEligible && previousLivePreset && botPresetHasHydratedSettings(previousLivePreset)
+      ? {
+          preset: previousPreset as unknown as Record<string, unknown>,
+        }
+      : null
+  const savedPreset = saveCurrentPresetLocal(options.apply)
   if (!savedPreset?.id || !previousPreset) {
-    return { savedPreset, rollback: null }
+    return { savedPreset, rollback: null, sparseBaseline: null }
   }
   return {
     savedPreset,
@@ -1018,7 +1032,40 @@ function saveCurrentPresetLocalWithRollback(): {
       savedPreset as unknown as Record<string, unknown>,
       { includeRemovedPreviousKeys: true },
     ),
+    sparseBaseline,
   }
+}
+
+function legacyPresetSaveCommandPatch(
+  savedPreset: botPreset,
+  baseline: LegacyPresetSparseSaveBaseline | null,
+): PresetSnapshot | null {
+  // This is intentionally the historical request shape. The merge-only endpoint
+  // cannot encode deletion even here, but falling back avoids claiming that a
+  // presence-changing reconstruction was proven safe for sparse transport.
+  const fullPatch = () => safeStructuredClone(savedPreset) as unknown as PresetSnapshot
+  if (!baseline || baseline.preset.id !== savedPreset.id) return fullPatch()
+
+  const saved = savedPreset as unknown as Record<string, unknown>
+  const patch: PresetSnapshot = { id: savedPreset.id }
+  let changed = false
+  const keys = new Set([...Object.keys(baseline.preset), ...Object.keys(saved)])
+  for (const key of keys) {
+    if (key === 'id') continue
+    const previousPresent =
+      Object.prototype.hasOwnProperty.call(baseline.preset, key) && baseline.preset[key] !== undefined
+    const savedPresent = Object.prototype.hasOwnProperty.call(saved, key) && saved[key] !== undefined
+    if (!savedPresent) {
+      // The legacy PATCH endpoint merges object keys and has no deletion marker.
+      // Keep the historical full-payload path when a managed optional field was removed.
+      if (previousPresent) return fullPatch()
+      continue
+    }
+    if (previousPresent && snapshotJson(baseline.preset[key]) === snapshotJson(saved[key])) continue
+    patch[key] = safeStructuredClone(saved[key])
+    changed = true
+  }
+  return changed ? patch : null
 }
 
 function rollbackBotPresetListEntry(entry: BotPresetListRollbackEntry): void {
@@ -3546,7 +3593,7 @@ export const defaultSdDataFunc = () => {
   return safeStructuredClone(defaultSdData)
 }
 
-function saveCurrentPresetLocal() {
+function saveCurrentPresetLocal(apply = true) {
   let db = getDatabase()
   normalizeBotPresetIds(db)
   let pres = db.botPresets
@@ -3640,9 +3687,15 @@ function saveCurrentPresetLocal() {
     verbosity: db.verbosity ?? 1,
     dynamicOutput: db.dynamicOutput ?? null,
   }
-  if (!Array.isArray(pres)) {
-    pres = []
-  }
+  if (!apply) return savedPreset
+  applyCurrentPresetSnapshot(savedPreset)
+  return savedPreset
+}
+
+function applyCurrentPresetSnapshot(savedPreset: botPreset): void {
+  const db = getDatabase()
+  let pres = db.botPresets
+  if (!Array.isArray(pres)) pres = []
   //if out of bounds, create a new preset
   if (db.botPresetsId >= pres.length) {
     pres.push(savedPreset)
@@ -3650,20 +3703,22 @@ function saveCurrentPresetLocal() {
     pres[db.botPresetsId] = savedPreset
   }
   db.botPresets = pres
-  return savedPreset
 }
 
 export function saveCurrentPreset() {
   withTrustedResourceWrite(() => {
-    const { savedPreset, rollback } = saveCurrentPresetLocalWithRollback()
+    const { savedPreset, rollback, sparseBaseline } = saveCurrentPresetLocalWithRollback({ apply: false })
     if (!savedPreset?.id) return []
+    const commandPatch = legacyPresetSaveCommandPatch(savedPreset, sparseBaseline)
+    if (!commandPatch) return []
+    applyCurrentPresetSnapshot(savedPreset)
     runOptimisticCommandSequence(
       [
         (baseRevision) =>
           updatePresetCommand({
             baseRevision,
             presetId: savedPreset.id!,
-            patch: safeStructuredClone(savedPreset) as unknown as PresetSnapshot,
+            patch: safeStructuredClone(commandPatch) as PresetSnapshot,
           }),
       ],
       () => rollbackBotPresetFields(rollback),

@@ -205,6 +205,21 @@ async function waitForState(assertion: () => void): Promise<void> {
   throw lastError
 }
 
+async function captureFullLegacyPresetSavePayload(settings: Partial<Database> = {}): Promise<botPreset> {
+  seedPresetDatabase({
+    ...settings,
+    botPresets: [{ id: 'preset-a', name: 'Alpha', image: 'img' } as botPreset],
+    botPresetsId: 0,
+  })
+  setCachedServerCommandRevision(100)
+  const calls = stubFailedPresetCommand()
+
+  saveCurrentPreset()
+
+  const command = await waitForPresetCommand(calls, '/presets/preset-a')
+  return clonePlain(command.body.patch) as botPreset
+}
+
 function makePreset(id: string, name: string, patch: Partial<botPreset> = {}): botPreset {
   return {
     ...clonePlain(presetTemplate),
@@ -1232,6 +1247,140 @@ describe('preset command rollback (L21)', () => {
       name: 'Newer projection',
       image: 'img',
     })
+  })
+
+  it('sends only changed fields when saving a large hydrated legacy preset', async () => {
+    const modelProfiles = Array.from({ length: 80 }, (_, index) => ({
+      id: `profile-${index}`,
+      name: `Large unchanged profile ${index}`,
+      modelId: `model-${index}`,
+    }))
+    const settings = { modelProfiles } as Partial<Database>
+    const baseline = await captureFullLegacyPresetSavePayload(settings)
+    seedPresetDatabase({
+      ...settings,
+      botPresets: [baseline, makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+      temperature: 45,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch).toEqual({ id: 'preset-a', temperature: 45 })
+    expect(JSON.stringify(command.body)).not.toContain('Large unchanged profile')
+  })
+
+  it('preserves explicit null, empty collection, and empty string clears in sparse save patches', async () => {
+    const settings = {
+      additionalParams: [['header::X-Legacy', 'enabled']],
+      bias: [['token', 1]],
+      customPromptTemplateToggle: 'enabled',
+      dynamicOutput: { mode: 'legacy' } as any,
+    } as Partial<Database>
+    const baseline = await captureFullLegacyPresetSavePayload(settings)
+    seedPresetDatabase({
+      ...settings,
+      botPresets: [baseline, makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+    })
+    getDatabase().additionalParams = []
+    getDatabase().bias = []
+    getDatabase().customPromptTemplateToggle = ''
+    getDatabase().dynamicOutput = null
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch).toEqual({
+      id: 'preset-a',
+      additionalParams: [],
+      bias: [],
+      customPromptTemplateToggle: '',
+      dynamicOutput: null,
+    })
+  })
+
+  it('suppresses an exact hydrated save no-op and preserves the local preset row', async () => {
+    const baseline = await captureFullLegacyPresetSavePayload()
+    seedPresetDatabase({
+      botPresets: [baseline, makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+    const before = getDatabase().botPresets[0]
+    const beforeJson = JSON.stringify(before)
+
+    saveCurrentPreset()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(calls).toHaveLength(0)
+    expect(getDatabase().botPresets[0]).toBe(before)
+    expect(JSON.stringify(getDatabase().botPresets[0])).toBe(beforeJson)
+  })
+
+  it('falls back to the full save payload for unhydrated and id-repaired baselines', async () => {
+    const modelProfiles = [{ id: 'profile-large', name: 'Large unchanged fallback profile', modelId: 'model-a' }]
+    const cases: Array<{ name: string; preset: botPreset }> = [
+      {
+        name: 'unhydrated',
+        preset: { id: 'preset-a', name: 'Alpha', image: 'img' } as botPreset,
+      },
+      {
+        name: 'id-repaired',
+        preset: makePreset('temporary', 'Alpha', { modelProfiles }) as botPreset,
+      },
+    ]
+    delete cases[1].preset.id
+
+    for (const scenario of cases) {
+      seedPresetDatabase({
+        botPresets: [scenario.preset],
+        botPresetsId: 0,
+        modelProfiles,
+      })
+      setCachedServerCommandRevision(100)
+      const calls = stubFailedPresetCommand()
+
+      saveCurrentPreset()
+
+      await waitForState(() =>
+        expect(calls.some((call) => call.url.startsWith('/api/v1/commands/presets/'))).toBe(true),
+      )
+      const command = calls.find((call) => call.url.startsWith('/api/v1/commands/presets/'))!
+      expect(command.body.patch.modelProfiles, scenario.name).toEqual(modelProfiles)
+      expect(Object.keys(command.body.patch).length, scenario.name).toBeGreaterThan(20)
+      expect(command.body.patch.id, scenario.name).toBe(decodeURIComponent(command.url.split('/').at(-1)!))
+
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('uses the historical full payload fallback when a hydrated baseline field is absent from the save snapshot', async () => {
+    const modelProfiles = [{ id: 'profile-large', name: 'Large unchanged fallback profile', modelId: 'model-a' }]
+    const settings = { modelProfiles } as Partial<Database>
+    const baseline = await captureFullLegacyPresetSavePayload(settings)
+    const baselineRecord = baseline as unknown as Record<string, unknown>
+    baselineRecord.legacyOnlyField = 'cannot-delete-with-merge-patch'
+    seedPresetDatabase({
+      ...settings,
+      botPresets: [baseline, makePreset('preset-b', 'Beta')],
+      botPresetsId: 0,
+    })
+    setCachedServerCommandRevision(100)
+    const calls = stubFailedPresetCommand()
+
+    saveCurrentPreset()
+
+    const command = await waitForPresetCommand(calls, '/presets/preset-a')
+    expect(command.body.patch.modelProfiles).toEqual(modelProfiles)
+    expect(command.body.patch).not.toHaveProperty('legacyOnlyField')
+    expect(Object.keys(command.body.patch).length).toBeGreaterThan(20)
   })
 
   it('does not save an unloaded promptTemplate as null when snapshotting the current preset', async () => {
