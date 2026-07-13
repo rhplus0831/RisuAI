@@ -6418,12 +6418,20 @@ export function registerCommandRoutes(
           writeSingleCollectionTable(innerDb, 'plugins', plugins)
           // `currentPluginProvider` is a settings scalar; co-write settings only
           // when deleting the active provider clears the pointer.
-          if (target.currentPluginProvider === pluginId) {
+          const clearsProvider = target.currentPluginProvider === pluginId
+          if (clearsProvider) {
             target.currentPluginProvider = ''
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
-            event: { ...COMMAND_EVENT_CATALOG.pluginDeleted, id: pluginId },
+            event: {
+              ...COMMAND_EVENT_CATALOG.pluginDeleted,
+              // Clearing the active provider is the sole plugin-record command
+              // that also changes settings. Keep authoritative reconciliation
+              // for both affected slices without reading unrelated settings.
+              ...(clearsProvider ? { resource: 'pluginCollectionWithProvider' } : {}),
+              id: pluginId,
+            },
             extra: { pluginId },
           }
         },

@@ -48,14 +48,18 @@ is separate from browser plugins.
   `pluginCompatibilityMode` is enabled, and remains plugin sandbox
   compatibility/cache storage rather than app database or backup persistence.
 
-Plugin storage persists in the SQLite `plugin_custom_storage` table. Plugin
-records narrow targeted projection through the `plugin` resource, while
+Plugin storage persists in the SQLite `plugin_custom_storage` table.
+Plugin-record events use precise projection scopes: `pluginCollection` reads
+only the plugin collection, `pluginProvider` reads only the `providers` settings
+group, and deleting the active provider uses `pluginCollectionWithProvider` to
+read both affected slices. Response-confirmed optimistic record/provider writes
+advance those resource fences without a read, retaining any newer queued edit.
 `pluginStorage` projects the complete `pluginCustomStorage` map so key deletion,
 clear, and bulk replacement remove absent values without refreshing unrelated
 app state. Pending per-key put/delete/bulk intents stay registered through
 projection reconciliation and overlay both targeted and full refreshes, so an
-older response cannot erase a newer optimistic storage edit. Heavy plugin/module bodies may be stubbed in bootstrap and filled
-from the bootstrap-body-cache path.
+older response cannot erase a newer optimistic storage edit. Heavy plugin/module
+bodies may be stubbed in bootstrap and filled from the bootstrap-body-cache path.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay

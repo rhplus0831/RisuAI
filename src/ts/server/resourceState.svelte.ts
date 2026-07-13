@@ -105,6 +105,18 @@ export interface ServerPluginStorageLocalEffectPayload {
   revision: number
 }
 
+export interface ServerPluginCollectionMutationLocalEffectPayload {
+  revision: number
+  operation: 'create' | 'update' | 'delete' | 'enable' | 'reorder'
+  pluginId?: string
+  pluginIds?: readonly string[]
+}
+
+export interface ServerPluginProviderLocalEffectPayload {
+  revision: number
+  provider: string
+}
+
 export interface ServerCharacterRowMutationLocalEffectPayload {
   revision: number
   characterId: string
@@ -338,6 +350,60 @@ export function applyPluginStorageLocalEffect(payload: ServerPluginStorageLocalE
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses.pluginCustomStorage = 'ready'
   delete collectionsResourceState.errors.pluginCustomStorage
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence a response-confirmed optimistic plugin-record mutation. Plugin scripts
+ * can be large, and the browser already holds the exact accepted record or
+ * ordering. Preserve any newer queued mutation while preventing older
+ * collection reads from replacing it.
+ */
+export function applyPluginCollectionMutationLocalEffect(
+  payload: ServerPluginCollectionMutationLocalEffectPayload,
+): boolean {
+  const knownRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions.plugins ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+
+  const plugins = collectionsResourceState.values.plugins
+  if (!Array.isArray(plugins) || collectionsResourceState.statuses.plugins !== 'ready') return false
+  if (payload.operation === 'reorder') {
+    if (!isUniqueStringArray(payload.pluginIds)) return false
+  } else if (!nonEmptyString(payload.pluginId)) {
+    return false
+  }
+
+  collectionsResourceState.revisions.plugins = payload.revision
+  collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+  collectionsResourceState.statuses.plugins = 'ready'
+  delete collectionsResourceState.errors.plugins
+  markResourceDatabaseChanged()
+  return true
+}
+
+/** Fence an accepted optimistic plugin-provider selection without a settings read. */
+export function applyPluginProviderLocalEffect(payload: ServerPluginProviderLocalEffectPayload): boolean {
+  const knownRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions.providers ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+
+  const provider = (settingsResourceState.value as Record<string, unknown>).currentPluginProvider
+  if (typeof provider !== 'string' || typeof payload.provider !== 'string') return false
+
+  // A later queued provider selection may already be visible. The response
+  // effect proves this earlier value was accepted, so advance the fence while
+  // deliberately retaining the newer optimistic provider.
+
+  settingsResourceState.groupRevisions.providers = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
   markResourceDatabaseChanged()
   return true
 }
@@ -1037,6 +1103,10 @@ function nonEmptyString(value: unknown): value is string {
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function isUniqueStringArray(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((entry) => nonEmptyString(entry)) && new Set(value).size === value.length
 }
 
 function isJsonValueEqual(left: unknown, right: unknown): boolean {

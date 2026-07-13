@@ -426,7 +426,18 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
       plan.collections.add('loadouts')
       addAllCharacters()
       return
+    case 'pluginCollection':
+      plan.collections.add('plugins')
+      return
+    case 'pluginProvider':
+      addSettingsGroup('providers')
+      return
+    case 'pluginCollectionWithProvider':
+      addSettingsGroup('providers')
+      plan.collections.add('plugins')
+      return
     case 'plugin':
+      // Compatibility with retained events from older servers.
       addFullSettings()
       plan.collections.add('plugins')
       return

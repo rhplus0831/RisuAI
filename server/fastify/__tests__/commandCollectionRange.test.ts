@@ -300,7 +300,7 @@ describe('Phase 4 plugins collection range', () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
-    const { metric } = await runCommand({
+    const { metric, body } = await runCommand({
       method: 'DELETE',
       url: '/api/v1/commands/plugins/plugin-b',
       payload: { baseRevision: revision },
@@ -311,6 +311,7 @@ describe('Phase 4 plugins collection range', () => {
     expect(metric.writtenTables).toEqual(['plugins'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
+    expect(body.event.resource).toBe('pluginCollection')
     expect(readCollection('plugins').map((p) => (p as { name: string }).name)).toEqual(['plugin-a', 'plugin-c'])
     expect(readSettings().currentPluginProvider).toBe('plugin-a')
   })
@@ -319,7 +320,7 @@ describe('Phase 4 plugins collection range', () => {
     const revision = await importDatabase(seedDatabase())
     const before = rowidSnapshot()
 
-    const { metric } = await runCommand({
+    const { metric, body } = await runCommand({
       method: 'DELETE',
       url: '/api/v1/commands/plugins/plugin-a',
       payload: { baseRevision: revision },
@@ -330,6 +331,7 @@ describe('Phase 4 plugins collection range', () => {
     expect(metric.writtenTables).toEqual(['plugins', 'settings'])
     assertCommandMetricGate(metric)
     expectNoCharacterOrChatChurn(before)
+    expect(body.event.resource).toBe('pluginCollectionWithProvider')
     expect(readCollection('plugins').map((p) => (p as { name: string }).name)).toEqual(['plugin-b', 'plugin-c'])
     expect(readSettings().currentPluginProvider).toBe('')
   })

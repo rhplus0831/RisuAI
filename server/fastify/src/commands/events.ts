@@ -621,27 +621,27 @@ export const COMMAND_EVENT_CATALOG = {
   },
   pluginCreated: {
     type: 'plugin.created',
-    resource: 'plugin',
+    resource: 'pluginCollection',
   },
   pluginUpdated: {
     type: 'plugin.updated',
-    resource: 'plugin',
+    resource: 'pluginCollection',
   },
   pluginDeleted: {
     type: 'plugin.deleted',
-    resource: 'plugin',
+    resource: 'pluginCollection',
   },
   pluginEnabled: {
     type: 'plugin.enabled',
-    resource: 'plugin',
+    resource: 'pluginCollection',
   },
   pluginProviderSelected: {
     type: 'plugin.provider.selected',
-    resource: 'plugin',
+    resource: 'pluginProvider',
   },
   pluginReordered: {
     type: 'plugin.reordered',
-    resource: 'plugin',
+    resource: 'pluginCollection',
   },
   pluginStorageUpdated: {
     type: 'pluginStorage.updated',

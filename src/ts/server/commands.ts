@@ -75,6 +75,18 @@ export interface PluginStorageLocalEffect {
   key?: string
 }
 
+export interface PluginCollectionMutationLocalEffect {
+  kind: 'pluginCollectionMutation'
+  operation: 'create' | 'update' | 'delete' | 'enable' | 'reorder'
+  pluginId?: string
+  pluginIds?: string[]
+}
+
+export interface PluginProviderLocalEffect {
+  kind: 'pluginProvider'
+  provider: string
+}
+
 export interface MessageTranslationLocalEffect {
   kind: 'messageTranslation'
   chatId: string
@@ -108,6 +120,8 @@ export type ServerCommandLocalEffect =
   | ChatPatchLocalEffect
   | SettingsPatchLocalEffect
   | PluginStorageLocalEffect
+  | PluginCollectionMutationLocalEffect
+  | PluginProviderLocalEffect
   | MessageTranslationLocalEffect
   | MessageMutationLocalEffect
   | CharacterRowMutationLocalEffect
@@ -3023,6 +3037,11 @@ export async function createPluginCommand(
       plugin: input.plugin,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPluginCollectionMutationLocalEffect(body, event, {
+        operation: 'create',
+        expectedPluginId: input.plugin.name,
+      }),
   })
 }
 
@@ -3037,6 +3056,12 @@ export async function updatePluginCommand(
       patch: input.patch,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPluginCollectionMutationLocalEffect(body, event, {
+        operation: 'update',
+        expectedPluginId: input.pluginId,
+        hasMutation: Object.keys(input.patch).length > 0,
+      }),
   })
 }
 
@@ -3050,6 +3075,11 @@ export async function deletePluginCommand(
       baseRevision: input.baseRevision,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPluginCollectionMutationLocalEffect(body, event, {
+        operation: 'delete',
+        expectedPluginId: input.pluginId,
+      }),
   })
 }
 
@@ -3064,6 +3094,12 @@ export async function enablePluginCommand(
       enabled: input.enabled,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPluginCollectionMutationLocalEffect(body, event, {
+        operation: 'enable',
+        expectedPluginId: input.pluginId,
+        expectedEnabled: input.enabled,
+      }),
   })
 }
 
@@ -3078,6 +3114,7 @@ export async function selectPluginProviderCommand(
       provider: input.provider,
     },
     signal,
+    readLocalEffect: (body, event) => readPluginProviderLocalEffect(body, event, input.provider),
   })
 }
 
@@ -3092,6 +3129,11 @@ export async function reorderPluginsCommand(
       pluginIds: input.pluginIds,
     },
     signal,
+    readLocalEffect: (body, event) =>
+      readPluginCollectionMutationLocalEffect(body, event, {
+        operation: 'reorder',
+        expectedPluginIds: input.pluginIds,
+      }),
   })
 }
 
@@ -3546,6 +3588,73 @@ function readPluginStorageLocalEffect(
   return { kind: 'pluginStorage', operation, key: expectedKey }
 }
 
+interface ReadPluginCollectionMutationLocalEffectOptions {
+  operation: PluginCollectionMutationLocalEffect['operation']
+  expectedPluginId?: unknown
+  expectedPluginIds?: unknown
+  expectedEnabled?: boolean
+  hasMutation?: boolean
+}
+
+function readPluginCollectionMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  options: ReadPluginCollectionMutationLocalEffectOptions,
+): PluginCollectionMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (event.resource !== 'pluginCollection') return undefined
+
+  const expectedType =
+    options.operation === 'create'
+      ? 'plugin.created'
+      : options.operation === 'update'
+        ? 'plugin.updated'
+        : options.operation === 'delete'
+          ? 'plugin.deleted'
+          : options.operation === 'enable'
+            ? 'plugin.enabled'
+            : 'plugin.reordered'
+  if (event.type !== expectedType) return undefined
+
+  if (options.operation === 'reorder') {
+    if (event.id !== undefined || !isUniqueStringArray(options.expectedPluginIds)) return undefined
+    return {
+      kind: 'pluginCollectionMutation',
+      operation: options.operation,
+      pluginIds: [...options.expectedPluginIds],
+    }
+  }
+
+  if (!nonEmptyString(options.expectedPluginId)) return undefined
+  const record = body as Record<string, unknown>
+  if (record.pluginId !== options.expectedPluginId || event.id !== options.expectedPluginId) return undefined
+  if (options.operation === 'update' && options.hasMutation !== true) return undefined
+  if (options.operation === 'enable' && record.enabled !== options.expectedEnabled) return undefined
+  return {
+    kind: 'pluginCollectionMutation',
+    operation: options.operation,
+    pluginId: options.expectedPluginId,
+  }
+}
+
+function readPluginProviderLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  expectedProvider: string,
+): PluginProviderLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  if (!nonEmptyString(expectedProvider) && expectedProvider !== '') return undefined
+  if (
+    event.type !== 'plugin.provider.selected' ||
+    event.resource !== 'pluginProvider' ||
+    event.id !== expectedProvider ||
+    (body as Record<string, unknown>).provider !== expectedProvider
+  ) {
+    return undefined
+  }
+  return { kind: 'pluginProvider', provider: expectedProvider }
+}
+
 function readMessageTranslationLocalEffect(
   body: unknown,
   event: CommandEvent,
@@ -3699,6 +3808,14 @@ function isNonEmptyStringArray(value: unknown, allowEmpty = false): value is str
     (allowEmpty || value.length > 0) &&
     value.every((entry) => typeof entry === 'string' && entry.trim() !== '')
   )
+}
+
+function isUniqueStringArray(value: unknown): value is string[] {
+  return isNonEmptyStringArray(value, true) && new Set(value).size === value.length
+}
+
+function nonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== ''
 }
 
 function readCharacterPatchLocalEffect(

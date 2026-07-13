@@ -19,6 +19,8 @@ import {
   applySettingsResource,
   applySettingsGroupResource,
   applySettingsPatchLocalEffect,
+  applyPluginCollectionMutationLocalEffect,
+  applyPluginProviderLocalEffect,
   applyPluginStorageLocalEffect,
   areServerDatabaseResourcesReady,
   charactersResourceState,
@@ -279,6 +281,52 @@ describe('resource-scoped database state', () => {
     expect(collectionsResourceState.values.hypaV3Presets).toEqual(presets)
     expect(collectionsResourceState.revisions.hypaV3Presets).toBe(2)
     expect(settingsResourceState.groupRevisions.memory).toBe(2)
+  })
+
+  it('fences optimistic plugin mutations without replacing newer records or order', () => {
+    applySettingsResource({ revision: 3, settings: { currentPluginProvider: 'plugin-a' } })
+    applyCollectionsResource({
+      revision: 3,
+      collections: {
+        ...completeCollections(),
+        plugins: [
+          { name: 'plugin-b', script: 'newer-b', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+          { name: 'plugin-a', script: 'newer-a', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+        ],
+      },
+    })
+
+    expect(
+      applyPluginCollectionMutationLocalEffect({
+        revision: 4,
+        operation: 'update',
+        pluginId: 'plugin-a',
+      }),
+    ).toBe(true)
+    expect(
+      applyPluginCollectionMutationLocalEffect({
+        revision: 5,
+        operation: 'reorder',
+        pluginIds: ['plugin-a', 'plugin-b'],
+      }),
+    ).toBe(true)
+
+    expect(getResourceDatabase().plugins).toEqual([
+      { name: 'plugin-b', script: 'newer-b', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+      { name: 'plugin-a', script: 'newer-a', arguments: {}, realArg: {}, customLink: [], argMeta: {} },
+    ])
+    expect(collectionsResourceState.revisions.plugins).toBe(5)
+    expect(collectionsResourceState.revision).toBe(5)
+  })
+
+  it('fences an accepted provider selection while retaining a newer queued selection', () => {
+    applySettingsResource({ revision: 3, settings: { currentPluginProvider: 'newer-provider' } })
+
+    expect(applyPluginProviderLocalEffect({ revision: 4, provider: 'accepted-provider' })).toBe(true)
+
+    expect(getResourceDatabase().currentPluginProvider).toBe('newer-provider')
+    expect(settingsResourceState.groupRevisions.providers).toBe(4)
+    expect(settingsResourceState.revision).toBe(4)
   })
 
   it('merges character details by stable id and drops stale rows', () => {

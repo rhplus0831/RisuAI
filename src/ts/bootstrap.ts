@@ -54,6 +54,8 @@ import {
   applyChatPatchLocalEffect,
   applyChatGenerationSettingsLocalEffect,
   applySettingsPatchLocalEffect,
+  applyPluginCollectionMutationLocalEffect,
+  applyPluginProviderLocalEffect,
   applyPluginStorageLocalEffect,
 } from './server/resourceState.svelte'
 import { withServerResourceApply } from './server/resourceWriteGuard.svelte'
@@ -446,6 +448,39 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       if (localEffect.operation === 'bulk' ? event.id !== undefined : event.id !== localEffect.key) return false
       return withServerResourceApply(() => applyPluginStorageLocalEffect({ revision: event.revision }))
     }
+    case 'pluginCollectionMutation': {
+      const expectedType =
+        localEffect.operation === 'create'
+          ? 'plugin.created'
+          : localEffect.operation === 'update'
+            ? 'plugin.updated'
+            : localEffect.operation === 'delete'
+              ? 'plugin.deleted'
+              : localEffect.operation === 'enable'
+                ? 'plugin.enabled'
+                : 'plugin.reordered'
+      if (event.resource !== 'pluginCollection' || event.type !== expectedType) return false
+      if (localEffect.operation === 'reorder' ? event.id !== undefined : event.id !== localEffect.pluginId) return false
+      return withServerResourceApply(() =>
+        applyPluginCollectionMutationLocalEffect({
+          revision: event.revision,
+          operation: localEffect.operation,
+          pluginId: localEffect.pluginId,
+          pluginIds: localEffect.pluginIds,
+        }),
+      )
+    }
+    case 'pluginProvider':
+      if (
+        event.type !== 'plugin.provider.selected' ||
+        event.resource !== 'pluginProvider' ||
+        event.id !== localEffect.provider
+      ) {
+        return false
+      }
+      return withServerResourceApply(() =>
+        applyPluginProviderLocalEffect({ revision: event.revision, provider: localEffect.provider }),
+      )
     case 'messageTranslation':
       if (
         event.type !== 'message.updated' ||

@@ -3628,6 +3628,97 @@ describe('server command API adapter', () => {
     ])
   })
 
+  it('exposes matching plugin mutations as compact response-confirmed local effects', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url, init) => {
+      const method = init.method ?? 'GET'
+      if (url.endsWith('/plugins/provider')) {
+        return {
+          revision: 10,
+          event: {
+            type: 'plugin.provider.selected',
+            revision: 10,
+            resource: 'pluginProvider',
+            id: 'provider-a',
+          },
+          provider: 'provider-a',
+        }
+      }
+      if (url.endsWith('/plugins/reorder')) {
+        return {
+          revision: 10,
+          event: { type: 'plugin.reordered', revision: 10, resource: 'pluginCollection' },
+        }
+      }
+
+      const operation =
+        method === 'DELETE'
+          ? 'delete'
+          : url.endsWith('/enable')
+            ? 'enable'
+            : method === 'POST'
+              ? 'create'
+              : 'update'
+      return {
+        revision: 10,
+        event: {
+          type: `plugin.${operation === 'enable' ? 'enabled' : `${operation}d`}`,
+          revision: 10,
+          resource: 'pluginCollection',
+          id: 'plugin-a',
+        },
+        pluginId: 'plugin-a',
+        ...(operation === 'enable' ? { enabled: true } : {}),
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await createPluginCommand({ baseRevision: 1, plugin: { name: 'plugin-a' } })
+    await updatePluginCommand({ baseRevision: 2, pluginId: 'plugin-a', patch: { displayName: 'A' } })
+    await deletePluginCommand({ baseRevision: 3, pluginId: 'plugin-a' })
+    await enablePluginCommand({ baseRevision: 4, pluginId: 'plugin-a', enabled: true })
+    await selectPluginProviderCommand({ baseRevision: 5, provider: 'provider-a' })
+    await reorderPluginsCommand({ baseRevision: 6, pluginIds: ['plugin-b', 'plugin-a'] })
+
+    expect(observedEffects).toEqual([
+      { kind: 'pluginCollectionMutation', operation: 'create', pluginId: 'plugin-a' },
+      { kind: 'pluginCollectionMutation', operation: 'update', pluginId: 'plugin-a' },
+      { kind: 'pluginCollectionMutation', operation: 'delete', pluginId: 'plugin-a' },
+      { kind: 'pluginCollectionMutation', operation: 'enable', pluginId: 'plugin-a' },
+      { kind: 'pluginProvider', provider: 'provider-a' },
+      {
+        kind: 'pluginCollectionMutation',
+        operation: 'reorder',
+        pluginIds: ['plugin-b', 'plugin-a'],
+      },
+    ])
+  })
+
+  it('keeps cross-resource plugin deletion on authoritative reconciliation', async () => {
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch(() => ({
+      revision: 10,
+      event: {
+        type: 'plugin.deleted',
+        revision: 10,
+        resource: 'pluginCollectionWithProvider',
+        id: 'plugin-a',
+      },
+      pluginId: 'plugin-a',
+    }))
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await deletePluginCommand({ baseRevision: 9, pluginId: 'plugin-a' })
+
+    expect(observedEffects).toEqual([])
+  })
+
   it('dispatches plugin-storage commands through typed helpers', async () => {
     const observedEffects: unknown[] = []
     setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {

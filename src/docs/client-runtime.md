@@ -107,6 +107,10 @@ Important files:
   Accepted chat generation-settings commands also return and apply their
   canonical persisted value without a follow-up character read. These effects
   preserve newer queued edits while fencing stale in-flight responses.
+- Accepted plugin record and provider mutations likewise fence the already
+  visible optimistic value instead of re-downloading plugin scripts or provider
+  settings. Foreign plugin events use collection-only, provider-group-only, or
+  combined collection/provider invalidation according to their actual writes.
 - `src/ts/server/promptTemplateHydration.ts` hydrates stripped prompt-template
   and preset prompt bodies with owner-keyed state for selected/requested prompt
   presets.

@@ -434,6 +434,52 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('acknowledges contiguous plugin mutations without fetching scripts or provider settings', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins = [
+        { name: 'plugin-b', script: 'newer-b' },
+        { name: 'plugin-a', script: 'newer-a' },
+      ] as never
+      getDatabase().currentPluginProvider = 'newer-provider'
+    })
+    const collectionEvent = {
+      type: 'plugin.reordered',
+      revision: 6,
+      resource: 'pluginCollection',
+    }
+    const providerEvent = {
+      type: 'plugin.provider.selected',
+      revision: 7,
+      resource: 'pluginProvider',
+      id: 'accepted-provider',
+    }
+
+    await commandApi.reconciler?.(
+      providerEvent,
+      [collectionEvent, providerEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'pluginCollectionMutation',
+            operation: 'reorder',
+            pluginIds: ['plugin-a', 'plugin-b'],
+          },
+        ],
+        [7, { kind: 'pluginProvider', provider: 'accepted-provider' }],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().plugins).toEqual([
+      { name: 'plugin-b', script: 'newer-b' },
+      { name: 'plugin-a', script: 'newer-a' },
+    ])
+    expect(getDatabase().currentPluginProvider).toBe('newer-provider')
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
   it('applies a contiguous canonical message translation without fetching the transcript', async () => {
     await loadWebInitialDatabase()
     const translation = {

@@ -622,6 +622,43 @@ describe('API-backed resource invalidation', () => {
     expect(getResourceDatabase().pluginCustomStorage).toEqual({ authoritative: true, pending: true })
   })
 
+  it('reads only plugin records and provider settings for precise plugin event scopes', async () => {
+    seedResources(1)
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 4,
+      collections: { plugins: [{ name: 'plugin-a', script: 'authoritative' }] },
+    })
+    api.settingsGroup.mockResolvedValue({
+      status: 'ok',
+      revision: 4,
+      group: 'providers',
+      settings: { currentPluginProvider: 'plugin-a' },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [
+          event(2, 'pluginCollection', { id: 'plugin-a' }),
+          event(3, 'pluginProvider', { id: 'plugin-a' }),
+          event(4, 'pluginCollectionWithProvider', { id: 'plugin-b' }),
+        ],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+
+    expect(api.collection).toHaveBeenCalledOnce()
+    expect(api.collection).toHaveBeenCalledWith('plugins', undefined)
+    expect(api.settingsGroup).toHaveBeenCalledOnce()
+    expect(api.settingsGroup).toHaveBeenCalledWith('providers', undefined)
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(api.collections).not.toHaveBeenCalled()
+    expect(getResourceDatabase()).toMatchObject({
+      currentPluginProvider: 'plugin-a',
+      plugins: [{ name: 'plugin-a', script: 'authoritative' }],
+    })
+  })
+
   it('reads only the owning collection for prompt item events', async () => {
     seedResources(1)
     api.collection.mockImplementation(async (name: string) => ({

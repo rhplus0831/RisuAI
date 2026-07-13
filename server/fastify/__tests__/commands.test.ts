@@ -10135,7 +10135,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     expect(created.json()).toMatchObject({
       revision: 2,
       pluginId: 'plugin-c',
-      event: { type: 'plugin.created', resource: 'plugin', id: 'plugin-c' },
+      event: { type: 'plugin.created', resource: 'pluginCollection', id: 'plugin-c' },
     })
 
     const patched = await harness.app.inject({
@@ -10148,7 +10148,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
       },
     })
     expect(patched.statusCode).toBe(200)
-    expect(patched.json().event.type).toBe('plugin.updated')
+    expect(patched.json().event).toMatchObject({ type: 'plugin.updated', resource: 'pluginCollection' })
 
     const enabled = await harness.app.inject({
       method: 'POST',
@@ -10161,7 +10161,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
       revision: 4,
       pluginId: 'plugin-b',
       enabled: true,
-      event: { type: 'plugin.enabled', id: 'plugin-b' },
+      event: { type: 'plugin.enabled', resource: 'pluginCollection', id: 'plugin-b' },
     })
 
     const provider = await harness.app.inject({
@@ -10174,7 +10174,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
     expect(provider.json()).toMatchObject({
       revision: 5,
       provider: 'provider-c',
-      event: { type: 'plugin.provider.selected', id: 'provider-c' },
+      event: { type: 'plugin.provider.selected', resource: 'pluginProvider', id: 'provider-c' },
     })
 
     const reordered = await harness.app.inject({
@@ -10184,7 +10184,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
       payload: { baseRevision: 5, pluginIds: ['plugin-c', 'plugin-b', 'plugin-a'] },
     })
     expect(reordered.statusCode).toBe(200)
-    expect(reordered.json().event.type).toBe('plugin.reordered')
+    expect(reordered.json().event).toMatchObject({ type: 'plugin.reordered', resource: 'pluginCollection' })
 
     const deleted = await harness.app.inject({
       method: 'DELETE',
@@ -10193,7 +10193,7 @@ describe('Phase 9-4e plugin record and configuration commands', () => {
       payload: { baseRevision: 6 },
     })
     expect(deleted.statusCode).toBe(200)
-    expect(deleted.json().event.type).toBe('plugin.deleted')
+    expect(deleted.json().event).toMatchObject({ type: 'plugin.deleted', resource: 'pluginCollection' })
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
