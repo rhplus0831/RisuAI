@@ -3035,6 +3035,39 @@ describe('API-backed client bootstrap', () => {
     })
   })
 
+  it('rereads an accepted character patch erased by an in-flight full refresh', async () => {
+    await loadWebInitialDatabase()
+    const destructiveRefreshEpoch = captureDestructiveRefreshEpoch()
+    createDestructiveRefreshToken('character-patch-bootstrap-test-refresh')
+    const event = {
+      type: 'character.updated',
+      revision: 6,
+      resource: 'characterRow',
+      id: 'char-a',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'characterPatch',
+            characterId: 'char-a',
+            patch: { name: 'accepted optimistic name' },
+            destructiveRefreshEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('does not fence a structural effect after a targeted character refresh', async () => {
     await loadWebInitialDatabase()
     const optimisticEpoch = captureDestructiveRefreshEpoch()

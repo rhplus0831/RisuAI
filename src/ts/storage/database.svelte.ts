@@ -314,6 +314,10 @@ const BOT_PRESET_HYDRATION_SENTINEL_KEYS = [
   'modelRoleProfiles',
   'modelRuntimeDefaults',
   'promptTemplate',
+  // Canonical full legacy-preset rows always include this normalized field;
+  // collection shells intentionally do not. Unlike an identity marker, this
+  // survives the clone/reorder reconciliation paths.
+  'localNetworkMode',
 ] as const
 
 export function botPresetHasHydratedSettings(preset: botPreset | undefined): preset is botPreset {

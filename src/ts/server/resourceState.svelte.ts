@@ -1,6 +1,7 @@
 import type { Database, character } from '../storage/database.svelte'
 import type { ChatGenerationSettings } from '../chatGenerationSettings'
 import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPresetRecords'
+import { changeLanguage } from '../../lang'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
 import { isModelProfileSettingsGroup, type SettingsGroup } from './settingsGroups'
@@ -9,6 +10,14 @@ import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } fr
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
 const characterRowProjectionEpochs = new Map<string, number>()
+const chatBodyResourceRevisions = new Map<string, number>()
+let nextChatBodyProjectionEpoch = 0
+let chatBodyProjectionBaseline = 0
+const chatBodyProjectionEpochs = new Map<string, number>()
+const characterLorebookBodyResourceRevisions = new Map<string, number>()
+let nextCharacterLorebookBodyProjectionEpoch = 0
+let characterLorebookBodyProjectionBaseline = 0
+const characterLorebookBodyProjectionEpochs = new Map<string, number>()
 let nextCharacterLorebookProjectionEpoch = 0
 let characterLorebookProjectionBaseline = 0
 const characterLorebookProjectionEpochs = new Map<string, number>()
@@ -41,6 +50,114 @@ export function hasCharacterRowProjectionEpochChanged(characterId: string, epoch
   return captureCharacterRowProjectionEpoch(characterId) !== epoch
 }
 
+/** Whether a newer authoritative transcript body has already been applied. */
+export function hasNewerChatBodyResourceRevision(chatId: string, revision: number): boolean {
+  return (chatBodyResourceRevisions.get(chatId) ?? -1) > revision
+}
+
+/** Record an authoritative transcript-body apply without claiming the parent character row. */
+export function markChatBodyResourceRevision(chatId: string, revision: number): void {
+  if (!nonEmptyString(chatId) || !Number.isInteger(revision) || revision < 0) return
+  chatBodyResourceRevisions.set(chatId, Math.max(chatBodyResourceRevisions.get(chatId) ?? -1, revision))
+}
+
+function advanceChatBodyProjectionEpoch(chatId: string): void {
+  chatBodyProjectionEpochs.set(chatId, ++nextChatBodyProjectionEpoch)
+}
+
+function advanceAllChatBodyProjectionEpochs(): void {
+  chatBodyProjectionBaseline = ++nextChatBodyProjectionEpoch
+  chatBodyProjectionEpochs.clear()
+}
+
+export function captureChatBodyProjectionEpoch(chatId: string): number {
+  return chatBodyProjectionEpochs.get(chatId) ?? chatBodyProjectionBaseline
+}
+
+export function hasChatBodyProjectionEpochChanged(chatId: string, epoch: number): boolean {
+  return captureChatBodyProjectionEpoch(chatId) !== epoch
+}
+
+/** Record a transcript-body apply or accepted local mutation. */
+export function markChatBodyProjectionApplied(chatId: string): void {
+  if (nonEmptyString(chatId)) advanceChatBodyProjectionEpoch(chatId)
+}
+
+/** Whether a newer authoritative character-lorebook body has already been applied. */
+export function hasNewerCharacterLorebookBodyResourceRevision(characterId: string, revision: number): boolean {
+  return (characterLorebookBodyResourceRevisions.get(characterId) ?? -1) > revision
+}
+
+/** Record an authoritative lorebook-body apply without claiming the parent character row. */
+export function markCharacterLorebookBodyResourceRevision(characterId: string, revision: number): void {
+  if (!nonEmptyString(characterId) || !Number.isInteger(revision) || revision < 0) return
+  characterLorebookBodyResourceRevisions.set(
+    characterId,
+    Math.max(characterLorebookBodyResourceRevisions.get(characterId) ?? -1, revision),
+  )
+}
+
+function advanceCharacterLorebookBodyProjectionEpoch(characterId: string): void {
+  characterLorebookBodyProjectionEpochs.set(characterId, ++nextCharacterLorebookBodyProjectionEpoch)
+}
+
+function advanceAllCharacterLorebookBodyProjectionEpochs(): void {
+  characterLorebookBodyProjectionBaseline = ++nextCharacterLorebookBodyProjectionEpoch
+  characterLorebookBodyProjectionEpochs.clear()
+}
+
+export function captureCharacterLorebookBodyProjectionEpoch(characterId: string): number {
+  return characterLorebookBodyProjectionEpochs.get(characterId) ?? characterLorebookBodyProjectionBaseline
+}
+
+export function hasCharacterLorebookBodyProjectionEpochChanged(characterId: string, epoch: number): boolean {
+  return captureCharacterLorebookBodyProjectionEpoch(characterId) !== epoch
+}
+
+function resetCharacterBodyResourceRevisions(): void {
+  chatBodyResourceRevisions.clear()
+  characterLorebookBodyResourceRevisions.clear()
+}
+
+function pruneCharacterBodyResourceRevisions(characters: readonly character[]): void {
+  const characterIds = new Set<string>()
+  const chatIds = new Set<string>()
+  for (const candidate of characters) {
+    if (nonEmptyString(candidate?.chaId)) characterIds.add(candidate.chaId)
+    for (const chat of candidate?.chats ?? []) {
+      if (nonEmptyString(chat?.id)) chatIds.add(chat.id)
+    }
+  }
+  for (const chatId of chatBodyResourceRevisions.keys()) {
+    if (!chatIds.has(chatId)) chatBodyResourceRevisions.delete(chatId)
+  }
+  for (const characterId of characterLorebookBodyResourceRevisions.keys()) {
+    if (!characterIds.has(characterId)) characterLorebookBodyResourceRevisions.delete(characterId)
+  }
+}
+
+function markRemovedCharacterBodyProjections(
+  previousCharacters: readonly character[],
+  nextCharacters: readonly character[],
+): void {
+  const nextCharacterIds = new Set(
+    nextCharacters.filter((candidate) => nonEmptyString(candidate?.chaId)).map((candidate) => candidate.chaId),
+  )
+  const nextChatIds = new Set(
+    nextCharacters.flatMap((candidate) =>
+      (candidate?.chats ?? []).filter((chat) => nonEmptyString(chat?.id)).map((chat) => chat.id),
+    ),
+  )
+  for (const character of previousCharacters) {
+    if (nonEmptyString(character?.chaId) && !nextCharacterIds.has(character.chaId)) {
+      markCharacterLorebookProjectionApplied(character.chaId)
+    }
+    for (const chat of character?.chats ?? []) {
+      if (nonEmptyString(chat?.id) && !nextChatIds.has(chat.id)) markChatBodyProjectionApplied(chat.id)
+    }
+  }
+}
+
 function advanceCharacterLorebookProjectionEpoch(characterId: string): void {
   characterLorebookProjectionEpochs.set(characterId, ++nextCharacterLorebookProjectionEpoch)
 }
@@ -60,7 +177,9 @@ export function hasCharacterLorebookProjectionEpochChanged(characterId: string, 
 
 /** Record a successful authoritative character-lorebook-only projection apply. */
 export function markCharacterLorebookProjectionApplied(characterId: string): void {
-  if (nonEmptyString(characterId)) advanceCharacterLorebookProjectionEpoch(characterId)
+  if (!nonEmptyString(characterId)) return
+  advanceCharacterLorebookProjectionEpoch(characterId)
+  advanceCharacterLorebookBodyProjectionEpoch(characterId)
 }
 
 function advanceCollectionProjectionEpoch(name: ServerCollectionName): void {
@@ -559,6 +678,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   settingsResourceState.groupRevisions = {}
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  applyRuntimeLanguage(settingsResourceState.value.language)
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
@@ -597,6 +717,7 @@ export function applySettingsGroupResource(
   settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
+  if (groupKeys.includes('language')) applyRuntimeLanguage(target.language)
   advanceSettingsGroupProjectionEpoch(payload.group)
   if (payload.group === 'providers') advanceSettingsGroupProjectionEpoch('models')
   advanceSettingsProjectionEpoch()
@@ -643,6 +764,7 @@ export function applySettingsPatchLocalEffect(payload: ServerSettingsPatchLocalE
       settingsTarget[key] = cloneJsonValue(payload.settings[key])
     }
   }
+  if (attemptedKeys.includes('language')) applyRuntimeLanguage(settingsTarget.language)
 
   if (knownSettingsRevision < payload.revision) {
     settingsResourceState.groupRevisions[payload.group] = payload.revision
@@ -874,6 +996,10 @@ export function applyLorebookMutationLocalEffect(payload: ServerLorebookMutation
   charactersResourceState.rowStatuses[payload.characterId] = 'ready'
   delete charactersResourceState.rowErrors[payload.characterId]
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
+  if (payload.scope === 'character') {
+    markCharacterLorebookBodyResourceRevision(payload.characterId, payload.revision)
+    markCharacterLorebookProjectionApplied(payload.characterId)
+  }
   markResourceDatabaseChanged()
   return true
 }
@@ -1710,6 +1836,9 @@ export function applyCharactersResource(
   if (Object.values(charactersResourceState.rowRevisions).some((revision) => revision > payload.revision)) return false
 
   const preserveResidentChatBodies = options.preserveResidentChatBodies ?? true
+  if (!preserveResidentChatBodies) resetCharacterBodyResourceRevisions()
+  const previousCharacters = charactersResourceState.characters
+  const appliedLorebookBodyIds = new Set<string>()
   const existingById = preserveResidentChatBodies
     ? new Map(
         charactersResourceState.characters
@@ -1719,10 +1848,20 @@ export function applyCharactersResource(
     : null
   charactersResourceState.characters = payload.characters.map((candidate) => {
     const nextCharacter = cloneJsonValue(candidate)
-    return existingById
-      ? preserveResidentCharacterChatBodies(nextCharacter, existingById.get(candidate.chaId))
-      : nextCharacter
+    const appliesLorebookBody =
+      nextCharacter.globalLore !== undefined &&
+      !hasNewerCharacterLorebookBodyResourceRevision(nextCharacter.chaId, payload.revision)
+    if (appliesLorebookBody) appliedLorebookBodyIds.add(nextCharacter.chaId)
+    return preserveResidentCharacterChatBodies(nextCharacter, existingById?.get(candidate.chaId), payload.revision)
   })
+  if (preserveResidentChatBodies) {
+    markRemovedCharacterBodyProjections(previousCharacters, charactersResourceState.characters)
+  }
+  pruneCharacterBodyResourceRevisions(charactersResourceState.characters)
+  for (const characterId of appliedLorebookBodyIds) {
+    markCharacterLorebookBodyResourceRevision(characterId, payload.revision)
+    if (preserveResidentChatBodies) advanceCharacterLorebookBodyProjectionEpoch(characterId)
+  }
   charactersResourceState.characterOrder = cloneJsonValue(payload.characterOrder)
   charactersResourceState.currentChar = payload.currentChar
   charactersResourceState.revision = maxRevision(charactersResourceState.revision, payload.revision)
@@ -1743,6 +1882,8 @@ export function applyCharactersResource(
   charactersResourceState.status = 'ready'
   charactersResourceState.error = null
   advanceAllCharacterRowProjectionEpochs()
+  if (!preserveResidentChatBodies) advanceAllChatBodyProjectionEpochs()
+  if (!preserveResidentChatBodies) advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
   markResourceDatabaseChanged()
   return true
@@ -1800,14 +1941,24 @@ export function applyCharacterResource(payload: ServerCharacterResourcePayload):
   if (isOlderRevision(payload.revision, charactersResourceState.listRevision)) return false
 
   const index = charactersResourceState.characters.findIndex((candidate) => candidate?.chaId === characterId)
-  const nextCharacter = preserveResidentCharacterChatBodies(
-    cloneJsonValue(payload.character),
-    index >= 0 ? charactersResourceState.characters[index] : undefined,
-  )
+  const previousCharacter = index >= 0 ? charactersResourceState.characters[index] : undefined
+  const incomingCharacter = cloneJsonValue(payload.character)
+  const appliesLorebookBody =
+    incomingCharacter.globalLore !== undefined &&
+    !hasNewerCharacterLorebookBodyResourceRevision(characterId, payload.revision)
+  const nextCharacter = preserveResidentCharacterChatBodies(incomingCharacter, previousCharacter, payload.revision)
   if (index >= 0) {
     charactersResourceState.characters[index] = nextCharacter
   } else {
     charactersResourceState.characters.push(nextCharacter)
+  }
+  if (previousCharacter) {
+    markRemovedCharacterBodyProjections([previousCharacter], [nextCharacter])
+  }
+  pruneCharacterBodyResourceRevisions(charactersResourceState.characters)
+  if (appliesLorebookBody) {
+    markCharacterLorebookBodyResourceRevision(characterId, payload.revision)
+    advanceCharacterLorebookBodyProjectionEpoch(characterId)
   }
   charactersResourceState.rowRevisions[characterId] = payload.revision
   charactersResourceState.rowStatuses[characterId] = 'ready'
@@ -2024,16 +2175,20 @@ export function resetServerResourceState(): void {
   charactersResourceState.rowStatuses = {}
   charactersResourceState.error = null
   charactersResourceState.rowErrors = {}
+  resetCharacterBodyResourceRevisions()
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   advanceLorebookPageProjectionEpoch()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
+  advanceAllChatBodyProjectionEpochs()
+  advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
   markResourceDatabaseChanged()
 }
 
 export function replaceResourceDatabase(database: Database, revision?: number): void {
+  resetCharacterBodyResourceRevisions()
   const nextRevision = normalizeOptionalRevision(revision)
   const databaseRecord = cloneJsonValue(database) as unknown as Record<string, unknown>
   const settings: Record<string, unknown> = {}
@@ -2102,6 +2257,8 @@ export function replaceResourceDatabase(database: Database, revision?: number): 
   advanceLorebookPageProjectionEpoch()
   advanceAllCollectionProjectionEpochs()
   advanceAllCharacterRowProjectionEpochs()
+  advanceAllChatBodyProjectionEpochs()
+  advanceAllCharacterLorebookBodyProjectionEpochs()
   advanceAllCharacterLorebookProjectionEpochs()
   markResourceDatabaseChanged()
 }
@@ -2329,9 +2486,12 @@ function markResourceDatabaseChanged(): void {
   resourceDatabaseFacadeEpoch += 1
 }
 
-function preserveResidentCharacterChatBodies(incoming: character, existing: character | undefined): character {
-  if (!existing) return incoming
-  if (Array.isArray(incoming.chats) && Array.isArray(existing.chats)) {
+function preserveResidentCharacterChatBodies(
+  incoming: character,
+  existing: character | undefined,
+  incomingRevision: number,
+): character {
+  if (existing && Array.isArray(incoming.chats) && Array.isArray(existing.chats)) {
     const existingChatsById = new Map(
       existing.chats.filter((chat) => nonEmptyString(chat?.id)).map((chat) => [chat.id, chat]),
     )
@@ -2352,10 +2512,21 @@ function preserveResidentCharacterChatBodies(incoming: character, existing: char
       }
     }
   }
-  if (incoming.globalLore === undefined && existing.globalLore !== undefined) {
+  const bodyIsNewer = hasNewerCharacterLorebookBodyResourceRevision(incoming.chaId, incomingRevision)
+  if (bodyIsNewer) {
+    if (existing?.globalLore !== undefined) {
+      incoming.globalLore = existing.globalLore
+    } else {
+      delete incoming.globalLore
+    }
+  } else if (incoming.globalLore === undefined && existing?.globalLore !== undefined) {
     incoming.globalLore = existing.globalLore
   }
   return incoming
+}
+
+function applyRuntimeLanguage(value: unknown): void {
+  changeLanguage(typeof value === 'string' ? value : 'en')
 }
 
 function shouldUseCharacterPointerResource(property: 'characterOrder' | 'currentChar'): boolean {

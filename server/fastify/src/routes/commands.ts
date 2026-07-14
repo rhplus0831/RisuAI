@@ -1121,7 +1121,6 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'deeplOptions',
     'deeplXOptions',
     'noWaitForTranslate',
-    'translateBeforeHTMLFormatting',
     'showTranslationLoading',
     'useExperimentalGoogleTranslator',
   ],
@@ -1262,7 +1261,7 @@ export const SETTINGS_GROUP_KEYS: Record<ReadableSettingsGroup, readonly string[
     'chatGenerationTogglePresets',
     'customSidebarItems',
   ],
-  account: ['account', 'didFirstSetup', 'username', 'localNetworkMode', 'localNetworkTimeoutSec'],
+  account: ['account', 'didFirstSetup', 'username'],
 }
 
 const BOOLEAN_SETTING_KEYS = new Set([

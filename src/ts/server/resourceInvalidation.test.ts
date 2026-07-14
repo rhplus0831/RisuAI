@@ -35,6 +35,14 @@ const promptHydration = vi.hoisted(() => ({
   reset: vi.fn(),
 }))
 
+const languageSideEffects = vi.hoisted(() => ({
+  change: vi.fn(),
+}))
+
+vi.mock('../../lang', () => ({
+  changeLanguage: languageSideEffects.change,
+}))
+
 vi.mock('./resourceReads', () => ({
   fetchServerSettings: api.settings,
   fetchServerSettingsGroup: api.settingsGroup,
@@ -71,15 +79,19 @@ import {
 } from './resourceInvalidation'
 import {
   SERVER_COLLECTION_NAMES,
+  applyCharacterResource,
   applyCharactersResource,
   applyCollectionsResource,
   applySettingsGroupResource,
   applySettingsResource,
   captureCharacterLorebookProjectionEpoch,
   captureCharacterRowProjectionEpoch,
+  charactersResourceState,
   getResourceDatabase,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
+  markCharacterLorebookProjectionApplied,
+  markChatBodyProjectionApplied,
   resetServerResourceState,
 } from './resourceState.svelte'
 import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
@@ -153,10 +165,19 @@ function event(revision: number, resource: string, ids: { id?: string; parentId?
   return { type: `${resource}.updated`, revision, resource, ...ids }
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   resetServerResourceState()
   for (const mock of Object.values(api)) mock.mockReset()
   for (const mock of Object.values(sideEffects)) mock.mockClear()
+  languageSideEffects.change.mockClear()
   for (const mock of [
     promptHydration.ensure,
     promptHydration.invalidate,
@@ -195,6 +216,7 @@ describe('API-backed resource invalidation', () => {
     })
     expect(sideEffects.mergePluginStorage).toHaveBeenCalledWith({ authoritative: true })
     expect(promptHydration.reset).toHaveBeenCalledTimes(1)
+    expect(languageSideEffects.change).toHaveBeenLastCalledWith('ko')
   })
 
   it('retries inconsistent full reads and applies only a common revision', async () => {
@@ -287,6 +309,7 @@ describe('API-backed resource invalidation', () => {
     expect(api.chat).not.toHaveBeenCalled()
     const database = getResourceDatabase()
     expect(database).toMatchObject({ language: 'ja', modules: [{ id: 'module-a' }] })
+    expect(languageSideEffects.change).toHaveBeenLastCalledWith('ja')
     expect(database.characters.find((candidate) => candidate.chaId === 'char-a')).toMatchObject({
       chaId: 'char-a',
       name: 'Ada updated',
@@ -1113,6 +1136,266 @@ describe('API-backed resource invalidation', () => {
     expect(hasCharacterRowProjectionEpochChanged('char-a', characterRowEpoch)).toBe(false)
   })
 
+  it('drops an in-flight chat invalidation after a newer projection removes its target', async () => {
+    seedResources(1)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      chatId: string
+      message: unknown[]
+      hypaV3Data: unknown
+      alternates: unknown[]
+    }>()
+    api.chat.mockReturnValue(response.promise)
+
+    const refresh = refreshInvalidatedServerResources(event(2, 'message', { id: 'message-a', parentId: 'chat-a' }), {
+      appliedRevision: 1,
+      hooks,
+    })
+    expect(api.chat).toHaveBeenCalledWith('chat-a', { signal: undefined })
+
+    applyCharacterResource({
+      revision: 2,
+      character: metadataCharacter('char-a', 'Ada', 'chat-b'),
+    })
+    response.resolve({
+      status: 'ok',
+      revision: 2,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'older in-flight transcript' }],
+      hypaV3Data: undefined,
+      alternates: [],
+    })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(sideEffects.applyChat).not.toHaveBeenCalled()
+  })
+
+  it('drops an in-flight generation window after a newer local transcript projection', async () => {
+    seedResources(1)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      chatId: string
+      message: unknown[]
+      hypaV3Data: unknown
+      alternates: unknown[]
+      messageStart: number
+      messageTotal: number
+    }>()
+    api.generationChat.mockReturnValue(response.promise)
+
+    const refresh = refreshInvalidatedServerResources(
+      event(2, 'generation', { id: 'generated-a', parentId: 'chat-a' }),
+      { appliedRevision: 1, hooks },
+    )
+    expect(api.generationChat).toHaveBeenCalledWith('chat-a', 'generated-a', { signal: undefined })
+
+    markChatBodyProjectionApplied('chat-a')
+    response.resolve({
+      status: 'ok',
+      revision: 2,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'older in-flight generation' }],
+      hypaV3Data: undefined,
+      alternates: [],
+      messageStart: 1,
+      messageTotal: 2,
+    })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(sideEffects.applyChat).not.toHaveBeenCalled()
+  })
+
+  it('drops an in-flight character-lorebook invalidation after a newer local body projection', async () => {
+    seedResources(1)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      characterId: string
+      globalLore: unknown[]
+    }>()
+    api.lorebook.mockReturnValue(response.promise)
+
+    const refresh = refreshInvalidatedServerResources(event(2, 'characterLorebook', { id: 'char-a' }), {
+      appliedRevision: 1,
+      hooks,
+    })
+    expect(api.lorebook).toHaveBeenCalledWith('char-a', { signal: undefined })
+
+    markCharacterLorebookProjectionApplied('char-a')
+    response.resolve({
+      status: 'ok',
+      revision: 2,
+      characterId: 'char-a',
+      globalLore: [{ key: 'older in-flight lore' }],
+    })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+    expect(sideEffects.applyLorebook).not.toHaveBeenCalled()
+  })
+
+  it('checks each captured character-lorebook epoch from a bulk invalidation independently', async () => {
+    seedResources(1)
+    const response = deferred<{
+      status: 'ok'
+      revision: number
+      characters: Array<{ characterId: string; globalLore: unknown[] }>
+      missing: string[]
+    }>()
+    api.lorebooks.mockReturnValue(response.promise)
+
+    const refresh = refreshInvalidatedServerResources(
+      [event(2, 'characterLorebook', { id: 'char-a' }), event(3, 'characterLorebook', { id: 'char-b' })],
+      { appliedRevision: 1, hooks },
+    )
+    expect(api.lorebooks).toHaveBeenCalledWith(['char-a', 'char-b'], { signal: undefined })
+
+    markCharacterLorebookProjectionApplied('char-a')
+    response.resolve({
+      status: 'ok',
+      revision: 3,
+      characters: [
+        { characterId: 'char-a', globalLore: [{ key: 'older A' }] },
+        { characterId: 'char-b', globalLore: [{ key: 'fresh B' }] },
+      ],
+      missing: [],
+    })
+
+    await expect(refresh).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+    expect(sideEffects.applyLorebook).toHaveBeenCalledOnce()
+    expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-b', [{ key: 'fresh B' }])
+  })
+
+  it('applies transcript and lorebook bodies even when a newer character shell was read in the same batch', async () => {
+    seedResources(1)
+    const characterShell = metadataCharacter('char-a', 'Ada refreshed', 'chat-a')
+    delete characterShell.globalLore
+    api.character.mockResolvedValue({
+      status: 'ok',
+      revision: 5,
+      character: characterShell,
+    })
+    api.chat.mockResolvedValue({
+      status: 'ok',
+      revision: 4,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'fresh transcript' }],
+      hypaV3Data: { fresh: true },
+      alternates: [],
+    })
+    api.lorebook.mockResolvedValue({
+      status: 'ok',
+      revision: 4,
+      characterId: 'char-a',
+      globalLore: [{ key: 'fresh lore' }],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [
+          event(2, 'characterRow', { id: 'char-a' }),
+          event(3, 'message', { id: 'message-a', parentId: 'chat-a' }),
+          event(4, 'characterLorebook', { id: 'char-a' }),
+        ],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 4, scope: 'targeted' })
+
+    expect(api.character).toHaveBeenCalledWith('char-a', undefined)
+    expect(sideEffects.applyChat).toHaveBeenCalledWith(
+      'chat-a',
+      [{ role: 'char', data: 'fresh transcript' }],
+      { fresh: true },
+      [],
+      undefined,
+    )
+    expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-a', [{ key: 'fresh lore' }])
+  })
+
+  it('keeps a newer un-stubbed character-row lorebook ahead of an older dedicated body', async () => {
+    seedResources(1)
+    const character = metadataCharacter('char-a', 'Ada refreshed', 'chat-a')
+    character.globalLore = [{ key: 'newer row lore' }] as never
+    api.character.mockResolvedValue({ status: 'ok', revision: 5, character })
+    api.lorebook.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      characterId: 'char-a',
+      globalLore: [{ key: 'older dedicated lore' }],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [event(2, 'characterRow', { id: 'char-a' }), event(3, 'characterLorebook', { id: 'char-a' })],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+    expect(sideEffects.applyLorebook).not.toHaveBeenCalled()
+    expect(getResourceDatabase().characters[0].globalLore).toEqual([{ key: 'newer row lore' }])
+  })
+
+  it('uses the pre-apply supersession snapshot when an earlier sibling apply advances an epoch', async () => {
+    seedResources(1)
+    api.chat.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'fresh transcript' }],
+      hypaV3Data: undefined,
+      alternates: [],
+    })
+    api.lorebook.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      characterId: 'char-a',
+      globalLore: [{ key: 'fresh lore' }],
+    })
+    sideEffects.applyChat.mockImplementationOnce(() => {
+      markCharacterLorebookProjectionApplied('char-a')
+      return true
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [event(2, 'message', { id: 'message-a', parentId: 'chat-a' }), event(3, 'characterLorebook', { id: 'char-a' })],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+    expect(sideEffects.applyChat).toHaveBeenCalledOnce()
+    expect(sideEffects.applyLorebook).toHaveBeenCalledWith('char-a', [{ key: 'fresh lore' }])
+  })
+
+  it('does not claim a parent character-row revision for body-only reads', async () => {
+    seedResources(1)
+    api.chat.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      chatId: 'chat-a',
+      message: [{ role: 'char', data: 'fresh transcript' }],
+      hypaV3Data: undefined,
+      alternates: [],
+    })
+    api.lorebook.mockResolvedValue({
+      status: 'ok',
+      revision: 3,
+      characterId: 'char-a',
+      globalLore: [{ key: 'fresh lore' }],
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        [event(2, 'message', { id: 'message-a', parentId: 'chat-a' }), event(3, 'characterLorebook', { id: 'char-a' })],
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 3, scope: 'targeted' })
+
+    expect(charactersResourceState.rowRevisions['char-a']).toBe(1)
+    expect(charactersResourceState.revision).toBe(1)
+  })
+
   it('uses a full chat read when generation windows for one chat are ambiguous', async () => {
     seedResources(1)
     api.chat.mockResolvedValue({
@@ -1448,7 +1731,7 @@ describe('API-backed resource invalidation', () => {
       resource: 'promptPreset',
       collection: 'promptPresets',
       settings: false,
-      promptTemplate: false,
+      promptTemplate: true,
     },
     {
       type: 'promptPreset.updated',
@@ -1476,14 +1759,14 @@ describe('API-backed resource invalidation', () => {
       resource: 'promptPreset',
       collection: 'promptPresets',
       settings: false,
-      promptTemplate: false,
+      promptTemplate: true,
     },
     {
       type: 'promptPreset.reordered',
       resource: 'promptPreset',
       collection: 'promptPresets',
       settings: true,
-      promptTemplate: false,
+      promptTemplate: true,
     },
   ] as const)(
     'plans only the server-written slices for $type',
@@ -1582,6 +1865,38 @@ describe('API-backed resource invalidation', () => {
     expect(api.collection).toHaveBeenCalledWith('promptPresets', undefined)
     expect(api.collection).not.toHaveBeenCalledWith('promptTemplate', undefined)
     expect(promptHydration.reset).toHaveBeenCalledTimes(1)
+    expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
+    expect(promptHydration.ensure).toHaveBeenCalledWith({
+      applyProjection: true,
+      force: true,
+      minimumRevision: 2,
+      promptPresetId: 'prompt-preset-a',
+    })
+  })
+
+  it('restores the unchanged selected prompt body after a prompt preset creation replaces shell rows', async () => {
+    seedResources(1)
+    promptHydration.currentOwner = 'prompt-preset-a'
+    api.collection.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      collections: {
+        promptPresets: [
+          { id: 'prompt-preset-a', name: 'Prompt A' },
+          { id: 'prompt-preset-b', name: 'Prompt B' },
+        ],
+      },
+    })
+
+    await expect(
+      refreshInvalidatedServerResources(
+        { type: 'promptPreset.created', revision: 2, resource: 'promptPreset', id: 'prompt-preset-b' },
+        { appliedRevision: 1, hooks },
+      ),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.settings).not.toHaveBeenCalled()
+    expect(promptHydration.reset).toHaveBeenCalledOnce()
     expect(promptHydration.invalidate).toHaveBeenCalledWith('prompt-preset-a')
     expect(promptHydration.ensure).toHaveBeenCalledWith({
       applyProjection: true,

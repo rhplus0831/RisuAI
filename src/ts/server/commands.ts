@@ -409,7 +409,7 @@ export interface CharacterOrderLocalEffect {
   attemptedOrder: CharacterOrderEntry[]
 }
 
-export type ServerCommandLocalEffect =
+export type ServerCommandLocalEffect = (
   | ChatGenerationSettingsLocalEffect
   | CharacterPatchLocalEffect
   | CharacterSelectionLocalEffect
@@ -438,6 +438,10 @@ export type ServerCommandLocalEffect =
   | MessageMutationLocalEffect
   | CharacterRowMutationLocalEffect
   | CharacterOrderLocalEffect
+) & {
+  /** Non-enumerable transport proof captured when the optimistic command is enqueued. */
+  readonly destructiveRefreshEpoch?: number
+}
 
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
@@ -1501,6 +1505,21 @@ let serverCommandExecutionTail: Promise<void> = Promise.resolve()
 let queuedServerCommandExecutionCount = 0
 let activeServerCommandReconciliationBatch: ServerCommandReconciliationBatch | null = null
 const directServerCommandReconciliations = new Set<DirectServerCommandReconciliation>()
+// A queued optimistic command can wait behind another request while a full
+// refresh replaces its local patch. Keep the epoch captured at enqueue time in
+// scope for every transport that the queued factory starts, so its eventual
+// local effect fails closed and triggers an authoritative reread.
+let activeQueuedCommandDestructiveRefreshEpoch: number | null = null
+
+async function withQueuedCommandDestructiveRefreshEpoch<T>(epoch: number, task: () => Promise<T>): Promise<T> {
+  const previousEpoch = activeQueuedCommandDestructiveRefreshEpoch
+  activeQueuedCommandDestructiveRefreshEpoch = epoch
+  try {
+    return await task()
+  } finally {
+    activeQueuedCommandDestructiveRefreshEpoch = previousEpoch
+  }
+}
 
 function enqueueServerCommandExecution<T>(task: () => Promise<T>): Promise<T> {
   const batch = getOrCreateServerCommandReconciliationBatch()
@@ -1901,7 +1920,11 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
   if (grouped.length === 0) return { status: 'unavailable' }
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
-  return enqueueServerCommandExecution(() => executeServerBackedSettingsPatch(input, grouped, rollbackEpoch))
+  return enqueueServerCommandExecution(() =>
+    withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () =>
+      executeServerBackedSettingsPatch(input, grouped, rollbackEpoch),
+    ),
+  )
 }
 
 async function executeServerBackedSettingsPatch(
@@ -4684,7 +4707,9 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
-  return enqueueServerCommandExecution(() => executeServerCommand(input, rollbackEpoch))
+  return enqueueServerCommandExecution(() =>
+    withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () => executeServerCommand(input, rollbackEpoch)),
+  )
 }
 
 /**
@@ -4706,7 +4731,11 @@ export async function runServerCommandSequence(
   if (!canUseServerCommands() || commands.length === 0) return null
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
-  return enqueueServerCommandExecution(() => executeServerCommandSequence(commands, rollback, rollbackEpoch))
+  return enqueueServerCommandExecution(() =>
+    withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () =>
+      executeServerCommandSequence(commands, rollback, rollbackEpoch),
+    ),
+  )
 }
 
 async function executeServerCommandSequence(
@@ -4787,6 +4816,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     deferOwnEventUntilResponse?: (event: CommandEvent) => boolean
   },
 ): Promise<ServerCommandResult<T>> {
+  const destructiveRefreshEpoch = activeQueuedCommandDestructiveRefreshEpoch ?? captureDestructiveRefreshEpoch()
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
@@ -4847,7 +4877,15 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       }
       const event = readCommandEvent(body)
       if (event) {
-        const localEffect = init.readLocalEffect?.(body, event)
+        const parsedLocalEffect = init.readLocalEffect?.(body, event)
+        let localEffect: ServerCommandLocalEffect | undefined
+        if (parsedLocalEffect) {
+          localEffect = { ...parsedLocalEffect }
+          Object.defineProperty(localEffect, 'destructiveRefreshEpoch', {
+            value: parsedLocalEffect.destructiveRefreshEpoch ?? destructiveRefreshEpoch,
+            enumerable: false,
+          })
+        }
         await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately, localEffect)
         confirmedEvent = event
       }

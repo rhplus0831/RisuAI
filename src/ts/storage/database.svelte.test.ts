@@ -50,6 +50,7 @@ import {
   updatePreset,
   updateModelPreset,
   updatePromptPreset,
+  withTrustedResourceWrite,
   type botPreset,
   type Database,
   type ModelPreset,
@@ -1064,6 +1065,42 @@ describe('preset command rollback (L21)', () => {
       name: 'Hydrated',
       mainPrompt: 'Hydrated prompt',
       promptTemplate: [{ id: 'hydrated-prompt', type: 'plain', text: 'hydrated prompt' }],
+    })
+  })
+
+  it('does not refetch an authoritative legacy preset with no optional settings fields', async () => {
+    seedPresetDatabase({
+      botPresets: [{ id: 'preset-minimal', name: 'Minimal', image: 'minimal.png' } as botPreset],
+      botPresetsId: 0,
+    })
+    setResourceWriteGuardEnabled(true)
+    const fetchSpy = vi.fn(async () =>
+      jsonResponse({
+        revision: 7,
+        preset: {
+          id: 'preset-minimal',
+          name: 'Minimal',
+          image: 'minimal.png',
+          localNetworkMode: false,
+          localNetworkTimeoutSec: 600,
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().botPresets[0] = clonePlain(getDatabase().botPresets[0])
+    })
+    await expect(ensureBotPresetHydrated(0)).resolves.toBe(true)
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+    expect(getDatabase().botPresets[0]).toEqual({
+      id: 'preset-minimal',
+      name: 'Minimal',
+      image: 'minimal.png',
+      localNetworkMode: false,
+      localNetworkTimeoutSec: 600,
     })
   })
 

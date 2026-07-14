@@ -126,6 +126,24 @@ describe('server hydration read clients', () => {
     })
   })
 
+  it('parses the selected default-scaffold fallback separately from the preset-owned body', async () => {
+    const resourceFetch = makeResourceFetch(() => ({
+      revision: 9,
+      promptPresetId: 'default-prompt-preset',
+      promptTemplate: null,
+      selectedFallbackPromptTemplate: [{ id: 'root-prompt', text: 'fallback' }],
+    }))
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    await expect(fetchServerPromptPresetTemplate('default-prompt-preset')).resolves.toEqual({
+      status: 'ok',
+      revision: 9,
+      promptPresetId: 'default-prompt-preset',
+      promptTemplate: null,
+      selectedFallbackPromptTemplate: [{ id: 'root-prompt', text: 'fallback' }],
+    })
+  })
+
   it('fetches chat messages with tail or range query params and parses optional ranges', async () => {
     const responses = [
       {
@@ -324,6 +342,12 @@ describe('server hydration read clients', () => {
       { revision: 1, promptPresetId: 'preset-a', promptTemplate: {} },
       {
         revision: 1,
+        promptPresetId: 'preset-a',
+        promptTemplate: null,
+        selectedFallbackPromptTemplate: {},
+      },
+      {
+        revision: 1,
         chatId: 'chat-a',
         message: [],
         messageStart: 3,
@@ -348,6 +372,10 @@ describe('server hydration read clients', () => {
     await expect(fetchServerPromptPresetTemplate('preset-a')).resolves.toEqual({
       status: 'error',
       error: 'Invalid resource revision',
+    })
+    await expect(fetchServerPromptPresetTemplate('preset-a')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid prompt preset template response',
     })
     await expect(fetchServerPromptPresetTemplate('preset-a')).resolves.toEqual({
       status: 'error',

@@ -690,6 +690,71 @@ describe('server command API adapter', () => {
     await expect(second).resolves.toMatchObject({ status: 'ok', revision: 12 })
   })
 
+  it('carries the enqueue-time refresh epoch through a command that waits in the queue', async () => {
+    const firstResponse = createDeferred<Response>()
+    const secondResponse = createDeferred<Response>()
+    const calls: string[] = []
+    let observedEffect: ServerCommandLocalEffect | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        calls.push(String(input))
+        return calls.length === 1 ? firstResponse.promise : secondResponse.promise
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(10)
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffect = localEffects.get(12)
+    })
+
+    const first = runServerCommand({
+      command: (baseRevision) =>
+        patchRuntimeSettings({
+          baseRevision,
+          patch: { maxContext: 8_000 },
+        }),
+    })
+    await vi.waitFor(() => expect(calls).toHaveLength(1))
+
+    const queuedEpoch = captureDestructiveRefreshEpoch()
+    const second = runServerCommand({
+      command: (baseRevision) =>
+        updateCharacterCommand({
+          baseRevision,
+          characterId: 'char-b',
+          patch: { name: 'accepted optimistic name' },
+        }),
+    })
+    createDestructiveRefreshToken('queued-character-patch-refresh')
+
+    firstResponse.resolve(
+      jsonResponse({
+        revision: 11,
+        event: { type: 'settings.updated', revision: 11, resource: 'settings' },
+      }),
+    )
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    secondResponse.resolve(
+      jsonResponse({
+        revision: 12,
+        event: {
+          type: 'character.updated',
+          revision: 12,
+          resource: 'characterRow',
+          id: 'char-b',
+        },
+        characterId: 'char-b',
+      }),
+    )
+
+    await expect(Promise.all([first, second])).resolves.toMatchObject([
+      { status: 'ok', revision: 11 },
+      { status: 'ok', revision: 12 },
+    ])
+    expect(observedEffect?.destructiveRefreshEpoch).toBe(queuedEpoch)
+    expect(observedEffect?.destructiveRefreshEpoch).not.toBe(captureDestructiveRefreshEpoch())
+  })
+
   it('starts a queued transport before reconciling the older command and never restores its older optimistic value', async () => {
     const firstResponse = createDeferred<Response>()
     const secondResponse = createDeferred<Response>()
@@ -5970,6 +6035,37 @@ describe('server command API adapter', () => {
         patch: { name: 'B renamed' },
       },
     ])
+  })
+
+  it('captures the destructive-refresh epoch before a local-effect command request', async () => {
+    const requestEpoch = captureDestructiveRefreshEpoch()
+    let observedEffect: ServerCommandLocalEffect | undefined
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffect = [...localEffects.values()][0]
+    })
+    const commandFetch = makeCommandFetch(() => {
+      createDestructiveRefreshToken('character-patch-in-flight-refresh')
+      return {
+        revision: 3,
+        event: {
+          type: 'character.updated',
+          revision: 3,
+          resource: 'characterRow',
+          id: 'char-b',
+        },
+        characterId: 'char-b',
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await updateCharacterCommand({
+      baseRevision: 2,
+      characterId: 'char-b',
+      patch: { name: 'B renamed' },
+    })
+
+    expect(observedEffect?.destructiveRefreshEpoch).toBe(requestEpoch)
+    expect(Object.keys(observedEffect ?? {})).not.toContain('destructiveRefreshEpoch')
   })
 
   it('reports an accepted character selection as a local command effect', async () => {

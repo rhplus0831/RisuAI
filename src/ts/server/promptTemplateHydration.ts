@@ -9,6 +9,8 @@ export const promptTemplateHydratedStore = writable(false)
 let promptTemplateHydrationInFlight = new Map<string, Promise<boolean>>()
 let promptTemplateHydrationGeneration = 0
 let promptTemplateHydratedOwnerIds = new Set<string | null>()
+let promptTemplateSelectedFallbackOwnerIds = new Set<string>()
+let deferredPromptTemplateSelectedFallbacks = new Map<string, Database['promptTemplate']>()
 let nextPromptTemplateOwnerProjectionEpoch = 0
 let promptTemplateOwnerProjectionBaseline = 0
 let promptTemplateOwnerProjectionEpochs = new Map<string | null, number>()
@@ -55,6 +57,8 @@ export function resetPromptTemplateHydration(): void {
   promptTemplateHydrationGeneration += 1
   promptTemplateHydrationInFlight = new Map()
   promptTemplateHydratedOwnerIds = new Set()
+  promptTemplateSelectedFallbackOwnerIds = new Set()
+  deferredPromptTemplateSelectedFallbacks = new Map()
   promptTemplateOwnerProjectionBaseline = ++nextPromptTemplateOwnerProjectionEpoch
   promptTemplateOwnerProjectionEpochs = new Map()
   promptTemplateOwnerRevisions = new Map()
@@ -66,6 +70,10 @@ export function invalidatePromptTemplateHydration(
   promptPresetId: string | null = currentPromptTemplateOwnerId(),
 ): void {
   promptTemplateHydratedOwnerIds.delete(promptPresetId)
+  if (promptPresetId !== null) {
+    promptTemplateSelectedFallbackOwnerIds.delete(promptPresetId)
+    deferredPromptTemplateSelectedFallbacks.delete(promptPresetId)
+  }
   if (promptPresetId !== null) promptTemplateHydrationInFlight.delete(promptPresetId)
   promptTemplateOwnerProjectionEpochs.set(promptPresetId, ++nextPromptTemplateOwnerProjectionEpoch)
   promptTemplateHydratedStore.set(promptTemplateHydratedOwnerIds.size > 0)
@@ -170,12 +178,27 @@ export async function ensurePromptTemplateHydrated(
     }
 
     const fields = { promptTemplate: result.promptTemplate } as Partial<Database>
+    const selectedFallbackPromptTemplate = result.selectedFallbackPromptTemplate as
+      | Database['promptTemplate']
+      | undefined
     if (
       !applyPromptTemplateProjectionFields(fields, ownerId, {
         applyCompatibilityProjection: applyProjection && ownerIsCurrent,
+        ...(selectedFallbackPromptTemplate !== undefined ? { selectedFallbackPromptTemplate } : {}),
       })
     ) {
       return false
+    }
+    if (selectedFallbackPromptTemplate === undefined) {
+      promptTemplateSelectedFallbackOwnerIds.delete(ownerId)
+      deferredPromptTemplateSelectedFallbacks.delete(ownerId)
+    } else {
+      promptTemplateSelectedFallbackOwnerIds.add(ownerId)
+      if (applyProjection && ownerIsCurrent) {
+        deferredPromptTemplateSelectedFallbacks.delete(ownerId)
+      } else {
+        deferredPromptTemplateSelectedFallbacks.set(ownerId, JSON.parse(JSON.stringify(selectedFallbackPromptTemplate)))
+      }
     }
     markPromptTemplateProjectionApplied(ownerId, result.revision)
     return true
@@ -195,10 +218,28 @@ function applyHydratedOwnerCompatibilityProjection(ownerId: string): boolean {
   if (!preset) return false
   const hasPromptTemplate = Object.prototype.hasOwnProperty.call(preset, 'promptTemplate')
   if (hasPromptTemplate && !Array.isArray(preset.promptTemplate)) return false
+  const usesSelectedFallback = !hasPromptTemplate && promptTemplateSelectedFallbackOwnerIds.has(ownerId)
+  const selectedFallbackPromptTemplate = usesSelectedFallback
+    ? (deferredPromptTemplateSelectedFallbacks.get(ownerId) ?? getDatabase().promptTemplate)
+    : undefined
+  if (usesSelectedFallback && !Array.isArray(selectedFallbackPromptTemplate)) {
+    promptTemplateHydratedOwnerIds.delete(ownerId)
+    promptTemplateSelectedFallbackOwnerIds.delete(ownerId)
+    deferredPromptTemplateSelectedFallbacks.delete(ownerId)
+    promptTemplateHydratedStore.set(promptTemplateHydratedOwnerIds.size > 0)
+    return false
+  }
   const fields = {
     promptTemplate: hasPromptTemplate ? JSON.parse(JSON.stringify(preset.promptTemplate)) : null,
   } as Partial<Database>
-  return applyPromptTemplateProjectionFields(fields, ownerId, { applyCompatibilityProjection: true })
+  const applied = applyPromptTemplateProjectionFields(fields, ownerId, {
+    applyCompatibilityProjection: true,
+    ...(usesSelectedFallback
+      ? { selectedFallbackPromptTemplate: JSON.parse(JSON.stringify(selectedFallbackPromptTemplate)) }
+      : {}),
+  })
+  if (applied) deferredPromptTemplateSelectedFallbacks.delete(ownerId)
+  return applied
 }
 
 function isOlderThanRevision(revision: number, comparisonRevision: number | null): boolean {
@@ -245,7 +286,10 @@ function snapshotJson(value: unknown): string {
 export function applyPromptTemplateProjectionFields(
   fields: Partial<Database>,
   ownerId: string | null = currentPromptTemplateOwnerId(),
-  options: { applyCompatibilityProjection?: boolean } = {},
+  options: {
+    applyCompatibilityProjection?: boolean
+    selectedFallbackPromptTemplate?: Database['promptTemplate']
+  } = {},
 ): boolean {
   if (ownerId === null) {
     mergeServerResourceFields(fields)
@@ -277,7 +321,9 @@ export function applyPromptTemplateProjectionFields(
       ownerId === currentPromptTemplateOwnerId() &&
       hasPromptTemplate
     ) {
-      if (promptTemplate === null) {
+      if (options.selectedFallbackPromptTemplate !== undefined) {
+        database.promptTemplate = options.selectedFallbackPromptTemplate
+      } else if (promptTemplate === null) {
         delete (database as unknown as Record<string, unknown>).promptTemplate
       } else {
         database.promptTemplate = promptTemplate as Database['promptTemplate']

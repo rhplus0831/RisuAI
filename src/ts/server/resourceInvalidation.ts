@@ -34,10 +34,18 @@ import {
   applyLegacyPresetRowResource,
   applySettingsResource,
   applySettingsGroupResource,
+  captureCharacterLorebookBodyProjectionEpoch,
+  captureChatBodyProjectionEpoch,
   captureLegacyPresetResourceBaseline,
   charactersResourceState,
   collectionsResourceState,
+  hasCharacterLorebookBodyProjectionEpochChanged,
+  hasChatBodyProjectionEpochChanged,
+  hasNewerCharacterLorebookBodyResourceRevision,
+  hasNewerChatBodyResourceRevision,
+  markCharacterLorebookBodyResourceRevision,
   markCharacterLorebookProjectionApplied,
+  markChatBodyResourceRevision,
   settingsResourceState,
   type ServerCollectionName,
   type ServerCollectionsResourcePayload,
@@ -132,9 +140,14 @@ type CompletedTargetedRead =
   | { kind: 'character'; characterId: string; result: CharacterReadResult }
   | { kind: 'characterOrder'; result: CharacterOrderReadResult }
   | { kind: 'characterSelection'; characterId: string; result: CharacterSelectionReadResult }
-  | { kind: 'chat'; chatId: string; result: ChatReadResult }
-  | { kind: 'lorebook'; characterId: string; result: LorebookReadResult }
-  | { kind: 'lorebooks'; characterIds: string[]; result: BulkLorebookReadResult }
+  | { kind: 'chat'; chatId: string; projectionEpoch: number; result: ChatReadResult }
+  | { kind: 'lorebook'; characterId: string; projectionEpoch: number; result: LorebookReadResult }
+  | {
+      kind: 'lorebooks'
+      characterIds: string[]
+      projectionEpochs: Map<string, number>
+      result: BulkLorebookReadResult
+    }
 
 /** Load and apply the complete API-backed database resource set at startup. */
 export async function loadInitialServerResources(
@@ -235,6 +248,10 @@ export async function refreshInvalidatedServerResources(
   }
 
   const completed = await runTargetedReads(plan, options.signal)
+  // Snapshot supersession before applying any sibling result. Character-shell
+  // applies advance their own projection epochs, but must not make a body read
+  // from this same completed batch appear stale.
+  const bodyReadSupersessions = snapshotTargetedBodyReadSupersessions(completed)
   const failed = firstFailedTargetedRead(completed)
   if (failed) return failed
 
@@ -253,7 +270,7 @@ export async function refreshInvalidatedServerResources(
       const failedApply = withServerResourceApply(() => {
         for (const entry of completed) {
           if (entry.result.status !== 'ok') continue
-          if (!applyTargetedRead(entry, options.hooks)) return targetedReadLabel(entry)
+          if (!applyTargetedRead(entry, bodyReadSupersessions, options.hooks)) return targetedReadLabel(entry)
         }
         return null
       })
@@ -513,9 +530,10 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
         case 'promptPreset.created':
         case 'promptPreset.imported':
           if (!hasEntityId) break
-          // These append an unselected shell/body. The active prompt template
-          // and settings projection are unchanged.
+          // Replacing the shell collection removes every resident prompt body,
+          // including the still-selected owner's body.
           plan.collections.add('promptPresets')
+          plan.refreshSelectedPromptTemplate = true
           return
         case 'promptPreset.selected':
           if (!hasEntityId) break
@@ -535,10 +553,11 @@ function addEventToRefreshPlan(plan: RefreshPlan, event: CommandEvent): void {
           return
         case 'promptPreset.reordered':
           if (event.id !== undefined || event.parentId !== undefined) break
-          // Reordering can move the numeric settings pointer, but neither
-          // changes nor reapplies the selected prompt-template body.
+          // Reordering moves the numeric pointer and replaces the body-free
+          // shell collection, so restore the selected owner's prompt body.
           addFullSettings()
           plan.collections.add('promptPresets')
+          plan.refreshSelectedPromptTemplate = true
           return
       }
       plan.full = true
@@ -768,15 +787,23 @@ async function runTargetedReads(
   // retain that authoritative swipe/reroll state, so fetch each changed chat
   // concurrently through the single-chat endpoint instead.
   for (const chatId of plan.chatIds) {
+    const projectionEpoch = captureChatBodyProjectionEpoch(chatId)
     reads.push(
-      fetchServerChatMessages(chatId, { signal }).then((result) => ({ kind: 'chat' as const, chatId, result })),
+      fetchServerChatMessages(chatId, { signal }).then((result) => ({
+        kind: 'chat' as const,
+        chatId,
+        projectionEpoch,
+        result,
+      })),
     )
   }
   for (const [chatId, messageId] of plan.generationChatMessageIds) {
+    const projectionEpoch = captureChatBodyProjectionEpoch(chatId)
     reads.push(
       fetchServerGenerationChatMessages(chatId, messageId, { signal }).then((result) => ({
         kind: 'chat' as const,
         chatId,
+        projectionEpoch,
         result,
       })),
     )
@@ -785,18 +812,27 @@ async function runTargetedReads(
   const lorebookCharacterIds = [...plan.lorebookCharacterIds]
   if (lorebookCharacterIds.length === 1) {
     const characterId = lorebookCharacterIds[0]
+    const projectionEpoch = captureCharacterLorebookBodyProjectionEpoch(characterId)
     reads.push(
       fetchServerCharacterLorebook(characterId, { signal }).then((result) => ({
         kind: 'lorebook' as const,
         characterId,
+        projectionEpoch,
         result,
       })),
     )
   } else if (lorebookCharacterIds.length > 1) {
+    const projectionEpochs = new Map(
+      lorebookCharacterIds.map((characterId) => [
+        characterId,
+        captureCharacterLorebookBodyProjectionEpoch(characterId),
+      ]),
+    )
     reads.push(
       fetchServerBulkCharacterLorebooks(lorebookCharacterIds, { signal }).then((result) => ({
         kind: 'lorebooks' as const,
         characterIds: lorebookCharacterIds,
+        projectionEpochs,
         result,
       })),
     )
@@ -856,8 +892,48 @@ function uniqueLegacyPresetIds(rows: readonly unknown[]): Set<string> | null {
   return ids
 }
 
+interface TargetedBodyReadSupersessions {
+  chatIds: Set<string>
+  characterLorebookIds: Set<string>
+}
+
+function snapshotTargetedBodyReadSupersessions(
+  completed: readonly CompletedTargetedRead[],
+): TargetedBodyReadSupersessions {
+  const supersessions: TargetedBodyReadSupersessions = {
+    chatIds: new Set(),
+    characterLorebookIds: new Set(),
+  }
+  for (const entry of completed) {
+    if (entry.kind === 'chat') {
+      if (hasChatBodyProjectionEpochChanged(entry.chatId, entry.projectionEpoch)) {
+        supersessions.chatIds.add(entry.chatId)
+      }
+      continue
+    }
+    if (entry.kind === 'lorebook') {
+      if (hasCharacterLorebookBodyProjectionEpochChanged(entry.characterId, entry.projectionEpoch)) {
+        supersessions.characterLorebookIds.add(entry.characterId)
+      }
+      continue
+    }
+    if (entry.kind !== 'lorebooks') continue
+    for (const characterId of entry.characterIds) {
+      const projectionEpoch = entry.projectionEpochs.get(characterId)
+      if (
+        projectionEpoch !== undefined &&
+        hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)
+      ) {
+        supersessions.characterLorebookIds.add(characterId)
+      }
+    }
+  }
+  return supersessions
+}
+
 function applyTargetedRead(
   entry: CompletedTargetedRead,
+  bodyReadSupersessions: TargetedBodyReadSupersessions,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): boolean {
   switch (entry.kind) {
@@ -930,19 +1006,25 @@ function applyTargetedRead(
       )
     case 'chat':
       return (
-        entry.result.status !== 'ok' || (entry.result.chatId === entry.chatId && applyChatMessages(entry.result, hooks))
+        entry.result.status !== 'ok' ||
+        (entry.result.chatId === entry.chatId &&
+          applyChatMessages(entry.result, bodyReadSupersessions.chatIds.has(entry.chatId), hooks))
       )
     case 'lorebook':
-      return entry.result.status !== 'ok' || applyCharacterLorebook(entry.result, hooks)
+      return (
+        entry.result.status !== 'ok' ||
+        applyCharacterLorebook(entry.result, bodyReadSupersessions.characterLorebookIds.has(entry.characterId), hooks)
+      )
     case 'lorebooks': {
       const result = entry.result
       if (result.status !== 'ok') return true
       const missing = new Set(result.missing)
-      if (entry.characterIds.some((characterId) => missing.has(characterId))) return false
       return entry.characterIds.every((characterId) => {
+        const superseded = bodyReadSupersessions.characterLorebookIds.has(characterId)
+        if (missing.has(characterId)) return superseded
         const character = result.characters.find((candidate) => candidate.characterId === characterId)
         return character
-          ? applyCharacterLorebook({ status: 'ok', revision: result.revision, ...character }, hooks)
+          ? applyCharacterLorebook({ status: 'ok', revision: result.revision, ...character }, superseded, hooks)
           : false
       })
     }
@@ -977,32 +1059,36 @@ async function refreshInvalidatedPromptTemplateOwners(
 
 function applyChatMessages(
   result: Extract<ChatReadResult, { status: 'ok' }>,
+  superseded: boolean,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): boolean {
+  if (superseded) return true
   const characterId = characterIdForChat(result.chatId)
   if (!characterId) return false
-  if (characterAlreadyNewer(characterId, result.revision)) return true
+  if (hasNewerChatBodyResourceRevision(result.chatId, result.revision)) return true
   if (!hooks?.applyChatMessages) return false
   const range =
     typeof result.messageStart === 'number' && typeof result.messageTotal === 'number'
       ? { start: result.messageStart, total: result.messageTotal }
       : undefined
   const applied = hooks.applyChatMessages(result.chatId, result.message, result.hypaV3Data, result.alternates, range)
-  if (applied) markCharacterBodyRevision(characterId, result.revision)
+  if (applied) markChatBodyResourceRevision(result.chatId, result.revision)
   return applied
 }
 
 function applyCharacterLorebook(
   result: Extract<LorebookReadResult, { status: 'ok' }>,
+  superseded: boolean,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): boolean {
+  if (superseded) return true
   if (!charactersResourceState.characters.some((candidate) => candidate?.chaId === result.characterId)) return false
-  if (characterAlreadyNewer(result.characterId, result.revision)) return true
+  if (hasNewerCharacterLorebookBodyResourceRevision(result.characterId, result.revision)) return true
   if (!hooks?.applyCharacterLorebook) return false
   const applied = hooks.applyCharacterLorebook(result.characterId, result.globalLore)
   if (applied) {
     hooks.markCharacterLorebookHydrated?.(result.characterId)
-    markCharacterBodyRevision(result.characterId, result.revision)
+    markCharacterLorebookBodyResourceRevision(result.characterId, result.revision)
     markCharacterLorebookProjectionApplied(result.characterId)
   }
   return applied
@@ -1013,16 +1099,6 @@ function characterIdForChat(chatId: string): string | undefined {
     if (character.chats?.some((candidate) => candidate?.id === chatId)) return character.chaId
   }
   return undefined
-}
-
-function markCharacterBodyRevision(characterId: string, revision: number): void {
-  charactersResourceState.rowRevisions[characterId] = Math.max(
-    charactersResourceState.rowRevisions[characterId] ?? -1,
-    revision,
-  )
-  charactersResourceState.revision = Math.max(charactersResourceState.revision ?? -1, revision)
-  charactersResourceState.rowStatuses[characterId] = 'ready'
-  delete charactersResourceState.rowErrors[characterId]
 }
 
 function withPendingPluginStorage<T extends ServerCollectionsResourcePayload>(
@@ -1166,13 +1242,6 @@ function charactersAlreadyAtLeast(revision: number): boolean {
 function characterAlreadyAtLeast(characterId: string, revision: number): boolean {
   return (
     Math.max(charactersResourceState.listRevision ?? -1, charactersResourceState.rowRevisions[characterId] ?? -1) >=
-    revision
-  )
-}
-
-function characterAlreadyNewer(characterId: string, revision: number): boolean {
-  return (
-    Math.max(charactersResourceState.listRevision ?? -1, charactersResourceState.rowRevisions[characterId] ?? -1) >
     revision
   )
 }

@@ -1,6 +1,17 @@
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { type AuthState, hasPassword, isAgentDevAuthBypassed, verifyAssertion } from './auth.js'
 
+export const PREFER_RETURN_MINIMAL = 'return=minimal'
+
+export function prefersMinimalResponse(prefer: string | string[] | undefined): boolean {
+  const preferences = Array.isArray(prefer) ? prefer : [prefer]
+  return preferences.some((header) =>
+    header
+      ?.split(',')
+      .some((preference) => preference.trim().split(';', 1)[0]?.toLowerCase() === PREFER_RETURN_MINIMAL),
+  )
+}
+
 export function extractRisuAuth(req: FastifyRequest): string {
   const raw = req.headers['risu-auth']
   if (Array.isArray(raw)) {

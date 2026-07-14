@@ -23,6 +23,14 @@ import { canUseServerResourceReads } from './resourceReads'
 import { beginHydrationRequest, recordBulkHydration, recordHydrationStaleDrop } from './protocolDiagnostics'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT, normalizeChatDisplayTailCount } from '../chatDisplayTailCount'
 import { setChatStructureHydrationHooks } from './chatStructureHydrationHooks'
+import {
+  captureCharacterLorebookBodyProjectionEpoch,
+  hasCharacterLorebookBodyProjectionEpochChanged,
+  markCharacterLorebookBodyResourceRevision,
+  markCharacterLorebookProjectionApplied,
+  markChatBodyProjectionApplied,
+  markChatBodyResourceRevision,
+} from './resourceState.svelte'
 
 export const BULK_HYDRATION_CONCURRENCY = 4
 export const ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW = DEFAULT_CHAT_DISPLAY_TAIL_COUNT
@@ -182,6 +190,7 @@ function refreshPendingFreshnessAfterHydration(chatId: string, completedToken: C
 
 function advanceChatProjectionEpoch(chatId: string): void {
   chatProjectionEpochs.set(chatId, (chatProjectionEpochs.get(chatId) ?? 0) + 1)
+  markChatBodyProjectionApplied(chatId)
 }
 
 /**
@@ -317,8 +326,10 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
           : undefined
       const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range)
       if (!applied) return
+      markChatBodyResourceRevision(chatId, result.revision)
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
+        markChatBodyProjectionApplied(chatId)
       }
       // Only the open chat's tail drives the swipe buffer; seed it from this
       // chat's persisted reroll candidates so rerolls survive a reload.
@@ -393,6 +404,8 @@ async function hydrateChatsBulk(chatIds: readonly string[], options: BulkHydrati
         missingIds.push(chatId)
         continue
       }
+      markChatBodyResourceRevision(chatId, result.revision)
+      markChatBodyProjectionApplied(chatId)
       hydratedChatIds.add(chatId)
       refreshPendingFreshnessAfterHydration(chatId, freshness)
     }
@@ -606,6 +619,7 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
 
   const generation = charLorebookHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
+  const projectionEpoch = captureCharacterLorebookBodyProjectionEpoch(characterId)
   let request: Promise<void>
   request = (async () => {
     try {
@@ -627,9 +641,15 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
         recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
         return
       }
+      if (hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)) {
+        recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
+        return
+      }
 
       const applied = hydrateServerCharacterLorebook(characterId, result.globalLore)
       if (!applied) return
+      markCharacterLorebookBodyResourceRevision(characterId, result.revision)
+      markCharacterLorebookProjectionApplied(characterId)
       // Mark hydrated so the lorebook watcher tracks (and persists) edits to it.
       markCharacterLorebookHydrated(characterId)
       hydratedCharLorebookIds.add(characterId)
@@ -653,6 +673,9 @@ async function hydrateCharacterLorebooksBulk(
 
   const generation = charLorebookHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
+  const projectionEpochs = new Map(
+    characterIds.map((characterId) => [characterId, captureCharacterLorebookBodyProjectionEpoch(characterId)]),
+  )
   const endRequest = beginHydrationRequest('characterLorebook')
   const result = await fetchServerBulkCharacterLorebooks(characterIds).finally(endRequest)
   if (result.status !== 'ok') {
@@ -688,11 +711,18 @@ async function hydrateCharacterLorebooksBulk(
       missingIds.push(characterId)
       continue
     }
+    const projectionEpoch = projectionEpochs.get(characterId)
+    if (projectionEpoch === undefined || hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)) {
+      recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
+      continue
+    }
     const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
     if (!applied) {
       missingIds.push(characterId)
       continue
     }
+    markCharacterLorebookBodyResourceRevision(characterId, result.revision)
+    markCharacterLorebookProjectionApplied(characterId)
     markCharacterLorebookHydrated(characterId)
     hydratedCharLorebookIds.add(characterId)
   }

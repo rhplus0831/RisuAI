@@ -59,6 +59,7 @@ export type ServerPromptPresetTemplateResult =
       revision: number
       promptPresetId: string
       promptTemplate: unknown[] | null
+      selectedFallbackPromptTemplate?: unknown[]
     }
   | { status: 'error'; error: string }
   | { status: 'unavailable' }
@@ -103,9 +104,11 @@ export async function fetchServerPromptPresetTemplate(
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) {
     return { status: 'error', error: 'Invalid resource revision' }
   }
+  const hasSelectedFallback = Object.prototype.hasOwnProperty.call(record, 'selectedFallbackPromptTemplate')
   if (
     record.promptPresetId !== promptPresetId ||
-    (record.promptTemplate !== null && !Array.isArray(record.promptTemplate))
+    (record.promptTemplate !== null && !Array.isArray(record.promptTemplate)) ||
+    (hasSelectedFallback && (record.promptTemplate !== null || !Array.isArray(record.selectedFallbackPromptTemplate)))
   ) {
     return { status: 'error', error: 'Invalid prompt preset template response' }
   }
@@ -114,6 +117,9 @@ export async function fetchServerPromptPresetTemplate(
     revision: record.revision as number,
     promptPresetId,
     promptTemplate: record.promptTemplate as unknown[] | null,
+    ...(hasSelectedFallback
+      ? { selectedFallbackPromptTemplate: record.selectedFallbackPromptTemplate as unknown[] }
+      : {}),
   }
 }
 

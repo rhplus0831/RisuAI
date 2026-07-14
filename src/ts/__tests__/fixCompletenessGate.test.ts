@@ -109,7 +109,7 @@ const SCHEDULED_FIXES: ScheduledFix[] = [
     fix: 'Defer jsonPayloadBytes until metrics are enabled',
     status: 'DONE',
     testPath: 'server/fastify/__tests__/serverLoadCostHarness.test.ts',
-    testName: 'M5: resource and bootstrap reads avoid protocol-metric serialization',
+    testName: 'M5: resource and bootstrap responses add metric serialization only when enabled',
   },
   {
     id: 'M6',

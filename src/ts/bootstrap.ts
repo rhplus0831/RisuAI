@@ -606,6 +606,15 @@ function applyTranslatorPresetPatchAcknowledgement(
 }
 
 function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffect: ServerCommandLocalEffect): boolean {
+  if (
+    localEffect.destructiveRefreshEpoch !== undefined &&
+    (!Number.isInteger(localEffect.destructiveRefreshEpoch) ||
+      localEffect.destructiveRefreshEpoch < 0 ||
+      hasDestructiveRefreshEpochChanged(localEffect.destructiveRefreshEpoch))
+  ) {
+    return false
+  }
+
   switch (localEffect.kind) {
     case 'agentPresetPatch':
       return applyAgentPresetPatchAcknowledgement(event, localEffect)

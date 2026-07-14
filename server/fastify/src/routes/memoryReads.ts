@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { DatabaseSync } from 'node:sqlite'
 import type { AuthState } from '../auth.js'
-import { requireAuth } from '../http.js'
+import { PREFER_RETURN_MINIMAL, prefersMinimalResponse, requireAuth } from '../http.js'
 import {
   deleteMemorySummary,
   getMemorySummary,
@@ -10,8 +10,6 @@ import {
   updateMemorySummary,
 } from '../memoryRepository.js'
 import { ValidationError } from '../repository.js'
-
-const PREFER_RETURN_MINIMAL = 'return=minimal'
 
 interface MemoryReadParams {
   chatId: string
@@ -42,15 +40,6 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function hasOwn(value: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
-}
-
-function prefersMinimalResponse(prefer: string | string[] | undefined): boolean {
-  const preferences = Array.isArray(prefer) ? prefer : [prefer]
-  return preferences.some((header) =>
-    header
-      ?.split(',')
-      .some((preference) => preference.trim().split(';', 1)[0]?.toLowerCase() === PREFER_RETURN_MINIMAL),
-  )
 }
 
 export function registerMemoryReadRoutes(app: FastifyInstance, db: DatabaseSync, authState: AuthState): void {

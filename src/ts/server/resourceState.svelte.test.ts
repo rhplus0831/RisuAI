@@ -53,6 +53,7 @@ import {
   getResourceDatabase,
   hasCharacterRowProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
+  hasNewerCharacterLorebookBodyResourceRevision,
   hasCollectionProjectionEpochChanged,
   hasLorebookPageProjectionEpochChanged,
   hasSettingsGroupProjectionEpochChanged,
@@ -61,7 +62,7 @@ import {
   isSettingsGroupAcknowledgementTainted,
   isCollectionAcknowledgementTainted,
   markCollectionAcknowledgementTainted,
-  markCharacterLorebookProjectionApplied,
+  markCharacterLorebookBodyResourceRevision,
   markSettingsGroupAcknowledgementTainted,
   markSettingsAcknowledgementTainted,
   replaceResourceDatabase,
@@ -1557,7 +1558,7 @@ describe('resource-scoped database state', () => {
     ).toBe(false)
   })
 
-  it('fences scoped lorebook mutations without replacing newer entries or advancing projection epochs', () => {
+  it('fences scoped lorebook mutations without replacing newer entries and advances only the body projection', () => {
     const globalEntry = canonicalLorebookEntry('global-entry', 'global newer')
     const characterEntry = canonicalLorebookEntry('character-entry', 'character newer')
     const chatEntry = canonicalLorebookEntry('chat-entry', 'chat newer')
@@ -1615,10 +1616,8 @@ describe('resource-scoped database state', () => {
     expect(charactersResourceState.rowRevisions['char-a']).toBe(6)
     expect(hasCollectionProjectionEpochChanged('loreBook', globalEpoch)).toBe(false)
     expect(hasCharacterRowProjectionEpochChanged('char-a', rowEpoch)).toBe(false)
-    expect(hasCharacterLorebookProjectionEpochChanged('char-a', lorebookEpoch)).toBe(false)
-
-    markCharacterLorebookProjectionApplied('char-a')
     expect(hasCharacterLorebookProjectionEpochChanged('char-a', lorebookEpoch)).toBe(true)
+    expect(hasNewerCharacterLorebookBodyResourceRevision('char-a', 4)).toBe(true)
     expect(hasCharacterRowProjectionEpochChanged('char-a', rowEpoch)).toBe(false)
   })
 
@@ -2247,7 +2246,7 @@ describe('resource-scoped database state', () => {
     })
   })
 
-  it('preserves a resident lorebook when a targeted or list row refresh omits the stubbed field', () => {
+  it('preserves a newer resident lorebook across stale rows and accepts a newer row-owned body', () => {
     const resident = metadataCharacter('char-a', 'Resident')
     resident.globalLore = [{ key: 'resident', content: 'kept' }] as never
     applyCharactersResource({
@@ -2256,19 +2255,30 @@ describe('resource-scoped database state', () => {
       characterOrder: ['char-a'],
       currentChar: 0,
     })
+    markCharacterLorebookBodyResourceRevision('char-a', 4)
 
-    expect(applyCharacterResource({ revision: 2, character: metadataCharacter('char-a', 'Targeted') })).toBe(true)
+    const targeted = metadataCharacter('char-a', 'Targeted')
+    targeted.globalLore = [{ key: 'stale-targeted', content: 'must not replace' }] as never
+    expect(applyCharacterResource({ revision: 2, character: targeted })).toBe(true)
     expect(getResourceDatabase().characters[0].globalLore).toEqual([{ key: 'resident', content: 'kept' }])
 
+    const listed = metadataCharacter('char-a', 'Listed')
+    listed.globalLore = [{ key: 'stale-listed', content: 'must not replace' }] as never
     expect(
       applyCharactersResource({
         revision: 3,
-        characters: [metadataCharacter('char-a', 'Listed')],
+        characters: [listed],
         characterOrder: ['char-a'],
         currentChar: 0,
       }),
     ).toBe(true)
     expect(getResourceDatabase().characters[0].globalLore).toEqual([{ key: 'resident', content: 'kept' }])
+
+    const newer = metadataCharacter('char-a', 'Newer')
+    newer.globalLore = [{ key: 'newer-row', content: 'authoritative' }] as never
+    expect(applyCharacterResource({ revision: 5, character: newer })).toBe(true)
+    expect(getResourceDatabase().characters[0].globalLore).toEqual([{ key: 'newer-row', content: 'authoritative' }])
+    expect(hasNewerCharacterLorebookBodyResourceRevision('char-a', 4)).toBe(true)
   })
 
   it('preserves newer pending generation settings across targeted and list character refreshes', () => {

@@ -521,6 +521,77 @@ describe('authenticated resource read routes', () => {
     expect(hydration.json().error).toBe('prompt_preset_ambiguous')
   })
 
+  it('preserves and hydrates the selected default-scaffold fallback from the root template', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      sqlite
+        .prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0')
+        .run(JSON.stringify({ id: 'default-prompt-preset', name: 'Default Prompt' }))
+      const legacyRow = sqlite.prepare('SELECT data_json FROM bot_presets WHERE position = 0').get() as {
+        data_json: string
+      }
+      const legacyPreset = JSON.parse(legacyRow.data_json) as Record<string, unknown>
+      delete legacyPreset.promptTemplate
+      sqlite.prepare('UPDATE bot_presets SET data_json = ? WHERE position = 0').run(JSON.stringify(legacyPreset))
+    } finally {
+      sqlite.close()
+    }
+
+    const aggregate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+    })
+    expect(aggregate.statusCode).toBe(200)
+    expect(aggregate.json().collections.promptTemplate).toEqual([
+      { id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' },
+    ])
+
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/prompt-presets/default-prompt-preset/template',
+      headers: authHeaders(),
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json()).toEqual({
+      revision,
+      promptPresetId: 'default-prompt-preset',
+      promptTemplate: null,
+      selectedFallbackPromptTemplate: [{ id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' }],
+    })
+  })
+
+  it('does not expose the root fallback when a legacy preset still owns a template', async () => {
+    const sqlite = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      sqlite
+        .prepare('UPDATE prompt_presets SET data_json = ? WHERE position = 0')
+        .run(JSON.stringify({ id: 'default-prompt-preset', name: 'Default Prompt' }))
+    } finally {
+      sqlite.close()
+    }
+
+    const aggregate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+    })
+    expect(aggregate.statusCode).toBe(200)
+    expect(aggregate.json().collections.promptTemplate).toEqual([])
+
+    const hydration = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/prompt-presets/default-prompt-preset/template',
+      headers: authHeaders(),
+    })
+    expect(hydration.statusCode).toBe(200)
+    expect(hydration.json()).toEqual({
+      revision,
+      promptPresetId: 'default-prompt-preset',
+      promptTemplate: null,
+    })
+  })
+
   it('returns character/chat metadata with matching chat and lorebook stubs', async () => {
     const list = await harness.app.inject({
       method: 'GET',

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -11,6 +11,31 @@ interface Harness {
   app: FastifyInstance
   dataDir: string
 }
+
+interface PayloadMetric {
+  metric: string
+  resource?: string
+  revision?: number
+  payloadBytes?: number | null
+}
+
+const capturedMetrics = vi.hoisted((): PayloadMetric[] => [])
+
+vi.mock('../src/protocolMetrics.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/protocolMetrics.js')>()
+  return {
+    ...actual,
+    emitProtocolMetric: (name: string, fields: Record<string, unknown> | (() => Record<string, unknown>)) => {
+      if (!actual.protocolMetricsEnabled()) return
+      capturedMetrics.push({
+        metric: name,
+        ...(typeof fields === 'function' ? fields() : fields),
+      } as PayloadMetric)
+    },
+  }
+})
+
+const PREVIOUS_PROTOCOL_METRICS = process.env.RISU_PROTOCOL_METRICS
 
 async function startHarness(): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
@@ -35,11 +60,18 @@ let harness: Harness
 let assertion: string
 
 beforeEach(async () => {
+  process.env.RISU_PROTOCOL_METRICS = '1'
+  capturedMetrics.length = 0
   harness = await startHarness()
   ;({ assertion } = await setupAuthedClient(harness.app))
 })
 
 afterEach(async () => {
+  if (PREVIOUS_PROTOCOL_METRICS === undefined) {
+    delete process.env.RISU_PROTOCOL_METRICS
+  } else {
+    process.env.RISU_PROTOCOL_METRICS = PREVIOUS_PROTOCOL_METRICS
+  }
   await harness.app.close()
   rmSync(harness.dataDir, { recursive: true, force: true })
 })
@@ -82,9 +114,18 @@ function messageHeavyDatabase(): Record<string, unknown> {
   }
 }
 
+function latestMetric(name: string, resource?: string): PayloadMetric {
+  const metric = [...capturedMetrics]
+    .reverse()
+    .find((entry) => entry.metric === name && (resource === undefined || entry.resource === resource))
+  expect(metric, `missing ${name}${resource ? `/${resource}` : ''} payload metric`).toBeTruthy()
+  return metric as PayloadMetric
+}
+
 describe('Phase 8 payload budgets', () => {
-  it('keeps bootstrap and character reads message-light', async () => {
+  it('emits bootstrap and resource payload metrics for message-light responses', async () => {
     const revision = await importDatabase(messageHeavyDatabase())
+    capturedMetrics.length = 0
 
     const bootstrap = await harness.app.inject({
       method: 'GET',
@@ -115,7 +156,14 @@ describe('Phase 8 payload budgets', () => {
     const hydrationBody = hydration.json()
     expect(hydrationBody.message).toHaveLength(80)
 
-    expect(jsonPayloadBytes(bootstrapBody)!).toBeLessThan(jsonPayloadBytes(hydrationBody)!)
-    expect(jsonPayloadBytes(charactersBody)!).toBeLessThan(jsonPayloadBytes(hydrationBody)!)
+    const bootstrapMetric = latestMetric('bootstrap_projection')
+    const charactersMetric = latestMetric('resource_response', 'characters')
+    const hydrationMetric = latestMetric('resource_response', 'chatMessages')
+
+    expect(bootstrapMetric.payloadBytes).toBe(jsonPayloadBytes(bootstrapBody))
+    expect(charactersMetric.payloadBytes).toBe(jsonPayloadBytes(charactersBody))
+    expect(hydrationMetric.payloadBytes).toBe(jsonPayloadBytes(hydrationBody))
+    expect(bootstrapMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
+    expect(charactersMetric.payloadBytes).toBeLessThan(hydrationMetric.payloadBytes!)
   })
 })

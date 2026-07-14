@@ -48,6 +48,15 @@ import {
   resetRerollNavigation,
   seedRerollBufferFromAlternates,
 } from '../process/rerollNavigation.svelte'
+import {
+  captureCharacterLorebookBodyProjectionEpoch,
+  captureChatBodyProjectionEpoch,
+  hasCharacterLorebookBodyProjectionEpochChanged,
+  hasChatBodyProjectionEpochChanged,
+  hasNewerCharacterLorebookBodyResourceRevision,
+  hasNewerChatBodyResourceRevision,
+  markCharacterLorebookProjectionApplied,
+} from './resourceState.svelte'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -177,6 +186,7 @@ const db = () =>
 
 describe('chat message hydration bridge', () => {
   it('hydrates only the active chat, and dedupes a second call', async () => {
+    const projectionEpoch = captureChatBodyProjectionEpoch('chat-1')
     projectionState.fetchChat.mockResolvedValue(okResult('chat-1', [{ role: 'user', data: 'hi', chatId: 'm1' }]))
 
     await hydrateActiveChat()
@@ -186,6 +196,8 @@ describe('chat message hydration bridge', () => {
       tail: ACTIVE_CHAT_INITIAL_MESSAGE_WINDOW,
     })
     expect(db().characters[0].chats[0].message).toEqual([{ role: 'user', data: 'hi', chatId: 'm1' }])
+    expect(hasNewerChatBodyResourceRevision('chat-1', 0)).toBe(true)
+    expect(hasChatBodyProjectionEpochChanged('chat-1', projectionEpoch)).toBe(true)
     // The unrelated chat stays a stub.
     expect(db().characters[0].chats[1].message).toEqual([])
 
@@ -604,8 +616,10 @@ describe('chat message hydration bridge', () => {
     const oldHydration = deferred<ReturnType<typeof okResult>>()
     projectionState.fetchChat.mockReturnValueOnce(oldHydration.promise)
     const pendingHydration = hydrateActiveChatFully()
+    const projectionEpoch = captureChatBodyProjectionEpoch('chat-1')
 
     expect(acknowledgeMessageMutationLocalEffect('chat-1')).toBe(true)
+    expect(hasChatBodyProjectionEpochChanged('chat-1', projectionEpoch)).toBe(true)
     oldHydration.resolve(okResult('chat-1', [{ role: 'user', data: 'stale', chatId: 'm-stale' }]))
     await pendingHydration
 
@@ -783,6 +797,7 @@ describe('isChatMessageHydrationPending', () => {
 
 describe('character globalLore hydration (Phase 5)', () => {
   it('hydrates + marks the open character globalLore when stubs are on', async () => {
+    const projectionEpoch = captureCharacterLorebookBodyProjectionEpoch('char-1')
     ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
     projectionState.fetchCharLore.mockResolvedValue({
       status: 'ok',
@@ -798,10 +813,38 @@ describe('character globalLore hydration (Phase 5)', () => {
     expect((db().characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([{ key: 'k', content: 'lore' }])
     // Marked hydrated → the lorebook watcher will now track (and persist) edits.
     expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+    expect(hasNewerCharacterLorebookBodyResourceRevision('char-1', 0)).toBe(true)
+    expect(hasCharacterLorebookBodyProjectionEpochChanged('char-1', projectionEpoch)).toBe(true)
 
     // Deduped on a second call (no refetch).
     await hydrateActiveCharacterLorebook()
     expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not let a forced hydration overwrite a newer local lorebook body', async () => {
+    ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    const oldHydration = deferred<{
+      status: 'ok'
+      revision: number
+      characterId: string
+      globalLore: unknown[]
+    }>()
+    projectionState.fetchCharLore.mockReturnValue(oldHydration.promise)
+
+    const pendingHydration = hydrateActiveCharacterLorebook({ force: true })
+    const localLore = [{ key: 'local', content: 'newer local lore' }]
+    ;(testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore = localLore
+    markCharacterLorebookProjectionApplied('char-1')
+    oldHydration.resolve({
+      status: 'ok',
+      revision: 1,
+      characterId: 'char-1',
+      globalLore: [{ key: 'old', content: 'older hydration' }],
+    })
+
+    await pendingHydration
+
+    expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual(localLore)
   })
 
   it('hydrates many character lorebooks with one bulk request', async () => {
@@ -816,6 +859,25 @@ describe('character globalLore hydration (Phase 5)', () => {
       { key: 'char-1', content: 'lore' },
     ])
     expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+  })
+
+  it('applies bulk lorebooks per id without overwriting a newer local body', async () => {
+    seedManyLorebookStubCharacters(2)
+    const oldHydration = deferred<ReturnType<typeof okBulkLorebookResult>>()
+    projectionState.fetchBulkCharLore.mockReturnValue(oldHydration.promise)
+
+    const pendingHydration = ensureAllCharacterLorebooksHydrated()
+    const localLore = [{ key: 'local', content: 'newer local lore' }]
+    ;(testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore = localLore
+    markCharacterLorebookProjectionApplied('char-1')
+    oldHydration.resolve(okBulkLorebookResult(['char-1', 'char-2']))
+
+    await pendingHydration
+
+    expect((testDatabaseState.db.characters[0] as { globalLore?: unknown[] }).globalLore).toEqual(localLore)
+    expect((testDatabaseState.db.characters[1] as { globalLore?: unknown[] }).globalLore).toEqual([
+      { key: 'char-2', content: 'lore' },
+    ])
   })
 
   it('keeps all-character lorebook hydration within the request-count budget', async () => {

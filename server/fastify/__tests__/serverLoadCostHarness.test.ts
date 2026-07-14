@@ -11,6 +11,7 @@ import { runAssetGc } from '../src/assetGc.js'
 import { openDatabase } from '../src/db.js'
 import type { CompletionStreamFrame } from '../src/generation/frames.js'
 import {
+  COLLECTION_FIELDS,
   insertAssetMetadataBatch,
   loadPersisted,
   loadPersistedForAssembly,
@@ -1288,11 +1289,18 @@ describe('server load-count harness on the large-corpus fixture', () => {
     const db = openDatabase(harness.dataDir)
     try {
       const broadDatabase = loadPersisted(db, harness.dataDir).database as Record<string, unknown>
-      for (const collection of ['plugins', 'modules', 'botPresets'] as const) {
-        const expectedCollection =
-          collection === 'botPresets'
-            ? [{ id: 'preset-a', name: 'Preset A' }]
-            : maskProviderSecrets({ [collection]: broadDatabase[collection] })[collection]
+      for (const collection of [...COLLECTION_FIELDS, 'pluginCustomStorage'] as const) {
+        let expectedCollection = broadDatabase[collection]
+        if (collection === 'botPresets') {
+          expectedCollection = [{ id: 'preset-a', name: 'Preset A' }]
+        } else if (collection === 'promptPresets') {
+          expectedCollection = (broadDatabase.promptPresets as Array<Record<string, unknown>>).map((preset) => {
+            const shell = { ...preset }
+            delete shell.promptTemplate
+            return shell
+          })
+        }
+        expectedCollection = maskProviderSecrets({ [collection]: expectedCollection })[collection]
         const expected = {
           revision,
           collections: {
@@ -1828,7 +1836,7 @@ describe('server load-count harness on the large-corpus fixture', () => {
     expect(logged[1]).toEqual({ metric: 'm5_probe_eager', payloadBytes: 123 })
   })
 
-  it('M5: resource and bootstrap reads avoid protocol-metric serialization', async () => {
+  it('M5: resource and bootstrap responses add metric serialization only when enabled', async () => {
     const fixture = buildLargeCorpusFixture()
     await importDatabase(fixture.database)
 
@@ -1867,11 +1875,11 @@ describe('server load-count harness on the large-corpus fixture', () => {
 
     const hydrationOff = await withProtocolMetricsEnv('', () => countResponseStringifies(hydrate, hydrationShaped))
     const hydrationOn = await withProtocolMetricsEnv('1', () => countResponseStringifies(hydrate, hydrationShaped))
-    expect(hydrationOn).toBe(hydrationOff)
+    expect(hydrationOn).toBe(hydrationOff + 1)
 
     const bootstrapOff = await withProtocolMetricsEnv('', () => countResponseStringifies(bootstrap, bootstrapShaped))
     const bootstrapOn = await withProtocolMetricsEnv('1', () => countResponseStringifies(bootstrap, bootstrapShaped))
-    expect(bootstrapOn).toBe(bootstrapOff)
+    expect(bootstrapOn).toBe(bootstrapOff + 1)
   })
 
   it('restores the statement primitives when the instrumented body throws', async () => {

@@ -4,7 +4,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { requireActiveWriter, type ActiveWriterState } from '../activeWriter.js'
 import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
-import { requireAuth } from '../http.js'
+import { PREFER_RETURN_MINIMAL, prefersMinimalResponse, requireAuth } from '../http.js'
 import {
   ValidationError,
   addAsset,
@@ -20,7 +20,6 @@ import { emitProtocolMetric } from '../protocolMetrics.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
-const PREFER_RETURN_MINIMAL = 'return=minimal'
 export const ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
 
 interface ExistsBody {
@@ -77,15 +76,6 @@ function assetUploadResponse(result: AddAssetResult): {
     revision: result.revision,
     created: result.created,
   }
-}
-
-function prefersMinimalResponse(prefer: string | string[] | undefined): boolean {
-  const preferences = Array.isArray(prefer) ? prefer : [prefer]
-  return preferences.some((header) =>
-    header
-      ?.split(',')
-      .some((preference) => preference.trim().split(';', 1)[0]?.toLowerCase() === PREFER_RETURN_MINIMAL),
-  )
 }
 
 function readAttachedValidationError(req: { validationError?: unknown }): unknown {

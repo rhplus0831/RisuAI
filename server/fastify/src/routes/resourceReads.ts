@@ -4,6 +4,7 @@ import type { AuthState } from '../auth.js'
 import { getSchemaState } from '../db.js'
 import { requireAuth } from '../http.js'
 import { maskProviderSecretsInPlace } from '../providerSecrets.js'
+import { emitProtocolMetric, jsonPayloadBytes } from '../protocolMetrics.js'
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, type ReadableSettingsGroup } from './commands.js'
 import {
   COLLECTION_FIELDS,
@@ -55,10 +56,10 @@ export function registerResourceReadRoutes(
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadSettingsFromSqlite(db)
-    return {
+    return metricResourceResponse(req.log, 'settings', revision, {
       revision,
       settings: maskProviderSecretsInPlace(settings ?? {}),
-    }
+    })
   })
 
   app.get<{ Params: { group: string } }>('/api/v1/settings/:group', { exposeHeadRoute: false }, async (req, reply) => {
@@ -84,22 +85,28 @@ export function registerResourceReadRoutes(
           READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group),
     )
     const { revision } = getSchemaState(db)
-    return {
+    return metricResourceResponse(
+      req.log,
+      'settings',
       revision,
-      group,
-      settings: maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, keys)),
-    }
+      {
+        revision,
+        group,
+        settings: maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, keys)),
+      },
+      { group },
+    )
   })
 
   app.get('/api/v1/collections', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
-    return {
+    return metricResourceResponse(req.log, 'collections', revision, {
       revision,
       collections: loadCollections(db, dataDir, READABLE_COLLECTION_NAMES, {
         suppressSelectedPromptTemplateProjection: true,
       }),
-    }
+    })
   })
 
   app.get<{ Params: { name: string } }>('/api/v1/collections/:name', { exposeHeadRoute: false }, async (req, reply) => {
@@ -112,10 +119,16 @@ export function registerResourceReadRoutes(
       return
     }
     const { revision } = getSchemaState(db)
-    return {
+    return metricResourceResponse(
+      req.log,
+      'collection',
       revision,
-      collections: loadCollections(db, dataDir, [req.params.name]),
-    }
+      {
+        revision,
+        collections: loadCollections(db, dataDir, [req.params.name]),
+      },
+      { collection: req.params.name },
+    )
   })
 
   app.get('/api/v1/characters', { exposeHeadRoute: false }, async (req, reply) => {
@@ -123,22 +136,22 @@ export function registerResourceReadRoutes(
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
     const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsForRead(db, dataDir) })
-    return {
+    return metricResourceResponse(req.log, 'characters', revision, {
       revision,
       characters: characterEnvelope.characters,
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
       currentChar: Number.isInteger(settings.currentChar) ? settings.currentChar : -1,
-    }
+    })
   })
 
   app.get('/api/v1/characters/order', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
     const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder'])
-    return {
+    return metricResourceResponse(req.log, 'characterOrder', revision, {
       revision,
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
-    }
+    })
   })
 
   app.get<{ Params: { id: string } }>(
@@ -155,7 +168,15 @@ export function registerResourceReadRoutes(
         return
       }
       const { revision } = getSchemaState(db)
-      return { revision, ...selection }
+      return metricResourceResponse(
+        req.log,
+        'characterSelection',
+        revision,
+        { revision, ...selection },
+        {
+          id: req.params.id,
+        },
+      )
     },
   )
 
@@ -171,7 +192,13 @@ export function registerResourceReadRoutes(
     }
     const { revision } = getSchemaState(db)
     const envelope = maskProviderSecretsInPlace({ characters: [character] })
-    return { revision, character: envelope.characters[0] }
+    return metricResourceResponse(
+      req.log,
+      'character',
+      revision,
+      { revision, character: envelope.characters[0] },
+      { id: req.params.id },
+    )
   })
 
   app.get<{ Params: { id: string }; Querystring: ChatMessageRangeQuery }>(
@@ -200,37 +227,55 @@ export function registerResourceReadRoutes(
       const { revision } = getSchemaState(db)
       if (generationMessageId) {
         const hydration = loadGenerationChatHydration(db, dataDir, req.params.id, generationMessageId)
-        return {
+        return metricResourceResponse(
+          req.log,
+          'chatMessages',
           revision,
-          chatId: req.params.id,
-          message: hydration.message,
-          hypaV3Data: hydration.hypaV3Data,
-          alternates: hydration.alternates,
-          messageStart: hydration.messageStart,
-          messageTotal: hydration.messageTotal,
-        }
+          {
+            revision,
+            chatId: req.params.id,
+            message: hydration.message,
+            hypaV3Data: hydration.hypaV3Data,
+            alternates: hydration.alternates,
+            messageStart: hydration.messageStart,
+            messageTotal: hydration.messageTotal,
+          },
+          { id: req.params.id, generationMessageId },
+        )
       }
       if (range) {
         const hydration = loadChatHydrationRange(db, dataDir, req.params.id, range)
-        return {
+        return metricResourceResponse(
+          req.log,
+          'chatMessages',
+          revision,
+          {
+            revision,
+            chatId: req.params.id,
+            message: hydration.message,
+            hypaV3Data: hydration.hypaV3Data,
+            alternates: hydration.alternates,
+            messageStart: hydration.messageStart,
+            messageTotal: hydration.messageTotal,
+          },
+          { id: req.params.id, range },
+        )
+      }
+
+      const hydration = loadChatHydration(db, dataDir, req.params.id)
+      return metricResourceResponse(
+        req.log,
+        'chatMessages',
+        revision,
+        {
           revision,
           chatId: req.params.id,
           message: hydration.message,
           hypaV3Data: hydration.hypaV3Data,
           alternates: hydration.alternates,
-          messageStart: hydration.messageStart,
-          messageTotal: hydration.messageTotal,
-        }
-      }
-
-      const hydration = loadChatHydration(db, dataDir, req.params.id)
-      return {
-        revision,
-        chatId: req.params.id,
-        message: hydration.message,
-        hypaV3Data: hydration.hypaV3Data,
-        alternates: hydration.alternates,
-      }
+        },
+        { id: req.params.id },
+      )
     },
   )
 
@@ -248,11 +293,17 @@ export function registerResourceReadRoutes(
       }
       const { revision } = getSchemaState(db)
       const hydration = loadChatHydrations(db, dataDir, chatIds, { includeAlternates: false })
-      return {
+      return metricResourceResponse(
+        req.log,
+        'chatMessages',
         revision,
-        chats: hydration.chats,
-        missing: hydration.missing,
-      }
+        {
+          revision,
+          chats: hydration.chats,
+          missing: hydration.missing,
+        },
+        { bulk: true, idCount: chatIds.length },
+      )
     },
   )
 
@@ -263,11 +314,17 @@ export function registerResourceReadRoutes(
       if (!(await requireAuth(authState, req, reply))) return
       const { revision } = getSchemaState(db)
       const hydration = loadCharacterLorebookHydration(db, dataDir, req.params.id)
-      return {
+      return metricResourceResponse(
+        req.log,
+        'characterLorebook',
         revision,
-        characterId: req.params.id,
-        globalLore: hydration.globalLore,
-      }
+        {
+          revision,
+          characterId: req.params.id,
+          globalLore: hydration.globalLore,
+        },
+        { id: req.params.id },
+      )
     },
   )
 
@@ -285,11 +342,17 @@ export function registerResourceReadRoutes(
       }
       const { revision } = getSchemaState(db)
       const hydration = loadCharacterLorebookHydrations(db, dataDir, characterIds)
-      return {
+      return metricResourceResponse(
+        req.log,
+        'characterLorebooks',
         revision,
-        characters: hydration.characters,
-        missing: hydration.missing,
-      }
+        {
+          revision,
+          characters: hydration.characters,
+          missing: hydration.missing,
+        },
+        { bulk: true, idCount: characterIds.length },
+      )
     },
   )
 
@@ -305,7 +368,13 @@ export function registerResourceReadRoutes(
     }
     const { revision } = getSchemaState(db)
     const envelope = maskProviderSecretsInPlace({ botPresets: [hydration.preset] })
-    return { revision, preset: envelope.botPresets[0] }
+    return metricResourceResponse(
+      req.log,
+      'legacyPreset',
+      revision,
+      { revision, preset: envelope.botPresets[0] },
+      { id: req.params.id },
+    )
   })
 
   app.get<{ Params: { id: string } }>(
@@ -313,7 +382,12 @@ export function registerResourceReadRoutes(
     { exposeHeadRoute: false },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
-      const fields = loadPersistedDatabaseFields(db, dataDir, ['promptPresets'])
+      const fields = loadPersistedDatabaseFields(db, dataDir, [
+        'promptPresets',
+        'promptPresetsId',
+        'promptTemplate',
+        'botPresets',
+      ])
       const presets = Array.isArray(fields.promptPresets) ? fields.promptPresets : []
       const matches = presets.filter((candidate) => isRecord(candidate) && candidate.id === req.params.id)
       if (matches.length === 0) {
@@ -331,14 +405,48 @@ export function registerResourceReadRoutes(
         return
       }
       const preset = matches[0]
+      const usesSelectedFallback =
+        !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') &&
+        Number.isInteger(fields.promptPresetsId) &&
+        presets[fields.promptPresetsId as number] === preset &&
+        isDefaultPromptPresetScaffold(preset) &&
+        Object.prototype.hasOwnProperty.call(fields, 'promptTemplate') &&
+        !hasLegacyBotPresetTemplates(fields)
       const { revision } = getSchemaState(db)
-      return {
+      return metricResourceResponse(
+        req.log,
+        'promptPresetTemplate',
         revision,
-        promptPresetId: req.params.id,
-        promptTemplate: Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') ? preset.promptTemplate : null,
-      }
+        {
+          revision,
+          promptPresetId: req.params.id,
+          promptTemplate: Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') ? preset.promptTemplate : null,
+          ...(usesSelectedFallback ? { selectedFallbackPromptTemplate: fields.promptTemplate } : {}),
+        },
+        { id: req.params.id },
+      )
     },
   )
+}
+
+function metricResourceResponse<T>(
+  logger: FastifyInstance['log'],
+  resource: string,
+  revision: number,
+  response: T,
+  extra: Record<string, unknown> = {},
+): T {
+  emitProtocolMetric(
+    'resource_response',
+    () => ({
+      resource,
+      revision,
+      ...extra,
+      payloadBytes: jsonPayloadBytes(response),
+    }),
+    logger,
+  )
+  return response
 }
 
 function loadCollections(
@@ -360,6 +468,15 @@ function loadCollections(
   delete collections.promptPresetsId
 
   if (Array.isArray(collections.promptPresets)) {
+    const selectedPromptPreset = Number.isInteger(selectedPromptPresetIndex)
+      ? collections.promptPresets[selectedPromptPresetIndex as number]
+      : undefined
+    const preservesSelectedFallback =
+      isRecord(selectedPromptPreset) &&
+      !Object.prototype.hasOwnProperty.call(selectedPromptPreset, 'promptTemplate') &&
+      isDefaultPromptPresetScaffold(selectedPromptPreset) &&
+      Object.prototype.hasOwnProperty.call(collections, 'promptTemplate') &&
+      !hasLegacyBotPresetTemplates(collections)
     const promptPresetShells = collections.promptPresets.map((candidate) => {
       if (!isRecord(candidate) || !Object.prototype.hasOwnProperty.call(candidate, 'promptTemplate')) {
         return candidate
@@ -376,7 +493,8 @@ function loadCollections(
       Number.isInteger(selectedPromptPresetIndex) &&
       (selectedPromptPresetIndex as number) >= 0 &&
       (selectedPromptPresetIndex as number) < promptPresetShells.length &&
-      isCanonicalPromptPresetShellList(promptPresetShells)
+      isCanonicalPromptPresetShellList(promptPresetShells) &&
+      !preservesSelectedFallback
     ) {
       // The selected modern preset owns this body. The top-level collection is
       // only its compatibility projection, so avoid returning the same large
@@ -412,6 +530,19 @@ function isCanonicalPromptPresetShellList(value: readonly unknown[]): boolean {
     ids.add(candidate.id)
   }
   return true
+}
+
+function isDefaultPromptPresetScaffold(preset: Record<string, unknown>): boolean {
+  return preset.id === 'default-prompt-preset' && preset.name === 'Default Prompt'
+}
+
+function hasLegacyBotPresetTemplates(fields: Record<string, unknown>): boolean {
+  return (
+    Array.isArray(fields.botPresets) &&
+    fields.botPresets.some(
+      (preset) => isRecord(preset) && Object.prototype.hasOwnProperty.call(preset, 'promptTemplate'),
+    )
+  )
 }
 
 function isReadableCollectionName(value: string): value is ReadableCollectionName {

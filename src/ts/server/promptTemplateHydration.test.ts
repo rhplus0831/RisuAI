@@ -484,6 +484,55 @@ describe('promptTemplate hydration', () => {
     expect(testDatabaseState.db).not.toHaveProperty('promptTemplate')
   })
 
+  it('keeps the selected default-scaffold fallback separate from the preset-owned body', async () => {
+    setCachedServerCommandRevision(7)
+    ;(testDatabaseState as { db: unknown }).db = {
+      promptTemplate: [item('stale-root', 'stale root')],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'default-prompt-preset', name: 'Default Prompt' }],
+    }
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      promptPresetId: 'default-prompt-preset',
+      promptTemplate: null,
+      selectedFallbackPromptTemplate: [item('root-row', 'fresh root fallback')],
+    })
+
+    await expect(ensurePromptTemplateHydrated({ force: true })).resolves.toBe(true)
+    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
+
+    expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('root-row', 'fresh root fallback')])
+    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
+  })
+
+  it('defers a selected fallback fetched by a background consumer until a visible projection is requested', async () => {
+    setCachedServerCommandRevision(7)
+    ;(testDatabaseState as { db: unknown }).db = {
+      promptTemplate: [item('visible-root', 'visible root')],
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'default-prompt-preset', name: 'Default Prompt' }],
+    }
+    projectionState.fetchResource.mockResolvedValue({
+      status: 'ok',
+      revision: 7,
+      promptPresetId: 'default-prompt-preset',
+      promptTemplate: null,
+      selectedFallbackPromptTemplate: [item('fresh-root', 'fresh root fallback')],
+    })
+
+    await expect(
+      ensurePromptTemplateHydrated({ promptPresetId: 'default-prompt-preset', applyProjection: false }),
+    ).resolves.toBe(true)
+    expect(testDatabaseState.db.promptPresets[0]).not.toHaveProperty('promptTemplate')
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('visible-root', 'visible root')])
+
+    await expect(ensurePromptTemplateHydrated()).resolves.toBe(true)
+    expect(testDatabaseState.db.promptTemplate).toEqual([item('fresh-root', 'fresh root fallback')])
+    expect(projectionState.fetchResource).toHaveBeenCalledTimes(1)
+  })
+
   it('clears stale compatibility promptTemplate when the selected preset has no promptTemplate', async () => {
     setCachedServerCommandRevision(7)
     ;(testDatabaseState as { db: unknown }).db = {

@@ -3,6 +3,22 @@ import { SERVER_SETTINGS_KEYS_BY_GROUP } from '../../../src/ts/server/settingsGr
 import { READABLE_SETTINGS_GROUPS, SETTINGS_GROUP_KEYS, SETTINGS_GROUPS } from '../src/routes/commands.js'
 
 describe('settings group parity', () => {
+  it('assigns every generically writable setting to exactly one canonical group', () => {
+    const owners = new Map<string, string[]>()
+    for (const group of SETTINGS_GROUPS) {
+      const keys = SETTINGS_GROUP_KEYS[group]
+      expect(new Set(keys).size, `${group} contains duplicate keys`).toBe(keys.length)
+      for (const key of keys) {
+        owners.set(key, [...(owners.get(key) ?? []), group])
+      }
+    }
+
+    expect(
+      [...owners.entries()].filter(([, groups]) => groups.length > 1),
+      "writable settings must not advance a different group's revision fence",
+    ).toEqual([])
+  })
+
   it('keeps the dedicated Agent Preset projection readable but not generically writable', () => {
     expect(READABLE_SETTINGS_GROUPS).toContain('agents')
     expect(SETTINGS_GROUPS).not.toContain('agents')
