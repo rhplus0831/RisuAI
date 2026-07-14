@@ -15,7 +15,7 @@
  * NOT reported here (runtime-only): browser cache hit rate and prompt-assembly
  * stage timings under real sends. Get those by running the real server with
  * `RISU_PROTOCOL_METRICS=1`. See
- * .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.
+ * .archived-docs/protocol-and-persistence/server-client-protocol/active-risk-analysis.md.
  *
  * Inputs (auto-detected):
  *   - A `.risu` export file (richest single file — re-embeds chat messages).
@@ -374,7 +374,7 @@ function printReport(analysis: DatabaseAnalysis): void {
   lines.push('  - capture them by running the real server with RISU_PROTOCOL_METRICS=1 during normal use;')
   lines.push('    the asset_byte_read / risusave_export lines land in the log.')
   lines.push(
-    '  - see docs/leftover.md and .archived-docs/server-client-protocol-stability-performance/active-risk-analysis.md.',
+    '  - see .archived-docs/deferred-work/leftover.md and .archived-docs/protocol-and-persistence/server-client-protocol/active-risk-analysis.md.',
   )
 
   console.log(lines.join('\n'))

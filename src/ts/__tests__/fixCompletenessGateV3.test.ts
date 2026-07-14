@@ -11,7 +11,7 @@ import path from 'node:path'
 
 // `vitest run` executes from the repo root, matching the companion gates.
 const ROOT = process.cwd()
-const PLAN = '.archived-docs/audit-stability-and-performance-v3'
+const PLAN = '.archived-docs/performance-and-stability/stability-audits/v3'
 const AUDIT_DOC = path.join(ROOT, PLAN, 'audit-stability-and-performance-v3.md')
 const RISK_DOC = path.join(ROOT, PLAN, 'active-risk-analysis.md')
 
@@ -1900,10 +1900,16 @@ export function collectGateProblems(input: GateProblemInput = {}): string[] {
 describe('v3 fix-completeness gate doc universe', () => {
   it('points at the archived v3 closeout sources', () => {
     expect(AUDIT_DOC).toContain(
-      path.join('.archived-docs', 'audit-stability-and-performance-v3', 'audit-stability-and-performance-v3.md'),
+      path.join(
+        '.archived-docs',
+        'performance-and-stability',
+        'stability-audits',
+        'v3',
+        'audit-stability-and-performance-v3.md',
+      ),
     )
     expect(RISK_DOC).toContain(
-      path.join('.archived-docs', 'audit-stability-and-performance-v3', 'active-risk-analysis.md'),
+      path.join('.archived-docs', 'performance-and-stability', 'stability-audits', 'v3', 'active-risk-analysis.md'),
     )
     expect(AUDIT_DOC).not.toContain(path.join('docs', 'plan'))
     expect(RISK_DOC).not.toContain(path.join('docs', 'plan'))

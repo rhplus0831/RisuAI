@@ -97,8 +97,11 @@ service-worker behavior are archival unless a new plan reopens them.
 Closed records under `.archived-docs/` explain how the current runtime landed:
 Fastify migration, client thinning, durable generation, the former lazy
 projection architecture and its replacement by concrete REST resources,
-db-json-to-SQLite (`.archived-docs/db-json-to-sqlite.md`), and the v1-v4
-stability/performance audits. They are design history, not current guidance.
+db-json-to-SQLite
+(`.archived-docs/protocol-and-persistence/sqlite-migration.md`), and the v1-v4
+stability/performance audits under
+`.archived-docs/performance-and-stability/stability-audits/`. They are design
+history, not current guidance.
 
 Current core systems that came from those workstreams:
 

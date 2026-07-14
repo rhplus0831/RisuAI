@@ -15,7 +15,7 @@ import path from 'node:path'
 // docs and both test trees hang off `process.cwd()`. (import.meta.url is not a
 // file: URL under the client vite test transform, so it cannot anchor reads.)
 const ROOT = process.cwd()
-const ARCHIVED_PLAN = '.archived-docs/audit-stability-and-performance'
+const ARCHIVED_PLAN = '.archived-docs/performance-and-stability/stability-audits/v1'
 const AUDIT_DOC = path.join(ROOT, ARCHIVED_PLAN, 'audit-stability-and-performance.md')
 const RISK_DOC = path.join(ROOT, ARCHIVED_PLAN, 'active-risk-analysis.md')
 
