@@ -8,6 +8,7 @@ vi.mock('./storage/fastifyStorage', () => ({
 import {
   clearCachedServerCommandRevision,
   notifyServerCommandLocalEffectApplied,
+  runServerCommand,
   setServerCommandSuccessReconciler,
   type ServerCommandLocalEffect,
 } from './server/commands'
@@ -112,8 +113,11 @@ function applySelectedPersonaProjection(
 }
 
 async function flushCommandEffects(): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  await new Promise((resolve) => setTimeout(resolve, 0))
+  // A queued no-op settles only after earlier fire-and-forget commands and their
+  // reconciliation batch, avoiding timer-based guesses about async completion.
+  await runServerCommand({
+    command: async () => ({ status: 'unavailable' as const }),
+  })
 }
 
 function mockNextCommandFailure(error = 'persona command failed'): void {
@@ -904,7 +908,7 @@ describe('persona ID read and command preparation', () => {
     })
   })
 
-  it('skips a trigger prompt write when the selected profile is unchanged', async () => {
+  it('skips a trigger prompt write when the selected profile is unchanged', () => {
     seedPersonaState(
       [
         makePersona({
@@ -923,7 +927,6 @@ describe('persona ID read and command preparation', () => {
     getDatabase().userNote = 'Current note'
 
     setSelectedPersonaPromptFromTrigger('Current prompt')
-    await flushCommandEffects()
 
     expect(fetch).not.toHaveBeenCalled()
   })
@@ -1042,19 +1045,18 @@ describe('persona ID read and command preparation', () => {
     expect(getDatabase({ snapshot: true })).toEqual(duplicateBefore)
   })
 
-  it('does not assign IDs or save profile fields while preparing an invalid reorder', async () => {
+  it('does not assign IDs or save profile fields while preparing an invalid reorder', () => {
     seedPersonaState([makePersona({ name: 'Missing ID' }), makePersona({ id: 'persona-b', name: 'B' })], 0)
     const before = cloneJsonValue(getDatabase())
 
     expect(beginPersonaReorder()).toBeNull()
     expect(reorderUserPersonasByIndices([1, 0], null)).toBe(false)
-    await flushCommandEffects()
 
     expect(getDatabase({ snapshot: true })).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('does not assign duplicate IDs or delete locally when delete preparation cannot form command IDs', async () => {
+  it('does not assign duplicate IDs or delete locally when delete preparation cannot form command IDs', () => {
     seedPersonaState(
       [
         makePersona({ id: 'duplicate-persona', name: 'Duplicate A' }),
@@ -1065,13 +1067,12 @@ describe('persona ID read and command preparation', () => {
     const before = cloneJsonValue(getDatabase())
 
     expect(deleteSelectedUserPersona()).toBe(false)
-    await flushCommandEffects()
 
     expect(getDatabase({ snapshot: true })).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('does not assign duplicate IDs or change selection when select preparation cannot form command IDs', async () => {
+  it('does not assign duplicate IDs or change selection when select preparation cannot form command IDs', () => {
     seedPersonaState(
       [
         makePersona({ id: 'duplicate-persona', name: 'Duplicate A' }),
@@ -1082,7 +1083,6 @@ describe('persona ID read and command preparation', () => {
     const before = cloneJsonValue(getDatabase())
 
     changeUserPersona(1)
-    await flushCommandEffects()
 
     expect(getDatabase({ snapshot: true })).toEqual(before)
     expect(fetch).not.toHaveBeenCalled()
