@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-14.
 
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, and the shared capability table that decides whether a
@@ -16,8 +16,9 @@ request shape can run on the server.
 | `src/ts/model/modelProfileRecords.ts`, `modelProfileResolver.ts`, `modelProfileUiState.ts`      | Durable model profile records, role bindings, compatibility resolution, and settings UI summaries. |
 | `src/ts/model/modelPresetSnapshots.ts`, `src/ts/promptPresetModelOverrides.svelte.ts`           | Snapshot/override helpers for model preset saves and prompt-preset model overrides.                 |
 | `src/ts/model/modelGrid.ts`                                                                     | Model-grid normalization and filtering helpers for picker UI.                                      |
+| `src/ts/model/keyedRequestCache.ts`                                                             | In-flight dedupe and bounded successful-result caching keyed by complete provider request context.  |
 | `src/ts/model/providers/`                                                                       | Provider-specific static model lists.                                                              |
-| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers.                                                                  |
+| `src/ts/model/openrouter.ts`, `nanogpt.ts`, `ollama.ts`, `ooba.ts`, `src/ts/horde/getModels.ts` | Browser provider catalog helpers, including keyed OpenRouter/NanoGPT/Ollama Cloud request reuse.     |
 | `src/lib/UI/ModelList.svelte`, `ModelGrid.svelte`, `NanoGPT*`, `OpenrouterProviderList.svelte`  | Model-picker UI.                                                                                   |
 
 `Database.modelProfiles` stores durable reusable profile records, and
@@ -45,6 +46,15 @@ allowlist; it does not import the full browser UI registry.
 NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`. OpenRouter,
 NanoGPT, Ollama, and Horde helpers carry richer browser catalog metadata for
 picker/filter UI than the server needs for dispatch.
+
+OpenRouter model/provider and NanoGPT model/provider catalog requests are keyed
+by their full credential/model context, share an in-flight promise, and briefly
+reuse successful results; failed requests are not retained. OpenRouter and
+NanoGPT catalogs use a 30-second TTL. Ollama Cloud tags use a 15-second cache
+keyed by base URL and API key, while local Ollama discovery remains uncached.
+NanoGPT balance/subscription lookups dedupe only concurrent calls. The legacy
+model settings surface also debounces draft catalog credentials for 400 ms, so
+typing a key does not issue one catalog request per character.
 
 ## Settings -> Model Profile Flow
 
@@ -205,6 +215,15 @@ Provider adapters live in `server/fastify/src/generation/`:
   Kobold, Horde, Ooba legacy, and Echo.
 - Shared additional-parameter, frame, and SSE helpers.
 
+Provider adapters build provider-safe wire rows instead of serializing internal
+prompt objects. `generation/providerMessages.ts` strips prompt-only metadata,
+translates OpenAI/Anthropic image parts, preserves supported reasoning
+continuation, and applies Anthropic cache points; Gemini and Responses perform
+their native media conversion in their adapters. Provider reasoning output is
+normalized into the shared `<Thoughts>` envelope. `generation/jsonControls.ts`
+parses the retained JSON schema/interface syntax and applies configured dot-path
+extraction to buffered results.
+
 The server resolves provider settings, endpoints, model ids, and secrets from
 durable profile context when present, then from flat compatibility settings when
 needed. Browser projections mask secrets through
@@ -214,6 +233,15 @@ Provider adapters may be incremental or buffered. `/api/v1/generate/chat` maps
 both shapes to chat SSE frames and wraps buffered outputs as token/done frames,
 while direct `/api/v1/generate/completion` rejects streaming for buffered
 providers.
+
+Dispatch materializes only sampler/runtime controls declared by the selected
+model's capability row, including separate-by-model overrides. The supported
+provider arms carry their relevant top-p/top-k/min-p/top-a and penalty fields,
+reasoning/thinking/verbosity controls, seed, JSON schema/extraction, prediction,
+cache/privacy headers, additional parameters, and provider-specific options.
+OpenAI Chat-family routes tokenize prompt bias rows into `logit_bias`; main
+send/regenerate can request up to 20 OpenAI/OpenRouter/NanoGPT choices and expose
+the extras as reroll alternates.
 
 Routing notes that matter when debugging provider drift:
 
@@ -227,7 +255,7 @@ Routing notes that matter when debugging provider drift:
 | Ollama Cloud             | `ollama-cloud` remaps by `ollamaRequestFormat` to native Ollama, OpenAI-compatible, Responses, or Anthropic-compatible dispatch.          |
 | Bedrock                  | Uses Bedrock/SigV4 model metadata and wire-model prefix handling.                                                                         |
 | Horde                    | Requires an instruct chat template in the shared capability table; dispatch is buffered, not incremental.                                 |
-| Logit bias               | Server chat dispatch does not currently carry browser-only logit-bias behavior.                                                           |
+| Logit bias               | OpenAI Chat-family dispatch tokenizes assembled prompt bias rows, including direct token ids and strong-ban variants.                      |
 | Completion streaming     | Direct `/generate/completion` rejects streaming for buffered providers such as Cohere, legacy instruct, Responses, Kobold, Ooba legacy, Bedrock, and Horde; `/generate/chat` wraps buffered provider output as token/done frames. |
 
 ## Capability Table
@@ -263,11 +291,11 @@ prompt-preset model overrides after profile-bound runtime fields.
 `chatDispatch.ts` forwards only the supported runtime subset to provider
 adapters.
 
-`modelTools` are copied into the effective DB; Fastify OpenAI Responses
-dispatch currently sends no hosted tool list, so hosted search/model tool
-behavior is not server-dispatched. Browser legacy `requestOpenAI()` and
-`requestOpenAIResponseAPI()` can still run MCP tools or add Responses
-`web_search_preview`, but normal Fastify chat bypasses browser tool execution.
+`modelTools` are copied into the effective DB. Fastify OpenAI Responses dispatch
+adds `web_search_preview` when the resolved profile runtime enables `search`.
+Arbitrary browser MCP/function-tool round trips are still not executed by the
+server-owned chat path; browser legacy `requestOpenAI()` and
+`requestOpenAIResponseAPI()` retain those client tool loops.
 Ollama server-intent completion takes a browser-local dispatch path when MCP
 tools are present so native `/api/chat` tool calls can execute client MCP tools.
 Memory summaries use memory-role profile resolution and profile-owned provider
@@ -313,8 +341,21 @@ bootstrap `activeGenerationJobs`, reattach with
 `GET /api/v1/generate/chat/:id/stream`, and cancel with
 `DELETE /api/v1/generate/chat/:id`. Inline non-durable SSE remains for
 tools/tests and preview-style callers. Browser `serverChat.ts` sends
-`clientCapabilities.compactPromptEvent`; the server may strip heavy prompt
-fields and delta-trim `replace_all` message patches with `firstChangedIndex`.
+`clientCapabilities.compactPromptEvent`, `promptMetadataOnly`, and
+`omitDuplicateDoneResult`; the server may strip heavy prompt fields, delta-trim
+`replace_all` message patches with `firstChangedIndex`, and omit an inline
+`done.result` when preceding token frames already delivered the same non-empty
+text. `done.result` is therefore optional for negotiated inline streams, while
+durable jobs retain it so replay and reattach remain self-contained. Agent
+Preset execution emits `agent_preset_progress` frames on the same stream.
+
+`generationChat.ts` wraps the provider dispatcher with retained request
+policies. Each attempt can run the server request trigger; failures before the
+first streamed token use bounded retries and ordered profile/legacy-model
+fallbacks. Blank-response fallback, banned-script retries, and character Escape
+Output are applied before frames become authoritative. Buffered
+multi-generation choices each pass post-generation derivation before their
+alternate ids are persisted.
 
 Generation finalization retries are SQLite-backed operational rows with
 target snapshots. Persistence is idempotent when the target already has the

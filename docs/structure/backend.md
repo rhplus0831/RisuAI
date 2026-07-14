@@ -1,6 +1,6 @@
 # Backend Map
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-14.
 
 The backend is the Fastify server under `server/fastify`. It owns SQLite state,
 auth, provider secrets, prompt assembly, provider dispatch, Hypa V3 memory,
@@ -13,17 +13,19 @@ imports/exports/backups, and the `/api/v1/*` route surface.
 | `server/fastify/src/index.ts`                                                 | Process entrypoint: load config, call `buildApp()`, listen, handle shutdown signals.                     |
 | `server/fastify/src/app.ts`                                                   | Composition root for plugins, SQLite, auth, active writer, routes, workers, timers, optional static SPA. |
 | `server/fastify/src/config.ts`                                                | Parses `RISU_API_*`, `TRUST_PROXY`, hub/Realm URLs, static root, trace mode, and agent auth bypass.      |
-| `server/fastify/src/db.ts`                                                    | SQLite schema v21, migrations, `schema_version`, global revision.                                        |
-| `server/fastify/src/repository.ts`                                            | Domain load/write, projections/body cache, legacy `db.json` import, `applyImport`, assets, backups.      |
+| `server/fastify/src/db.ts`                                                    | SQLite schema v22, migrations, `schema_version`, global revision; v22 removes the retired projection body-cache tables. |
+| `server/fastify/src/repository.ts`                                            | Broad/scoped/exact domain loaders, REST resource/hydration readers, targeted row/table writers, legacy `db.json` import, `applyImport`, assets, backups. |
 | `server/fastify/src/messageStore.ts`                                          | Chat `messages`, reroll alternates, and per-chat `chat_hypa_v3` rows.                                    |
 | `server/fastify/src/chatGenerationSettingsStorage.ts`                         | Normalizes persisted chat-scoped generation settings on import/load.                                      |
 | `server/fastify/src/databaseDefaults.ts`                                      | Server-owned first-run defaults and import normalization defaults.                                       |
+| `server/fastify/src/routes/resourceReads.ts`                                  | Authenticated settings/collection/character REST resources plus lazy chat, lorebook, legacy-preset, and prompt-template hydration reads. |
+| `server/fastify/src/commands/mutations.ts`, `commands/events.ts`               | Revision-checked transaction lanes, durable command-event catalog/history, and live event fanout.        |
 | `server/fastify/src/auth.ts`, `http.ts`, `activeWriter.ts`, `providerSecrets.ts` | Single-user auth/session helpers, route auth assertion, active-writer guard, secret masking/resolution. |
 | `server/fastify/src/routeManifest.ts`                                         | Source of truth for route auth, active-writer, streaming, and exception classifications.                  |
 | `server/fastify/src/routeRateLimits.ts`                                       | Per-route rate-limit presets.                                                                            |
 | `server/fastify/src/protocolMetrics.ts`, `requestTrace.ts`                    | Opt-in protocol metrics, command table-write capture, and API request traces.                            |
 | `server/fastify/src/generationJobs.ts`, `generationFinalizationRetry.ts`      | Process-local durable chat jobs, replay/reattach state, and SQLite-backed finalization retry rows.        |
-| `server/fastify/src/messageTranslationJobs.ts`                                | Process-local active raw-message translation registry projected through bootstrap.                        |
+| `server/fastify/src/messageTranslationJobs.ts`                                | Process-local active raw-message translation registry exposed through runtime bootstrap.                  |
 | `server/fastify/src/translation/`                                             | Raw message translation provider dispatch for Google, DeepL, DeepLX, and LLM translation.                 |
 | `server/fastify/src/pushNotifications.ts`                                     | Web Push VAPID key loading/generation, subscription persistence, and best-effort completion pushes.       |
 | `server/fastify/src/assetGc.ts`                                               | Periodic reference-counted asset garbage collection.                                                     |
@@ -93,9 +95,9 @@ and generation submit `60/min`.
 
 | Family                | Registrars                                                | Notes                                                                                                                                                                                |
 | --------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated bootstrap; writer-intent bootstrap latches active writer and returns body-cache, active generation job metadata, and active message translation metadata. |
-| Projection/events     | `projection.ts`, `events.ts`                              | Targeted projection, chat/lorebook hydration, bulk hydration, command/memory SSE.                                                                                                    |
-| Commands              | `commands.ts` plus `commands/`                            | First-run state initialization plus revision-checked domain mutations for settings, model profiles/role bindings/runtime defaults, Agent Presets, split model/prompt presets, legacy bot preset extraction, bot/translator presets, prompt settings/items, personas, loadouts, characters/chats/messages, chat forks, chat folders, chat generation settings, chat script state, lorebooks, modules, plugin records/storage/provider choice, script/trigger definitions, generation results, compact lorebook entries, message tails, and raw message translation. |
+| Health/auth/bootstrap | `health.ts`, `auth.ts`, `bootstrap.ts`                    | Health/status/setup/login plus authenticated runtime-only bootstrap; writer intent latches the active writer, while the response carries initialization/revision/schema metadata and active generation/translation jobs. |
+| Resources/events      | `resourceReads.ts`, `events.ts`                            | Root and targeted REST resources, lazy/bulk chat/lorebook/preset hydration, replayable command SSE, and live memory SSE.                                                             |
+| Commands              | `commands.ts` plus `commands/`                            | First-run initialization plus revision-checked domain mutations for settings, profiles/presets, personas/loadouts, characters/chats/messages, lorebooks, modules/plugins, definitions, and generation results. Hot paths accept sparse object/row/definition patches and return compact canonical or digest-backed receipts when the browser can acknowledge its optimistic state safely. |
 | Assets/saves/backups  | `assets.ts`, `save.ts`, `realmImport.ts`, `backups.ts`    | Content-addressed assets, `.risu`/bundle/local-backup import/export, Realm import, snapshots.                                                                                        |
 | Push notifications    | `pushNotifications.ts`                                    | Web Push VAPID public-key lookup plus authenticated subscription create/delete routes; durable subscriptions live in SQLite while generated VAPID keys live in `data/__web_push_vapid_keys.json`. |
 | Proxy/hub/storage     | `proxy.ts`, `streamJobs.ts`, `hub.ts`, `legacyStorage.ts` | Authenticated proxy/fetch and stream jobs, retained hub passthrough, `/api/v1/storage/*` compatibility byte store, public `/api/v1/auth/crypto` helper.                              |
@@ -128,6 +130,23 @@ collection-scoped, chat/character-scoped, single-row, skip-load, and
 message-aware SQLite paths. New commands should use the narrowest path that
 matches their write set. Protocol metrics can capture table-write summaries for
 command mutation budget tests and debugging.
+
+Scoped loaders read only the settings row, named collections, or one
+character/chat owner needed by a command and fall back to the broad loader for
+legacy or pre-extraction shapes. Scoped snapshots cannot be written back as a
+whole database. The repository writer kit updates the owning settings,
+collection, character, chat, or plugin-storage rows, while the message-store
+writers update transcript rows inside the same transaction. Exact
+character/chat variants preserve every unrelated persisted field, and row-level
+updates keep unrelated rowids stable.
+
+High-frequency commands can send changed fields plus explicit delete keys, or a
+single create/update/delete/reorder definition mutation, instead of resending a
+whole object or collection. Responses name accepted keys and include only
+canonical overrides/deletions, or return a digest/certificate proving that the
+server applied the same sparse transition. The browser uses those receipts only
+for a matching next-revision event and fenced optimistic snapshot; otherwise it
+falls back to the event's authoritative REST-resource read.
 
 Server-owned exceptions still need explicit auth/active-writer decisions but are
 not browser `/commands/*` resource endpoints. Some still reuse command mutation
@@ -187,6 +206,10 @@ SQLite with pending/terminal status, include target snapshots for stale-target
 protection and idempotency, and are swept by the generation finalization retry
 timer. Preview-prompt is a one-shot JSON
 assembly route and does not dispatch a provider.
+Negotiated client capabilities can reduce persisted-mode prompt events to
+metadata and let an inline, non-replayable stream omit `done.result` when prior
+token frames already delivered the same non-empty completion. Durable jobs keep
+the terminal result so replay and reattach remain self-contained.
 
 Only Hypa V3 is maintained. Legacy backfill lives in `memoryLegacyImport.ts`.
 Memory storage and queueing live in `memoryRepository.ts`; planning/selection

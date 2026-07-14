@@ -1,6 +1,6 @@
 # Structure Notes
 
-Last audited: 2026-07-13.
+Last audited: 2026-07-14.
 
 This is the first-stop map for the Fastify-only RisuAI codebase. Use it for
 orientation, then open the focused note under `docs/structure/` or `src/docs/`
@@ -18,7 +18,8 @@ past decisions; they are not the source of current behavior.
 5. `src/docs/client-runtime.md` - browser Fastify adapters, bootstrap, REST
    resource reads and hydration, generation client, assets/storage/plugins.
 6. `docs/structure/server-resources-and-bridges.md` - bootstrap, API-backed
-   resource state, lazy hydration, SSE invalidation, bridge watchers.
+   resource state, lazy hydration, projection epochs, command-local
+   acknowledgements, SSE invalidation, bridge watchers.
 7. `docs/structure/data-and-events.md` - SQLite, auth, active writer, revisions,
    events, streaming.
 8. `docs/structure/assets-and-saves.md` - assets, `.risu`, bundle import/export,
@@ -60,7 +61,7 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/db.ts`                                                                                                                  | SQLite schema v22, migrations, schema version, global revision.                                                             |
 | `server/fastify/src/repository.ts`, `server/fastify/src/messageStore.ts`                                                                    | SQLite-backed domain load/write for settings, characters/chats, split collections, legacy `db.json` import/applyImport, asset metadata, backups, and chat message tables. |
 | `server/fastify/src/routeManifest.ts`                                                                                                       | Auth, active-writer, streaming, and route classification decisions used by tests/audits. Update it for route changes; use `app.printRoutes()` for the endpoint inventory. |
-| `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers.                                                         |
+| `server/fastify/src/routes/`, `server/fastify/src/commands/`                                                                                | `/api/v1/*` route registrars and revision-checked mutation helpers, including scoped row loaders, sparse mutation contracts, and canonical acknowledgement receipts. |
 | `server/fastify/src/commands/events.ts`, `server/fastify/src/routes/events.ts`                                                              | Command-event persistence, replay, and live command/memory SSE route.                                                       |
 | `server/fastify/src/pushNotifications.ts`, `server/fastify/src/routes/pushNotifications.ts`                                                 | Web Push VAPID key/subscription storage and push subscription routes.                                                       |
 | `server/fastify/src/generation/`, `server/fastify/src/prompt/`, `server/fastify/src/routes/generation*.ts`, `server/fastify/src/generationJobs.ts`, `server/fastify/src/generationFinalizationRetry.ts`, `server/fastify/src/messageTranslationJobs.ts`, `server/fastify/src/translation/` | Provider adapters, prompt assembly/effective generation config, Agent Preset execution, Lua hooks/progress, SSE transport, durable chat jobs, finalization retries, detached message translation state and provider dispatch. |
@@ -70,12 +71,15 @@ past decisions; they are not the source of current behavior.
 | `server/fastify/src/streamJobs.ts`, `server/fastify/src/streamBackpressure.ts`                                                              | Process-local proxy stream jobs and shared bounded stream writers.                                                          |
 | `src/main.ts`, `src/App.svelte`, `src/ts/bootstrap.ts`                                                                                      | Browser bootstrap, app shell, initial REST resource load, and SSE invalidation startup.                                     |
 | `src/lib/`                                                                                                                                  | Svelte UI components by feature area.                                                                                       |
-| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: runtime bootstrap, resource reads/state/invalidation, lazy character/chat/lorebook/prompt hydration, commands, events, memory jobs, message translation refresh, bridges, assets, backups, Realm import, push notifications, stale-operation guards, protocol diagnostics, and browser smoke hooks. |
-| `src/ts/chatCommands.ts`, `src/ts/server/chatGenerationSettingsResourceGuard.ts`                                                            | Narrow optimistic chat/message commands and pending chat-generation-settings protection while an authoritative character resource refresh is in flight. |
+| `src/ts/server/`                                                                                                                            | Browser Fastify adapters: runtime bootstrap, resource reads/state/invalidation, lazy character/chat/lorebook/prompt and preset hydration, commands, events, memory jobs, message translation refresh, bridges, assets, backups, Realm import, push notifications, stale-operation guards, protocol diagnostics, and browser smoke hooks. |
+| `src/ts/server/commands.ts`, `src/ts/server/resourceState.svelte.ts`, `src/ts/server/resourceInvalidation.ts`, `src/ts/server/commandLocalEffectEvents.ts` | Shared command queue, per-slice projection epochs, validated contiguous local-effect acknowledgement, authoritative invalidation fallback, and post-apply listeners. |
+| `src/ts/server/settingsGroups.ts`, `src/ts/promptSettings.ts`                                                                               | Browser settings-group ownership map, including the isolated prompt group shared by resource reads, invalidation, and settings bridges. |
+| `src/ts/chatCommands.ts`, `src/ts/chatGenerationSettings.ts`, `src/ts/server/chatGenerationSettingsResourceGuard.ts`, `src/ts/server/chatStructureHydrationHooks.ts` | Sparse optimistic chat/message and generation-settings commands, plus guards that keep authoritative row/transcript hydration from replacing newer local structure edits. |
+| `src/ts/personaMutationCertificate.ts`, `src/ts/server/loadoutCanonical.ts`, `src/ts/server/scriptDefinitionMutations.ts`                   | Canonical-state and digest helpers used to prove compact persona, loadout, and script/trigger mutations without echoing full client projections. |
 | `src/ts/process/`, `src/ts/process/request/`                                                                                                | `sendChat`, server-backed generation bridge, request routing, SSE parsing, retained parity helpers.                         |
 | `src/ts/storage/`                                                                                                                           | API-backed resource access adapters, server-backed auth/storage, backup helpers, and retained browser `.risu` compatibility codecs; server-backed device backup flows use server routes. |
 | `src/ts/plugins/`, `src/ts/pluginCommands.ts`, `src/ts/process/modules.ts`, `src/ts/moduleCommands.ts`, `src/ts/process/mcp/`               | Browser plugin/module runtime, Plugin V3 API host, command-backed plugin/module state, `.risum` import, and MCP clients/tools. |
-| `src/ts/model/`, `src/ts/horde/`                                                                                                            | Browser model registry and provider catalog helpers.                                                                        |
+| `src/ts/model/`, `src/ts/horde/`                                                                                                            | Browser model registry, keyed provider-catalog request caching, and Horde helpers.                                          |
 | `src/lib/Setting/Pages/AgentPresetSettings.svelte`, `src/lib/Setting/Pages/AgentPresetEditorDrawer.svelte`, `src/lib/SideBars/ChatGenerationSettingsControls.svelte` | Agent Preset authoring UI and chat-scoped Agent Preset selection.                                                           |
 | `src/lang/`, `src/styles.css`, `src/ts/gui/`, `src/ts/setting/`                                                                             | Language packs, global styling/theme variables, GUI size/animation helpers, and data-driven setting definitions.            |
 | `src/ts/media/`, `src/ts/parser/`, `src/ts/translator/`, `src/ts/network/`, `src/ts/kei/`, `src/ts/util/`                                  | Focused client helper domains and tests.                                                                                    |
@@ -101,6 +105,22 @@ past decisions; they are not the source of current behavior.
   server-owned exceptions include import/restore, asset upload, Realm import,
   generation persistence, backups, legacy storage write/remove, and memory job
   create/cancel.
+- High-level browser command mutations share one execution queue because every
+  domain uses the same server revision. Successful responses may carry compact
+  local-effect receipts, but the browser applies one only when its event is
+  contiguous and its target, projection epoch, and canonical state still match.
+  Missing, malformed, stale, or unsafe receipts retain the normal authoritative
+  invalidation/read path; an HTTP success alone is not projection authority.
+- Collection reads intentionally return lightweight shells for modern prompt
+  presets and legacy bot presets. Hydrate their large owner bodies through the
+  dedicated prompt-template or legacy-preset reads, and preserve the existing
+  owner/revision/epoch fences when adding a caller.
+- Settings resource ownership is mirrored between
+  `server/fastify/src/routes/commands.ts` and
+  `src/ts/server/settingsGroups.ts`; prompt fields use their own `prompt` group.
+  Keep those maps and
+  `server/fastify/__tests__/settingsGroupParity.test.ts` aligned when moving or
+  adding a persisted setting.
 - Server-side prompt assembly is the supported chat-send path. Browser preflight
   uses `resolveServerPromptAssembly()` and model-profile resolution; the shared
   provider capability table is reached through the resolved profile. Unsupported

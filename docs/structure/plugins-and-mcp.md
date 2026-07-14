@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-14.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -37,6 +37,11 @@ supported. Plugin V2 edit/replacer hooks make server prompt assembly return
 `unsupported`; Fastify never executes browser plugin code. Server Lua scripting
 is separate from browser plugins.
 
+`checkPluginUpdate()` deduplicates concurrent range requests and keeps a bounded
+128-entry, five-minute LRU cache keyed by plugin name, update URL, and installed
+version. Successful no-update checks are cached as well as available updates;
+HTTP/network failures are not retained and can be retried immediately.
+
 ## Plugin Storage
 
 - Server-backed plugin custom storage is `Database.pluginCustomStorage`, mutated
@@ -49,17 +54,18 @@ is separate from browser plugins.
   compatibility/cache storage rather than app database or backup persistence.
 
 Plugin storage persists in the SQLite `plugin_custom_storage` table.
-Plugin-record events use precise projection scopes: `pluginCollection` reads
+Plugin-record events use precise resource scopes: `pluginCollection` reads
 only the plugin collection, `pluginProvider` reads only the `providers` settings
 group, and deleting the active provider uses `pluginCollectionWithProvider` to
 read both affected slices. Response-confirmed optimistic record/provider writes
 advance those resource fences without a read, retaining any newer queued edit.
-`pluginStorage` projects the complete `pluginCustomStorage` map so key deletion,
-clear, and bulk replacement remove absent values without refreshing unrelated
-app state. Pending per-key put/delete/bulk intents stay registered through
-projection reconciliation and overlay both targeted and full refreshes, so an
-older response cannot erase a newer optimistic storage edit. Heavy plugin/module
-bodies may be stubbed in bootstrap and filled from the bootstrap-body-cache path.
+`pluginStorage` maps to the complete `pluginCustomStorage` collection so key
+deletion, clear, and bulk replacement remove absent values without refreshing
+unrelated app state. Pending per-key put/delete/bulk intents stay registered through
+resource reconciliation and overlay both targeted and full refreshes, so an
+older response cannot erase a newer optimistic storage edit. Plugin and module
+records arrive in full through the collection resources; bootstrap contains no
+durable record bodies or body-cache path.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay
@@ -99,6 +105,14 @@ Single-key plugin-storage `PUT`/`DELETE` commands skip full database load and
 touch only `plugin_custom_storage`; bulk storage reads and merges current
 storage. Plugin collection commands are similarly scoped, and deleting the
 active provider co-writes the provider selection settings.
+
+Plugin and module collection diffs can fan out into several create/update/delete,
+enable, and reorder commands. Those fan-outs run through
+`runServerCommandSequence()` as one unit in the browser's global revision queue:
+each accepted step supplies the next base revision, unrelated commands cannot
+interleave, and the accumulated response events reconcile once after the
+sequence. A failed step rolls back the remaining optimistic sequence before its
+earlier accepted events are released.
 
 ## MCP Runtime
 

@@ -1,6 +1,6 @@
 # Generated Files And Legacy Caveats
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-14.
 
 These notes help avoid spending time in files that look important but are
 generated, local-only, historical, vendored, or intentionally no-port.
@@ -15,7 +15,7 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `test-results/`                                 | Playwright/test output.                                                                                                                                |
 | `blobs-for-test/`                               | Ignored local binary/test scratch payloads.                                                                                                             |
 | `*.tsbuildinfo`                                 | TypeScript incremental build artifacts, including `tsconfig.client-lib.tsbuildinfo`.                                                                   |
-| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, traces under `data/trace/` including bodies/screenshots, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
+| `data/`                                         | Local runtime state: `risu.db`/WAL/SHM, assets, backups, auth files, optional Web Push VAPID keys, `data/save/`, request/generation body sidecars and optional tsserver logs under `data/trace/`, optional `data/dev`, legacy import artifacts. Useful for debugging, not source; see `data-and-events.md`. |
 | `scripts/` when present                         | Ignored local scratch/tooling directory.                                                                                                               |
 | `public/token/`                                 | Vendor/tokenizer data. Only touch when intentionally updating those assets.                                                                            |
 | `public/assets/`                                | Bundled Bergamot/browser translator workers. Only touch when intentionally updating vendor assets.                                                     |
@@ -35,6 +35,13 @@ exception is live test ownership: the v1-v3
 by `fixCompletenessGate*.test.ts`. Treat those archive files as
 completeness-gate fixtures; do not rename them or edit their status tables
 without updating and running the gates.
+
+`audit-stability-and-performance-v4/` is also an archived audit record, but it
+did not become a standalone remediation plan and is not directly parsed by a
+v4 completeness gate. Selected v4 findings were routed through the v3 closeout
+via `audit-stability-and-performance-v3/v4-integration-brief.md`; the resulting
+v3 gate riders and named feature tests remain live even though the v4 finding
+tree itself is historical.
 
 `docs/structure/frontend.md` is source documentation only as a compatibility
 pointer for older links. Add current frontend guidance to
@@ -88,9 +95,10 @@ Risu Account Sync, and legacy `public/sw.js` share/file-handler/offline
 service-worker behavior are archival unless a new plan reopens them.
 
 Closed records under `.archived-docs/` explain how the current runtime landed:
-Fastify migration, client thinning, durable generation, lazy projection,
-db-json-to-SQLite (`.archived-docs/db-json-to-sqlite.md`), and protocol
-stability/performance. They are design history, not current guidance.
+Fastify migration, client thinning, durable generation, the former lazy
+projection architecture and its replacement by concrete REST resources,
+db-json-to-SQLite (`.archived-docs/db-json-to-sqlite.md`), and the v1-v4
+stability/performance audits. They are design history, not current guidance.
 
 Current core systems that came from those workstreams:
 
@@ -99,6 +107,9 @@ Current core systems that came from those workstreams:
 - Durable generation: `server/fastify/src/generationJobs.ts`.
 - SQLite-backed domain repository: `server/fastify/src/repository.ts` and
   `server/fastify/src/db.ts`.
+- API-backed browser resources: `server/fastify/src/routes/resourceReads.ts`
+  plus `src/ts/server/resourceState.svelte.ts` and
+  `src/ts/server/resourceInvalidation.ts`.
 
 ## Legacy Names Still Active
 

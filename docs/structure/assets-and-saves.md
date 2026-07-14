@@ -1,6 +1,6 @@
 # Assets And Saves
 
-Last audited: 2026-07-10.
+Last audited: 2026-07-14.
 
 Fastify owns binary persistence, save import/export, Realm import, and backup
 snapshots. Browser code should use server asset URLs and server save routes
@@ -18,9 +18,10 @@ data. Save/import/export and user-upload flows should use server asset ids and
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `server/fastify/src/routes/assets.ts`                   | `/api/v1/assets`, `/api/v1/assets/bulk`, immutable `GET`/`HEAD`, existence probe.                                             |
 | `server/fastify/src/repository.ts`                      | Asset id validation, sha256 dedupe, SQLite metadata, file paths, missing-asset checks.                                        |
-| `server/fastify/src/assetGc.ts`                         | Reference-counted asset garbage collection over the current minimal reference projection.                                      |
+| `server/fastify/src/assetGc.ts`                         | Reference-counted asset garbage collection over a minimal SQLite reference shape.                                              |
 | `server/fastify/src/risuSave/assetReferences.ts`        | Known-field asset-reference walker for import/export/GC reports.                                                              |
 | `src/ts/server/assets.ts`, `src/ts/globalApi.svelte.ts` | Browser upload/read adapters, asset URL normalization, and private bulk-upload existence probing. |
+| `src/ts/server/settingsMediaAssetUpload.ts`, `src/ts/process/stableDiff.ts` | Durable image-setting asset references and lazy provider-request base64 materialization. |
 
 Asset ids are lowercase sha256 hex strings. Metadata lives in SQLite `assets`;
 bytes live at `data/assets/<sha256>.<ext>`. Supported content types are defined
@@ -30,21 +31,31 @@ for the server's canonical `jpg` extension.
 `POST /api/v1/assets` accepts raw supported asset bytes;
 `POST /api/v1/assets/bulk` accepts compact binary framing for browser bulk
 uploads and keeps JSON/base64 batch compatibility for import paths.
-Uploads are authenticated and active-writer guarded;
-successful new assets bump the domain revision and emit `asset.created`.
-Re-uploading existing bytes is idempotent and can heal a missing file.
+Uploads are authenticated and active-writer guarded. Asset metadata is outside
+the revisioned application-resource domain: uploads return the current domain
+revision but do not bump it or emit a command event. Re-uploading existing
+bytes is idempotent and can heal a missing file. Browser upload helpers request
+`Prefer: return=minimal`; compact single and bulk acknowledgements return
+`{ assetId, revision }` and `{ assetIds, revision }` respectively, while callers
+that omit the preference retain the fuller compatibility response.
 
 `GET` and `HEAD /api/v1/assets/:id` are public immutable reads for ids present
 in metadata and on disk. `POST /api/v1/assets/exists` is a public read-only POST
 that reports missing ids.
 
+New NovelAI I2I/character-reference and WaveSpeed reference-image uploads store
+only the durable server asset id and remove the duplicated legacy inline-base64
+field. `stableDiff.ts` reads and encodes the asset only while constructing the
+provider request. Imported base64-only settings and inline fallbacks for an
+unreadable imported asset reference remain supported.
+
 `runAssetGc()` walks known asset-reference fields across a minimal SQLite
-projection and scans `messages.data` for inlay references, then removes
-unreferenced metadata and stray files. The minimal GC projection currently loads
+reference shape and scans `messages.data` for inlay references, then removes
+unreferenced metadata and stray files. The minimal GC shape currently loads
 settings, module assets, persona icons, bot preset images, character/chat
 reference fields, and active message inlays rather than a full repository
-projection. The broader save-report walker also knows split model/prompt preset
-images; those split preset images are not part of the minimal GC projection
+load. The broader save-report walker also knows split model/prompt preset
+images; those split preset images are not part of the minimal GC shape
 today, so keep `assetGc.ts` in sync when adding reference-bearing split tables.
 A grace window protects upload-then-reference races. GC does not bump the
 revision or emit command events.
@@ -110,9 +121,14 @@ Card conversion helpers live in `server/fastify/src/realmImport/`. Asset
 staging/persistence, `charx` extraction, progress SSE, low-level-access
 confirmation, import limits, and the command-mutation commit are owned by
 `server/fastify/src/routes/realmImport.ts`. Browser request/SSE decoding lives
-in `src/ts/server/realmImport.ts`; projection resync, navigation,
+in `src/ts/server/realmImport.ts`; response-event reconciliation and resource
+refresh live in `src/ts/server/resourceRefresh.ts`, while navigation,
 low-level-access retry, and older browser fallback handling live in
-`src/ts/characterCards.ts`. Server Realm import is primary but not exclusive:
+`src/ts/characterCards.ts`. A successful response carries the revision,
+`character.created` event, and character id. When that event is contiguous the
+browser refreshes only the character list and preserves resident hydrated
+bodies; a missing cursor, mismatched event, or revision gap falls back to a
+complete resource refresh. Server Realm import is primary but not exclusive:
 unsupported server Realm responses can fall back to the older browser path, and
 local direct `charx` file import still has a browser-native path.
 Operational guards include a request deadline and client-disconnect abort,
@@ -151,9 +167,9 @@ read-only. Concrete routes are `POST /api/v1/backups`, `GET /api/v1/backups`,
 
 Restore swaps asset/save directories and restores SQLite tables through the
 `SQLITE_BACKUP_TABLES` allowlist in `repository.ts`, then emits
-`state.restored` and triggers browser projection recovery. Because restore swaps
-tables from the copied backup DB with `ATTACH`, operational tables can be
-present in the backup file but ignored on restore if they are not allowlisted.
+`state.restored` and triggers a complete browser resource refresh. Because
+restore swaps tables from the copied backup DB with `ATTACH`, operational tables
+can be present in the backup file but ignored on restore if they are not allowlisted.
 Keep that allowlist in sync when adding durable tables; split model/prompt
 preset rows are included, while operational rows and Web Push subscription/key
 state are currently outside the restore contract. Older backups containing

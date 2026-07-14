@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-13.
+Last audited: 2026-07-14.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -173,10 +173,22 @@ live in `server/fastify/__fixtures__/risuSave/`. Explicit frontend gates live in
 `src/ts/__tests__/` and `src/lib/_audit/`; keep audit/perf/completeness gates in
 those places instead of mixing them into ordinary feature folders. The
 architecture audit can be scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`.
-`fixCompletenessGate*.test.ts` also parses the v1-v3 archived
+`fixCompletenessGate*.test.ts` directly parses the v1-v3 archived
 stability/performance audit and risk Markdown, so those specific
 `.archived-docs/` files remain live test fixtures even though they are not
-current behavioral guidance.
+current behavioral guidance. The archived v4 audit is not directly parsed by a
+standalone v4 gate; selected v4 findings were routed through the v3 integration
+brief and remain represented by v3 gate riders and their named regression
+tests.
+
+Communication-cost regressions stay in the normal frontend/server lanes rather
+than a separate package script. The server lane owns the large-corpus and
+mutation-shape checks in `serverLoadCostHarness.test.ts`,
+`commandMutationReadNarrowing.test.ts`, `commandSingleRowPaths.test.ts`,
+`commandSettingsAndPluginStorageRange.test.ts`, and
+`commandMessageFreeCeiling.test.ts`. The explicit completeness gates verify
+that required archived findings still point at the current resource-read and
+feature regression tests.
 
 ## Visible State Test Contract
 
@@ -187,13 +199,13 @@ command payload assertions, and fetch mocks can support the test, but they are
 not enough for stale-visible-UI bugs. If behavior includes optimistic updates or
 rollback, assert both the visible optimistic change and the visible rollback.
 
-Use helper Vitest for pure helpers and resource-invalidation calculations, Svelte DOM
-Vitest for state-to-DOM contracts, and sparse Fastify browser smoke for
-end-to-end boot/API/SSE wiring. Add state-to-DOM coverage when touching
+Use helper Vitest for pure helpers and resource-invalidation calculations,
+Svelte DOM Vitest for state-to-DOM contracts, and sparse Fastify browser smoke
+for end-to-end boot/API/SSE wiring. Add state-to-DOM coverage when touching
 resource slice state, `selectedCharID`, `chatPage`, `loadedStore`, authoritative
-resource applies, bootstrap/refresh/SSE, optimistic command helpers, bridge watchers, router
-selection, array create/delete/reorder flows, `$derived`, `$effect`, keyed lists,
-memo signatures, or render dependency keys.
+resource applies, bootstrap/refresh/SSE, optimistic command helpers, bridge
+watchers, router selection, array create/delete/reorder flows, `$derived`,
+`$effect`, keyed lists, memo signatures, or render dependency keys.
 
 ## TypeScript And Formatting
 
