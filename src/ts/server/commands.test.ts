@@ -321,6 +321,7 @@ describe('server command API adapter', () => {
       group: 'display',
       baseRevision: 2,
       patch: { theme: 'LIGHT', zoomsize: 90 },
+      acknowledgeOptimistic: true,
     })
 
     expect(observedEffects).toEqual([
@@ -357,6 +358,7 @@ describe('server command API adapter', () => {
       group: 'display',
       baseRevision: 2,
       patch: { customCSS },
+      acknowledgeOptimistic: true,
     })
 
     expect(observedEffects).toEqual([
@@ -367,6 +369,50 @@ describe('server command API adapter', () => {
         settings: { customCSS },
       },
     ])
+  })
+
+  it('requires explicit certification before acknowledging a settings patch locally', async () => {
+    const commandFetch = makeCommandFetch((_url, init) => {
+      const request = JSON.parse(String(init?.body)) as { baseRevision: number }
+      const revision = request.baseRevision + 1
+      return {
+        revision,
+        event: {
+          type: 'settings.updated',
+          revision,
+          resource: 'settings',
+          id: 'display',
+        },
+        acknowledgedKeys: ['theme'],
+        settings: { theme: 'light' },
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    setCachedServerCommandRevision(1)
+    const observedEffects: ServerCommandLocalEffect[][] = []
+    setServerCommandSuccessReconciler((_event, _coalescedEvents, localEffects) => {
+      observedEffects.push([...localEffects.values()])
+    })
+
+    await patchServerBackedSettings({ patch: { theme: 'LIGHT' } })
+    await patchServerBackedSettings({ patch: { theme: 'LIGHT' }, acknowledgeOptimistic: true })
+
+    expect(observedEffects).toEqual([
+      [],
+      [
+        {
+          kind: 'settingsPatch',
+          group: 'display',
+          attemptedPatch: { theme: 'LIGHT' },
+          settings: { theme: 'light' },
+        },
+      ],
+    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      { baseRevision: 1, patch: { theme: 'LIGHT' } },
+      { baseRevision: 2, patch: { theme: 'LIGHT' } },
+    ])
+    expect(commandFetch.calls[1]?.body).not.toHaveProperty('acknowledgeOptimistic')
   })
 
   it('sends only shallow object changes while reconstructing the full optimistic settings value locally', async () => {
@@ -871,8 +917,20 @@ describe('server command API adapter', () => {
 
     const result = await runServerCommandSequence(
       [
-        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: attempts[0] }),
-        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: attempts[1] }),
+        (baseRevision) =>
+          patchSettingsGroup({
+            group: 'runtime',
+            baseRevision,
+            patch: attempts[0],
+            acknowledgeOptimistic: true,
+          }),
+        (baseRevision) =>
+          patchSettingsGroup({
+            group: 'runtime',
+            baseRevision,
+            patch: attempts[1],
+            acknowledgeOptimistic: true,
+          }),
       ],
       rollback,
     )

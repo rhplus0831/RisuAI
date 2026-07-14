@@ -547,6 +547,39 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 
+  it('authoritatively reconciles an accepted settings patch without an optimistic effect', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().theme = 'old-local-value'
+    })
+    const event = {
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'display',
+    }
+    resourceApi.refreshInvalidated.mockImplementationOnce(async () => {
+      applySettingsGroupResource(
+        {
+          revision: 6,
+          group: 'display',
+          settings: { theme: 'light' },
+        },
+        ['theme'],
+      )
+      return { status: 'ok', revision: 6, scope: 'targeted' }
+    })
+
+    await commandApi.reconciler?.(event, [event], new Map())
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+    expect(getDatabase().theme).toBe('light')
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('acknowledges an exact prompt settings patch only against its unchanged untainted projection', async () => {
     await loadWebInitialDatabase()
     withTrustedResourceWrite(() => {

@@ -477,6 +477,7 @@ export interface PatchSettingsObjectFieldsInput {
 
 export interface PatchServerBackedSettingsInput {
   patch: SettingsPatch
+  acknowledgeOptimistic?: boolean
   rollback?: () => void
   signal?: AbortSignal | null
   keepalive?: boolean
@@ -1861,10 +1862,10 @@ export async function patchSettingsGroup(
     signal,
     keepalive,
     readLocalEffect:
-      input.acknowledgeOptimistic === false
-        ? undefined
-        : (body, event) =>
-            readSettingsPatchLocalEffect(body, event, input.group, input.patch, input.optimisticProjectionEpoch),
+      input.acknowledgeOptimistic === true
+        ? (body, event) =>
+            readSettingsPatchLocalEffect(body, event, input.group, input.patch, input.optimisticProjectionEpoch)
+        : undefined,
   })
 }
 
@@ -1940,7 +1941,16 @@ async function executeServerBackedSettingsPatch(
       return { status: 'error', error: 'Unable to read server command revision' }
     }
 
-    const result = await patchSettingsGroup({ group, baseRevision, patch }, input.signal, input.keepalive)
+    const result = await patchSettingsGroup(
+      {
+        group,
+        baseRevision,
+        patch,
+        acknowledgeOptimistic: input.acknowledgeOptimistic === true,
+      },
+      input.signal,
+      input.keepalive,
+    )
 
     if (result.status !== 'ok') {
       runRollbackUnlessDestructiveRefreshChanged(input.rollback, rollbackEpoch)
