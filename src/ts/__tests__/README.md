@@ -1,9 +1,8 @@
-# Explicit Frontend Gates
+# Explicit Frontend Performance Gates
 
-This directory contains static completeness, clone-cost, render-cost, and
-send-path cost gates. They are useful regression protection, but they are
-heavier and more brittle than ordinary feature tests, so the default frontend
-lane excludes them.
+This directory contains shared clone-cost helpers plus render-cost and send-path
+performance gates. They are useful regression protection, but they are heavier
+than ordinary feature tests, so the default frontend lane excludes them.
 
 Run them explicitly with:
 
@@ -21,13 +20,11 @@ pnpm test:frontend:all
 
 | Files | Purpose |
 | --- | --- |
-| `fixCompletenessGate*.test.ts` | Static proof that scheduled audit fixes still have regression coverage; these parse the v1-v3 archived stability/performance audit and risk Markdown as live fixtures. |
-| `cloneCostGateCompleteness.test.ts` | Static proof that clone-cost gates remain registered for narrowed hot paths. |
-| `cloneCostHarness.ts` | Shared snapshot-shape, rollback, and clone-instrumentation helpers used by registered gates across `src/`. |
+| `cloneCostHarness.ts` | Shared snapshot-shape, rollback, and clone-instrumentation helpers used by focused regression tests across `src/`. |
 | `renderCostHarness*.ts` | DOM/render-cost regression probes for GUI reload behavior. |
 | `sendCloneCountProbe*.ts` | Send-path clone-count regression probe. |
-| `largeCorpusFixture*.ts` | Shared large-corpus fixture and sanity coverage used by cost gates. |
+| `largeCorpusFixture.ts` | Shared large-corpus fixture used by client and server cost regressions. |
 
-Keep new static or perf/completeness gates here. UI audit probes belong in
-`src/lib/_audit`. Add a new path to `pnpm test:gates` only if it falls outside
-those directories or the existing util audit test.
+Keep new performance gates here. UI audit probes belong in `src/lib/_audit`.
+Add a new path to `pnpm test:gates` only if it falls outside those directories
+or the existing util audit test.

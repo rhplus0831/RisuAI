@@ -27,21 +27,10 @@ generated, local-only, historical, vendored, or intentionally no-port.
 | `*.snap` under test fixtures                    | Vitest snapshots; update through the relevant test workflow.                                                                                           |
 
 `.archived-docs/` files are historical documentation. They may contain
-present-tense statements that were true at closeout and are now stale. Prefer
-`STRUCTURE.md`, `docs/structure/`, and code for current behavior. One narrow
-exception is live test ownership: the v1-v3
-`audit-stability-and-performance/`, `audit-stability-and-performance-v2/`, and
-`audit-stability-and-performance-v3/` audit and risk Markdown files are parsed
-by `fixCompletenessGate*.test.ts`. Treat those archive files as
-completeness-gate fixtures; do not rename them or edit their status tables
-without updating and running the gates.
-
-`audit-stability-and-performance-v4/` is also an archived audit record, but it
-did not become a standalone remediation plan and is not directly parsed by a
-v4 completeness gate. Selected v4 findings were routed through the v3 closeout
-via `audit-stability-and-performance-v3/v4-integration-brief.md`; the resulting
-v3 gate riders and named feature tests remain live even though the v4 finding
-tree itself is historical.
+present-tense statements, commands, and gate references that were true at
+closeout and are now stale. Prefer `STRUCTURE.md`, `docs/structure/`, code, and
+the current behavioral tests. None of the archived audit Markdown is a live
+test fixture.
 
 `docs/structure/frontend.md` is source documentation only as a compatibility
 pointer for older links. Add current frontend guidance to

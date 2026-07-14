@@ -24,10 +24,9 @@ pnpm through Corepack.
 | `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate/audit tests.  |
 | `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate/audit tests.                |
 | `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate/audit tests.                                        |
-| `pnpm test:gates`                  | Run explicit frontend audit, completeness, clone-cost, and render-cost gates.                                  |
+| `pnpm test:gates`                  | Run explicit frontend architecture, UI, clone-cost, and render-cost gates.                                     |
 | `pnpm test:gates:audit`            | Run architecture-audit and UI-audit gate tests.                                                               |
-| `pnpm test:gates:completeness`     | Run static audit/completeness registry gates.                                                                 |
-| `pnpm test:gates:perf`             | Run render-cost, clone-count, and large-corpus fixture gates.                                                  |
+| `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                         |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                              |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                       |
 | `pnpm test:all`                    | Run default frontend tests, explicit gates, and server tests, preserving a failing exit code if any lane fails. |
@@ -170,25 +169,19 @@ coverage reports local unless a plan slice explicitly asks for extracted results
 Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
 `UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
 live in `server/fastify/__fixtures__/risuSave/`. Explicit frontend gates live in
-`src/ts/__tests__/` and `src/lib/_audit/`; keep audit/perf/completeness gates in
-those places instead of mixing them into ordinary feature folders. The
-architecture audit can be scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`.
-`fixCompletenessGate*.test.ts` directly parses the v1-v3 archived
-stability/performance audit and risk Markdown, so those specific
-`.archived-docs/` files remain live test fixtures even though they are not
-current behavioral guidance. The archived v4 audit is not directly parsed by a
-standalone v4 gate; selected v4 findings were routed through the v3 integration
-brief and remain represented by v3 gate riders and their named regression
-tests.
+`src/ts/__tests__/` and `src/lib/_audit/`; keep performance and UI audit probes
+in those places instead of mixing them into ordinary feature folders. The
+architecture audit can be scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`. Closed
+v1-v4 stability audits under `.archived-docs/` are historical records, not test
+fixtures; current behavior is protected directly by feature and performance
+regression tests.
 
 Communication-cost regressions stay in the normal frontend/server lanes rather
 than a separate package script. The server lane owns the large-corpus and
 mutation-shape checks in `serverLoadCostHarness.test.ts`,
 `commandMutationReadNarrowing.test.ts`, `commandSingleRowPaths.test.ts`,
 `commandSettingsAndPluginStorageRange.test.ts`, and
-`commandMessageFreeCeiling.test.ts`. The explicit completeness gates verify
-that required archived findings still point at the current resource-read and
-feature regression tests.
+`commandMessageFreeCeiling.test.ts`.
 
 ## Visible State Test Contract
 
