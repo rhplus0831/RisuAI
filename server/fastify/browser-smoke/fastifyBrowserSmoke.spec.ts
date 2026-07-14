@@ -88,6 +88,7 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   page,
 }) => {
   const apiRequests: string[] = []
+  const resourceCacheRequests: Array<{ path: string; hashes: Record<string, unknown> }> = []
   const browserDiagnostics: string[] = []
   await page.addInitScript(() => {
     const audit: { records: StorageAuditRecord[] } = { records: [] }
@@ -134,6 +135,15 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
     if (url.pathname.startsWith('/api/v1/')) {
       apiRequests.push(`${request.method()} ${url.pathname}`)
     }
+    if (
+      request.method() === 'POST' &&
+      ['/api/v1/settings', '/api/v1/collections', '/api/v1/characters'].includes(url.pathname)
+    ) {
+      const body = request.postDataJSON() as { cache?: { hashes?: unknown } } | null
+      if (body?.cache?.hashes && typeof body.cache.hashes === 'object') {
+        resourceCacheRequests.push({ path: url.pathname, hashes: body.cache.hashes as Record<string, unknown> })
+      }
+    }
   })
 
   await page.goto(harness.baseUrl)
@@ -164,6 +174,11 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   await expect
     .poll(() => apiRequests.filter((entry) => entry === 'GET /api/v1/events').length)
     .toBeGreaterThanOrEqual(1)
+  for (const resource of ['settings', 'collections', 'characters']) {
+    await expect
+      .poll(() => apiRequests.filter((entry) => entry === `POST /api/v1/${resource}`).length)
+      .toBeGreaterThanOrEqual(1)
+  }
 
   const initialProjection = await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getDatabaseSnapshot())
   expect(initialProjection?.streamGeminiThoughts).toBe(false)
@@ -264,7 +279,17 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
   expect(apiRequests).toContain('POST /api/v1/import/risusave')
   expect(apiRequests).toContain('GET /api/v1/memory/chunks/chat-smoke')
   expect(apiRequests).toContain('GET /api/v1/memory/summaries/chat-smoke')
-  expect(apiRequests.filter((entry) => entry === 'GET /api/v1/bootstrap').length).toBeGreaterThan(1)
+  for (const resource of ['settings', 'collections', 'characters']) {
+    const path = `/api/v1/${resource}`
+    await expect.poll(() => resourceCacheRequests.filter((entry) => entry.path === path).length).toBeGreaterThan(1)
+    const latest = resourceCacheRequests.filter((entry) => entry.path === path).at(-1)
+    expect(
+      Object.values(latest?.hashes ?? {}).some(
+        (hashes) =>
+          Array.isArray(hashes) && hashes.some((hash) => typeof hash === 'string' && /^[a-f0-9]{64}$/.test(hash)),
+      ),
+    ).toBe(true)
+  }
   expect(apiRequests.filter((entry) => /^((GET)|(POST)) \/api\/v1\/storage\//.test(entry))).toEqual([])
   await expect
     .poll(() =>
