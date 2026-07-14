@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import type { AuthState } from '../auth.js'
@@ -26,6 +27,14 @@ const PLUGIN_STORAGE_COLLECTION = 'pluginCustomStorage' as const
 const READABLE_COLLECTION_NAMES = [...COLLECTION_FIELDS, PLUGIN_STORAGE_COLLECTION] as const
 type ReadableCollectionName = (typeof READABLE_COLLECTION_NAMES)[number]
 const READABLE_COLLECTION_NAME_SET = new Set<string>(READABLE_COLLECTION_NAMES)
+const RESOURCE_CACHE_VERSION = 1 as const
+const RESOURCE_CACHE_ALGORITHM = 'sha256' as const
+const RESOURCE_CACHE_MAX_HASHES = 10_000
+const SHA256_HEX_RE = /^[a-f0-9]{64}$/
+const RESOURCE_CACHE_METADATA = {
+  version: RESOURCE_CACHE_VERSION,
+  algorithm: RESOURCE_CACHE_ALGORITHM,
+} as const
 const LEGACY_BOT_PRESET_SHELL_FIELDS = [
   'id',
   'name',
@@ -40,6 +49,16 @@ interface ChatMessageRangeQuery {
   limit?: string
   tail?: string
   generationMessageId?: string
+}
+
+interface ParsedResourceCacheRequest {
+  hashes: ReadonlyMap<string, ReadonlySet<string>>
+}
+
+interface CacheSubstitutionResult<T = unknown> {
+  value: T
+  hits: number
+  misses: number
 }
 
 export function registerResourceReadRoutes(
@@ -62,6 +81,27 @@ export function registerResourceReadRoutes(
     })
   })
 
+  app.post<{ Body: unknown }>('/api/v1/settings', { onRequest: requireReadAuth }, async (req, reply) => {
+    const cacheRequest = parseResourceCacheRequest(req.body, ['settings'])
+    if (typeof cacheRequest === 'string') {
+      return sendInvalidResourceCacheRequest(reply, cacheRequest)
+    }
+    const { revision } = getSchemaState(db)
+    const settings = maskProviderSecretsInPlace(loadSettingsFromSqlite(db) ?? {})
+    const substitution = substituteCachedValue(settings, cacheRequest.hashes.get('settings'))
+    return metricResourceResponse(
+      req.log,
+      'settings',
+      revision,
+      {
+        revision,
+        cache: RESOURCE_CACHE_METADATA,
+        settings: substitution.value,
+      },
+      cacheMetricFields(substitution),
+    )
+  })
+
   app.get<{ Params: { group: string } }>('/api/v1/settings/:group', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     if (!READABLE_SETTINGS_GROUPS.includes(req.params.group as ReadableSettingsGroup)) {
@@ -72,18 +112,6 @@ export function registerResourceReadRoutes(
       return
     }
     const group = req.params.group as ReadableSettingsGroup
-    // hypaV3Presets is command-owned by the memory group but persists in its
-    // own collection table. Keep this endpoint settings-only; the dedicated
-    // cross-resource event invalidates that collection separately.
-    const groupKeys =
-      group === 'language' ? [...SETTINGS_GROUP_KEYS[group], 'translatorPresetId'] : SETTINGS_GROUP_KEYS[group]
-    const keys = groupKeys.filter(
-      (key) =>
-        key !== 'hypaV3Presets' &&
-        (group === 'models' ||
-          (group === 'language' && key === 'translatorPresetId') ||
-          READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group),
-    )
     const { revision } = getSchemaState(db)
     return metricResourceResponse(
       req.log,
@@ -92,11 +120,47 @@ export function registerResourceReadRoutes(
       {
         revision,
         group,
-        settings: maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, keys)),
+        settings: loadSettingsGroup(db, dataDir, group),
       },
       { group },
     )
   })
+
+  app.post<{ Params: { group: string }; Body: unknown }>(
+    '/api/v1/settings/:group',
+    { onRequest: requireReadAuth },
+    async (req, reply) => {
+      if (!READABLE_SETTINGS_GROUPS.includes(req.params.group as ReadableSettingsGroup)) {
+        reply.code(404).send({
+          error: 'settings_group_not_found',
+          reason: `Unknown settings group: ${req.params.group}`,
+        })
+        return
+      }
+      const cacheRequest = parseResourceCacheRequest(req.body, ['settings'])
+      if (typeof cacheRequest === 'string') {
+        return sendInvalidResourceCacheRequest(reply, cacheRequest)
+      }
+      const group = req.params.group as ReadableSettingsGroup
+      const { revision } = getSchemaState(db)
+      const substitution = substituteCachedValue(
+        loadSettingsGroup(db, dataDir, group),
+        cacheRequest.hashes.get('settings'),
+      )
+      return metricResourceResponse(
+        req.log,
+        'settings',
+        revision,
+        {
+          revision,
+          group,
+          cache: RESOURCE_CACHE_METADATA,
+          settings: substitution.value,
+        },
+        { group, ...cacheMetricFields(substitution) },
+      )
+    },
+  )
 
   app.get('/api/v1/collections', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -107,6 +171,31 @@ export function registerResourceReadRoutes(
         suppressSelectedPromptTemplateProjection: true,
       }),
     })
+  })
+
+  app.post<{ Body: unknown }>('/api/v1/collections', { onRequest: requireReadAuth }, async (req, reply) => {
+    const cacheRequest = parseResourceCacheRequest(req.body, READABLE_COLLECTION_NAMES)
+    if (typeof cacheRequest === 'string') {
+      return sendInvalidResourceCacheRequest(reply, cacheRequest)
+    }
+    const { revision } = getSchemaState(db)
+    const substitution = substituteCachedCollections(
+      loadCollections(db, dataDir, READABLE_COLLECTION_NAMES, {
+        suppressSelectedPromptTemplateProjection: true,
+      }),
+      cacheRequest,
+    )
+    return metricResourceResponse(
+      req.log,
+      'collections',
+      revision,
+      {
+        revision,
+        cache: RESOURCE_CACHE_METADATA,
+        collections: substitution.value,
+      },
+      cacheMetricFields(substitution),
+    )
   })
 
   app.get<{ Params: { name: string } }>('/api/v1/collections/:name', { exposeHeadRoute: false }, async (req, reply) => {
@@ -131,6 +220,37 @@ export function registerResourceReadRoutes(
     )
   })
 
+  app.post<{ Params: { name: string }; Body: unknown }>(
+    '/api/v1/collections/:name',
+    { onRequest: requireReadAuth },
+    async (req, reply) => {
+      if (!isReadableCollectionName(req.params.name)) {
+        reply.code(404).send({
+          error: 'collection_not_found',
+          reason: `Unknown collection: ${req.params.name}`,
+        })
+        return
+      }
+      const cacheRequest = parseResourceCacheRequest(req.body, [req.params.name])
+      if (typeof cacheRequest === 'string') {
+        return sendInvalidResourceCacheRequest(reply, cacheRequest)
+      }
+      const { revision } = getSchemaState(db)
+      const substitution = substituteCachedCollections(loadCollections(db, dataDir, [req.params.name]), cacheRequest)
+      return metricResourceResponse(
+        req.log,
+        'collection',
+        revision,
+        {
+          revision,
+          cache: RESOURCE_CACHE_METADATA,
+          collections: substitution.value,
+        },
+        { collection: req.params.name, ...cacheMetricFields(substitution) },
+      )
+    },
+  )
+
   app.get('/api/v1/characters', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
     const { revision } = getSchemaState(db)
@@ -142,6 +262,30 @@ export function registerResourceReadRoutes(
       characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
       currentChar: Number.isInteger(settings.currentChar) ? settings.currentChar : -1,
     })
+  })
+
+  app.post<{ Body: unknown }>('/api/v1/characters', { onRequest: requireReadAuth }, async (req, reply) => {
+    const cacheRequest = parseResourceCacheRequest(req.body, ['characters'])
+    if (typeof cacheRequest === 'string') {
+      return sendInvalidResourceCacheRequest(reply, cacheRequest)
+    }
+    const { revision } = getSchemaState(db)
+    const settings = loadPersistedDatabaseFields(db, dataDir, ['characterOrder', 'currentChar'])
+    const characterEnvelope = maskProviderSecretsInPlace({ characters: loadCharacterRowsForRead(db, dataDir) })
+    const substitution = substituteCachedArray(characterEnvelope.characters, cacheRequest.hashes.get('characters'))
+    return metricResourceResponse(
+      req.log,
+      'characters',
+      revision,
+      {
+        revision,
+        cache: RESOURCE_CACHE_METADATA,
+        characters: substitution.value,
+        characterOrder: Array.isArray(settings.characterOrder) ? settings.characterOrder : [],
+        currentChar: Number.isInteger(settings.currentChar) ? settings.currentChar : -1,
+      },
+      cacheMetricFields(substitution),
+    )
   })
 
   app.get('/api/v1/characters/order', { exposeHeadRoute: false }, async (req, reply) => {
@@ -447,6 +591,134 @@ function metricResourceResponse<T>(
     logger,
   )
   return response
+}
+
+function loadSettingsGroup(db: DatabaseSync, dataDir: string, group: ReadableSettingsGroup): Record<string, unknown> {
+  // hypaV3Presets is command-owned by the memory group but persists in its
+  // own collection table. Keep this endpoint settings-only; the dedicated
+  // cross-resource event invalidates that collection separately.
+  const groupKeys =
+    group === 'language' ? [...SETTINGS_GROUP_KEYS[group], 'translatorPresetId'] : SETTINGS_GROUP_KEYS[group]
+  const keys = groupKeys.filter(
+    (key) =>
+      key !== 'hypaV3Presets' &&
+      (group === 'models' ||
+        (group === 'language' && key === 'translatorPresetId') ||
+        READABLE_SETTINGS_GROUPS.find((candidate) => SETTINGS_GROUP_KEYS[candidate].includes(key)) === group),
+  )
+  return maskProviderSecretsInPlace(loadPersistedDatabaseFields(db, dataDir, keys))
+}
+
+function parseResourceCacheRequest(
+  body: unknown,
+  allowedResourceNames: readonly string[],
+): ParsedResourceCacheRequest | string {
+  if (!isRecord(body)) return 'body must be an object'
+  const bodyKeys = Object.keys(body)
+  if (bodyKeys.length !== 1 || bodyKeys[0] !== 'cache') {
+    return 'body must contain only cache'
+  }
+  if (!isRecord(body.cache)) return 'body.cache must be an object'
+  const cacheKeys = Object.keys(body.cache).sort()
+  if (cacheKeys.length !== 2 || cacheKeys[0] !== 'hashes' || cacheKeys[1] !== 'version') {
+    return 'body.cache must contain only version and hashes'
+  }
+  if (body.cache.version !== RESOURCE_CACHE_VERSION) {
+    return `body.cache.version must equal ${RESOURCE_CACHE_VERSION}`
+  }
+  if (!isRecord(body.cache.hashes)) return 'body.cache.hashes must be an object'
+
+  const allowed = new Set(allowedResourceNames)
+  const hashes = new Map<string, ReadonlySet<string>>()
+  let totalHashes = 0
+  for (const [resourceName, rawHashes] of Object.entries(body.cache.hashes)) {
+    if (!allowed.has(resourceName)) {
+      return `Unknown cache resource: ${resourceName}`
+    }
+    if (!Array.isArray(rawHashes)) {
+      return `body.cache.hashes.${resourceName} must be an array`
+    }
+    const resourceHashes = new Set<string>()
+    for (const rawHash of rawHashes) {
+      totalHashes += 1
+      if (totalHashes > RESOURCE_CACHE_MAX_HASHES) {
+        return `body.cache.hashes must contain at most ${RESOURCE_CACHE_MAX_HASHES} hashes`
+      }
+      if (typeof rawHash !== 'string' || !SHA256_HEX_RE.test(rawHash)) {
+        return `body.cache.hashes.${resourceName} must contain only lowercase SHA-256 hex strings`
+      }
+      resourceHashes.add(rawHash)
+    }
+    hashes.set(resourceName, resourceHashes)
+  }
+  return { hashes }
+}
+
+function sendInvalidResourceCacheRequest(reply: FastifyReply, reason: string): FastifyReply {
+  return reply.code(400).send({
+    error: 'invalid_resource_cache_request',
+    reason,
+  })
+}
+
+function substituteCachedCollections(
+  collections: Record<string, unknown>,
+  cacheRequest: ParsedResourceCacheRequest,
+): CacheSubstitutionResult<Record<string, unknown>> {
+  const value: Record<string, unknown> = {}
+  let hits = 0
+  let misses = 0
+  for (const [name, collection] of Object.entries(collections)) {
+    const substitution =
+      name === PLUGIN_STORAGE_COLLECTION
+        ? substituteCachedValue(collection, cacheRequest.hashes.get(name))
+        : Array.isArray(collection)
+          ? substituteCachedArray(collection, cacheRequest.hashes.get(name))
+          : { value: collection, hits: 0, misses: 1 }
+    value[name] = substitution.value
+    hits += substitution.hits
+    misses += substitution.misses
+  }
+  return { value, hits, misses }
+}
+
+function substituteCachedArray(
+  values: readonly unknown[],
+  cachedHashes: ReadonlySet<string> | undefined,
+): CacheSubstitutionResult<unknown[]> {
+  const value: unknown[] = []
+  let hits = 0
+  let misses = 0
+  for (const item of values) {
+    const substitution = substituteCachedValue(item, cachedHashes)
+    value.push(substitution.value)
+    hits += substitution.hits
+    misses += substitution.misses
+  }
+  return { value, hits, misses }
+}
+
+function substituteCachedValue(value: unknown, cachedHashes: ReadonlySet<string> | undefined): CacheSubstitutionResult {
+  const hash = sha256JsonValue(value)
+  if (cachedHashes?.has(hash)) return { value: hash, hits: 1, misses: 0 }
+  return { value, hits: 0, misses: 1 }
+}
+
+function sha256JsonValue(value: unknown): string {
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) {
+    throw new TypeError('Resource cache values must be JSON-serializable')
+  }
+  return createHash('sha256').update(serialized, 'utf8').digest('hex')
+}
+
+function cacheMetricFields(substitution: CacheSubstitutionResult): Record<string, unknown> {
+  return {
+    cacheVersion: RESOURCE_CACHE_VERSION,
+    cacheAlgorithm: RESOURCE_CACHE_ALGORITHM,
+    cacheHits: substitution.hits,
+    cacheMisses: substitution.misses,
+  }
 }
 
 function loadCollections(

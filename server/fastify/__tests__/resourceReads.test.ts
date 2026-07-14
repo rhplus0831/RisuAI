@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
@@ -167,6 +168,14 @@ afterEach(async () => {
 
 function authHeaders(): Record<string, string> {
   return { 'risu-auth': assertion }
+}
+
+function jsonSha256(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex')
+}
+
+function cachePayload(hashes: Record<string, string[]>): Record<string, unknown> {
+  return { cache: { version: 1, hashes } }
 }
 
 describe('authenticated resource read routes', () => {
@@ -357,6 +366,64 @@ describe('authenticated resource read routes', () => {
     expect(unknown.json().error).toBe('settings_group_not_found')
   })
 
+  it('substitutes exact masked settings and settings-group projections by content hash', async () => {
+    const full = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings',
+      headers: authHeaders(),
+    })
+    const fullSettings = full.json().settings as Record<string, unknown>
+    const fullHash = jsonSha256(fullSettings)
+    const unmaskedHash = jsonSha256({ ...fullSettings, openAIKey: 'root-secret' })
+
+    const changed = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/settings',
+      headers: authHeaders(),
+      payload: cachePayload({ settings: [unmaskedHash] }),
+    })
+    expect(changed.statusCode).toBe(200)
+    expect(changed.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      settings: fullSettings,
+    })
+
+    const cached = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/settings',
+      headers: authHeaders(),
+      payload: cachePayload({ settings: [fullHash] }),
+    })
+    expect(cached.statusCode).toBe(200)
+    expect(cached.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      settings: fullHash,
+    })
+
+    const models = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/settings/models',
+      headers: authHeaders(),
+    })
+    const modelSettings = models.json().settings as Record<string, unknown>
+    const modelHash = jsonSha256(modelSettings)
+    const cachedModels = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/settings/models',
+      headers: authHeaders(),
+      payload: cachePayload({ settings: [modelHash] }),
+    })
+    expect(cachedModels.statusCode).toBe(200)
+    expect(cachedModels.json()).toEqual({
+      revision,
+      group: 'models',
+      cache: { version: 1, algorithm: 'sha256' },
+      settings: modelHash,
+    })
+  })
+
   it('returns aggregate and allowlisted targeted collections with masked secrets', async () => {
     const aggregate = await harness.app.inject({
       method: 'GET',
@@ -463,6 +530,142 @@ describe('authenticated resource read routes', () => {
     })
     expect(unknown.statusCode).toBe(404)
     expect(unknown.json().error).toBe('collection_not_found')
+  })
+
+  it('returns only changed collection items and treats hash arrays as content inventories', async () => {
+    const aggregate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+    })
+    const collections = aggregate.json().collections as Record<string, unknown>
+    const modules = collections.modules as unknown[]
+    const modelPresets = collections.modelPresets as Array<Record<string, unknown>>
+    const promptPresets = collections.promptPresets as Array<Record<string, unknown>>
+    const moduleHash = jsonSha256(modules[0])
+    const maskedModelHash = jsonSha256(modelPresets[0])
+    const unmaskedModelHash = jsonSha256({ ...modelPresets[0], openAIKey: 'model-secret' })
+    const promptHashes = promptPresets.map(jsonSha256)
+    const fullPromptOwnerHash = jsonSha256({
+      id: 'prompt-a',
+      name: 'Prompt A',
+      promptTemplate: [{ id: 'prompt-item-a', type: 'plain', text: 'Prompt text', role: 'system' }],
+    })
+    const pluginStorageHash = jsonSha256(collections.pluginCustomStorage)
+
+    const cached = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+      payload: cachePayload({
+        modules: [moduleHash],
+        modelPresets: [unmaskedModelHash, maskedModelHash],
+        // Reverse the inventory and include the stripped owner body's hash.
+        // Membership, not request position, decides whether a row is cached.
+        promptPresets: [promptHashes[1], fullPromptOwnerHash, promptHashes[0]],
+        pluginCustomStorage: [pluginStorageHash],
+      }),
+    })
+    expect(cached.statusCode).toBe(200)
+    const cachedBody = cached.json()
+    expect(cachedBody.cache).toEqual({ version: 1, algorithm: 'sha256' })
+    expect(cachedBody.collections.modules).toEqual([moduleHash])
+    expect(cachedBody.collections.modelPresets).toEqual([maskedModelHash])
+    expect(cachedBody.collections.promptPresets).toEqual(promptHashes)
+    expect(cachedBody.collections.pluginCustomStorage).toBe(pluginStorageHash)
+    expect(cachedBody.collections.promptTemplate).toEqual([])
+    expect(cached.payload).not.toContain('model-secret')
+    expect(cached.payload).not.toContain('Prompt text')
+
+    const partial = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/collections/promptPresets',
+      headers: authHeaders(),
+      payload: cachePayload({ promptPresets: [promptHashes[0]] }),
+    })
+    expect(partial.statusCode).toBe(200)
+    expect(partial.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      collections: {
+        promptPresets: [promptHashes[0], promptPresets[1]],
+      },
+    })
+
+    const promptTemplate = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/collections/promptTemplate',
+      headers: authHeaders(),
+    })
+    const promptTemplateItem = promptTemplate.json().collections.promptTemplate[0]
+    const promptTemplateHash = jsonSha256(promptTemplateItem)
+    const cachedPromptTemplate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/collections/promptTemplate',
+      headers: authHeaders(),
+      payload: cachePayload({ promptTemplate: [promptTemplateHash] }),
+    })
+    expect(cachedPromptTemplate.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      collections: { promptTemplate: [promptTemplateHash] },
+    })
+
+    expect(aggregate.json()).not.toHaveProperty('cache')
+  })
+
+  it('strictly validates versioned cache inventories and caps their total hashes', async () => {
+    const validHash = 'a'.repeat(64)
+    const invalidPayloads: Array<Record<string, unknown>> = [
+      {},
+      { cache: { version: 2, hashes: {} } },
+      { cache: { version: 1, hashes: {}, extra: true } },
+      { cache: { version: 1, hashes: { unknown: [] } } },
+      { cache: { version: 1, hashes: { modules: validHash } } },
+      { cache: { version: 1, hashes: { modules: [validHash.toUpperCase()] } } },
+      { cache: { version: 1, hashes: { modules: [validHash] } }, extra: true },
+    ]
+
+    for (const payload of invalidPayloads) {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/collections',
+        headers: authHeaders(),
+        payload,
+      })
+      expect(response.statusCode, JSON.stringify(payload)).toBe(400)
+      expect(response.json().error).toBe('invalid_resource_cache_request')
+    }
+
+    const oversized = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+      payload: cachePayload({ modules: new Array(10_001).fill(validHash) }),
+    })
+    expect(oversized.statusCode).toBe(400)
+    expect(oversized.json()).toMatchObject({
+      error: 'invalid_resource_cache_request',
+      reason: 'body.cache.hashes must contain at most 10000 hashes',
+    })
+
+    const unknownCollection = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/collections/not-a-collection',
+      headers: authHeaders(),
+      payload: cachePayload({}),
+    })
+    expect(unknownCollection.statusCode).toBe(404)
+    expect(unknownCollection.json().error).toBe('collection_not_found')
+
+    const unknownGroup = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/settings/not-a-group',
+      headers: authHeaders(),
+      payload: cachePayload({}),
+    })
+    expect(unknownGroup.statusCode).toBe(404)
+    expect(unknownGroup.json().error).toBe('settings_group_not_found')
   })
 
   it('retains the aggregate root prompt template when the selected modern preset pointer is malformed', async () => {
@@ -634,6 +837,48 @@ describe('authenticated resource read routes', () => {
     })
     expect(missing.statusCode).toBe(404)
     expect(missing.json().error).toBe('character_not_found')
+  })
+
+  it('substitutes cached message-free character projections without depending on inventory order', async () => {
+    const list = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters',
+      headers: authHeaders(),
+    })
+    const characters = list.json().characters as Array<Record<string, unknown>>
+    const characterHashes = characters.map(jsonSha256)
+    const unmaskedAdaHash = jsonSha256({
+      ...characters[0],
+      oaiTTSConfig: { apiKey: 'tts-secret' },
+    })
+
+    const cached = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/characters',
+      headers: authHeaders(),
+      payload: cachePayload({ characters: [characterHashes[1], unmaskedAdaHash, characterHashes[0]] }),
+    })
+    expect(cached.statusCode).toBe(200)
+    expect(cached.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      characters: characterHashes,
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    })
+    expect(cached.payload).not.toContain('tts-secret')
+
+    const partial = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/characters',
+      headers: authHeaders(),
+      payload: cachePayload({ characters: [characterHashes[0]] }),
+    })
+    expect(partial.statusCode).toBe(200)
+    expect(partial.json().characters).toEqual([characterHashes[0], characters[1]])
+    expect(partial.json().characterOrder).toEqual(['char-a', 'char-b'])
+    expect(partial.json().currentChar).toBe(0)
+    expect(list.json()).not.toHaveProperty('cache')
   })
 
   it('keeps character lorebooks resident when lorebook stubs are disabled', async () => {

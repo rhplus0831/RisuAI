@@ -144,6 +144,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'settings-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/settings',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware settings reads contain private user configuration and masked provider credentials.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware settings reading is read-only; POST carries the client cache inventory.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'settings-group-read',
     methods: GET_ONLY,
     path: '/api/v1/settings/:group',
@@ -159,6 +173,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'settings-group-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/settings/:group',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware settings-group reads contain private user configuration and masked provider credentials.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware settings-group reading is read-only; POST carries the client cache inventory.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'collections-read',
     methods: GET_ONLY,
     path: '/api/v1/collections',
@@ -169,6 +198,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     activeWriter: {
       decision: 'not-applicable',
       reason: 'Read-only collection route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'collections-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/collections',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware collection reads contain private user presets, modules, plugins, and storage.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware collection reading is read-only; POST carries the client cache inventory.',
     },
     streaming: 'none',
   },
@@ -188,6 +231,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'collection-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/collections/:name',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware targeted collection reads contain private user presets, modules, plugins, or storage.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware targeted collection reading is read-only; POST carries the client cache inventory.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'characters-read',
     methods: GET_ONLY,
     path: '/api/v1/characters',
@@ -198,6 +256,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     activeWriter: {
       decision: 'not-applicable',
       reason: 'Read-only character listing route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'characters-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/characters',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware character reads return private character and chat metadata.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware character reading is read-only; POST carries the client cache inventory.',
     },
     streaming: 'none',
   },

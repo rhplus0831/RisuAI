@@ -320,6 +320,31 @@ describe('active-writer header validation', () => {
     })
     expect(res.statusCode).toBe(200)
   })
+
+  it('does not apply the active-writer gate to authenticated hash-aware resource reads', async () => {
+    const assertion = await authed()
+    await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/bootstrap',
+      headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
+    })
+
+    for (const url of [
+      '/api/v1/settings',
+      '/api/v1/settings/display',
+      '/api/v1/collections',
+      '/api/v1/collections/modules',
+      '/api/v1/characters',
+    ]) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url,
+        headers: { 'risu-auth': assertion },
+        payload: { cache: { version: 1, hashes: {} } },
+      })
+      expect(res.statusCode, url).toBe(200)
+    }
+  })
 })
 
 describe('explicit route rate limits', () => {
