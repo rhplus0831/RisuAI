@@ -41,33 +41,90 @@ import { selectedCharID } from 'src/ts/stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import { resolveActiveChatGenerationSettings } from 'src/ts/activeChatGenerationSettings'
 import { clearCachedServerCommandRevision } from 'src/ts/server/commands'
+import { waitForPendingChatGenerationSettingsSave } from 'src/ts/chatCommands'
 import { classifyDifferential, readJailbreakSelected, readToggleSelected } from './domStateOracle'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
+interface CapturedCommandRequest {
+  url: string
+  method: string
+  body: unknown
+}
+
+interface DeferredCommandTransport {
+  calls: CapturedCommandRequest[]
+  invoked: Promise<void>
+  release: () => void
+}
+
 let target: HTMLElement
 let component: MountedComponent | undefined
+let activeCommandTransport: DeferredCommandTransport | undefined
 
-// A deferred fetch so the save command never resolves during the test: this
-// isolates the *optimistic* paint from the server-confirmed state.
-function stubNeverResolvingCommandFetch(): { count: () => number } {
-  let calls = 0
+// Hold the save response until the optimistic assertions have run, then let
+// the test deliberately fail the command and drain its fire-and-forget queue.
+function stubDeferredCommandFetch(): DeferredCommandTransport {
+  let resolveCommand!: (response: Response) => void
+  const commandResponse = new Promise<Response>((resolve) => {
+    resolveCommand = resolve
+  })
+  let markInvoked!: () => void
+  const invoked = new Promise<void>((resolve) => {
+    markInvoked = resolve
+  })
+  const calls: CapturedCommandRequest[] = []
+  let invokedMarked = false
+  let released = false
+
   vi.stubGlobal(
     'fetch',
-    vi.fn(async (input: RequestInfo | URL) => {
-      calls += 1
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(input)
       if (url === '/api/v1/bootstrap') {
-        return new Response(JSON.stringify({ revision: 400 }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        })
+        return jsonResponse({ revision: 400 })
       }
-      // generation-settings save: hang forever.
-      return new Promise<Response>(() => {})
+      if (url === '/api/v1/commands/chats/chat-a/generation-settings') {
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+        if (!invokedMarked) {
+          invokedMarked = true
+          markInvoked()
+        }
+        return commandResponse
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
-  return { count: () => calls }
+
+  activeCommandTransport = {
+    calls,
+    invoked,
+    release: () => {
+      if (released) return
+      released = true
+      resolveCommand(jsonResponse({ error: 'deferred optimistic-paint test release' }, 503))
+    },
+  }
+  return activeCommandTransport
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+async function releaseAndDrainCommandTransport(): Promise<void> {
+  const transport = activeCommandTransport
+  if (!transport) return
+  transport.release()
+  await waitForPendingChatGenerationSettingsSave('chat-a')
+  if (activeCommandTransport === transport) activeCommandTransport = undefined
 }
 
 function seedDb(): void {
@@ -134,9 +191,12 @@ beforeEach(() => {
   seedDb()
 })
 
-afterEach(() => {
+afterEach(async () => {
+  // Keep the stub installed and the resource projection intact until every
+  // queued command has settled, including when a test assertion throws.
+  await releaseAndDrainCommandTransport()
   if (component) {
-    unmount(component)
+    await unmount(component)
     component = undefined
   }
   target.remove()
@@ -148,7 +208,7 @@ afterEach(() => {
 
 describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', () => {
   it('flips the rendered jailbreak checkbox immediately, before the save resolves', async () => {
-    stubNeverResolvingCommandFetch()
+    const transport = stubDeferredCommandFetch()
     component = mount(Toggles, {
       target,
       props: { chara: getResourceDatabase().characters[0], noContainer: true },
@@ -168,15 +228,28 @@ describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', ()
     // still pending (no server confirmation yet).
     const domSelected = readJailbreakSelected(target)
     expect(domSelected).toBe(false)
+    await transport.invoked
+    expect(transport.calls).toEqual([
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        body: expect.objectContaining({
+          baseRevision: 400,
+          patch: { jailbreakToggle: false },
+        }),
+      },
+    ])
 
     // Classify: the optimistic store write set jailbreakToggle=false; the DOM
     // must agree. No bug iff DOM == store.
     const storeSelected = resolveActiveChatGenerationSettings().settings?.jailbreakToggle === true
     expect(classifyDifferential({ dom: domSelected, store: storeSelected, expected: false })).toBe('dom-matches-store')
+
+    await releaseAndDrainCommandTransport()
   })
 
   it('flips a rendered sidebar checkbox toggle immediately on click', async () => {
-    stubNeverResolvingCommandFetch()
+    const transport = stubDeferredCommandFetch()
     component = mount(Toggles, {
       target,
       props: { chara: getResourceDatabase().characters[0], noContainer: true },
@@ -194,9 +267,22 @@ describe('Phase 0 / Journey 2: optimistic toggle paint (DOM oracle, Tier 1)', ()
 
     const domSelected = readToggleSelected(target, 'flag')
     expect(domSelected).toBe(false)
+    await transport.invoked
+    expect(transport.calls).toEqual([
+      {
+        url: '/api/v1/commands/chats/chat-a/generation-settings',
+        method: 'PUT',
+        body: expect.objectContaining({
+          baseRevision: 400,
+          patch: { sidebarToggles: { flag: '0' } },
+        }),
+      },
+    ])
     const storeValue = resolveActiveChatGenerationSettings().settings?.sidebarToggles?.flag
     expect(classifyDifferential({ dom: domSelected, store: storeValue === '1', expected: false })).toBe(
       'dom-matches-store',
     )
+
+    await releaseAndDrainCommandTransport()
   })
 })
