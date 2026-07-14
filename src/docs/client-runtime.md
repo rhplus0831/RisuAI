@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-13.
+Last audited: 2026-07-14.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -42,8 +42,9 @@ the preloading element.
 2. If SQLite is uninitialized, issue the initialization command and refetch the
    runtime metadata.
 3. Fetch `/api/v1/settings`, `/api/v1/collections`, and `/api/v1/characters` in
-   parallel. Retry the complete set when their revisions do not match, then
-   apply the consistent set to reactive resource state.
+   parallel through hash-aware POSTs when IndexedDB/Web Crypto are available,
+   otherwise use their full GET forms. Retry the complete set when revisions do
+   not match, then apply the consistent set to reactive resource state.
 4. Seed selected-character state, reset body hydration, record already-resident
    lorebook coverage, and cache the common resource revision.
 5. Enable guarded resource writes and command-event reconciliation.
@@ -82,6 +83,10 @@ Important files:
   groups, `/api/v1/collections`, optional named collections,
   `/api/v1/characters`, narrow character order/selection resources, and
   individual character rows.
+- `src/ts/server/resourceCache.ts` owns the disposable IndexedDB cache. It keeps
+  bounded per-resource SHA-256 manifests plus content-addressed JSON values,
+  verifies stored bytes before advertising a hash, reconstructs mixed hash/value
+  responses, and prunes unreferenced entries.
 - `src/ts/server/hydrationReads.ts` reads chat-message, character-lorebook,
   legacy-preset, and prompt-preset-template bodies from concrete endpoints.
 - `src/ts/server/resourceInvalidation.ts` maps command events to targeted REST
@@ -128,6 +133,23 @@ If a component shows stale or missing data, confirm whether the data is:
 - optimistically changed but awaiting command confirmation;
 - rolled back after command failure;
 - superseded by an SSE-triggered targeted read or full resource refresh.
+
+Hash-aware reads are an authenticated transfer optimization, not an offline or
+authoritative browser database. The client sends only hashes for entries present
+in a verified current manifest. Fastify returns hashes for unchanged values and
+full JSON for changed values at the current revision; the transport adapter
+reconstructs the ordinary full payload before any resource-state or hydration
+caller sees it. A missing/corrupt cache value, unsupported POST route, malformed
+cache response, quota/privacy failure, or unavailable crypto causes a compatible
+full GET. Optimistic command state is never written to this cache.
+
+The root settings value, every split collection (including modules, plugins,
+prompt presets, personas, loadouts, lorebooks, and plugin custom storage), and
+message-free character rows participate. The selected/requested prompt-template
+body, legacy preset body, and single-character lorebook hydration use the same
+mechanism because those large bodies are intentionally absent from their shells.
+Chat messages remain on their existing lazy/ranged protocol rather than entering
+the persistent cache.
 
 The concrete resource modules above are the authoritative guide for startup,
 targeted invalidation, hydration, SSE reconciliation, guarded compatibility

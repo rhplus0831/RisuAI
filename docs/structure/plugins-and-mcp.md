@@ -64,8 +64,10 @@ deletion, clear, and bulk replacement remove absent values without refreshing
 unrelated app state. Pending per-key put/delete/bulk intents stay registered through
 resource reconciliation and overlay both targeted and full refreshes, so an
 older response cannot erase a newer optimistic storage edit. Plugin and module
-records arrive in full through the collection resources; bootstrap contains no
-durable record bodies or body-cache path.
+records arrive through the collection resources; bootstrap contains no durable
+record bodies. Those collection reads participate in the generic authenticated
+SHA-256/IndexedDB resource cache, rather than a plugin-specific bootstrap body
+cache.
 
 Plugin API calls that patch settings, modules, characters, chats, lorebooks, or
 scripts should use command-backed helpers. Unsupported direct resource keys stay

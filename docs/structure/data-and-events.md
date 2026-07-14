@@ -112,8 +112,10 @@ retained events from older servers.
 
 Grouped settings events reread `/api/v1/settings/:group`; broader settings-like
 events reread `/api/v1/settings`. Collection events reread the owning
-`/api/v1/collections/:name`. Character selection/order events use narrow pointer
-resources, while structural character events reread the list or one row.
+`/api/v1/collections/:name`. These cache-capable reads prefer authenticated
+hash-aware POSTs and fall back to their full GET forms. Character
+selection/order events use narrow pointer resources, while structural character
+events reread the list or one row.
 Message/transcript events reread the complete affected chat body; an
 unambiguous generation event rereads only its changed suffix. Character
 lorebook events use the single or bulk lorebook endpoint. `asset` and explicit
@@ -218,22 +220,28 @@ metadata/revision, while a client that lost the initialization race retries
 bootstrap read-only. It then loads the three root resources at one common
 revision.
 
-| Data                                                | Endpoint                                                       |
-| --------------------------------------------------- | -------------------------------------------------------------- |
-| Persisted settings fields                           | `GET /api/v1/settings`                                         |
-| One settings group                                  | `GET /api/v1/settings/:group`                                  |
-| All split collections                               | `GET /api/v1/collections`                                      |
-| One named split collection                          | `GET /api/v1/collections/:name`                                |
-| Message-free character list/order/current selection | `GET /api/v1/characters`                                      |
-| Character order only                                | `GET /api/v1/characters/order`                                |
-| Character selection/interaction                     | `GET /api/v1/characters/:id/selection`                        |
-| One message-free character row                      | `GET /api/v1/characters/:id`                                  |
-| Full, tail, ranged, or generation-suffix chat messages, per-chat memory data, and reroll alternates | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` |
-| Many chat histories                                 | `POST /api/v1/chats/messages/bulk`                              |
-| Character lorebook when `enableLorebookStubs` is on | `GET /api/v1/characters/:id/lorebook`                           |
-| Many character lorebooks                            | `POST /api/v1/characters/lorebooks/bulk`                        |
-| One legacy bot-preset body                          | `GET /api/v1/legacy-presets/:id`                                |
-| One prompt-preset-owned template                    | `GET /api/v1/prompt-presets/:id/template`                       |
+| Data                                                | Endpoint                                                                                                  |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Persisted settings fields                           | Cache `POST /api/v1/settings`; full `GET` fallback                                                         |
+| One settings group                                  | Cache `POST /api/v1/settings/:group`; full `GET` fallback                                                  |
+| All split collections                               | Cache `POST /api/v1/collections`; full `GET` fallback                                                      |
+| One named split collection                          | Cache `POST /api/v1/collections/:name`; full `GET` fallback                                                |
+| Message-free character list/order/current selection | Cache `POST /api/v1/characters`; full `GET` fallback                                                       |
+| Character order only                                | `GET /api/v1/characters/order`                                                                             |
+| Character selection/interaction                     | `GET /api/v1/characters/:id/selection`                                                                     |
+| One message-free character row                      | `GET /api/v1/characters/:id`                                                                               |
+| Full, tail, ranged, or generation-suffix chat messages, per-chat memory data, and reroll alternates | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId`            |
+| Many chat histories                                 | `POST /api/v1/chats/messages/bulk`                                                                         |
+| Character lorebook when `enableLorebookStubs` is on | Cache `POST /api/v1/characters/:id/lorebook`; full `GET` fallback                                          |
+| Many character lorebooks                            | `POST /api/v1/characters/lorebooks/bulk`                                                                   |
+| One legacy bot-preset body                          | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback                                               |
+| One prompt-preset-owned template                    | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback                                      |
+
+Cache requests carry bounded SHA-256 inventories. Fastify hashes only final
+wire values after secret masking and shell/body projection, returns hashes for
+unchanged entries and JSON for misses, and preserves the endpoint's current
+revision. The browser reconstructs the ordinary full response from verified
+IndexedDB values; unavailable or untrustworthy caching falls back to GET.
 
 The root browser wrappers live in `src/ts/server/resourceReads.ts`, body-read
 wrappers live in `src/ts/server/hydrationReads.ts`, and application state is

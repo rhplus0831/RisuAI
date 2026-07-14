@@ -19,10 +19,10 @@ explicit server-owned mutation routes.
   client reuses the runtime metadata and accepted revision it already has; a
   read-only bootstrap retry is needed only when another client won the
   initialization race.
-- `loadInitialServerResources()` concurrently reads `GET /api/v1/settings`,
-  `GET /api/v1/collections`, and `GET /api/v1/characters`. All three responses
-  must report one common revision. Concurrent writes that split the revisions
-  cause the complete read set to retry, up to
+- `loadInitialServerResources()` concurrently reads settings, collections, and
+  characters through their hash-aware POST resources (with compatible full GET
+  fallback). All three responses must report one common revision. Concurrent
+  writes that split the revisions cause the complete read set to retry, up to
   `FULL_RESOURCE_REFRESH_MAX_ATTEMPTS`.
 - The consistent response set is applied through one trusted resource scope.
   The settings, collections, and characters state objects keep their own
@@ -45,6 +45,7 @@ explicit server-owned mutation routes.
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `src/ts/server/bootstrap.ts`                   | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.      |
 | `src/ts/server/resourceReads.ts`               | Browser wrappers and response validation for settings, collections, and character reads. |
+| `src/ts/server/resourceCache.ts`               | Bounded SHA-256 manifests, verified IndexedDB values, mixed-response reconstruction, and cache fallback. |
 | `src/ts/server/resourceState.svelte.ts`        | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view. |
 | `src/ts/server/resourceInvalidation.ts`        | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies. |
 | `src/ts/server/resourceRefresh.ts`             | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.    |
@@ -152,31 +153,50 @@ resources.
 
 ## Read And Hydration Endpoints
 
-All endpoints below require auth. The bulk endpoints are read-only POSTs and are
-classified that way in `server/fastify/src/routeManifest.ts`.
+All endpoints below require auth. Cache POSTs and bulk endpoints are read-only
+POSTs and are classified that way in `server/fastify/src/routeManifest.ts`.
+
+For cache-capable resources, the browser sends
+`{cache:{version:1,hashes:{resource:[sha256,...]}}}`. Hash arrays are content
+inventories rather than positional claims, so reordering does not resend an
+unchanged row. Fastify hashes the final JSON wire value after secret masking and
+shell/body projection, returns a hash string for each hit and the full value for
+each miss, and always returns the current resource revision. The browser accepts
+a hit only when that hash's IndexedDB bytes re-hash correctly. Missing/corrupt
+entries, unsupported POSTs, malformed cache responses, unavailable IndexedDB,
+or unavailable Web Crypto fall back to the full GET. Cached data is never used
+offline or without an authenticated server response confirming its hash.
 
 | Data                                      | Endpoint                                                       | Browser owner                                               |
 | ----------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
-| Persisted settings fields                 | `GET /api/v1/settings`                                         | `resourceReads.ts`, `settingsResourceState`                 |
-| One settings group                        | `GET /api/v1/settings/:group`                                  | Event-driven targeted invalidation                          |
-| Every split collection                    | `GET /api/v1/collections`                                      | `resourceReads.ts`, `collectionsResourceState`              |
-| One split collection                      | `GET /api/v1/collections/:name`                                | Event-driven targeted invalidation                          |
-| Message-free character list/order/current | `GET /api/v1/characters`                                       | `resourceReads.ts`, `charactersResourceState`               |
+| Persisted settings fields                 | Cache `POST /api/v1/settings`; full `GET` fallback              | `resourceReads.ts`, `settingsResourceState`                 |
+| One settings group                        | Cache `POST /api/v1/settings/:group`; full `GET` fallback       | Event-driven targeted invalidation                          |
+| Every split collection                    | Cache `POST /api/v1/collections`; full `GET` fallback           | `resourceReads.ts`, `collectionsResourceState`              |
+| One split collection                      | Cache `POST /api/v1/collections/:name`; full `GET` fallback     | Event-driven targeted invalidation                          |
+| Message-free character list/order/current | Cache `POST /api/v1/characters`; full `GET` fallback            | `resourceReads.ts`, `charactersResourceState`               |
 | Character order only                      | `GET /api/v1/characters/order`                                 | Character-order invalidation                                |
 | Character selection/interaction           | `GET /api/v1/characters/:id/selection`                         | Character-selection invalidation                            |
 | One character row                         | `GET /api/v1/characters/:id`                                   | Targeted invalidation and character-shell hydration         |
 | Full, tail, ranged, or generation-suffix chat body | `GET /api/v1/chats/:id/messages` with optional `tail`, `start`/`limit`, or `generationMessageId` | `hydrateActiveChat*()` and event invalidation |
 | Many chat bodies                          | `POST /api/v1/chats/messages/bulk`                              | `ensureAllChatsHydrated()`                                  |
-| One character lorebook                    | `GET /api/v1/characters/:id/lorebook`                           | `hydrateActiveCharacterLorebook()` and invalidation         |
+| One character lorebook                    | Cache `POST /api/v1/characters/:id/lorebook`; full `GET` fallback | `hydrateActiveCharacterLorebook()` and invalidation       |
 | Many character lorebooks                  | `POST /api/v1/characters/lorebooks/bulk`                        | `ensureAllCharacterLorebooksHydrated()`                     |
-| One legacy bot-preset body                | `GET /api/v1/legacy-presets/:id`                                | `ensureBotPresetHydrated()`                                 |
-| One prompt-preset template                | `GET /api/v1/prompt-presets/:id/template`                       | `ensurePromptTemplateHydrated()`                            |
+| One legacy bot-preset body                | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback    | `ensureBotPresetHydrated()`                                 |
+| One prompt-preset template                | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback | `ensurePromptTemplateHydrated()`                       |
 
 The collection names are `modules`, `plugins`, `modelPresets`,
 `promptPresets`, `botPresets`, `promptTemplate`, `personas`, `loadouts`,
 `loreBook`, `translatorPresets`, `hypaV3Presets`, and
 `pluginCustomStorage`. Provider secrets are masked before settings,
 collections, or character responses leave Fastify.
+
+Settings and plugin custom storage use one whole-value hash. Array collections,
+character rows, prompt-template rows, and lorebook rows use per-item hashes;
+legacy presets use one hash for the complete masked body. Aggregate and targeted
+`promptTemplate` collection projections have separate browser manifests because
+the aggregate response can intentionally suppress the selected compatibility
+body. The browser bounds each request inventory and retains at most 512 current
+resource manifests, pruning unreferenced content-addressed values.
 
 Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.

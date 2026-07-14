@@ -87,9 +87,12 @@ past decisions; they are not the source of current behavior.
 ## Standing Conventions
 
 - The live runtime is Fastify-only. `src/ts/platform.ts` sets
-  `isFastifyServer = true`; native/mobile wrappers, browser-local persistence,
-  peer sync, Drive sync, and non-Fastify modes are not live. The Web Push
-  notification service worker at `public/service-worker.js` is live only through
+  `isFastifyServer = true`; native/mobile wrappers, authoritative browser-local
+  persistence, peer sync, Drive sync, and non-Fastify modes are not live. The
+  browser does keep a bounded, disposable IndexedDB cache of authenticated REST
+  resource values; Fastify remains the source of truth and confirms every reuse
+  by SHA-256. The Web Push notification service worker at
+  `public/service-worker.js` is live only through
   `src/ts/server/pushNotifications.ts`; legacy share/file-handler/offline
   service-worker surfaces remain no-port.
 - `pnpm dev:agent` runs the full-stack trace runner on frontend port 6418 and
@@ -115,6 +118,12 @@ past decisions; they are not the source of current behavior.
   presets and legacy bot presets. Hydrate their large owner bodies through the
   dedicated prompt-template or legacy-preset reads, and preserve the existing
   owner/revision/epoch fences when adding a caller.
+- Browser resource reads prefer authenticated hash-aware POSTs for settings,
+  collections, the message-free character list, prompt templates, legacy preset
+  bodies, and character lorebooks. The client sends bounded SHA-256 inventories,
+  reconstructs hash hits from verified IndexedDB entries, and falls back to the
+  compatible full GET whenever caching is unavailable or untrustworthy. Cache
+  only final masked/shell projections, never raw SQLite data or optimistic state.
 - Settings resource ownership is mirrored between
   `server/fastify/src/routes/commands.ts` and
   `src/ts/server/settingsGroups.ts`; prompt fields use their own `prompt` group.
