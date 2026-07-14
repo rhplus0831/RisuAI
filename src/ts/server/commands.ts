@@ -48,6 +48,7 @@ export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffec
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
 const AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE = 'agent-preset-collection-v1'
+const PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE = 'preset-reorder-v1'
 
 export {
   SERVER_SETTINGS_GROUP_BY_KEY,
@@ -270,6 +271,30 @@ export interface AgentPresetCollectionMutationLocalEffect {
   agentPresetDefaultId: string | null
 }
 
+export type ReorderablePresetKind = 'legacy' | 'model'
+
+/** Client-only proof captured around an optimistic legacy/model preset reorder. */
+export interface PresetReorderOptimisticAcknowledgement {
+  presetKind: ReorderablePresetKind
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  beforePresetIds: string[]
+  attemptedPresetIds: string[]
+  beforeSelectedPresetId: string | null
+  attemptedSelectedPresetId: string | null
+  settingsWritten: boolean
+}
+
+export interface PresetReorderLocalEffect {
+  kind: 'presetReorder'
+  presetKind: ReorderablePresetKind
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  presetIds: string[]
+  selectedPresetId: string | null
+  settingsWritten: boolean
+}
+
 /** Client-only proof captured after one optimistic legacy-preset PATCH. */
 export interface LegacyPresetPatchOptimisticAcknowledgement {
   collectionProjectionEpoch: number
@@ -442,6 +467,7 @@ export type ServerCommandLocalEffect = (
   | PromptItemMutationLocalEffect
   | SplitPresetPatchLocalEffect
   | LegacyPresetPatchLocalEffect
+  | PresetReorderLocalEffect
   | AgentPresetPatchLocalEffect
   | AgentPresetStepPatchLocalEffect
   | AgentPresetCollectionMutationLocalEffect
@@ -709,6 +735,7 @@ export interface ImportPresetCommandInput extends PresetCommandInput {
 
 export interface ReorderPresetsCommandInput extends PresetCommandInput {
   presetIds: string[]
+  optimisticAcknowledgement?: PresetReorderOptimisticAcknowledgement
 }
 
 export type ModelPresetSnapshot = Record<string, unknown>
@@ -745,6 +772,7 @@ export interface ImportModelPresetCommandInput extends ModelPresetCommandInput {
 
 export interface ReorderModelPresetsCommandInput extends ModelPresetCommandInput {
   modelPresetIds: string[]
+  optimisticAcknowledgement?: PresetReorderOptimisticAcknowledgement
 }
 
 export interface PromptPresetCommandInput {
@@ -2099,6 +2127,14 @@ export async function reorderPresetsCommand(
       presetIds: input.presetIds,
     },
     signal,
+    readLocalEffect: input.optimisticAcknowledgement
+      ? (body, event) =>
+          readPresetReorderLocalEffect(body, event, {
+            presetKind: 'legacy',
+            requestedPresetIds: input.presetIds,
+            acknowledgement: input.optimisticAcknowledgement!,
+          })
+      : undefined,
   })
 }
 
@@ -2192,6 +2228,14 @@ export async function reorderModelPresetsCommand(
       modelPresetIds: input.modelPresetIds,
     },
     signal,
+    readLocalEffect: input.optimisticAcknowledgement
+      ? (body, event) =>
+          readPresetReorderLocalEffect(body, event, {
+            presetKind: 'model',
+            requestedPresetIds: input.modelPresetIds,
+            acknowledgement: input.optimisticAcknowledgement!,
+          })
+      : undefined,
   })
 }
 
@@ -5280,6 +5324,89 @@ function readSettingsObjectPatchLocalEffect(
     attemptedPatch: { [input.key]: cloneJsonValue(input.attemptedObject) },
     settings: { [input.key]: canonicalObject },
     settingsProjectionEpoch: input.optimisticProjectionEpoch,
+  }
+}
+
+function readPresetReorderLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input: {
+    presetKind: ReorderablePresetKind
+    requestedPresetIds: string[]
+    acknowledgement: PresetReorderOptimisticAcknowledgement
+  },
+): PresetReorderLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+
+  const record = body as Record<string, unknown>
+  const acknowledgement = input.acknowledgement
+  const expectedType = input.presetKind === 'legacy' ? 'preset.reordered' : 'modelPreset.reordered'
+  const expectedResource =
+    input.presetKind === 'legacy'
+      ? acknowledgement.settingsWritten
+        ? 'presetCollectionWithPointer'
+        : 'presetCollection'
+      : 'modelPreset'
+  const selectedResponseKey = input.presetKind === 'legacy' ? 'selectedPresetId' : 'selectedModelPresetId'
+
+  if (
+    record.revision !== event.revision ||
+    record.presetReorderCertificate !== PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE ||
+    record.presetKind !== input.presetKind ||
+    event.type !== expectedType ||
+    event.resource !== expectedResource ||
+    event.id !== undefined ||
+    event.parentId !== undefined ||
+    acknowledgement.presetKind !== input.presetKind ||
+    !isProjectionEpoch(acknowledgement.collectionProjectionEpoch) ||
+    !isProjectionEpoch(acknowledgement.settingsProjectionEpoch) ||
+    !isUniqueStringArray(acknowledgement.beforePresetIds) ||
+    !isUniqueStringArray(acknowledgement.attemptedPresetIds) ||
+    !isUniqueStringArray(input.requestedPresetIds) ||
+    !isUniqueStringArray(record.presetIds) ||
+    !isNullableNonEmptyString(acknowledgement.beforeSelectedPresetId) ||
+    !isNullableNonEmptyString(acknowledgement.attemptedSelectedPresetId) ||
+    typeof acknowledgement.settingsWritten !== 'boolean' ||
+    typeof record.settingsWritten !== 'boolean'
+  ) {
+    return undefined
+  }
+
+  const beforePresetIds = acknowledgement.beforePresetIds
+  const attemptedPresetIds = acknowledgement.attemptedPresetIds
+  const beforeSelectedPresetId = acknowledgement.beforeSelectedPresetId
+  const attemptedSelectedPresetId = acknowledgement.attemptedSelectedPresetId
+  if (
+    !isJsonValueEqual(input.requestedPresetIds, attemptedPresetIds) ||
+    !isJsonValueEqual(record.presetIds, attemptedPresetIds) ||
+    !isJsonValueEqual([...beforePresetIds].sort(), [...attemptedPresetIds].sort()) ||
+    (beforeSelectedPresetId !== null && !beforePresetIds.includes(beforeSelectedPresetId)) ||
+    (attemptedSelectedPresetId !== null && !attemptedPresetIds.includes(attemptedSelectedPresetId)) ||
+    attemptedSelectedPresetId !== beforeSelectedPresetId
+  ) {
+    return undefined
+  }
+
+  const beforeSelectedIndex = beforeSelectedPresetId === null ? -1 : beforePresetIds.indexOf(beforeSelectedPresetId)
+  const attemptedSelectedIndex =
+    attemptedSelectedPresetId === null ? -1 : attemptedPresetIds.indexOf(attemptedSelectedPresetId)
+  const expectedSettingsWritten = beforeSelectedIndex !== attemptedSelectedIndex
+  if (
+    acknowledgement.settingsWritten !== expectedSettingsWritten ||
+    record.settingsWritten !== expectedSettingsWritten ||
+    record[selectedResponseKey] !== attemptedSelectedPresetId
+  ) {
+    return undefined
+  }
+
+  return {
+    kind: 'presetReorder',
+    presetKind: input.presetKind,
+    collectionProjectionEpoch: acknowledgement.collectionProjectionEpoch,
+    settingsProjectionEpoch: acknowledgement.settingsProjectionEpoch,
+    presetIds: [...attemptedPresetIds],
+    selectedPresetId: attemptedSelectedPresetId,
+    settingsWritten: expectedSettingsWritten,
   }
 }
 

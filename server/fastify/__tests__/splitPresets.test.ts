@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
 import {
@@ -468,7 +469,11 @@ describe('split preset command routes', () => {
       modelPresetIds: ['model-created', 'model-imported', 'model-base'],
     })
     expect(reorderedModels).toMatchObject({
+      presetReorderCertificate: 'preset-reorder-v1',
+      presetKind: 'model',
+      presetIds: ['model-created', 'model-imported', 'model-base'],
       selectedModelPresetId: 'model-imported',
+      settingsWritten: true,
       event: { type: 'modelPreset.reordered' },
     })
     revision = reorderedModels.revision as number
@@ -524,6 +529,73 @@ describe('split preset command routes', () => {
     })
     expect(persisted.modelPresets[persisted.settings.modelPresetsId as number].id).toBe('model-imported')
     expect(persisted.promptPresets[persisted.settings.promptPresetsId as number].id).toBe('prompt-imported')
+  })
+
+  it('omits the model preset reorder receipt when collection normalization repairs a row', async () => {
+    const revision = await importPresets({
+      modelPresetsId: 0,
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+    })
+    const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+    try {
+      const row = db.prepare('SELECT data_json FROM model_presets WHERE position = 0').get() as {
+        data_json: string
+      }
+      const modelPreset = JSON.parse(row.data_json) as Record<string, unknown>
+      delete modelPreset.name
+      db.prepare('UPDATE model_presets SET data_json = ? WHERE position = 0').run(JSON.stringify(modelPreset))
+    } finally {
+      db.close()
+    }
+
+    const reordered = await runCommand('/api/v1/commands/model-presets/reorder', revision, {
+      modelPresetIds: ['model-b', 'model-a'],
+    })
+
+    expect(reordered).toMatchObject({
+      selectedModelPresetId: 'model-a',
+      event: { type: 'modelPreset.reordered' },
+    })
+    expect(reordered).not.toHaveProperty('presetReorderCertificate')
+    expect(reordered).not.toHaveProperty('presetKind')
+    expect(reordered).not.toHaveProperty('presetIds')
+    expect(reordered).not.toHaveProperty('settingsWritten')
+
+    const persisted = await readPersistedPresetState()
+    expect(persisted.modelPresets).toEqual([
+      { id: 'model-b', name: 'Model B' },
+      { id: 'model-a', name: 'Preset 1' },
+    ])
+    expect(persisted.settings.modelPresetsId).toBe(1)
+  })
+
+  it('certifies a model preset reorder that does not write the selected pointer', async () => {
+    const revision = await importPresets({
+      modelPresetsId: 1,
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+        { id: 'model-c', name: 'Model C' },
+      ],
+    })
+
+    const reordered = await runCommand('/api/v1/commands/model-presets/reorder', revision, {
+      modelPresetIds: ['model-c', 'model-b', 'model-a'],
+    })
+
+    expect(reordered).toMatchObject({
+      presetReorderCertificate: 'preset-reorder-v1',
+      presetKind: 'model',
+      presetIds: ['model-c', 'model-b', 'model-a'],
+      selectedModelPresetId: 'model-b',
+      settingsWritten: false,
+      event: { type: 'modelPreset.reordered', resource: 'modelPreset' },
+    })
+    const persisted = await readPersistedPresetState()
+    expect(persisted.settings.modelPresetsId).toBe(1)
   })
 
   it('rejects duplicate, unknown, and stale reorders without changing either collection or selected id', async () => {

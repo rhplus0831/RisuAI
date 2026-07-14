@@ -25,6 +25,7 @@ import {
   applyAgentPresetStepPatchLocalEffect,
   applyPersonaMutationLocalEffect,
   applyPersonaPatchLocalEffect,
+  applyPresetReorderLocalEffect,
   applyTranslatorPresetPatchLocalEffect,
   applyLegacyPresetRowResource,
   applySettingsResource,
@@ -447,6 +448,104 @@ describe('resource-scoped database state', () => {
         fields: {},
       }),
     ).toBe(false)
+  })
+
+  it('fences legacy and model preset reorders while preserving newer live orders', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        botPresets: [
+          { id: 'preset-b', name: 'Newer B' },
+          { id: 'preset-a', name: 'Newer A' },
+        ],
+        botPresetsId: 0,
+        modelPresets: [
+          { id: 'model-c', name: 'Newer C' },
+          { id: 'model-b', name: 'Newer B' },
+          { id: 'model-a', name: 'Newer A' },
+        ],
+        modelPresetsId: 1,
+      } as never,
+      3,
+    )
+    const legacyPresets = getResourceDatabase().botPresets
+    const modelPresets = getResourceDatabase().modelPresets
+
+    expect(
+      applyPresetReorderLocalEffect({
+        revision: 4,
+        presetKind: 'legacy',
+        presetIds: ['preset-a', 'preset-b'],
+        selectedPresetId: 'preset-b',
+        settingsWritten: false,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().botPresets).toBe(legacyPresets)
+    expect(getResourceDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a'])
+    expect(collectionsResourceState.revisions.botPresets).toBe(4)
+    expect(collectionsResourceState.revisions.modelPresets).toBe(3)
+    expect(settingsResourceState.fullRevision).toBe(3)
+
+    expect(
+      applyPresetReorderLocalEffect({
+        revision: 5,
+        presetKind: 'model',
+        presetIds: ['model-a', 'model-b', 'model-c'],
+        selectedPresetId: 'model-b',
+        settingsWritten: true,
+      }),
+    ).toBe(true)
+    expect(getResourceDatabase().modelPresets).toBe(modelPresets)
+    expect(getResourceDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-c', 'model-b', 'model-a'])
+    expect(collectionsResourceState.revisions.botPresets).toBe(4)
+    expect(collectionsResourceState.revisions.modelPresets).toBe(5)
+    expect(collectionsResourceState.revisions.promptPresets).toBe(3)
+    expect(collectionsResourceState.fullRevision).toBe(3)
+    expect(settingsResourceState.fullRevision).toBe(5)
+  })
+
+  it('rejects preset reorder fences with mismatched membership or a noncanonical selected pointer', () => {
+    replaceResourceDatabase(
+      {
+        ...completeCollections(),
+        characters: [],
+        botPresets: [
+          { id: 'preset-a', name: 'A' },
+          { id: 'preset-b', name: 'B' },
+        ],
+        botPresetsId: 0,
+        modelPresets: [
+          { id: 'model-a', name: 'A' },
+          { id: 'model-b', name: 'B' },
+        ],
+        modelPresetsId: -1,
+      } as never,
+      3,
+    )
+
+    expect(
+      applyPresetReorderLocalEffect({
+        revision: 4,
+        presetKind: 'legacy',
+        presetIds: ['preset-a', 'preset-c'],
+        selectedPresetId: 'preset-a',
+        settingsWritten: false,
+      }),
+    ).toBe(false)
+    expect(collectionsResourceState.revisions.botPresets).toBe(3)
+
+    expect(
+      applyPresetReorderLocalEffect({
+        revision: 4,
+        presetKind: 'model',
+        presetIds: ['model-a', 'model-b'],
+        selectedPresetId: 'model-a',
+        settingsWritten: true,
+      }),
+    ).toBe(false)
+    expect(collectionsResourceState.revisions.modelPresets).toBe(3)
+    expect(settingsResourceState.fullRevision).toBe(3)
   })
 
   it('fences an accepted persona PATCH while preserving later row and settings edits', () => {

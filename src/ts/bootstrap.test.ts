@@ -915,6 +915,218 @@ describe('API-backed client bootstrap', () => {
     expect(peekAppliedServerResourceRevision()).toBe(7)
   })
 
+  it('acknowledges contiguous legacy/model preset reorders without collection or settings reads', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          botPresets: [
+            { id: 'preset-a', name: 'Newer A' },
+            { id: 'preset-b', name: 'Newer B' },
+          ] as never,
+        },
+      },
+      'botPresets',
+    )
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          modelPresets: [
+            { id: 'model-a', name: 'Newer A' },
+            { id: 'model-b', name: 'Newer B' },
+            { id: 'model-c', name: 'Newer C' },
+          ] as never,
+        },
+      },
+      'modelPresets',
+    )
+    applySettingsResource({ revision: 5, settings: { botPresetsId: 0, modelPresetsId: 0 } })
+    const legacyCollectionEpoch = captureCollectionProjectionEpoch('botPresets')
+    const modelCollectionEpoch = captureCollectionProjectionEpoch('modelPresets')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    withTrustedResourceWrite(() => {
+      getDatabase().botPresets = [getDatabase().botPresets[1], getDatabase().botPresets[0]]
+      getDatabase().botPresetsId = 1
+      getDatabase().modelPresets = [
+        getDatabase().modelPresets[0],
+        getDatabase().modelPresets[2],
+        getDatabase().modelPresets[1],
+      ]
+      getDatabase().modelPresetsId = 0
+    })
+    const legacyEvent = {
+      type: 'preset.reordered',
+      revision: 6,
+      resource: 'presetCollectionWithPointer',
+    }
+    const modelEvent = { type: 'modelPreset.reordered', revision: 7, resource: 'modelPreset' }
+
+    await commandApi.reconciler?.(
+      modelEvent,
+      [legacyEvent, modelEvent],
+      new Map([
+        [
+          6,
+          {
+            kind: 'presetReorder',
+            presetKind: 'legacy',
+            collectionProjectionEpoch: legacyCollectionEpoch,
+            settingsProjectionEpoch,
+            presetIds: ['preset-b', 'preset-a'],
+            selectedPresetId: 'preset-a',
+            settingsWritten: true,
+          },
+        ],
+        [
+          7,
+          {
+            kind: 'presetReorder',
+            presetKind: 'model',
+            collectionProjectionEpoch: modelCollectionEpoch,
+            settingsProjectionEpoch,
+            presetIds: ['model-a', 'model-c', 'model-b'],
+            selectedPresetId: 'model-a',
+            settingsWritten: false,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-a'])
+    expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-c', 'model-b'])
+    expect(collectionsResourceState.revisions.botPresets).toBe(6)
+    expect(collectionsResourceState.revisions.modelPresets).toBe(7)
+    expect(settingsResourceState.fullRevision).toBe(6)
+    expect(hasCollectionProjectionEpochChanged('botPresets', legacyCollectionEpoch)).toBe(false)
+    expect(hasCollectionProjectionEpochChanged('modelPresets', modelCollectionEpoch)).toBe(false)
+    expect(captureSettingsProjectionEpoch()).toBe(settingsProjectionEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it('ignores unrelated full-settings staleness for a collection-only model preset reorder', async () => {
+    await loadWebInitialDatabase()
+    applyCollectionsResource(
+      {
+        revision: 5,
+        collections: {
+          modelPresets: [
+            { id: 'model-a', name: 'A' },
+            { id: 'model-b', name: 'B' },
+            { id: 'model-c', name: 'C' },
+          ] as never,
+        },
+      },
+      'modelPresets',
+    )
+    applySettingsResource({ revision: 5, settings: { modelPresetsId: 1 } })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('modelPresets')
+    const staleSettingsProjectionEpoch = captureSettingsProjectionEpoch()
+    applySettingsResource({ revision: 5, settings: { modelPresetsId: 1 } })
+    markSettingsAcknowledgementTainted()
+    withTrustedResourceWrite(() => {
+      getDatabase().modelPresets = [
+        getDatabase().modelPresets[2],
+        getDatabase().modelPresets[1],
+        getDatabase().modelPresets[0],
+      ]
+    })
+    const event = { type: 'modelPreset.reordered', revision: 6, resource: 'modelPreset' }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'presetReorder',
+            presetKind: 'model',
+            collectionProjectionEpoch,
+            settingsProjectionEpoch: staleSettingsProjectionEpoch,
+            presetIds: ['model-c', 'model-b', 'model-a'],
+            selectedPresetId: 'model-b',
+            settingsWritten: false,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(collectionsResourceState.revisions.modelPresets).toBe(6)
+    expect(settingsResourceState.fullRevision).toBe(5)
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it.each([
+    'collection epoch',
+    'collection taint',
+    'settings epoch',
+    'settings taint',
+    'selection mismatch',
+    'noncanonical pointer',
+    'event resource',
+  ])('falls back to authoritative reconciliation for a preset reorder with a stale %s proof', async (failure) => {
+    await loadWebInitialDatabase()
+    const presets = [
+      { id: 'preset-b', name: 'B' },
+      { id: 'preset-a', name: 'A' },
+    ]
+    applyCollectionsResource({ revision: 5, collections: { botPresets: presets as never } }, 'botPresets')
+    applySettingsResource({ revision: 5, settings: { botPresetsId: 1 } })
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
+    let selectedPresetId: string | null = 'preset-a'
+    let resource = 'presetCollectionWithPointer'
+    if (failure === 'collection epoch') {
+      applyCollectionsResource({ revision: 5, collections: { botPresets: presets as never } }, 'botPresets')
+    } else if (failure === 'collection taint') {
+      markCollectionAcknowledgementTainted('botPresets')
+    } else if (failure === 'settings epoch') {
+      applySettingsResource({ revision: 5, settings: { botPresetsId: 1 } })
+    } else if (failure === 'settings taint') {
+      markSettingsAcknowledgementTainted()
+    } else if (failure === 'selection mismatch') {
+      withTrustedResourceWrite(() => {
+        getDatabase().botPresetsId = 0
+      })
+    } else if (failure === 'noncanonical pointer') {
+      selectedPresetId = null
+      withTrustedResourceWrite(() => {
+        getDatabase().botPresetsId = -1
+      })
+    } else {
+      resource = 'presetCollection'
+    }
+    const event = { type: 'preset.reordered', revision: 6, resource }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'presetReorder',
+            presetKind: 'legacy',
+            collectionProjectionEpoch,
+            settingsProjectionEpoch,
+            presetIds: ['preset-b', 'preset-a'],
+            selectedPresetId,
+            settingsWritten: true,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+  })
+
   it('acknowledges a contiguous selected model preset PATCH field-wise without collection or settings reads', async () => {
     await loadWebInitialDatabase()
     applyCollectionsResource(

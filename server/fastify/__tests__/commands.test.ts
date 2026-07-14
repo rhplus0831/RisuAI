@@ -3815,9 +3815,16 @@ describe('Phase 9-2b bot preset commands', () => {
       },
     })
     expect(reordered.statusCode).toBe(200)
-    expect(reordered.json().event).toMatchObject({
-      type: 'preset.reordered',
-      resource: 'presetCollectionWithPointer',
+    expect(reordered.json()).toMatchObject({
+      presetReorderCertificate: 'preset-reorder-v1',
+      presetKind: 'legacy',
+      presetIds: ['preset-b', copiedPresetId, 'preset-a'],
+      selectedPresetId: 'preset-a',
+      settingsWritten: true,
+      event: {
+        type: 'preset.reordered',
+        resource: 'presetCollectionWithPointer',
+      },
     })
 
     const deleted = await harness.app.inject({
@@ -3853,6 +3860,43 @@ describe('Phase 9-2b bot preset commands', () => {
       'preset-a',
     ])
     expect(bootstrap.json().database.botPresetsId).toBe(0)
+  })
+
+  it('omits the preset reorder receipt when the selected pointer requires normalization', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      botPresets: [
+        { id: 'preset-a', name: 'A' },
+        { id: 'preset-b', name: 'B' },
+      ],
+      botPresetsId: 0,
+    })
+    updateSettingsRow((settings) => {
+      settings.botPresetsId = 99
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        presetIds: ['preset-b', 'preset-a'],
+      },
+    })
+
+    expect(reordered.statusCode, reordered.body).toBe(200)
+    expect(reordered.json()).toMatchObject({
+      selectedPresetId: 'preset-b',
+      event: {
+        type: 'preset.reordered',
+        resource: 'presetCollectionWithPointer',
+      },
+    })
+    expect(reordered.json()).not.toHaveProperty('presetReorderCertificate')
+    expect(reordered.json()).not.toHaveProperty('presetKind')
+    expect(reordered.json()).not.toHaveProperty('presetIds')
+    expect(reordered.json()).not.toHaveProperty('settingsWritten')
   })
 
   it('rejects missing and duplicate preset ids on copy and import', async () => {

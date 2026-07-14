@@ -65,6 +65,7 @@ import {
   type LegacyPresetPatchOptimisticAcknowledgement,
   type PromptPresetSnapshot,
   type PresetSnapshot,
+  type PresetReorderOptimisticAcknowledgement,
   type ServerCommandTransportOptions,
   type SplitPresetPatchOptimisticAcknowledgement,
 } from '../server/commands'
@@ -1416,6 +1417,51 @@ function runPromptPresetSelectionCommand(promptPresetId: string, rollback: () =>
     }
     rollback()
   })()
+}
+
+function presetReorderOptimisticAcknowledgement(input: {
+  presetKind: PresetReorderOptimisticAcknowledgement['presetKind']
+  collectionProjectionEpoch: number
+  settingsProjectionEpoch: number
+  beforePresetIds: string[]
+  attemptedPresetIds: string[]
+  beforeSelectedPresetId: string | null
+  attemptedSelectedPresetId: string | null
+}): PresetReorderOptimisticAcknowledgement | null {
+  const {
+    presetKind,
+    collectionProjectionEpoch,
+    settingsProjectionEpoch,
+    beforePresetIds,
+    attemptedPresetIds,
+    beforeSelectedPresetId,
+    attemptedSelectedPresetId,
+  } = input
+  if (
+    new Set(beforePresetIds).size !== beforePresetIds.length ||
+    new Set(attemptedPresetIds).size !== attemptedPresetIds.length ||
+    beforePresetIds.length !== attemptedPresetIds.length ||
+    beforePresetIds.some((presetId) => !attemptedPresetIds.includes(presetId)) ||
+    (beforeSelectedPresetId !== null && !beforePresetIds.includes(beforeSelectedPresetId)) ||
+    (attemptedSelectedPresetId !== null && !attemptedPresetIds.includes(attemptedSelectedPresetId)) ||
+    attemptedSelectedPresetId !== beforeSelectedPresetId
+  ) {
+    return null
+  }
+
+  const beforeSelectedIndex = beforeSelectedPresetId === null ? -1 : beforePresetIds.indexOf(beforeSelectedPresetId)
+  const attemptedSelectedIndex =
+    attemptedSelectedPresetId === null ? -1 : attemptedPresetIds.indexOf(attemptedSelectedPresetId)
+  return {
+    presetKind,
+    collectionProjectionEpoch,
+    settingsProjectionEpoch,
+    beforePresetIds: [...beforePresetIds],
+    attemptedPresetIds: [...attemptedPresetIds],
+    beforeSelectedPresetId,
+    attemptedSelectedPresetId,
+    settingsWritten: beforeSelectedIndex !== attemptedSelectedIndex,
+  }
 }
 
 function stringArraysEqual(left: string[], right: string[]): boolean {
@@ -4172,7 +4218,10 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
       return []
     }
 
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('botPresets')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
     const previousPresetIds = botPresetIds(db.botPresets)
+    const previousSelectedPresetId = botPresetSelectedId(db)
     let botPresets = [...db.botPresets]
     const movedItem = botPresets.splice(fromIndex, 1)[0]
     if (!movedItem) return []
@@ -4191,15 +4240,29 @@ export function reorderPresets(fromIndex: number, toIndex: number) {
 
     db.botPresets = botPresets
     const presetIds = db.botPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    const optimisticAcknowledgement = presetReorderOptimisticAcknowledgement({
+      presetKind: 'legacy',
+      collectionProjectionEpoch,
+      settingsProjectionEpoch,
+      beforePresetIds: previousPresetIds,
+      attemptedPresetIds: presetIds,
+      beforeSelectedPresetId: previousSelectedPresetId,
+      attemptedSelectedPresetId: botPresetSelectedId(db),
+    })
     runOptimisticCommandSequence(
       [
         (baseRevision) =>
           reorderPresetsCommand({
             baseRevision,
             presetIds,
+            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
           }),
       ],
-      () => rollbackBotPresetReorder(previousPresetIds, presetIds),
+      () => {
+        markCollectionAcknowledgementTainted('botPresets')
+        markSettingsAcknowledgementTainted()
+        rollbackBotPresetReorder(previousPresetIds, presetIds)
+      },
     )
   })
 }
@@ -4335,7 +4398,10 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
       return
     }
     flushPendingSplitPresetPatchesForKind('model')
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('modelPresets')
+    const settingsProjectionEpoch = captureSettingsProjectionEpoch()
     const previousPresetIds = splitPresetIds(db.modelPresets)
+    const previousSelectedPresetId = splitPresetSelectedId(db, 'model')
     const modelPresets = [...db.modelPresets]
     const movedItem = modelPresets.splice(fromIndex, 1)[0]
     if (!movedItem) return
@@ -4344,15 +4410,29 @@ export function reorderModelPresets(fromIndex: number, toIndex: number) {
     db.modelPresetsId = movedSelectedIndex(db.modelPresetsId, fromIndex, adjustedToIndex)
     db.modelPresets = modelPresets
     const modelPresetIds = db.modelPresets.map((preset) => preset.id).filter((id): id is string => !!id)
+    const optimisticAcknowledgement = presetReorderOptimisticAcknowledgement({
+      presetKind: 'model',
+      collectionProjectionEpoch,
+      settingsProjectionEpoch,
+      beforePresetIds: previousPresetIds,
+      attemptedPresetIds: modelPresetIds,
+      beforeSelectedPresetId: previousSelectedPresetId,
+      attemptedSelectedPresetId: splitPresetSelectedId(db, 'model'),
+    })
     runOptimisticCommandSequence(
       [
         (baseRevision) =>
           reorderModelPresetsCommand({
             baseRevision,
             modelPresetIds,
+            ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
           }),
       ],
-      () => rollbackSplitPresetReorder('model', previousPresetIds, modelPresetIds),
+      () => {
+        markCollectionAcknowledgementTainted('modelPresets')
+        markSettingsAcknowledgementTainted()
+        rollbackSplitPresetReorder('model', previousPresetIds, modelPresetIds)
+      },
     )
   })
 }

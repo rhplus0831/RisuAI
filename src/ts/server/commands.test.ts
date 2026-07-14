@@ -92,6 +92,7 @@ import {
   reorderCharacterModulesCommand,
   reorderChatLorebookEntriesCommand,
   reorderModulesCommand,
+  reorderModelPresetsCommand,
   reorderGlobalLorebookEntriesCommand,
   reorderModuleLorebookEntriesCommand,
   reorderPluginsCommand,
@@ -1715,6 +1716,146 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('emits strict legacy/model preset reorder effects without serializing projection proofs', async () => {
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+    const commandFetch = makeCommandFetch((url) => {
+      if (url.endsWith('/presets/reorder')) {
+        return {
+          revision: 4,
+          event: {
+            type: 'preset.reordered',
+            revision: 4,
+            resource: 'presetCollectionWithPointer',
+          },
+          presetReorderCertificate: 'preset-reorder-v1',
+          presetKind: 'legacy',
+          presetIds: ['preset-b', 'preset-a'],
+          selectedPresetId: 'preset-a',
+          settingsWritten: true,
+        }
+      }
+      return {
+        revision: 5,
+        event: { type: 'modelPreset.reordered', revision: 5, resource: 'modelPreset' },
+        presetReorderCertificate: 'preset-reorder-v1',
+        presetKind: 'model',
+        presetIds: ['model-c', 'model-b', 'model-a'],
+        selectedModelPresetId: 'model-b',
+        settingsWritten: false,
+      }
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await reorderPresetsCommand({
+      baseRevision: 3,
+      presetIds: ['preset-b', 'preset-a'],
+      optimisticAcknowledgement: {
+        presetKind: 'legacy',
+        collectionProjectionEpoch: 4,
+        settingsProjectionEpoch: 5,
+        beforePresetIds: ['preset-a', 'preset-b'],
+        attemptedPresetIds: ['preset-b', 'preset-a'],
+        beforeSelectedPresetId: 'preset-a',
+        attemptedSelectedPresetId: 'preset-a',
+        settingsWritten: true,
+      },
+    })
+    await reorderModelPresetsCommand({
+      baseRevision: 4,
+      modelPresetIds: ['model-c', 'model-b', 'model-a'],
+      optimisticAcknowledgement: {
+        presetKind: 'model',
+        collectionProjectionEpoch: 6,
+        settingsProjectionEpoch: 7,
+        beforePresetIds: ['model-a', 'model-b', 'model-c'],
+        attemptedPresetIds: ['model-c', 'model-b', 'model-a'],
+        beforeSelectedPresetId: 'model-b',
+        attemptedSelectedPresetId: 'model-b',
+        settingsWritten: false,
+      },
+    })
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'presetReorder',
+        presetKind: 'legacy',
+        collectionProjectionEpoch: 4,
+        settingsProjectionEpoch: 5,
+        presetIds: ['preset-b', 'preset-a'],
+        selectedPresetId: 'preset-a',
+        settingsWritten: true,
+      },
+      {
+        kind: 'presetReorder',
+        presetKind: 'model',
+        collectionProjectionEpoch: 6,
+        settingsProjectionEpoch: 7,
+        presetIds: ['model-c', 'model-b', 'model-a'],
+        selectedPresetId: 'model-b',
+        settingsWritten: false,
+      },
+    ])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      { baseRevision: 3, presetIds: ['preset-b', 'preset-a'] },
+      { baseRevision: 4, modelPresetIds: ['model-c', 'model-b', 'model-a'] },
+    ])
+  })
+
+  it('rejects malformed legacy preset reorder receipts so authoritative reconciliation remains available', async () => {
+    const exactEvent = {
+      type: 'preset.reordered',
+      revision: 4,
+      resource: 'presetCollectionWithPointer',
+    }
+    const exactReceipt = {
+      revision: 4,
+      event: exactEvent,
+      presetReorderCertificate: 'preset-reorder-v1',
+      presetKind: 'legacy',
+      presetIds: ['preset-b', 'preset-a'],
+      selectedPresetId: 'preset-a',
+      settingsWritten: true,
+    }
+    const bodies = [
+      { ...exactReceipt, presetReorderCertificate: undefined },
+      { ...exactReceipt, presetIds: ['preset-a', 'preset-b'] },
+      { ...exactReceipt, selectedPresetId: 'preset-b' },
+      { ...exactReceipt, settingsWritten: false },
+      { ...exactReceipt, event: { ...exactEvent, resource: 'presetCollection' } },
+    ]
+    let bodyIndex = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(bodies[bodyIndex++])),
+    )
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    for (const _body of bodies) {
+      await reorderPresetsCommand({
+        baseRevision: 3,
+        presetIds: ['preset-b', 'preset-a'],
+        optimisticAcknowledgement: {
+          presetKind: 'legacy',
+          collectionProjectionEpoch: 4,
+          settingsProjectionEpoch: 5,
+          beforePresetIds: ['preset-a', 'preset-b'],
+          attemptedPresetIds: ['preset-b', 'preset-a'],
+          beforeSelectedPresetId: 'preset-a',
+          attemptedSelectedPresetId: 'preset-a',
+          settingsWritten: true,
+        },
+      })
+    }
+
+    expect(observedEffectCounts).toEqual(bodies.map(() => 0))
   })
 
   it('dispatches model profile commands through typed helpers', async () => {

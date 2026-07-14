@@ -28,6 +28,7 @@ import {
   type AgentPresetPatchLocalEffect,
   type AgentPresetStepPatchLocalEffect,
   type LegacyPresetPatchLocalEffect,
+  type PresetReorderLocalEffect,
   type PersonaMutationLocalEffect,
   type PersonaPatchLocalEffect,
   type ServerCommandLocalEffect,
@@ -76,6 +77,7 @@ import {
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
   applyLegacyPresetPatchLocalEffect,
+  applyPresetReorderLocalEffect,
   applyAgentPresetCollectionMutationLocalEffect,
   applyAgentPresetPatchLocalEffect,
   applyAgentPresetStepPatchLocalEffect,
@@ -455,6 +457,43 @@ function applyLegacyPresetPatchAcknowledgement(
   )
 }
 
+function applyPresetReorderAcknowledgement(event: CommandEvent, localEffect: PresetReorderLocalEffect): boolean {
+  const collectionName = localEffect.presetKind === 'legacy' ? 'botPresets' : 'modelPresets'
+  const expectedType = localEffect.presetKind === 'legacy' ? 'preset.reordered' : 'modelPreset.reordered'
+  const expectedResource =
+    localEffect.presetKind === 'legacy'
+      ? localEffect.settingsWritten
+        ? 'presetCollectionWithPointer'
+        : 'presetCollection'
+      : 'modelPreset'
+  if (
+    event.type !== expectedType ||
+    event.resource !== expectedResource ||
+    event.id !== undefined ||
+    event.parentId !== undefined ||
+    !Number.isInteger(localEffect.collectionProjectionEpoch) ||
+    localEffect.collectionProjectionEpoch < 0 ||
+    !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+    localEffect.settingsProjectionEpoch < 0 ||
+    hasCollectionProjectionEpochChanged(collectionName, localEffect.collectionProjectionEpoch) ||
+    isCollectionAcknowledgementTainted(collectionName) ||
+    (localEffect.settingsWritten &&
+      (hasSettingsProjectionEpochChanged(localEffect.settingsProjectionEpoch) || isSettingsAcknowledgementTainted())) ||
+    currentPresetReorderSelection(localEffect.presetKind) !== localEffect.selectedPresetId
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyPresetReorderLocalEffect({
+      revision: event.revision,
+      presetKind: localEffect.presetKind,
+      presetIds: localEffect.presetIds,
+      selectedPresetId: localEffect.selectedPresetId,
+      settingsWritten: localEffect.settingsWritten,
+    }),
+  )
+}
+
 function applyPersonaPatchAcknowledgement(event: CommandEvent, localEffect: PersonaPatchLocalEffect): boolean {
   if (
     event.type !== 'persona.updated' ||
@@ -656,6 +695,8 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
       return applyAgentPresetStepPatchAcknowledgement(event, localEffect)
     case 'legacyPresetPatch':
       return applyLegacyPresetPatchAcknowledgement(event, localEffect)
+    case 'presetReorder':
+      return applyPresetReorderAcknowledgement(event, localEffect)
     case 'personaPatch':
       return applyPersonaPatchAcknowledgement(event, localEffect)
     case 'personaMutation':
@@ -1381,6 +1422,15 @@ function currentSplitPresetId(kind: 'model' | 'prompt'): string | null {
   const selectedIndex = kind === 'model' ? database.modelPresetsId : database.promptPresetsId
   if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(presets)) return null
   const id = presets[selectedIndex]?.id
+  return typeof id === 'string' && id.trim() !== '' ? id : null
+}
+
+function currentPresetReorderSelection(kind: PresetReorderLocalEffect['presetKind']): string | null {
+  if (kind === 'model') return currentSplitPresetId('model')
+  const database = getDatabase()
+  const selectedIndex = database.botPresetsId
+  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || !Array.isArray(database.botPresets)) return null
+  const id = database.botPresets[selectedIndex]?.id
   return typeof id === 'string' && id.trim() !== '' ? id : null
 }
 

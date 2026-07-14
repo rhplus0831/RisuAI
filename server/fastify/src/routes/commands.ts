@@ -402,6 +402,30 @@ function cloneJsonForCommandCertificate<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+const PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE = 'preset-reorder-v1' as const
+
+function buildPresetReorderAcknowledgement(
+  presetKind: 'legacy' | 'model',
+  presetIds: readonly string[],
+  settingsWritten: boolean,
+  acknowledgementSafe: boolean,
+):
+  | {
+      presetReorderCertificate: typeof PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE
+      presetKind: 'legacy' | 'model'
+      presetIds: string[]
+      settingsWritten: boolean
+    }
+  | Record<string, never> {
+  if (!acknowledgementSafe) return {}
+  return {
+    presetReorderCertificate: PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE,
+    presetKind,
+    presetIds: [...presetIds],
+    settingsWritten,
+  }
+}
+
 function readGlobalLorebookCommandTarget(database: unknown): {
   target: Record<string, unknown>
   lorebooks: ReturnType<typeof ensureGlobalLorebookCollection>
@@ -2676,7 +2700,11 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.presets,
         mutate(database, innerDb) {
           const target = ensureDatabaseObject(database)
+          const rawPresets = cloneJsonForCommandCertificate(target.botPresets)
+          const rawSelected = target.botPresetsId
           const presets = ensurePresetCollection(target)
+          const acknowledgementSafe =
+            Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && rawSelected === target.botPresetsId
           const beforeSelected = target.botPresetsId
           const currentSelectedId = selectedPresetId(target, presets)
           validateFullPresetIdList(presets, presetIds)
@@ -2689,17 +2717,26 @@ export function registerCommandRoutes(
               ? 0
               : -1
           writeSingleCollectionTable(innerDb, 'botPresets', reordered)
+          const settingsWritten = target.botPresetsId !== beforeSelected
           // `botPresetsId` is a settings scalar; co-write settings only when the
           // reorder moved the selected preset to a new index.
-          if (target.botPresetsId !== beforeSelected) {
+          if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: {
               ...COMMAND_EVENT_CATALOG.presetReordered,
-              ...(target.botPresetsId !== beforeSelected ? { resource: PRESET_COLLECTION_WITH_POINTER_RESOURCE } : {}),
+              ...(settingsWritten ? { resource: PRESET_COLLECTION_WITH_POINTER_RESOURCE } : {}),
             },
-            extra: { selectedPresetId: selectedPresetId(target, reordered) },
+            extra: {
+              selectedPresetId: selectedPresetId(target, reordered),
+              ...buildPresetReorderAcknowledgement(
+                'legacy',
+                reordered.map((preset) => preset.id),
+                settingsWritten,
+                acknowledgementSafe,
+              ),
+            },
           }
         },
       })
@@ -3000,7 +3037,11 @@ export function registerCommandRoutes(
         collectionScopedRead: COLLECTION_SCOPED_READS.modelPresets,
         mutate(database, innerDb) {
           const target = ensureSplitPresetDatabaseObject(database)
+          const rawPresets = cloneJsonForCommandCertificate(target.modelPresets)
+          const rawSelected = target.modelPresetsId
           const presets = ensureModelPresetCollection(target)
+          const acknowledgementSafe =
+            Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && rawSelected === target.modelPresetsId
           const beforeSelected = target.modelPresetsId
           const currentSelectedId = selectedModelPresetId(target, presets)
           validateFullModelPresetIdList(presets, modelPresetIds)
@@ -3013,12 +3054,21 @@ export function registerCommandRoutes(
               ? 0
               : -1
           writeSingleCollectionTable(innerDb, 'modelPresets', reordered)
-          if (target.modelPresetsId !== beforeSelected) {
+          const settingsWritten = target.modelPresetsId !== beforeSelected
+          if (settingsWritten) {
             writeSettingsOnly(innerDb, extractSettings(target))
           }
           return {
             event: COMMAND_EVENT_CATALOG.modelPresetReordered,
-            extra: { selectedModelPresetId: selectedModelPresetId(target, reordered) },
+            extra: {
+              selectedModelPresetId: selectedModelPresetId(target, reordered),
+              ...buildPresetReorderAcknowledgement(
+                'model',
+                reordered.map((preset) => preset.id),
+                settingsWritten,
+                acknowledgementSafe,
+              ),
+            },
           }
         },
       })

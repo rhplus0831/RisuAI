@@ -359,6 +359,14 @@ export interface ServerLegacyPresetPatchLocalEffectPayload {
   >
 }
 
+export interface ServerPresetReorderLocalEffectPayload {
+  revision: number
+  presetKind: 'legacy' | 'model'
+  presetIds: string[]
+  selectedPresetId: string | null
+  settingsWritten: boolean
+}
+
 export interface ServerPersonaPatchLocalEffectPayload {
   revision: number
   personaId: string
@@ -1175,6 +1183,83 @@ export function applySplitPresetPatchLocalEffect(payload: ServerSplitPresetPatch
   collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
   collectionsResourceState.statuses[collectionName] = 'ready'
   delete collectionsResourceState.errors[collectionName]
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence a response-certified optimistic legacy/model preset reorder. The live
+ * order and selected numeric pointer may already contain a later queued
+ * reorder, so validate stable membership/selection and advance only the
+ * resource revisions written by this accepted command.
+ */
+export function applyPresetReorderLocalEffect(payload: ServerPresetReorderLocalEffectPayload): boolean {
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    (payload.presetKind !== 'legacy' && payload.presetKind !== 'model') ||
+    !isUniqueStringArray(payload.presetIds) ||
+    (payload.selectedPresetId !== null &&
+      (!nonEmptyString(payload.selectedPresetId) || !payload.presetIds.includes(payload.selectedPresetId))) ||
+    typeof payload.settingsWritten !== 'boolean'
+  ) {
+    return false
+  }
+
+  const collectionName: ServerCollectionName = payload.presetKind === 'legacy' ? 'botPresets' : 'modelPresets'
+  const selectedSettingsKey = payload.presetKind === 'legacy' ? 'botPresetsId' : 'modelPresetsId'
+  const knownCollectionRevision = Math.max(
+    collectionsResourceState.fullRevision ?? -1,
+    collectionsResourceState.revisions[collectionName] ?? -1,
+  )
+  const knownSettingsRevision = settingsResourceState.fullRevision ?? -1
+  if (
+    knownCollectionRevision >= payload.revision &&
+    (!payload.settingsWritten || knownSettingsRevision >= payload.revision)
+  ) {
+    return true
+  }
+
+  const presets = collectionsResourceState.values[collectionName]
+  if (
+    collectionsResourceState.statuses[collectionName] !== 'ready' ||
+    collectionsResourceState.revisions[collectionName] === undefined ||
+    !Array.isArray(presets) ||
+    !isUniquePresetCollection(presets) ||
+    presets.length !== payload.presetIds.length
+  ) {
+    return false
+  }
+  const livePresetIds = presets.map((preset) => (preset as Record<string, unknown>).id as string)
+  if (livePresetIds.some((presetId) => !payload.presetIds.includes(presetId))) return false
+
+  const settings = settingsResourceState.value as Record<string, unknown>
+  const selectedIndex = settings[selectedSettingsKey]
+  if (
+    settingsResourceState.status !== 'ready' ||
+    settingsResourceState.fullRevision === null ||
+    !Number.isInteger(selectedIndex) ||
+    (presets.length === 0
+      ? selectedIndex !== -1 || payload.selectedPresetId !== null
+      : (selectedIndex as number) < 0 ||
+        (selectedIndex as number) >= presets.length ||
+        (presets[selectedIndex as number] as Record<string, unknown>).id !== payload.selectedPresetId)
+  ) {
+    return false
+  }
+
+  if (knownCollectionRevision < payload.revision) {
+    collectionsResourceState.revisions[collectionName] = payload.revision
+    collectionsResourceState.revision = maxRevision(collectionsResourceState.revision, payload.revision)
+    collectionsResourceState.statuses[collectionName] = 'ready'
+    delete collectionsResourceState.errors[collectionName]
+  }
+  if (payload.settingsWritten && knownSettingsRevision < payload.revision) {
+    settingsResourceState.fullRevision = payload.revision
+    settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+    settingsResourceState.status = 'ready'
+    settingsResourceState.error = null
+  }
   markResourceDatabaseChanged()
   return true
 }

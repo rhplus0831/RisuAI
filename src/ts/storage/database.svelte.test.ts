@@ -15,7 +15,7 @@ import {
   setServerCommandSuccessReconciler,
   type ServerCommandLocalEffect,
 } from '../server/commands'
-import { isCollectionAcknowledgementTainted } from '../server/resourceState.svelte'
+import { isCollectionAcknowledgementTainted, isSettingsAcknowledgementTainted } from '../server/resourceState.svelte'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from '../server/staleStateGuards'
 import {
   applyModelPresetFieldsToDatabase,
@@ -38,6 +38,7 @@ import {
   normalizePromptTemplateIds,
   presetTemplate,
   promptTemplateIdsNeedNormalization,
+  reorderModelPresets,
   reorderPromptPresets,
   reorderPresets,
   saveCurrentPreset,
@@ -2093,6 +2094,121 @@ describe('preset command rollback (L21)', () => {
     })
   })
 
+  it('captures client-only legacy/model reorder proofs from the optimistic projection', async () => {
+    seedPresetDatabase({
+      botPresets: [makePreset('preset-a', 'A'), makePreset('preset-b', 'B'), makePreset('preset-c', 'C')],
+      botPresetsId: 1,
+      modelPresets: [
+        makePreset('model-a', 'Model A') as unknown as ModelPreset,
+        makePreset('model-b', 'Model B') as unknown as ModelPreset,
+        makePreset('model-c', 'Model C') as unknown as ModelPreset,
+        makePreset('model-d', 'Model D') as unknown as ModelPreset,
+      ],
+      modelPresetsId: 1,
+    })
+    setCachedServerCommandRevision(100)
+    const calls: CapturedFetch[] = []
+    let revision = 100
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const call = {
+          url,
+          method: init.method ?? 'GET',
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        }
+        calls.push(call)
+        revision += 1
+        if (url.endsWith('/presets/reorder')) {
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'preset.reordered',
+              revision,
+              resource: 'presetCollectionWithPointer',
+            },
+            presetReorderCertificate: 'preset-reorder-v1',
+            presetKind: 'legacy',
+            presetIds: ['preset-b', 'preset-c', 'preset-a'],
+            selectedPresetId: 'preset-b',
+            settingsWritten: true,
+          })
+        }
+        if (url.endsWith('/model-presets/reorder')) {
+          return jsonResponse({
+            revision,
+            event: { type: 'modelPreset.reordered', revision, resource: 'modelPreset' },
+            presetReorderCertificate: 'preset-reorder-v1',
+            presetKind: 'model',
+            presetIds: ['model-a', 'model-b', 'model-d', 'model-c'],
+            selectedModelPresetId: 'model-b',
+            settingsWritten: false,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    reorderPresets(0, 3)
+    await waitForState(() => expect(observedEffects).toHaveLength(1))
+    reorderModelPresets(2, 4)
+    await waitForState(() => expect(observedEffects).toHaveLength(2))
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'presetReorder',
+        presetKind: 'legacy',
+        collectionProjectionEpoch: expect.any(Number),
+        settingsProjectionEpoch: expect.any(Number),
+        presetIds: ['preset-b', 'preset-c', 'preset-a'],
+        selectedPresetId: 'preset-b',
+        settingsWritten: true,
+      },
+      {
+        kind: 'presetReorder',
+        presetKind: 'model',
+        collectionProjectionEpoch: expect.any(Number),
+        settingsProjectionEpoch: expect.any(Number),
+        presetIds: ['model-a', 'model-b', 'model-d', 'model-c'],
+        selectedPresetId: 'model-b',
+        settingsWritten: false,
+      },
+    ])
+    expect(calls.map((call) => call.body)).toEqual([
+      { baseRevision: 100, presetIds: ['preset-b', 'preset-c', 'preset-a'] },
+      { baseRevision: 101, modelPresetIds: ['model-a', 'model-b', 'model-d', 'model-c'] },
+    ])
+  })
+
+  it('taints collection and full settings before rolling back a failed model reorder', async () => {
+    seedPresetDatabase({
+      modelPresets: [
+        makePreset('model-a', 'Model A') as unknown as ModelPreset,
+        makePreset('model-b', 'Model B') as unknown as ModelPreset,
+        makePreset('model-c', 'Model C') as unknown as ModelPreset,
+      ],
+      modelPresetsId: 1,
+    })
+    const calls = stubFailedPresetCommand()
+
+    expect(isCollectionAcknowledgementTainted('modelPresets')).toBe(false)
+    expect(isSettingsAcknowledgementTainted()).toBe(false)
+    reorderModelPresets(0, 3)
+
+    await waitForPresetCommand(calls, '/model-presets/reorder')
+    await waitForState(() => {
+      expect(getDatabase().modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b', 'model-c'])
+      expect(getDatabase().modelPresetsId).toBe(1)
+      expect(isCollectionAcknowledgementTainted('modelPresets')).toBe(true)
+      expect(isSettingsAcknowledgementTainted()).toBe(true)
+    })
+  })
+
   it('failed prompt reorder restores only the prior id order and preserves row edits', async () => {
     seedPresetDatabase({
       promptPresets: [
@@ -2509,6 +2625,8 @@ describe('preset command rollback (L21)', () => {
       }
     })
 
+    expect(isCollectionAcknowledgementTainted('botPresets')).toBe(false)
+    expect(isSettingsAcknowledgementTainted()).toBe(false)
     reorderPresets(0, 3)
 
     expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-b', 'preset-c', 'preset-a'])
@@ -2518,6 +2636,8 @@ describe('preset command rollback (L21)', () => {
       expect(getDatabase().botPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
       expect(getDatabase().botPresets[2]).toMatchObject({ name: 'Gamma edited after dispatch' })
       expect(getDatabase().botPresetsId).toBe(1)
+      expect(isCollectionAcknowledgementTainted('botPresets')).toBe(true)
+      expect(isSettingsAcknowledgementTainted()).toBe(true)
     })
   })
 
