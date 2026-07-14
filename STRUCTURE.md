@@ -120,10 +120,15 @@ past decisions; they are not the source of current behavior.
   owner/revision/epoch fences when adding a caller.
 - Browser resource reads prefer authenticated hash-aware POSTs for settings,
   collections, the message-free character list, prompt templates, legacy preset
-  bodies, and character lorebooks. The client sends bounded SHA-256 inventories,
-  reconstructs hash hits from verified IndexedDB entries, and falls back to the
-  compatible full GET whenever caching is unavailable or untrustworthy. Cache
-  only final masked/shell projections, never raw SQLite data or optimistic state.
+  bodies, and character lorebooks. Protocol v2 POST bodies are limited to 1 MiB;
+  the client sends bounded SHA-256 inventories, and array responses tag each
+  position as either `{hash: sha256}` or `{value: json}`. It reconstructs hits
+  from verified IndexedDB entries and falls back to the compatible full GET
+  whenever caching is unavailable or untrustworthy. Cache only final
+  masked/shell projections, never raw SQLite data or optimistic state. The
+  persistent cache keeps at most 512 manifests with 8,192 hashes each and
+  32,768 unique entries; UTF-8 serialized JSON is capped at 64 MiB globally and
+  32 MiB per value, excluding IndexedDB metadata and engine overhead.
 - Settings resource ownership is mirrored between
   `server/fastify/src/routes/commands.ts` and
   `src/ts/server/settingsGroups.ts`; prompt fields use their own `prompt` group.

@@ -27,9 +27,10 @@ const PLUGIN_STORAGE_COLLECTION = 'pluginCustomStorage' as const
 const READABLE_COLLECTION_NAMES = [...COLLECTION_FIELDS, PLUGIN_STORAGE_COLLECTION] as const
 type ReadableCollectionName = (typeof READABLE_COLLECTION_NAMES)[number]
 const READABLE_COLLECTION_NAME_SET = new Set<string>(READABLE_COLLECTION_NAMES)
-const RESOURCE_CACHE_VERSION = 1 as const
+const RESOURCE_CACHE_VERSION = 2 as const
 const RESOURCE_CACHE_ALGORITHM = 'sha256' as const
 const RESOURCE_CACHE_MAX_HASHES = 10_000
+const RESOURCE_CACHE_MAX_BODY_BYTES = 1024 * 1024
 const SHA256_HEX_RE = /^[a-f0-9]{64}$/
 const RESOURCE_CACHE_METADATA = {
   version: RESOURCE_CACHE_VERSION,
@@ -79,6 +80,10 @@ export function registerResourceReadRoutes(
   const requireReadAuth = async (req: Parameters<typeof requireAuth>[1], reply: FastifyReply) => {
     await requireAuth(authState, req, reply)
   }
+  const cacheReadRouteOptions = () => ({
+    onRequest: requireReadAuth,
+    bodyLimit: RESOURCE_CACHE_MAX_BODY_BYTES,
+  })
 
   app.get('/api/v1/settings', { exposeHeadRoute: false }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
@@ -90,7 +95,7 @@ export function registerResourceReadRoutes(
     })
   })
 
-  app.post<{ Body: unknown }>('/api/v1/settings', { onRequest: requireReadAuth }, async (req, reply) => {
+  app.post<{ Body: unknown }>('/api/v1/settings', cacheReadRouteOptions(), async (req, reply) => {
     const cacheRequest = parseResourceCacheRequest(req.body, ['settings'])
     if (typeof cacheRequest === 'string') {
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
@@ -137,7 +142,7 @@ export function registerResourceReadRoutes(
 
   app.post<{ Params: { group: string }; Body: unknown }>(
     '/api/v1/settings/:group',
-    { onRequest: requireReadAuth },
+    cacheReadRouteOptions(),
     async (req, reply) => {
       if (!READABLE_SETTINGS_GROUPS.includes(req.params.group as ReadableSettingsGroup)) {
         reply.code(404).send({
@@ -182,7 +187,7 @@ export function registerResourceReadRoutes(
     })
   })
 
-  app.post<{ Body: unknown }>('/api/v1/collections', { onRequest: requireReadAuth }, async (req, reply) => {
+  app.post<{ Body: unknown }>('/api/v1/collections', cacheReadRouteOptions(), async (req, reply) => {
     const cacheRequest = parseResourceCacheRequest(req.body, READABLE_COLLECTION_NAMES)
     if (typeof cacheRequest === 'string') {
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
@@ -231,7 +236,7 @@ export function registerResourceReadRoutes(
 
   app.post<{ Params: { name: string }; Body: unknown }>(
     '/api/v1/collections/:name',
-    { onRequest: requireReadAuth },
+    cacheReadRouteOptions(),
     async (req, reply) => {
       if (!isReadableCollectionName(req.params.name)) {
         reply.code(404).send({
@@ -273,7 +278,7 @@ export function registerResourceReadRoutes(
     })
   })
 
-  app.post<{ Body: unknown }>('/api/v1/characters', { onRequest: requireReadAuth }, async (req, reply) => {
+  app.post<{ Body: unknown }>('/api/v1/characters', cacheReadRouteOptions(), async (req, reply) => {
     const cacheRequest = parseResourceCacheRequest(req.body, ['characters'])
     if (typeof cacheRequest === 'string') {
       return sendInvalidResourceCacheRequest(reply, cacheRequest)
@@ -483,7 +488,7 @@ export function registerResourceReadRoutes(
 
   app.post<{ Params: { id: string }; Body: unknown }>(
     '/api/v1/characters/:id/lorebook',
-    { onRequest: requireReadAuth },
+    cacheReadRouteOptions(),
     async (req, reply) => {
       const cacheRequest = parseResourceCacheRequest(req.body, ['globalLore'])
       if (typeof cacheRequest === 'string') {
@@ -558,7 +563,7 @@ export function registerResourceReadRoutes(
 
   app.post<{ Params: { id: string }; Body: unknown }>(
     '/api/v1/legacy-presets/:id',
-    { onRequest: requireReadAuth },
+    cacheReadRouteOptions(),
     async (req, reply) => {
       const cacheRequest = parseResourceCacheRequest(req.body, ['preset'])
       if (typeof cacheRequest === 'string') {
@@ -629,7 +634,7 @@ export function registerResourceReadRoutes(
 
   app.post<{ Params: { id: string }; Body: unknown }>(
     '/api/v1/prompt-presets/:id/template',
-    { onRequest: requireReadAuth },
+    cacheReadRouteOptions(),
     async (req, reply) => {
       const cacheRequest = parseResourceCacheRequest(req.body, ['promptTemplate', 'selectedFallbackPromptTemplate'])
       if (typeof cacheRequest === 'string') {
@@ -824,15 +829,19 @@ function substituteCachedCollections(
 function substituteCachedArray(
   values: readonly unknown[],
   cachedHashes: ReadonlySet<string> | undefined,
-): CacheSubstitutionResult<unknown[]> {
-  const value: unknown[] = []
+): CacheSubstitutionResult<Array<{ hash: string } | { value: unknown }>> {
+  const value: Array<{ hash: string } | { value: unknown }> = []
   let hits = 0
   let misses = 0
   for (const item of values) {
-    const substitution = substituteCachedValue(item, cachedHashes)
-    value.push(substitution.value)
-    hits += substitution.hits
-    misses += substitution.misses
+    const hash = sha256JsonValue(item)
+    if (cachedHashes?.has(hash)) {
+      value.push({ hash })
+      hits += 1
+    } else {
+      value.push({ value: item })
+      misses += 1
+    }
   }
   return { value, hits, misses }
 }

@@ -45,7 +45,7 @@ explicit server-owned mutation routes.
 | ---------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `src/ts/server/bootstrap.ts`                   | Validates the small runtime bootstrap and exposes writer-intent/read-only variants.      |
 | `src/ts/server/resourceReads.ts`               | Browser wrappers and response validation for settings, collections, and character reads. |
-| `src/ts/server/resourceCache.ts`               | Bounded SHA-256 manifests, verified IndexedDB values, mixed-response reconstruction, and cache fallback. |
+| `src/ts/server/resourceCache.ts`               | Bounded SHA-256 manifests, verified IndexedDB values, protocol-v2 tagged-response reconstruction, and cache fallback. |
 | `src/ts/server/resourceState.svelte.ts`        | Svelte resource owners, per-slice revisions/status/errors, and the aggregate compatibility view. |
 | `src/ts/server/resourceInvalidation.ts`        | Initial/full reads, event-to-endpoint planning, targeted reads, revision checks, and applies. |
 | `src/ts/server/resourceRefresh.ts`             | Coalesced complete refresh for replay gaps, restores, and other broad recovery paths.    |
@@ -156,16 +156,19 @@ resources.
 All endpoints below require auth. Cache POSTs and bulk endpoints are read-only
 POSTs and are classified that way in `server/fastify/src/routeManifest.ts`.
 
-For cache-capable resources, the browser sends
-`{cache:{version:1,hashes:{resource:[sha256,...]}}}`. Hash arrays are content
-inventories rather than positional claims, so reordering does not resend an
-unchanged row. Fastify hashes the final JSON wire value after secret masking and
-shell/body projection, returns a hash string for each hit and the full value for
-each miss, and always returns the current resource revision. The browser accepts
-a hit only when that hash's IndexedDB bytes re-hash correctly. Missing/corrupt
-entries, unsupported POSTs, malformed cache responses, unavailable IndexedDB,
-or unavailable Web Crypto fall back to the full GET. Cached data is never used
-offline or without an authenticated server response confirming its hash.
+For cache-capable resources, protocol v2 sends
+`{cache:{version:2,hashes:{resource:[sha256,...]}}}`. Cache POST bodies have a
+1 MiB route limit. Hash arrays are content inventories rather than positional
+claims, so reordering does not resend an unchanged row. Fastify hashes the final
+JSON wire value after secret masking and shell/body projection and always
+returns the current resource revision. Every array position is unambiguous: a
+hit is `{hash: sha256}` and a miss is `{value: json}`. Whole-value resources use
+the hash string for a hit and the complete JSON value for a miss. The browser
+accepts a hit only when that hash's IndexedDB bytes re-hash correctly.
+Missing/corrupt entries, unsupported POSTs, malformed cache responses,
+unavailable IndexedDB, or unavailable Web Crypto fall back to the full GET.
+Cached data is never used offline or without an authenticated server response
+confirming its hash.
 
 | Data                                      | Endpoint                                                       | Browser owner                                               |
 | ----------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------- |
@@ -195,8 +198,12 @@ character rows, prompt-template rows, and lorebook rows use per-item hashes;
 legacy presets use one hash for the complete masked body. Aggregate and targeted
 `promptTemplate` collection projections have separate browser manifests because
 the aggregate response can intentionally suppress the selected compatibility
-body. The browser bounds each request inventory and retains at most 512 current
-resource manifests, pruning unreferenced content-addressed values.
+body. In addition to the 1 MiB POST limit, the browser bounds each request
+inventory and retains at most 512 current resource manifests with 8,192 hashes
+per manifest. It keeps at most 32,768 unique content-addressed entries, pruning
+unreferenced values and limiting their UTF-8 serialized JSON to 64 MiB globally
+and 32 MiB per value. Those byte limits do not include IndexedDB metadata or
+engine overhead.
 
 Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.

@@ -237,11 +237,18 @@ revision.
 | One legacy bot-preset body                          | Cache `POST /api/v1/legacy-presets/:id`; full `GET` fallback                                               |
 | One prompt-preset-owned template                    | Cache `POST /api/v1/prompt-presets/:id/template`; full `GET` fallback                                      |
 
-Cache requests carry bounded SHA-256 inventories. Fastify hashes only final
-wire values after secret masking and shell/body projection, returns hashes for
-unchanged entries and JSON for misses, and preserves the endpoint's current
-revision. The browser reconstructs the ordinary full response from verified
-IndexedDB values; unavailable or untrustworthy caching falls back to GET.
+Protocol-v2 cache requests carry bounded SHA-256 inventories in POST bodies
+limited to 1 MiB. Fastify hashes only final wire values after secret masking and
+shell/body projection and preserves the endpoint's current revision. In array
+responses, unchanged entries are `{hash: sha256}` and misses are
+`{value: json}`; the tags prevent a legitimate JSON string from being mistaken
+for a cache hit. Whole-value resources use a hash string for a hit and the
+complete JSON value for a miss. The browser reconstructs the ordinary full
+response from verified IndexedDB values; unavailable or untrustworthy caching
+falls back to GET. It retains at most 512 manifests with 8,192 hashes each and
+32,768 unique entries. Retained UTF-8 serialized JSON is limited to 64 MiB
+globally and 32 MiB per value, not counting IndexedDB metadata or engine
+overhead; unreferenced values are pruned.
 
 The root browser wrappers live in `src/ts/server/resourceReads.ts`, body-read
 wrappers live in `src/ts/server/hydrationReads.ts`, and application state is

@@ -237,7 +237,7 @@ describe('server resource read clients', () => {
     expect(calls.map((call) => call.url)).toEqual(['/api/v1/collections', '/api/v1/collections/modules'])
   })
 
-  it('posts IndexedDB hash inventories and reconstructs unchanged collection entries', async () => {
+  it('reconstructs collection hits while preserving a literal hash-shaped miss', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     await clearResourceCache()
 
@@ -254,10 +254,12 @@ describe('server resource read clients', () => {
         const secondRequest = calls.length === 2
         return jsonResponse({
           revision: secondRequest ? 9 : 8,
-          cache: { version: 1, algorithm: 'sha256' },
+          cache: { version: 2, algorithm: 'sha256' },
           collections: Object.fromEntries(
             SERVER_COLLECTION_NAMES.map((name) => {
-              if (name === 'modules') return [name, secondRequest ? [moduleHash] : [module]]
+              if (name === 'modules') {
+                return [name, secondRequest ? [{ hash: moduleHash }, { value: moduleHash }] : [{ value: module }]]
+              }
               if (name === 'pluginCustomStorage') return [name, secondRequest ? storageHash : storage]
               return [name, []]
             }),
@@ -275,14 +277,14 @@ describe('server resource read clients', () => {
       await expect(fetchServerCollections()).resolves.toMatchObject({
         status: 'ok',
         revision: 9,
-        collections: { modules: [module], pluginCustomStorage: storage },
+        collections: { modules: [module, moduleHash], pluginCustomStorage: storage },
       })
 
       expect(calls).toHaveLength(2)
       expect(calls.every((call) => call.method === 'POST')).toBe(true)
       expect(calls[0]?.body).toEqual({
         cache: {
-          version: 1,
+          version: 2,
           hashes: Object.fromEntries(SERVER_COLLECTION_NAMES.map((name) => [name, []])),
         },
       })
@@ -322,22 +324,26 @@ describe('server resource read clients', () => {
         if (method === 'POST' && url === '/api/v1/settings') {
           return jsonResponse({
             revision: 1,
-            cache: { version: 1, algorithm: 'sha256' },
+            cache: { version: 2, algorithm: 'sha256' },
             settings: { language: 'en', modules: [] },
           })
         }
         if (method === 'POST' && url === '/api/v1/collections') {
           return jsonResponse({
             revision: 1,
-            cache: { version: 1, algorithm: 'sha256' },
+            cache: { version: 2, algorithm: 'sha256' },
             collections: { ...completeCollections(), pluginCustomStorage: [] },
           })
         }
         if (method === 'POST' && url === '/api/v1/characters') {
           return jsonResponse({
             revision: 1,
-            cache: { version: 1, algorithm: 'sha256' },
-            characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a', message: [{ data: 'not-a-shell' }] }] }],
+            cache: { version: 2, algorithm: 'sha256' },
+            characters: [
+              {
+                value: { chaId: 'char-a', chats: [{ id: 'chat-a', message: [{ data: 'not-a-shell' }] }] },
+              },
+            ],
             characterOrder: ['char-a'],
             currentChar: 0,
           })
@@ -391,14 +397,14 @@ describe('server resource read clients', () => {
         if (kind === 'settings') {
           return jsonResponse({
             revision: requestCount,
-            cache: { version: 1, algorithm: 'sha256' },
+            cache: { version: 2, algorithm: 'sha256' },
             settings: requestCount === 1 ? settings : settingsHash,
           })
         }
         return jsonResponse({
           revision: requestCount,
-          cache: { version: 1, algorithm: 'sha256' },
-          characters: requestCount === 1 ? characters : [characterHash],
+          cache: { version: 2, algorithm: 'sha256' },
+          characters: requestCount === 1 ? characters.map((value) => ({ value })) : [{ hash: characterHash }],
           characterOrder: ['char-a'],
           currentChar: 0,
         })

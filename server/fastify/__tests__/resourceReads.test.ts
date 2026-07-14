@@ -24,7 +24,7 @@ async function startHarness(): Promise<Harness> {
       host: '127.0.0.1',
       port: 0,
       dataDir,
-      bodyLimit: 1024 * 1024,
+      bodyLimit: 2 * 1024 * 1024,
       importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
@@ -175,7 +175,7 @@ function jsonSha256(value: unknown): string {
 }
 
 function cachePayload(hashes: Record<string, string[]>): Record<string, unknown> {
-  return { cache: { version: 1, hashes } }
+  return { cache: { version: 2, hashes } }
 }
 
 describe('authenticated resource read routes', () => {
@@ -385,7 +385,7 @@ describe('authenticated resource read routes', () => {
     expect(changed.statusCode).toBe(200)
     expect(changed.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       settings: fullSettings,
     })
 
@@ -398,7 +398,7 @@ describe('authenticated resource read routes', () => {
     expect(cached.statusCode).toBe(200)
     expect(cached.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       settings: fullHash,
     })
 
@@ -419,7 +419,7 @@ describe('authenticated resource read routes', () => {
     expect(cachedModels.json()).toEqual({
       revision,
       group: 'models',
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       settings: modelHash,
     })
   })
@@ -568,10 +568,10 @@ describe('authenticated resource read routes', () => {
     })
     expect(cached.statusCode).toBe(200)
     const cachedBody = cached.json()
-    expect(cachedBody.cache).toEqual({ version: 1, algorithm: 'sha256' })
-    expect(cachedBody.collections.modules).toEqual([moduleHash])
-    expect(cachedBody.collections.modelPresets).toEqual([maskedModelHash])
-    expect(cachedBody.collections.promptPresets).toEqual(promptHashes)
+    expect(cachedBody.cache).toEqual({ version: 2, algorithm: 'sha256' })
+    expect(cachedBody.collections.modules).toEqual([{ hash: moduleHash }])
+    expect(cachedBody.collections.modelPresets).toEqual([{ hash: maskedModelHash }])
+    expect(cachedBody.collections.promptPresets).toEqual(promptHashes.map((hash) => ({ hash })))
     expect(cachedBody.collections.pluginCustomStorage).toBe(pluginStorageHash)
     expect(cachedBody.collections.promptTemplate).toEqual([])
     expect(cached.payload).not.toContain('model-secret')
@@ -586,9 +586,9 @@ describe('authenticated resource read routes', () => {
     expect(partial.statusCode).toBe(200)
     expect(partial.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       collections: {
-        promptPresets: [promptHashes[0], promptPresets[1]],
+        promptPresets: [{ hash: promptHashes[0] }, { value: promptPresets[1] }],
       },
     })
 
@@ -607,8 +607,8 @@ describe('authenticated resource read routes', () => {
     })
     expect(cachedPromptTemplate.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
-      collections: { promptTemplate: [promptTemplateHash] },
+      cache: { version: 2, algorithm: 'sha256' },
+      collections: { promptTemplate: [{ hash: promptTemplateHash }] },
     })
 
     expect(aggregate.json()).not.toHaveProperty('cache')
@@ -618,12 +618,12 @@ describe('authenticated resource read routes', () => {
     const validHash = 'a'.repeat(64)
     const invalidPayloads: Array<Record<string, unknown>> = [
       {},
-      { cache: { version: 2, hashes: {} } },
-      { cache: { version: 1, hashes: {}, extra: true } },
-      { cache: { version: 1, hashes: { unknown: [] } } },
-      { cache: { version: 1, hashes: { modules: validHash } } },
-      { cache: { version: 1, hashes: { modules: [validHash.toUpperCase()] } } },
-      { cache: { version: 1, hashes: { modules: [validHash] } }, extra: true },
+      { cache: { version: 1, hashes: {} } },
+      { cache: { version: 2, hashes: {}, extra: true } },
+      { cache: { version: 2, hashes: { unknown: [] } } },
+      { cache: { version: 2, hashes: { modules: validHash } } },
+      { cache: { version: 2, hashes: { modules: [validHash.toUpperCase()] } } },
+      { cache: { version: 2, hashes: { modules: [validHash] } }, extra: true },
     ]
 
     for (const payload of invalidPayloads) {
@@ -648,6 +648,14 @@ describe('authenticated resource read routes', () => {
       error: 'invalid_resource_cache_request',
       reason: 'body.cache.hashes must contain at most 10000 hashes',
     })
+
+    const oversizedBody = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/collections',
+      headers: authHeaders(),
+      payload: cachePayload({ modules: ['a'.repeat(1024 * 1024)] }),
+    })
+    expect(oversizedBody.statusCode).toBe(413)
 
     const unknownCollection = await harness.app.inject({
       method: 'POST',
@@ -779,9 +787,9 @@ describe('authenticated resource read routes', () => {
     expect(cachedHydration.json()).toEqual({
       revision,
       promptPresetId: 'default-prompt-preset',
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       promptTemplate: nullTemplateHash,
-      selectedFallbackPromptTemplate: [fallbackTemplateHash],
+      selectedFallbackPromptTemplate: [{ hash: fallbackTemplateHash }],
     })
   })
 
@@ -882,8 +890,8 @@ describe('authenticated resource read routes', () => {
     expect(cached.statusCode).toBe(200)
     expect(cached.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
-      characters: characterHashes,
+      cache: { version: 2, algorithm: 'sha256' },
+      characters: characterHashes.map((hash) => ({ hash })),
       characterOrder: ['char-a', 'char-b'],
       currentChar: 0,
     })
@@ -896,7 +904,7 @@ describe('authenticated resource read routes', () => {
       payload: cachePayload({ characters: [characterHashes[0]] }),
     })
     expect(partial.statusCode).toBe(200)
-    expect(partial.json().characters).toEqual([characterHashes[0], characters[1]])
+    expect(partial.json().characters).toEqual([{ hash: characterHashes[0] }, { value: characters[1] }])
     expect(partial.json().characterOrder).toEqual(['char-a', 'char-b'])
     expect(partial.json().currentChar).toBe(0)
     expect(list.json()).not.toHaveProperty('cache')
@@ -1077,8 +1085,8 @@ describe('authenticated resource read routes', () => {
     expect(cachedSingle.json()).toEqual({
       revision,
       characterId: 'char-a',
-      cache: { version: 1, algorithm: 'sha256' },
-      globalLore: [globalLoreHash],
+      cache: { version: 2, algorithm: 'sha256' },
+      globalLore: [{ hash: globalLoreHash }],
     })
 
     const uncachedSingle = await harness.app.inject({
@@ -1091,8 +1099,8 @@ describe('authenticated resource read routes', () => {
     expect(uncachedSingle.json()).toEqual({
       revision,
       characterId: 'char-a',
-      cache: { version: 1, algorithm: 'sha256' },
-      globalLore,
+      cache: { version: 2, algorithm: 'sha256' },
+      globalLore: globalLore.map((value) => ({ value })),
     })
 
     const bulk = await harness.app.inject({
@@ -1150,7 +1158,7 @@ describe('authenticated resource read routes', () => {
     expect(uncachedLegacy.statusCode).toBe(200)
     expect(uncachedLegacy.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       preset: legacyPreset,
     })
     expect(uncachedLegacy.payload).not.toContain('legacy-secret')
@@ -1164,7 +1172,7 @@ describe('authenticated resource read routes', () => {
     expect(cachedLegacy.statusCode).toBe(200)
     expect(cachedLegacy.json()).toEqual({
       revision,
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       preset: maskedPresetHash,
     })
     expect(cachedLegacy.payload.length).toBeLessThan(legacy.payload.length)
@@ -1196,8 +1204,8 @@ describe('authenticated resource read routes', () => {
     expect(cachedTemplate.json()).toEqual({
       revision,
       promptPresetId: 'prompt-a',
-      cache: { version: 1, algorithm: 'sha256' },
-      promptTemplate: [promptTemplateHash],
+      cache: { version: 2, algorithm: 'sha256' },
+      promptTemplate: [{ hash: promptTemplateHash }],
     })
 
     const empty = await harness.app.inject({
@@ -1222,7 +1230,7 @@ describe('authenticated resource read routes', () => {
     expect(cachedEmpty.json()).toEqual({
       revision,
       promptPresetId: 'prompt-empty',
-      cache: { version: 1, algorithm: 'sha256' },
+      cache: { version: 2, algorithm: 'sha256' },
       promptTemplate: nullTemplateHash,
     })
 

@@ -1,4 +1,4 @@
-export const RESOURCE_CACHE_VERSION = 1 as const
+export const RESOURCE_CACHE_VERSION = 2 as const
 export const RESOURCE_CACHE_ALGORITHM = 'sha256' as const
 export const RESOURCE_CACHE_MAX_REQUEST_HASHES = 8_192
 
@@ -7,13 +7,24 @@ const RESOURCE_CACHE_DATABASE_VERSION = 1
 const RESOURCE_CACHE_ENTRY_STORE = 'entries'
 const RESOURCE_CACHE_MANIFEST_STORE = 'manifests'
 const RESOURCE_CACHE_MAX_MANIFESTS = 512
+const RESOURCE_CACHE_MAX_ENTRIES = 32_768
+const RESOURCE_CACHE_MAX_STORED_BYTES = 64 * 1024 * 1024
+const RESOURCE_CACHE_MAX_VALUE_BYTES = 32 * 1024 * 1024
 const RESOURCE_CACHE_HASH_PATTERN = /^[a-f0-9]{64}$/
 const HASH_BATCH_SIZE = 32
+const RESOURCE_CACHE_MANIFEST_VERSION = 1 as const
 
 interface StoredResourceCacheManifest {
   version: 1
   hashes: string[]
+  sizes: number[]
   updatedAt: number
+}
+
+interface PreparedResourceCacheUpdate extends ResourceCacheUpdate {
+  hashes: string[]
+  values: unknown[]
+  sizes: number[]
 }
 
 export interface ResourceCacheSnapshot {
@@ -195,14 +206,15 @@ export async function resolveResourceCacheArray<T = unknown>(
   const changed: Array<{ index: number; value: unknown }> = []
 
   for (let index = 0; index < mixedValues.length; index += 1) {
-    const candidate = mixedValues[index]
-    if (typeof candidate === 'string' && sent.has(candidate)) {
-      if (!snapshot.valuesByHash.has(candidate)) return null
-      values[index] = cloneResourceCacheValue(snapshot.valuesByHash.get(candidate)) as T
-      hashes[index] = candidate
-    } else {
-      changed.push({ index, value: candidate })
+    const entry = readResourceCacheArrayEntry(mixedValues[index])
+    if (!entry) return null
+    if (entry.kind === 'hit') {
+      if (!sent.has(entry.hash) || !snapshot.valuesByHash.has(entry.hash)) return null
+      values[index] = cloneResourceCacheValue(snapshot.valuesByHash.get(entry.hash)) as T
+      hashes[index] = entry.hash
+      continue
     }
+    changed.push({ index, value: entry.value })
   }
 
   for (let offset = 0; offset < changed.length; offset += HASH_BATCH_SIZE) {
@@ -314,6 +326,7 @@ async function openResourceCacheDatabase(): Promise<IDBDatabase | null> {
 }
 
 async function persistResourceCacheInternal(updates: readonly ResourceCacheUpdate[]): Promise<void> {
+  const preparedUpdates = prepareResourceCacheUpdates(updates)
   const database = await openResourceCacheDatabase()
   if (!database) return
 
@@ -323,19 +336,24 @@ async function persistResourceCacheInternal(updates: readonly ResourceCacheUpdat
   const manifests = transaction.objectStore(RESOURCE_CACHE_MANIFEST_STORE)
   const now = Date.now()
 
-  for (const update of updates) {
+  const writtenHashes = new Set<string>()
+  for (const update of preparedUpdates) {
     for (let index = 0; index < update.hashes.length; index += 1) {
-      entries.put(update.values[index], update.hashes[index])
+      const hash = update.hashes[index]
+      if (!hash || writtenHashes.has(hash)) continue
+      entries.put(update.values[index], hash)
+      writtenHashes.add(hash)
     }
     const manifest: StoredResourceCacheManifest = {
-      version: RESOURCE_CACHE_VERSION,
+      version: RESOURCE_CACHE_MANIFEST_VERSION,
       hashes: [...update.hashes],
+      sizes: [...update.sizes],
       updatedAt: now,
     }
     manifests.put(manifest, update.key)
   }
   await done
-  for (const update of updates) {
+  for (const update of preparedUpdates) {
     for (let index = 0; index < update.hashes.length; index += 1) {
       verifiedResourceCacheValues.set(update.hashes[index] as string, cloneResourceCacheValue(update.values[index]))
     }
@@ -362,15 +380,51 @@ async function pruneResourceCache(database: IDBDatabase): Promise<void> {
         candidate.manifest !== null,
     )
     .sort((left, right) => right.manifest.updatedAt - left.manifest.updatedAt)
-  const kept = candidates.slice(0, RESOURCE_CACHE_MAX_MANIFESTS)
+  const kept: Array<{ key: IDBValidKey; manifest: StoredResourceCacheManifest }> = []
+  const referencedSizes = new Map<string, number>()
+  let referencedBytes = 0
+  for (const candidate of candidates) {
+    if (kept.length >= RESOURCE_CACHE_MAX_MANIFESTS) break
+    const hashes: string[] = []
+    const sizes: number[] = []
+    const seen = new Set<string>()
+    for (let index = 0; index < candidate.manifest.hashes.length; index += 1) {
+      const hash = candidate.manifest.hashes[index]
+      const size = candidate.manifest.sizes[index]
+      if (!hash || size === undefined || seen.has(hash)) continue
+      const retainedSize = referencedSizes.get(hash)
+      if (retainedSize === undefined) {
+        if (referencedSizes.size >= RESOURCE_CACHE_MAX_ENTRIES) continue
+        if (referencedBytes + size > RESOURCE_CACHE_MAX_STORED_BYTES) continue
+        referencedSizes.set(hash, size)
+        referencedBytes += size
+      }
+      hashes.push(hash)
+      sizes.push(retainedSize ?? size)
+      seen.add(hash)
+    }
+    if (hashes.length === 0) continue
+    kept.push({
+      key: candidate.key,
+      manifest: { ...candidate.manifest, hashes, sizes },
+    })
+  }
   const keptKeys = new Set(kept.map(({ key }) => String(key)))
-  const referencedHashes = new Set(kept.flatMap(({ manifest }) => manifest.hashes))
+  const referencedHashes = new Set(referencedSizes.keys())
   const manifestDeletes = manifestKeys.filter((key) => !keptKeys.has(String(key)))
   const entryDeletes = entryKeys.filter((key) => !referencedHashes.has(String(key)))
+  const manifestPuts = kept.filter(({ key, manifest }) => {
+    const candidate = candidates.find((entry) => String(entry.key) === String(key))
+    return (
+      !candidate ||
+      !sameArray(candidate.manifest.hashes, manifest.hashes) ||
+      !sameArray(candidate.manifest.sizes, manifest.sizes)
+    )
+  })
   for (const hash of verifiedResourceCacheValues.keys()) {
     if (!referencedHashes.has(hash)) verifiedResourceCacheValues.delete(hash)
   }
-  if (manifestDeletes.length === 0 && entryDeletes.length === 0) return
+  if (manifestDeletes.length === 0 && entryDeletes.length === 0 && manifestPuts.length === 0) return
 
   const deleteTransaction = database.transaction(
     [RESOURCE_CACHE_ENTRY_STORE, RESOURCE_CACHE_MANIFEST_STORE],
@@ -380,6 +434,7 @@ async function pruneResourceCache(database: IDBDatabase): Promise<void> {
   const deleteManifests = deleteTransaction.objectStore(RESOURCE_CACHE_MANIFEST_STORE)
   const deleteEntries = deleteTransaction.objectStore(RESOURCE_CACHE_ENTRY_STORE)
   for (const key of manifestDeletes) deleteManifests.delete(key)
+  for (const { key, manifest } of manifestPuts) deleteManifests.put(manifest, key)
   for (const key of entryDeletes) deleteEntries.delete(key)
   await deleteDone
 }
@@ -387,16 +442,21 @@ async function pruneResourceCache(database: IDBDatabase): Promise<void> {
 function readStoredManifest(value: unknown): StoredResourceCacheManifest | null {
   if (
     !isRecord(value) ||
-    value.version !== RESOURCE_CACHE_VERSION ||
+    value.version !== RESOURCE_CACHE_MANIFEST_VERSION ||
     !Array.isArray(value.hashes) ||
     !value.hashes.every(isSha256Hex) ||
+    value.hashes.length > RESOURCE_CACHE_MAX_REQUEST_HASHES ||
+    !Array.isArray(value.sizes) ||
+    value.sizes.length !== value.hashes.length ||
+    !value.sizes.every((size) => Number.isInteger(size) && size >= 0) ||
     !Number.isFinite(value.updatedAt)
   ) {
     return null
   }
   return {
-    version: RESOURCE_CACHE_VERSION,
+    version: RESOURCE_CACHE_MANIFEST_VERSION,
     hashes: value.hashes,
+    sizes: value.sizes as number[],
     updatedAt: value.updatedAt as number,
   }
 }
@@ -409,10 +469,61 @@ function isValidResourceCacheUpdate(update: ResourceCacheUpdate): boolean {
   return nonEmptyString(update.key) && update.hashes.length === update.values.length && update.hashes.every(isSha256Hex)
 }
 
+function prepareResourceCacheUpdates(updates: readonly ResourceCacheUpdate[]): PreparedResourceCacheUpdate[] {
+  const retainedHashes = new Set<string>()
+  let retainedBytes = 0
+  return updates.map((update) => {
+    const hashes: string[] = []
+    const values: unknown[] = []
+    const sizes: number[] = []
+    const manifestHashes = new Set<string>()
+    for (let index = 0; index < update.hashes.length; index += 1) {
+      if (hashes.length >= RESOURCE_CACHE_MAX_REQUEST_HASHES) break
+      const hash = update.hashes[index]
+      if (!hash || manifestHashes.has(hash)) continue
+      const serialized = serializeResourceCacheValue(update.values[index])
+      const size = new TextEncoder().encode(serialized).byteLength
+      if (size > RESOURCE_CACHE_MAX_VALUE_BYTES) continue
+      if (!retainedHashes.has(hash)) {
+        if (retainedHashes.size >= RESOURCE_CACHE_MAX_ENTRIES) continue
+        if (retainedBytes + size > RESOURCE_CACHE_MAX_STORED_BYTES) continue
+        retainedHashes.add(hash)
+        retainedBytes += size
+      }
+      hashes.push(hash)
+      values.push(JSON.parse(serialized) as unknown)
+      sizes.push(size)
+      manifestHashes.add(hash)
+    }
+    return { key: update.key, hashes, values, sizes }
+  })
+}
+
+function readResourceCacheArrayEntry(
+  value: unknown,
+): { kind: 'hit'; hash: string } | { kind: 'value'; value: unknown } | null {
+  if (!isRecord(value)) return null
+  const keys = Object.keys(value)
+  if (keys.length !== 1) return null
+  if (keys[0] === 'hash' && isSha256Hex(value.hash)) return { kind: 'hit', hash: value.hash }
+  if (keys[0] === 'value' && Object.prototype.hasOwnProperty.call(value, 'value')) {
+    return { kind: 'value', value: value.value }
+  }
+  return null
+}
+
 function cloneResourceCacheValue<T>(value: T): T {
+  return JSON.parse(serializeResourceCacheValue(value)) as T
+}
+
+function serializeResourceCacheValue(value: unknown): string {
   const serialized = JSON.stringify(value)
   if (serialized === undefined) throw new Error('Resource cache values must be JSON-serializable')
-  return JSON.parse(serialized) as T
+  return serialized
+}
+
+function sameArray<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function discardResourceCacheDatabase(database: IDBDatabase): void {

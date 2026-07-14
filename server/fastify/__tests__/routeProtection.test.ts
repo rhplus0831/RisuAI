@@ -358,7 +358,7 @@ describe('active-writer header validation', () => {
         method: 'POST',
         url,
         headers: { 'risu-auth': assertion },
-        payload: { cache: { version: 1, hashes: {} } },
+        payload: { cache: { version: 2, hashes: {} } },
       })
       expect(res.statusCode, url).toBe(statusCode)
     }

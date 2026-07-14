@@ -85,8 +85,8 @@ Important files:
   individual character rows.
 - `src/ts/server/resourceCache.ts` owns the disposable IndexedDB cache. It keeps
   bounded per-resource SHA-256 manifests plus content-addressed JSON values,
-  verifies stored bytes before advertising a hash, reconstructs mixed hash/value
-  responses, and prunes unreferenced entries.
+  verifies stored bytes before advertising a hash, reconstructs protocol-v2
+  tagged array responses, and prunes unreferenced entries.
 - `src/ts/server/hydrationReads.ts` reads chat-message, character-lorebook,
   legacy-preset, and prompt-preset-template bodies from concrete endpoints.
 - `src/ts/server/resourceInvalidation.ts` maps command events to targeted REST
@@ -135,13 +135,20 @@ If a component shows stale or missing data, confirm whether the data is:
 - superseded by an SSE-triggered targeted read or full resource refresh.
 
 Hash-aware reads are an authenticated transfer optimization, not an offline or
-authoritative browser database. The client sends only hashes for entries present
-in a verified current manifest. Fastify returns hashes for unchanged values and
-full JSON for changed values at the current revision; the transport adapter
-reconstructs the ordinary full payload before any resource-state or hydration
-caller sees it. A missing/corrupt cache value, unsupported POST route, malformed
-cache response, quota/privacy failure, or unavailable crypto causes a compatible
-full GET. Optimistic command state is never written to this cache.
+authoritative browser database. Protocol-v2 POST bodies are limited to 1 MiB,
+and the client sends only hashes for entries present in a verified current
+manifest. For arrays, Fastify returns `{hash: sha256}` for an unchanged position
+and `{value: json}` for a miss; these explicit tags keep ordinary JSON strings
+unambiguous. Whole-value resources use a hash string for a hit and the complete
+JSON value for a miss. The transport adapter reconstructs the ordinary full
+payload at the current revision before any resource-state or hydration caller
+sees it. A missing/corrupt cache value, unsupported POST route, malformed cache
+response, quota/privacy failure, or unavailable crypto causes a compatible full
+GET. Optimistic command state is never written to this cache. The browser keeps
+at most 512 current resource manifests with 8,192 hashes per manifest and
+32,768 unique content-addressed entries. It prunes unreferenced values, skips an
+individual value above 32 MiB, and caps retained UTF-8 serialized JSON at 64 MiB
+globally. IndexedDB metadata and engine overhead are outside those byte counts.
 
 The root settings value, every split collection (including modules, plugins,
 prompt presets, personas, loadouts, lorebooks, and plugin custom storage), and

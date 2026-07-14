@@ -145,23 +145,23 @@ describe('server hydration read clients', () => {
       if (url.includes('/legacy-presets/')) {
         return {
           revision: count,
-          cache: { version: 1, algorithm: 'sha256' },
+          cache: { version: 2, algorithm: 'sha256' },
           preset: count === 1 ? legacyPreset : legacyHash,
         }
       }
       if (url.includes('/prompt-presets/')) {
         return {
           revision: count,
-          cache: { version: 1, algorithm: 'sha256' },
+          cache: { version: 2, algorithm: 'sha256' },
           promptPresetId: 'prompt-a',
-          promptTemplate: count === 1 ? promptTemplate : [promptHash],
+          promptTemplate: count === 1 ? promptTemplate.map((value) => ({ value })) : [{ hash: promptHash }],
         }
       }
       return {
         revision: count,
-        cache: { version: 1, algorithm: 'sha256' },
+        cache: { version: 2, algorithm: 'sha256' },
         characterId: 'char-a',
-        globalLore: count === 1 ? globalLore : [loreHash],
+        globalLore: count === 1 ? globalLore.map((value) => ({ value })) : [{ hash: loreHash }],
       }
     })
     vi.stubGlobal('fetch', resourceFetch.fetch)
@@ -195,23 +195,23 @@ describe('server hydration read clients', () => {
       expect(resourceFetch.calls.every((call) => call.method === 'POST')).toBe(true)
       expect(resourceFetch.calls.every((call) => call.authHeader === 'resource-auth-token')).toBe(true)
       expect(resourceFetch.calls.every((call) => call.contentType === 'application/json')).toBe(true)
-      expect(resourceFetch.calls[0]?.body).toEqual({ cache: { version: 1, hashes: { preset: [] } } })
+      expect(resourceFetch.calls[0]?.body).toEqual({ cache: { version: 2, hashes: { preset: [] } } })
       expect(resourceFetch.calls[1]?.body).toEqual({
         cache: {
-          version: 1,
+          version: 2,
           hashes: { promptTemplate: [], selectedFallbackPromptTemplate: [] },
         },
       })
-      expect(resourceFetch.calls[2]?.body).toEqual({ cache: { version: 1, hashes: { globalLore: [] } } })
-      expect(resourceFetch.calls[3]?.body).toEqual({ cache: { version: 1, hashes: { preset: [legacyHash] } } })
+      expect(resourceFetch.calls[2]?.body).toEqual({ cache: { version: 2, hashes: { globalLore: [] } } })
+      expect(resourceFetch.calls[3]?.body).toEqual({ cache: { version: 2, hashes: { preset: [legacyHash] } } })
       expect(resourceFetch.calls[4]?.body).toEqual({
         cache: {
-          version: 1,
+          version: 2,
           hashes: { promptTemplate: [promptHash], selectedFallbackPromptTemplate: [] },
         },
       })
       expect(resourceFetch.calls[5]?.body).toEqual({
-        cache: { version: 1, hashes: { globalLore: [loreHash] } },
+        cache: { version: 2, hashes: { globalLore: [loreHash] } },
       })
     } finally {
       await clearResourceCache()
@@ -250,10 +250,11 @@ describe('server hydration read clients', () => {
       requestCount += 1
       return {
         revision: requestCount,
-        cache: { version: 1, algorithm: 'sha256' },
+        cache: { version: 2, algorithm: 'sha256' },
         promptPresetId: 'default-prompt-preset',
         promptTemplate: requestCount === 1 ? null : nullHash,
-        selectedFallbackPromptTemplate: requestCount === 1 ? fallback : [fallbackHash],
+        selectedFallbackPromptTemplate:
+          requestCount === 1 ? fallback.map((value) => ({ value })) : [{ hash: fallbackHash }],
       }
     })
     vi.stubGlobal('fetch', resourceFetch.fetch)
@@ -271,7 +272,7 @@ describe('server hydration read clients', () => {
       })
       expect(resourceFetch.calls[1]?.body).toEqual({
         cache: {
-          version: 1,
+          version: 2,
           hashes: {
             promptTemplate: [nullHash],
             selectedFallbackPromptTemplate: [fallbackHash],

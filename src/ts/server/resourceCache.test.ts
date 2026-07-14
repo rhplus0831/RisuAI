@@ -30,7 +30,11 @@ describe('IndexedDB resource cache', () => {
     const empty = emptySnapshots?.get('collection:modules')
     expect(empty).toEqual({ hashes: [], valuesByHash: new Map() })
 
-    const first = await resolveResourceCacheArray(initial, empty!, [])
+    const first = await resolveResourceCacheArray(
+      initial.map((value) => ({ value })),
+      empty!,
+      [],
+    )
     expect(first?.value).toEqual(initial)
     await persistResourceCache([
       {
@@ -46,7 +50,7 @@ describe('IndexedDB resource cache', () => {
     expect(requestHashes).toEqual(first!.hashes)
 
     const changed = { id: 'module-c', script: 'C'.repeat(128) }
-    const mixedResponse = [first!.hashes[1], changed, first!.hashes[0]]
+    const mixedResponse = [{ hash: first!.hashes[1] }, { value: changed }, { hash: first!.hashes[0] }]
     const second = await resolveResourceCacheArray(mixedResponse, cached, requestHashes)
     expect(second?.value).toEqual([initial[1], changed, initial[0]])
     expect(second?.hashes).toEqual([first!.hashes[1], await sha256JsonValue(changed), first!.hashes[0]])
@@ -70,7 +74,7 @@ describe('IndexedDB resource cache', () => {
       valuesByHash: new Map([[hash, row]]),
     }
 
-    const resolved = await resolveResourceCacheArray<typeof row>([hash, hash], snapshot, [hash])
+    const resolved = await resolveResourceCacheArray<typeof row>([{ hash }, { hash }], snapshot, [hash])
     expect(resolved?.value).toEqual([row, row])
     expect(resolved?.value[0]).not.toBe(resolved?.value[1])
     expect(resolved?.value[0]?.nested).not.toBe(resolved?.value[1]?.nested)
@@ -118,7 +122,9 @@ describe('IndexedDB resource cache', () => {
   it('fails closed when the server references a hash whose body is not resident', async () => {
     const missingHash = 'a'.repeat(64)
     await expect(
-      resolveResourceCacheArray([missingHash], { hashes: [missingHash], valuesByHash: new Map() }, [missingHash]),
+      resolveResourceCacheArray([{ hash: missingHash }], { hashes: [missingHash], valuesByHash: new Map() }, [
+        missingHash,
+      ]),
     ).resolves.toBeNull()
     await expect(
       resolveResourceCacheValue(missingHash, { hashes: [missingHash], valuesByHash: new Map() }, [missingHash]),
@@ -140,7 +146,7 @@ describe('IndexedDB resource cache', () => {
     transaction.objectStore('entries').put({ id: 'tampered' }, claimedHash)
     transaction
       .objectStore('manifests')
-      .put({ version: 1, hashes: [claimedHash], updatedAt: Date.now() }, 'collection:modules')
+      .put({ version: 1, hashes: [claimedHash], sizes: [17], updatedAt: Date.now() }, 'collection:modules')
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve()
       transaction.onerror = () => reject(transaction.error)
@@ -153,9 +159,19 @@ describe('IndexedDB resource cache', () => {
     expect(selectResourceCacheHashes(cached)).toEqual([])
   })
 
+  it('caps each persisted manifest to the request inventory limit', async () => {
+    const values = Array.from({ length: 8_300 }, (_, id) => ({ id }))
+    const hashes = await Promise.all(values.map((value) => sha256JsonValue(value)))
+    await persistResourceCache([{ key: 'collection:modules', hashes, values }])
+
+    const cached = (await readResourceCacheSnapshots(['collection:modules']))!.get('collection:modules')!
+    expect(cached.hashes).toHaveLength(8_192)
+    expect(selectResourceCacheHashes(cached)).toHaveLength(8_192)
+  })
+
   it('accepts only the negotiated SHA-256 cache metadata', () => {
-    expect(isResourceCacheMetadata({ version: 1, algorithm: 'sha256' })).toBe(true)
-    expect(isResourceCacheMetadata({ version: 2, algorithm: 'sha256' })).toBe(false)
-    expect(isResourceCacheMetadata({ version: 1, algorithm: 'md5' })).toBe(false)
+    expect(isResourceCacheMetadata({ version: 2, algorithm: 'sha256' })).toBe(true)
+    expect(isResourceCacheMetadata({ version: 1, algorithm: 'sha256' })).toBe(false)
+    expect(isResourceCacheMetadata({ version: 2, algorithm: 'md5' })).toBe(false)
   })
 })
