@@ -32,6 +32,16 @@ export interface ResourceCacheUpdate {
   values: readonly unknown[]
 }
 
+export interface ResourceCacheDescriptor {
+  name: string
+  key: string
+}
+
+export interface PreparedResourceCacheRequest {
+  hashes: Record<string, string[]>
+  snapshots: Map<string, ResourceCacheSnapshot>
+}
+
 let resourceCacheDatabasePromise: Promise<IDBDatabase | null> | null = null
 let resourceCacheWriteChain: Promise<void> = Promise.resolve()
 const verifiedResourceCacheValues = new Map<string, unknown>()
@@ -122,6 +132,35 @@ export async function readResourceCacheSnapshots(
   } catch {
     discardResourceCacheDatabase(database)
     return null
+  }
+}
+
+/** Prepare one bounded POST inventory shared by root and hydration reads. */
+export async function prepareResourceCacheRequest(
+  descriptors: readonly ResourceCacheDescriptor[],
+): Promise<PreparedResourceCacheRequest | null> {
+  const cached = await readResourceCacheSnapshots(descriptors.map(({ key }) => key))
+  if (!cached) return null
+
+  const hashes: Record<string, string[]> = {}
+  const snapshots = new Map<string, ResourceCacheSnapshot>()
+  let remainingHashes = RESOURCE_CACHE_MAX_REQUEST_HASHES
+  for (const descriptor of descriptors) {
+    const snapshot = cached.get(descriptor.key) ?? { hashes: [], valuesByHash: new Map() }
+    const selected = selectResourceCacheHashes(snapshot, remainingHashes)
+    hashes[descriptor.name] = selected
+    snapshots.set(descriptor.name, snapshot)
+    remainingHashes -= selected.length
+  }
+  return { hashes, snapshots }
+}
+
+export function resourceCacheRequestBody(hashes: Record<string, string[]>): Record<string, unknown> {
+  return {
+    cache: {
+      version: RESOURCE_CACHE_VERSION,
+      hashes,
+    },
   }
 }
 

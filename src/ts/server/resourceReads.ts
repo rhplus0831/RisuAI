@@ -1,15 +1,12 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
-  RESOURCE_CACHE_MAX_REQUEST_HASHES,
-  RESOURCE_CACHE_VERSION,
   isResourceCacheMetadata,
   persistResourceCache,
-  readResourceCacheSnapshots,
+  prepareResourceCacheRequest,
+  resourceCacheRequestBody,
   resolveResourceCacheArray,
   resolveResourceCacheValue,
-  selectResourceCacheHashes,
-  type ResourceCacheSnapshot,
   type ResourceCacheUpdate,
 } from './resourceCache'
 import {
@@ -33,16 +30,6 @@ const CHARACTERS_ENDPOINT = '/api/v1/characters'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
 const SETTINGS_CACHE_KEY = 'settings:all'
 const CHARACTERS_CACHE_KEY = 'characters'
-
-interface CacheResourceDescriptor {
-  name: string
-  key: string
-}
-
-interface PreparedResourceCacheRequest {
-  hashes: Record<string, string[]>
-  snapshots: Map<string, ResourceCacheSnapshot>
-}
 
 type ServerResourceJsonRequestResult =
   | { status: 'ok'; body: unknown }
@@ -436,34 +423,6 @@ async function requestCachedCharacters(
     }
   } catch {
     return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-  }
-}
-
-async function prepareResourceCacheRequest(
-  descriptors: readonly CacheResourceDescriptor[],
-): Promise<PreparedResourceCacheRequest | null> {
-  const cached = await readResourceCacheSnapshots(descriptors.map(({ key }) => key))
-  if (!cached) return null
-
-  const hashes: Record<string, string[]> = {}
-  const snapshots = new Map<string, ResourceCacheSnapshot>()
-  let remainingHashes = RESOURCE_CACHE_MAX_REQUEST_HASHES
-  for (const descriptor of descriptors) {
-    const snapshot = cached.get(descriptor.key) ?? { hashes: [], valuesByHash: new Map() }
-    const selected = selectResourceCacheHashes(snapshot, remainingHashes)
-    hashes[descriptor.name] = selected
-    snapshots.set(descriptor.name, snapshot)
-    remainingHashes -= selected.length
-  }
-  return { hashes, snapshots }
-}
-
-function resourceCacheRequestBody(hashes: Record<string, string[]>): Record<string, unknown> {
-  return {
-    cache: {
-      version: RESOURCE_CACHE_VERSION,
-      hashes,
-    },
   }
 }
 

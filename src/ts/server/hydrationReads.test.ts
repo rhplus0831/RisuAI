@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'resource-auth-token',
@@ -13,6 +14,7 @@ import {
   fetchServerLegacyPreset,
   fetchServerPromptPresetTemplate,
 } from './hydrationReads'
+import { clearResourceCache, sha256JsonValue } from './resourceCache'
 
 interface CapturedFetch {
   url: string
@@ -124,6 +126,161 @@ describe('server hydration read clients', () => {
       authHeader: 'resource-auth-token',
       signal: controller.signal,
     })
+  })
+
+  it('reconstructs cached prompt, legacy preset, and character lorebook bodies from IndexedDB', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    await clearResourceCache()
+
+    const legacyPreset = { id: 'legacy-a', name: 'Legacy A', prompt: 'large legacy prompt' }
+    const promptTemplate = [{ id: 'prompt-a', text: 'large prompt template' }]
+    const globalLore = [{ key: 'Ada', content: 'large lorebook entry' }]
+    const legacyHash = await sha256JsonValue(legacyPreset)
+    const promptHash = await sha256JsonValue(promptTemplate[0])
+    const loreHash = await sha256JsonValue(globalLore[0])
+    const requestCounts = new Map<string, number>()
+    const resourceFetch = makeResourceFetch((url) => {
+      const count = (requestCounts.get(url) ?? 0) + 1
+      requestCounts.set(url, count)
+      if (url.includes('/legacy-presets/')) {
+        return {
+          revision: count,
+          cache: { version: 1, algorithm: 'sha256' },
+          preset: count === 1 ? legacyPreset : legacyHash,
+        }
+      }
+      if (url.includes('/prompt-presets/')) {
+        return {
+          revision: count,
+          cache: { version: 1, algorithm: 'sha256' },
+          promptPresetId: 'prompt-a',
+          promptTemplate: count === 1 ? promptTemplate : [promptHash],
+        }
+      }
+      return {
+        revision: count,
+        cache: { version: 1, algorithm: 'sha256' },
+        characterId: 'char-a',
+        globalLore: count === 1 ? globalLore : [loreHash],
+      }
+    })
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    try {
+      await expect(fetchServerLegacyPreset('legacy-a')).resolves.toMatchObject({
+        status: 'ok',
+        preset: legacyPreset,
+      })
+      await expect(fetchServerPromptPresetTemplate('prompt-a')).resolves.toMatchObject({
+        status: 'ok',
+        promptTemplate,
+      })
+      await expect(fetchServerCharacterLorebook('char-a')).resolves.toMatchObject({
+        status: 'ok',
+        globalLore,
+      })
+      await expect(fetchServerLegacyPreset('legacy-a')).resolves.toMatchObject({
+        status: 'ok',
+        preset: legacyPreset,
+      })
+      await expect(fetchServerPromptPresetTemplate('prompt-a')).resolves.toMatchObject({
+        status: 'ok',
+        promptTemplate,
+      })
+      await expect(fetchServerCharacterLorebook('char-a')).resolves.toMatchObject({
+        status: 'ok',
+        globalLore,
+      })
+
+      expect(resourceFetch.calls.every((call) => call.method === 'POST')).toBe(true)
+      expect(resourceFetch.calls.every((call) => call.authHeader === 'resource-auth-token')).toBe(true)
+      expect(resourceFetch.calls.every((call) => call.contentType === 'application/json')).toBe(true)
+      expect(resourceFetch.calls[0]?.body).toEqual({ cache: { version: 1, hashes: { preset: [] } } })
+      expect(resourceFetch.calls[1]?.body).toEqual({
+        cache: {
+          version: 1,
+          hashes: { promptTemplate: [], selectedFallbackPromptTemplate: [] },
+        },
+      })
+      expect(resourceFetch.calls[2]?.body).toEqual({ cache: { version: 1, hashes: { globalLore: [] } } })
+      expect(resourceFetch.calls[3]?.body).toEqual({ cache: { version: 1, hashes: { preset: [legacyHash] } } })
+      expect(resourceFetch.calls[4]?.body).toEqual({
+        cache: {
+          version: 1,
+          hashes: { promptTemplate: [promptHash], selectedFallbackPromptTemplate: [] },
+        },
+      })
+      expect(resourceFetch.calls[5]?.body).toEqual({
+        cache: { version: 1, hashes: { globalLore: [loreHash] } },
+      })
+    } finally {
+      await clearResourceCache()
+    }
+  })
+
+  it('falls back to the legacy GET hydration route when cache POST is unsupported', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    await clearResourceCache()
+    const resourceFetch = makeResourceFetch((_url, init) =>
+      init.method === 'POST'
+        ? jsonResponse({ error: 'not_found' }, 404)
+        : { revision: 6, preset: { id: 'legacy-a', name: 'Legacy A' } },
+    )
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    try {
+      await expect(fetchServerLegacyPreset('legacy-a')).resolves.toMatchObject({
+        status: 'ok',
+        preset: { id: 'legacy-a', name: 'Legacy A' },
+      })
+      expect(resourceFetch.calls.map((call) => call.method)).toEqual(['POST', 'GET'])
+    } finally {
+      await clearResourceCache()
+    }
+  })
+
+  it('caches a selected default prompt fallback separately from its null owner body', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    await clearResourceCache()
+    const fallback = [{ id: 'root-prompt', text: 'fallback prompt' }]
+    const nullHash = await sha256JsonValue(null)
+    const fallbackHash = await sha256JsonValue(fallback[0])
+    let requestCount = 0
+    const resourceFetch = makeResourceFetch(() => {
+      requestCount += 1
+      return {
+        revision: requestCount,
+        cache: { version: 1, algorithm: 'sha256' },
+        promptPresetId: 'default-prompt-preset',
+        promptTemplate: requestCount === 1 ? null : nullHash,
+        selectedFallbackPromptTemplate: requestCount === 1 ? fallback : [fallbackHash],
+      }
+    })
+    vi.stubGlobal('fetch', resourceFetch.fetch)
+
+    try {
+      await expect(fetchServerPromptPresetTemplate('default-prompt-preset')).resolves.toMatchObject({
+        status: 'ok',
+        promptTemplate: null,
+        selectedFallbackPromptTemplate: fallback,
+      })
+      await expect(fetchServerPromptPresetTemplate('default-prompt-preset')).resolves.toMatchObject({
+        status: 'ok',
+        promptTemplate: null,
+        selectedFallbackPromptTemplate: fallback,
+      })
+      expect(resourceFetch.calls[1]?.body).toEqual({
+        cache: {
+          version: 1,
+          hashes: {
+            promptTemplate: [nullHash],
+            selectedFallbackPromptTemplate: [fallbackHash],
+          },
+        },
+      })
+    } finally {
+      await clearResourceCache()
+    }
   })
 
   it('parses the selected default-scaffold fallback separately from the preset-owned body', async () => {

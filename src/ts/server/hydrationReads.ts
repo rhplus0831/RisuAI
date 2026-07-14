@@ -1,5 +1,16 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { canUseServerResourceReads } from './resourceReads'
+import {
+  isResourceCacheMetadata,
+  persistResourceCache,
+  prepareResourceCacheRequest,
+  resourceCacheRequestBody,
+  resolveResourceCacheArray,
+  resolveResourceCacheValue,
+  type PreparedResourceCacheRequest,
+  type ResourceCacheDescriptor,
+  type ResourceCacheUpdate,
+} from './resourceCache'
 
 export async function fetchServerLegacyPreset(
   presetId: string,
@@ -10,29 +21,34 @@ export async function fetchServerLegacyPreset(
   | { status: 'unavailable' }
 > {
   if (!canUseServerResourceReads()) return { status: 'unavailable' }
-
-  const auth = await getNodeServerProxyAuth()
-  let response: Response
-  try {
-    response = await fetch(`/api/v1/legacy-presets/${encodeURIComponent(presetId)}`, {
-      method: 'GET',
-      signal: options.signal ?? undefined,
-      headers: { 'risu-auth': auth },
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { status: 'error', error: `Network error: ${message}` }
-  }
-
-  let body: unknown = null
-  try {
-    body = await response.json()
-  } catch {
-    // Reported via HTTP status or response validation below.
-  }
-  if (!response.ok) {
-    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
-  }
+  const result = await requestCacheNegotiatedHydrationJson(
+    `/api/v1/legacy-presets/${encodeURIComponent(presetId)}`,
+    options.signal,
+    [{ name: 'preset', key: `legacy-preset:${presetId}` }],
+    async (record, prepared) => {
+      if (!isResourceCacheMetadata(record.cache) || !Object.prototype.hasOwnProperty.call(record, 'preset')) {
+        return null
+      }
+      const snapshot = prepared.snapshots.get('preset')
+      if (!snapshot) return null
+      const resolved = await resolveResourceCacheValue(record.preset, snapshot, prepared.hashes.preset ?? [])
+      if (
+        !resolved ||
+        !isResourceRevision(record.revision) ||
+        !resolved.value ||
+        typeof resolved.value !== 'object' ||
+        Array.isArray(resolved.value)
+      ) {
+        return null
+      }
+      return {
+        body: { ...record, preset: resolved.value },
+        updates: [{ key: `legacy-preset:${presetId}`, hashes: resolved.hashes, values: [resolved.value] }],
+      }
+    },
+  )
+  if (result.status !== 'ok') return { status: 'error', error: result.error }
+  const body = result.body
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { status: 'error', error: 'Invalid preset response' }
   }
@@ -74,28 +90,62 @@ export async function fetchServerPromptPresetTemplate(
     return { status: 'error', error: 'Prompt preset id is required' }
   }
 
-  const auth = await getNodeServerProxyAuth()
-  let response: Response
-  try {
-    response = await fetch(`/api/v1/prompt-presets/${encodeURIComponent(promptPresetId)}/template`, {
-      method: 'GET',
-      signal: options.signal ?? undefined,
-      headers: { 'risu-auth': auth },
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { status: 'error', error: `Network error: ${message}` }
-  }
+  const templateCacheKey = `prompt-preset-template:${promptPresetId}`
+  const fallbackCacheKey = `prompt-preset-fallback:${promptPresetId}`
+  const result = await requestCacheNegotiatedHydrationJson(
+    `/api/v1/prompt-presets/${encodeURIComponent(promptPresetId)}/template`,
+    options.signal,
+    [
+      { name: 'promptTemplate', key: templateCacheKey },
+      { name: 'selectedFallbackPromptTemplate', key: fallbackCacheKey },
+    ],
+    async (record, prepared) => {
+      if (!isResourceCacheMetadata(record.cache) || !Object.prototype.hasOwnProperty.call(record, 'promptTemplate')) {
+        return null
+      }
+      const templateSnapshot = prepared.snapshots.get('promptTemplate')
+      if (!templateSnapshot) return null
+      const mixedTemplate = record.promptTemplate
+      const template = Array.isArray(mixedTemplate)
+        ? await resolveResourceCacheArray(mixedTemplate, templateSnapshot, prepared.hashes.promptTemplate ?? [])
+        : await resolveResourceCacheValue(mixedTemplate, templateSnapshot, prepared.hashes.promptTemplate ?? [])
+      if (!template || (template.value !== null && !Array.isArray(template.value))) return null
 
-  let body: unknown = null
-  try {
-    body = await response.json()
-  } catch {
-    // Reported via HTTP status or response validation below.
-  }
-  if (!response.ok) {
-    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
-  }
+      const updates: ResourceCacheUpdate[] = [
+        {
+          key: templateCacheKey,
+          hashes: template.hashes,
+          values: Array.isArray(template.value) ? template.value : [template.value],
+        },
+      ]
+      const reconstructed: Record<string, unknown> = { ...record, promptTemplate: template.value }
+      const hasSelectedFallback = Object.prototype.hasOwnProperty.call(record, 'selectedFallbackPromptTemplate')
+      if (hasSelectedFallback) {
+        const fallbackSnapshot = prepared.snapshots.get('selectedFallbackPromptTemplate')
+        if (!fallbackSnapshot) return null
+        const fallback = await resolveResourceCacheArray(
+          record.selectedFallbackPromptTemplate,
+          fallbackSnapshot,
+          prepared.hashes.selectedFallbackPromptTemplate ?? [],
+        )
+        if (!fallback) return null
+        reconstructed.selectedFallbackPromptTemplate = fallback.value
+        updates.push({ key: fallbackCacheKey, hashes: fallback.hashes, values: fallback.value })
+      }
+
+      if (
+        !isResourceRevision(record.revision) ||
+        record.promptPresetId !== promptPresetId ||
+        (hasSelectedFallback &&
+          (template.value !== null || !Array.isArray(reconstructed.selectedFallbackPromptTemplate)))
+      ) {
+        return null
+      }
+      return { body: reconstructed, updates }
+    },
+  )
+  if (result.status !== 'ok') return { status: 'error', error: result.error }
+  const body = result.body
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { status: 'error', error: 'Invalid prompt preset template response' }
   }
@@ -366,29 +416,25 @@ export async function fetchServerCharacterLorebook(
   if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const url = `/api/v1/characters/${encodeURIComponent(characterId)}/lorebook`
-  const auth = await getNodeServerProxyAuth()
-  let response: Response
-  try {
-    response = await fetch(url, {
-      method: 'GET',
-      signal: options.signal ?? undefined,
-      headers: { 'risu-auth': auth },
-    })
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { status: 'error', error: `Network error: ${message}` }
-  }
-
-  let body: unknown = null
-  try {
-    body = await response.json()
-  } catch {
-    // Reported via HTTP status below.
-  }
-
-  if (!response.ok) {
-    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
-  }
+  const cacheKey = `character-lorebook:${characterId}`
+  const result = await requestCacheNegotiatedHydrationJson(
+    url,
+    options.signal,
+    [{ name: 'globalLore', key: cacheKey }],
+    async (record, prepared) => {
+      if (!isResourceCacheMetadata(record.cache)) return null
+      const snapshot = prepared.snapshots.get('globalLore')
+      if (!snapshot) return null
+      const lorebook = await resolveResourceCacheArray(record.globalLore, snapshot, prepared.hashes.globalLore ?? [])
+      if (!lorebook || !isResourceRevision(record.revision)) return null
+      return {
+        body: { ...record, globalLore: lorebook.value },
+        updates: [{ key: cacheKey, hashes: lorebook.hashes, values: lorebook.value }],
+      }
+    },
+  )
+  if (result.status !== 'ok') return { status: 'error', error: result.error }
+  const body = result.body
   if (!body || typeof body !== 'object') {
     return { status: 'error', error: 'Invalid character-lorebook response' }
   }
@@ -479,6 +525,102 @@ export async function fetchServerBulkCharacterLorebooks(
       ? record.missing.filter((value): value is string => typeof value === 'string')
       : [],
   }
+}
+
+type HydrationJsonRequestResult =
+  | { status: 'ok'; body: unknown }
+  | { status: 'error'; error: string; httpStatus?: number }
+
+interface ReconstructedHydrationCacheResponse {
+  body: unknown
+  updates: ResourceCacheUpdate[]
+}
+
+async function requestCacheNegotiatedHydrationJson(
+  url: string,
+  signal: AbortSignal | null | undefined,
+  descriptors: readonly ResourceCacheDescriptor[],
+  reconstruct: (
+    record: Record<string, unknown>,
+    prepared: PreparedResourceCacheRequest,
+  ) => Promise<ReconstructedHydrationCacheResponse | null>,
+): Promise<HydrationJsonRequestResult> {
+  const auth = await getNodeServerProxyAuth()
+  const prepared = await prepareResourceCacheRequest(descriptors)
+  if (!prepared) return requestHydrationJson(url, auth, signal)
+
+  const result = await requestHydrationJson(url, auth, signal, {
+    method: 'POST',
+    body: resourceCacheRequestBody(prepared.hashes),
+  })
+  if (result.status !== 'ok') {
+    return shouldFallbackHydrationCachePost(result) ? requestHydrationJson(url, auth, signal) : result
+  }
+
+  if (!isRecord(result.body)) return requestHydrationJson(url, auth, signal)
+  try {
+    const reconstructed = await reconstruct(result.body, prepared)
+    if (!reconstructed) return requestHydrationJson(url, auth, signal)
+    await persistResourceCache(reconstructed.updates)
+    return { status: 'ok', body: reconstructed.body }
+  } catch {
+    return requestHydrationJson(url, auth, signal)
+  }
+}
+
+async function requestHydrationJson(
+  url: string,
+  auth: string,
+  signal: AbortSignal | null | undefined,
+  options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+): Promise<HydrationJsonRequestResult> {
+  const method = options.method ?? 'GET'
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method,
+      signal: signal ?? undefined,
+      headers: {
+        ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+        'risu-auth': auth,
+      },
+      ...(method === 'POST' ? { body: JSON.stringify(options.body ?? {}) } : {}),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { status: 'error', error: `Network error: ${message}` }
+  }
+
+  let body: unknown = null
+  try {
+    body = await response.json()
+  } catch {
+    // Reported via HTTP status or response validation by the caller.
+  }
+  if (!response.ok) {
+    return {
+      status: 'error',
+      error: errorMessageFromBody(body, `HTTP ${response.status}`),
+      httpStatus: response.status,
+    }
+  }
+  return { status: 'ok', body }
+}
+
+function shouldFallbackHydrationCachePost(result: HydrationJsonRequestResult): boolean {
+  return (
+    result.status === 'error' &&
+    result.httpStatus !== undefined &&
+    [400, 404, 405, 413, 415].includes(result.httpStatus)
+  )
+}
+
+function isResourceRevision(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {
