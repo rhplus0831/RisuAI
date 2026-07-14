@@ -762,6 +762,27 @@ describe('authenticated resource read routes', () => {
       promptTemplate: null,
       selectedFallbackPromptTemplate: [{ id: 'root-prompt', type: 'plain', text: 'Root prompt', role: 'system' }],
     })
+
+    const nullTemplateHash = jsonSha256(null)
+    const fallbackTemplate = hydration.json().selectedFallbackPromptTemplate as unknown[]
+    const fallbackTemplateHash = jsonSha256(fallbackTemplate[0])
+    const cachedHydration = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/prompt-presets/default-prompt-preset/template',
+      headers: authHeaders(),
+      payload: cachePayload({
+        promptTemplate: [nullTemplateHash],
+        selectedFallbackPromptTemplate: [fallbackTemplateHash],
+      }),
+    })
+    expect(cachedHydration.statusCode).toBe(200)
+    expect(cachedHydration.json()).toEqual({
+      revision,
+      promptPresetId: 'default-prompt-preset',
+      cache: { version: 1, algorithm: 'sha256' },
+      promptTemplate: nullTemplateHash,
+      selectedFallbackPromptTemplate: [fallbackTemplateHash],
+    })
   })
 
   it('does not expose the root fallback when a legacy preset still owns a template', async () => {
@@ -1044,6 +1065,36 @@ describe('authenticated resource read routes', () => {
       globalLore: [expect.objectContaining({ key: 'Ada', content: 'Character lore' })],
     })
 
+    const globalLore = single.json().globalLore as unknown[]
+    const globalLoreHash = jsonSha256(globalLore[0])
+    const cachedSingle = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/characters/char-a/lorebook',
+      headers: authHeaders(),
+      payload: cachePayload({ globalLore: [globalLoreHash] }),
+    })
+    expect(cachedSingle.statusCode).toBe(200)
+    expect(cachedSingle.json()).toEqual({
+      revision,
+      characterId: 'char-a',
+      cache: { version: 1, algorithm: 'sha256' },
+      globalLore: [globalLoreHash],
+    })
+
+    const uncachedSingle = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/characters/char-a/lorebook',
+      headers: authHeaders(),
+      payload: cachePayload({ globalLore: [] }),
+    })
+    expect(uncachedSingle.statusCode).toBe(200)
+    expect(uncachedSingle.json()).toEqual({
+      revision,
+      characterId: 'char-a',
+      cache: { version: 1, algorithm: 'sha256' },
+      globalLore,
+    })
+
     const bulk = await harness.app.inject({
       method: 'POST',
       url: '/api/v1/characters/lorebooks/bulk',
@@ -1087,6 +1138,37 @@ describe('authenticated resource read routes', () => {
     })
     expect(legacy.payload).not.toContain('legacy-secret')
 
+    const legacyPreset = legacy.json().preset as Record<string, unknown>
+    const maskedPresetHash = jsonSha256(legacyPreset)
+    const unmaskedPresetHash = jsonSha256({ ...legacyPreset, openAIKey: 'legacy-secret' })
+    const uncachedLegacy = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/legacy-presets/legacy-a',
+      headers: authHeaders(),
+      payload: cachePayload({ preset: [unmaskedPresetHash] }),
+    })
+    expect(uncachedLegacy.statusCode).toBe(200)
+    expect(uncachedLegacy.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      preset: legacyPreset,
+    })
+    expect(uncachedLegacy.payload).not.toContain('legacy-secret')
+
+    const cachedLegacy = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/legacy-presets/legacy-a',
+      headers: authHeaders(),
+      payload: cachePayload({ preset: [maskedPresetHash] }),
+    })
+    expect(cachedLegacy.statusCode).toBe(200)
+    expect(cachedLegacy.json()).toEqual({
+      revision,
+      cache: { version: 1, algorithm: 'sha256' },
+      preset: maskedPresetHash,
+    })
+    expect(cachedLegacy.payload.length).toBeLessThan(legacy.payload.length)
+
     const template = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/prompt-presets/prompt-a/template',
@@ -1099,6 +1181,25 @@ describe('authenticated resource read routes', () => {
       promptTemplate: [{ id: 'prompt-item-a', type: 'plain', text: 'Prompt text', role: 'system' }],
     })
 
+    const promptTemplate = template.json().promptTemplate as unknown[]
+    const promptTemplateHash = jsonSha256(promptTemplate[0])
+    const cachedTemplate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/prompt-presets/prompt-a/template',
+      headers: authHeaders(),
+      payload: cachePayload({
+        promptTemplate: [promptTemplateHash],
+        selectedFallbackPromptTemplate: [],
+      }),
+    })
+    expect(cachedTemplate.statusCode).toBe(200)
+    expect(cachedTemplate.json()).toEqual({
+      revision,
+      promptPresetId: 'prompt-a',
+      cache: { version: 1, algorithm: 'sha256' },
+      promptTemplate: [promptTemplateHash],
+    })
+
     const empty = await harness.app.inject({
       method: 'GET',
       url: '/api/v1/prompt-presets/prompt-empty/template',
@@ -1106,6 +1207,24 @@ describe('authenticated resource read routes', () => {
     })
     expect(empty.statusCode).toBe(200)
     expect(empty.json()).toEqual({ revision, promptPresetId: 'prompt-empty', promptTemplate: null })
+
+    const nullTemplateHash = jsonSha256(null)
+    const cachedEmpty = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/prompt-presets/prompt-empty/template',
+      headers: authHeaders(),
+      payload: cachePayload({
+        promptTemplate: [nullTemplateHash],
+        selectedFallbackPromptTemplate: [],
+      }),
+    })
+    expect(cachedEmpty.statusCode).toBe(200)
+    expect(cachedEmpty.json()).toEqual({
+      revision,
+      promptPresetId: 'prompt-empty',
+      cache: { version: 1, algorithm: 'sha256' },
+      promptTemplate: nullTemplateHash,
+    })
 
     const missing = await harness.app.inject({
       method: 'GET',

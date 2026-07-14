@@ -362,6 +362,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'character-lorebook-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/characters/:id/lorebook',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware character lorebook reads return private prompt context.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware character lorebook reading is read-only; POST carries the client cache inventory.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'character-lorebooks-bulk-read',
     methods: ['POST'],
     path: '/api/v1/characters/lorebooks/bulk',
@@ -391,6 +406,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'legacy-preset-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/legacy-presets/:id',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware legacy preset reads can contain private provider configuration.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware legacy preset reading is read-only; POST carries the client cache inventory.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'prompt-preset-template-read',
     methods: GET_ONLY,
     path: '/api/v1/prompt-presets/:id/template',
@@ -402,6 +432,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     activeWriter: {
       decision: 'not-applicable',
       reason: 'Read-only prompt preset template route.',
+    },
+    streaming: 'none',
+  },
+  {
+    id: 'prompt-preset-template-cache-read',
+    methods: ['POST'],
+    path: '/api/v1/prompt-presets/:id/template',
+    match: 'pattern',
+    auth: {
+      decision: 'required',
+      reason: 'Hash-aware prompt preset template reads contain private user prompt content.',
+    },
+    activeWriter: {
+      decision: 'read-only-post',
+      reason: 'Hash-aware prompt template reading is read-only; POST carries the client cache inventory.',
     },
     streaming: 'none',
   },

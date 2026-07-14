@@ -61,6 +61,15 @@ interface CacheSubstitutionResult<T = unknown> {
   misses: number
 }
 
+type PromptPresetTemplateReadResult =
+  | { status: 'not-found' }
+  | { status: 'ambiguous' }
+  | {
+      status: 'found'
+      promptTemplate: unknown
+      selectedFallbackPromptTemplate?: unknown
+    }
+
 export function registerResourceReadRoutes(
   app: FastifyInstance,
   db: DatabaseSync,
@@ -472,6 +481,32 @@ export function registerResourceReadRoutes(
     },
   )
 
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    '/api/v1/characters/:id/lorebook',
+    { onRequest: requireReadAuth },
+    async (req, reply) => {
+      const cacheRequest = parseResourceCacheRequest(req.body, ['globalLore'])
+      if (typeof cacheRequest === 'string') {
+        return sendInvalidResourceCacheRequest(reply, cacheRequest)
+      }
+      const { revision } = getSchemaState(db)
+      const hydration = loadCharacterLorebookHydration(db, dataDir, req.params.id)
+      const substitution = substituteCachedArray(hydration.globalLore, cacheRequest.hashes.get('globalLore'))
+      return metricResourceResponse(
+        req.log,
+        'characterLorebook',
+        revision,
+        {
+          revision,
+          characterId: req.params.id,
+          cache: RESOURCE_CACHE_METADATA,
+          globalLore: substitution.value,
+        },
+        { id: req.params.id, ...cacheMetricFields(substitution) },
+      )
+    },
+  )
+
   app.post<{ Body: { ids?: unknown } }>(
     '/api/v1/characters/lorebooks/bulk',
     { onRequest: requireReadAuth },
@@ -521,41 +556,59 @@ export function registerResourceReadRoutes(
     )
   })
 
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    '/api/v1/legacy-presets/:id',
+    { onRequest: requireReadAuth },
+    async (req, reply) => {
+      const cacheRequest = parseResourceCacheRequest(req.body, ['preset'])
+      if (typeof cacheRequest === 'string') {
+        return sendInvalidResourceCacheRequest(reply, cacheRequest)
+      }
+      const hydration = loadPresetHydration(db, dataDir, req.params.id)
+      if (!hydration) {
+        reply.code(404).send({
+          error: 'preset_not_found',
+          reason: `Preset not found: ${req.params.id}`,
+        })
+        return
+      }
+      const { revision } = getSchemaState(db)
+      const envelope = maskProviderSecretsInPlace({ botPresets: [hydration.preset] })
+      const substitution = substituteCachedValue(envelope.botPresets[0], cacheRequest.hashes.get('preset'))
+      return metricResourceResponse(
+        req.log,
+        'legacyPreset',
+        revision,
+        {
+          revision,
+          cache: RESOURCE_CACHE_METADATA,
+          preset: substitution.value,
+        },
+        { id: req.params.id, ...cacheMetricFields(substitution) },
+      )
+    },
+  )
+
   app.get<{ Params: { id: string } }>(
     '/api/v1/prompt-presets/:id/template',
     { exposeHeadRoute: false },
     async (req, reply) => {
       if (!(await requireAuth(authState, req, reply))) return
-      const fields = loadPersistedDatabaseFields(db, dataDir, [
-        'promptPresets',
-        'promptPresetsId',
-        'promptTemplate',
-        'botPresets',
-      ])
-      const presets = Array.isArray(fields.promptPresets) ? fields.promptPresets : []
-      const matches = presets.filter((candidate) => isRecord(candidate) && candidate.id === req.params.id)
-      if (matches.length === 0) {
+      const hydration = loadPromptPresetTemplateForRead(db, dataDir, req.params.id)
+      if (hydration.status === 'not-found') {
         reply.code(404).send({
           error: 'prompt_preset_not_found',
           reason: `Prompt preset not found: ${req.params.id}`,
         })
         return
       }
-      if (matches.length !== 1) {
+      if (hydration.status === 'ambiguous') {
         reply.code(409).send({
           error: 'prompt_preset_ambiguous',
           reason: `Prompt preset id is not unique: ${req.params.id}`,
         })
         return
       }
-      const preset = matches[0]
-      const usesSelectedFallback =
-        !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') &&
-        Number.isInteger(fields.promptPresetsId) &&
-        presets[fields.promptPresetsId as number] === preset &&
-        isDefaultPromptPresetScaffold(preset) &&
-        Object.prototype.hasOwnProperty.call(fields, 'promptTemplate') &&
-        !hasLegacyBotPresetTemplates(fields)
       const { revision } = getSchemaState(db)
       return metricResourceResponse(
         req.log,
@@ -564,13 +617,99 @@ export function registerResourceReadRoutes(
         {
           revision,
           promptPresetId: req.params.id,
-          promptTemplate: Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') ? preset.promptTemplate : null,
-          ...(usesSelectedFallback ? { selectedFallbackPromptTemplate: fields.promptTemplate } : {}),
+          promptTemplate: hydration.promptTemplate,
+          ...(Object.prototype.hasOwnProperty.call(hydration, 'selectedFallbackPromptTemplate')
+            ? { selectedFallbackPromptTemplate: hydration.selectedFallbackPromptTemplate }
+            : {}),
         },
         { id: req.params.id },
       )
     },
   )
+
+  app.post<{ Params: { id: string }; Body: unknown }>(
+    '/api/v1/prompt-presets/:id/template',
+    { onRequest: requireReadAuth },
+    async (req, reply) => {
+      const cacheRequest = parseResourceCacheRequest(req.body, ['promptTemplate', 'selectedFallbackPromptTemplate'])
+      if (typeof cacheRequest === 'string') {
+        return sendInvalidResourceCacheRequest(reply, cacheRequest)
+      }
+      const hydration = loadPromptPresetTemplateForRead(db, dataDir, req.params.id)
+      if (hydration.status === 'not-found') {
+        reply.code(404).send({
+          error: 'prompt_preset_not_found',
+          reason: `Prompt preset not found: ${req.params.id}`,
+        })
+        return
+      }
+      if (hydration.status === 'ambiguous') {
+        reply.code(409).send({
+          error: 'prompt_preset_ambiguous',
+          reason: `Prompt preset id is not unique: ${req.params.id}`,
+        })
+        return
+      }
+
+      const promptTemplateSubstitution = substituteCachedArrayOrValue(
+        hydration.promptTemplate,
+        cacheRequest.hashes.get('promptTemplate'),
+      )
+      const { revision } = getSchemaState(db)
+      const response: Record<string, unknown> = {
+        revision,
+        promptPresetId: req.params.id,
+        cache: RESOURCE_CACHE_METADATA,
+        promptTemplate: promptTemplateSubstitution.value,
+      }
+      let hits = promptTemplateSubstitution.hits
+      let misses = promptTemplateSubstitution.misses
+      if (Object.prototype.hasOwnProperty.call(hydration, 'selectedFallbackPromptTemplate')) {
+        const fallbackSubstitution = substituteCachedArrayOrValue(
+          hydration.selectedFallbackPromptTemplate,
+          cacheRequest.hashes.get('selectedFallbackPromptTemplate'),
+        )
+        response.selectedFallbackPromptTemplate = fallbackSubstitution.value
+        hits += fallbackSubstitution.hits
+        misses += fallbackSubstitution.misses
+      }
+      return metricResourceResponse(req.log, 'promptPresetTemplate', revision, response, {
+        id: req.params.id,
+        ...cacheMetricFields({ value: response, hits, misses }),
+      })
+    },
+  )
+}
+
+function loadPromptPresetTemplateForRead(
+  db: DatabaseSync,
+  dataDir: string,
+  promptPresetId: string,
+): PromptPresetTemplateReadResult {
+  const fields = loadPersistedDatabaseFields(db, dataDir, [
+    'promptPresets',
+    'promptPresetsId',
+    'promptTemplate',
+    'botPresets',
+  ])
+  const presets = Array.isArray(fields.promptPresets) ? fields.promptPresets : []
+  const matches = presets.filter((candidate) => isRecord(candidate) && candidate.id === promptPresetId)
+  if (matches.length === 0) return { status: 'not-found' }
+  if (matches.length !== 1) return { status: 'ambiguous' }
+
+  const preset = matches[0]
+  const usesSelectedFallback =
+    !Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') &&
+    Number.isInteger(fields.promptPresetsId) &&
+    presets[fields.promptPresetsId as number] === preset &&
+    isDefaultPromptPresetScaffold(preset) &&
+    Object.prototype.hasOwnProperty.call(fields, 'promptTemplate') &&
+    !hasLegacyBotPresetTemplates(fields)
+  return {
+    status: 'found',
+    promptTemplate: Object.prototype.hasOwnProperty.call(preset, 'promptTemplate') ? preset.promptTemplate : null,
+    ...(usesSelectedFallback ? { selectedFallbackPromptTemplate: fields.promptTemplate } : {}),
+  }
 }
 
 function metricResourceResponse<T>(
@@ -696,6 +835,13 @@ function substituteCachedArray(
     misses += substitution.misses
   }
   return { value, hits, misses }
+}
+
+function substituteCachedArrayOrValue(
+  value: unknown,
+  cachedHashes: ReadonlySet<string> | undefined,
+): CacheSubstitutionResult {
+  return Array.isArray(value) ? substituteCachedArray(value, cachedHashes) : substituteCachedValue(value, cachedHashes)
 }
 
 function substituteCachedValue(value: unknown, cachedHashes: ReadonlySet<string> | undefined): CacheSubstitutionResult {

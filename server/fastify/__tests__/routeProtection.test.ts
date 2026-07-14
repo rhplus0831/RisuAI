@@ -180,6 +180,21 @@ describe('route protection (table-wide auth enforcement)', () => {
     expect(unprotected).toEqual([])
   })
 
+  it('classifies hash-aware hydration POSTs as authenticated read-only routes', () => {
+    for (const path of [
+      '/api/v1/characters/:id/lorebook',
+      '/api/v1/legacy-presets/:id',
+      '/api/v1/prompt-presets/:id/template',
+    ]) {
+      expect(findProtocolRouteDecision('POST', path)).toMatchObject({
+        methods: ['POST'],
+        path,
+        auth: { decision: 'required' },
+        activeWriter: { decision: 'read-only-post' },
+      })
+    }
+  })
+
   it('leaves the documented public routes reachable without auth', async () => {
     await setupPassword(harness.app)
 
@@ -329,12 +344,15 @@ describe('active-writer header validation', () => {
       headers: { 'risu-auth': assertion, [ACTIVE_WRITER_SESSION_HEADER]: 'session-a' },
     })
 
-    for (const url of [
-      '/api/v1/settings',
-      '/api/v1/settings/display',
-      '/api/v1/collections',
-      '/api/v1/collections/modules',
-      '/api/v1/characters',
+    for (const { url, statusCode } of [
+      { url: '/api/v1/settings', statusCode: 200 },
+      { url: '/api/v1/settings/display', statusCode: 200 },
+      { url: '/api/v1/collections', statusCode: 200 },
+      { url: '/api/v1/collections/modules', statusCode: 200 },
+      { url: '/api/v1/characters', statusCode: 200 },
+      { url: '/api/v1/characters/x/lorebook', statusCode: 200 },
+      { url: '/api/v1/legacy-presets/x', statusCode: 404 },
+      { url: '/api/v1/prompt-presets/x/template', statusCode: 404 },
     ]) {
       const res = await harness.app.inject({
         method: 'POST',
@@ -342,7 +360,7 @@ describe('active-writer header validation', () => {
         headers: { 'risu-auth': assertion },
         payload: { cache: { version: 1, hashes: {} } },
       })
-      expect(res.statusCode, url).toBe(200)
+      expect(res.statusCode, url).toBe(statusCode)
     }
   })
 })
