@@ -50,55 +50,6 @@ test('parses ChatML', () => {
   )
 })
 
-// Parser edge case:
-/*
-<|im_start|>assistant
-<|im_start|>assistant
-*/
-test.skip('parses ChatML without ending token', () => {
-  expect(parseChatML('<|im_start|>assistant\n<|im_start|>assistant')).toEqual([
-    {
-      role: 'assistant',
-      content: '',
-      thoughts: [],
-    },
-    {
-      role: 'assistant',
-      content: '',
-      thoughts: [],
-    },
-  ])
-
-  fc.assert(
-    fc.property(
-      anyRole,
-      anyRole,
-      anythingNotToken,
-      fc.constantFrom('<|im_sep|>', '\n', ' '),
-      (role1, role2, content, sep) => {
-        const input = `<|im_start|>${role1}${sep}${content}<|im_start|>${role2}${sep}${content}`
-        const result = parseChatML(input)
-
-        expect(result).toHaveLength(2)
-        // In this case, since there's no <|im_end|>, trimming removes both ends
-        expect(result).toEqual([
-          {
-            role: role1,
-            content: content.trim(),
-            thoughts: [],
-          },
-          {
-            role: role2,
-            content: content.trim(),
-            thoughts: [],
-          },
-        ])
-      },
-    ),
-    { seed: 1735332051, path: '22:0', endOnFailure: true },
-  )
-})
-
 test('extracts thoughts', () => {
   // Known behavior: empty thoughts leak the <Thoughts> tag.
   expect(parseChatML('<|im_start|>assistant<|im_sep|><Thoughts></Thoughts> OK')).toEqual([
@@ -127,19 +78,6 @@ test('extracts thoughts', () => {
     ),
     { seed: 409853665, path: '6:0', endOnFailure: true },
   )
-})
-
-// Skipped: the greedy Thoughts matcher merges multiple blocks into one capture.
-test.skip('extracts multiple thoughts', () => {
-  const input = `<|im_start|>assistant<|im_sep|>Start <Thoughts>Thought 1</Thoughts> Middle <Thoughts>Thought 2</Thoughts> End<|im_end|>`
-  const result = parseChatML(input)
-
-  expect(result).toHaveLength(1)
-  expect(result?.[0]).toEqual({
-    role: 'assistant',
-    content: 'Start  Middle  End',
-    thoughts: ['Thought 1', 'Thought 2'],
-  })
 })
 
 test('defaults to user role if unknown prefix', () => {

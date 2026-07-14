@@ -68,23 +68,9 @@ function hasTableBudget(gate: CommandMetricGate): boolean {
 }
 
 describe('command mutation-range budgets', () => {
-  it('every mutationPath the runtime emits has a review gate', () => {
-    const emitted = collectEmittedMutationPaths()
-    // Sanity: the scan found the labels we know exist, so an empty/over-narrow
-    // regex can never make this assertion vacuously pass.
-    expect(emitted.size).toBeGreaterThanOrEqual(GATE_KEYS.length)
-    const ungated = [...emitted].filter((label) => !(label in COMMAND_METRIC_REVIEW_GATES)).sort()
-    expect(ungated, 'runtime mutationPath labels with no review gate').toEqual([])
-  })
-
-  it('every review gate maps to a mutationPath the runtime still emits', () => {
-    const emitted = collectEmittedMutationPaths()
-    const orphaned = GATE_KEYS.filter((key) => !emitted.has(key)).sort()
-    expect(orphaned, 'review gates with no runtime emitter (stale budget)').toEqual([])
-  })
-
-  it('the gate set and the emitted set are exactly equal', () => {
+  it('the review gates exactly match the mutation paths emitted at runtime', () => {
     const emitted = [...collectEmittedMutationPaths()].sort()
+    expect(emitted.length).toBeGreaterThanOrEqual(GATE_KEYS.length)
     expect(emitted).toEqual([...GATE_KEYS].sort())
   })
 

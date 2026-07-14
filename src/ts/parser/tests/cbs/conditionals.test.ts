@@ -265,12 +265,6 @@ describe('#when', () => {
       expect(quickParse('#when::1::and::0::or::1', 'CBS')).toBe(`0 CBS 9`)
       expect(quickParse('#when::0::and::1::or::1', 'CBS')).toBe(`0  9`)
     })
-
-    test.skip('Lower precedence than other operators', () => {
-      // Skipped: the right-to-left reducer does not group comparison operands
-      // before applying logical operators.
-      expect(quickParse('#when::3::tis::3::or::7::tis::7', 'CBS')).toBe(`0 CBS 9`)
-    })
   })
 
   describe('Operators: whitespaces', () => {
