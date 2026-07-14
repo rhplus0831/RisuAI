@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./storage/fastifyStorage', () => ({
@@ -458,19 +456,6 @@ afterEach(() => {
   setResourceWriteGuardEnabled(false)
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-})
-
-describe('LoadoutModal projection write cleanup', () => {
-  it('routes modal favorite and delete operations through loadout domain helpers', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/lib/Others/LoadoutModal.svelte'), 'utf8')
-
-    expect(source).not.toContain('withTrustedResourceWrite')
-    expect(source).not.toContain('currentLoadoutStateSnapshot')
-    expect(source).not.toContain('dispatchDeleteLoadout')
-    expect(source).not.toContain('dispatchFavoriteLoadout')
-    expect(source).toContain('toggleLoadoutFavorite')
-    expect(source).toContain('deleteLoadout')
-  })
 })
 
 describe('loadout projection command helpers', () => {

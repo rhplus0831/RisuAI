@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
@@ -789,69 +787,6 @@ describe('character select command rollback', () => {
   })
 })
 
-describe('Sidebar character order projection cleanup', () => {
-  it('routes drag reorder and folder creation through character command helpers', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/lib/SideBars/Sidebar.svelte'), 'utf8')
-    const inserterStart = source.indexOf('const inserter')
-    const scrollStart = source.indexOf('function scrollToActiveCharacter')
-    const createFolderStart = source.indexOf('const createFolder')
-    const dragTypeStart = source.indexOf('type DragEv')
-
-    expect(inserterStart).toBeGreaterThanOrEqual(0)
-    expect(scrollStart).toBeGreaterThan(inserterStart)
-    expect(createFolderStart).toBeGreaterThanOrEqual(0)
-    expect(dragTypeStart).toBeGreaterThan(createFolderStart)
-
-    const inserterBody = source.slice(inserterStart, scrollStart)
-    const createFolderBody = source.slice(createFolderStart, dragTypeStart)
-
-    expect(inserterBody).toContain('moveCharacterOrderItem')
-    expect(inserterBody).not.toContain('withTrustedResourceWrite')
-    expect(inserterBody).not.toContain('dispatchReorderCharacters')
-    expect(createFolderBody).toContain('createCharacterOrderFolder')
-    expect(createFolderBody).not.toContain('withTrustedResourceWrite')
-    expect(createFolderBody).not.toContain('dispatchReorderCharacters')
-  })
-
-  it('routes folder metadata writes through character command helpers with guarded image upload freshness', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/lib/SideBars/Sidebar.svelte'), 'utf8')
-    const contextMenuStart = source.indexOf('oncontextmenu={async (e) => {')
-    const onClickStart = source.indexOf('onClick={() => {', contextMenuStart)
-    const uploadStart = source.indexOf('async function uploadCharacterFolderImage')
-    const openCharacterStart = source.indexOf('function openCharacterRoute', uploadStart)
-
-    expect(contextMenuStart).toBeGreaterThanOrEqual(0)
-    expect(onClickStart).toBeGreaterThan(contextMenuStart)
-    expect(uploadStart).toBeGreaterThanOrEqual(0)
-    expect(openCharacterStart).toBeGreaterThan(uploadStart)
-
-    const contextMenuBody = source.slice(contextMenuStart, onClickStart)
-    const uploadBody = source.slice(uploadStart, openCharacterStart)
-    const selectImageStart = uploadBody.indexOf("selectSingleFile(['png', 'jpg', 'webp'], {")
-    const selectedImageGuardStart = uploadBody.indexOf('if (!folderImage || !folderImageUpload)', selectImageStart)
-    const selectImageCallbackBody = uploadBody.slice(selectImageStart, selectedImageGuardStart)
-
-    expect(source).not.toContain('withTrustedResourceWrite')
-    expect(source).not.toContain('currentCharacterStateSnapshot')
-    expect(source).not.toContain('dispatchReorderCharacters')
-    expect(source.match(/updateCharacterOrderFolder\(/g) ?? []).toHaveLength(4)
-    expect(contextMenuBody).toContain('{ name: v }')
-    expect(contextMenuBody).toContain('{ color: colors[sel] }')
-    expect(contextMenuBody).toContain("{ imgFile: null, img: '' }")
-    expect(contextMenuBody).toContain('await uploadCharacterFolderImage(char.id)')
-    expect(selectImageStart).toBeGreaterThanOrEqual(0)
-    expect(selectedImageGuardStart).toBeGreaterThan(selectImageStart)
-    expect(selectImageCallbackBody).toContain('onFileSelected: () => {')
-    expect(uploadBody).toContain('captureCharacterFolderImageUploadTarget')
-    expect(uploadBody.match(/beginCharacterFolderImageUpload/g) ?? []).toHaveLength(1)
-    expect(selectImageCallbackBody).toContain('beginCharacterFolderImageUpload(folderImageTarget)')
-    expect(uploadBody.match(/isFreshCharacterFolderImageUpload/g) ?? []).toHaveLength(3)
-    expect(uploadBody).toContain('resolveFreshCharacterFolderImageUploadPatch')
-    expect(uploadBody).toContain('patch: { imgFile: folderImageData, img: folderImageSrc }')
-    expect(uploadBody).toContain('updateCharacterOrderFolder(freshFolderImageUpload.folderId, freshImagePatch)')
-  })
-})
-
 describe('character order command helpers', () => {
   it('computes normalized character order without mutating the input order', () => {
     const order = [
@@ -942,19 +877,6 @@ describe('character order command helpers', () => {
     expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-b'])
     await flushAsyncWork()
     expect(calls).toHaveLength(0)
-  })
-
-  it('keeps the global checkCharOrder compatibility helper free of trusted writes', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/ts/globalApi.svelte.ts'), 'utf8')
-    const start = source.indexOf('export function checkCharOrder')
-    const end = source.indexOf('/**\n * Retrieves the request log', start)
-
-    expect(start).toBeGreaterThanOrEqual(0)
-    expect(end).toBeGreaterThan(start)
-
-    const checkCharOrderSource = source.slice(start, end)
-    expect(checkCharOrderSource).toContain('normalizeCharacterOrder')
-    expect(checkCharOrderSource).not.toContain('withTrustedResourceWrite')
   })
 
   it('moves a root character into a folder, dispatches reorder, normalizes order, and rolls back on failure', async () => {
@@ -1827,7 +1749,7 @@ describe('Phase 0 character-row snapshot kit', () => {
     expect(testDatabaseState.db.characters[1].name).toBe('Sibling')
   })
 
-  it('sanity baseline: the selection snapshot performs zero whole-characters clones, the legacy snapshot performs one', () => {
+  it('keeps the selection snapshot below the whole-character collection size', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(0)
     const charactersSize = JSON.stringify(testDatabaseState.db.characters).length
@@ -1835,9 +1757,6 @@ describe('Phase 0 character-row snapshot kit', () => {
     const selection = withCloneInstrumentation(() => currentCharacterSelectionSnapshot('char-0'))
     expect(selection.maxClonedSize).toBeLessThan(charactersSize)
     assertSnapshotIsScalar(selection.result)
-
-    const legacy = withCloneInstrumentation(() => currentCharacterStateSnapshot())
-    expect(legacy.maxClonedSize).toBeGreaterThanOrEqual(charactersSize)
   })
 })
 

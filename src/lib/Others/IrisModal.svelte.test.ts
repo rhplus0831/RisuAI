@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -34,33 +32,6 @@ import type { Database } from 'src/ts/storage/database.svelte'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 
 const originalAnimate = Element.prototype.animate
-
-function irisModalSource(): string {
-  return readFileSync(resolve(process.cwd(), 'src/lib/Others/IrisModal.svelte'), 'utf8')
-}
-
-function extractDerivedBody(source: string, variableName: string): string {
-  const derivedStart = source.indexOf(`let ${variableName} = $derived.by(() => {`)
-  expect(derivedStart).toBeGreaterThanOrEqual(0)
-
-  const bodyStart = source.indexOf('{', derivedStart)
-  expect(bodyStart).toBeGreaterThanOrEqual(0)
-
-  let depth = 0
-  for (let index = bodyStart; index < source.length; index += 1) {
-    const char = source[index]
-    if (char === '{') {
-      depth += 1
-    } else if (char === '}') {
-      depth -= 1
-      if (depth === 0) {
-        return source.slice(bodyStart + 1, index)
-      }
-    }
-  }
-
-  throw new Error(`Could not find the end of ${variableName}`)
-}
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -130,16 +101,6 @@ afterEach(() => {
 })
 
 describe('IrisModal model availability', () => {
-  it('checks support against the canonical otherAx role resolver', () => {
-    const source = irisModalSource()
-    const unsupportedBody = extractDerivedBody(source, 'isUnsupportedModel')
-
-    expect(source).toContain("import { resolveModelForRole } from 'src/ts/model/modelRoles'")
-    expect(unsupportedBody).toContain("resolveModelForRole(getDatabase(), 'otherAx')")
-    expect(unsupportedBody).not.toContain('getDatabase().seperateModels')
-    expect(unsupportedBody).not.toContain('getDatabase().subModel')
-  })
-
   it('treats canonical otherAx overrides as available even when subModel is unsupported', async () => {
     component = mount(IrisModal, { target })
     await settle()

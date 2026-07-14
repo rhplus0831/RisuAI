@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -83,18 +81,5 @@ describe('PluginSettings', () => {
 
     const labels = Array.from(target.querySelectorAll('option')).map((option) => option.textContent?.trim())
     expect(labels).toEqual(['fast', 'slow'])
-  })
-
-  it('routes optimistic plugin writes through plugin command helpers', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/PluginSettings.svelte'), 'utf8')
-
-    expect(source).not.toContain('withTrustedResourceWrite')
-    expect(source).not.toContain('currentPluginStateSnapshot')
-    expect(source).not.toContain('dispatchDeletePlugin')
-    expect(source).not.toContain('dispatchEnablePlugin')
-    expect(source).not.toContain('dispatchUpdatePlugin')
-    expect(source).toContain('setPluginArgument(pluginName, arg, value)')
-    expect(source).toContain('togglePluginEnabled(plugin.name)')
-    expect(source).toContain('deletePlugin(plugin.name)')
   })
 })

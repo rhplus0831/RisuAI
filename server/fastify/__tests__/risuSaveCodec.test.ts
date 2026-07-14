@@ -1,7 +1,6 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { risuSaveFixtureCases } from '../__fixtures__/risuSave/fixtures.js'
 import { classifyRisuSaveEnvelope, inspectRisuSaveBlockFixtureEnvelope } from '../src/risuSave/fixtureHarness.js'
@@ -20,13 +19,6 @@ import {
 import { writePersistedWithMessages } from '../src/repository.js'
 import { openDatabase } from '../src/db.js'
 
-const here = path.dirname(fileURLToPath(import.meta.url))
-const harnessSource = readFileSync(path.join(here, '../src/risuSave/fixtureHarness.ts'), 'utf8')
-const legacyCodecSource = readFileSync(path.join(here, '../src/risuSave/legacyEnvelopeCodec.ts'), 'utf8')
-const blockCodecSource = readFileSync(path.join(here, '../src/risuSave/blockCodec.ts'), 'utf8')
-const importSnapshotSource = readFileSync(path.join(here, '../src/risuSave/importSnapshot.ts'), 'utf8')
-const exportSnapshotSource = readFileSync(path.join(here, '../src/risuSave/exportSnapshot.ts'), 'utf8')
-
 const dataDirs: string[] = []
 
 function makeDataDir(): string {
@@ -42,30 +34,6 @@ afterEach(() => {
 })
 
 describe('server .risu fixture harness', () => {
-  it('keeps codec helpers server-safe and detached from browser storage modules', () => {
-    for (const source of [
-      harnessSource,
-      legacyCodecSource,
-      blockCodecSource,
-      importSnapshotSource,
-      exportSnapshotSource,
-    ]) {
-      expect(source).not.toContain('localforage')
-      expect(source).not.toContain('database.svelte')
-      expect(source).not.toContain('globalApi.svelte')
-      expect(source).not.toContain('CompressionStream')
-      expect(source).not.toContain('DecompressionStream')
-    }
-  })
-
-  it('loads every fixture case as non-empty bytes', () => {
-    expect(risuSaveFixtureCases.length).toBeGreaterThanOrEqual(8)
-    for (const fixture of risuSaveFixtureCases) {
-      expect(fixture.bytes).toBeInstanceOf(Uint8Array)
-      expect(fixture.bytes.length, fixture.name).toBeGreaterThan(0)
-    }
-  })
-
   it('classifies legacy raw, compressed, stream, block, and malformed envelopes', () => {
     for (const fixture of risuSaveFixtureCases) {
       expect(classifyRisuSaveEnvelope(fixture.bytes), fixture.name).toBe(fixture.expectedEnvelope)

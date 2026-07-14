@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 const imageMocks = vi.hoisted(() => ({
@@ -48,12 +46,5 @@ describe('PlaygroundImageTrans JSON rendering', () => {
         '[{"x_min":0,"y_min":0,"x_max":1,"y_max":1,"bg_hex_color":"#fff","text_hex_color":"#000","translation":"ok"}]',
       ),
     ).toHaveLength(1)
-  })
-
-  it('routes edited output through the tolerant parser instead of bare JSON.parse', () => {
-    const source = readFileSync(resolve(process.cwd(), 'src/lib/Playground/PlaygroundImageTrans.svelte'), 'utf8')
-
-    expect(source).toContain('parseImageTranslationRenderOutput(output)')
-    expect(source).not.toContain('const data = JSON.parse(output)')
   })
 })

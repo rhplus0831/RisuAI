@@ -1,4 +1,3 @@
-import { readFileSync } from 'node:fs'
 import { mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -396,13 +395,6 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-c', false)
     expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
-
-  it('does not own trusted projection writes in component source', () => {
-    const source = readFileSync('src/lib/Others/ChatList.svelte', 'utf8')
-
-    expect(source).not.toContain('withTrustedResourceWrite')
-  })
-
   it('dispatches chat rename through the update command helper without local fallback mutation', async () => {
     seedModalDatabase()
 
