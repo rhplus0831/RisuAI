@@ -126,6 +126,7 @@
     "@vitest/coverage-v8": "^4.1.2",
     "autoprefixer": "^10.4.23",
     "cross-env": "^10.1.0",
+    "fake-indexeddb": "^6.2.5",
     "fast-check": "^4.5.3",
     "happy-dom": "^20.1.0",
     "internal-ip": "^7.0.0",

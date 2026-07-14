@@ -1,6 +1,18 @@
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import { SERVER_SETTINGS_KEYS_BY_GROUP, isSettingsGroup, type SettingsGroup } from './settingsGroups'
 import {
+  RESOURCE_CACHE_MAX_REQUEST_HASHES,
+  RESOURCE_CACHE_VERSION,
+  isResourceCacheMetadata,
+  persistResourceCache,
+  readResourceCacheSnapshots,
+  resolveResourceCacheArray,
+  resolveResourceCacheValue,
+  selectResourceCacheHashes,
+  type ResourceCacheSnapshot,
+  type ResourceCacheUpdate,
+} from './resourceCache'
+import {
   SERVER_COLLECTION_NAMES,
   isServerCollectionName,
   type ServerCharacterResourcePayload,
@@ -19,6 +31,23 @@ const SETTINGS_ENDPOINT = '/api/v1/settings'
 const COLLECTIONS_ENDPOINT = '/api/v1/collections'
 const CHARACTERS_ENDPOINT = '/api/v1/characters'
 const CHARACTER_ORDER_ENDPOINT = `${CHARACTERS_ENDPOINT}/order`
+const SETTINGS_CACHE_KEY = 'settings:all'
+const CHARACTERS_CACHE_KEY = 'characters'
+
+interface CacheResourceDescriptor {
+  name: string
+  key: string
+}
+
+interface PreparedResourceCacheRequest {
+  hashes: Record<string, string[]>
+  snapshots: Map<string, ResourceCacheSnapshot>
+}
+
+type ServerResourceJsonRequestResult =
+  | { status: 'ok'; body: unknown }
+  | { status: 'error'; error: string; httpStatus?: number }
+  | { status: 'unavailable' }
 
 export type ServerResourceReadResult<T extends { revision: number }> =
   | ({ status: 'ok' } & T)
@@ -32,8 +61,15 @@ export function canUseServerResourceReads(): boolean {
 export async function fetchServerSettings(
   signal?: AbortSignal | null,
 ): Promise<ServerResourceReadResult<ServerSettingsResourcePayload>> {
-  const result = await requestServerResourceJson(SETTINGS_ENDPOINT, signal)
-  if (result.status !== 'ok') return result
+  const result = await requestCachedSingularResource(
+    SETTINGS_ENDPOINT,
+    'settings',
+    SETTINGS_CACHE_KEY,
+    signal,
+    (value, record) =>
+      readRevisionEnvelope(record) !== null && isPlainRecord(value) && !containsNonSettingResource(value),
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (!record || !isPlainRecord(record.settings)) {
@@ -54,8 +90,19 @@ export async function fetchServerSettingsGroup(
   signal?: AbortSignal | null,
 ): Promise<ServerResourceReadResult<ServerSettingsGroupResourcePayload>> {
   if (!isSettingsGroup(group)) return { status: 'error', error: 'Unknown settings group' }
-  const result = await requestServerResourceJson(`${SETTINGS_ENDPOINT}/${encodeURIComponent(group)}`, signal)
-  if (result.status !== 'ok') return result
+  const result = await requestCachedSingularResource(
+    `${SETTINGS_ENDPOINT}/${encodeURIComponent(group)}`,
+    'settings',
+    `settings:group:${group}`,
+    signal,
+    (value, record) =>
+      readRevisionEnvelope(record) !== null &&
+      record.group === group &&
+      isPlainRecord(value) &&
+      !containsNonSettingResource(value) &&
+      Object.keys(value).every((key) => key !== 'hypaV3Presets' && SERVER_SETTINGS_KEYS_BY_GROUP[group].includes(key)),
+  )
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (!record || record.group !== group || !isPlainRecord(record.settings)) {
@@ -93,8 +140,8 @@ export async function fetchServerCollection(
 export async function fetchServerCharacters(
   signal?: AbortSignal | null,
 ): Promise<ServerResourceReadResult<ServerCharactersResourcePayload>> {
-  const result = await requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
-  if (result.status !== 'ok') return result
+  const result = await requestCachedCharacters(signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (
@@ -123,7 +170,7 @@ export async function fetchServerCharacter(
     return { status: 'error', error: 'Character id is required' }
   }
   const result = await requestServerResourceJson(`${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}`, signal)
-  if (result.status !== 'ok') return result
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (!record || !isMessageFreeCharacter(record.character) || record.character.chaId !== characterId) {
@@ -140,7 +187,7 @@ export async function fetchServerCharacterOrder(
   signal?: AbortSignal | null,
 ): Promise<ServerResourceReadResult<ServerCharacterOrderResourcePayload>> {
   const result = await requestServerResourceJson(CHARACTER_ORDER_ENDPOINT, signal)
-  if (result.status !== 'ok') return result
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (!record || !Array.isArray(record.characterOrder)) {
@@ -164,7 +211,7 @@ export async function fetchServerCharacterSelection(
     `${CHARACTERS_ENDPOINT}/${encodeURIComponent(characterId)}/selection`,
     signal,
   )
-  if (result.status !== 'ok') return result
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (
@@ -191,8 +238,8 @@ async function fetchServerCollectionsFromEndpoint(
   requestedName: ServerCollectionName | undefined,
   signal: AbortSignal | null | undefined,
 ): Promise<ServerResourceReadResult<ServerCollectionsResourcePayload>> {
-  const result = await requestServerResourceJson(endpoint, signal)
-  if (result.status !== 'ok') return result
+  const result = await requestCachedCollections(endpoint, requestedName, signal)
+  if (result.status !== 'ok') return resourceReadFailure(result)
 
   const record = readRevisionEnvelope(result.body)
   if (!record || !isPlainRecord(record.collections)) {
@@ -222,19 +269,245 @@ async function fetchServerCollectionsFromEndpoint(
   }
 }
 
+async function requestCachedSingularResource(
+  endpoint: string,
+  resourceName: string,
+  cacheKey: string,
+  signal: AbortSignal | null | undefined,
+  validate: (value: unknown, record: Record<string, unknown>) => boolean,
+): Promise<ServerResourceJsonRequestResult> {
+  const prepared = await prepareResourceCacheRequest([{ name: resourceName, key: cacheKey }])
+  if (!prepared) return requestServerResourceJson(endpoint, signal)
+
+  const result = await requestServerResourceJson(endpoint, signal, {
+    method: 'POST',
+    body: resourceCacheRequestBody(prepared.hashes),
+  })
+  if (result.status !== 'ok') {
+    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(endpoint, signal) : result
+  }
+
+  const record = isPlainRecord(result.body) ? result.body : null
+  if (
+    !record ||
+    !isResourceCacheMetadata(record.cache) ||
+    !Object.prototype.hasOwnProperty.call(record, resourceName)
+  ) {
+    return requestServerResourceJson(endpoint, signal)
+  }
+
+  const snapshot = prepared.snapshots.get(resourceName)
+  if (!snapshot) return requestServerResourceJson(endpoint, signal)
+  try {
+    const resolved = await resolveResourceCacheValue(
+      record[resourceName],
+      snapshot,
+      prepared.hashes[resourceName] ?? [],
+    )
+    if (!resolved) return requestServerResourceJson(endpoint, signal)
+    if (!validate(resolved.value, record)) {
+      return { status: 'ok', body: { ...record, [resourceName]: resolved.value } }
+    }
+    await persistResourceCache([
+      {
+        key: cacheKey,
+        hashes: resolved.hashes,
+        values: [resolved.value],
+      },
+    ])
+    return {
+      status: 'ok',
+      body: { ...record, [resourceName]: resolved.value },
+    }
+  } catch {
+    return requestServerResourceJson(endpoint, signal)
+  }
+}
+
+async function requestCachedCollections(
+  endpoint: string,
+  requestedName: ServerCollectionName | undefined,
+  signal: AbortSignal | null | undefined,
+): Promise<ServerResourceJsonRequestResult> {
+  const names: readonly ServerCollectionName[] = requestedName ? [requestedName] : SERVER_COLLECTION_NAMES
+  const descriptors = names.map((name) => ({
+    name,
+    key: collectionCacheKey(name, requestedName === undefined),
+  }))
+  const prepared = await prepareResourceCacheRequest(descriptors)
+  if (!prepared) return requestServerResourceJson(endpoint, signal)
+
+  const result = await requestServerResourceJson(endpoint, signal, {
+    method: 'POST',
+    body: resourceCacheRequestBody(prepared.hashes),
+  })
+  if (result.status !== 'ok') {
+    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(endpoint, signal) : result
+  }
+
+  const record = isPlainRecord(result.body) ? result.body : null
+  const mixedCollections = record && isPlainRecord(record.collections) ? record.collections : null
+  if (
+    !record ||
+    !mixedCollections ||
+    !isResourceCacheMetadata(record.cache) ||
+    !hasExactCollectionNames(Object.keys(mixedCollections), names)
+  ) {
+    return requestServerResourceJson(endpoint, signal)
+  }
+
+  try {
+    const collections: Partial<ServerCollectionValues> = {}
+    const updates: ResourceCacheUpdate[] = []
+    for (const descriptor of descriptors) {
+      const name = descriptor.name as ServerCollectionName
+      const snapshot = prepared.snapshots.get(name)
+      if (!snapshot) return requestServerResourceJson(endpoint, signal)
+      const sentHashes = prepared.hashes[name] ?? []
+      const resolved =
+        name === 'pluginCustomStorage'
+          ? await resolveResourceCacheValue(mixedCollections[name], snapshot, sentHashes)
+          : await resolveResourceCacheArray(mixedCollections[name], snapshot, sentHashes)
+      if (!resolved) return requestServerResourceJson(endpoint, signal)
+
+      collections[name] = resolved.value as never
+      updates.push({
+        key: descriptor.key,
+        hashes: resolved.hashes,
+        values: Array.isArray(resolved.value) ? resolved.value : [resolved.value],
+      })
+    }
+    if (
+      readRevisionEnvelope(record) !== null &&
+      names.every((name) => isValidCollectionValue(name, collections[name]))
+    ) {
+      await persistResourceCache(updates)
+    }
+    return {
+      status: 'ok',
+      body: { ...record, collections },
+    }
+  } catch {
+    return requestServerResourceJson(endpoint, signal)
+  }
+}
+
+async function requestCachedCharacters(
+  signal: AbortSignal | null | undefined,
+): Promise<ServerResourceJsonRequestResult> {
+  const prepared = await prepareResourceCacheRequest([{ name: 'characters', key: CHARACTERS_CACHE_KEY }])
+  if (!prepared) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+
+  const result = await requestServerResourceJson(CHARACTERS_ENDPOINT, signal, {
+    method: 'POST',
+    body: resourceCacheRequestBody(prepared.hashes),
+  })
+  if (result.status !== 'ok') {
+    return shouldFallbackToLegacyGet(result) ? requestServerResourceJson(CHARACTERS_ENDPOINT, signal) : result
+  }
+
+  const record = isPlainRecord(result.body) ? result.body : null
+  if (!record || !isResourceCacheMetadata(record.cache)) {
+    return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+  }
+  const snapshot = prepared.snapshots.get('characters')
+  if (!snapshot) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+
+  try {
+    const resolved = await resolveResourceCacheArray(record.characters, snapshot, prepared.hashes.characters ?? [])
+    if (!resolved) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+    if (
+      readRevisionEnvelope(record) !== null &&
+      resolved.value.every(isMessageFreeCharacter) &&
+      Array.isArray(record.characterOrder) &&
+      Number.isInteger(record.currentChar)
+    ) {
+      await persistResourceCache([
+        {
+          key: CHARACTERS_CACHE_KEY,
+          hashes: resolved.hashes,
+          values: resolved.value,
+        },
+      ])
+    }
+    return {
+      status: 'ok',
+      body: { ...record, characters: resolved.value },
+    }
+  } catch {
+    return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
+  }
+}
+
+async function prepareResourceCacheRequest(
+  descriptors: readonly CacheResourceDescriptor[],
+): Promise<PreparedResourceCacheRequest | null> {
+  const cached = await readResourceCacheSnapshots(descriptors.map(({ key }) => key))
+  if (!cached) return null
+
+  const hashes: Record<string, string[]> = {}
+  const snapshots = new Map<string, ResourceCacheSnapshot>()
+  let remainingHashes = RESOURCE_CACHE_MAX_REQUEST_HASHES
+  for (const descriptor of descriptors) {
+    const snapshot = cached.get(descriptor.key) ?? { hashes: [], valuesByHash: new Map() }
+    const selected = selectResourceCacheHashes(snapshot, remainingHashes)
+    hashes[descriptor.name] = selected
+    snapshots.set(descriptor.name, snapshot)
+    remainingHashes -= selected.length
+  }
+  return { hashes, snapshots }
+}
+
+function resourceCacheRequestBody(hashes: Record<string, string[]>): Record<string, unknown> {
+  return {
+    cache: {
+      version: RESOURCE_CACHE_VERSION,
+      hashes,
+    },
+  }
+}
+
+function collectionCacheKey(name: ServerCollectionName, aggregate: boolean): string {
+  return name === 'promptTemplate' && aggregate ? 'collection:promptTemplate:aggregate' : `collection:${name}`
+}
+
+function hasExactCollectionNames(names: readonly string[], expected: readonly ServerCollectionName[]): boolean {
+  return names.length === expected.length && expected.every((name) => names.includes(name))
+}
+
+function shouldFallbackToLegacyGet(result: ServerResourceJsonRequestResult): boolean {
+  return (
+    result.status === 'error' &&
+    result.httpStatus !== undefined &&
+    [400, 404, 405, 413, 415].includes(result.httpStatus)
+  )
+}
+
+function resourceReadFailure(
+  result: Exclude<ServerResourceJsonRequestResult, { status: 'ok' }>,
+): { status: 'error'; error: string } | { status: 'unavailable' } {
+  return result.status === 'unavailable' ? result : { status: 'error', error: result.error }
+}
+
 async function requestServerResourceJson(
   endpoint: string,
   signal?: AbortSignal | null,
-): Promise<{ status: 'ok'; body: unknown } | { status: 'error'; error: string } | { status: 'unavailable' }> {
+  options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+): Promise<ServerResourceJsonRequestResult> {
   if (!canUseServerResourceReads()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
+  const method = options.method ?? 'GET'
   let response: Response
   try {
     response = await fetch(endpoint, {
-      method: 'GET',
+      method,
       signal: signal ?? undefined,
-      headers: { 'risu-auth': auth },
+      headers: {
+        ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+        'risu-auth': auth,
+      },
+      ...(method === 'POST' ? { body: JSON.stringify(options.body ?? {}) } : {}),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -249,7 +522,11 @@ async function requestServerResourceJson(
     // responses fail the resource-specific envelope validation.
   }
   if (!response.ok) {
-    return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
+    return {
+      status: 'error',
+      error: errorMessageFromBody(body, `HTTP ${response.status}`),
+      httpStatus: response.status,
+    }
   }
   return { status: 'ok', body }
 }

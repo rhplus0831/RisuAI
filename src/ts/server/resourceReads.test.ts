@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'resource-auth-token',
 }))
 
 import { SERVER_COLLECTION_NAMES } from './resourceState.svelte'
+import { clearResourceCache, sha256JsonValue } from './resourceCache'
 import {
   fetchServerCharacter,
   fetchServerCharacterOrder,
@@ -233,6 +235,126 @@ describe('server resource read clients', () => {
       collections: { modules: [{ id: 'module-a' }] },
     })
     expect(calls.map((call) => call.url)).toEqual(['/api/v1/collections', '/api/v1/collections/modules'])
+  })
+
+  it('posts IndexedDB hash inventories and reconstructs unchanged collection entries', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    await clearResourceCache()
+
+    const module = { id: 'module-a', cjs: 'module.exports = true' }
+    const storage = { 'plugin-a:state': { enabled: true } }
+    const moduleHash = await sha256JsonValue(module)
+    const storageHash = await sha256JsonValue(storage)
+    const calls: Array<{ method: string; body: Record<string, any> }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const body = JSON.parse(String(init.body)) as Record<string, any>
+        calls.push({ method: init.method ?? 'GET', body })
+        const secondRequest = calls.length === 2
+        return jsonResponse({
+          revision: secondRequest ? 9 : 8,
+          cache: { version: 1, algorithm: 'sha256' },
+          collections: Object.fromEntries(
+            SERVER_COLLECTION_NAMES.map((name) => {
+              if (name === 'modules') return [name, secondRequest ? [moduleHash] : [module]]
+              if (name === 'pluginCustomStorage') return [name, secondRequest ? storageHash : storage]
+              return [name, []]
+            }),
+          ),
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(fetchServerCollections()).resolves.toMatchObject({
+        status: 'ok',
+        revision: 8,
+        collections: { modules: [module], pluginCustomStorage: storage },
+      })
+      await expect(fetchServerCollections()).resolves.toMatchObject({
+        status: 'ok',
+        revision: 9,
+        collections: { modules: [module], pluginCustomStorage: storage },
+      })
+
+      expect(calls).toHaveLength(2)
+      expect(calls.every((call) => call.method === 'POST')).toBe(true)
+      expect(calls[0]?.body).toEqual({
+        cache: {
+          version: 1,
+          hashes: Object.fromEntries(SERVER_COLLECTION_NAMES.map((name) => [name, []])),
+        },
+      })
+      expect(calls[1]?.body.cache.hashes.modules).toEqual([moduleHash])
+      expect(calls[1]?.body.cache.hashes.pluginCustomStorage).toEqual([storageHash])
+    } finally {
+      await clearResourceCache()
+    }
+  })
+
+  it('falls back to GET when IndexedDB cannot be opened', async () => {
+    vi.stubGlobal('indexedDB', {
+      open() {
+        throw new Error('IndexedDB disabled')
+      },
+    })
+    const calls = stubResourceFetch(() => ({
+      revision: 8,
+      collections: completeCollections(),
+    }))
+
+    await expect(fetchServerCollections()).resolves.toMatchObject({ status: 'ok', revision: 8 })
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.method).toBe('GET')
+  })
+
+  it('reuses whole settings and message-free character rows from IndexedDB', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    await clearResourceCache()
+
+    const settings = { language: 'en', currentChar: 0, agentPresets: [{ id: 'agent-a', steps: [] }] }
+    const characters = [{ chaId: 'char-a', name: 'Ada', chats: [{ id: 'chat-a', message: [] }] }]
+    const settingsHash = await sha256JsonValue(settings)
+    const characterHash = await sha256JsonValue(characters[0])
+    const requestBodies: Record<string, Array<Record<string, any>>> = { settings: [], characters: [] }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const kind = String(input).endsWith('/settings') ? 'settings' : 'characters'
+        const body = JSON.parse(String(init.body)) as Record<string, any>
+        requestBodies[kind]?.push(body)
+        const requestCount = requestBodies[kind]?.length ?? 0
+        if (kind === 'settings') {
+          return jsonResponse({
+            revision: requestCount,
+            cache: { version: 1, algorithm: 'sha256' },
+            settings: requestCount === 1 ? settings : settingsHash,
+          })
+        }
+        return jsonResponse({
+          revision: requestCount,
+          cache: { version: 1, algorithm: 'sha256' },
+          characters: requestCount === 1 ? characters : [characterHash],
+          characterOrder: ['char-a'],
+          currentChar: 0,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', settings })
+      await expect(fetchServerCharacters()).resolves.toMatchObject({ status: 'ok', characters })
+      await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', settings })
+      await expect(fetchServerCharacters()).resolves.toMatchObject({ status: 'ok', characters })
+
+      expect(requestBodies.settings?.[0]?.cache.hashes.settings).toEqual([])
+      expect(requestBodies.settings?.[1]?.cache.hashes.settings).toEqual([settingsHash])
+      expect(requestBodies.characters?.[0]?.cache.hashes.characters).toEqual([])
+      expect(requestBodies.characters?.[1]?.cache.hashes.characters).toEqual([characterHash])
+    } finally {
+      await clearResourceCache()
+    }
   })
 
   it('rejects incomplete full collection envelopes and malformed collection values', async () => {
