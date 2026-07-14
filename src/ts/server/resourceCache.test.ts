@@ -62,6 +62,20 @@ describe('IndexedDB resource cache', () => {
     expect(finalSnapshots!.get('collection:modules')!.hashes).toEqual(second!.hashes)
   })
 
+  it('materializes duplicate hash hits as independent JSON values', async () => {
+    const row = { id: 'same-row', nested: { enabled: true } }
+    const hash = await sha256JsonValue(row)
+    const snapshot = {
+      hashes: [hash],
+      valuesByHash: new Map([[hash, row]]),
+    }
+
+    const resolved = await resolveResourceCacheArray<typeof row>([hash, hash], snapshot, [hash])
+    expect(resolved?.value).toEqual([row, row])
+    expect(resolved?.value[0]).not.toBe(resolved?.value[1])
+    expect(resolved?.value[0]?.nested).not.toBe(resolved?.value[1]?.nested)
+  })
+
   it('stores and restores a whole cached value for settings-style resources', async () => {
     const settings = { language: 'en', agentPresets: [{ id: 'agent-a', prompt: 'large prompt' }] }
     const empty = (await readResourceCacheSnapshots(['settings:all']))!.get('settings:all')!
@@ -73,6 +87,32 @@ describe('IndexedDB resource cache', () => {
     const hit = await resolveResourceCacheValue(requestHashes[0], cached, requestHashes)
 
     expect(hit).toEqual({ value: settings, hashes: requestHashes })
+  })
+
+  it('isolates verified cache values from caller mutations', async () => {
+    const settings = { language: 'en', nested: { value: 'authoritative' } }
+    const empty = (await readResourceCacheSnapshots(['settings:all']))!.get('settings:all')!
+    const first = await resolveResourceCacheValue(settings, empty, [])
+    expect(first).not.toBeNull()
+    if (!first) throw new Error('Expected the settings value to resolve')
+    await persistResourceCache([{ key: 'settings:all', hashes: first.hashes, values: [first.value] }])
+
+    settings.nested.value = 'optimistic mutation'
+    const firstSnapshot = (await readResourceCacheSnapshots(['settings:all']))!.get('settings:all')!
+    const [hash] = first.hashes
+    if (!hash) throw new Error('Expected a settings cache hash')
+    expect(firstSnapshot.valuesByHash.get(hash)).toEqual({
+      language: 'en',
+      nested: { value: 'authoritative' },
+    })
+    const exposedValue = firstSnapshot.valuesByHash.get(hash) as typeof settings
+    exposedValue.nested.value = 'snapshot mutation'
+    const secondSnapshot = (await readResourceCacheSnapshots(['settings:all']))!.get('settings:all')!
+    expect(secondSnapshot.valuesByHash.get(hash)).toEqual({
+      language: 'en',
+      nested: { value: 'authoritative' },
+    })
+    expect(selectResourceCacheHashes(secondSnapshot)).toEqual([hash])
   })
 
   it('fails closed when the server references a hash whose body is not resident', async () => {

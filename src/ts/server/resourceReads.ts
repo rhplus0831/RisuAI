@@ -293,7 +293,7 @@ async function requestCachedSingularResource(
     )
     if (!resolved) return requestServerResourceJson(endpoint, signal)
     if (!validate(resolved.value, record)) {
-      return { status: 'ok', body: { ...record, [resourceName]: resolved.value } }
+      return requestServerResourceJson(endpoint, signal)
     }
     await persistResourceCache([
       {
@@ -365,11 +365,12 @@ async function requestCachedCollections(
       })
     }
     if (
-      readRevisionEnvelope(record) !== null &&
-      names.every((name) => isValidCollectionValue(name, collections[name]))
+      readRevisionEnvelope(record) === null ||
+      !names.every((name) => isValidCollectionValue(name, collections[name]))
     ) {
-      await persistResourceCache(updates)
+      return requestServerResourceJson(endpoint, signal)
     }
+    await persistResourceCache(updates)
     return {
       status: 'ok',
       body: { ...record, collections },
@@ -404,19 +405,20 @@ async function requestCachedCharacters(
     const resolved = await resolveResourceCacheArray(record.characters, snapshot, prepared.hashes.characters ?? [])
     if (!resolved) return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
     if (
-      readRevisionEnvelope(record) !== null &&
-      resolved.value.every(isMessageFreeCharacter) &&
-      Array.isArray(record.characterOrder) &&
-      Number.isInteger(record.currentChar)
+      readRevisionEnvelope(record) === null ||
+      !resolved.value.every(isMessageFreeCharacter) ||
+      !Array.isArray(record.characterOrder) ||
+      !Number.isInteger(record.currentChar)
     ) {
-      await persistResourceCache([
-        {
-          key: CHARACTERS_CACHE_KEY,
-          hashes: resolved.hashes,
-          values: resolved.value,
-        },
-      ])
+      return requestServerResourceJson(CHARACTERS_ENDPOINT, signal)
     }
+    await persistResourceCache([
+      {
+        key: CHARACTERS_CACHE_KEY,
+        hashes: resolved.hashes,
+        values: resolved.value,
+      },
+    ])
     return {
       status: 'ok',
       body: { ...record, characters: resolved.value },

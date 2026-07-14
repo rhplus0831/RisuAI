@@ -309,6 +309,69 @@ describe('server resource read clients', () => {
     expect(calls[0]?.method).toBe('GET')
   })
 
+  it('falls back to full GETs when cache POST envelopes are malformed', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    await clearResourceCache()
+    const calls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const method = init.method ?? 'GET'
+        calls.push(`${method} ${url}`)
+        if (method === 'POST' && url === '/api/v1/settings') {
+          return jsonResponse({
+            revision: 1,
+            cache: { version: 1, algorithm: 'sha256' },
+            settings: { language: 'en', modules: [] },
+          })
+        }
+        if (method === 'POST' && url === '/api/v1/collections') {
+          return jsonResponse({
+            revision: 1,
+            cache: { version: 1, algorithm: 'sha256' },
+            collections: { ...completeCollections(), pluginCustomStorage: [] },
+          })
+        }
+        if (method === 'POST' && url === '/api/v1/characters') {
+          return jsonResponse({
+            revision: 1,
+            cache: { version: 1, algorithm: 'sha256' },
+            characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a', message: [{ data: 'not-a-shell' }] }] }],
+            characterOrder: ['char-a'],
+            currentChar: 0,
+          })
+        }
+        if (url === '/api/v1/settings') return jsonResponse({ revision: 2, settings: { language: 'en' } })
+        if (url === '/api/v1/collections') {
+          return jsonResponse({ revision: 2, collections: completeCollections() })
+        }
+        return jsonResponse({
+          revision: 2,
+          characters: [{ chaId: 'char-a', chats: [{ id: 'chat-a', message: [] }] }],
+          characterOrder: ['char-a'],
+          currentChar: 0,
+        })
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(fetchServerSettings()).resolves.toMatchObject({ status: 'ok', revision: 2 })
+      await expect(fetchServerCollections()).resolves.toMatchObject({ status: 'ok', revision: 2 })
+      await expect(fetchServerCharacters()).resolves.toMatchObject({ status: 'ok', revision: 2 })
+      expect(calls).toEqual([
+        'POST /api/v1/settings',
+        'GET /api/v1/settings',
+        'POST /api/v1/collections',
+        'GET /api/v1/collections',
+        'POST /api/v1/characters',
+        'GET /api/v1/characters',
+      ])
+    } finally {
+      await clearResourceCache()
+    }
+  })
+
   it('reuses whole settings and message-free character rows from IndexedDB', async () => {
     vi.stubGlobal('indexedDB', new IDBFactory())
     await clearResourceCache()

@@ -85,7 +85,7 @@ export async function readResourceCacheSnapshots(
     const hashesToRead: string[] = []
     for (const hash of allHashes) {
       if (verifiedResourceCacheValues.has(hash)) {
-        valuesByHash.set(hash, verifiedResourceCacheValues.get(hash))
+        valuesByHash.set(hash, cloneResourceCacheValue(verifiedResourceCacheValues.get(hash)))
       } else {
         hashesToRead.push(hash)
       }
@@ -114,7 +114,7 @@ export async function readResourceCacheSnapshots(
         for (const entry of verified) {
           if (!entry) continue
           valuesByHash.set(entry[0], entry[1])
-          verifiedResourceCacheValues.set(entry[0], entry[1])
+          verifiedResourceCacheValues.set(entry[0], cloneResourceCacheValue(entry[1]))
         }
       }
     }
@@ -198,7 +198,7 @@ export async function resolveResourceCacheArray<T = unknown>(
     const candidate = mixedValues[index]
     if (typeof candidate === 'string' && sent.has(candidate)) {
       if (!snapshot.valuesByHash.has(candidate)) return null
-      values[index] = snapshot.valuesByHash.get(candidate) as T
+      values[index] = cloneResourceCacheValue(snapshot.valuesByHash.get(candidate)) as T
       hashes[index] = candidate
     } else {
       changed.push({ index, value: candidate })
@@ -227,7 +227,7 @@ export async function resolveResourceCacheValue<T = unknown>(
 ): Promise<ResolvedResourceCacheValue<T> | null> {
   if (typeof mixedValue === 'string' && sentHashes.includes(mixedValue)) {
     if (!isSha256Hex(mixedValue) || !snapshot.valuesByHash.has(mixedValue)) return null
-    return { value: snapshot.valuesByHash.get(mixedValue) as T, hashes: [mixedValue] }
+    return { value: cloneResourceCacheValue(snapshot.valuesByHash.get(mixedValue)) as T, hashes: [mixedValue] }
   }
   return {
     value: mixedValue as T,
@@ -337,7 +337,7 @@ async function persistResourceCacheInternal(updates: readonly ResourceCacheUpdat
   await done
   for (const update of updates) {
     for (let index = 0; index < update.hashes.length; index += 1) {
-      verifiedResourceCacheValues.set(update.hashes[index] as string, update.values[index])
+      verifiedResourceCacheValues.set(update.hashes[index] as string, cloneResourceCacheValue(update.values[index]))
     }
   }
   await pruneResourceCache(database)
@@ -407,6 +407,12 @@ function readStoredManifestHashes(value: unknown): string[] {
 
 function isValidResourceCacheUpdate(update: ResourceCacheUpdate): boolean {
   return nonEmptyString(update.key) && update.hashes.length === update.values.length && update.hashes.every(isSha256Hex)
+}
+
+function cloneResourceCacheValue<T>(value: T): T {
+  const serialized = JSON.stringify(value)
+  if (serialized === undefined) throw new Error('Resource cache values must be JSON-serializable')
+  return JSON.parse(serialized) as T
 }
 
 function discardResourceCacheDatabase(database: IDBDatabase): void {
