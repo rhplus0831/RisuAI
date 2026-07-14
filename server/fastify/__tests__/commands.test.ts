@@ -4053,6 +4053,8 @@ describe('Agent Preset command surface', () => {
         id: createdBody.presetId,
       },
       agentPresetDefaultId: createdBody.presetId,
+      certificate: 'agent-preset-collection-v1',
+      agentPresetIds: [createdBody.presetId],
     })
 
     const second = await harness.app.inject({
@@ -4077,9 +4079,14 @@ describe('Agent Preset command surface', () => {
       },
     })
     expect(reordered.statusCode).toBe(200)
-    expect(reordered.json().event).toMatchObject({
-      type: 'agentPreset.reordered',
-      resource: 'agentPreset',
+    expect(reordered.json()).toMatchObject({
+      event: {
+        type: 'agentPreset.reordered',
+        resource: 'agentPreset',
+      },
+      agentPresetDefaultId: createdBody.presetId,
+      certificate: 'agent-preset-collection-v1',
+      agentPresetIds: [secondId, createdBody.presetId],
     })
 
     const settings = await harness.app.inject({
@@ -4358,6 +4365,47 @@ describe('Agent Preset command surface', () => {
       version: 1,
       steps: [],
     })
+  })
+
+  it('withholds collection acknowledgements when reorder/default repairs non-canonical state', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [
+        { id: 'ap_target', name: 'Target', enabled: true, version: 1, steps: [] },
+        { id: 'ap_sibling', name: 'Sibling', enabled: true, version: 1, steps: [] },
+      ],
+      agentPresetDefaultId: 'ap_target',
+    })
+    updateSettingsRow((settings) => {
+      const presets = settings.agentPresets as Array<Record<string, unknown>>
+      presets[1] = { ...presets[1], name: '  Repaired Sibling  ', unexpected: true }
+    })
+
+    const reordered = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, presetIds: ['ap_sibling', 'ap_target'] },
+    })
+
+    expect(reordered.statusCode).toBe(200)
+    expect(reordered.json()).not.toHaveProperty('certificate')
+    expect(reordered.json()).not.toHaveProperty('agentPresetIds')
+
+    updateSettingsRow((settings) => {
+      const presets = settings.agentPresets as Array<Record<string, unknown>>
+      presets[0] = { ...presets[0], name: '  Repaired Again  ', unexpected: true }
+    })
+    const defaulted = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/default',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: reordered.json().revision, agentPresetId: 'ap_sibling' },
+    })
+
+    expect(defaulted.statusCode).toBe(200)
+    expect(defaulted.json()).not.toHaveProperty('certificate')
+    expect(defaulted.json()).not.toHaveProperty('agentPresetIds')
   })
 
   it('deletes Agent Presets and clears default, chat, and loadout references atomically', async () => {

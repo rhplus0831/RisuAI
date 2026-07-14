@@ -152,6 +152,132 @@ afterEach(() => {
 })
 
 describe('Agent Preset optimistic field rollback', () => {
+  it('emits exact local effects for response-confirmed optimistic reorder/default writes', async () => {
+    setResourceWriteGuardEnabled(false)
+    resetServerResourceState()
+    setDatabaseLite(
+      {
+        agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
+        agentPresetDefaultId: 'ap_a',
+        characters: [],
+      } as never,
+      1,
+    )
+    setResourceWriteGuardEnabled(true)
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      if (url.endsWith('/agent-presets/reorder')) {
+        return response(
+          {
+            revision: 2,
+            event: { type: 'agentPreset.reordered', revision: 2, resource: 'agentPreset' },
+            agentPresetDefaultId: 'ap_a',
+            certificate: 'agent-preset-collection-v1',
+            agentPresetIds: ['ap_b', 'ap_a'],
+          },
+          200,
+        )
+      }
+      if (url.endsWith('/agent-presets/default')) {
+        return response(
+          {
+            revision: 3,
+            event: {
+              type: 'agentPreset.default.updated',
+              revision: 3,
+              resource: 'agentPreset',
+              id: 'ap_b',
+            },
+            agentPresetDefaultId: 'ap_b',
+            certificate: 'agent-preset-collection-v1',
+            agentPresetIds: ['ap_b', 'ap_a'],
+          },
+          200,
+        )
+      }
+      throw new Error(`Unexpected command URL: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const observedEffects: unknown[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
+
+    await reorderAgentPresets(['ap_b', 'ap_a'])
+    await setAgentPresetDefault('ap_b')
+
+    expect(observedEffects).toEqual([
+      {
+        kind: 'agentPresetCollectionMutation',
+        operation: 'reorder',
+        settingsProjectionEpoch: expect.any(Number),
+        presetIds: ['ap_b', 'ap_a'],
+        agentPresetDefaultId: 'ap_a',
+      },
+      {
+        kind: 'agentPresetCollectionMutation',
+        operation: 'default',
+        settingsProjectionEpoch: expect.any(Number),
+        presetIds: ['ap_b', 'ap_a'],
+        agentPresetDefaultId: 'ap_b',
+      },
+    ])
+    expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_b', 'ap_a'])
+    expect(getDatabase().agentPresetDefaultId).toBe('ap_b')
+    expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(String((init as RequestInit).body)))).toEqual([
+      { baseRevision: 1, presetIds: ['ap_b', 'ap_a'] },
+      { baseRevision: 2, agentPresetId: 'ap_b' },
+    ])
+  })
+
+  it('withholds local effects for missing or contradictory collection receipts', async () => {
+    setResourceWriteGuardEnabled(false)
+    resetServerResourceState()
+    setDatabaseLite(
+      {
+        agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
+        agentPresetDefaultId: 'ap_a',
+        characters: [],
+      } as never,
+      1,
+    )
+    setResourceWriteGuardEnabled(true)
+    let responseIndex = 0
+    const bodies = [
+      {
+        revision: 2,
+        event: { type: 'agentPreset.reordered', revision: 2, resource: 'agentPreset' },
+        agentPresetDefaultId: 'ap_a',
+        agentPresetIds: ['ap_b', 'ap_a'],
+      },
+      {
+        revision: 3,
+        event: {
+          type: 'agentPreset.default.updated',
+          revision: 3,
+          resource: 'agentPreset',
+          id: 'ap_b',
+        },
+        agentPresetDefaultId: 'ap_b',
+        certificate: 'agent-preset-collection-v1',
+        agentPresetIds: ['ap_a', 'ap_b'],
+      },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response(bodies[responseIndex++], 200)),
+    )
+    const observedEffectCounts: number[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffectCounts.push(localEffects.size)
+    })
+
+    await reorderAgentPresets(['ap_b', 'ap_a'])
+    await setAgentPresetDefault('ap_b')
+
+    expect(observedEffectCounts).toEqual([0, 0])
+  })
+
   it('restores failed delete references by stable id while preserving concurrent chat and loadout edits', async () => {
     seedAgentPresetDeleteReferences()
     const pendingResponse = deferred<Response>()

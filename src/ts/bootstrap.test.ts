@@ -1594,6 +1594,127 @@ describe('API-backed client bootstrap', () => {
     },
   )
 
+  it('fences contiguous optimistic Agent Preset reorder/default writes without an agents read', async () => {
+    await loadWebInitialDatabase()
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets = [
+        { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
+        { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
+      ]
+      getDatabase().agentPresetDefaultId = 'ap_a'
+    })
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+    const resourceApplyEpoch = getServerResourceApplyEpoch()
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
+    })
+    const reorderEvent = {
+      type: 'agentPreset.reordered',
+      revision: 6,
+      resource: 'agentPreset',
+    }
+    const reorderEffect = {
+      kind: 'agentPresetCollectionMutation' as const,
+      operation: 'reorder' as const,
+      settingsProjectionEpoch,
+      presetIds: ['ap_b', 'ap_a'],
+      agentPresetDefaultId: 'ap_a',
+    }
+
+    await commandApi.reconciler?.(reorderEvent, [reorderEvent], new Map([[6, reorderEffect]]))
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresetDefaultId = 'ap_b'
+    })
+    const defaultEvent = {
+      type: 'agentPreset.default.updated',
+      revision: 7,
+      resource: 'agentPreset',
+      id: 'ap_b',
+    }
+    const defaultEffect = {
+      kind: 'agentPresetCollectionMutation' as const,
+      operation: 'default' as const,
+      settingsProjectionEpoch,
+      presetIds: ['ap_b', 'ap_a'],
+      agentPresetDefaultId: 'ap_b',
+    }
+
+    await commandApi.reconciler?.(defaultEvent, [defaultEvent], new Map([[7, defaultEffect]]))
+
+    expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
+    expect(getDatabase().agentPresets.map((preset) => preset.id)).toEqual(['ap_b', 'ap_a'])
+    expect(getDatabase().agentPresetDefaultId).toBe('ap_b')
+    expect(settingsResourceState.groupRevisions.agents).toBe(7)
+    expect(hasSettingsGroupProjectionEpochChanged('agents', settingsProjectionEpoch)).toBe(false)
+    expect(getServerResourceApplyEpoch()).toBe(resourceApplyEpoch)
+    expect(peekAppliedServerResourceRevision()).toBe(7)
+  })
+
+  it.each(['agents epoch', 'agents taint', 'live identities'])(
+    '%s forces Agent Preset reorder acknowledgement through authoritative reconciliation',
+    async (failure) => {
+      await loadWebInitialDatabase()
+      withTrustedResourceWrite(() => {
+        getDatabase().agentPresets = [
+          { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
+          { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
+        ]
+        getDatabase().agentPresetDefaultId = 'ap_a'
+      })
+      const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+      if (failure === 'agents epoch') {
+        applySettingsGroupResource(
+          {
+            revision: 5,
+            group: 'agents',
+            settings: {
+              agentPresets: [
+                { id: 'ap_b', name: 'Preset B', enabled: true, version: 1, steps: [] },
+                { id: 'ap_a', name: 'Preset A', enabled: true, version: 1, steps: [] },
+              ],
+              agentPresetDefaultId: 'ap_a',
+            },
+          },
+          ['agentPresets', 'agentPresetDefaultId'],
+        )
+      } else if (failure === 'agents taint') {
+        markSettingsGroupAcknowledgementTainted('agents')
+      } else {
+        withTrustedResourceWrite(() => {
+          getDatabase().agentPresets = [getDatabase().agentPresets[1], getDatabase().agentPresets[0]]
+        })
+      }
+      const event = {
+        type: 'agentPreset.reordered',
+        revision: 6,
+        resource: 'agentPreset',
+      }
+
+      await commandApi.reconciler?.(
+        event,
+        [event],
+        new Map([
+          [
+            6,
+            {
+              kind: 'agentPresetCollectionMutation',
+              operation: 'reorder',
+              settingsProjectionEpoch,
+              presetIds: ['ap_b', 'ap_a'],
+              agentPresetDefaultId: 'ap_a',
+            },
+          ],
+        ]),
+      )
+
+      expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+        appliedRevision: 5,
+        hooks: resourceApi.hooks,
+      })
+    },
+  )
+
   it('acknowledges a contiguous translator preset PATCH without collection/language reads or apply-epoch bumps', async () => {
     await loadWebInitialDatabase()
     applyCollectionsResource(

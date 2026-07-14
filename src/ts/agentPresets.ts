@@ -16,6 +16,7 @@ import {
   type AgentPresetSnapshot,
   type AgentPresetStepSnapshot,
   type AgentPresetPatchOptimisticAcknowledgement,
+  type AgentPresetCollectionOptimisticAcknowledgement,
   type JsonFieldState,
   type ServerCommandResult,
 } from './server/commands'
@@ -115,10 +116,23 @@ export function reorderAgentPresets(
   presetIds: string[],
   options: AgentPresetCommandOptions = {},
 ): Promise<ServerCommandResult<{ agentPresetDefaultId: string | null }>> {
+  const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+  const rollback = optimisticallyReorderAgentPresets(presetIds)
+  const optimisticAcknowledgement = currentAgentPresetCollectionAcknowledgement(settingsProjectionEpoch, {
+    presetIds,
+  })
   return runServerCommand({
     signal: options.signal,
-    rollback: taintedAgentPresetRollback(optimisticallyReorderAgentPresets(presetIds)),
-    command: (baseRevision) => reorderAgentPresetsCommand({ baseRevision, presetIds }, options.signal),
+    rollback: taintedAgentPresetRollback(rollback),
+    command: (baseRevision) =>
+      reorderAgentPresetsCommand(
+        {
+          baseRevision,
+          presetIds,
+          ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
+        },
+        options.signal,
+      ),
   })
 }
 
@@ -126,10 +140,23 @@ export function setAgentPresetDefault(
   agentPresetId: string | null,
   options: AgentPresetCommandOptions = {},
 ): Promise<ServerCommandResult<{ agentPresetDefaultId: string | null }>> {
+  const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('agents')
+  const rollback = optimisticallySetAgentPresetDefault(agentPresetId)
+  const optimisticAcknowledgement = currentAgentPresetCollectionAcknowledgement(settingsProjectionEpoch, {
+    agentPresetDefaultId: agentPresetId,
+  })
   return runServerCommand({
     signal: options.signal,
-    rollback: taintedAgentPresetRollback(optimisticallySetAgentPresetDefault(agentPresetId)),
-    command: (baseRevision) => setAgentPresetDefaultCommand({ baseRevision, agentPresetId }, options.signal),
+    rollback: taintedAgentPresetRollback(rollback),
+    command: (baseRevision) =>
+      setAgentPresetDefaultCommand(
+        {
+          baseRevision,
+          agentPresetId,
+          ...(optimisticAcknowledgement ? { optimisticAcknowledgement } : {}),
+        },
+        options.signal,
+      ),
   })
 }
 
@@ -207,6 +234,31 @@ export function reorderAgentPresetSteps(
 interface OptimisticAgentPresetFieldPatch {
   rollback?: () => void
   acknowledgement?: AgentPresetPatchOptimisticAcknowledgement
+}
+
+function currentAgentPresetCollectionAcknowledgement(
+  settingsProjectionEpoch: number,
+  expected: { presetIds: string[] } | { agentPresetDefaultId: string | null },
+): AgentPresetCollectionOptimisticAcknowledgement | undefined {
+  const presetIds = getAgentPresets().map((preset) => preset.id)
+  if (presetIds.some((presetId) => !nonBlankId(presetId)) || new Set(presetIds).size !== presetIds.length) {
+    return undefined
+  }
+  const agentPresetDefaultId = getAgentPresetDefaultId() ?? null
+  if (agentPresetDefaultId !== null && !presetIds.includes(agentPresetDefaultId)) return undefined
+  if (
+    'presetIds' in expected &&
+    (presetIds.length !== expected.presetIds.length ||
+      presetIds.some((presetId, index) => presetId !== expected.presetIds[index]))
+  ) {
+    return undefined
+  }
+  if ('agentPresetDefaultId' in expected && agentPresetDefaultId !== expected.agentPresetDefaultId) return undefined
+  return {
+    settingsProjectionEpoch,
+    presetIds: [...presetIds],
+    agentPresetDefaultId,
+  }
 }
 
 interface AgentPresetDeleteFieldRollback {

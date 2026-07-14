@@ -47,6 +47,7 @@ export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffec
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
+const AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE = 'agent-preset-collection-v1'
 
 export {
   SERVER_SETTINGS_GROUP_BY_KEY,
@@ -254,6 +255,21 @@ export interface AgentPresetStepPatchLocalEffect {
   updatedAt: number
 }
 
+/** Client-only proof captured after an optimistic Agent Preset reorder/default write. */
+export interface AgentPresetCollectionOptimisticAcknowledgement {
+  settingsProjectionEpoch: number
+  presetIds: string[]
+  agentPresetDefaultId: string | null
+}
+
+export interface AgentPresetCollectionMutationLocalEffect {
+  kind: 'agentPresetCollectionMutation'
+  operation: 'reorder' | 'default'
+  settingsProjectionEpoch: number
+  presetIds: string[]
+  agentPresetDefaultId: string | null
+}
+
 /** Client-only proof captured after one optimistic legacy-preset PATCH. */
 export interface LegacyPresetPatchOptimisticAcknowledgement {
   collectionProjectionEpoch: number
@@ -428,6 +444,7 @@ export type ServerCommandLocalEffect = (
   | LegacyPresetPatchLocalEffect
   | AgentPresetPatchLocalEffect
   | AgentPresetStepPatchLocalEffect
+  | AgentPresetCollectionMutationLocalEffect
   | PersonaPatchLocalEffect
   | PersonaMutationLocalEffect
   | TranslatorPresetPatchLocalEffect
@@ -786,10 +803,12 @@ export interface DeleteAgentPresetCommandInput extends AgentPresetCommandInput {
 
 export interface ReorderAgentPresetsCommandInput extends AgentPresetCommandInput {
   presetIds: string[]
+  optimisticAcknowledgement?: AgentPresetCollectionOptimisticAcknowledgement
 }
 
 export interface SetAgentPresetDefaultCommandInput extends AgentPresetCommandInput {
   agentPresetId: string | null
+  optimisticAcknowledgement?: AgentPresetCollectionOptimisticAcknowledgement
 }
 
 export interface CreateAgentPresetStepCommandInput extends AgentPresetCommandInput {
@@ -2351,6 +2370,14 @@ export async function reorderAgentPresetsCommand(
       presetIds: input.presetIds,
     },
     signal,
+    readLocalEffect: input.optimisticAcknowledgement
+      ? (body, event) =>
+          readAgentPresetCollectionMutationLocalEffect(body, event, {
+            operation: 'reorder',
+            expectedPresetIds: input.presetIds,
+            acknowledgement: input.optimisticAcknowledgement!,
+          })
+      : undefined,
   })
 }
 
@@ -2365,6 +2392,14 @@ export async function setAgentPresetDefaultCommand(
       agentPresetId: input.agentPresetId,
     },
     signal,
+    readLocalEffect: input.optimisticAcknowledgement
+      ? (body, event) =>
+          readAgentPresetCollectionMutationLocalEffect(body, event, {
+            operation: 'default',
+            expectedDefaultId: input.agentPresetId,
+            acknowledgement: input.optimisticAcknowledgement!,
+          })
+      : undefined,
   })
 }
 
@@ -5762,6 +5797,64 @@ function readTranslatorPresetPatchLocalEffect(
     selectedPresetId: acknowledgement.selectedPresetId,
     attemptedPatch: cloneJsonValue(input.attemptedPatch),
     attemptedPreset: cloneJsonValue(attemptedPreset),
+  }
+}
+
+function readAgentPresetCollectionMutationLocalEffect(
+  body: unknown,
+  event: CommandEvent,
+  input:
+    | {
+        operation: 'reorder'
+        expectedPresetIds: string[]
+        acknowledgement: AgentPresetCollectionOptimisticAcknowledgement
+      }
+    | {
+        operation: 'default'
+        expectedDefaultId: string | null
+        acknowledgement: AgentPresetCollectionOptimisticAcknowledgement
+      },
+): AgentPresetCollectionMutationLocalEffect | undefined {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
+  const record = body as Record<string, unknown>
+  const acknowledgement = input.acknowledgement
+  const expectedType = input.operation === 'reorder' ? 'agentPreset.reordered' : 'agentPreset.default.updated'
+  if (
+    record.revision !== event.revision ||
+    record.certificate !== AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE ||
+    event.type !== expectedType ||
+    event.resource !== 'agentPreset' ||
+    event.parentId !== undefined ||
+    !isProjectionEpoch(acknowledgement.settingsProjectionEpoch) ||
+    !isUniqueStringArray(acknowledgement.presetIds) ||
+    !isUniqueStringArray(record.agentPresetIds) ||
+    !isJsonValueEqual(record.agentPresetIds, acknowledgement.presetIds)
+  ) {
+    return undefined
+  }
+
+  const expectedDefaultId = acknowledgement.agentPresetDefaultId
+  if (
+    (expectedDefaultId !== null && !nonEmptyString(expectedDefaultId)) ||
+    (expectedDefaultId !== null && !acknowledgement.presetIds.includes(expectedDefaultId)) ||
+    record.agentPresetDefaultId !== expectedDefaultId ||
+    event.id !== (input.operation === 'default' ? (expectedDefaultId ?? undefined) : undefined)
+  ) {
+    return undefined
+  }
+  if (
+    (input.operation === 'reorder' && !isJsonValueEqual(input.expectedPresetIds, acknowledgement.presetIds)) ||
+    (input.operation === 'default' && input.expectedDefaultId !== expectedDefaultId)
+  ) {
+    return undefined
+  }
+
+  return {
+    kind: 'agentPresetCollectionMutation',
+    operation: input.operation,
+    settingsProjectionEpoch: acknowledgement.settingsProjectionEpoch,
+    presetIds: [...acknowledgement.presetIds],
+    agentPresetDefaultId: expectedDefaultId,
   }
 }
 

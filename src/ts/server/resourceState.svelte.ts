@@ -405,6 +405,13 @@ export interface ServerAgentPresetStepPatchLocalEffectPayload extends ServerAgen
   stepId: string
 }
 
+export interface ServerAgentPresetCollectionMutationLocalEffectPayload {
+  revision: number
+  operation: 'reorder' | 'default'
+  presetIds: string[]
+  agentPresetDefaultId: string | null
+}
+
 export interface ServerCharactersResourcePayload {
   revision: number
   characters: character[]
@@ -1617,6 +1624,58 @@ export function applyTranslatorPresetPatchLocalEffect(payload: ServerTranslatorP
     settingsResourceState.status = 'ready'
     settingsResourceState.error = null
   }
+  markResourceDatabaseChanged()
+  return true
+}
+
+/**
+ * Fence an exact, response-confirmed Agent Preset reorder/default mutation. The
+ * optimistic collection/default projection is already resident; retain it only
+ * while its canonical identities still match the certified response receipt.
+ */
+export function applyAgentPresetCollectionMutationLocalEffect(
+  payload: ServerAgentPresetCollectionMutationLocalEffectPayload,
+): boolean {
+  if (
+    !Number.isInteger(payload.revision) ||
+    payload.revision < 0 ||
+    (payload.operation !== 'reorder' && payload.operation !== 'default') ||
+    !isUniqueStringArray(payload.presetIds) ||
+    (payload.agentPresetDefaultId !== null &&
+      (!nonEmptyString(payload.agentPresetDefaultId) || !payload.presetIds.includes(payload.agentPresetDefaultId)))
+  ) {
+    return false
+  }
+
+  const knownRevision = Math.max(
+    settingsResourceState.fullRevision ?? -1,
+    settingsResourceState.groupRevisions.agents ?? -1,
+  )
+  if (knownRevision >= payload.revision) return true
+  const settings = settingsResourceState.value as Record<string, unknown>
+  const presets = settings.agentPresets
+  if (
+    settingsResourceState.status !== 'ready' ||
+    knownRevision < 0 ||
+    !Array.isArray(presets) ||
+    !isUniqueAgentPresetProjection(presets) ||
+    !presets.every((preset) => isPlainRecord(preset) && isCanonicalValidAgentPreset(preset)) ||
+    !isJsonValueEqual(
+      presets.map((preset) => (preset as Record<string, unknown>).id),
+      payload.presetIds,
+    )
+  ) {
+    return false
+  }
+
+  const rawDefaultId = settings.agentPresetDefaultId
+  const currentDefaultId = rawDefaultId === undefined ? null : nonEmptyString(rawDefaultId) ? rawDefaultId : undefined
+  if (currentDefaultId === undefined || currentDefaultId !== payload.agentPresetDefaultId) return false
+
+  settingsResourceState.groupRevisions.agents = payload.revision
+  settingsResourceState.revision = maxRevision(settingsResourceState.revision, payload.revision)
+  settingsResourceState.status = 'ready'
+  settingsResourceState.error = null
   markResourceDatabaseChanged()
   return true
 }

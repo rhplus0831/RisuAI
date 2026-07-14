@@ -57,6 +57,17 @@ interface AgentPresetPatchAcknowledgement extends Record<string, unknown> {
   updatedAt?: number
 }
 
+interface AgentPresetCollectionAcknowledgement extends Record<string, unknown> {
+  certificate: typeof AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE
+  agentPresetIds: string[]
+}
+
+interface AgentPresetCollectionMutationExtra extends Record<string, unknown> {
+  agentPresetDefaultId: string | null
+  certificate?: typeof AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE
+  agentPresetIds?: string[]
+}
+
 interface CanonicalAgentPresetState {
   presets: AgentPresetRecord[]
   defaultId: string | undefined
@@ -67,6 +78,7 @@ const AGENT_PRESET_PHASE_SET = new Set<string>(AGENT_PRESET_STEP_PHASES)
 const AGENT_PRESET_OUTPUT_FORMAT_SET = new Set<string>(AGENT_PRESET_STEP_OUTPUT_FORMATS)
 const AGENT_PRESET_INPUT_SCOPE_SET = new Set<string>(AGENT_PRESET_STEP_INPUT_SCOPES)
 const AGENT_PRESET_DESTINATION_SET = new Set<string>(AGENT_PRESET_STEP_DESTINATIONS)
+const AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE = 'agent-preset-collection-v1'
 
 export function createAgentPresetCommand(
   args: AgentPresetCommandArgs,
@@ -198,20 +210,28 @@ export function deleteAgentPresetCommand(
 
 export function reorderAgentPresetsCommand(
   args: AgentPresetCommandArgs,
-): JsonCommandMutationResult<{ agentPresetDefaultId: string | null }> {
+): JsonCommandMutationResult<AgentPresetCollectionMutationExtra> {
   const body = readObject(args.body, 'request body')
   const presetIds = readIdList(body.presetIds, 'presetIds')
 
   return applyAgentPresetSettingsMutation(args, (target) => {
-    const presets = currentAgentPresets(target)
+    const before = readCanonicalAgentPresetState(target)
+    const presets = before.presets
     validateFullPresetOrder(presets, presetIds)
     const byId = new Map(presets.map((preset) => [preset.id, preset]))
     target.agentPresets = readPresetCollectionForWrite(presetIds.map((id) => byId.get(id)!))
     normalizeAgentPresetDefault(target)
+    const after = readCanonicalAgentPresetState(target)
+    const acknowledgementSafe =
+      before.acknowledgementSafe &&
+      after.acknowledgementSafe &&
+      before.defaultId === after.defaultId &&
+      presetIds.every((presetId, index) => isDeepStrictEqual(after.presets[index], byId.get(presetId)))
     return {
       event: COMMAND_EVENT_CATALOG.agentPresetReordered,
       extra: {
-        agentPresetDefaultId: typeof target.agentPresetDefaultId === 'string' ? target.agentPresetDefaultId : null,
+        agentPresetDefaultId: after.defaultId ?? null,
+        ...buildAgentPresetCollectionAcknowledgement(after, acknowledgementSafe),
       },
     }
   })
@@ -219,13 +239,14 @@ export function reorderAgentPresetsCommand(
 
 export function setAgentPresetDefaultCommand(
   args: AgentPresetCommandArgs,
-): JsonCommandMutationResult<{ agentPresetDefaultId: string | null }> {
+): JsonCommandMutationResult<AgentPresetCollectionMutationExtra> {
   const body = readObject(args.body, 'request body')
   const rawId = body.agentPresetId ?? body.presetId
   const requestedId = rawId === null ? '' : (readOptionalString(rawId, 'agentPresetId') ?? '')
 
   return applyAgentPresetSettingsMutation(args, (target) => {
-    const presets = currentAgentPresets(target)
+    const before = readCanonicalAgentPresetState(target)
+    const presets = before.presets
     if (requestedId.trim() === '') {
       delete target.agentPresetDefaultId
     } else {
@@ -233,13 +254,21 @@ export function setAgentPresetDefaultCommand(
       target.agentPresetDefaultId = requestedId
     }
     normalizeAgentPresetDefault(target)
+    const after = readCanonicalAgentPresetState(target)
+    const expectedDefaultId = requestedId.trim() === '' ? undefined : requestedId
+    const acknowledgementSafe =
+      before.acknowledgementSafe &&
+      after.acknowledgementSafe &&
+      after.defaultId === expectedDefaultId &&
+      isDeepStrictEqual(before.presets, after.presets)
     return {
       event: {
         ...COMMAND_EVENT_CATALOG.agentPresetDefaultUpdated,
-        ...(typeof target.agentPresetDefaultId === 'string' ? { id: target.agentPresetDefaultId } : {}),
+        ...(after.defaultId ? { id: after.defaultId } : {}),
       },
       extra: {
-        agentPresetDefaultId: typeof target.agentPresetDefaultId === 'string' ? target.agentPresetDefaultId : null,
+        agentPresetDefaultId: after.defaultId ?? null,
+        ...buildAgentPresetCollectionAcknowledgement(after, acknowledgementSafe),
       },
     }
   })
@@ -438,6 +467,17 @@ function readCanonicalAgentPresetState(target: Record<string, unknown>): Canonic
     presets,
     defaultId,
     acknowledgementSafe: Array.isArray(rawPresets) && isDeepStrictEqual(rawPresets, presets) && defaultIsCanonical,
+  }
+}
+
+function buildAgentPresetCollectionAcknowledgement(
+  state: CanonicalAgentPresetState,
+  acknowledgementSafe: boolean,
+): AgentPresetCollectionAcknowledgement | Record<string, never> {
+  if (!acknowledgementSafe) return {}
+  return {
+    certificate: AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE,
+    agentPresetIds: state.presets.map((preset) => preset.id),
   }
 }
 

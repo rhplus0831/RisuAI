@@ -24,6 +24,7 @@ import {
   setCachedServerCommandRevision,
   setServerCommandSuccessReconciler,
   type CommandEvent,
+  type AgentPresetCollectionMutationLocalEffect,
   type AgentPresetPatchLocalEffect,
   type AgentPresetStepPatchLocalEffect,
   type LegacyPresetPatchLocalEffect,
@@ -75,6 +76,7 @@ import {
   applyModuleEnabledLocalEffect,
   applyPromptItemMutationLocalEffect,
   applyLegacyPresetPatchLocalEffect,
+  applyAgentPresetCollectionMutationLocalEffect,
   applyAgentPresetPatchLocalEffect,
   applyAgentPresetStepPatchLocalEffect,
   applyPersonaMutationLocalEffect,
@@ -517,6 +519,36 @@ function applyPersonaMutationAcknowledgement(event: CommandEvent, localEffect: P
   )
 }
 
+function applyAgentPresetCollectionMutationAcknowledgement(
+  event: CommandEvent,
+  localEffect: AgentPresetCollectionMutationLocalEffect,
+): boolean {
+  const expectedType = localEffect.operation === 'reorder' ? 'agentPreset.reordered' : 'agentPreset.default.updated'
+  const expectedEventId =
+    localEffect.operation === 'default' ? (localEffect.agentPresetDefaultId ?? undefined) : undefined
+  if (
+    event.type !== expectedType ||
+    event.resource !== 'agentPreset' ||
+    event.id !== expectedEventId ||
+    event.parentId !== undefined ||
+    !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+    localEffect.settingsProjectionEpoch < 0 ||
+    hasSettingsGroupProjectionEpochChanged('agents', localEffect.settingsProjectionEpoch) ||
+    isSettingsGroupAcknowledgementTainted('agents') ||
+    isSettingsAcknowledgementTainted()
+  ) {
+    return false
+  }
+  return withTrustedResourceWrite(() =>
+    applyAgentPresetCollectionMutationLocalEffect({
+      revision: event.revision,
+      operation: localEffect.operation,
+      presetIds: localEffect.presetIds,
+      agentPresetDefaultId: localEffect.agentPresetDefaultId,
+    }),
+  )
+}
+
 function applyAgentPresetPatchAcknowledgement(event: CommandEvent, localEffect: AgentPresetPatchLocalEffect): boolean {
   if (
     event.type !== 'agentPreset.updated' ||
@@ -616,6 +648,8 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
   }
 
   switch (localEffect.kind) {
+    case 'agentPresetCollectionMutation':
+      return applyAgentPresetCollectionMutationAcknowledgement(event, localEffect)
     case 'agentPresetPatch':
       return applyAgentPresetPatchAcknowledgement(event, localEffect)
     case 'agentPresetStepPatch':
