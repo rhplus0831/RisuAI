@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../src/app.js'
 import {
   applyModelPreset,
   applyPromptPreset,
@@ -11,6 +16,7 @@ import {
 import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 import { MODEL_ROLES } from '../../../src/ts/model/modelRoles.js'
 import { LLMFlags } from '../../../src/ts/model/types.js'
+import { setupAuthedClient } from './helpers/auth.js'
 
 const normalizedModelRoles = (overrides: Record<string, string> = {}) => ({
   chatMain: '',
@@ -321,5 +327,252 @@ describe('split preset command normalization', () => {
       promptTemplate: [{ type: 'plain', text: 'applied missing id' }],
     })
     expect((database.promptTemplate as Array<{ id?: string }>)[0].id).toEqual(expect.any(String))
+  })
+})
+
+describe('split preset command routes', () => {
+  interface Harness {
+    app: FastifyInstance
+    dataDir: string
+  }
+
+  let harness: Harness
+  let assertion: string
+
+  beforeEach(async () => {
+    process.env.LOG_LEVEL = 'silent'
+    const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-split-preset-routes-'))
+    const { app } = await buildApp({
+      config: {
+        host: '127.0.0.1',
+        port: 0,
+        dataDir,
+        bodyLimit: 1024 * 1024,
+        importMaxBytes: Infinity,
+        trustProxy: false,
+        hubUrl: 'https://sv.risuai.xyz',
+      },
+      assetGc: false,
+      memoryWorker: false,
+    })
+    harness = { app, dataDir }
+    ;({ assertion } = await setupAuthedClient(app))
+  })
+
+  afterEach(async () => {
+    await harness.app.close()
+    rmSync(harness.dataDir, { recursive: true, force: true })
+  })
+
+  async function importPresets(database: Record<string, unknown>): Promise<number> {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/import/risusave',
+      headers: { 'risu-auth': assertion },
+      payload: { database },
+    })
+    expect(response.statusCode, response.payload).toBe(200)
+    return response.json().revision as number
+  }
+
+  async function runCommand(
+    url: string,
+    baseRevision: number,
+    payload: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url,
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision, ...payload },
+    })
+    expect(response.statusCode, response.payload).toBe(200)
+    return response.json() as Record<string, unknown>
+  }
+
+  async function readPersistedPresetState(): Promise<{
+    revision: number
+    modelPresets: Array<Record<string, unknown>>
+    promptPresets: Array<Record<string, unknown>>
+    settings: Record<string, unknown>
+  }> {
+    const [collections, settings] = await Promise.all([
+      harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/collections',
+        headers: { 'risu-auth': assertion },
+      }),
+      harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/settings',
+        headers: { 'risu-auth': assertion },
+      }),
+    ])
+    expect(collections.statusCode, collections.payload).toBe(200)
+    expect(settings.statusCode, settings.payload).toBe(200)
+    const collectionBody = collections.json() as {
+      revision: number
+      collections: {
+        modelPresets: Array<Record<string, unknown>>
+        promptPresets: Array<Record<string, unknown>>
+      }
+    }
+    const settingsBody = settings.json() as { revision: number; settings: Record<string, unknown> }
+    expect(settingsBody.revision).toBe(collectionBody.revision)
+    return {
+      revision: collectionBody.revision,
+      modelPresets: collectionBody.collections.modelPresets,
+      promptPresets: collectionBody.collections.promptPresets,
+      settings: settingsBody.settings,
+    }
+  }
+
+  it('persists model and prompt create/import/select/reorder as one coherent lifecycle', async () => {
+    let revision = await importPresets({
+      modelPresetsId: 0,
+      promptPresetsId: 0,
+      temperature: 0.1,
+      mainPrompt: 'base prompt',
+      modelPresets: [{ id: 'model-base', name: 'Model Base', temperature: 0.1 }],
+      promptPresets: [{ id: 'prompt-base', name: 'Prompt Base', mainPrompt: 'base prompt' }],
+    })
+
+    const createdModel = await runCommand('/api/v1/commands/model-presets', revision, {
+      preset: { id: 'model-created', name: 'Model Created', temperature: 0.4 },
+    })
+    expect(createdModel).toMatchObject({
+      modelPresetId: 'model-created',
+      event: { type: 'modelPreset.created', id: 'model-created' },
+    })
+    revision = createdModel.revision as number
+
+    const importedModel = await runCommand('/api/v1/commands/model-presets/import', revision, {
+      preset: { id: 'model-imported', name: 'Model Imported', temperature: 0.8 },
+    })
+    expect(importedModel).toMatchObject({
+      modelPresetId: 'model-imported',
+      event: { type: 'modelPreset.imported', id: 'model-imported' },
+    })
+    revision = importedModel.revision as number
+
+    const selectedModel = await runCommand('/api/v1/commands/model-presets/select', revision, {
+      modelPresetId: 'model-imported',
+    })
+    expect(selectedModel).toMatchObject({
+      modelPresetId: 'model-imported',
+      event: { type: 'modelPreset.selected', id: 'model-imported' },
+    })
+    revision = selectedModel.revision as number
+
+    const reorderedModels = await runCommand('/api/v1/commands/model-presets/reorder', revision, {
+      modelPresetIds: ['model-created', 'model-imported', 'model-base'],
+    })
+    expect(reorderedModels).toMatchObject({
+      selectedModelPresetId: 'model-imported',
+      event: { type: 'modelPreset.reordered' },
+    })
+    revision = reorderedModels.revision as number
+
+    const createdPrompt = await runCommand('/api/v1/commands/prompt-presets', revision, {
+      preset: { id: 'prompt-created', name: 'Prompt Created', mainPrompt: 'created prompt' },
+    })
+    expect(createdPrompt).toMatchObject({
+      promptPresetId: 'prompt-created',
+      event: { type: 'promptPreset.created', id: 'prompt-created' },
+    })
+    revision = createdPrompt.revision as number
+
+    const importedPrompt = await runCommand('/api/v1/commands/prompt-presets/import', revision, {
+      preset: { id: 'prompt-imported', name: 'Prompt Imported', mainPrompt: 'imported prompt' },
+    })
+    expect(importedPrompt).toMatchObject({
+      promptPresetId: 'prompt-imported',
+      event: { type: 'promptPreset.imported', id: 'prompt-imported' },
+    })
+    revision = importedPrompt.revision as number
+
+    const selectedPrompt = await runCommand('/api/v1/commands/prompt-presets/select', revision, {
+      promptPresetId: 'prompt-imported',
+    })
+    expect(selectedPrompt).toMatchObject({
+      promptPresetId: 'prompt-imported',
+      event: { type: 'promptPreset.selected', id: 'prompt-imported' },
+    })
+    revision = selectedPrompt.revision as number
+
+    const reorderedPrompts = await runCommand('/api/v1/commands/prompt-presets/reorder', revision, {
+      promptPresetIds: ['prompt-imported', 'prompt-base', 'prompt-created'],
+    })
+    expect(reorderedPrompts).toMatchObject({
+      selectedPromptPresetId: 'prompt-imported',
+      event: { type: 'promptPreset.reordered' },
+    })
+
+    const persisted = await readPersistedPresetState()
+    expect(persisted.revision).toBe(reorderedPrompts.revision)
+    expect(persisted.modelPresets.map((preset) => preset.id)).toEqual(['model-created', 'model-imported', 'model-base'])
+    expect(persisted.promptPresets.map((preset) => preset.id)).toEqual([
+      'prompt-imported',
+      'prompt-base',
+      'prompt-created',
+    ])
+    expect(persisted.settings).toMatchObject({
+      modelPresetsId: 1,
+      promptPresetsId: 0,
+      temperature: 0.8,
+      mainPrompt: 'imported prompt',
+    })
+    expect(persisted.modelPresets[persisted.settings.modelPresetsId as number].id).toBe('model-imported')
+    expect(persisted.promptPresets[persisted.settings.promptPresetsId as number].id).toBe('prompt-imported')
+  })
+
+  it('rejects duplicate, unknown, and stale reorders without changing either collection or selected id', async () => {
+    const revision = await importPresets({
+      modelPresetsId: 1,
+      promptPresetsId: 1,
+      modelPresets: [
+        { id: 'model-a', name: 'Model A' },
+        { id: 'model-b', name: 'Model B' },
+      ],
+      promptPresets: [
+        { id: 'prompt-a', name: 'Prompt A' },
+        { id: 'prompt-b', name: 'Prompt B' },
+      ],
+    })
+
+    const duplicate = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, modelPresetIds: ['model-a', 'model-a'] },
+    })
+    expect(duplicate.statusCode).toBe(400)
+    expect(duplicate.json()).toEqual({ error: 'Duplicate preset id: model-a' })
+
+    const unknown = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/prompt-presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision, promptPresetIds: ['prompt-a', 'prompt-missing'] },
+    })
+    expect(unknown.statusCode).toBe(400)
+    expect(unknown.json()).toEqual({ error: 'Unknown preset id: prompt-missing' })
+
+    const stale = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/model-presets/reorder',
+      headers: { 'risu-auth': assertion },
+      payload: { baseRevision: revision - 1, modelPresetIds: ['model-b', 'model-a'] },
+    })
+    expect(stale.statusCode).toBe(409)
+    expect(stale.json()).toEqual({ error: 'revision_conflict', currentRevision: revision })
+
+    const persisted = await readPersistedPresetState()
+    expect(persisted.revision).toBe(revision)
+    expect(persisted.modelPresets.map((preset) => preset.id)).toEqual(['model-a', 'model-b'])
+    expect(persisted.promptPresets.map((preset) => preset.id)).toEqual(['prompt-a', 'prompt-b'])
+    expect(persisted.settings).toMatchObject({ modelPresetsId: 1, promptPresetsId: 1 })
+    expect(persisted.modelPresets[persisted.settings.modelPresetsId as number].id).toBe('model-b')
+    expect(persisted.promptPresets[persisted.settings.promptPresetsId as number].id).toBe('prompt-b')
   })
 })
