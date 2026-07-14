@@ -1,4 +1,7 @@
-import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+import {
+  captureSettingsPatchProjectionEpochs,
+  getResourceDatabase as getDatabase,
+} from 'src/ts/server/resourceState.svelte'
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps } from '../modules'
 import { canUseServerCommands, patchServerBackedSettings } from '../../server/commands'
@@ -329,8 +332,11 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   if (!canUseServerCommands()) return
 
   const attemptedNext = cloneJsonValue(getDatabase().authRefreshes as StoredMCPRefreshToken[])
+  const patch = { authRefreshes: attemptedNext }
   void patchServerBackedSettings({
-    patch: { authRefreshes: attemptedNext },
+    patch,
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs: captureSettingsPatchProjectionEpochs(patch),
     rollback: () => {
       withTrustedResourceWrite(() => {
         const rolledBack = applyAttemptedFieldRollback({

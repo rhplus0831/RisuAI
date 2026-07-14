@@ -1085,6 +1085,7 @@ function runGlobalScriptsDefinitionCommand(
           group: 'advanced',
           baseRevision,
           patch: { globalscript: scripts },
+          acknowledgeOptimistic: true,
           optimisticProjectionEpoch,
         },
         options.signal,

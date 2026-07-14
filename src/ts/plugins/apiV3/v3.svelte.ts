@@ -12,6 +12,7 @@ import { SandboxHost } from './factory'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { currentPluginStateSnapshot, dispatchUpdatePlugin } from 'src/ts/pluginCommands'
 import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
+import { captureSettingsPatchProjectionEpochs } from 'src/ts/server/resourceState.svelte'
 import { currentCharacterRowSnapshot, prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import {
   appendCurrentChatUserMessageForSend,
@@ -76,6 +77,8 @@ function dispatchPluginApiSettingsPatch(patch: Record<string, unknown>, previous
   const rollbackPrevious = cloneJsonValue(previous)
   void patchServerBackedSettings({
     patch: attempted,
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs: captureSettingsPatchProjectionEpochs(attempted),
     rollback: () => {
       withTrustedResourceWrite(() => {
         const rolledBack = applyAttemptedFieldRollback({

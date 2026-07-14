@@ -519,6 +519,7 @@ describe('API-backed client bootstrap', () => {
     withTrustedResourceWrite(() => {
       getDatabase().theme = 'LIGHT'
     })
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('display')
     const event = {
       type: 'settings.updated',
       revision: 6,
@@ -537,6 +538,7 @@ describe('API-backed client bootstrap', () => {
             group: 'display',
             attemptedPatch: { theme: 'LIGHT' },
             settings: { theme: 'light' },
+            settingsProjectionEpoch,
           },
         ],
       ]),
@@ -545,6 +547,102 @@ describe('API-backed client bootstrap', () => {
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(getDatabase().theme).toBe('light')
     expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('falls back when an authoritative settings apply supersedes an optimistic intent', async () => {
+    await loadWebInitialDatabase()
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('display')
+    withTrustedResourceWrite(() => {
+      getDatabase().theme = 'optimistic'
+    })
+    applySettingsGroupResource(
+      {
+        revision: 5,
+        group: 'display',
+        settings: { theme: 'authoritative-before-command' },
+      },
+      ['theme'],
+    )
+    const event = {
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'display',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'settingsPatch',
+            group: 'display',
+            attemptedPatch: { theme: 'optimistic' },
+            settings: { theme: 'canonical' },
+            settingsProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+    expect(getDatabase().theme).toBe('authoritative-before-command')
+  })
+
+  it('falls back when a models read supersedes an optimistic provider-owned model profile intent', async () => {
+    await loadWebInitialDatabase()
+    const settingsProjectionEpoch = captureSettingsGroupProjectionEpoch('providers')
+    withTrustedResourceWrite(() => {
+      getDatabase().modelProfiles = [{ id: 'profile-optimistic', name: 'Optimistic Profile' }] as never
+    })
+    applySettingsGroupResource(
+      {
+        revision: 5,
+        group: 'models',
+        settings: {
+          modelProfiles: [{ id: 'profile-authoritative', name: 'Authoritative Profile' }],
+        },
+      },
+      ['modelProfiles'],
+    )
+    const event = {
+      type: 'settings.updated',
+      revision: 6,
+      resource: 'settings',
+      id: 'providers',
+    }
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'settingsPatch',
+            group: 'providers',
+            attemptedPatch: {
+              modelProfiles: [{ id: 'profile-optimistic', name: 'Optimistic Profile' }],
+            },
+            settings: {
+              modelProfiles: [{ id: 'profile-optimistic', name: 'Optimistic Profile' }],
+            },
+            settingsProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
+    expect(getDatabase().modelProfiles).toEqual([{ id: 'profile-authoritative', name: 'Authoritative Profile' }])
   })
 
   it('authoritatively reconciles an accepted settings patch without an optimistic effect', async () => {

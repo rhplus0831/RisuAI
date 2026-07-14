@@ -4,7 +4,12 @@ import { normalizeAgentPresets, validateAgentPresetRecord } from '../agentPreset
 import { changeLanguage } from '../../lang'
 import { shouldPreserveLiveChatGenerationSettingsForResource } from './chatGenerationSettingsResourceGuard'
 import { isCanonicalLoadoutCollection } from './loadoutCanonical'
-import { isModelProfileSettingsGroup, type SettingsGroup } from './settingsGroups'
+import {
+  isModelProfileSettingsGroup,
+  SERVER_SETTINGS_GROUP_BY_KEY,
+  type SettingsGroup,
+  type SettingsGroupProjectionEpochs,
+} from './settingsGroups'
 import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } from './commands'
 
 let nextCharacterRowProjectionEpoch = 0
@@ -242,9 +247,12 @@ export function hasLorebookPageProjectionEpochChanged(epoch: number): boolean {
   return captureLorebookPageProjectionEpoch() !== epoch
 }
 
-function advanceSettingsGroupProjectionEpoch(group: SettingsGroup): void {
+function advanceSettingsGroupProjectionEpoch(
+  group: SettingsGroup,
+  options: { preserveAcknowledgementTaint?: boolean } = {},
+): void {
   settingsGroupProjectionEpochs.set(group, ++nextSettingsProjectionEpoch)
-  settingsGroupAcknowledgementTaints.delete(group)
+  if (!options.preserveAcknowledgementTaint) settingsGroupAcknowledgementTaints.delete(group)
 }
 
 function advanceAllSettingsProjectionEpochs(): void {
@@ -255,6 +263,19 @@ function advanceAllSettingsProjectionEpochs(): void {
 
 export function captureSettingsGroupProjectionEpoch(group: SettingsGroup): number {
   return settingsGroupProjectionEpochs.get(group) ?? settingsProjectionBaseline
+}
+
+export function captureSettingsPatchProjectionEpochs(
+  patch: Readonly<Record<string, unknown>>,
+): SettingsGroupProjectionEpochs {
+  const epochs: SettingsGroupProjectionEpochs = {}
+  for (const key of Object.keys(patch)) {
+    const group = SERVER_SETTINGS_GROUP_BY_KEY[key]
+    if (group && epochs[group] === undefined) {
+      epochs[group] = captureSettingsGroupProjectionEpoch(group)
+    }
+  }
+  return epochs
 }
 
 export function hasSettingsGroupProjectionEpochChanged(group: SettingsGroup, epoch: number): boolean {
@@ -720,6 +741,9 @@ export function applySettingsGroupResource(
   if (groupKeys.includes('language')) applyRuntimeLanguage(target.language)
   advanceSettingsGroupProjectionEpoch(payload.group)
   if (payload.group === 'providers') advanceSettingsGroupProjectionEpoch('models')
+  if (payload.group === 'models') {
+    advanceSettingsGroupProjectionEpoch('providers', { preserveAcknowledgementTaint: true })
+  }
   advanceSettingsProjectionEpoch()
   markResourceDatabaseChanged()
   return true

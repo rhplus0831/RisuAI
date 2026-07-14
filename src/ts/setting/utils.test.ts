@@ -18,8 +18,19 @@ vi.mock('../process/modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-import { clearCachedServerCommandRevision, settingsGroupForKey } from '../server/commands'
-import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import {
+  clearCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
+  settingsGroupForKey,
+  type ServerCommandLocalEffect,
+} from '../server/commands'
+import {
+  applySettingsGroupResource,
+  captureSettingsGroupProjectionEpoch,
+  getResourceDatabase,
+  hasSettingsGroupProjectionEpochChanged,
+  replaceResourceDatabase,
+} from '../server/resourceState.svelte'
 import { setResourceWriteGuardEnabled, withServerResourceApply } from '../server/resourceWriteGuard.svelte'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
@@ -149,12 +160,14 @@ function serverCommandKeyForSetting(item: SettingItem): string | null {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
+  setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
   replaceResourceDatabase({ notification: false } as any)
 })
 
 afterEach(() => {
   clearDeferredSettingWrites()
+  setServerCommandSuccessReconciler(null)
   vi.unstubAllGlobals()
   vi.useRealTimers()
   setResourceWriteGuardEnabled(false)
@@ -319,6 +332,93 @@ describe('server-backed data-driven settings', () => {
     expect(patches).toHaveLength(1)
     expect(patches[0].body).toMatchObject({ patch: { guiHTML: 'local final' } })
     unmount(component)
+  })
+
+  it('keeps a destroyed input intent fenced to its pre-projection group epoch', async () => {
+    vi.useFakeTimers()
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+        calls.push({ url, method: init.method ?? 'GET', body })
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 4 })
+        if (url === '/api/v1/commands/settings/display') {
+          return jsonResponse({
+            revision: 5,
+            event: {
+              type: 'settings.updated',
+              revision: 5,
+              resource: 'settings',
+              id: 'display',
+            },
+            acknowledgedKeys: ['guiHTML'],
+            settings: {},
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    replaceResourceDatabase({
+      guiHTML: 'server initial',
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'display.guiHTML',
+      type: 'textarea',
+      bindKey: 'guiHTML' as keyof ReturnType<typeof getResourceDatabase>,
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+    const observedEffects: ServerCommandLocalEffect[] = []
+    let finishReconciliation!: () => void
+    const reconciliationFinished = new Promise<void>((resolve) => {
+      finishReconciliation = resolve
+    })
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+      finishReconciliation()
+    })
+    const intentEpoch = captureSettingsGroupProjectionEpoch('display')
+    const target = document.createElement('div')
+    const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'text' } })
+    flushSync()
+    const input = target.querySelector<HTMLInputElement>('[data-setting-input-draft]')!
+
+    input.value = 'local final'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+    unmount(component)
+    withServerResourceApply(() =>
+      applySettingsGroupResource(
+        {
+          revision: 4,
+          group: 'display',
+          settings: { guiHTML: 'server intermediate' },
+        },
+        ['guiHTML'],
+      ),
+    )
+    expect(hasSettingsGroupProjectionEpochChanged('display', intentEpoch)).toBe(true)
+    expect(getResourceDatabase().guiHTML).toBe('server intermediate')
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await reconciliationFinished
+
+    expect(calls.filter((call) => call.url === '/api/v1/commands/settings/display')).toHaveLength(1)
+    expect(observedEffects).toEqual([
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { guiHTML: 'local final' },
+        settings: { guiHTML: 'local final' },
+        settingsProjectionEpoch: intentEpoch,
+      },
+    ])
+    expect(getResourceDatabase().guiHTML).toBe('server intermediate')
   })
 
   it('bounds rapid slider persistence to one dispatch with the final value', async () => {

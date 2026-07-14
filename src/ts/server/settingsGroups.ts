@@ -18,6 +18,8 @@ export const SETTINGS_GROUPS = [
 
 export type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
 
+export type SettingsGroupProjectionEpochs = Partial<Record<SettingsGroup, number>>
+
 export const MODEL_PROFILE_SETTINGS_KEYS = ['modelProfiles', 'modelRoleProfiles', 'modelRuntimeDefaults'] as const
 
 export function isModelProfileSettingsGroup(group: SettingsGroup): group is 'providers' | 'models' {

@@ -19,6 +19,8 @@ import {
   type ServerCommandTransportOptions,
 } from '../server/commands'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { captureSettingsPatchProjectionEpochs } from '../server/resourceState.svelte'
+import type { SettingsGroupProjectionEpochs } from '../server/settingsGroups'
 import { registerPendingBridgePatchFlusher } from '../server/pendingBridgeFlushRegistry'
 import {
   currentTopLevelPresetFieldMirrorValue,
@@ -84,6 +86,7 @@ interface DeferredSettingEdit {
 interface PendingDeferredSettingWrite {
   desiredRoot: unknown
   edits: Map<string, DeferredSettingEdit>
+  optimisticProjectionEpochs?: SettingsGroupProjectionEpochs
   previousRoot: unknown
   target: DeferredSettingTarget
   timer: ReturnType<typeof setTimeout>
@@ -123,13 +126,16 @@ export function getSettingValue(item: SettingItem, ctx: SettingContext): any {
 export function setSettingValue(item: SettingItem, newValue: any, ctx: SettingContext): void {
   const previousValue = getSettingValue(item, ctx)
   const commandPatch = buildServerSettingsPatch(item)
+  const optimisticProjectionEpochs = commandPatch
+    ? captureSettingsPatchProjectionEpochs({ [commandPatch.key]: newValue })
+    : undefined
 
   writeLocalSettingValue(item, newValue, ctx)
 
   const mirroredToPreset = mirrorSettingValueToSelectedPreset(item, newValue, ctx)
 
   if (commandPatch && !mirroredToPreset) {
-    void patchServerBackedSetting(item, commandPatch, newValue, previousValue, ctx)
+    void patchServerBackedSetting(item, commandPatch, newValue, previousValue, ctx, optimisticProjectionEpochs)
   }
 }
 
@@ -146,6 +152,8 @@ export function setDeferredSettingValue(
 ): DeferredSettingWriteResult {
   const target = resolveDeferredSettingTarget(item, ctx)
   const previousRoot = target ? currentDeferredSettingTargetValue(target) : undefined
+  const optimisticProjectionEpochs =
+    target?.kind === 'server' ? captureSettingsPatchProjectionEpochs({ [target.rootKey]: previousRoot }) : undefined
 
   writeLocalSettingValue(item, newValue, ctx)
 
@@ -160,6 +168,7 @@ export function setDeferredSettingValue(
       previousRoot,
       deferredSettingPath(item),
       newValue,
+      optimisticProjectionEpochs,
       options.delayMs ?? DEFERRED_SETTING_INPUT_DELAY_MS,
     ),
   }
@@ -249,6 +258,7 @@ function queueDeferredSettingWrite(
   previousRoot: unknown,
   path: string[],
   value: unknown,
+  optimisticProjectionEpochs: SettingsGroupProjectionEpochs | undefined,
   delayMs: number,
 ): boolean {
   const existing = pendingDeferredSettingWrites.get(target.ownerKey)
@@ -273,6 +283,11 @@ function queueDeferredSettingWrite(
   const pending: PendingDeferredSettingWrite = {
     desiredRoot: cloneJsonValue(desiredRoot),
     edits,
+    ...(target.kind === 'server'
+      ? {
+          optimisticProjectionEpochs: existing?.optimisticProjectionEpochs ?? optimisticProjectionEpochs,
+        }
+      : {}),
     previousRoot: baseline,
     target,
     timer: setTimeout(() => dispatchDeferredSettingWrite(target.ownerKey), delayMs),
@@ -318,6 +333,8 @@ function dispatchDeferredSettingWrite(ownerKey: string, options: ServerCommandTr
 
   void patchServerBackedSettings({
     patch: { [serverTarget.rootKey]: attemptedRoot },
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs: pending.optimisticProjectionEpochs,
     keepalive: options.keepalive,
     signal: options.signal,
     rollback: () => rollbackDeferredServerSetting(serverTarget, attemptedRoot, pending.previousRoot, pending.edits),
@@ -475,6 +492,7 @@ async function patchServerBackedSetting(
   newValue: unknown,
   previousValue: unknown,
   ctx: SettingContext,
+  optimisticProjectionEpochs: SettingsGroupProjectionEpochs | undefined,
 ): Promise<void> {
   const patch = { [commandPatch.key]: commandPatch.valueFromDb() }
   if (patch[commandPatch.key] === undefined) {
@@ -484,6 +502,8 @@ async function patchServerBackedSetting(
 
   await patchServerBackedSettings({
     patch,
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs,
     rollback: () => rollbackLocalSetting(item, newValue, previousValue, ctx),
   })
 }

@@ -322,6 +322,7 @@ describe('server command API adapter', () => {
       baseRevision: 2,
       patch: { theme: 'LIGHT', zoomsize: 90 },
       acknowledgeOptimistic: true,
+      optimisticProjectionEpoch: 12,
     })
 
     expect(observedEffects).toEqual([
@@ -330,6 +331,7 @@ describe('server command API adapter', () => {
         group: 'display',
         attemptedPatch: { theme: 'LIGHT', zoomsize: 90 },
         settings: { theme: 'light', zoomsize: 90 },
+        settingsProjectionEpoch: 12,
       },
     ])
   })
@@ -359,6 +361,7 @@ describe('server command API adapter', () => {
       baseRevision: 2,
       patch: { customCSS },
       acknowledgeOptimistic: true,
+      optimisticProjectionEpoch: 13,
     })
 
     expect(observedEffects).toEqual([
@@ -367,11 +370,12 @@ describe('server command API adapter', () => {
         group: 'display',
         attemptedPatch: { customCSS },
         settings: { customCSS },
+        settingsProjectionEpoch: 13,
       },
     ])
   })
 
-  it('requires explicit certification before acknowledging a settings patch locally', async () => {
+  it('requires opt-in and a projection epoch before acknowledging a settings patch locally', async () => {
     const commandFetch = makeCommandFetch((_url, init) => {
       const request = JSON.parse(String(init?.body)) as { baseRevision: number }
       const revision = request.baseRevision + 1
@@ -396,8 +400,14 @@ describe('server command API adapter', () => {
 
     await patchServerBackedSettings({ patch: { theme: 'LIGHT' } })
     await patchServerBackedSettings({ patch: { theme: 'LIGHT' }, acknowledgeOptimistic: true })
+    await patchServerBackedSettings({
+      patch: { theme: 'LIGHT' },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpochs: { display: 7 },
+    })
 
     expect(observedEffects).toEqual([
+      [],
       [],
       [
         {
@@ -405,14 +415,17 @@ describe('server command API adapter', () => {
           group: 'display',
           attemptedPatch: { theme: 'LIGHT' },
           settings: { theme: 'light' },
+          settingsProjectionEpoch: 7,
         },
       ],
     ])
     expect(commandFetch.calls.map((call) => call.body)).toEqual([
       { baseRevision: 1, patch: { theme: 'LIGHT' } },
       { baseRevision: 2, patch: { theme: 'LIGHT' } },
+      { baseRevision: 3, patch: { theme: 'LIGHT' } },
     ])
-    expect(commandFetch.calls[1]?.body).not.toHaveProperty('acknowledgeOptimistic')
+    expect(commandFetch.calls[2]?.body).not.toHaveProperty('acknowledgeOptimistic')
+    expect(commandFetch.calls[2]?.body).not.toHaveProperty('optimisticProjectionEpochs')
   })
 
   it('sends only shallow object changes while reconstructing the full optimistic settings value locally', async () => {
@@ -923,6 +936,7 @@ describe('server command API adapter', () => {
             baseRevision,
             patch: attempts[0],
             acknowledgeOptimistic: true,
+            optimisticProjectionEpoch: 9,
           }),
         (baseRevision) =>
           patchSettingsGroup({
@@ -930,6 +944,7 @@ describe('server command API adapter', () => {
             baseRevision,
             patch: attempts[1],
             acknowledgeOptimistic: true,
+            optimisticProjectionEpoch: 9,
           }),
       ],
       rollback,
@@ -953,6 +968,7 @@ describe('server command API adapter', () => {
               group: 'runtime',
               attemptedPatch: attempts[0],
               settings: attempts[0],
+              settingsProjectionEpoch: 9,
             },
           ],
           [
@@ -962,6 +978,7 @@ describe('server command API adapter', () => {
               group: 'runtime',
               attemptedPatch: attempts[1],
               settings: attempts[1],
+              settingsProjectionEpoch: 9,
             },
           ],
         ],
@@ -1311,27 +1328,39 @@ describe('server command API adapter', () => {
       if (url.endsWith('/settings/providers')) {
         return {
           revision: 11,
-          event: { type: 'settings.updated', revision: 11, resource: 'settings' },
+          event: { type: 'settings.updated', revision: 11, resource: 'settings', id: 'providers' },
+          acknowledgedKeys: ['aiModel'],
+          settings: {},
         }
       }
       return {
         revision: 12,
-        event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+        event: { type: 'settings.updated', revision: 12, resource: 'settings', id: 'runtime' },
+        acknowledgedKeys: ['maxContext'],
+        settings: {},
       }
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
+    const observedEffects: ServerCommandLocalEffect[] = []
+    setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+      observedEffects.push(...localEffects.values())
+    })
 
     const result = await patchServerBackedSettings({
       patch: {
         aiModel: 'openrouter',
         maxContext: 12000,
       },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpochs: { providers: 20, runtime: 30 },
     })
 
     expect(result).toEqual({
       status: 'ok',
       revision: 12,
-      event: { type: 'settings.updated', revision: 12, resource: 'settings' },
+      event: { type: 'settings.updated', revision: 12, resource: 'settings', id: 'runtime' },
+      acknowledgedKeys: ['maxContext'],
+      settings: {},
     })
     expect(commandFetch.calls.map((call) => ({ url: call.url, body: call.body }))).toEqual([
       {
@@ -1352,6 +1381,47 @@ describe('server command API adapter', () => {
           patch: { maxContext: 12000 },
         },
       },
+    ])
+    expect(observedEffects).toEqual([])
+  })
+
+  it('keeps earlier accepted groups authoritative when a later settings group fails', async () => {
+    const commandFetch = makeCommandFetch((url) => {
+      if (url === '/api/v1/bootstrap') return { revision: 10 }
+      if (url.endsWith('/settings/providers')) {
+        return {
+          revision: 11,
+          event: { type: 'settings.updated', revision: 11, resource: 'settings', id: 'providers' },
+          acknowledgedKeys: ['aiModel'],
+          settings: {},
+        }
+      }
+      return jsonResponse({ error: 'maxContext must be a number' }, 400)
+    })
+    vi.stubGlobal('fetch', commandFetch.fetch)
+    const rollback = vi.fn()
+    const reconciliations: Array<{ revisions: number[]; localEffects: ServerCommandLocalEffect[] }> = []
+    setServerCommandSuccessReconciler((_event, events, localEffects) => {
+      reconciliations.push({
+        revisions: events.map((event) => event.revision),
+        localEffects: [...localEffects.values()],
+      })
+    })
+
+    const result = await patchServerBackedSettings({
+      patch: { aiModel: 'openrouter', maxContext: 'invalid' },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpochs: { providers: 20, runtime: 30 },
+      rollback,
+    })
+
+    expect(result).toEqual({ status: 'error', error: 'maxContext must be a number' })
+    expect(rollback).toHaveBeenCalledTimes(1)
+    expect(reconciliations).toEqual([{ revisions: [11], localEffects: [] }])
+    expect(commandFetch.calls.map((call) => call.body)).toEqual([
+      null,
+      { baseRevision: 10, patch: { aiModel: 'openrouter' } },
+      { baseRevision: 11, patch: { maxContext: 'invalid' } },
     ])
   })
 

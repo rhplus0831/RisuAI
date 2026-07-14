@@ -16,11 +16,12 @@ import { fetchServerSettingsGroup } from './resourceReads'
 import {
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
+  captureSettingsPatchProjectionEpochs,
   hasSettingsGroupProjectionEpochChanged,
   isSettingsGroupAcknowledgementTainted,
   markSettingsGroupAcknowledgementTainted,
 } from './resourceState.svelte'
-import { SERVER_SETTINGS_KEYS_BY_GROUP, type SettingsGroup } from './settingsGroups'
+import { SERVER_SETTINGS_KEYS_BY_GROUP, type SettingsGroup, type SettingsGroupProjectionEpochs } from './settingsGroups'
 import {
   getServerResourceApplyEpoch,
   withServerResourceApply,
@@ -32,6 +33,7 @@ interface PendingSettingsPatch {
   patch: SettingsPatch
   previous: SettingsPatch
   attempted: SettingsPatch
+  projectionEpochs: SettingsGroupProjectionEpochs
   timer: ReturnType<typeof setTimeout> | null
 }
 
@@ -44,6 +46,7 @@ const pendingSettingsPatch: PendingSettingsPatch = {
   patch: {},
   previous: {},
   attempted: {},
+  projectionEpochs: {},
   timer: null,
 }
 
@@ -52,6 +55,7 @@ interface SparseObjectSettingQueue {
   group: SettingsGroup
   baseline: Record<string, unknown>
   queued: SparseSettingsObjectUpdate | null
+  queuedProjectionEpoch: number | null
   timer: ReturnType<typeof setTimeout> | null
   running: boolean
   superseded: boolean
@@ -194,6 +198,7 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
   }
 
   if (Object.keys(commandPatch).length === 0) return
+  const optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(commandPatch)
 
   dropPendingSettingsPatchKeys(Object.keys(commandPatch))
 
@@ -206,7 +211,7 @@ export function applyServerBackedSettingsPatch(patch: SettingsPatch): void {
     })
   })
 
-  dispatchServerBackedSettingsPatch(commandPatch, previous, attempted)
+  dispatchServerBackedSettingsPatch(commandPatch, previous, attempted, optimisticProjectionEpochs)
 }
 
 export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServerBackedSettingsOptions): void {
@@ -228,18 +233,21 @@ export function applyOnboardingServerBackedSettings(options: ApplyOnboardingServ
     })
   })
 
-  dispatchServerBackedSettingsPatch(fullPatch, previous, attempted)
+  dispatchServerBackedSettingsPatch(fullPatch, previous, attempted, captureSettingsPatchProjectionEpochs(fullPatch))
 }
 
 function dispatchServerBackedSettingsPatch(
   commandPatch: SettingsPatch,
   previous: SettingsPatch,
   attempted: SettingsPatch,
+  optimisticProjectionEpochs: SettingsGroupProjectionEpochs,
 ): void {
   if (Object.keys(commandPatch).length === 0) return
 
   void patchServerBackedSettings({
     patch: commandPatch,
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs,
     rollback: () => rollbackServerBackedSettings(previous, attempted),
   })
 }
@@ -299,6 +307,10 @@ export function watchServerBackedSettings(
 function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay: number): void {
   for (const [key, value] of Object.entries(patch)) {
     if (queueSparseObjectSettingPatch(key, previous[key], value, delay)) continue
+    const group = settingsGroupForKey(key)
+    if (group && pendingSettingsPatch.projectionEpochs[group] === undefined) {
+      pendingSettingsPatch.projectionEpochs[group] = captureSettingsGroupProjectionEpoch(group)
+    }
     if (!(key in pendingSettingsPatch.previous)) {
       pendingSettingsPatch.previous[key] = previous[key]
     }
@@ -311,6 +323,7 @@ function queueSettingsPatch(patch: SettingsPatch, previous: SettingsPatch, delay
     pendingSettingsPatch.patch[key] = value
     pendingSettingsPatch.attempted[key] = value
   }
+  prunePendingSettingsPatchProjectionEpochs()
 
   if (pendingSettingsPatch.timer) clearTimeout(pendingSettingsPatch.timer)
   if (Object.keys(pendingSettingsPatch.patch).length === 0) {
@@ -337,6 +350,7 @@ function dropPendingSettingsPatchKeys(keys: readonly string[]): void {
     delete pendingSettingsPatch.previous[key]
     delete pendingSettingsPatch.attempted[key]
   }
+  prunePendingSettingsPatchProjectionEpochs()
 
   if (dropped && pendingSettingsPatch.timer && Object.keys(pendingSettingsPatch.patch).length === 0) {
     clearTimeout(pendingSettingsPatch.timer)
@@ -363,18 +377,34 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
   const commandPatch = pendingSettingsPatch.patch
   const commandPrevious = pendingSettingsPatch.previous
   const commandAttempted = pendingSettingsPatch.attempted
+  const optimisticProjectionEpochs = pendingSettingsPatch.projectionEpochs
   pendingSettingsPatch.patch = {}
   pendingSettingsPatch.previous = {}
   pendingSettingsPatch.attempted = {}
+  pendingSettingsPatch.projectionEpochs = {}
 
   if (Object.keys(commandPatch).length === 0) return
 
   void patchServerBackedSettings({
     patch: commandPatch,
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs,
     keepalive: options.keepalive,
     signal: options.signal,
     rollback: () => rollbackServerBackedSettings(commandPrevious, commandAttempted),
   })
+}
+
+function prunePendingSettingsPatchProjectionEpochs(): void {
+  const pendingGroups = new Set(
+    Object.keys(pendingSettingsPatch.patch).flatMap((key) => {
+      const group = settingsGroupForKey(key)
+      return group ? [group] : []
+    }),
+  )
+  for (const group of Object.keys(pendingSettingsPatch.projectionEpochs) as SettingsGroup[]) {
+    if (!pendingGroups.has(group)) delete pendingSettingsPatch.projectionEpochs[group]
+  }
 }
 
 function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted: unknown, delay: number): boolean {
@@ -392,12 +422,14 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
       group,
       baseline: cloneJsonValue(previous),
       queued: intent,
+      queuedProjectionEpoch: captureSettingsGroupProjectionEpoch(group),
       timer: null,
       running: false,
       superseded: false,
     }
     sparseObjectSettingQueues.set(key, state)
   } else if (intent) {
+    if (!state.queued) state.queuedProjectionEpoch = captureSettingsGroupProjectionEpoch(group)
     state.queued = mergeSparseObjectSettingUpdates(state.queued, intent)
   }
 
@@ -405,6 +437,7 @@ function queueSparseObjectSettingPatch(key: string, previous: unknown, attempted
     const desired = applySparseObjectSettingUpdate(state.baseline, state.queued)
     state.queued = diffSparseObjectSetting(state.baseline, desired)
     if (!state.queued) {
+      state.queuedProjectionEpoch = null
       if (state.timer) clearTimeout(state.timer)
       sparseObjectSettingQueues.delete(key)
       return true
@@ -424,6 +457,7 @@ function supersedeSparseObjectSettingQueue(key: string): void {
   if (!state) return
   state.superseded = true
   state.queued = null
+  state.queuedProjectionEpoch = null
   if (state.timer) clearTimeout(state.timer)
   state.timer = null
   if (!state.running) sparseObjectSettingQueues.delete(key)
@@ -436,14 +470,15 @@ async function dispatchSparseObjectSettingQueue(
   if (state.running || state.superseded || !state.queued) return
   const attemptedObject = applySparseObjectSettingUpdate(state.baseline, state.queued)
   const update = diffSparseObjectSetting(state.baseline, attemptedObject)
+  const projectionEpoch = state.queuedProjectionEpoch
   state.queued = null
-  if (!update) {
+  state.queuedProjectionEpoch = null
+  if (!update || projectionEpoch === null) {
     sparseObjectSettingQueues.delete(state.key)
     return
   }
 
   state.running = true
-  const projectionEpoch = captureSettingsGroupProjectionEpoch(state.group)
   let failed = false
   const result = await runServerCommand({
     signal: options.signal,
@@ -503,6 +538,7 @@ async function dispatchSparseObjectSettingQueue(
       queueMicrotask(() => void dispatchSparseObjectSettingQueue(state, options))
       return
     }
+    state.queuedProjectionEpoch = null
   } else if (
     (failed || usedAuthoritativeBaseline) &&
     isJsonSnapshotEqual(currentSettingValue(state.key, {}), attemptedObject)

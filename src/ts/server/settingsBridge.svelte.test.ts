@@ -5,6 +5,8 @@ import { flushSync } from 'svelte'
 const recorded = vi.hoisted(() => ({
   patches: [] as Array<{
     patch: Record<string, unknown>
+    acknowledgeOptimistic?: boolean
+    optimisticProjectionEpochs?: Record<string, number>
     rollback?: () => void
     keepalive?: boolean
   }>,
@@ -14,6 +16,7 @@ const recorded = vi.hoisted(() => ({
     key: string
     update: { patch: Record<string, unknown>; deleteKeys?: string[] }
     attemptedObject: Record<string, unknown>
+    optimisticProjectionEpoch: number
   }>,
   objectResults: [] as Array<unknown | Promise<unknown>>,
   groupReads: [] as unknown[],
@@ -50,6 +53,7 @@ vi.mock('./commands', () => ({
       key: string
       update: { patch: Record<string, unknown>; deleteKeys?: string[] }
       attemptedObject: Record<string, unknown>
+      optimisticProjectionEpoch: number
     }) => {
       recorded.objectPatches.push(args)
       const queued = recorded.objectResults.shift()
@@ -74,7 +78,13 @@ vi.mock('./commands', () => ({
     },
   ),
   patchServerBackedSettings: vi.fn(
-    async (args: { patch: Record<string, unknown>; rollback?: () => void; keepalive?: boolean }) => {
+    async (args: {
+      patch: Record<string, unknown>
+      acknowledgeOptimistic?: boolean
+      optimisticProjectionEpochs?: Record<string, number>
+      rollback?: () => void
+      keepalive?: boolean
+    }) => {
       recorded.patches.push(args)
       return { status: 'ok', revision: 1 }
     },
@@ -90,6 +100,8 @@ vi.mock('./commands', () => ({
   settingsGroupForKey: (key: string) => {
     if (key === 'NAIImgConfig' || key === 'wavespeedImage') return 'media'
     if (key === 'seperateParameters') return 'runtime'
+    if (key === 'notification') return 'display'
+    if (key === 'useAutoSuggestions') return 'sidebar'
     return new Set([
       'aiModel',
       'apiType',
@@ -138,7 +150,13 @@ vi.mock('../process/templates/templates', () => ({
 }))
 
 import type { HypaV3Preset } from '../process/memory/hypav3'
-import { getResourceDatabase, replaceResourceDatabase } from './resourceState.svelte'
+import {
+  applySettingsGroupResource,
+  captureSettingsGroupProjectionEpoch,
+  getResourceDatabase,
+  hasSettingsGroupProjectionEpochChanged,
+  replaceResourceDatabase,
+} from './resourceState.svelte'
 import type { Database } from '../storage/database.svelte'
 import '../stores.svelte'
 import {
@@ -672,6 +690,39 @@ describe('settingsBridge coalescing', () => {
     stop()
   })
 
+  it('retains the intent-time group epoch across an authoritative apply before debounce dispatch', async () => {
+    setupSettings({ notification: false })
+    const stop = watchServerBackedSettings(['notification'], { delayMs: DELAY })
+    flushSync()
+    const intentEpoch = captureSettingsGroupProjectionEpoch('display')
+
+    testDatabaseState.db.notification = true
+    flushSync()
+    resourceGuardState.epoch += 1
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 1,
+          group: 'display',
+          settings: { notification: false },
+        },
+        ['notification'],
+      ),
+    ).toBe(true)
+    flushSync()
+    expect(hasSettingsGroupProjectionEpochChanged('display', intentEpoch)).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.patches).toHaveLength(1)
+    expect(recorded.patches[0]).toMatchObject({
+      patch: { notification: true },
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpochs: { display: intentEpoch },
+    })
+    stop()
+  })
+
   it('sends only changed fields from large watched settings objects', async () => {
     const original = {
       width: 512,
@@ -694,6 +745,42 @@ describe('settingsBridge coalescing', () => {
       update: { patch: { width: 832 } },
     })
     expect(recorded.objectPatches[0].attemptedObject).toEqual({ ...original, width: 832 })
+    stop()
+  })
+
+  it('retains the sparse-object intent epoch across an authoritative apply before dispatch', async () => {
+    const original = { width: 512, height: 768 }
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    const intentEpoch = captureSettingsGroupProjectionEpoch('media')
+
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    resourceGuardState.epoch += 1
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 1,
+          group: 'media',
+          settings: { NAIImgConfig: original as never },
+        },
+        ['NAIImgConfig'],
+      ),
+    ).toBe(true)
+    flushSync()
+    expect(hasSettingsGroupProjectionEpochChanged('media', intentEpoch)).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    await flushAndSettle()
+
+    expect(recorded.objectPatches).toHaveLength(1)
+    expect(recorded.objectPatches[0]).toMatchObject({
+      group: 'media',
+      key: 'NAIImgConfig',
+      update: { patch: { width: 832 } },
+      optimisticProjectionEpoch: intentEpoch,
+    })
     stop()
   })
 

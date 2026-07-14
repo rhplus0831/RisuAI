@@ -827,12 +827,10 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         return false
       }
       if (
-        (localEffect.group === 'prompt' && localEffect.settingsProjectionEpoch === undefined) ||
-        (localEffect.settingsProjectionEpoch !== undefined &&
-          (!Number.isInteger(localEffect.settingsProjectionEpoch) ||
-            localEffect.settingsProjectionEpoch < 0 ||
-            hasSettingsGroupProjectionEpochChanged(localEffect.group, localEffect.settingsProjectionEpoch) ||
-            isSettingsGroupAcknowledgementTainted(localEffect.group)))
+        !Number.isInteger(localEffect.settingsProjectionEpoch) ||
+        localEffect.settingsProjectionEpoch < 0 ||
+        hasSettingsGroupProjectionEpochChanged(localEffect.group, localEffect.settingsProjectionEpoch) ||
+        isSettingsGroupAcknowledgementTainted(localEffect.group)
       ) {
         return false
       }

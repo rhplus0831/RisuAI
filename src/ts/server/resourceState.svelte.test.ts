@@ -1240,7 +1240,7 @@ describe('resource-scoped database state', () => {
       theme: 'dark',
     })
     expect(settingsResourceState.groupRevisions).toMatchObject({ providers: 2, models: 3 })
-    expect(hasSettingsGroupProjectionEpochChanged('providers', providerEpoch)).toBe(false)
+    expect(hasSettingsGroupProjectionEpochChanged('providers', providerEpoch)).toBe(true)
     expect(hasSettingsGroupProjectionEpochChanged('models', modelsEpoch)).toBe(true)
     expect(isSettingsGroupAcknowledgementTainted('providers')).toBe(true)
     expect(isSettingsGroupAcknowledgementTainted('models')).toBe(false)

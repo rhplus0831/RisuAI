@@ -209,9 +209,10 @@ Settings-group ownership is mirrored between the browser and Fastify; the
 dedicated read-only `agents` and `models` exceptions are parity-tested.
 `agents` is written by dedicated Agent Preset commands. `models` is an exact
 read-only model-profile slice, while writable `providers` is its superset;
-applying a providers response advances both group fences, and one providers
-read subsumes a simultaneous models invalidation. The `language` read includes
-the command-owned `translatorPresetId` pointer.
+because those projections overlap, applying either response advances both group
+fences, while a models response preserves unrelated provider acknowledgement
+taint. One providers read subsumes a simultaneous models invalidation. The
+`language` read includes the command-owned `translatorPresetId` pointer.
 `hypaV3Presets` is collection-owned even though memory settings commands can
 change it, so the memory group response excludes it and its cross-resource event
 reads the collection separately.

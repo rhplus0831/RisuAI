@@ -32,7 +32,7 @@ import {
 } from './scriptDefinitionMutations'
 import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
 import { isCanonicalLoadout } from './loadoutCanonical'
-import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup } from './settingsGroups'
+import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup, type SettingsGroupProjectionEpochs } from './settingsGroups'
 import {
   captureDestructiveRefreshEpoch,
   hasDestructiveRefreshEpochChanged,
@@ -54,6 +54,7 @@ export {
   SETTINGS_GROUPS,
   isSettingsGroup,
   type SettingsGroup,
+  type SettingsGroupProjectionEpochs,
 } from './settingsGroups'
 
 export interface CommandEvent {
@@ -120,7 +121,7 @@ export interface SettingsPatchLocalEffect {
   group: SettingsGroup
   attemptedPatch: SettingsPatch
   settings: SettingsPatch
-  settingsProjectionEpoch?: number
+  settingsProjectionEpoch: number
 }
 
 export interface SparseSettingsObjectUpdate {
@@ -462,7 +463,9 @@ export interface PatchSettingsGroupInput {
   group: SettingsGroup
   baseRevision: number
   patch: SettingsPatch
+  /** Opt in only when the attempted patch is already visible in the local projection. */
   acknowledgeOptimistic?: boolean
+  /** Settings-group epoch captured before that optimistic projection write. */
   optimisticProjectionEpoch?: number
 }
 
@@ -477,7 +480,10 @@ export interface PatchSettingsObjectFieldsInput {
 
 export interface PatchServerBackedSettingsInput {
   patch: SettingsPatch
+  /** Opt in only when every patched value is already visible in the local projection. */
   acknowledgeOptimistic?: boolean
+  /** Per-group epochs captured when those optimistic intents were created. */
+  optimisticProjectionEpochs?: Readonly<SettingsGroupProjectionEpochs>
   rollback?: () => void
   signal?: AbortSignal | null
   keepalive?: boolean
@@ -1933,6 +1939,10 @@ async function executeServerBackedSettingsPatch(
   grouped: Array<[SettingsGroup, SettingsPatch]>,
   rollbackEpoch: number,
 ): Promise<ServerCommandResult> {
+  // A later group can fail after an earlier group was accepted. Callers only
+  // expose one whole-patch rollback, so keep every event authoritative in that
+  // case; its group read repairs any accepted key restored by the rollback.
+  const acknowledgeOptimistic = input.acknowledgeOptimistic === true && grouped.length === 1
   let lastResult: ServerCommandResult = { status: 'unavailable' }
   for (const [group, patch] of grouped) {
     const baseRevision = await getServerCommandBaseRevision(input.signal, input.keepalive)
@@ -1946,7 +1956,8 @@ async function executeServerBackedSettingsPatch(
         group,
         baseRevision,
         patch,
-        acknowledgeOptimistic: input.acknowledgeOptimistic === true,
+        acknowledgeOptimistic,
+        optimisticProjectionEpoch: input.optimisticProjectionEpochs?.[group],
       },
       input.signal,
       input.keepalive,
@@ -5118,14 +5129,8 @@ function readSettingsPatchLocalEffect(
   if (!body || typeof body !== 'object' || Array.isArray(body)) return undefined
   const record = body as Record<string, unknown>
   if (record.revision !== event.revision) return undefined
-  if (
-    (group === 'prompt' && !isProjectionEpoch(optimisticProjectionEpoch)) ||
-    (optimisticProjectionEpoch !== undefined && !isProjectionEpoch(optimisticProjectionEpoch))
-  ) {
-    return undefined
-  }
-  const settingsProjectionEpoch =
-    optimisticProjectionEpoch === undefined ? undefined : (optimisticProjectionEpoch as number)
+  if (!isProjectionEpoch(optimisticProjectionEpoch)) return undefined
+  const settingsProjectionEpoch = optimisticProjectionEpoch as number
   const acknowledgedKeys = record.acknowledgedKeys
   const overrides = record.settings
   if (!isUniqueStringArray(acknowledgedKeys)) return undefined
@@ -5160,7 +5165,7 @@ function readSettingsPatchLocalEffect(
     group,
     attemptedPatch: cloneJsonValue(attemptedPatch),
     settings: canonicalSettings,
-    ...(settingsProjectionEpoch === undefined ? {} : { settingsProjectionEpoch }),
+    settingsProjectionEpoch,
   }
 }
 

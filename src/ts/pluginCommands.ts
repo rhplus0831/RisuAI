@@ -19,7 +19,8 @@ import {
   type SettingsGroup,
 } from './server/commands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
-import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import { captureSettingsPatchProjectionEpochs, getResourceDatabase as getDatabase } from './server/resourceState.svelte'
+import type { SettingsGroupProjectionEpochs } from './server/settingsGroups'
 import { applyAttemptedFieldRollback } from './server/staleStateGuards'
 
 export interface PluginStateSnapshot {
@@ -37,6 +38,7 @@ export interface PluginSettingsPatchRollbackSnapshot {
 
 interface PluginSettingsPatchRollbackStep {
   patch: Record<string, unknown>
+  optimisticProjectionEpochs: SettingsGroupProjectionEpochs
   rollbackSnapshot: PluginSettingsPatchRollbackSnapshot
 }
 
@@ -1166,6 +1168,7 @@ export function dispatchPluginSettingsPatch(
       if (!step) {
         step = {
           patch: {},
+          optimisticProjectionEpochs: {},
           rollbackSnapshot: emptyPluginSettingsPatchRollbackSnapshot(),
         }
         stepsByGroup.set(group, step)
@@ -1178,6 +1181,9 @@ export function dispatchPluginSettingsPatch(
     }
   }
   const steps = Array.from(stepsByGroup.values())
+  for (const step of steps) {
+    step.optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(step.patch)
+  }
   if (steps.length === 0) return
   void dispatchPluginSettingsPatchSteps(steps)
 }
@@ -1188,6 +1194,8 @@ async function dispatchPluginSettingsPatchSteps(steps: PluginSettingsPatchRollba
   for (const step of steps) {
     const result = await patchServerBackedSettings({
       patch: step.patch,
+      acknowledgeOptimistic: true,
+      optimisticProjectionEpochs: step.optimisticProjectionEpochs,
       rollback: () => rollbackPluginSettingsPatchSteps(steps, acceptedStepCount),
     })
 

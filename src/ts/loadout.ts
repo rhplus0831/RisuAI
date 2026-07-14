@@ -1359,6 +1359,8 @@ function applyLoadoutNow(
               patch: {
                 globalChatVariables: nextGlobalChatVariables,
               },
+              acknowledgeOptimistic: true,
+              optimisticProjectionEpoch: settingsProjectionEpoch,
             }),
           () =>
             rollbackGlobalChatVariables({
