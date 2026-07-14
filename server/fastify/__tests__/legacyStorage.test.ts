@@ -214,15 +214,35 @@ describe('Phase 3D-Broad /api/v1/storage', () => {
     expect(res.rawPayload.length).toBe(0)
   })
 
-  it('rejects non-hex file paths', async () => {
+  it('rejects missing and invalid file paths consistently across path-based routes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
-    const res = await harness.app.inject({
-      method: 'POST',
-      url: '/api/v1/storage/write',
-      headers: { 'risu-auth': assertion, 'file-path': 'not-hex' },
-      payload: Buffer.from('x'),
-    })
-    expect(res.statusCode).toBe(400)
+    const routes = [
+      { method: 'GET' as const, url: '/api/v1/storage/exists' },
+      { method: 'GET' as const, url: '/api/v1/storage/read' },
+      { method: 'POST' as const, url: '/api/v1/storage/write', payload: Buffer.from('x') },
+      { method: 'POST' as const, url: '/api/v1/storage/remove' },
+    ]
+
+    for (const route of routes) {
+      const payload = 'payload' in route ? { payload: route.payload } : {}
+      const missingPath = await harness.app.inject({
+        method: route.method,
+        url: route.url,
+        headers: { 'risu-auth': assertion },
+        ...payload,
+      })
+      expect(missingPath.statusCode, `${route.method} ${route.url} without file-path`).toBe(400)
+      expect(missingPath.json()).toEqual({ error: 'File path required' })
+
+      const invalidPath = await harness.app.inject({
+        method: route.method,
+        url: route.url,
+        headers: { 'risu-auth': assertion, 'file-path': 'not-hex' },
+        ...payload,
+      })
+      expect(invalidPath.statusCode, `${route.method} ${route.url} with invalid file-path`).toBe(400)
+      expect(invalidPath.json()).toEqual({ error: 'Invalid path' })
+    }
   })
 
   it('rejects empty write body', async () => {
@@ -286,6 +306,28 @@ describe('Phase 3D-Broad /api/v1/storage', () => {
     expect(existsSync(path.join(harness.dataDir, 'save', keyA))).toBe(false)
     expect(existsSync(path.join(harness.dataDir, 'save', keyB))).toBe(false)
     expect(existsSync(path.join(harness.dataDir, 'save', HELLO_HEX))).toBe(true)
+  })
+
+  it('validates every remove path before deleting any entry', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const payload = Buffer.from('must-survive-invalid-batch')
+    const writeRes = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/write',
+      headers: { 'risu-auth': assertion, 'file-path': HELLO_HEX },
+      payload,
+    })
+    expect(writeRes.statusCode).toBe(200)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/storage/remove',
+      headers: { 'risu-auth': assertion, 'file-path': `${HELLO_HEX}$$not-hex` },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Invalid path' })
+    expect(Buffer.from(readFileSync(path.join(harness.dataDir, 'save', HELLO_HEX)))).toEqual(payload)
   })
 
   it('remove of a missing key is idempotent (success: true, no throw)', async () => {
