@@ -226,7 +226,13 @@ async function exportServerBackupBlob(
     return { status: 'error', error: errorMessageFromBody(body, `HTTP ${response.status}`) }
   }
 
-  const blob = await readResponseBlobWithProgress(response, scaleProgress(onProgress, 10, 95), 'Downloading backup')
+  let blob: Blob
+  try {
+    blob = await readResponseBlobWithProgress(response, scaleProgress(onProgress, 10, 95), 'Downloading backup')
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { status: 'error', error: `Download error: ${message}` }
+  }
   reportProgress(onProgress, {
     phase: 'complete',
     message: 'Backup download complete',

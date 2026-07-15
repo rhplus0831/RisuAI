@@ -350,6 +350,27 @@ describe('device backup helpers (Save/Load Backup Locally)', () => {
     })
   })
 
+  it('returns a structured error when a successful backup response breaks while streaming', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error('connection interrupted'))
+      },
+    })
+    const backupFetch = makeBackupFetch(
+      () =>
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-length': String(BUNDLE_BYTES.byteLength) },
+        }),
+    )
+    vi.stubGlobal('fetch', backupFetch.fetch)
+
+    await expect(exportServerBundle({ onProgress: vi.fn() })).resolves.toEqual({
+      status: 'error',
+      error: expect.stringContaining('connection interrupted'),
+    })
+  })
+
   it('uploads a bundle file, restores it, and refreshes API-backed resources', async () => {
     const event = { type: 'state.imported', resource: 'state', revision: 21 }
     const backupFetch = makeBackupFetch((url) => {
