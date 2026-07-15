@@ -38,6 +38,7 @@ import {
   type OpenAITranscriptionRouteOptions,
 } from './routes/openAITranscription.js'
 import { registerProviderOperationRoutes, type ProviderOperationRouteOptions } from './routes/providerOperations.js'
+import { registerImageGenerationRoutes, type ImageGenerationRouteOptions } from './routes/imageGeneration.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
@@ -84,6 +85,7 @@ export interface BuildAppOptions {
   providerOperations?: ProviderOperationRouteOptions
   embeddingOperations?: EmbeddingOperationRouteOptions
   ttsSynthesis?: TtsSynthesisRouteOptions
+  imageGeneration?: ImageGenerationRouteOptions
   /**
    * Periodic server-side asset GC. `false` disables the timer (tests that do
    * not exercise GC). An options object tunes the grace window / interval.
@@ -284,6 +286,10 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerEmbeddingOperationRoutes(app, db, authState, opts.embeddingOperations)
   registerProviderOperationRoutes(app, db, authState, opts.providerOperations)
   registerTtsRoutes(app, db, authState, opts.ttsSynthesis)
+  registerImageGenerationRoutes(app, db, authState, {
+    keiHubUrl: config.hubUrl,
+    ...opts.imageGeneration,
+  })
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, db, authState, config.hubUrl)

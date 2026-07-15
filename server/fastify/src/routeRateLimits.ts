@@ -32,6 +32,11 @@ export const openAITranscriptionRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const imageGenerationRateLimit: RateLimitOptions = {
+  max: 10,
+  timeWindow: MINUTE,
+}
+
 export const mcpOAuthRefreshRateLimit: RateLimitOptions = {
   max: 30,
   timeWindow: MINUTE,

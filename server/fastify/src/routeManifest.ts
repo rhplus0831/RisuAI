@@ -765,6 +765,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'binary',
   },
   {
+    id: 'image-generation',
+    methods: ['POST'],
+    path: '/api/v1/image-generation',
+    auth: {
+      decision: 'required',
+      reason: 'Image generation can use server-owned provider credentials and incur upstream cost.',
+    },
+    activeWriter: {
+      decision: 'runtime-generation',
+      reason: 'Generates an image without mutating local durable state.',
+    },
+    streaming: 'binary',
+  },
+  {
     id: 'proxy-fetch',
     methods: ['POST'],
     path: '/api/v1/proxy/fetch',
