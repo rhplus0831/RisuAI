@@ -174,7 +174,24 @@
     })
   })
 
-  async function getMaxMemoryRatio(): Promise<number> {
+  function maxMemoryRatioDependencyKey(): string {
+    const database = getDatabase()
+    const char = database.characters[$selectedCharID]
+
+    // The await block can only subscribe to values read before the async
+    // boundary. Capture every input used by token counting here so a later
+    // character, prompt, or context change starts a fresh calculation.
+    return JSON.stringify([
+      $selectedCharID,
+      database.promptTemplate,
+      char,
+      database.loreBookToken,
+      database.maxResponse,
+      database.maxContext,
+    ])
+  }
+
+  async function getMaxMemoryRatio(_dependencyKey: string): Promise<number> {
     await ensurePromptTemplateHydrated()
     const promptTemplateToken = await tokenizePreset(getDatabase().promptTemplate)
     const char = getDatabase().characters[$selectedCharID]
@@ -1439,9 +1456,14 @@
             placeholder={language.hypaV3Settings.supaMemoryPromptPlaceHolder}
             bind:value={settings.reSummarizationPrompt} />
         </div>
-        {#await getMaxMemoryRatio() then maxMemoryRatio}
+        {#await getMaxMemoryRatio(maxMemoryRatioDependencyKey()) then maxMemoryRatio}
           <span class="text-textcolor">{language.hypaV3Settings.maxMemoryTokensRatioLabel}</span>
-          <NumberInput marginBottom disabled size="sm" value={maxMemoryRatio} />
+          <NumberInput
+            marginBottom
+            disabled
+            size="sm"
+            value={maxMemoryRatio}
+            ariaLabel={language.hypaV3Settings.maxMemoryTokensRatioLabel} />
         {:catch error}
           <span class="mb-4 text-red-400">{language.hypaV3Settings.maxMemoryTokensRatioError}</span>
         {/await}

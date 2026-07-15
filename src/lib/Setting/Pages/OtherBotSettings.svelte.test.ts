@@ -12,10 +12,13 @@ const otherBotMocks = vi.hoisted(() => ({
   hypaPresets: [] as Array<Record<string, any>>,
   initialWavespeedImage: {} as Record<string, any>,
   loraWrites: [] as Array<Array<{ path: string; scale: number }>>,
+  ensurePromptTemplateHydrated: vi.fn(),
+  getCharToken: vi.fn(),
   providerOperation: vi.fn(),
   providerOperationCredential: vi.fn((apiKey: string) => ({ source: 'provided', apiKey })),
   saveAsset: vi.fn(),
   selectSingleFile: vi.fn(),
+  tokenizePreset: vi.fn(),
 }))
 
 vi.mock('src/ts/util', async (importActual) => {
@@ -125,11 +128,11 @@ vi.mock('src/ts/characters', () => ({
 }))
 
 vi.mock('src/ts/process/prompt', () => ({
-  tokenizePreset: vi.fn(async () => 0),
+  tokenizePreset: otherBotMocks.tokenizePreset,
 }))
 
 vi.mock('src/ts/tokenizer', () => ({
-  getCharToken: vi.fn(async () => ({ dynamic: 0, persistant: 0 })),
+  getCharToken: otherBotMocks.getCharToken,
 }))
 
 vi.mock('src/ts/process/memory/hypav3', () => ({
@@ -137,7 +140,7 @@ vi.mock('src/ts/process/memory/hypav3', () => ({
 }))
 
 vi.mock('src/ts/server/promptTemplateHydration', () => ({
-  ensurePromptTemplateHydrated: vi.fn(),
+  ensurePromptTemplateHydrated: otherBotMocks.ensurePromptTemplateHydrated,
 }))
 
 vi.mock('src/ts/gui/highlight', () => ({
@@ -150,6 +153,7 @@ vi.mock('src/ts/gui/highlight', () => ({
 import OtherBotSettings from './OtherBotSettings.svelte'
 import { language } from 'src/lang'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { selectedCharID } from 'src/ts/stores.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -189,8 +193,11 @@ beforeEach(() => {
   otherBotMocks.hypaEnabled = false
   otherBotMocks.hypaPresets = []
   otherBotMocks.loraWrites.length = 0
+  otherBotMocks.ensurePromptTemplateHydrated.mockReset().mockResolvedValue(true)
+  otherBotMocks.getCharToken.mockReset().mockResolvedValue({ dynamic: 0, persistant: 0 })
   otherBotMocks.saveAsset.mockReset()
   otherBotMocks.selectSingleFile.mockReset()
+  otherBotMocks.tokenizePreset.mockReset().mockResolvedValue(0)
   otherBotMocks.initialWavespeedImage = {
     key: 'wavespeed-key',
     model: 'wavespeed/saved-model',
@@ -217,6 +224,7 @@ beforeEach(() => {
     ],
   })
   setDatabaseLite({ useLegacyGUI: false } as any)
+  selectedCharID.set(-1)
 })
 
 afterEach(() => {
@@ -227,6 +235,7 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   setDatabaseLite({} as any)
+  selectedCharID.set(-1)
 })
 
 describe('OtherBotSettings WaveSpeed LoRAs', () => {
@@ -468,6 +477,73 @@ describe('OtherBotSettings Hypa preset import', () => {
     await vi.waitFor(() => expect(otherBotMocks.selectSingleFile).toHaveBeenCalledWith(['json']))
     expect(otherBotMocks.alertError).not.toHaveBeenCalled()
     expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(presetsBeforeCancel)
+  })
+})
+
+describe('OtherBotSettings Hypa memory ratio', () => {
+  it('recomputes the displayed maximum when its context inputs change', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [
+      {
+        name: 'Default',
+        settings: {
+          summarizationModel: 'subModel',
+          summarizationPrompt: '',
+          reSummarizationPrompt: '',
+          memoryTokensRatio: 0.2,
+          extraSummarizationRatio: 0,
+          maxChatsPerSummary: 6,
+          recentMemoryRatio: 0.4,
+          similarMemoryRatio: 0.4,
+          enableSimilarityCorrection: false,
+          preserveOrphanedMemory: false,
+          processRegexScript: false,
+          doNotSummarizeUserMessage: false,
+          summaryChunkSeparator: '\\n\\n',
+          useExperimentalImpl: false,
+          summarizationRequestsPerMinute: 20,
+          summarizationMaxConcurrent: 1,
+          embeddingRequestsPerMinute: 100,
+          embeddingMaxConcurrent: 1,
+          alwaysToggleOn: false,
+          queryChatCount: 3,
+        },
+      },
+    ]
+    otherBotMocks.tokenizePreset.mockResolvedValue(100)
+    otherBotMocks.getCharToken.mockResolvedValue({ dynamic: 0, persistant: 100 })
+    selectedCharID.set(0)
+
+    const database = (maxContext: number) =>
+      ({
+        useLegacyGUI: false,
+        promptTemplate: [],
+        characters: [
+          {
+            chaId: 'character-1',
+            chats: [],
+            chatPage: 0,
+            loreSettings: { tokenBudget: 0 },
+          },
+        ],
+        loreBookToken: 0,
+        maxResponse: 100,
+        maxContext,
+      }) as any
+
+    setDatabaseLite(database(1000))
+    component = mount(OtherBotSettings, { target })
+
+    const ratioInput = () =>
+      target.querySelector<HTMLInputElement>(`input[aria-label="${language.hypaV3Settings.maxMemoryTokensRatioLabel}"]`)
+
+    await vi.waitFor(() => expect(ratioInput()?.valueAsNumber).toBe(0.5))
+
+    setDatabaseLite(database(2000))
+
+    await vi.waitFor(() => expect(ratioInput()?.valueAsNumber).toBe(0.75))
+    expect(otherBotMocks.tokenizePreset).toHaveBeenCalledTimes(2)
+    expect(otherBotMocks.getCharToken).toHaveBeenCalledTimes(2)
   })
 })
 
