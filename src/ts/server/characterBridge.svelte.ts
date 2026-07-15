@@ -22,7 +22,16 @@ interface PendingCharacterPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
+interface PendingCharacterAttempt {
+  sequence: number
+  characterId: string
+  previous: CharacterStateSnapshot
+  attempted: CharacterSnapshot
+}
+
 const pendingPatches = new Map<string, PendingCharacterPatch>()
+const pendingCharacterAttempts: PendingCharacterAttempt[] = []
+let nextCharacterAttemptSequence = 0
 let suppressRollbackDispatch = false
 
 export interface WatchServerBackedCharacterProfileOptions {
@@ -324,13 +333,96 @@ function runPendingCharacterPatch(characterId: string, options: ServerCommandTra
     attemptedProfile: sanitizeCharacterPatch(commandPatch.patch),
   } as CharacterStateSnapshot
 
-  dispatchUpdateCharacter(
+  const attempt = registerCharacterAttempt(commandPatch.characterId, rollbackSnapshot)
+  const result = dispatchUpdateCharacter(
     commandPatch.characterId,
     commandPatch.patch,
     rollbackSnapshot,
-    rollbackServerBackedCharacterProfile,
+    () => rollbackCharacterAttempt(attempt),
     options,
   )
+  void result?.then(
+    () => clearCharacterAttempt(attempt),
+    () => clearCharacterAttempt(attempt),
+  )
+}
+
+function registerCharacterAttempt(characterId: string, snapshot: CharacterStateSnapshot): PendingCharacterAttempt {
+  const attempted = sanitizeCharacterPatch(
+    (snapshot as CharacterStateSnapshot & { attemptedProfile?: CharacterSnapshot }).attemptedProfile ?? {},
+  )
+  const attempt = {
+    sequence: ++nextCharacterAttemptSequence,
+    characterId,
+    previous: snapshot,
+    attempted,
+  }
+  pendingCharacterAttempts.push(attempt)
+  return attempt
+}
+
+function rollbackCharacterAttempt(attempt: PendingCharacterAttempt): void {
+  rollbackServerBackedCharacterProfile(attempt.previous)
+  rebaseLaterCharacterAttempts(attempt)
+  clearCharacterAttempt(attempt)
+}
+
+function rebaseLaterCharacterAttempts(failed: PendingCharacterAttempt): void {
+  const failedPrevious = characterAttemptPreviousProfile(failed)
+  if (!failedPrevious) return
+
+  for (const key of Object.keys(failed.attempted)) {
+    let rebased = false
+    for (const later of pendingCharacterAttempts) {
+      if (later.sequence <= failed.sequence || later.characterId !== failed.characterId) continue
+      if (!Object.prototype.hasOwnProperty.call(later.attempted, key)) continue
+      const laterPrevious = characterAttemptPreviousProfile(later)
+      if (!laterPrevious || !sameFieldValue(laterPrevious, failed.attempted, key)) continue
+      copyFieldValue(laterPrevious, failedPrevious, key)
+      rebased = true
+      break
+    }
+
+    if (rebased) continue
+    const queued = pendingPatches.get(failed.characterId)
+    const queuedPrevious = queued ? characterSnapshotProfile(queued.previous) : undefined
+    if (
+      queued &&
+      queuedPrevious &&
+      Object.prototype.hasOwnProperty.call(queued.patch, key) &&
+      sameFieldValue(queuedPrevious, failed.attempted, key)
+    ) {
+      copyFieldValue(queuedPrevious, failedPrevious, key)
+    }
+  }
+}
+
+function characterAttemptPreviousProfile(attempt: PendingCharacterAttempt): CharacterSnapshot | undefined {
+  return characterSnapshotProfile(attempt.previous)
+}
+
+function characterSnapshotProfile(snapshot: CharacterStateSnapshot): CharacterSnapshot | undefined {
+  return (snapshot as CharacterStateSnapshot & { profile?: CharacterSnapshot }).profile
+}
+
+function sameFieldValue(left: CharacterSnapshot, right: CharacterSnapshot, key: string): boolean {
+  return (
+    Object.prototype.hasOwnProperty.call(left, key) === Object.prototype.hasOwnProperty.call(right, key) &&
+    snapshotJson(left[key]) === snapshotJson(right[key])
+  )
+}
+
+function copyFieldValue(target: CharacterSnapshot, source: CharacterSnapshot, key: string): void {
+  if (Object.prototype.hasOwnProperty.call(source, key)) {
+    target[key] = cloneJsonValue(source[key])
+  } else {
+    delete target[key]
+  }
+}
+
+function clearCharacterAttempt(attempt: PendingCharacterAttempt): void {
+  const index = pendingCharacterAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingCharacterAttempts.splice(index, 1)
 }
 
 function scalarCharacterProfile(character: Record<string, unknown>): CharacterSnapshot {

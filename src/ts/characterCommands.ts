@@ -659,9 +659,9 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
   options: ServerCommandTransportOptions = {},
-): void {
+): Promise<ServerCommandResult<T>> | undefined {
   if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback, ...options })
+  return runServerCommand({ command, rollback, ...options })
 }
 
 export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
@@ -704,10 +704,10 @@ function dispatchUpdateCharacterWith(
   patch: CharacterSnapshot,
   rollback: () => void,
   options: ServerCommandTransportOptions = {},
-): void {
+): Promise<ServerCommandResult> | undefined {
   const commandPatch = sanitizeCharacterPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
-  runCharacterCommand(
+  return runCharacterCommand(
     (baseRevision) =>
       updateCharacterCommand(
         {
@@ -729,8 +729,8 @@ export function dispatchUpdateCharacter(
   previous: CharacterStateSnapshot,
   rollback: (snapshot: CharacterStateSnapshot) => void = restoreCharacterState,
   options: ServerCommandTransportOptions = {},
-): void {
-  dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous), options)
+): Promise<ServerCommandResult> | undefined {
+  return dispatchUpdateCharacterWith(characterId, patch, () => rollback(previous), options)
 }
 
 // Single-row rollback variant of `dispatchUpdateCharacter` for character-FIELD

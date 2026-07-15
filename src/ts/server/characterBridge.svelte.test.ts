@@ -7,6 +7,7 @@ const recorded = vi.hoisted(() => ({
     patch: Record<string, unknown>
     keepalive?: boolean
   }>,
+  characterResults: [] as Array<Promise<{ status: string; error?: string }>>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 
@@ -52,14 +53,19 @@ vi.mock('../characterCommands', () => {
     dispatchUpdateCharacter: (
       characterId: string,
       patch: Record<string, unknown>,
-      _previous: unknown,
-      _rollback: unknown,
+      previous: unknown,
+      rollback: (snapshot: unknown) => void,
       options?: { keepalive?: boolean },
     ) => {
       recorded.characterUpdates.push({
         characterId,
         patch: cloneJsonValue(sanitizeCharacterPatch(patch)),
         ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
+      })
+      const result = recorded.characterResults.shift() ?? Promise.resolve({ status: 'ok' })
+      return result.then((settled) => {
+        if (settled.status !== 'ok') rollback(previous)
+        return settled
       })
     },
     restoreCharacterState: vi.fn(),
@@ -81,6 +87,19 @@ import { watchServerBackedChatMetadata } from './chatBridge.svelte'
 import { watchServerBackedScriptDefinitions } from './scriptDefinitionBridge.svelte'
 
 const DELAY = 50
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve']
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 const resourceDatabase = {
   set current(value: unknown) {
@@ -144,6 +163,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   resourceGuardState.epoch = 0
   recorded.characterUpdates.length = 0
+  recorded.characterResults.length = 0
 })
 
 afterEach(() => {
@@ -460,6 +480,40 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 })
 
 describe('watchServerBackedCharacterProfile baselines', () => {
+  it('rebases a debounced same-field edit after two character saves fail', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    const secondResult = createDeferred<{ status: string; error?: string }>()
+    recorded.characterResults.push(firstResult.promise, secondResult.promise)
+    setupCharacter('Server baseline')
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].name = 'First attempt'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    getDatabase().characters[0].name = 'Second attempt'
+    flushSync()
+    expect(getDatabase().characters[0].name).toBe('Second attempt')
+
+    firstResult.resolve({ status: 'network-error', error: 'first failed' })
+    await flushAndSettle()
+    await flushAndSettle()
+    expect(getDatabase().characters[0].name).toBe('Second attempt')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.characterUpdates.map((entry) => entry.patch)).toEqual([
+      { name: 'First attempt' },
+      { name: 'Second attempt' },
+    ])
+
+    secondResult.resolve({ status: 'network-error', error: 'second failed' })
+    await flushAndSettle()
+    await flushAndSettle()
+    expect(getDatabase().characters[0].name).toBe('Server baseline')
+    stop()
+  })
+
   it('keeps the character watcher baseline when started beside chat metadata in an untracked owner effect', async () => {
     setupCharacter()
     const stop = $effect.root(() => {
