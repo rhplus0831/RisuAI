@@ -26,6 +26,7 @@
     <input
       type="color"
       class="style2 text-sm mr-2"
+      aria-label={language[labelKey]}
       value={currentValue}
       oninput={(e) => {
         applyServerBackedSetting(field, e.currentTarget.value)

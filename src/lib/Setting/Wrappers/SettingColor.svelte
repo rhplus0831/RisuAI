@@ -12,6 +12,7 @@
   let { item, ctx }: Props = $props()
 
   let localValue: any = $state(untrack(() => getSettingValue(item, ctx)))
+  let label = $derived(getLabel(item))
 
   // Sync: DB → local (one-way read)
   $effect(() => {
@@ -31,6 +32,6 @@
 </script>
 
 <div class="flex items-center {item.classes ?? 'mt-2'}">
-  <ColorInput bind:value={localValue} nullable={item.options?.nullable ?? false} />
-  <span class="ml-2">{getLabel(item)}</span>
+  <ColorInput bind:value={localValue} nullable={item.options?.nullable ?? false} ariaLabel={label} />
+  <span class="ml-2">{label}</span>
 </div>

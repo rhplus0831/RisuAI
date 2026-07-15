@@ -28,6 +28,7 @@
       <ColorInput
         nullable={color[2]}
         value={getDatabase().customTextTheme[color[0]]}
+        ariaLabel={color[1]}
         oninput={updateTextThemeAndCSS}
         onchange={(value) => setTextThemeValue(color[0], value)} />
       <span class="ml-2">{color[1]}</span>

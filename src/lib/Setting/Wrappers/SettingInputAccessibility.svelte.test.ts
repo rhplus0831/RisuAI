@@ -28,6 +28,7 @@ vi.mock('src/ts/setting/inputDraft.svelte', () => ({
 }))
 
 import SettingNumber from './SettingNumber.svelte'
+import SettingColor from './SettingColor.svelte'
 import SettingSelect from './SettingSelect.svelte'
 import SettingSlider from './SettingSlider.svelte'
 import SettingText from './SettingText.svelte'
@@ -124,5 +125,15 @@ describe('data-driven setting input labels', () => {
     expect(target.querySelector('input[type="checkbox"]')?.getAttribute('aria-label')).toBe(
       `${language.enable}: Slider setting`,
     )
+
+    await resetMountedSetting()
+    await mountSetting(
+      SettingColor,
+      { id: 'accessible.color', type: 'color', fallbackLabel: 'Color setting' },
+      '#123456',
+    )
+    const colorInput = target.querySelector<HTMLInputElement>('input[type="color"]')
+    expect(colorInput?.value).toBe('#123456')
+    expect(colorInput?.labels?.[0]?.textContent?.trim()).toBe('Color setting')
   })
 })

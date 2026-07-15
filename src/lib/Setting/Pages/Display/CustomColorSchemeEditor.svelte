@@ -50,6 +50,7 @@
       <div class="flex items-center mt-2">
         <ColorInput
           value={getDatabase().colorScheme[color[0]]}
+          ariaLabel={color[1]}
           oninput={() => updateColorScheme()}
           onchange={(value) => setColorSchemeValue(color[0], value)} />
         <span class="ml-2">{color[1]}</span>
