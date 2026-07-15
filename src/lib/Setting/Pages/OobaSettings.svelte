@@ -34,98 +34,215 @@
 
     {#if reverseProxyOobaArgsDraft.value.mode === 'instruct'}
       <span class="text-textcolor">user prefix</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name1_instruct} />
+      <OptionalInput
+        label="user prefix"
+        marginBottom={true}
+        bind:value={reverseProxyOobaArgsDraft.value.name1_instruct} />
       <span class="text-textcolor">bot prefix</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name2_instruct} />
+      <OptionalInput
+        label="bot prefix"
+        marginBottom={true}
+        bind:value={reverseProxyOobaArgsDraft.value.name2_instruct} />
       <span class="text-textcolor">system prefix</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.context_instruct} />
+      <OptionalInput
+        label="system prefix"
+        marginBottom={true}
+        bind:value={reverseProxyOobaArgsDraft.value.context_instruct} />
       <span class="text-textcolor">system message</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.system_message} />
+      <OptionalInput
+        label="system message"
+        marginBottom={true}
+        bind:value={reverseProxyOobaArgsDraft.value.system_message} />
     {/if}
     {#if reverseProxyOobaArgsDraft.value.mode === 'chat' || reverseProxyOobaArgsDraft.value.mode === 'chat-instruct'}
       <span class="text-textcolor">user prefix</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name1} />
+      <OptionalInput label="user prefix" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name1} />
       <span class="text-textcolor">bot prefix</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name2} />
+      <OptionalInput label="bot prefix" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.name2} />
       <span class="text-textcolor">system prefix</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.context} />
+      <OptionalInput label="system prefix" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.context} />
       <span class="text-textcolor">start message</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.greeting} />
+      <OptionalInput label="start message" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.greeting} />
     {/if}
     {#if reverseProxyOobaArgsDraft.value.mode === 'chat-instruct'}
       <span class="text-textcolor">chat_instruct_command</span>
-      <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.chat_instruct_command} />
+      <OptionalInput
+        label="chat_instruct_command"
+        marginBottom={true}
+        bind:value={reverseProxyOobaArgsDraft.value.chat_instruct_command} />
     {/if}
   {/if}
   <span class="text-textcolor">tokenizer</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.tokenizer} />
+  <OptionalInput label="tokenizer" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.tokenizer} />
   <span class="text-textcolor">min_p</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.min_p} numberMode />
+  <OptionalInput label="min_p" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.min_p} numberMode />
   <span class="text-textcolor">top_k</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.top_k} numberMode />
+  <OptionalInput label="top_k" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.top_k} numberMode />
   <span class="text-textcolor">repetition_penalty</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.repetition_penalty} numberMode />
+  <OptionalInput
+    label="repetition_penalty"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.repetition_penalty}
+    numberMode />
   <span class="text-textcolor">repetition_penalty_range</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.repetition_penalty_range} numberMode />
+  <OptionalInput
+    label="repetition_penalty_range"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.repetition_penalty_range}
+    numberMode />
   <span class="text-textcolor">typical_p</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.typical_p} numberMode />
+  <OptionalInput
+    label="typical_p"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.typical_p}
+    numberMode />
   <span class="text-textcolor">tfs</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.tfs} numberMode />
+  <OptionalInput label="tfs" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.tfs} numberMode />
   <span class="text-textcolor">top_a</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.top_a} numberMode />
+  <OptionalInput label="top_a" marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.top_a} numberMode />
   <span class="text-textcolor">epsilon_cutoff</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.epsilon_cutoff} numberMode />
+  <OptionalInput
+    label="epsilon_cutoff"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.epsilon_cutoff}
+    numberMode />
   <span class="text-textcolor">eta_cutoff</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.eta_cutoff} numberMode />
+  <OptionalInput
+    label="eta_cutoff"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.eta_cutoff}
+    numberMode />
   <span class="text-textcolor">guidance_scale</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.guidance_scale} numberMode />
+  <OptionalInput
+    label="guidance_scale"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.guidance_scale}
+    numberMode />
   <span class="text-textcolor">penalty_alpha</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.penalty_alpha} numberMode />
+  <OptionalInput
+    label="penalty_alpha"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.penalty_alpha}
+    numberMode />
   <span class="text-textcolor">mirostat_mode</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.mirostat_mode} numberMode />
+  <OptionalInput
+    label="mirostat_mode"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.mirostat_mode}
+    numberMode />
   <span class="text-textcolor">mirostat_tau</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.mirostat_tau} numberMode />
+  <OptionalInput
+    label="mirostat_tau"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.mirostat_tau}
+    numberMode />
   <span class="text-textcolor">mirostat_eta</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.mirostat_eta} numberMode />
+  <OptionalInput
+    label="mirostat_eta"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.mirostat_eta}
+    numberMode />
   <span class="text-textcolor">encoder_repetition_penalty</span>
   <OptionalInput
+    label="encoder_repetition_penalty"
     marginBottom={true}
     bind:value={reverseProxyOobaArgsDraft.value.encoder_repetition_penalty}
     numberMode />
   <span class="text-textcolor">no_repeat_ngram_size</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.no_repeat_ngram_size} numberMode />
+  <OptionalInput
+    label="no_repeat_ngram_size"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.no_repeat_ngram_size}
+    numberMode />
   <span class="text-textcolor">min_length</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.min_length} numberMode />
+  <OptionalInput
+    label="min_length"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.min_length}
+    numberMode />
   <span class="text-textcolor">num_beams</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.num_beams} numberMode />
+  <OptionalInput
+    label="num_beams"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.num_beams}
+    numberMode />
   <span class="text-textcolor">length_penalty</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.length_penalty} numberMode />
+  <OptionalInput
+    label="length_penalty"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.length_penalty}
+    numberMode />
   <span class="text-textcolor">truncation_length</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.truncation_length} numberMode />
+  <OptionalInput
+    label="truncation_length"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.truncation_length}
+    numberMode />
   <span class="text-textcolor">max_tokens_second</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.max_tokens_second} numberMode />
+  <OptionalInput
+    label="max_tokens_second"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.max_tokens_second}
+    numberMode />
   <span class="text-textcolor">negative_prompt</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.negative_prompt} />
+  <OptionalInput
+    label="negative_prompt"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.negative_prompt} />
   <span class="text-textcolor">custom_token_bans</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.custom_token_bans} />
+  <OptionalInput
+    label="custom_token_bans"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.custom_token_bans} />
   <span class="text-textcolor">grammar_string</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.grammar_string} />
+  <OptionalInput
+    label="grammar_string"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.grammar_string} />
 
   <span class="text-textcolor">temperature_last</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.temperature_last} boolMode />
+  <OptionalInput
+    label="temperature_last"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.temperature_last}
+    boolMode />
   <span class="text-textcolor">do_sample</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.do_sample} boolMode />
+  <OptionalInput
+    label="do_sample"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.do_sample}
+    boolMode />
   <span class="text-textcolor">early_stopping</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.early_stopping} boolMode />
+  <OptionalInput
+    label="early_stopping"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.early_stopping}
+    boolMode />
   <span class="text-textcolor">auto_max_new_tokens</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.auto_max_new_tokens} boolMode />
+  <OptionalInput
+    label="auto_max_new_tokens"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.auto_max_new_tokens}
+    boolMode />
 
   <span class="text-textcolor">ban_eos_token</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.ban_eos_token} boolMode />
+  <OptionalInput
+    label="ban_eos_token"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.ban_eos_token}
+    boolMode />
   <span class="text-textcolor">add_bos_token</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.add_bos_token} boolMode />
+  <OptionalInput
+    label="add_bos_token"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.add_bos_token}
+    boolMode />
   <span class="text-textcolor">skip_special_tokens</span>
-  <OptionalInput marginBottom={true} bind:value={reverseProxyOobaArgsDraft.value.skip_special_tokens} boolMode />
+  <OptionalInput
+    label="skip_special_tokens"
+    marginBottom={true}
+    bind:value={reverseProxyOobaArgsDraft.value.skip_special_tokens}
+    boolMode />
 
   {#if instructionMode}
     <div class="flex items-center mt-4">
