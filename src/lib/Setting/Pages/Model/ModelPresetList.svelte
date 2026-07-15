@@ -108,21 +108,6 @@
     afterApply()
   }
 
-  function isInteractiveKeyboardTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof Element)) return false
-    const interactive = target.closest('input, textarea, select, button, [contenteditable]')
-    if (!interactive) return false
-    if (interactive.matches('input, textarea, select, button')) return true
-    return interactive.getAttribute('contenteditable')?.toLowerCase() !== 'false'
-  }
-
-  function applyPresetFromKeyboard(event: KeyboardEvent, index: number): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    if (isInteractiveKeyboardTarget(event.target)) return
-    event.preventDefault()
-    applyPreset(index)
-  }
-
   function movePresetUp(index: number): void {
     if (index <= 0) return
     reorderModelPresets(index, index - 1)
@@ -255,17 +240,17 @@
         </thead>
         <tbody>
           {#each presets as preset, index (preset.id ?? index)}
+            <!-- Keyboard users apply through the explicit button in the actions cell. -->
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
             <tr
               class="cursor-pointer border-t border-darkborderc align-top hover:bg-darkbg"
               class:bg-selected={index === selectedIndex}
-              role="button"
-              tabindex="0"
-              onclick={() => applyPreset(index)}
-              onkeydown={(event) => applyPresetFromKeyboard(event, index)}>
+              onclick={() => applyPreset(index)}>
               <td class="px-3 py-3" onclick={(event) => event.stopPropagation()}>
                 <TextInput
                   size="sm"
                   value={presetName(preset, index)}
+                  ariaLabel={`${language.modelProfiles.profileNameColumn}: ${presetName(preset, index)}`}
                   onchange={(event) => renamePreset(index, event.currentTarget.value)}
                   fullwidth />
                 <span class="mt-1 block text-xs text-textcolor2">{preset.id ?? language.none}</span>
@@ -281,6 +266,15 @@
               </td>
               <td class="px-3 py-3">
                 <div class="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    ariaLabel={`${language.modelProfiles.apply}: ${presetName(preset, index)}`}
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      applyPreset(index)
+                    }}>
+                    {language.modelProfiles.apply}
+                  </Button>
                   <Button
                     size="sm"
                     styled="outlined"
