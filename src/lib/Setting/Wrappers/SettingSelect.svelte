@@ -37,15 +37,25 @@
     (item.options?.selectOptions ?? []).filter((opt) => !opt.condition || opt.condition(ctx)),
   )
 
+  let hasObservedInitialOptions = false
+
   // Reset value if current selection becomes hidden
   $effect(() => {
+    const availableOptions = processedOptions
+    if (!hasObservedInitialOptions) {
+      // Persisted values can come from a newer client or a temporarily hidden
+      // option. Do not coerce them on mount: the final option may be an action.
+      hasObservedInitialOptions = true
+      return
+    }
+
     const currentValue = untrack(() => localValue)
     if (
-      processedOptions.length > 0 &&
+      availableOptions.length > 0 &&
       currentValue !== undefined &&
-      !processedOptions.some((o) => o.value === currentValue)
+      !availableOptions.some((o) => o.value === currentValue)
     ) {
-      localValue = processedOptions[processedOptions.length - 1].value
+      localValue = availableOptions[availableOptions.length - 1].value
     }
   })
 </script>

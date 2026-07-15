@@ -36,6 +36,7 @@ export const languageSettingsItems: SettingItem[] = [
       selectOptions: [
         { value: 'de', label: 'Deutsch' },
         { value: 'en', label: 'English' },
+        { value: 'es', label: 'Español' },
         { value: 'ko', label: '한국어' },
         { value: 'cn', label: '中文' },
         { value: 'zh-Hant', label: '中文(繁體)' },
