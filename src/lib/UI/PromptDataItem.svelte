@@ -120,6 +120,16 @@
   function clonePromptItem(item: PromptItem): PromptItem {
     return JSON.parse(JSON.stringify(item)) as PromptItem
   }
+
+  function toggleOpened(): void {
+    const newIndices = new Set(openedItemIndices)
+    if (isOpened) {
+      newIndices.delete(currentIndex)
+    } else {
+      newIndices.add(currentIndex)
+    }
+    openedItemIndices = newIndices
+  }
 </script>
 
 <div
@@ -170,7 +180,6 @@
       onDrop()
     }
   }}>
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="flex items-center w-full"
     draggable="true"
@@ -194,29 +203,29 @@
     ondragend={(e) => {
       draggedIndex = -1
       dragOverIndex = -1
-    }}
-    onclick={() => {
-      const newIndices = new Set(openedItemIndices)
-      if (isOpened) {
-        newIndices.delete(currentIndex)
-      } else {
-        newIndices.add(currentIndex)
-      }
-      openedItemIndices = newIndices
     }}>
-    <span>{getName(promptItem)}</span>
-    <div class="flex flex-1 justify-end">
+    <button
+      type="button"
+      class="flex min-w-0 flex-1 items-center self-stretch rounded-sm text-left focus-visible:ring-2 focus-visible:ring-borderc focus-visible:outline-hidden"
+      aria-expanded={isOpened}
+      onclick={toggleOpened}>
+      <span>{getName(promptItem)}</span>
+    </button>
+    <div class="flex justify-end">
       <button
+        type="button"
         onclick={(e) => {
           e.stopPropagation()
           onRemove()
         }}><XIcon /></button>
       <button
+        type="button"
         onclick={(e) => {
           e.stopPropagation()
           moveDown()
         }}><ArrowDown /></button>
       <button
+        type="button"
         onclick={(e) => {
           e.stopPropagation()
           moveUp()
