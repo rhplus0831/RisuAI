@@ -49,6 +49,10 @@ interface BasicScriptingEngineState {
   chat?: Chat
   setVar?: (key: string, value: string) => void
   getVar?: (key: string) => string
+  currentRun?: {
+    char?: character | simpleCharacterArgument
+    stopChat: () => void
+  }
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -157,7 +161,7 @@ export async function runScripted(
         if (!ScriptingSafeIds.has(id)) {
           return
         }
-        stopSending = true
+        ScriptingEngineState.currentRun?.stopChat()
       })
       declareAPI('alertError', (id: string, value: string) => {
         if (!ScriptingSafeIds.has(id)) {
@@ -396,7 +400,11 @@ export async function runScripted(
         if (!ScriptingLowLevelIds.has(id)) {
           return
         }
-        const gen = await generateAIImage(value, char as character, negValue, 'inlay')
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        if (!currentCharacter) {
+          return
+        }
+        const gen = await generateAIImage(value, currentCharacter as character, negValue, 'inlay')
         if (!gen) {
           return 'Error: Image generation failed'
         }
@@ -815,13 +823,14 @@ export async function runScripted(
           return
         }
 
-        if (char.type !== 'character') {
+        const currentCharacter = ScriptingEngineState.currentRun?.char
+        if (currentCharacter?.type !== 'character') {
           return
         }
 
         const { alwaysActive = false, insertOrder = 100, key = '', regex = false, secondKey = '' } = options
 
-        const currentChat = char.chats[char.chatPage]
+        const currentChat = currentCharacter.chats[currentCharacter.chatPage]
 
         const newLocalLoreBooks = currentChat.localLore.filter((book) => book.comment !== name)
         newLocalLoreBooks.push({
@@ -1083,6 +1092,13 @@ export async function runScripted(
       ScriptingEngineState.code = code
     }
     let accessKey = v4()
+    const currentRun: NonNullable<BasicScriptingEngineState['currentRun']> = {
+      char,
+      stopChat: () => {
+        stopSending = true
+      },
+    }
+    ScriptingEngineState.currentRun = currentRun
     if (mode === 'editDisplay') {
       ScriptingEditDisplayIds.add(accessKey)
     } else {
@@ -1190,6 +1206,9 @@ export async function runScripted(
       ScriptingSafeIds.delete(accessKey)
       ScriptingLowLevelIds.delete(accessKey)
       ScriptingEditDisplayIds.delete(accessKey)
+      if (ScriptingEngineState.currentRun === currentRun) {
+        ScriptingEngineState.currentRun = undefined
+      }
     }
 
     chat = ScriptingEngineState.chat

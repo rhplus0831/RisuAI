@@ -11,6 +11,7 @@ const luaMock = vi.hoisted(() => {
     closedEngineIds: [] as number[],
     lastAccessKey: '',
     rejectDispatch: false,
+    dispatchArgs: new Map<string, unknown[]>(),
   }
 
   function makeEngine(options: Record<string, unknown>) {
@@ -34,7 +35,12 @@ const luaMock = vi.hoisted(() => {
               return JSON.stringify(JSON.parse(value))
             }
           }
-          return hostFns.get(name)
+          const hostFunction = hostFns.get(name)
+          const dispatchArgs = state.dispatchArgs.get(name)
+          if (hostFunction && dispatchArgs) {
+            return (accessKey: string) => hostFunction(accessKey, ...dispatchArgs)
+          }
+          return hostFunction
         }),
         newThread: vi.fn(() => {
           let loadedCode = ''
@@ -89,17 +95,22 @@ const luaMock = vi.hoisted(() => {
       state.closedEngineIds.length = 0
       state.lastAccessKey = ''
       state.rejectDispatch = false
+      state.dispatchArgs.clear()
       state.createEngine.mockClear()
       state.createEngine.mockImplementation(async (options: Record<string, unknown>) => makeEngine(options))
     },
     setRejectDispatch(value: boolean) {
       state.rejectDispatch = value
     },
+    setDispatchArgs(name: string, args: unknown[]) {
+      state.dispatchArgs.set(name, args)
+    },
   }
 })
 
 const mediaMock = vi.hoisted(() => ({
   fetchNative: vi.fn(),
+  generateAIImage: vi.fn(),
   getInlayAsset: vi.fn(),
   getPersonaPrompt: vi.fn(() => ''),
   getUserIcon: vi.fn(() => 'persona.png'),
@@ -134,6 +145,10 @@ vi.mock('src/ts/globalApi.svelte', async (importActual) => {
 vi.mock('./files/inlays', () => ({
   getInlayAsset: mediaMock.getInlayAsset,
   writeInlayImage: mediaMock.writeInlayImage,
+}))
+
+vi.mock('./stableDiff', () => ({
+  generateAIImage: mediaMock.generateAIImage,
 }))
 
 vi.mock('../util', async (importActual) => {
@@ -204,6 +219,8 @@ beforeEach(() => {
   resetScriptingEngineCacheForTests()
   luaMock.reset()
   mediaMock.fetchNative.mockReset()
+  mediaMock.generateAIImage.mockReset()
+  mediaMock.generateAIImage.mockResolvedValue('data:image/png;base64,generated')
   mediaMock.getInlayAsset.mockReset()
   mediaMock.getPersonaPrompt.mockReturnValue('')
   mediaMock.getUserIcon.mockReturnValue('persona.png')
@@ -366,6 +383,79 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
 
     expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
     expect(digestSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the current run stop handler when a cached engine calls stopChat', async () => {
+    const firstChat = makeChat()
+    const secondChat = makeChat()
+    const code = '-- cached stopChat handler'
+
+    const first = await runScripted(code, {
+      char: makeCharacter(firstChat),
+      chat: firstChat,
+      mode: 'stopChat',
+    })
+    const second = await runScripted(code, {
+      char: makeCharacter(secondChat),
+      chat: secondChat,
+      mode: 'stopChat',
+    })
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(first.stopSending).toBe(true)
+    expect(second.stopSending).toBe(true)
+  })
+
+  it('uses the current run character when a cached engine generates an image', async () => {
+    const firstChat = makeChat()
+    const secondChat = makeChat()
+    const firstCharacter = makeCharacter(firstChat)
+    const secondCharacter = makeCharacter(secondChat)
+    firstCharacter.chaId = 'char-first'
+    secondCharacter.chaId = 'char-second'
+    luaMock.setDispatchArgs('generateImage', ['portrait', 'negative'])
+    const code = '-- cached generateImage handler'
+
+    await runScripted(code, {
+      char: firstCharacter,
+      chat: firstChat,
+      mode: 'generateImage',
+      lowLevelAccess: true,
+    })
+    await runScripted(code, {
+      char: secondCharacter,
+      chat: secondChat,
+      mode: 'generateImage',
+      lowLevelAccess: true,
+    })
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(mediaMock.generateAIImage).toHaveBeenNthCalledWith(1, 'portrait', firstCharacter, 'negative', 'inlay')
+    expect(mediaMock.generateAIImage).toHaveBeenNthCalledWith(2, 'portrait', secondCharacter, 'negative', 'inlay')
+  })
+
+  it('uses the current run character when a cached engine upserts local lore', async () => {
+    const firstChat = makeChat()
+    const secondChat = makeChat()
+    const firstCharacter = makeCharacter(firstChat)
+    const secondCharacter = makeCharacter(secondChat)
+    firstCharacter.chaId = 'char-first'
+    secondCharacter.chaId = 'char-second'
+    luaMock.setDispatchArgs('upsertLocalLoreBook', ['run lore', 'current character', {}])
+    const code = '-- cached upsertLocalLoreBook handler'
+
+    await runScripted(code, { char: firstCharacter, chat: firstChat, mode: 'upsertLocalLoreBook' })
+    await runScripted(code, { char: secondCharacter, chat: secondChat, mode: 'upsertLocalLoreBook' })
+
+    expect(luaMock.createEngine).toHaveBeenCalledTimes(1)
+    expect(firstChat.localLore).toHaveLength(1)
+    expect(secondChat.localLore).toHaveLength(1)
+    expect(secondChat.localLore[0]).toEqual(
+      expect.objectContaining({
+        comment: 'run lore',
+        content: 'current character',
+      }),
+    )
   })
 
   it('L41: editDisplay access key is removed after Lua success and rejection', async () => {
