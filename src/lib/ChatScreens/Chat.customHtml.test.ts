@@ -2,6 +2,7 @@ import { flushSync, mount, tick, unmount } from 'svelte'
 import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Database } from '../../ts/storage/database.svelte'
+import { parseBranchComment } from './branchComment'
 
 const customHtmlMocks = vi.hoisted(() => {
   const templates = {
@@ -857,9 +858,9 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
   })
 
-  it('selects a branch source and navigates to its canonical route', async () => {
+  it('selects a legacy branch source whose name contains delimiters and navigates to its canonical route', async () => {
     seedDatabase(1, null as unknown as string)
-    const marker = '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}'
+    const marker = '{{specialcomment::branchedfrom::custom-html-chat::Custom::HTML Chat::message-0::}}'
     const character = testDatabaseState.db.characters[0]
     character.chatPage = 1
     character.chats[1].message[0].data = marker
@@ -896,9 +897,12 @@ describe('message action target freshness', () => {
     expect(branchedChat?.name).toBe('Custom HTML Chat Branch')
     expect(branchedChat?.message[0].chatId).toBeTruthy()
     expect(branchedChat?.message[0].chatId).not.toBe('message-0')
-    expect(branchedChat?.message.at(-1)?.data).toContain(
-      '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}',
-    )
+    expect(branchedChat?.message.at(-1)?.data).toMatch(/^\{\{specialcomment::branchedfrom::json-v1::/)
+    expect(parseBranchComment(branchedChat?.message.at(-1)?.data ?? '')).toEqual({
+      sourceChatId: 'custom-html-chat',
+      sourceChatName: 'Custom HTML Chat',
+      sourceMessageId: 'message-0',
+    })
     expect(
       testDatabaseState.db.characters[0].chats.find((chat) => chat.id === 'custom-html-other-chat')?.message[0],
     ).toEqual({
@@ -922,9 +926,11 @@ describe('message action target freshness', () => {
     expect(forkedMessageIds?.[0]).toBeTruthy()
     expect(forkedMessageIds).not.toContain('message-0')
     expect(new Set(forkedMessageIds).size).toBe(forkedMessageIds?.length)
-    expect(forkPayload?.chat.message.at(-1)?.data).toContain(
-      '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}',
-    )
+    expect(parseBranchComment(forkPayload?.chat.message.at(-1)?.data ?? '')).toEqual({
+      sourceChatId: 'custom-html-chat',
+      sourceChatName: 'Custom HTML Chat',
+      sourceMessageId: 'message-0',
+    })
   })
 
   it('disables the clicked message when the active chat switches immediately after the click', async () => {

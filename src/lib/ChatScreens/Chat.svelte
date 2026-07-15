@@ -115,6 +115,7 @@
     type ChatButtonTriggerIdentity,
     type ChatButtonTriggerTarget,
   } from './chatButtonTriggerFreshness'
+  import { createBranchComment, parseBranchComment } from './branchComment'
   import { characterRoutePath, navigate } from 'src/ts/router'
 
   let translating = $state(false)
@@ -1342,24 +1343,21 @@
   {:else if isComment}
     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
       {#if msgDisplay.startsWith('{{specialcomment')}
-        {@const parts = msgDisplay.split('::')}
-        {@const type = parts[1]}
+        {@const branchReference = parseBranchComment(msgDisplay)}
 
-        {#if type === 'branchedfrom'}
+        {#if branchReference}
           <button
             class="text-blue-500 hover:underline"
             onclick={() => {
-              console.log(parts)
-              const sourceChatId = parts[2] ?? ''
               const characterId = getDatabase().characters?.[selIdState.selId]?.chaId
-              changeChatTo(sourceChatId)
-              foldChatToMessage(parts[4])
-              if (characterId && sourceChatId) {
-                navigate(characterRoutePath(characterId, sourceChatId))
+              changeChatTo(branchReference.sourceChatId)
+              foldChatToMessage(branchReference.sourceMessageId)
+              if (characterId && branchReference.sourceChatId) {
+                navigate(characterRoutePath(characterId, branchReference.sourceChatId))
               }
             }}>
             <GitBranch size={20} class="inline-block mr-1" />
-            {language.branchedText.replace('{}', parts[3] ?? '')}
+            {language.branchedText.replace('{}', branchReference.sourceChatName)}
           </button>
         {/if}
       {:else}
@@ -1976,14 +1974,11 @@
       }
       newChat.message.push({
         role: 'char',
-        data:
-          '{{specialcomment::branchedfrom::' +
-          currentChat.id +
-          '::' +
-          currentChat.name +
-          '::' +
-          currentMessage.chatId +
-          '::}}',
+        data: createBranchComment({
+          sourceChatId: currentChat.id ?? '',
+          sourceChatName: currentChat.name,
+          sourceMessageId: currentMessage.chatId ?? '',
+        }),
         isComment: true,
         disabled: true,
         chatId: v4(),
