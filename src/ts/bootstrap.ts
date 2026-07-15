@@ -62,6 +62,11 @@ import { reconcileChatCompletionPushNotificationSetting } from './server/pushNot
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
 import {
+  resolveSelectedCharacterIndexAfterRefresh,
+  trackSelectedCharacterDuringRefresh,
+  type SelectedCharacterRefreshSnapshot,
+} from './server/selectedCharacterRefresh'
+import {
   applyCharacterCollectionMutationLocalEffect,
   applyCharacterPatchLocalEffect,
   applyCharacterOrderLocalEffect,
@@ -1473,62 +1478,60 @@ function selectedPromptPresetOwnsTemplate(promptPresetId: string): boolean {
 async function processAuthoritativeServerCommandEvents(events: readonly CommandEvent[]): Promise<boolean> {
   if (events.length === 0) return true
 
-  const previousSelectedIndex = get(selectedCharID)
-  const previousSelectedCharacterId =
-    previousSelectedIndex >= 0 ? getDatabase().characters?.[previousSelectedIndex]?.chaId : undefined
-  const result = await refreshInvalidatedServerResources(events, {
-    appliedRevision: peekAppliedServerResourceRevision(),
-    hooks: serverResourceInvalidationHooks,
-  })
+  const selectionTracker = trackSelectedCharacterDuringRefresh()
+  try {
+    const result = await refreshInvalidatedServerResources(events, {
+      appliedRevision: peekAppliedServerResourceRevision(),
+      hooks: serverResourceInvalidationHooks,
+    })
 
-  if (result.status !== 'ok') {
-    if (result.status === 'error') console.warn(`Server resource invalidation failed: ${result.error}`)
-    scheduleServerResourceReconnect()
-    return false
-  }
-  if (result.scope === 'none') return true
+    if (result.status !== 'ok') {
+      if (result.status === 'error') console.warn(`Server resource invalidation failed: ${result.error}`)
+      scheduleServerResourceReconnect()
+      return false
+    }
+    if (result.scope === 'none') return true
 
-  if (
-    result.scope === 'full' &&
-    !(await ensurePromptTemplateHydrated({ force: true, minimumRevision: result.revision }))
-  ) {
-    console.warn('Server resource invalidation failed: selected prompt-template owner hydration failed')
-    scheduleServerResourceReconnect()
-    return false
-  }
+    if (
+      result.scope === 'full' &&
+      !(await ensurePromptTemplateHydrated({ force: true, minimumRevision: result.revision }))
+    ) {
+      console.warn('Server resource invalidation failed: selected prompt-template owner hydration failed')
+      scheduleServerResourceReconnect()
+      return false
+    }
 
-  reconcileSelectedCharacterAfterResourceRefresh(events, previousSelectedIndex, previousSelectedCharacterId)
-  recordHydratedCharacterLorebooks(getDatabase().characters)
-
-  if (result.scope === 'full') {
-    resetChatHydration()
-    resetLorebookHydration()
+    reconcileSelectedCharacterAfterResourceRefresh(events, selectionTracker.snapshot())
     recordHydratedCharacterLorebooks(getDatabase().characters)
-    void hydrateActiveChat({ force: true })
-    triggerOpenChatGenerationReattach()
-  }
 
-  advanceKnownServerCommandRevision(result.revision)
-  setAppliedServerResourceRevision(result.revision)
-  return true
+    if (result.scope === 'full') {
+      resetChatHydration()
+      resetLorebookHydration()
+      recordHydratedCharacterLorebooks(getDatabase().characters)
+      void hydrateActiveChat({ force: true })
+      triggerOpenChatGenerationReattach()
+    }
+
+    advanceKnownServerCommandRevision(result.revision)
+    setAppliedServerResourceRevision(result.revision)
+    return true
+  } finally {
+    selectionTracker.stop()
+  }
 }
 
 function reconcileSelectedCharacterAfterResourceRefresh(
   events: readonly CommandEvent[],
-  previousIndex: number,
-  previousCharacterId: string | undefined,
+  selection: SelectedCharacterRefreshSnapshot,
 ): void {
   const database = getDatabase()
-  if (events.some((event) => event.resource === 'characterSelection')) {
+  if (!selection.selectionChanged && events.some((event) => event.resource === 'characterSelection')) {
     selectedCharID.set(initialSelectedCharFromDatabase(database))
     return
   }
-  if (previousIndex < 0) return
+  if (selection.target.selectedIndex < 0) return
 
-  const preservedIndex = previousCharacterId
-    ? database.characters.findIndex((character) => character?.chaId === previousCharacterId)
-    : -1
-  selectedCharID.set(preservedIndex >= 0 ? preservedIndex : initialSelectedCharFromDatabase(database))
+  selectedCharID.set(resolveSelectedCharacterIndexAfterRefresh(selection.target))
 }
 
 function isOwnCommandEvent(event: CommandEvent): boolean {

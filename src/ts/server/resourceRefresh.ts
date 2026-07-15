@@ -1,4 +1,3 @@
-import { get } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
 import { mergePendingPluginStorageResource } from '../pluginCommands'
 import { setActiveGenerationJobs, triggerOpenChatGenerationReattach } from '../process/reattach'
@@ -25,6 +24,11 @@ import {
   refreshInvalidatedServerResources,
   type ServerResourceInvalidationHooks,
 } from './resourceInvalidation'
+import {
+  resolveSelectedCharacterIndexAfterRefresh,
+  trackSelectedCharacterDuringRefresh,
+  type SelectedCharacterRefreshSnapshot,
+} from './selectedCharacterRefresh'
 
 export type ServerResourceRefreshResult =
   | { status: 'ok'; revision: number }
@@ -88,30 +92,33 @@ export async function refreshServerRealmImportResources(input: {
     return forceServerResourceRefresh('realm-import', { resource: input.event.resource })
   }
 
-  const selectedIndex = get(selectedCharID)
-  const selectedCharacterId = selectedIndex >= 0 ? getDatabase().characters?.[selectedIndex]?.chaId : undefined
-  const result = await refreshInvalidatedServerResources(input.event, {
-    appliedRevision,
-    hooks: serverResourceInvalidationHooks,
-  })
-  if (result.status !== 'ok') return result
+  const selectionTracker = trackSelectedCharacterDuringRefresh()
+  try {
+    const result = await refreshInvalidatedServerResources(input.event, {
+      appliedRevision,
+      hooks: serverResourceInvalidationHooks,
+    })
+    if (result.status !== 'ok') return result
 
-  if (result.scope === 'full') {
-    // This is not expected for a validated, contiguous character.created
-    // event, but retain full-refresh hydration semantics if the invalidation
-    // planner broadens the event in the future.
-    recordFullResourceRefresh('realm-import', input.event.resource)
-    return completeFullServerResourceRefresh(result.revision, selectedIndex, selectedCharacterId)
-  }
+    if (result.scope === 'full') {
+      // This is not expected for a validated, contiguous character.created
+      // event, but retain full-refresh hydration semantics if the invalidation
+      // planner broadens the event in the future.
+      recordFullResourceRefresh('realm-import', input.event.resource)
+      return completeFullServerResourceRefresh(result.revision, selectionTracker.snapshot())
+    }
 
-  if (result.scope === 'targeted') {
-    // Preserve existing hydration identities. Only mark characters whose
-    // character-list payload actually carried a resident lorebook.
-    recordHydratedCharacterLorebooks(getDatabase().characters)
+    if (result.scope === 'targeted') {
+      // Preserve existing hydration identities. Only mark characters whose
+      // character-list payload actually carried a resident lorebook.
+      recordHydratedCharacterLorebooks(getDatabase().characters)
+    }
+    setCachedServerCommandRevision(result.revision)
+    setAppliedServerResourceRevision(result.revision)
+    return { status: 'ok', revision: result.revision }
+  } finally {
+    selectionTracker.stop()
   }
-  setCachedServerCommandRevision(result.revision)
-  setAppliedServerResourceRevision(result.revision)
-  return { status: 'ok', revision: result.revision }
 }
 
 async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> {
@@ -119,15 +126,18 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
 
   do {
     serverResourceRefreshPending = false
-    const selectedIndex = get(selectedCharID)
-    const selectedCharacterId = selectedIndex >= 0 ? getDatabase().characters?.[selectedIndex]?.chaId : undefined
-    const result = await refreshAllServerResources({ hooks: serverResourceInvalidationHooks })
-    if (result.status !== 'ok') {
-      latestResult = result
-      continue
-    }
+    const selectionTracker = trackSelectedCharacterDuringRefresh()
+    try {
+      const result = await refreshAllServerResources({ hooks: serverResourceInvalidationHooks })
+      if (result.status !== 'ok') {
+        latestResult = result
+        continue
+      }
 
-    latestResult = await completeFullServerResourceRefresh(result.revision, selectedIndex, selectedCharacterId)
+      latestResult = await completeFullServerResourceRefresh(result.revision, selectionTracker.snapshot())
+    } finally {
+      selectionTracker.stop()
+    }
   } while (serverResourceRefreshPending)
 
   return latestResult ?? { status: 'error', error: 'Server resource refresh did not complete' }
@@ -135,10 +145,9 @@ async function runServerResourceRefresh(): Promise<ServerResourceRefreshResult> 
 
 async function completeFullServerResourceRefresh(
   revision: number,
-  selectedIndex: number,
-  selectedCharacterId: string | undefined,
+  selection: SelectedCharacterRefreshSnapshot,
 ): Promise<ServerResourceRefreshResult> {
-  syncSelectedCharacterAfterRefresh(selectedIndex, selectedCharacterId)
+  syncSelectedCharacterAfterRefresh(selection)
   if (!(await ensurePromptTemplateHydrated({ force: true, minimumRevision: revision }))) {
     return { status: 'error', error: 'Selected prompt-template owner hydration failed' }
   }
@@ -172,23 +181,9 @@ function isMatchingRealmCharacterCreatedEvent(input: {
   )
 }
 
-function syncSelectedCharacterAfterRefresh(previousIndex: number, previousCharacterId: string | undefined): void {
-  if (previousIndex < 0) return
-  const database = getDatabase()
-  const preservedIndex = previousCharacterId
-    ? database.characters.findIndex((character) => character?.chaId === previousCharacterId)
-    : -1
-  selectedCharID.set(preservedIndex >= 0 ? preservedIndex : selectedCharFromDatabase())
-}
-
-function selectedCharFromDatabase(): number {
-  const database = getDatabase()
-  const currentChar = (database as { currentChar?: unknown }).currentChar
-  return Number.isInteger(currentChar) &&
-    (currentChar as number) >= 0 &&
-    (currentChar as number) < database.characters.length
-    ? (currentChar as number)
-    : -1
+function syncSelectedCharacterAfterRefresh(selection: SelectedCharacterRefreshSnapshot): void {
+  if (selection.target.selectedIndex < 0) return
+  selectedCharID.set(resolveSelectedCharacterIndexAfterRefresh(selection.target))
 }
 
 async function refreshRuntimeJobs(): Promise<void> {

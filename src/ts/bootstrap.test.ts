@@ -521,6 +521,29 @@ describe('API-backed client bootstrap', () => {
     await vi.waitFor(() => expect(peekAppliedServerResourceRevision()).toBe(6))
   })
 
+  it('preserves a newer character selection while a targeted resource invalidation is pending', async () => {
+    await loadWebInitialDatabase()
+    selectedCharID.set(0)
+    const event = { type: 'settings.updated', revision: 6, resource: 'settings', id: 'display' }
+    let finishRead!: () => void
+    const readFinished = new Promise<void>((resolve) => {
+      finishRead = resolve
+    })
+    resourceApi.refreshInvalidated.mockImplementationOnce(async () => {
+      await readFinished
+      return { status: 'ok', revision: event.revision, scope: 'targeted' }
+    })
+
+    const reconciliation = commandApi.reconciler?.(event, [event], new Map())
+    await vi.waitFor(() => expect(resourceApi.refreshInvalidated).toHaveBeenCalledTimes(1))
+    selectedCharID.set(1)
+    finishRead()
+    await reconciliation
+
+    expect(getDatabase().characters[get(selectedCharID)]?.chaId).toBe('char-b')
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
   it('deduplicates an own direct event before, during, and after response resource reconciliation', async () => {
     await loadWebInitialDatabase()
     const event = {

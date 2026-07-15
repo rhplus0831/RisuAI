@@ -67,7 +67,7 @@ import {
   setAppliedServerResourceRevision,
   setCachedServerCommandRevision,
 } from './commands'
-import { replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
+import { getResourceDatabase, replaceResourceDatabase, resetServerResourceState } from './resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../storage/database.svelte'
 import { selectedCharID } from '../stores.svelte'
 
@@ -219,6 +219,36 @@ describe('complete server resource refresh', () => {
 
     await forceServerResourceRefresh('realm-import')
     expect(get(selectedCharID)).toBe(0)
+  })
+
+  it('preserves a newer selection by character id when a pending refresh reorders rows', async () => {
+    let finishRead!: () => void
+    const readFinished = new Promise<void>((resolve) => {
+      finishRead = resolve
+    })
+    refreshApi.refreshAll.mockImplementationOnce(async () => {
+      await readFinished
+      replaceResourceDatabase(
+        database(
+          [
+            { chaId: 'char-b', name: 'Bea refreshed' },
+            { chaId: 'char-a', name: 'Ada refreshed' },
+          ],
+          0,
+        ),
+        6,
+      )
+      return { status: 'ok', revision: 6, scope: 'full' }
+    })
+
+    const refresh = forceServerResourceRefresh('backup-restore')
+    await vi.waitFor(() => expect(refreshApi.refreshAll).toHaveBeenCalledTimes(1))
+    selectedCharID.set(0)
+    finishRead()
+    await refresh
+
+    expect(get(selectedCharID)).toBe(1)
+    expect(getResourceDatabase().characters[get(selectedCharID)]?.chaId).toBe('char-a')
   })
 
   it('does not advance cursors or run hydration side effects after a failed read', async () => {
