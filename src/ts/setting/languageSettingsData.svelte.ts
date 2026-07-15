@@ -12,10 +12,33 @@ import { sleep } from '../util'
 import { alertNormal, alertSelect, alertConfirm, alertError, alertWait } from '../alert'
 import { downloadFile } from '../globalApi.svelte'
 import { selectFileByDom } from '../util'
-import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { getResourceDatabase as getDatabase } from '../server/resourceState.svelte'
 import { exportLLMCacheAsJSON, importLLMCacheFromJSON, clearLLMCache } from '../translator/translator'
 
 export const langState = $state({ changed: false })
+
+export async function downloadLanguageTemplate(): Promise<void> {
+  const activeLanguage = getDatabase().language
+  const choice = parseInt(await alertSelect([language.continueTranslatingLanguage, language.makeNewLanguage]))
+
+  try {
+    if (choice === 0) {
+      const languages = ['de', 'ko', 'cn', 'vi', 'zh-Hant']
+      const selectedLanguage = languages[parseInt(await alertSelect(languages))]
+      if (!selectedLanguage) return
+      changeLanguage(selectedLanguage)
+      await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(language, null, 4)))
+    } else if (choice === 1) {
+      await downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)))
+    } else {
+      return
+    }
+
+    alertNormal(language.translationTemplateDownloaded)
+  } finally {
+    changeLanguage(activeLanguage)
+  }
+}
 
 export const languageSettingsItems: SettingItem[] = [
   {
@@ -33,6 +56,7 @@ export const languageSettingsItems: SettingItem[] = [
     bindKey: 'language',
     classes: 'mt-4',
     options: {
+      selectFallbackValue: 'en',
       selectOptions: [
         { value: 'de', label: 'Deutsch' },
         { value: 'en', label: 'English' },
@@ -41,40 +65,21 @@ export const languageSettingsItems: SettingItem[] = [
         { value: 'cn', label: '中文' },
         { value: 'zh-Hant', label: '中文(繁體)' },
         { value: 'vi', label: 'Tiếng Việt' },
-        { value: 'translang', label: '[Translate in your own language]' },
       ],
     },
     onChange: async (val, ctx) => {
-      if (val === 'translang') {
-        const j = await alertSelect(['Continue Translating Existing Language', 'Make a new language'])
-
-        if (parseInt(j) === 0) {
-          const langs = ['de', 'ko', 'cn', 'vi', 'zh-Hant']
-          const lang = parseInt(await alertSelect(langs))
-          changeLanguage(langs[lang])
-          downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(language, null, 4)))
-          alertNormal(
-            'Downloaded JSON, translate it, and send it to the dev by discord DM and email. I will add it to the next version.',
-          )
-        } else {
-          downloadFile('lang.json', new TextEncoder().encode(JSON.stringify(languageEnglish, null, 4)))
-          alertNormal(
-            'Downloaded JSON, translate it, and send it to the dev by discord DM and email. I will add it to the next version.',
-          )
-        }
-
-        // onChange runs outside the trusted projection-write scope of the
-        // generic settings wrapper, so this reset must wrap the write itself
-        // or it throws against the read-only server projection in Fastify mode.
-        withTrustedResourceWrite(() => {
-          ctx.db.language = 'en'
-        })
-      }
-
       await sleep(10)
       changeLanguage(ctx.db.language)
       langState.changed = true
     },
+  },
+
+  {
+    id: 'lang.downloadTemplate',
+    type: 'button',
+    labelKey: 'translateOwnLanguage',
+    classes: 'mt-2',
+    options: { onClick: downloadLanguageTemplate },
   },
 
   {

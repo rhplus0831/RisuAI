@@ -834,6 +834,11 @@ export const languageEnglish = {
   plugin: 'Plugin',
   language: 'Language',
   UiLanguage: 'UI Language',
+  translateOwnLanguage: 'Translate in your own language',
+  continueTranslatingLanguage: 'Continue translating an existing language',
+  makeNewLanguage: 'Make a new language',
+  translationTemplateDownloaded:
+    'Downloaded the language template. Translate it and send it to the developers for a future release.',
   createfromScratch: 'Create from Scratch',
   importCharacter: 'Import Character',
   translator: 'Translator',
