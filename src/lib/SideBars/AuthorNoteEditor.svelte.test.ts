@@ -40,6 +40,7 @@ vi.mock('../Others/Help.svelte', async () => {
 })
 
 import AuthorNoteEditor from './AuthorNoteEditor.svelte'
+import AuthorNoteEditorTestHost from './AuthorNoteEditor.testHost.svelte'
 import type { character } from 'src/ts/storage/database.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -61,6 +62,17 @@ function makeCharacter(note = 'initial note'): character {
       },
     ],
   } as unknown as character
+}
+
+function makeCharacterWithTwoChats(): character {
+  const chara = makeCharacter('first note')
+  chara.chats.push({
+    id: 'chat-b',
+    name: 'Chat B',
+    note: 'second note',
+    message: [],
+  })
+  return chara
 }
 
 beforeEach(() => {
@@ -107,5 +119,30 @@ describe('AuthorNoteEditor debounce persistence', () => {
 
     vi.advanceTimersByTime(300)
     expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledTimes(1)
+  })
+
+  it('flushes the old chat draft before switching owners', async () => {
+    component = mount(AuthorNoteEditorTestHost, {
+      target,
+      props: {
+        initialCharacter: makeCharacterWithTwoChats(),
+      },
+    })
+    await tick()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')!
+    textarea.value = 'unsaved first-chat draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(authorNoteMocks.setChatNoteValue).not.toHaveBeenCalled()
+    ;(component as unknown as { switchChat: (chatPage: number) => void }).switchChat(1)
+    await tick()
+
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledWith('chat-a', 'unsaved first-chat draft')
+    expect(textarea.value).toBe('second note')
+
+    vi.advanceTimersByTime(300)
+    expect(authorNoteMocks.setChatNoteValue).toHaveBeenCalledOnce()
   })
 })

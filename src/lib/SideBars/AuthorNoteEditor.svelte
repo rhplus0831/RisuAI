@@ -83,6 +83,7 @@
     const nextChatId = chat?.id ?? null
     const nextNote = chat?.note ?? ''
     if (nextChatId !== authorNoteChatId) {
+      untrack(flushPendingAuthorNoteSave)
       authorNoteChatId = nextChatId
       authorNoteDraft = nextNote
       authorNoteServerNote = nextNote
