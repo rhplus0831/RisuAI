@@ -220,9 +220,13 @@ describe('GridCatalog derived lists', () => {
 
     expect(catalogRoot().getAttribute('data-risu-list-kind')).toBe('grid')
     expect(catalogTab('grid').getAttribute('data-risu-selected')).toBe('true')
+    expect(catalogTab('grid').querySelector('button')?.getAttribute('aria-pressed')).toBe('true')
+    expect(catalogTab('list').querySelector('button')?.getAttribute('aria-pressed')).toBe('false')
     expect(catalogCountText()).toBe('2Character')
 
     await clickCatalogTab('list')
+    expect(catalogTab('grid').querySelector('button')?.getAttribute('aria-pressed')).toBe('false')
+    expect(catalogTab('list').querySelector('button')?.getAttribute('aria-pressed')).toBe('true')
     expect(listHeadings('list')).toEqual(['AlphaHero', 'Alpha Sidekick'])
     expect(target.textContent).toContain('Lead alpha')
     expect(target.textContent).toContain('Side alpha')

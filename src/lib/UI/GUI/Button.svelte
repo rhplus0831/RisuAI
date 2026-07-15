@@ -16,7 +16,7 @@
   }
 
   let {
-    selected = false,
+    selected,
     styled = 'primary',
     className = '',
     size = 'md',
@@ -31,6 +31,7 @@
 <button
   {onclick}
   {disabled}
+  aria-pressed={selected}
   aria-expanded={ariaExpanded}
   aria-controls={ariaControls}
   class="{styled === 'primary'

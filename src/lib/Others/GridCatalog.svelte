@@ -141,6 +141,7 @@
       <div class="flex flex-wrap gap-2 mt-2">
         <span data-risu-grid-tab data-risu-list-kind="simple" data-risu-selected={selected === 3 ? 'true' : 'false'}>
           <Button
+            selected={selected === 3}
             styled={selected === 3 ? 'primary' : 'outlined'}
             size="sm"
             onclick={() => {
@@ -151,6 +152,7 @@
         </span>
         <span data-risu-grid-tab data-risu-list-kind="grid" data-risu-selected={selected === 0 ? 'true' : 'false'}>
           <Button
+            selected={selected === 0}
             styled={selected === 0 ? 'primary' : 'outlined'}
             size="sm"
             onclick={() => {
@@ -161,6 +163,7 @@
         </span>
         <span data-risu-grid-tab data-risu-list-kind="list" data-risu-selected={selected === 1 ? 'true' : 'false'}>
           <Button
+            selected={selected === 1}
             styled={selected === 1 ? 'primary' : 'outlined'}
             size="sm"
             onclick={() => {
@@ -171,6 +174,7 @@
         </span>
         <span data-risu-grid-tab data-risu-list-kind="trash" data-risu-selected={selected === 2 ? 'true' : 'false'}>
           <Button
+            selected={selected === 2}
             styled={selected === 2 ? 'primary' : 'outlined'}
             size="sm"
             onclick={() => {

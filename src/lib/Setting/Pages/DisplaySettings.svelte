@@ -22,6 +22,7 @@
 {#if submenu !== -1}
   <div class="flex w-full rounded-md border border-darkborderc mb-4 overflow-x-auto h-16 min-h-16 overflow-y-clip">
     <button
+      aria-pressed={submenu === 0}
       onclick={() => {
         submenu = 0
       }}
@@ -30,6 +31,7 @@
       <span>{language.theme}</span>
     </button>
     <button
+      aria-pressed={submenu === 1}
       onclick={() => {
         submenu = 1
       }}
@@ -38,6 +40,7 @@
       <span>{language.sizeAndSpeed}</span>
     </button>
     <button
+      aria-pressed={submenu === 2}
       onclick={() => {
         submenu = 2
       }}
