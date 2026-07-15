@@ -164,6 +164,7 @@ import {
   getModuleRegexScripts,
   getModuleTriggers,
   importModule,
+  importRisuModuleObject,
   moduleUpdate,
   refreshModules,
 } from './modules'
@@ -291,7 +292,8 @@ describe('module imports', () => {
     decodeRPack.mockReset()
     decodeRPack.mockImplementation(async (data: Uint8Array) => data)
     sleep.mockReset()
-    createGlobalModule.mockClear()
+    createGlobalModule.mockReset()
+    createGlobalModule.mockResolvedValue(null)
     alertConfirm.mockReset()
     alertConfirm.mockResolvedValue(true)
     alertModuleSelect.mockReset()
@@ -359,6 +361,83 @@ describe('module imports', () => {
       }),
     )
     expect(alertNormal).toHaveBeenCalled()
+  })
+
+  it('does not announce .risum import success when module creation fails', async () => {
+    const save = createDeferred<any>()
+    createGlobalModule.mockReturnValueOnce(save.promise)
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum({
+        id: 'old-id',
+        name: 'Rejected module',
+        description: 'Imported',
+      }),
+    }
+
+    const importPromise = importModule()
+    await vi.waitFor(() => expect(createGlobalModule).toHaveBeenCalledOnce())
+    expect(alertNormal).not.toHaveBeenCalled()
+
+    save.resolve({ status: 'error', error: 'module write failed' })
+    await importPromise
+
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(language.moduleImport.commandError('module write failed'))
+  })
+
+  it('returns no imported module or success alert after an object-import conflict', async () => {
+    createGlobalModule.mockResolvedValueOnce({ status: 'conflict', currentRevision: 41 })
+
+    const imported = await importRisuModuleObject(
+      {
+        id: 'old-id',
+        name: 'Conflicted module',
+        description: 'Imported',
+      },
+      { alertSuccess: true },
+    )
+
+    expect(imported).toBeUndefined()
+    expect(alertNormal).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(language.moduleImport.commandConflict)
+  })
+
+  it.each([
+    [
+      'Risu lorebook',
+      {
+        type: 'risu',
+        name: 'Lorebook module',
+        data: [],
+      },
+    ],
+    [
+      'external lorebook',
+      {
+        name: 'External lorebook module',
+        entries: { first: { content: 'Lore' } },
+      },
+    ],
+    [
+      'regex',
+      {
+        type: 'regex',
+        name: 'Regex module',
+        data: [{ in: 'x', out: 'y', type: 'editoutput' }],
+      },
+    ],
+  ])('reports unavailable creation for converted %s imports', async (_kind, payload) => {
+    createGlobalModule.mockResolvedValueOnce({ status: 'unavailable' })
+    selectedFileState.file = {
+      name: 'converted.json',
+      data: Buffer.from(JSON.stringify(payload)),
+    }
+
+    await importModule()
+
+    expect(createGlobalModule).toHaveBeenCalledOnce()
+    expect(alertError).toHaveBeenCalledWith(language.moduleImport.commandUnavailable)
   })
 
   it('imports .risum asset tuples with a null filename slot using empty filename fallback', async () => {

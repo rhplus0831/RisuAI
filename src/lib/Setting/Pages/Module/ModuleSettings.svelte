@@ -283,7 +283,7 @@
       data-risu-module-action="import"
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
-        importModule()
+        await importModule()
       }}>
       <HardDriveUpload />
     </button>

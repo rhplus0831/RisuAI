@@ -1216,6 +1216,11 @@ export const languageEnglish = {
     editTargetMissing: 'The module you were editing no longer exists. Your draft was kept.',
     commandError: (error: string) => `Module save failed: ${error}`,
   },
+  moduleImport: {
+    commandConflict: 'The server changed while the module was being imported. The module was not imported. Try again.',
+    commandUnavailable: 'Module import is unavailable. The module was not imported.',
+    commandError: (error: string) => `Module import failed: ${error}`,
+  },
   importModule: 'Import Module',
   download: 'Download',
   edit: 'Edit',

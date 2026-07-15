@@ -81,6 +81,23 @@ interface ImportRisuModuleOptions {
   alertSuccess?: boolean
 }
 
+function moduleImportCommandError(result: Exclude<ServerCommandResult, { status: 'ok' }>): string {
+  if (result.status === 'conflict') return language.moduleImport.commandConflict
+  if (result.status === 'unavailable') return language.moduleImport.commandUnavailable
+  return language.moduleImport.commandError(result.error)
+}
+
+async function createImportedGlobalModule(module: RisuModule): Promise<boolean> {
+  try {
+    const result = await createGlobalModule(module)
+    if (result === null || result.status === 'ok') return true
+    alertError(moduleImportCommandError(result))
+  } catch (error) {
+    alertError(language.moduleImport.commandError(error instanceof Error ? error.message : String(error)))
+  }
+  return false
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
 }
@@ -456,7 +473,9 @@ export async function importRisuModuleData(
   if (!module) {
     return
   }
-  createGlobalModule(module)
+  if (!(await createImportedGlobalModule(module))) {
+    return
+  }
   if (alertSuccess) {
     alertNormal(language.successImport)
   }
@@ -477,7 +496,9 @@ export async function importRisuModuleObject(
     return false
   }
   normalizedImportData.id = v4()
-  createGlobalModule(normalizedImportData)
+  if (!(await createImportedGlobalModule(normalizedImportData))) {
+    return
+  }
   if (alertSuccess) {
     alertNormal(language.successImport)
   }
@@ -510,7 +531,7 @@ export async function importModule() {
         lorebook: lores,
         id: v4(),
       }
-      createGlobalModule(importModule)
+      await createImportedGlobalModule(importModule)
       return
     }
     if (importData.entries) {
@@ -521,7 +542,7 @@ export async function importModule() {
         lorebook: lores,
         id: v4(),
       }
-      createGlobalModule(importModule)
+      await createImportedGlobalModule(importModule)
       return
     }
     if (importData.type === 'regex' && importData.data) {
@@ -532,7 +553,7 @@ export async function importModule() {
         regex: regexs,
         id: v4(),
       }
-      createGlobalModule(importModule)
+      await createImportedGlobalModule(importModule)
       return
     }
   } catch (error) {
