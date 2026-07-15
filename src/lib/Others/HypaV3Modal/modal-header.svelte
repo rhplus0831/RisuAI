@@ -120,10 +120,7 @@
   <!-- Buttons Container -->
   <div class="flex items-center gap-2">
     <!-- Open Search Button -->
-    <button
-      class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-      tabindex="-1"
-      onclick={async () => await toggleSearch()}>
+    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" onclick={async () => await toggleSearch()}>
       <SearchIcon class="w-6 h-6" />
     </button>
 
@@ -132,7 +129,6 @@
       class="p-2 transition-colors {filterState?.showImportantOnly
         ? 'text-yellow-400 hover:text-yellow-300'
         : 'text-zinc-400 hover:text-zinc-200'}"
-      tabindex="-1"
       onclick={toggleFilterImportant}>
       <StarIcon class="w-6 h-6" />
     </button>
@@ -143,7 +139,6 @@
         class="p-2 transition-colors {bulkEditState.isEnabled
           ? 'text-blue-400 hover:text-blue-300'
           : 'text-zinc-400 hover:text-zinc-200'}"
-        tabindex="-1"
         onclick={toggleBulkEditMode}>
         <SquarePenIcon class="w-6 h-6" />
       </button>
@@ -151,22 +146,19 @@
 
     <!-- Category Manager Button -->
     {#if categoryManagerState && !readOnly}
-      <button
-        class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
-        tabindex="-1"
-        onclick={openCategoryManager}>
+      <button class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={openCategoryManager}>
         <TagIcon class="w-6 h-6" />
       </button>
     {/if}
 
     <!-- Open Global Settings Button -->
-    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" tabindex="-1" onclick={openGlobalSettings}>
+    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" onclick={openGlobalSettings}>
       <SettingsIcon class="w-6 h-6" />
     </button>
 
     <!-- Open Dropdown Button -->
     <div class="relative">
-      <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" tabindex="-1" onclick={openDropdown}>
+      <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" onclick={openDropdown}>
         <MoreVerticalIcon class="w-6 h-6" />
       </button>
 
@@ -179,7 +171,6 @@
               class="p-2 transition-colors {filterSelected
                 ? 'text-blue-400 hover:text-blue-300'
                 : 'text-zinc-400 hover:text-zinc-200'}"
-              tabindex="-1"
               onclick={toggleFilterSelected}>
               <BarChartIcon class="w-6 h-6" />
             </button>
@@ -188,7 +179,6 @@
             {#if !readOnly}
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-                tabindex="-1"
                 onclick={async () => await resetData()}>
                 <Trash2Icon class="w-6 h-6" />
               </button>
@@ -199,7 +189,7 @@
     </div>
 
     <!-- Close Modal Button -->
-    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" tabindex="-1" onclick={closeModal}>
+    <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" onclick={closeModal}>
       <XIcon class="w-6 h-6" />
     </button>
   </div>
