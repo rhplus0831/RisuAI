@@ -210,6 +210,51 @@ describe('runAnthropic (non-streaming)', () => {
     expect(body.top_k).toBeUndefined()
   })
 
+  it('forces thinking off and preserves the caller-scoped tool set after additionalParams', async () => {
+    let captured: RequestInit | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = init
+      return ok({ content: [{ type: 'text', text: 'answer' }] })
+    })
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    }
+
+    await runAnthropic({
+      model: 'claude-adaptive',
+      messages: [{ role: 'user', content: 'hi' }],
+      apiKey: 'k',
+      baseUrl: 'https://api.anthropic.com/v1',
+      version: '2023-06-01',
+      maxTokens: 512,
+      temperature: 0.5,
+      thinkingType: 'adaptive',
+      adaptiveThinkingEffort: 'high',
+      supportsAdaptiveThinking: true,
+      tools: [tool],
+      additionalParams: [
+        ['tools', 'json::[{"name":"arbitrary-tool","input_schema":{"type":"object"}}]'],
+        ['thinking.type', 'adaptive'],
+        ['output_config.effort', 'high'],
+      ],
+      signal: new AbortController().signal,
+    })
+
+    const body = JSON.parse(captured!.body as string)
+    expect(body.tools).toEqual([
+      {
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.inputSchema,
+      },
+    ])
+    expect(body.thinking).toBeUndefined()
+    expect(body.output_config).toBeUndefined()
+    expect(body.temperature).toBe(0.5)
+  })
+
   it('omits system / temperature when not provided', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

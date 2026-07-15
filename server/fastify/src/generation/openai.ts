@@ -15,6 +15,8 @@ import {
   writeGenerationTraceSidecar,
   type GenerationTraceContext,
 } from './generationTraceSidecar.js'
+import type { ServerToolDefinition } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import { openAIToolDefinitions, parseOpenAIToolCalls } from './serverTools.js'
 
 export interface OpenAIRequest {
   model: string
@@ -61,6 +63,7 @@ export interface OpenAIRequest {
    */
   oobaSystemHoist?: boolean
   trace?: GenerationTraceContext
+  tools?: ServerToolDefinition[]
   signal: AbortSignal
 }
 
@@ -92,6 +95,7 @@ interface OpenAIResolveInput {
   additionalParams?: Array<[string, string]>
   oobaSystemHoist?: boolean
   trace?: GenerationTraceContext
+  tools?: ServerToolDefinition[]
   signal: AbortSignal
 }
 
@@ -143,6 +147,7 @@ export function resolveOpenAIRequest(input: OpenAIResolveInput): OpenAIRequest |
     additionalParams: input.additionalParams,
     oobaSystemHoist: input.oobaSystemHoist === true ? true : undefined,
     trace: input.trace,
+    tools: input.tools,
     signal: input.signal,
   }
 }
@@ -213,6 +218,7 @@ function buildPayload(req: OpenAIRequest, stream: boolean): Record<string, unkno
     delete body.presence_penalty
   }
   if (req.logitBias !== undefined && Object.keys(req.logitBias).length > 0) body.logit_bias = req.logitBias
+  if (req.tools !== undefined && req.tools.length > 0) body.tools = openAIToolDefinitions(req.tools)
   return body
 }
 
@@ -246,6 +252,9 @@ function buildRequestInit(
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  // Tool definitions are caller-scoped capabilities. A persisted
+  // additionalParams entry must not replace them with unrelated functions.
+  if (req.tools !== undefined && req.tools.length > 0) body.tools = openAIToolDefinitions(req.tools)
   return { payload: body, body: JSON.stringify(body), headers }
 }
 
@@ -280,7 +289,7 @@ async function emitOpenAIProviderBodyMetric(
 }
 
 interface OpenAINonStreamChoice {
-  message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown }
+  message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown; tool_calls?: unknown }
   reasoning_content?: unknown
   finish_reason?: unknown
 }
@@ -371,6 +380,21 @@ export async function runOpenAI(req: OpenAIRequest): Promise<CompletionResult> {
     return reasoning.length > 0 && !content.startsWith('<Thoughts>')
       ? `<Thoughts>\n${reasoning}\n</Thoughts>\n${content}`
       : content
+  }
+  const rawToolCalls = choices[0]?.message?.tool_calls
+  if (Array.isArray(rawToolCalls) && rawToolCalls.length > 0) {
+    if (!req.tools || req.tools.length === 0) {
+      return { type: 'fail', result: 'upstream returned tool calls when no tools were supplied' }
+    }
+    const parsed = parseOpenAIToolCalls(rawToolCalls, new Set(req.tools.map((tool) => tool.name)))
+    if (parsed.ok === false) return { type: 'fail', result: `invalid upstream tool call: ${parsed.error}` }
+    const result: CompletionResult = {
+      type: 'success',
+      result: choiceText(choices[0]) ?? '',
+      toolCalls: parsed.value,
+    }
+    if (typeof body.model === 'string') result.model = body.model
+    return result
   }
   const content = choiceText(choices[0])
   if (content === null) {

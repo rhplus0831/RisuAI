@@ -28,6 +28,7 @@ import { requestClaude } from './anthropic'
 import { requestGoogleCloudVertex } from './google'
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from './openAI/requests'
 import { resolveServerCompletionRoute, requestServerCompletion } from './serverCompletion'
+import type { ServerToolCall, ServerToolRound } from './serverToolProtocol'
 import { applyAdditionalParameters, applyParameters, type ModelModeExtended } from './shared'
 
 export type ToolCall = {
@@ -59,6 +60,7 @@ interface requestDataArgument {
   fallbackProfileId?: string
   escape?: boolean
   tools?: MCPTool[]
+  toolRounds?: ServerToolRound[]
   rememberToolUsage?: boolean
   blockPlugins?: boolean
 }
@@ -90,6 +92,7 @@ export type requestDataResponse =
       status?: number
       statusText?: string
       code?: string
+      toolCalls?: ServerToolCall[]
     }
   | {
       type: 'streaming'
@@ -683,7 +686,7 @@ export async function requestChatData(
       }
 
       if (da.type === 'success' && fallbackIndex !== fallbackAttempts.length - 1 && db.fallbackWhenBlankResponse) {
-        if (da.result.trim() === '') {
+        if (da.result.trim() === '' && !da.toolCalls?.length) {
           break
         }
       }

@@ -8,6 +8,8 @@ import {
 } from './sse.js'
 import { readBoundedBodyJson, readBoundedBodyText } from './body.js'
 import { formatUpstreamFetchError, formatUpstreamHttpError, upstreamStatusText } from './upstreamError.js'
+import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import { anthropicToolDefinitions, appendAnthropicToolRounds, parseAnthropicToolCalls } from './serverTools.js'
 
 export interface AnthropicRequest {
   model: string
@@ -34,6 +36,7 @@ export interface AnthropicRequest {
    * `./additionalParams.ts` for semantics.
    */
   additionalParams?: Array<[string, string]>
+  tools?: ServerToolDefinition[]
   signal: AbortSignal
 }
 
@@ -56,6 +59,8 @@ interface AnthropicResolveInput {
   oneHourCache?: unknown
   extraHeaders?: Record<string, string>
   additionalParams?: Array<[string, string]>
+  tools?: ServerToolDefinition[]
+  toolRounds?: ServerToolRound[]
   signal: AbortSignal
 }
 
@@ -98,7 +103,7 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
 
   return {
     model: input.model,
-    messages: input.messages,
+    messages: appendAnthropicToolRounds(input.messages, input.toolRounds ?? []),
     apiKey: input.apiKey,
     baseUrl,
     version,
@@ -115,11 +120,13 @@ export function resolveAnthropicRequest(input: AnthropicResolveInput): Anthropic
     oneHourCache: input.oneHourCache === true,
     extraHeaders: input.extraHeaders,
     additionalParams: input.additionalParams,
+    tools: input.tools,
     signal: input.signal,
   }
 }
 
 function buildPayload(req: AnthropicRequest, stream: boolean): Record<string, unknown> {
+  const hasTools = (req.tools?.length ?? 0) > 0
   const body: Record<string, unknown> = {
     model: req.model,
     messages: req.messages,
@@ -127,10 +134,11 @@ function buildPayload(req: AnthropicRequest, stream: boolean): Record<string, un
     stream,
   }
   if (req.system !== undefined) body.system = req.system
+  if (req.tools !== undefined && req.tools.length > 0) body.tools = anthropicToolDefinitions(req.tools)
   if (req.temperature !== undefined) body.temperature = req.temperature
   if (req.topP !== undefined) body.top_p = req.topP
   if (req.topK !== undefined) body.top_k = req.topK
-  if (req.thinkingType === 'adaptive' && req.supportsAdaptiveThinking) {
+  if (!hasTools && req.thinkingType === 'adaptive' && req.supportsAdaptiveThinking) {
     const effort =
       req.adaptiveThinkingEffort === 'xhigh' && !req.supportsXHighEffort
         ? 'high'
@@ -140,7 +148,7 @@ function buildPayload(req: AnthropicRequest, stream: boolean): Record<string, un
     delete body.temperature
     delete body.top_p
     delete body.top_k
-  } else if (req.thinkingType !== 'off' && req.thinkingTokens !== undefined) {
+  } else if (!hasTools && req.thinkingType !== 'off' && req.thinkingTokens !== undefined) {
     body.thinking = { type: 'enabled', budget_tokens: req.thinkingTokens, display: 'summarized' }
     delete body.temperature
     delete body.top_p
@@ -177,6 +185,15 @@ function buildRequestInit(req: AnthropicRequest, stream: boolean): { body: strin
   if (req.additionalParams !== undefined && req.additionalParams.length > 0) {
     applyAdditionalParameters(body, headers, req.additionalParams)
   }
+  if (req.tools !== undefined && req.tools.length > 0) {
+    // Extended-thinking blocks carry signatures that this bounded browser
+    // round-trip intentionally does not retain. Keep tool turns compatible,
+    // and prevent additionalParams from widening the supplied tool set or
+    // re-enabling thinking behind the protocol's back.
+    body.tools = anthropicToolDefinitions(req.tools)
+    delete body.thinking
+    delete body.output_config
+  }
   return { body: JSON.stringify(body), headers }
 }
 
@@ -184,6 +201,9 @@ interface AnthropicContentBlock {
   type?: unknown
   text?: unknown
   thinking?: unknown
+  id?: unknown
+  name?: unknown
+  input?: unknown
 }
 
 interface AnthropicResponse {
@@ -256,6 +276,17 @@ export async function runAnthropic(req: AnthropicRequest): Promise<CompletionRes
     }
   }
   if (thinkingOpen) text += '</Thoughts>\n\n'
+  const hasToolUse = body.content?.some((block) => block.type === 'tool_use') === true
+  if (hasToolUse) {
+    if (!req.tools || req.tools.length === 0) {
+      return { type: 'fail', result: 'upstream returned tool calls when no tools were supplied' }
+    }
+    const parsed = parseAnthropicToolCalls(body.content, new Set(req.tools.map((tool) => tool.name)))
+    if (parsed.ok === false) return { type: 'fail', result: `invalid upstream tool call: ${parsed.error}` }
+    const result: CompletionResult = { type: 'success', result: text, toolCalls: parsed.value }
+    if (typeof body.model === 'string') result.model = body.model
+    return result
+  }
   if (text.length === 0) {
     return { type: 'fail', result: 'upstream returned no text content' }
   }

@@ -39,6 +39,13 @@ import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { attachAbort } from '../requestAbort.js'
 import { handleOllamaCloudToolProxy, isOllamaCloudToolOperation } from '../ollamaCloudToolProxy.js'
+import {
+  validateServerToolDefinitions,
+  validateServerToolRounds,
+  type ServerToolCall,
+  type ServerToolDefinition,
+  type ServerToolRound,
+} from '../../../../src/ts/process/request/serverToolProtocol.js'
 
 const SUPPORTED_PROVIDERS = new Set([
   'echo',
@@ -76,6 +83,8 @@ interface CompletionRequestBody {
   maxTokens?: unknown
   temperature?: unknown
   currentCharName?: unknown
+  tools?: unknown
+  toolRounds?: unknown
 }
 
 const SERVER_INTENT_KIND = 'server-intent'
@@ -365,6 +374,7 @@ interface CompletionResponsePayload {
   status?: number
   statusText?: string
   code?: string
+  toolCalls?: ServerToolCall[]
 }
 
 function completionPayload(result: CompletionResult): CompletionResponsePayload {
@@ -375,6 +385,7 @@ function completionPayload(result: CompletionResult): CompletionResponsePayload 
     ...(typeof result.status === 'number' ? { status: result.status } : {}),
     ...(result.statusText ? { statusText: result.statusText } : {}),
     ...(result.code ? { code: result.code } : {}),
+    ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
   }
 }
 
@@ -382,7 +393,10 @@ function writeSseChunk(reply: FastifyReply, frame: CompletionStreamFrame): void 
   const event = frame.kind === 'done' ? 'done' : frame.kind === 'error' ? 'error' : 'chunk'
   const data =
     frame.kind === 'done'
-      ? JSON.stringify({ finishReason: frame.finishReason ?? 'stop' })
+      ? JSON.stringify({
+          finishReason: frame.finishReason ?? 'stop',
+          ...(frame.toolCalls?.length ? { toolCalls: frame.toolCalls } : {}),
+        })
       : frame.kind === 'error'
         ? JSON.stringify({
             type: 'provider_error',
@@ -444,7 +458,11 @@ async function collectCompletionFrames(
       })
     }
     if (frame.kind === 'done') {
-      return { type: 'success', result }
+      return {
+        type: 'success',
+        result,
+        ...(frame.toolCalls?.length ? { toolCalls: frame.toolCalls } : {}),
+      }
     }
   }
   return { type: 'success', result }
@@ -1226,6 +1244,23 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'currentCharName must be a string when provided')
   }
 
+  let tools: ServerToolDefinition[] | undefined
+  let toolRounds: ServerToolRound[] | undefined
+  if (body.tools !== undefined) {
+    const validatedTools = validateServerToolDefinitions(body.tools)
+    if (validatedTools.ok === false) return badRequest(reply, validatedTools.error)
+    tools = validatedTools.value
+  }
+  if ((tools?.length ?? 0) > 0 && body.stream === true) {
+    return badRequest(reply, 'server-intent tool requests must use buffered completion')
+  }
+  if (body.toolRounds !== undefined) {
+    if (!tools || tools.length === 0) return badRequest(reply, 'toolRounds require supplied tools')
+    const validatedRounds = validateServerToolRounds(body.toolRounds, new Set(tools.map((tool) => tool.name)))
+    if (validatedRounds.ok === false) return badRequest(reply, validatedRounds.error)
+    toolRounds = validatedRounds.value
+  }
+
   const settings = loadServerIntentCompletionSettings(db)
   if (settings === null) {
     return badRequest(reply, 'database is not initialized')
@@ -1243,6 +1278,8 @@ async function handleServerIntentCompletion(
       outputTokens: finiteNumber(body.maxTokens),
       profile,
       signal,
+      tools,
+      toolRounds,
     })
 
     if (body.stream === true) {

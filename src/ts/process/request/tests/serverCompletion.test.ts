@@ -120,6 +120,93 @@ describe('requestServerCompletion', () => {
     expect(payload?.staticModel).toBe('echo_model')
   })
 
+  it('sends bounded tool history and validates the returned call against the supplied definitions', async () => {
+    let payload: Record<string, unknown> | null = null
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: RequestInit) => {
+        payload = JSON.parse(init.body as string)
+        return new Response(
+          JSON.stringify({
+            type: 'success',
+            result: '',
+            toolCalls: [{ id: 'call-2', name: tool.name, arguments: { id: 'next-id' } }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      }),
+    )
+
+    await expect(
+      requestServerCompletion(
+        makeTarg({
+          tools: [tool],
+          toolRounds: [
+            {
+              assistantContent: '',
+              calls: [{ id: 'call-1', name: tool.name, arguments: { id: 'mira-id' } }],
+              results: [{ callId: 'call-1', name: tool.name, content: '{"name":"Mira"}' }],
+            },
+          ],
+        }),
+        null,
+      ),
+    ).resolves.toEqual({
+      type: 'success',
+      result: '',
+      toolCalls: [{ id: 'call-2', name: tool.name, arguments: { id: 'next-id' } }],
+    })
+    expect(payload).toMatchObject({ tools: [tool] })
+    expect(payload?.toolRounds).toEqual([
+      {
+        assistantContent: '',
+        calls: [{ id: 'call-1', name: tool.name, arguments: { id: 'mira-id' } }],
+        results: [{ callId: 'call-1', name: tool.name, content: '{"name":"Mira"}' }],
+      },
+    ])
+  })
+
+  it('rejects a server tool call that was not in the caller-supplied list', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              type: 'success',
+              result: '',
+              toolCalls: [{ id: 'call-1', name: 'arbitrary-tool', arguments: {} }],
+            }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    )
+
+    await expect(
+      requestServerCompletion(
+        makeTarg({
+          tools: [
+            {
+              name: 'risu-get-character-info',
+              description: 'Get character information.',
+              inputSchema: { type: 'object' },
+            },
+          ],
+        }),
+        null,
+      ),
+    ).resolves.toMatchObject({
+      type: 'fail',
+      result: expect.stringContaining('unavailable tool: arbitrary-tool'),
+      noRetry: true,
+    })
+  })
+
   it('returns a noRetry failure when the server rejects the intent', async () => {
     vi.stubGlobal(
       'fetch',

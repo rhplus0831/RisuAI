@@ -15,6 +15,8 @@ import {
   writeGenerationTraceSidecar,
   type GenerationTraceContext,
 } from './generationTraceSidecar.js'
+import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import { appendGeminiToolRounds, geminiToolDefinitions, parseGeminiToolCalls } from './serverTools.js'
 
 export interface VertexAuthInput {
   projectId: string
@@ -25,7 +27,7 @@ export interface VertexAuthInput {
 
 export interface GeminiRequest {
   model: string
-  contents: GeminiContent[]
+  contents: unknown[]
   systemInstruction?: string
   /**
    * Vanilla Google AI Studio path: query-string `key=<apiKey>` against
@@ -47,6 +49,7 @@ export interface GeminiRequest {
   frequencyPenalty?: number
   thinkingTokens?: number
   trace?: GenerationTraceContext
+  tools?: ServerToolDefinition[]
   signal: AbortSignal
 }
 
@@ -74,6 +77,8 @@ interface GeminiResolveInput {
   frequencyPenalty?: unknown
   thinkingTokens?: unknown
   trace?: GenerationTraceContext
+  tools?: ServerToolDefinition[]
+  toolRounds?: ServerToolRound[]
   signal: AbortSignal
 }
 
@@ -209,7 +214,7 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
 
   return {
     model: input.model,
-    contents: reformat.contents,
+    contents: appendGeminiToolRounds(reformat.contents, input.toolRounds ?? []),
     systemInstruction: reformat.systemInstruction,
     apiKey: hasApiKey ? (input.apiKey as string) : undefined,
     vertex: hasVertex ? input.vertex : undefined,
@@ -222,6 +227,7 @@ export function resolveGeminiRequest(input: GeminiResolveInput): GeminiRequest |
     frequencyPenalty,
     thinkingTokens,
     trace: input.trace,
+    tools: input.tools,
     signal: input.signal,
   }
 }
@@ -234,7 +240,7 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   if (req.topK !== undefined) generationConfig.topK = req.topK
   if (req.presencePenalty !== undefined) generationConfig.presencePenalty = req.presencePenalty
   if (req.frequencyPenalty !== undefined) generationConfig.frequencyPenalty = req.frequencyPenalty
-  if (req.thinkingTokens !== undefined) {
+  if ((req.tools?.length ?? 0) === 0 && req.thinkingTokens !== undefined) {
     generationConfig.thinkingConfig = { thinkingBudget: req.thinkingTokens, includeThoughts: true }
   }
   const body: Record<string, unknown> = {
@@ -244,6 +250,7 @@ function buildPayload(req: GeminiRequest): Record<string, unknown> {
   if (req.systemInstruction !== undefined) {
     body.systemInstruction = { parts: [{ text: req.systemInstruction }] }
   }
+  if (req.tools !== undefined && req.tools.length > 0) body.tools = geminiToolDefinitions(req.tools)
   return body
 }
 
@@ -334,6 +341,7 @@ interface GeminiResponsePart {
   text?: unknown
   thought?: unknown
   thoughtSignature?: unknown
+  functionCall?: unknown
 }
 
 interface GeminiCandidate {
@@ -501,6 +509,18 @@ export async function runGemini(req: GeminiRequest): Promise<CompletionResult> {
   }
 
   const text = extractText(body)
+  const toolParts = (body.candidates ?? []).flatMap((candidate) => candidate.content?.parts ?? [])
+  const hasToolCalls = toolParts.some((part) => part.functionCall !== undefined)
+  if (hasToolCalls) {
+    if (!req.tools || req.tools.length === 0) {
+      return { type: 'fail', result: 'upstream returned tool calls when no tools were supplied' }
+    }
+    const parsed = parseGeminiToolCalls(toolParts, new Set(req.tools.map((tool) => tool.name)))
+    if (parsed.ok === false) return { type: 'fail', result: `invalid upstream tool call: ${parsed.error}` }
+    const result: CompletionResult = { type: 'success', result: text, toolCalls: parsed.value }
+    if (typeof body.modelVersion === 'string') result.model = body.modelVersion
+    return result
+  }
   if (text.length === 0) {
     return { type: 'fail', result: 'upstream returned no text content' }
   }

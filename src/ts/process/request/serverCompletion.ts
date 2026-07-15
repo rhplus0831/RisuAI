@@ -1,6 +1,7 @@
 import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { parseSseEvent } from './sseParse'
 import type { RequestDataArgumentExtended, requestDataResponse } from './request'
+import { validateServerToolCalls, validateServerToolDefinitions, validateServerToolRounds } from './serverToolProtocol'
 
 export { formatToServerProvider } from './providerCapability'
 
@@ -55,6 +56,7 @@ interface CompletionJsonResponse {
   status?: unknown
   statusText?: unknown
   code?: unknown
+  toolCalls?: unknown
 }
 
 function nonEmptyString(value: unknown): value is string {
@@ -172,6 +174,23 @@ export async function requestServerCompletion(
   signal: AbortSignal | null,
 ): Promise<requestDataResponse> {
   const useStreaming = targ.useStreaming === true
+  const validatedTools = targ.tools ? validateServerToolDefinitions(targ.tools) : { ok: true as const, value: [] }
+  if (validatedTools.ok === false) {
+    return { type: 'fail', result: `Invalid tool definitions: ${validatedTools.error}`, noRetry: true }
+  }
+  if (validatedTools.value.length > 0 && useStreaming) {
+    return { type: 'fail', result: 'Server tool requests must use buffered completion', noRetry: true }
+  }
+  const allowedToolNames = new Set(validatedTools.value.map((tool) => tool.name))
+  const validatedRounds = targ.toolRounds
+    ? validateServerToolRounds(targ.toolRounds, allowedToolNames)
+    : { ok: true as const, value: [] }
+  if (validatedRounds.ok === false) {
+    return { type: 'fail', result: `Invalid tool history: ${validatedRounds.error}`, noRetry: true }
+  }
+  if (validatedRounds.value.length > 0 && validatedTools.value.length === 0) {
+    return { type: 'fail', result: 'Tool history requires supplied tools', noRetry: true }
+  }
   const auth = await getNodeServerProxyAuth()
   const payload = {
     kind: SERVER_INTENT_KIND,
@@ -183,6 +202,8 @@ export async function requestServerCompletion(
     maxTokens: targ.maxTokens,
     temperature: targ.temperature,
     currentCharName: targ.currentChar?.name,
+    ...(validatedTools.value.length > 0 ? { tools: validatedTools.value } : {}),
+    ...(validatedRounds.value.length > 0 ? { toolRounds: validatedRounds.value } : {}),
   }
 
   let response: Response
@@ -237,6 +258,17 @@ export async function requestServerCompletion(
   const status = typeof json.status === 'number' && Number.isFinite(json.status) ? json.status : undefined
   const statusText = nonEmptyString(json.statusText) ? json.statusText : undefined
   const code = nonEmptyString(json.code) ? json.code : undefined
+  let toolCalls
+  if (json.toolCalls !== undefined) {
+    if (type !== 'success' || validatedTools.value.length === 0) {
+      return { type: 'fail', result: 'Server returned unexpected tool calls', noRetry: true }
+    }
+    const validatedCalls = validateServerToolCalls(json.toolCalls, allowedToolNames)
+    if (validatedCalls.ok === false) {
+      return { type: 'fail', result: `Server returned invalid tool calls: ${validatedCalls.error}`, noRetry: true }
+    }
+    toolCalls = validatedCalls.value
+  }
   return {
     type,
     result,
@@ -244,5 +276,6 @@ export async function requestServerCompletion(
     ...(status !== undefined ? { status } : {}),
     ...(statusText ? { statusText } : {}),
     ...(code ? { code } : {}),
+    ...(toolCalls ? { toolCalls } : {}),
   }
 }

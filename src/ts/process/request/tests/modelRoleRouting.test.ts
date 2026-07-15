@@ -204,6 +204,56 @@ describe('requestChatDataMain model-role routing', () => {
     })
   })
 
+  it('does not discard a tool-call-only success as a blank fallback response', async () => {
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: { type: 'object' },
+    }
+    seedDb({
+      fallbackModels: {
+        model: ['fallback-model'],
+        memory: [],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: [],
+      } as Database['fallbackModels'],
+      fallbackWhenBlankResponse: true,
+      requestRetrys: 0,
+    })
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            type: 'success',
+            result: '',
+            toolCalls: [{ id: 'call-1', name: tool.name, arguments: {} }],
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+
+    await expect(
+      requestChatData(
+        {
+          formated: [{ role: 'user', content: 'hi' }],
+          bias: {},
+          tools: [tool],
+        },
+        'model',
+      ),
+    ).resolves.toEqual({
+      type: 'success',
+      result: '',
+      toolCalls: [{ id: 'call-1', name: tool.name, arguments: {} }],
+      model: 'fallback-model',
+    })
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   it('sends durable fallback profile refs as profile fallback attempts', async () => {
     seedDb({
       aiModel: 'gpt-5',

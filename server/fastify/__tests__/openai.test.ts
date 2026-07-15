@@ -331,6 +331,42 @@ describe('runOpenAI (non-streaming)', () => {
     expect(headers['X-Title']).toBe('RisuAI')
   })
 
+  it('does not let additionalParams replace caller-scoped tool definitions', async () => {
+    let captured: { init: RequestInit } | null = null
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      captured = { init }
+      return ok({ choices: [{ message: { content: 'x' } }] })
+    })
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    }
+    await runOpenAI({
+      model: 'm',
+      messages: [],
+      apiKey: 'k',
+      baseUrl: 'https://api.openai.com/v1',
+      tools: [tool],
+      additionalParams: [
+        ['tools', 'json::[{"type":"function","function":{"name":"arbitrary-tool","parameters":{"type":"object"}}}]'],
+      ],
+      signal: new AbortController().signal,
+    })
+
+    const sent = JSON.parse(captured!.init.body as string)
+    expect(sent.tools).toEqual([
+      {
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.inputSchema,
+        },
+      },
+    ])
+  })
+
   it('strips a trailing slash from baseUrl', async () => {
     let capturedUrl = ''
     vi.stubGlobal('fetch', async (url: string) => {

@@ -32,6 +32,8 @@ import { emitProtocolMetric } from '../protocolMetrics.js'
 import { promptSummaryMetricFields, summarizePromptRows } from './promptSummary.js'
 import type { GenerationTraceContext } from '../generation/generationTraceSidecar.js'
 import { encodeTokens, encodingForModel } from './tokens.js'
+import type { ServerToolDefinition, ServerToolRound } from '../../../../src/ts/process/request/serverToolProtocol.js'
+import { appendOpenAIToolRounds } from '../generation/serverTools.js'
 import {
   buildAnthropicWireMessages,
   buildOpenAIWireMessages,
@@ -49,6 +51,10 @@ interface ChatDispatchArgs {
   biases?: [string, number][]
   /** Main chat send/regenerate only; auxiliary/continue flows stay single-choice. */
   multiGeneration?: boolean
+  /** Browser-owned tool definitions for one bounded server-completion round trip. */
+  tools?: ServerToolDefinition[]
+  /** Prior calls and browser-executed results, converted to provider-native history server-side. */
+  toolRounds?: ServerToolRound[]
 }
 
 interface CustomModelEntry {
@@ -940,11 +946,12 @@ async function* resultFrames(
   const alternates = extractJsonPath
     ? result.alternates?.map((alternate) => extractConfiguredJsonValue(alternate, extractJsonPath))
     : result.alternates
-  yield { kind: 'token', content }
+  if (content.length > 0) yield { kind: 'token', content }
   yield {
     kind: 'done',
-    finishReason: 'stop',
+    finishReason: result.toolCalls?.length ? 'tool_calls' : 'stop',
     ...(alternates?.length ? { alternates } : {}),
+    ...(result.toolCalls?.length ? { toolCalls: result.toolCalls } : {}),
   }
 }
 
@@ -1007,13 +1014,18 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     db.jsonSchemaEnabled === true && typeof db.extractJson === 'string' && db.extractJson.trim().length > 0
       ? db.extractJson.trim()
       : undefined
-  const stream = db.useStreaming === true && generationCount === 1 && extractJsonPath === undefined
+  const hasTools = (args.tools?.length ?? 0) > 0
+  const stream = !hasTools && db.useStreaming === true && generationCount === 1 && extractJsonPath === undefined
   const bufferedResultFrames = (result: Promise<CompletionResult>): AsyncGenerator<CompletionStreamFrame> =>
     resultFrames(result, extractJsonPath)
   const textMessages = sanitizeTextMessages(messages, {
     newOAIHandle: db.newOAIHandle !== false,
     developerRole: info.flags.includes(LLMFlags.DeveloperRole),
   })
+
+  if (hasTools && !['openai', 'openrouter', 'nanogpt', 'anthropic', 'gemini'].includes(provider)) {
+    throw new Error(`tools are not supported by the resolved ${provider} provider`)
+  }
 
   if (provider === 'echo') {
     const isDebugEchoProfile = profile.status.providerId === 'debug-echo'
@@ -1030,11 +1042,14 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     if (!variant) throw new Error('options.openai.apiKey is required')
     const request = resolveOpenAIRequest({
       model,
-      messages: buildOpenAIWireMessages(messages, {
-        flags: info.flags,
-        newOAIHandle: db.newOAIHandle !== false,
-        visionQuality: db.gptVisionQuality,
-      }),
+      messages: appendOpenAIToolRounds(
+        buildOpenAIWireMessages(messages, {
+          flags: info.flags,
+          newOAIHandle: db.newOAIHandle !== false,
+          visionQuality: db.gptVisionQuality,
+        }),
+        args.toolRounds ?? [],
+      ),
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
       maxTokens,
@@ -1061,6 +1076,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       oobaSystemHoist: variant.oobaSystemHoist,
       signal,
       trace,
+      tools: args.tools,
     })
     if (!request) throw new Error('apiKey is required')
     return stream ? runOpenAIStream(request) : bufferedResultFrames(runOpenAI(request))
@@ -1071,11 +1087,14 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
     if (!variant) throw new Error('options.nanogpt.apiKey is required')
     const request = resolveOpenAIRequest({
       model,
-      messages: buildOpenAIWireMessages(messages, {
-        flags: info.flags,
-        newOAIHandle: db.newOAIHandle !== false,
-        visionQuality: db.gptVisionQuality,
-      }),
+      messages: appendOpenAIToolRounds(
+        buildOpenAIWireMessages(messages, {
+          flags: info.flags,
+          newOAIHandle: db.newOAIHandle !== false,
+          visionQuality: db.gptVisionQuality,
+        }),
+        args.toolRounds ?? [],
+      ),
       apiKey: variant.apiKey,
       baseUrl: variant.baseUrl,
       maxTokens,
@@ -1102,6 +1121,7 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       oobaSystemHoist: variant.oobaSystemHoist,
       signal,
       trace,
+      tools: args.tools,
     })
     if (!request) throw new Error('options.nanogpt.apiKey is required')
     return stream ? runOpenAIStream(request) : bufferedResultFrames(runOpenAI(request))
@@ -1132,6 +1152,8 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       extraHeaders: providerOptions.extraHeaders,
       additionalParams: providerOptions.additionalParams,
       signal,
+      tools: args.tools,
+      toolRounds: args.toolRounds,
     })
     if (!request) throw new Error('options.anthropic.apiKey is required')
     return stream ? runAnthropicStream(request) : bufferedResultFrames(runAnthropic(request))
@@ -1198,6 +1220,8 @@ export async function dispatchChatProvider(args: ChatDispatchArgs): Promise<Asyn
       thinkingTokens: parameters.thinkingTokens,
       signal,
       trace,
+      tools: args.tools,
+      toolRounds: args.toolRounds,
     })
     if (!request) throw new Error('options.gemini.apiKey or options.gemini.vertex is required')
     return stream ? runGeminiStream(request) : bufferedResultFrames(runGemini(request))

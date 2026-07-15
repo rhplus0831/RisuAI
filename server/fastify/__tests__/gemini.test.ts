@@ -277,6 +277,119 @@ describe('runGemini', () => {
     })
   })
 
+  it('sends array-shaped tools and preserves function ids and signatures in continuation history', async () => {
+    const sentBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sentBodies.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+      if (sentBodies.length === 1) {
+        return ok({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    functionCall: {
+                      id: 'provider-call-1',
+                      name: 'risu-get-character-info',
+                      args: { id: 'mira-id' },
+                    },
+                    thoughtSignature: 'provider-thought-signature',
+                  },
+                ],
+              },
+            },
+          ],
+        })
+      }
+      return ok({ candidates: [{ content: { parts: [{ text: 'Mira is ready.' }] } }] })
+    })
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+    }
+    const firstRequest = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'Is Mira available?' }],
+      apiKey: 'k',
+      tools: [tool],
+      thinkingTokens: 256,
+      signal: new AbortController().signal,
+    })!
+    const first = await runGemini(firstRequest)
+    expect(first).toEqual({
+      type: 'success',
+      result: '',
+      toolCalls: [
+        {
+          id: 'provider-call-1',
+          name: tool.name,
+          arguments: { id: 'mira-id' },
+          thoughtSignature: 'provider-thought-signature',
+        },
+      ],
+    })
+
+    const secondRequest = resolveGeminiRequest({
+      model: 'gemini-2.5-flash',
+      messages: [{ role: 'user', content: 'Is Mira available?' }],
+      apiKey: 'k',
+      tools: [tool],
+      toolRounds: [
+        {
+          assistantContent: '',
+          calls: first.toolCalls!,
+          results: [
+            {
+              callId: 'provider-call-1',
+              name: tool.name,
+              content: '{"name":"Mira"}',
+            },
+          ],
+        },
+      ],
+      signal: new AbortController().signal,
+    })!
+    await expect(runGemini(secondRequest)).resolves.toEqual({ type: 'success', result: 'Mira is ready.' })
+
+    expect(sentBodies[0].tools).toEqual([
+      {
+        functionDeclarations: [
+          {
+            name: tool.name,
+            description: tool.description,
+            parameters: tool.inputSchema,
+          },
+        ],
+      },
+    ])
+    expect((sentBodies[0].generationConfig as Record<string, unknown>).thinkingConfig).toBeUndefined()
+    expect(sentBodies[1].contents).toEqual([
+      { role: 'user', parts: [{ text: 'Is Mira available?' }] },
+      {
+        role: 'model',
+        parts: [
+          {
+            functionCall: { id: 'provider-call-1', name: tool.name, args: { id: 'mira-id' } },
+            thoughtSignature: 'provider-thought-signature',
+          },
+        ],
+      },
+      {
+        role: 'user',
+        parts: [
+          {
+            functionResponse: {
+              id: 'provider-call-1',
+              name: tool.name,
+              response: { data: { name: 'Mira' } },
+            },
+          },
+        ],
+      },
+    ])
+  })
+
   it('omits systemInstruction when no system rows are present', async () => {
     let captured: { init: RequestInit } | null = null
     vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {

@@ -1,3 +1,5 @@
+import type { ServerToolCall } from '../../../../src/ts/process/request/serverToolProtocol.js'
+
 export interface CompletionStreamFrame {
   kind: 'token' | 'done' | 'error'
   content?: string
@@ -8,6 +10,7 @@ export interface CompletionStreamFrame {
   code?: string
   reason?: string
   alternates?: string[]
+  toolCalls?: ServerToolCall[]
 }
 
 export interface CompletionResult {
@@ -19,4 +22,5 @@ export interface CompletionResult {
   code?: string
   aborted?: boolean
   alternates?: string[]
+  toolCalls?: ServerToolCall[]
 }
