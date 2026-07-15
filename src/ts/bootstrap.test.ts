@@ -145,6 +145,7 @@ vi.mock('./alert', () => ({
 vi.mock('./gui/animation', () => ({ updateAnimationSpeed: vi.fn() }))
 vi.mock('./gui/colorscheme', () => ({ updateColorScheme: vi.fn(), updateTextThemeAndCSS: vi.fn() }))
 vi.mock('./gui/guisize', () => ({ updateGuisize: vi.fn() }))
+vi.mock('./gui/heightMode', () => ({ updateHeightMode: vi.fn() }))
 vi.mock('./observer.svelte', () => ({ startObserveDom: vi.fn() }))
 vi.mock('./process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
@@ -165,6 +166,7 @@ import {
   stopServerResourceEvents,
 } from './bootstrap'
 import { alertError } from './alert'
+import { updateHeightMode } from './gui/heightMode'
 import {
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
@@ -322,6 +324,7 @@ describe('API-backed client bootstrap', () => {
           group: 'display',
           settings: {
             animationSpeed: 0.5,
+            heightMode: 'dvh',
             colorScheme: {
               bgcolor: '#282a36',
               darkbg: '#21222c',
@@ -338,7 +341,7 @@ describe('API-backed client bootstrap', () => {
             textTheme: 'highcontrast',
           },
         },
-        ['animationSpeed', 'colorScheme', 'textAreaSize', 'textTheme'],
+        ['animationSpeed', 'colorScheme', 'heightMode', 'textAreaSize', 'textTheme'],
       ),
     ).toBe(true)
 
@@ -346,6 +349,7 @@ describe('API-backed client bootstrap', () => {
     expect(updateTextThemeAndCSS).toHaveBeenCalledOnce()
     expect(updateGuisize).toHaveBeenCalledOnce()
     expect(updateAnimationSpeed).toHaveBeenCalledOnce()
+    expect(updateHeightMode).toHaveBeenCalledOnce()
   })
 
   it('loads resource APIs, seeds the resource revision, and starts runtime services', async () => {

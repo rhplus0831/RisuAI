@@ -110,6 +110,7 @@ import {
   peekPromptTemplateOwnerRevision,
 } from './server/promptTemplateHydration'
 import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
+import { updateHeightMode } from './gui/heightMode'
 
 const COLOR_SCHEME_RUNTIME_KEYS = new Set(['colorScheme', 'colorSchemeName', 'customBackground'])
 const TEXT_THEME_RUNTIME_KEYS = new Set(['textTheme', 'customTextTheme', 'font', 'customFont', 'customCSS'])
@@ -125,6 +126,7 @@ setSettingsRuntimeProjectionHook((keys) => {
   if (colorSchemeChanged || hasProjectedRuntimeKey(keys, TEXT_THEME_RUNTIME_KEYS)) updateTextThemeAndCSS()
   if (hasProjectedRuntimeKey(keys, GUI_SIZE_RUNTIME_KEYS)) updateGuisize()
   if (keys.includes('animationSpeed')) updateAnimationSpeed()
+  if (keys.includes('heightMode')) updateHeightMode()
 })
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
@@ -1607,32 +1609,4 @@ function getUsableErrorLikeAlertPayload(value: unknown): Error | string | null {
     return trimmed ? trimmed : null
   }
   return null
-}
-
-/**
- * Updates the height mode of the document based on the value stored in the database.
- */
-function updateHeightMode() {
-  const db = getDatabase()
-  const root = document.querySelector(':root') as HTMLElement
-  switch (db.heightMode) {
-    case 'auto':
-      root.style.setProperty('--risu-height-size', '100%')
-      break
-    case 'vh':
-      root.style.setProperty('--risu-height-size', '100vh')
-      break
-    case 'dvh':
-      root.style.setProperty('--risu-height-size', '100dvh')
-      break
-    case 'lvh':
-      root.style.setProperty('--risu-height-size', '100lvh')
-      break
-    case 'svh':
-      root.style.setProperty('--risu-height-size', '100svh')
-      break
-    case 'percent':
-      root.style.setProperty('--risu-height-size', '100%')
-      break
-  }
 }

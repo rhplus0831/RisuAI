@@ -1,4 +1,5 @@
 import type { SettingItem } from './types'
+import { updateHeightMode } from '../gui/heightMode'
 
 export const advancedSettingsItems: SettingItem[] = [
   {
@@ -131,6 +132,7 @@ export const advancedSettingsItems: SettingItem[] = [
     type: 'select',
     labelKey: 'heightMode',
     bindKey: 'heightMode',
+    onChange: () => updateHeightMode(),
     options: {
       selectOptions: [
         { value: 'normal', label: 'Normal' },
