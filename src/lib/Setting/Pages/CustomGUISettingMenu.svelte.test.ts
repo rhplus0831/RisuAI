@@ -1,4 +1,5 @@
 import { mount, tick, unmount } from 'svelte'
+import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const commandSpies = vi.hoisted(() => ({
@@ -26,6 +27,8 @@ vi.mock('src/ts/process/modules', () => ({
 import CustomGUISettingMenu from './CustomGUISettingMenu.svelte'
 import { flushPendingServerBackedSettingsPatch } from 'src/ts/server/settingsBridge.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { CustomGUISettingMenuStore } from 'src/ts/stores.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -42,6 +45,7 @@ function buttonByText(text: string): HTMLButtonElement {
 beforeEach(() => {
   vi.useFakeTimers()
   commandSpies.patchServerBackedSettings.mockClear()
+  CustomGUISettingMenuStore.set(true)
   setDatabaseLite({
     guiHTML: '',
   } as any)
@@ -59,6 +63,7 @@ afterEach(() => {
   }
   target.remove()
   ;(globalThis as { safeStructuredClone?: unknown }).safeStructuredClone = previousSafeStructuredClone
+  CustomGUISettingMenuStore.set(false)
   setDatabaseLite({} as any)
   vi.useRealTimers()
 })
@@ -89,6 +94,50 @@ describe('CustomGUISettingMenu persistence', () => {
     await vi.advanceTimersByTimeAsync(250)
     await tick()
 
+    expect(commandSpies.patchServerBackedSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patch: {
+          guiHTML: expect.stringContaining('data-risu-type="fullWidthChat"'),
+        },
+      }),
+    )
+  })
+
+  it('returns through the back button without waiting to save the latest edit', async () => {
+    component = mount(CustomGUISettingMenu, { target })
+    await tick()
+
+    buttonByText('Menu').click()
+    await tick()
+
+    buttonByText('fullWidthChat').click()
+    buttonByText(language.goback).click()
+    await tick()
+
+    expect(get(CustomGUISettingMenuStore)).toBe(false)
+    expect(getDatabase().guiHTML).toContain('data-risu-type="fullWidthChat"')
+    expect(commandSpies.patchServerBackedSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        patch: {
+          guiHTML: expect.stringContaining('data-risu-type="fullWidthChat"'),
+        },
+      }),
+    )
+  })
+
+  it('returns through Escape without waiting to save the latest edit', async () => {
+    component = mount(CustomGUISettingMenu, { target })
+    await tick()
+
+    buttonByText('Menu').click()
+    await tick()
+
+    buttonByText('fullWidthChat').click()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await tick()
+
+    expect(get(CustomGUISettingMenuStore)).toBe(false)
+    expect(getDatabase().guiHTML).toContain('data-risu-type="fullWidthChat"')
     expect(commandSpies.patchServerBackedSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         patch: {

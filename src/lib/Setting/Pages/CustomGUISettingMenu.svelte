@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { flushSync } from 'svelte'
+  import {
+    createServerBackedSettingDraft,
+    flushPendingServerBackedSettingsPatch,
+  } from 'src/ts/server/settingsBridge.svelte'
+  import { CustomGUISettingMenuStore } from 'src/ts/stores.svelte'
+  import { language } from 'src/lang'
 
   interface CustomTree {
     name: string // dom name, like div, span, etc. for component, we use 'component'
@@ -213,6 +219,20 @@
     guiHTMLDraft.value = html
   }
 
+  function closeEditor() {
+    persistTree()
+    flushSync()
+    flushPendingServerBackedSettingsPatch()
+    CustomGUISettingMenuStore.set(false)
+  }
+
+  function handleEditorKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape' || event.defaultPrevented) return
+    event.preventDefault()
+    event.stopPropagation()
+    closeEditor()
+  }
+
   $effect(() => {
     const html = guiHTMLDraft.value ?? ''
     if (html === previousGuiHTML) return
@@ -242,6 +262,16 @@
 
   let { oncontextmenu }: Props = $props()
 </script>
+
+<svelte:window onkeydown={handleEditorKeydown} />
+
+<button
+  type="button"
+  aria-keyshortcuts="Escape"
+  title={`${language.goback} (Esc)`}
+  data-risu-custom-gui-back
+  class="absolute top-0 left-0 z-30 p-2 border bg-white text-black rounded-sm"
+  onclick={closeEditor}>{language.goback}</button>
 
 <!-- svelte-ignore a11y_role_has_required_aria_props -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
