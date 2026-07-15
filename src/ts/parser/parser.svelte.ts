@@ -730,6 +730,13 @@ function getCachedBlobUrl(id: string) {
   return cached
 }
 
+function isBlobUrlRendered(url: string) {
+  if (typeof document === 'undefined') return false
+  return Array.from(document.querySelectorAll<HTMLImageElement | HTMLMediaElement | HTMLSourceElement>('[src]')).some(
+    (element) => element.getAttribute('src') === url,
+  )
+}
+
 function setCachedBlobUrl(id: string, entry: BlobUrlCacheEntry) {
   const previous = blobUrlCache.get(id)
   if (previous) {
@@ -740,12 +747,18 @@ function setCachedBlobUrl(id: string, entry: BlobUrlCacheEntry) {
   }
 
   blobUrlCache.set(id, entry)
-  while (blobUrlCache.size > INLAY_BLOB_URL_CACHE_LIMIT) {
+  let renderedEntriesScanned = 0
+  while (blobUrlCache.size > INLAY_BLOB_URL_CACHE_LIMIT && renderedEntriesScanned < blobUrlCache.size) {
     const oldestId = blobUrlCache.keys().next().value
     if (oldestId === undefined) break
     const oldest = blobUrlCache.get(oldestId)
     blobUrlCache.delete(oldestId)
     if (oldest) {
+      if (isBlobUrlRendered(oldest.url)) {
+        blobUrlCache.set(oldestId, oldest)
+        renderedEntriesScanned += 1
+        continue
+      }
       revokeBlobUrl(oldest.url)
     }
   }

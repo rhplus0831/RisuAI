@@ -141,6 +141,23 @@ describe('inlay blob URL cache', () => {
     expect(mocks.getInlayAssetBlob).toHaveBeenCalledTimes(INLAY_BLOB_URL_CACHE_LIMIT + 1)
   })
 
+  test('does not revoke an evicted blob URL while rendered media still uses it', async () => {
+    mocks.getInlayAssetBlob.mockImplementation(async (id: string) => asset(id, 'image'))
+
+    const rendered = document.createElement('div')
+    rendered.innerHTML = await parseInlay('{{inlay::asset-0}}')
+    document.body.appendChild(rendered)
+    for (let i = 1; i < INLAY_BLOB_URL_CACHE_LIMIT; i += 1) {
+      await parseInlay(`{{inlay::asset-${i}}}`)
+    }
+    await parseInlay(`{{inlay::asset-${INLAY_BLOB_URL_CACHE_LIMIT}}}`)
+
+    expect(revokeObjectURL).not.toHaveBeenCalledWith('blob:test-1')
+    mocks.getInlayAssetBlob.mockClear()
+    await parseInlay('{{inlay::asset-0}}')
+    expect(mocks.getInlayAssetBlob).not.toHaveBeenCalled()
+  })
+
   test('K3/L50: cached and uncached inlays render identical output', async () => {
     const cases: Array<{ id: string; marker: string; type: RenderableType }> = [
       { id: 'image-asset', marker: '{{inlay::image-asset}}', type: 'image' },
