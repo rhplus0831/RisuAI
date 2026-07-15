@@ -237,6 +237,36 @@ describe('Hypa V3 async ownership', () => {
     expect(character.chats[1].hypaV3Data).toBe(destinationMemory)
   })
 
+  it('does not delete the summary that replaces a removed target during confirmation', async () => {
+    seedDatabase(true)
+    const pendingConfirmation = deferred<boolean>()
+    resetMocks.alertConfirm.mockReturnValueOnce(pendingConfirmation.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const memory = getDatabase().characters[0].chats[0].hypaV3Data!
+    const removedSummary = memory.summaries[0]
+    const survivingSummary = memory.summaries[1]
+    const deleteButtons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter((button) =>
+      button.querySelector('svg.lucide-trash-2'),
+    )
+    expect(deleteButtons).toHaveLength(2)
+
+    deleteButtons[0].click()
+    await settle()
+    expect(resetMocks.alertConfirm).toHaveBeenCalledOnce()
+
+    memory.summaries.splice(0, 1)
+    await settle()
+    expect(memory.summaries).toEqual([survivingSummary])
+
+    pendingConfirmation.resolve(true)
+    await settle()
+
+    expect(memory.summaries).toEqual([survivingSummary])
+    expect(memory.summaries).not.toContain(removedSummary)
+  })
+
   it('does not resurrect a canceled bulk resummary after deferred completion', async () => {
     seedDatabase(true)
     const pendingSummary = deferred<string>()

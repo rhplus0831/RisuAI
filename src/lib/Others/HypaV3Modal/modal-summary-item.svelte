@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import {
     LanguagesIcon,
     StarIcon,
@@ -83,6 +83,26 @@
   let rerolled = $state<string | null>(null)
   let isTranslatingRerolled = $state(false)
   let rerolledTranslation = $state<string | null>(null)
+  let deletionOwnerActive = true
+
+  interface SummaryDeletionTarget {
+    owner: SerializableHypaV3Data
+    summary: SerializableSummary
+  }
+
+  onDestroy(() => {
+    deletionOwnerActive = false
+  })
+
+  function captureSummaryDeletionTarget(): SummaryDeletionTarget | null {
+    if (!summary || !hypaV3Data.summaries.includes(summary)) return null
+    return { owner: hypaV3Data, summary }
+  }
+
+  function resolveSummaryDeletionIndex(target: SummaryDeletionTarget): number {
+    if (!deletionOwnerActive || hypaV3Data !== target.owner) return -1
+    return target.owner.summaries.indexOf(target.summary)
+  }
 
   $effect.pre(() => {
     summaryItemStateMap.set(summary, summaryItemState)
@@ -207,22 +227,37 @@
   }
 
   async function deleteThis(): Promise<void> {
-    if (await alertConfirm(language.hypaV3Modal.deleteThisConfirmMessage)) {
-      if (onDeleteSummary) await onDeleteSummary(summaryIndex)
-      else hypaV3Data.summaries = hypaV3Data.summaries.filter((_, i) => i !== summaryIndex)
-    }
+    const target = captureSummaryDeletionTarget()
+    if (!target || !(await alertConfirm(language.hypaV3Modal.deleteThisConfirmMessage))) return
+
+    const liveIndex = resolveSummaryDeletionIndex(target)
+    if (liveIndex < 0) return
+    if (onDeleteSummary) await onDeleteSummary(liveIndex)
+    else target.owner.summaries.splice(liveIndex, 1)
   }
 
   async function deleteAfter(): Promise<void> {
+    const target = captureSummaryDeletionTarget()
+    if (!target) return
+    const targetIndex = target.owner.summaries.indexOf(target.summary)
+    const trailingSummaries = target.owner.summaries.slice(targetIndex + 1)
+    const confirmed = await alertConfirmTwice(
+      language.hypaV3Modal.deleteAfterConfirmMessage,
+      language.hypaV3Modal.deleteAfterConfirmSecondMessage,
+    )
+    if (!confirmed) return
+
+    const liveIndex = resolveSummaryDeletionIndex(target)
+    if (liveIndex < 0) return
+    const liveTrailingSummaries = target.owner.summaries.slice(liveIndex + 1)
     if (
-      await alertConfirmTwice(
-        language.hypaV3Modal.deleteAfterConfirmMessage,
-        language.hypaV3Modal.deleteAfterConfirmSecondMessage,
-      )
+      liveTrailingSummaries.length !== trailingSummaries.length ||
+      liveTrailingSummaries.some((candidate, index) => candidate !== trailingSummaries[index])
     ) {
-      if (onDeleteAfter) await onDeleteAfter(summaryIndex)
-      else hypaV3Data.summaries.splice(summaryIndex + 1)
+      return
     }
+    if (onDeleteAfter) await onDeleteAfter(liveIndex)
+    else target.owner.summaries.splice(liveIndex + 1)
   }
 
   async function toggleTranslateRerolled(regenerate: boolean): Promise<void> {
