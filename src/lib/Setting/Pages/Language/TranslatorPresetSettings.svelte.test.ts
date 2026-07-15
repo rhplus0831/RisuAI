@@ -217,6 +217,7 @@ vi.mock('src/ts/util', async (importActual) => {
 })
 
 import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
+import { language } from 'src/lang'
 import { alertConfirm, alertInput } from 'src/ts/alert'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
@@ -488,6 +489,19 @@ afterEach(async () => {
 })
 
 describe('TranslatorPresetSettings server-backed edits', () => {
+  it('names every preset toolbar action for its target', () => {
+    const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).slice(0, 5)
+
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      `${language.add}: ${language.presets}`,
+      `${language.edit}: Preset A`,
+      `${language.remove}: Preset A`,
+      `${language.export}: Preset A`,
+      `${language.import}: ${language.presets}`,
+    ])
+    expect(buttons.every((button) => button.type === 'button')).toBe(true)
+  })
+
   it('optimistically updates resource-backed state before the debounced command is sent', async () => {
     await editPrompt('new prompt A')
 

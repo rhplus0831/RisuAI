@@ -484,6 +484,30 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
 })
 
 describe('OtherBotSettings Hypa preset import', () => {
+  it('names every preset toolbar action for its target', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const buttons = [
+      target.querySelector<SVGElement>('svg.lucide-plus')?.closest('button'),
+      target.querySelector<SVGElement>('svg.lucide-pencil')?.closest('button'),
+      target.querySelector<SVGElement>('svg.lucide-trash')?.closest('button'),
+      target.querySelector<SVGElement>('svg.lucide-download')?.closest('button'),
+      target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button'),
+    ]
+
+    expect(buttons.map((button) => button?.getAttribute('aria-label'))).toEqual([
+      `${language.add}: ${language.presets}`,
+      `${language.edit}: Existing`,
+      `${language.remove}: Existing`,
+      `${language.export}: Existing`,
+      `${language.import}: ${language.presets}`,
+    ])
+    expect(buttons.every((button) => button?.type === 'button')).toBe(true)
+  })
+
   it('silently leaves the preset list unchanged when file selection is canceled', async () => {
     otherBotMocks.hypaEnabled = true
     otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]

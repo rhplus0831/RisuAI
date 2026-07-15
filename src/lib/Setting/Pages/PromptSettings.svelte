@@ -126,6 +126,25 @@
       extokens = totals.extokens
     },
   })
+
+  function fallbackModelLabel(key: FallbackModelKey): string {
+    switch (key) {
+      case 'model':
+        return language.model
+      case 'memory':
+        return language.modelRoles.roles.memory
+      case 'translate':
+        return language.modelRoles.roles.translate
+      case 'emotion':
+        return language.modelRoles.roles.emotion
+      case 'otherAx':
+        return language.modelRoles.roles.otherAx
+      case 'scriptMain':
+        return language.modelRoles.roles.scriptMain
+      case 'scriptAux':
+        return language.modelRoles.roles.scriptAux
+    }
+  }
   const promptTemplateDraft = $state<{ value: PromptItem[] }>({
     value: isPromptTemplateHydrated() ? cloneSelectedPromptPresetTemplate() : [],
   })
@@ -995,7 +1014,11 @@
 
 {#if mode === 'independent'}
   <h2 class="mb-2 text-2xl font-bold mt-2 items-center flex">
-    <button class="mr-2 text-textcolor2 hover:text-textcolor" onclick={onGoBack}>
+    <button
+      type="button"
+      aria-label={language.goback}
+      class="mr-2 text-textcolor2 hover:text-textcolor"
+      onclick={onGoBack}>
       <ArrowLeft />
     </button>
     {language.promptTemplate}
@@ -1003,6 +1026,8 @@
 
   <div class="flex w-full rounded-md border border-selected">
     <button
+      type="button"
+      aria-pressed={subMenu === 0}
       onclick={() => {
         subMenu = 0
       }}
@@ -1011,6 +1036,8 @@
       <span>{language.template}</span>
     </button>
     <button
+      type="button"
+      aria-pressed={subMenu === 1}
       onclick={() => {
         subMenu = 1
       }}
@@ -1116,6 +1143,8 @@
     </div>
 
     <button
+      type="button"
+      aria-label={`${language.add}: ${language.promptTemplate}`}
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         const promptItem = createPromptItem()
@@ -1187,12 +1216,16 @@
     {/each}
     <div class="flex gap-2">
       <button
+        type="button"
+        aria-label={`${language.add}: ${fallbackModelLabel(arg)}`}
         class="bg-selected text-textcolor p-2 rounded-md"
         onclick={() => {
           const value = fallbackModelsDraft.value[arg] ?? []
           fallbackModelsDraft.value[arg] = [...value, '']
         }}><PlusIcon /></button>
       <button
+        type="button"
+        aria-label={`${language.remove}: ${fallbackModelLabel(arg)}`}
         class="bg-red-500 text-white p-2 rounded-md"
         onclick={() => {
           const value = fallbackModelsDraft.value[arg] ?? []

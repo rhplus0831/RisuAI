@@ -1312,6 +1312,8 @@
 
       <div class="flex items-center mb-8">
         <button
+          type="button"
+          aria-label={`${language.add}: ${language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={() => {
             const newPreset = createHypaV3Preset()
@@ -1325,6 +1327,8 @@
         </button>
 
         <button
+          type="button"
+          aria-label={`${language.edit}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             const target = captureHypaV3PresetTarget()
@@ -1347,6 +1351,8 @@
         </button>
 
         <button
+          type="button"
+          aria-label={`${language.remove}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             const target = captureHypaV3PresetTarget()
@@ -1372,6 +1378,8 @@
         <div class="ml-2 mr-4 w-px h-full bg-darkborderc"></div>
 
         <button
+          type="button"
+          aria-label={`${language.export}: ${hypaV3PresetsDraft.value[hypaV3PresetIdDraft.value]?.name ?? language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             try {
@@ -1403,6 +1411,8 @@
         </button>
 
         <button
+          type="button"
+          aria-label={`${language.import}: ${language.presets}`}
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             try {

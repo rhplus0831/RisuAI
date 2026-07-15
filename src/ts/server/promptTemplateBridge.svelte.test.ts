@@ -186,6 +186,7 @@ import {
   replaceResourceDatabase,
 } from './resourceState.svelte'
 import PromptSettings from 'src/lib/Setting/Pages/PromptSettings.svelte'
+import { language } from 'src/lang'
 import {
   createPromptItemCommand,
   deletePromptItemCommand,
@@ -1893,6 +1894,87 @@ describe('flushPendingPromptTemplatePatches', () => {
     )
     expect(getResourceDatabase().jsonSchemaEnabled).toBe('newer server value')
     expect(isSettingsGroupAcknowledgementTainted('prompt')).toBe(true)
+  })
+})
+
+describe('PromptSettings action accessibility', () => {
+  it('names navigation and add actions while exposing the selected independent tab', async () => {
+    seedPromptSettings()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'independent', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      const backButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.goback}"]`)
+      const addButton = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.add}: ${language.promptTemplate}"]`,
+      )
+      const templateButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === language.template,
+      )
+      const settingsButton = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === language.settings,
+      )
+
+      expect(backButton?.type).toBe('button')
+      expect(addButton?.type).toBe('button')
+      expect(templateButton?.getAttribute('aria-pressed')).toBe('true')
+      expect(settingsButton?.getAttribute('aria-pressed')).toBe('false')
+
+      settingsButton?.click()
+      await tick()
+
+      expect(templateButton?.getAttribute('aria-pressed')).toBe('false')
+      expect(settingsButton?.getAttribute('aria-pressed')).toBe('true')
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('names fallback add and remove actions for their model role', async () => {
+    seedPromptSettings()
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 1 },
+      })
+      await tick()
+
+      const buttonByText = (text: string) =>
+        Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+          (button) => button.textContent?.trim() === text,
+        )
+
+      buttonByText(language.fallbackModel)?.click()
+      await tick()
+      buttonByText(language.model)?.click()
+      await tick()
+
+      const addButton = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.add}: ${language.model}"]`,
+      )
+      const removeButton = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.remove}: ${language.model}"]`,
+      )
+      expect(addButton?.type).toBe('button')
+      expect(removeButton?.type).toBe('button')
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
   })
 })
 

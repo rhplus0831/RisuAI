@@ -1149,6 +1149,8 @@
 
 <div class="flex items-center mb-4">
   <button
+    type="button"
+    aria-label={`${language.add}: ${language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       await flushPendingTranslatorPresetUpdates()
@@ -1169,6 +1171,8 @@
   </button>
 
   <button
+    type="button"
+    aria-label={`${language.edit}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       const presets = getDatabase().translatorPresets
@@ -1205,6 +1209,8 @@
   </button>
 
   <button
+    type="button"
+    aria-label={`${language.remove}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       const presets = getDatabase().translatorPresets
@@ -1244,6 +1250,8 @@
   <div class="ml-2 mr-4 w-px h-full bg-darkborderc"></div>
 
   <button
+    type="button"
+    aria-label={`${language.export}: ${getDatabase().translatorPresets[getDatabase().translatorPresetId]?.name ?? language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       try {
@@ -1265,6 +1273,8 @@
   </button>
 
   <button
+    type="button"
+    aria-label={`${language.import}: ${language.presets}`}
     class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
     onclick={async () => {
       try {
