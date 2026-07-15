@@ -202,7 +202,13 @@
     // Translate
     const result = await translate(source, regenerate)
 
-    if (!isCurrentTranslation(run, owner, source)) return
+    if (!isCurrentTranslation(run, owner, source)) {
+      if (run === translationRun && ownsSummary(owner)) {
+        isTranslating = false
+        translation = null
+      }
+      return
+    }
     translation = result
     isTranslating = false
   }
@@ -499,11 +505,15 @@
         <input
           type="checkbox"
           class="w-4 h-4 text-blue-600 bg-zinc-900 border-zinc-600 rounded-sm focus:ring-blue-500"
+          aria-label={(isSelected()
+            ? language.hypaV3Modal.deselectSummaryAction
+            : language.hypaV3Modal.selectSummaryAction
+          ).replace('{0}', (summaryIndex + 1).toString())}
           checked={isSelected()}
           onchange={() => onToggleSummarySelection?.(summaryIndex)} />
       {/if}
 
-      <span class="text-sm text-zinc-400"
+      <span id={`hypav3-summary-${summaryIndex}-label`} class="text-sm text-zinc-400"
         >{language.hypaV3Modal.summaryNumberLabel.replace('{0}', (summaryIndex + 1).toString())}</span>
 
       <!-- Category Tag -->
@@ -517,6 +527,7 @@
           <TagIcon class="w-3 h-3" />
           <select
             class="max-w-36 bg-transparent text-zinc-200 focus:outline-hidden"
+            aria-label={language.hypaV3Modal.summaryCategoryLabel.replace('{0}', (summaryIndex + 1).toString())}
             value={summary.categoryId ?? ''}
             onchange={(event) => {
               summary.categoryId = event.currentTarget.value || undefined
@@ -585,6 +596,9 @@
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
         data-summary-action="translate"
+        aria-label={language.hypaV3Modal.toggleSummaryTranslationAction}
+        aria-pressed={translation !== null}
+        title={language.hypaV3Modal.toggleSummaryTranslationAction}
         use:handleDualAction={{
           onMainAction: () => toggleTranslate(false),
           onAlternativeAction: () => toggleTranslate(true),
@@ -599,6 +613,9 @@
             ? 'text-yellow-400 hover:text-yellow-300'
             : 'text-zinc-400 hover:text-zinc-200'}"
           data-summary-action="important"
+          aria-label={language.hypaV3Modal.toggleSummaryImportantAction}
+          aria-pressed={summary.isImportant}
+          title={language.hypaV3Modal.toggleSummaryImportantAction}
           onclick={toggleImportant}>
           <StarIcon class="w-4 h-4" />
         </button>
@@ -607,6 +624,8 @@
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
           data-summary-action="reroll"
+          aria-label={language.hypaV3Modal.rerollSummaryAction}
+          title={language.hypaV3Modal.rerollSummaryAction}
           disabled={isOrphan()}
           onclick={async () => await toggleReroll()}>
           <RefreshCw class="w-4 h-4" />
@@ -615,6 +634,8 @@
         <!-- Delete This Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
+          aria-label={language.hypaV3Modal.deleteSummaryAction}
+          title={language.hypaV3Modal.deleteSummaryAction}
           onclick={async () => await deleteThis()}>
           <Trash2Icon class="w-4 h-4" />
         </button>
@@ -622,6 +643,8 @@
         <!-- Delete After Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
+          aria-label={language.hypaV3Modal.deleteFollowingSummariesAction}
+          title={language.hypaV3Modal.deleteFollowingSummariesAction}
           onclick={async () => await deleteAfter()}>
           <ScissorsLineDashed class="w-4 h-4" />
         </button>
@@ -633,6 +656,7 @@
   <div class="mt-2 sm:mt-4">
     <textarea
       class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
+      aria-labelledby={`hypav3-summary-${summaryIndex}-label`}
       bind:this={summaryItemState.originalRef}
       bind:value={summary.text}
       readonly={readOnly}
@@ -649,12 +673,13 @@
   <!-- Original Summary Translation -->
   {#if translation}
     <div class="mt-2 sm:mt-4">
-      <div class="mb-2 text-sm sm:mb-4 text-zinc-400">
+      <div id={`hypav3-summary-${summaryIndex}-translation-label`} class="mb-2 text-sm sm:mb-4 text-zinc-400">
         {language.hypaV3Modal.translationLabel}
       </div>
 
       <textarea
         class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+        aria-labelledby={`hypav3-summary-${summaryIndex}-translation-label`}
         readonly
         tabindex="-1"
         bind:this={summaryItemState.translationRef}
@@ -666,12 +691,17 @@
     <!-- Rerolled Summary Header -->
     <div class="mt-2 sm:mt-4">
       <div class="flex items-center justify-between">
-        <span class="text-sm text-zinc-400">{language.hypaV3Modal.rerolledSummaryLabel}</span>
+        <span id={`hypav3-summary-${summaryIndex}-rerolled-label`} class="text-sm text-zinc-400">
+          {language.hypaV3Modal.rerolledSummaryLabel}
+        </span>
         <div class="flex items-center gap-2">
           <!-- Translate Rerolled Button -->
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
             data-summary-action="translate-rerolled"
+            aria-label={language.hypaV3Modal.toggleRerolledSummaryTranslationAction}
+            aria-pressed={rerolledTranslation !== null}
+            title={language.hypaV3Modal.toggleRerolledSummaryTranslationAction}
             disabled={isRerolling || !rerollReady}
             use:handleDualAction={{
               onMainAction: () => toggleTranslateRerolled(false),
@@ -684,6 +714,8 @@
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
             data-summary-action="cancel-rerolled"
+            aria-label={language.hypaV3Modal.cancelRerollAction}
+            title={language.hypaV3Modal.cancelRerollAction}
             onclick={cancelRerolled}>
             <XIcon class="w-4 h-4" />
           </button>
@@ -692,6 +724,8 @@
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
             data-summary-action="apply-rerolled"
+            aria-label={language.hypaV3Modal.applyRerollAction}
+            title={language.hypaV3Modal.applyRerollAction}
             disabled={isRerolling || !rerollReady || !rerolled}
             onclick={applyRerolled}>
             <CheckIcon class="w-4 h-4" />
@@ -704,6 +738,7 @@
     <div class="mt-2 sm:mt-4">
       <textarea
         class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
+        aria-labelledby={`hypav3-summary-${summaryIndex}-rerolled-label`}
         bind:value={rerolled}
         readonly={isRerolling || !rerollReady}
         oninput={cancelRerolledTranslation}>
@@ -713,12 +748,15 @@
     <!-- Rerolled Summary Translation -->
     {#if rerolledTranslation}
       <div class="mt-2 sm:mt-4">
-        <div class="mb-2 text-sm sm:mb-4 text-zinc-400">
+        <div
+          id={`hypav3-summary-${summaryIndex}-rerolled-translation-label`}
+          class="mb-2 text-sm sm:mb-4 text-zinc-400">
           {language.hypaV3Modal.rerolledTranslationLabel}
         </div>
 
         <textarea
           class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+          aria-labelledby={`hypav3-summary-${summaryIndex}-rerolled-translation-label`}
           readonly
           tabindex="-1"
           bind:this={summaryItemState.rerolledTranslationRef}
@@ -747,6 +785,10 @@
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
           data-summary-action="translate-message"
+          aria-label={language.hypaV3Modal.toggleConnectedMessageTranslationAction}
+          aria-pressed={expandedMessageState?.summaryIndex === summaryIndex &&
+            expandedMessageState.translation !== null}
+          title={language.hypaV3Modal.toggleConnectedMessageTranslationAction}
           disabled={!expandedMessageState || expandedMessageState.summaryIndex !== summaryIndex}
           use:handleDualAction={{
             onMainAction: () => toggleTranslateExpandedMessage(false),
@@ -784,13 +826,16 @@
         {#await getMessageFromChatMemo(expandedMessageState.selectedChatMemo) then expandedMessage}
           {#if expandedMessage}
             <!-- Role -->
-            <div class="mb-2 text-sm sm:mb-4 text-zinc-400">
+            <div
+              id={`hypav3-summary-${summaryIndex}-connected-message-label`}
+              class="mb-2 text-sm sm:mb-4 text-zinc-400">
               {language.hypaV3Modal.connectedMessageRoleLabel.replace('{0}', expandedMessage.role)}
             </div>
 
             <!-- Content -->
             <textarea
               class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+              aria-labelledby={`hypav3-summary-${summaryIndex}-connected-message-label`}
               readonly
               tabindex="-1"
               value={expandedMessage.data}></textarea>
@@ -806,12 +851,15 @@
       <!-- Expanded Message Translation -->
       {#if expandedMessageState.translation}
         <div class="mt-2 sm:mt-4">
-          <div class="mb-2 text-sm sm:mb-4 text-zinc-400">
+          <div
+            id={`hypav3-summary-${summaryIndex}-connected-message-translation-label`}
+            class="mb-2 text-sm sm:mb-4 text-zinc-400">
             {language.hypaV3Modal.connectedMessageTranslationLabel}
           </div>
 
           <textarea
             class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden text-zinc-200 bg-zinc-900"
+            aria-labelledby={`hypav3-summary-${summaryIndex}-connected-message-translation-label`}
             readonly
             tabindex="-1"
             bind:this={expandedMessageState.translationRef}

@@ -2,13 +2,25 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { summarize, type SerializableHypaV3Data, type SerializableSummary } from 'src/ts/process/memory/hypav3'
 import { translateHTML } from 'src/ts/translator/translator'
-import type { ExpandedMessageState, SearchState, SummaryItemState } from './types'
+import type { BulkEditState, ExpandedMessageState, SearchState, SummaryItemState } from './types'
 
 vi.mock('src/lang', () => ({
   language: {
     loading: 'Loading',
     hypaV3Modal: {
       summaryNumberLabel: 'Summary {0}',
+      selectSummaryAction: 'Select summary {0}',
+      deselectSummaryAction: 'Deselect summary {0}',
+      summaryCategoryLabel: 'Category for summary {0}',
+      toggleSummaryTranslationAction: 'Toggle summary translation',
+      toggleSummaryImportantAction: 'Toggle important summary',
+      rerollSummaryAction: 'Reroll summary',
+      deleteSummaryAction: 'Delete summary',
+      deleteFollowingSummariesAction: 'Delete following summaries',
+      toggleRerolledSummaryTranslationAction: 'Toggle rerolled summary translation',
+      cancelRerollAction: 'Cancel summary reroll',
+      applyRerollAction: 'Apply rerolled summary',
+      toggleConnectedMessageTranslationAction: 'Toggle connected message translation',
       deleteThisConfirmMessage: 'Delete this summary?',
       deleteAfterConfirmMessage: 'Delete summaries after this one?',
       deleteAfterConfirmSecondMessage: 'Are you sure?',
@@ -88,7 +100,7 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
-function mountSummary(summary: SerializableSummary): void {
+function mountSummary(summary: SerializableSummary, extraProps: { bulkEditState?: BulkEditState } = {}): void {
   const hypaV3Data: SerializableHypaV3Data = { summaries: [summary] }
   component = mount(ModalSummaryItem, {
     target,
@@ -100,6 +112,7 @@ function mountSummary(summary: SerializableSummary): void {
       searchState: null as unknown as SearchState,
       filterSelected: false,
       categories: [{ id: '', name: 'Unclassified' }],
+      ...extraProps,
     },
   })
 }
@@ -162,6 +175,71 @@ describe('HypaV3 summary item keyboard navigation', () => {
     expect(editableTextareas).toHaveLength(2)
     expect(editableTextareas.every((textarea) => textarea.tabIndex === 0)).toBe(true)
   })
+
+  it('provides localized names and tooltips for summary controls and textareas', async () => {
+    const summary: SerializableSummary = {
+      text: 'Summary text',
+      chatMemos: ['message-1'],
+      isImportant: false,
+      categoryId: '',
+      tags: [],
+    }
+    mountSummary(summary, {
+      bulkEditState: {
+        isEnabled: true,
+        selectedSummaries: new Set(),
+        selectedCategory: '',
+        bulkSelectInput: '',
+      },
+    })
+
+    const selection = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    const category = target.querySelector<HTMLSelectElement>('select')
+    expect(selection?.getAttribute('aria-label')).toBe('Select summary 1')
+    expect(category?.getAttribute('aria-label')).toBe('Category for summary 1')
+
+    await tick()
+    actionButton('translate').click()
+    await vi.waitFor(() => expect(translateHTMLMock).toHaveBeenCalledOnce())
+    actionButton('reroll').click()
+    await vi.waitFor(() => expect(actionButton('apply-rerolled').disabled).toBe(false))
+
+    const messageButton = target.querySelector<HTMLButtonElement>('[data-chat-memo="message-1"]')
+    messageButton?.click()
+    await vi.waitFor(() =>
+      expect(
+        Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+          (textarea) => textarea.value === 'Connected message',
+        ),
+      ).toBe(true),
+    )
+
+    const iconOnlyButtons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter(
+      (button) => button.querySelector('svg') && button.textContent?.trim() === '',
+    )
+    expect(iconOnlyButtons.map((button) => button.getAttribute('aria-label'))).toEqual(
+      expect.arrayContaining([
+        'Toggle summary translation',
+        'Toggle important summary',
+        'Reroll summary',
+        'Delete summary',
+        'Delete following summaries',
+        'Toggle rerolled summary translation',
+        'Cancel summary reroll',
+        'Apply rerolled summary',
+        'Toggle connected message translation',
+      ]),
+    )
+    expect(iconOnlyButtons.every((button) => button.title === button.getAttribute('aria-label'))).toBe(true)
+
+    const textareas = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea'))
+    expect(textareas).toHaveLength(4)
+    for (const textarea of textareas) {
+      const labelledBy = textarea.getAttribute('aria-labelledby')
+      expect(labelledBy).toBeTruthy()
+      expect(labelledBy ? target.querySelector(`#${labelledBy}`)?.textContent?.trim() : '').toBeTruthy()
+    }
+  })
 })
 
 describe('HypaV3 summary item async ownership', () => {
@@ -195,6 +273,33 @@ describe('HypaV3 summary item async ownership', () => {
 
     expect(target.querySelector('[data-summary-action="apply-rerolled"]')).toBeNull()
     expect(target.querySelectorAll('textarea')).toHaveLength(1)
+  })
+
+  it('clears a stale loading translation after an external summary update changes its source', async () => {
+    const pendingTranslation = deferred<string>()
+    translateHTMLMock.mockReturnValueOnce(pendingTranslation.promise)
+    const summary = createSummary()
+    mountSummary(summary)
+
+    await tick()
+    actionButton('translate').click()
+    await vi.waitFor(() => expect(translateHTMLMock).toHaveBeenCalledOnce())
+    expect(
+      Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+        (textarea) => textarea.value === 'Loading...',
+      ),
+    ).toBe(true)
+
+    summary.text = 'Externally projected summary'
+    pendingTranslation.resolve('Translation of stale summary')
+    await tick()
+    await tick()
+
+    expect(target.querySelectorAll('textarea')).toHaveLength(1)
+    expect(actionButton('translate').getAttribute('aria-pressed')).toBe('false')
+
+    actionButton('translate').click()
+    await vi.waitFor(() => expect(translateHTMLMock).toHaveBeenCalledTimes(2))
   })
 
   it('discards a rerolled translation when its source is edited', async () => {

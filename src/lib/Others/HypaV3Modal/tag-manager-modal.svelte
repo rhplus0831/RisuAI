@@ -128,6 +128,7 @@
           data-modal-initial-focus
           class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
           aria-label={language.close}
+          title={language.close}
           onclick={closeTagManager}>
           <XIcon class="w-5 h-5" />
         </button>
@@ -139,6 +140,7 @@
           <input
             type="text"
             class="flex-1 px-3 py-2 text-sm rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+            aria-label={language.hypaV3Modal.newTagName}
             placeholder={language.hypaV3Modal.newTagName}
             bind:value={tagManagerState.editingTag}
             onkeydown={handleAddTagKeydown} />
@@ -159,23 +161,36 @@
                 <input
                   type="text"
                   class="flex-1 px-2 py-1 text-sm rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  aria-label={language.hypaV3Modal.tagNameLabel}
                   bind:value={tagManagerState.editingTag}
                   onkeydown={handleEditTagKeydown} />
-                <button class="p-1.5 text-green-400 hover:text-green-300 transition-colors" onclick={saveEditingTag}>
+                <button
+                  class="p-1.5 text-green-400 hover:text-green-300 transition-colors"
+                  aria-label={language.hypaV3Modal.saveTagAction}
+                  title={language.hypaV3Modal.saveTagAction}
+                  onclick={saveEditingTag}>
                   <CheckIcon class="w-4 h-4" />
                 </button>
-                <button class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={cancelEditingTag}>
+                <button
+                  class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
+                  aria-label={language.hypaV3Modal.cancelTagEditAction}
+                  title={language.hypaV3Modal.cancelTagEditAction}
+                  onclick={cancelEditingTag}>
                   <XIcon class="w-4 h-4" />
                 </button>
               {:else}
                 <span class="flex-1 text-sm text-zinc-200">#{tag}</span>
                 <button
                   class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
+                  aria-label={language.hypaV3Modal.editTagAction}
+                  title={language.hypaV3Modal.editTagAction}
                   onclick={() => startEditTag(tagIndex, tag)}>
                   <SquarePenIcon class="w-4 h-4" />
                 </button>
                 <button
                   class="p-1.5 text-red-400 hover:text-red-300 transition-colors"
+                  aria-label={language.hypaV3Modal.deleteTagAction}
+                  title={language.hypaV3Modal.deleteTagAction}
                   onclick={() => removeTag(currentSummaryIndex(), tagIndex)}>
                   <Trash2Icon class="w-4 h-4" />
                 </button>

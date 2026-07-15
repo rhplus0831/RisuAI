@@ -136,7 +136,11 @@
         <h2 class="text-lg font-semibold text-zinc-300">{language.hypaV3Modal.categoryManager}</h2>
         <div class="flex items-center gap-2">
           <!-- Add Category Button -->
-          <button class="p-2 text-zinc-400 hover:text-green-400 transition-colors" onclick={startAddCategory}>
+          <button
+            class="p-2 text-zinc-400 hover:text-green-400 transition-colors"
+            aria-label={language.hypaV3Modal.addCategoryAction}
+            title={language.hypaV3Modal.addCategoryAction}
+            onclick={startAddCategory}>
             <PlusIcon class="w-5 h-5" />
           </button>
           <!-- Close Button -->
@@ -144,6 +148,7 @@
             data-modal-initial-focus
             class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
             aria-label={language.close}
+            title={language.close}
             onclick={closeCategoryManager}>
             <XIcon class="w-5 h-5" />
           </button>
@@ -178,12 +183,21 @@
               <input
                 type="text"
                 class="flex-1 px-3 py-1.5 text-sm rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                aria-label={language.hypaV3Modal.categoryName}
                 bind:value={categoryManagerState.editingCategory.name}
                 placeholder={language.hypaV3Modal.categoryName} />
-              <button class="p-1.5 text-green-400 hover:text-green-300 transition-colors" onclick={saveEditingCategory}>
+              <button
+                class="p-1.5 text-green-400 hover:text-green-300 transition-colors"
+                aria-label={language.hypaV3Modal.saveCategoryAction}
+                title={language.hypaV3Modal.saveCategoryAction}
+                onclick={saveEditingCategory}>
                 <CheckIcon class="w-4 h-4" />
               </button>
-              <button class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={cancelEditingCategory}>
+              <button
+                class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
+                aria-label={language.hypaV3Modal.cancelCategoryEditAction}
+                title={language.hypaV3Modal.cancelCategoryEditAction}
+                onclick={cancelEditingCategory}>
                 <XIcon class="w-4 h-4" />
               </button>
             {:else}
@@ -193,11 +207,15 @@
               {#if category.id !== ''}
                 <button
                   class="p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors"
+                  aria-label={language.hypaV3Modal.editCategoryAction}
+                  title={language.hypaV3Modal.editCategoryAction}
                   onclick={() => startEditCategory(category)}>
                   <SquarePenIcon class="w-4 h-4" />
                 </button>
                 <button
                   class="p-1.5 text-red-400 hover:text-red-300 transition-colors"
+                  aria-label={language.hypaV3Modal.deleteCategoryAction}
+                  title={language.hypaV3Modal.deleteCategoryAction}
                   onclick={() => deleteCategory(category.id)}>
                   <Trash2Icon class="w-4 h-4" />
                 </button>

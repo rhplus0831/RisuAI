@@ -86,6 +86,7 @@
         <!-- Category Selection -->
         <select
           class="px-3 py-2 rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+          aria-label={language.hypaV3Modal.bulkCategoryLabel}
           value={bulkEditState.selectedCategory}
           onchange={handleCategoryChange}>
           {#each categories as category}
@@ -109,6 +110,8 @@
             .selectedSummaries.size === 0
             ? 'opacity-50 cursor-not-allowed'
             : ''}"
+          aria-label={language.hypaV3Modal.toggleBulkImportantAction}
+          title={language.hypaV3Modal.toggleBulkImportantAction}
           onclick={bulkToggleImportant}
           disabled={bulkEditState.selectedSummaries.size === 0}>
           <StarIcon class="w-4 h-4" />
@@ -118,6 +121,7 @@
         <div class="flex gap-2">
           <input
             type="text"
+            aria-label={language.hypaV3Modal.bulkSelectionInputLabel}
             value={bulkEditState.bulkSelectInput}
             oninput={handleBulkSelectInputChange}
             placeholder="1,3,5-8"

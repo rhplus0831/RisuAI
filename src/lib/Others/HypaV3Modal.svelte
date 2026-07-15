@@ -1078,6 +1078,7 @@
                   }}>
                   <input
                     class="w-full px-2 py-2 border rounded-sm sm:px-4 sm:py-3 border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
+                    aria-label={language.hypaV3Modal.searchAction}
                     placeholder={language.hypaV3Modal.searchPlaceholder}
                     bind:this={searchState.ref}
                     bind:value={searchState.query}
@@ -1104,6 +1105,8 @@
               <!-- Previous Button -->
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+                aria-label={language.hypaV3Modal.previousSearchResultAction}
+                title={language.hypaV3Modal.previousSearchResultAction}
                 onclick={() => {
                   onSearch({ shiftKey: true, key: 'Enter' } as KeyboardEvent)
                 }}>
@@ -1113,6 +1116,8 @@
               <!-- Next Button -->
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+                aria-label={language.hypaV3Modal.nextSearchResultAction}
+                title={language.hypaV3Modal.nextSearchResultAction}
                 onclick={() => {
                   onSearch({ key: 'Enter' } as KeyboardEvent)
                 }}>

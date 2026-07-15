@@ -254,8 +254,85 @@ describe('Hypa V3 async ownership', () => {
 
     const previousButton = buttonForIcon(target, 'lucide-chevron-up')
     const nextButton = buttonForIcon(target, 'lucide-chevron-down')
+    const searchInput = target.querySelector<HTMLInputElement>(
+      `input[placeholder="${language.hypaV3Modal.searchPlaceholder}"]`,
+    )
     expect(previousButton?.tabIndex).toBe(0)
     expect(nextButton?.tabIndex).toBe(0)
+    expect(searchInput?.getAttribute('aria-label')).toBe(language.hypaV3Modal.searchAction)
+    expect(previousButton?.getAttribute('aria-label')).toBe(language.hypaV3Modal.previousSearchResultAction)
+    expect(previousButton?.title).toBe(language.hypaV3Modal.previousSearchResultAction)
+    expect(nextButton?.getAttribute('aria-label')).toBe(language.hypaV3Modal.nextSearchResultAction)
+    expect(nextButton?.title).toBe(language.hypaV3Modal.nextSearchResultAction)
+    expect(previousButton?.getAttribute('aria-label')).not.toBe(nextButton?.getAttribute('aria-label'))
+  })
+
+  it('provides names and tooltips for live bulk-edit and re-summarization controls', async () => {
+    seedDatabase(true)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const bulkModeButton = buttonForIcon(target, 'lucide-square-pen')
+    expect(bulkModeButton).not.toBeNull()
+    bulkModeButton!.click()
+    await settle()
+
+    const bulkCategory = target.querySelector<HTMLSelectElement>(
+      `select[aria-label="${language.hypaV3Modal.bulkCategoryLabel}"]`,
+    )
+    const bulkSelection = target.querySelector<HTMLInputElement>(
+      `input[aria-label="${language.hypaV3Modal.bulkSelectionInputLabel}"]`,
+    )
+    const bulkImportant = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.toggleBulkImportantAction}"]`,
+    )
+    expect(bulkCategory).not.toBeNull()
+    expect(bulkSelection).not.toBeNull()
+    expect(bulkImportant?.title).toBe(language.hypaV3Modal.toggleBulkImportantAction)
+
+    const summaryCheckboxes = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+    summaryCheckboxes.forEach((checkbox) => checkbox.click())
+    await settle()
+    const resummaryButton = buttonByText(target, language.hypaV3Modal.reSummarize)
+    expect(resummaryButton).not.toBeNull()
+    resummaryButton!.click()
+    await settle()
+
+    const actionLabels = [
+      language.hypaV3Modal.toggleResummaryTranslationAction,
+      language.hypaV3Modal.retryResummaryAction,
+      language.hypaV3Modal.applyResummaryAction,
+      language.hypaV3Modal.cancelResummaryAction,
+    ]
+    for (const label of actionLabels) {
+      const button = target.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+      expect(button?.title).toBe(label)
+    }
+
+    const result = target.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-labelledby="hypav3-resummary-result-label"]',
+    )
+    expect(result?.value).toBe('Default merged summary')
+
+    target
+      .querySelector<HTMLButtonElement>(`button[aria-label="${language.hypaV3Modal.toggleResummaryTranslationAction}"]`)
+      ?.click()
+    await settle()
+    expect(
+      target.querySelector<HTMLTextAreaElement>('textarea[aria-labelledby="hypav3-resummary-translation-label"]')
+        ?.value,
+    ).toBe('Default translation')
+  })
+
+  it('programmatically names the next-summarization preview', async () => {
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const preview = target.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-labelledby="hypav3-next-summarization-label"]',
+    )
+    expect(preview).not.toBeNull()
+    expect(target.querySelector('#hypav3-next-summarization-label')?.textContent?.trim()).toBeTruthy()
   })
 
   it('traps focus across the main, category, and tag dialogs while preserving edit Escape', async () => {
@@ -291,9 +368,22 @@ describe('Hypa V3 async ownership', () => {
       `[role="dialog"][aria-label="${language.hypaV3Modal.categoryManager}"]`,
     )
     const categoryClose = categoryDialog?.querySelector<HTMLButtonElement>(`button[aria-label="${language.close}"]`)
+    const addCategory = categoryDialog?.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.addCategoryAction}"]`,
+    )
+    const editCategory = categoryDialog?.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.editCategoryAction}"]`,
+    )
+    const deleteCategory = categoryDialog?.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.deleteCategoryAction}"]`,
+    )
     expect(categoryDialog?.getAttribute('aria-modal')).toBe('true')
     expect(mainDialog?.closest<HTMLElement>('[data-modal-root]')?.inert).toBe(true)
     expect(document.activeElement).toBe(categoryClose)
+    expect(categoryClose?.title).toBe(language.close)
+    expect(addCategory?.title).toBe(language.hypaV3Modal.addCategoryAction)
+    expect(editCategory?.title).toBe(language.hypaV3Modal.editCategoryAction)
+    expect(deleteCategory?.title).toBe(language.hypaV3Modal.deleteCategoryAction)
 
     mainClose!.focus()
     expect(document.activeElement).toBe(categoryClose)
@@ -316,11 +406,23 @@ describe('Hypa V3 async ownership', () => {
     const tagClose = tagDialog?.querySelector<HTMLButtonElement>(`button[aria-label="${language.close}"]`)
     expect(tagDialog?.getAttribute('aria-modal')).toBe('true')
     expect(document.activeElement).toBe(tagClose)
+    expect(tagClose?.title).toBe(language.close)
 
     const editButton = buttonForIcon(tagDialog!, 'lucide-square-pen')
     expect(editButton).not.toBeNull()
+    expect(editButton?.getAttribute('aria-label')).toBe(language.hypaV3Modal.editTagAction)
+    expect(editButton?.title).toBe(language.hypaV3Modal.editTagAction)
     editButton!.click()
     await settle()
+
+    const saveTag = tagDialog?.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.saveTagAction}"]`,
+    )
+    const cancelTagEdit = tagDialog?.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.cancelTagEditAction}"]`,
+    )
+    expect(saveTag?.title).toBe(language.hypaV3Modal.saveTagAction)
+    expect(cancelTagEdit?.title).toBe(language.hypaV3Modal.cancelTagEditAction)
 
     const editInputs = Array.from(tagDialog!.querySelectorAll<HTMLInputElement>('input[type="text"]'))
     expect(editInputs).toHaveLength(2)
@@ -458,7 +560,7 @@ describe('Hypa V3 async ownership', () => {
     await startBulkResummary(target)
     expect(resetMocks.summarize).toHaveBeenCalledOnce()
 
-    const cancelButton = buttonByTitle(target, language.cancel)
+    const cancelButton = buttonByTitle(target, language.hypaV3Modal.cancelResummaryAction)
     expect(cancelButton).not.toBeNull()
     cancelButton!.click()
     await settle()
@@ -510,13 +612,13 @@ describe('Hypa V3 async ownership', () => {
     await startBulkResummary(target)
     expect(hasTextareaValue(target, 'Merged summary')).toBe(true)
 
-    const translateButton = buttonByTitle(target, language.hypaV3Modal.translate)
+    const translateButton = buttonByTitle(target, language.hypaV3Modal.toggleResummaryTranslationAction)
     expect(translateButton).not.toBeNull()
     translateButton!.click()
     await settle()
     expect(resetMocks.translateHTML).toHaveBeenCalledOnce()
 
-    const cancelButton = buttonByTitle(target, language.cancel)
+    const cancelButton = buttonByTitle(target, language.hypaV3Modal.cancelResummaryAction)
     expect(cancelButton).not.toBeNull()
     cancelButton!.click()
     await settle()

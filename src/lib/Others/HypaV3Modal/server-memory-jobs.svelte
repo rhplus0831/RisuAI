@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte'
   import { RefreshCwIcon, XIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
   import {
     cancelServerMemoryJob,
     listServerMemoryJobs,
@@ -151,9 +152,10 @@
 
     <button
       class="shrink-0 rounded-sm p-2 text-zinc-400 transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+      aria-label={language.hypaV3Modal.refreshMemoryJobsAction}
       disabled={loading}
       onclick={() => void refreshJobs()}
-      title="Refresh jobs">
+      title={language.hypaV3Modal.refreshMemoryJobsAction}>
       <RefreshCwIcon class="h-4 w-4 {loading ? 'animate-spin' : ''}" />
     </button>
   </div>

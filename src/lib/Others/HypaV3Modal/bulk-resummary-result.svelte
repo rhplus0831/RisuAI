@@ -20,7 +20,9 @@
   <div class="sticky bottom-0 p-4 bg-zinc-900 border-t border-zinc-700 rounded-b-lg">
     <div class="flex flex-col gap-3">
       <div class="flex justify-between items-center">
-        <h3 class="text-sm font-medium text-zinc-300">{language.hypaV3Modal.reSummarizeResult}</h3>
+        <h3 id="hypav3-resummary-result-label" class="text-sm font-medium text-zinc-300">
+          {language.hypaV3Modal.reSummarizeResult}
+        </h3>
         <div class="flex items-center gap-2">
           <!-- Translate Button -->
           <button
@@ -28,8 +30,10 @@
             !bulkResummaryState.result
               ? 'opacity-50 cursor-not-allowed'
               : ''}"
+            aria-label={language.hypaV3Modal.toggleResummaryTranslationAction}
+            aria-pressed={bulkResummaryState.translation !== null}
             disabled={bulkResummaryState.isProcessing || !bulkResummaryState.result}
-            title={language.hypaV3Modal.translate}
+            title={language.hypaV3Modal.toggleResummaryTranslationAction}
             use:handleDualAction={{
               onMainAction: () => onToggleTranslation(false),
               onAlternativeAction: () => onToggleTranslation(true),
@@ -42,9 +46,10 @@
             class="p-2 rounded transition-colors {bulkResummaryState.isProcessing
               ? 'text-zinc-600 cursor-not-allowed'
               : 'text-orange-400 hover:text-orange-300'}"
+            aria-label={language.hypaV3Modal.retryResummaryAction}
             onclick={onReroll}
             disabled={bulkResummaryState.isProcessing}
-            title={language.hypaV3Modal.retry}>
+            title={language.hypaV3Modal.retryResummaryAction}>
             <RefreshCw class="w-4 h-4" />
           </button>
 
@@ -53,17 +58,19 @@
             class="p-2 rounded transition-colors {bulkResummaryState.isProcessing || !bulkResummaryState.result
               ? 'text-zinc-600 cursor-not-allowed'
               : 'text-green-400 hover:text-green-300'}"
+            aria-label={language.hypaV3Modal.applyResummaryAction}
             onclick={onApply}
             disabled={bulkResummaryState.isProcessing || !bulkResummaryState.result}
-            title={language.apply}>
+            title={language.hypaV3Modal.applyResummaryAction}>
             <CheckIcon class="w-4 h-4" />
           </button>
 
           <!-- Cancel Button -->
           <button
             class="p-2 rounded-sm transition-colors text-zinc-400 hover:text-zinc-200"
+            aria-label={language.hypaV3Modal.cancelResummaryAction}
             onclick={onCancel}
-            title={language.cancel}>
+            title={language.hypaV3Modal.cancelResummaryAction}>
             <XIcon class="w-4 h-4" />
           </button>
         </div>
@@ -78,17 +85,19 @@
       {:else if bulkResummaryState.result}
         <textarea
           class="p-3 w-full min-h-32 resize-vertical rounded-sm border border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 transition-colors text-zinc-200 bg-zinc-800"
+          aria-labelledby="hypav3-resummary-result-label"
           readonly
           value={bulkResummaryState.result}></textarea>
 
         <!-- Translation Result -->
         {#if bulkResummaryState.translation}
           <div class="mt-3">
-            <div class="mb-2 text-sm text-zinc-400">
+            <div id="hypav3-resummary-translation-label" class="mb-2 text-sm text-zinc-400">
               {language.hypaV3Modal.translationLabel}
             </div>
             <textarea
               class="p-3 w-full min-h-32 resize-vertical rounded-sm border border-zinc-700 focus:outline-hidden transition-colors text-zinc-200 bg-zinc-800"
+              aria-labelledby="hypav3-resummary-translation-label"
               readonly
               value={bulkResummaryState.translation}></textarea>
           </div>

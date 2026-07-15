@@ -17,6 +17,7 @@ vi.mock('src/ts/server/memoryJobEvents', () => ({
 }))
 
 import ServerMemoryJobs from './server-memory-jobs.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -61,13 +62,16 @@ describe('Server memory job keyboard navigation', () => {
     let cancelButton: HTMLButtonElement | null = null
 
     await vi.waitFor(() => {
-      refreshButton = target.querySelector<HTMLButtonElement>('button[title="Refresh jobs"]')
+      refreshButton = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.hypaV3Modal.refreshMemoryJobsAction}"]`,
+      )
       cancelButton = target.querySelector<HTMLButtonElement>('button[title="Cancel job"]')
       expect(refreshButton?.disabled).toBe(false)
       expect(cancelButton?.disabled).toBe(false)
     })
 
     expect(refreshButton?.tabIndex).toBe(0)
+    expect(refreshButton?.title).toBe(language.hypaV3Modal.refreshMemoryJobsAction)
     expect(cancelButton?.tabIndex).toBe(0)
   })
 })
