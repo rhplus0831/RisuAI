@@ -13,6 +13,7 @@ const otherBotMocks = vi.hoisted(() => ({
   hypaPresets: [] as Array<Record<string, any>>,
   initialWavespeedImage: {} as Record<string, any>,
   loraWrites: [] as Array<Array<{ path: string; scale: number }>>,
+  saveAsset: vi.fn(),
   selectSingleFile: vi.fn(),
 }))
 
@@ -60,7 +61,7 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
 vi.mock('src/ts/globalApi.svelte', () => ({
   downloadFile: vi.fn(),
   globalFetch: otherBotMocks.globalFetch,
-  saveAsset: vi.fn(),
+  saveAsset: otherBotMocks.saveAsset,
 }))
 
 vi.mock('src/ts/alert', () => ({
@@ -115,6 +116,14 @@ function buttonNamed(name: string): HTMLButtonElement {
   return button
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -123,6 +132,7 @@ beforeEach(() => {
   otherBotMocks.hypaEnabled = false
   otherBotMocks.hypaPresets = []
   otherBotMocks.loraWrites.length = 0
+  otherBotMocks.saveAsset.mockReset()
   otherBotMocks.selectSingleFile.mockReset()
   otherBotMocks.initialWavespeedImage = {
     key: 'wavespeed-key',
@@ -244,6 +254,73 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
         .map((option) => option.value)
         .filter(Boolean),
     ).toEqual(['zzz-id', 'aaa-id'])
+  })
+
+  it('keeps an older delayed file read from superseding a newer reference-image selection', async () => {
+    const olderRead = deferred<{ name: string; data: Uint8Array } | null>()
+    const newerSave = deferred<string>()
+    const olderFile = { name: 'older.png', data: new Uint8Array([1]) }
+    const newerFile = { name: 'newer.png', data: new Uint8Array([2]) }
+    let pickerCall = 0
+
+    otherBotMocks.initialWavespeedImage.reference_mode = 'image'
+    otherBotMocks.globalFetch.mockResolvedValue({
+      ok: true,
+      data: {
+        code: 200,
+        data: [
+          {
+            type: 'image-to-image',
+            model_id: 'wavespeed/saved-model',
+            name: 'Saved model',
+            base_price: 0.01,
+            api_schema: { api_schemas: [] },
+          },
+        ],
+      },
+    })
+    otherBotMocks.selectSingleFile.mockImplementation(
+      async (_extensions: string[], options: { onFileSelected?: (file: File) => void } = {}) => {
+        pickerCall += 1
+        const selected = pickerCall === 1 ? olderFile : newerFile
+        options.onFileSelected?.(selected as unknown as File)
+        return pickerCall === 1 ? olderRead.promise : selected
+      },
+    )
+    otherBotMocks.saveAsset.mockImplementation((data: Uint8Array) => {
+      if (data[0] === 2) return newerSave.promise
+      return Promise.resolve('older-asset')
+    })
+
+    component = mount(OtherBotSettings, { target })
+    await tick()
+    buttonNamed(language.imageGeneration).click()
+    await tick()
+    buttonNamed('Refresh Models').click()
+
+    let uploadButton: HTMLButtonElement | undefined
+    await vi.waitFor(() => {
+      uploadButton = Array.from(target.querySelectorAll('button')).find(
+        (button) => button.textContent?.replace(/\s/g, '') === 'UploadImage',
+      )
+      expect(uploadButton).toBeTruthy()
+    })
+
+    uploadButton!.click()
+    await tick()
+    uploadButton!.click()
+    await vi.waitFor(() => expect(otherBotMocks.saveAsset).toHaveBeenCalledTimes(1))
+    expect(otherBotMocks.saveAsset).toHaveBeenCalledWith(newerFile.data)
+
+    olderRead.resolve(olderFile)
+    await tick()
+    await Promise.resolve()
+    expect(otherBotMocks.saveAsset).toHaveBeenCalledTimes(1)
+
+    newerSave.resolve('newer-asset')
+    await vi.waitFor(() => {
+      expect(otherBotMocks.drafts.get('wavespeedImage')?.value.reference_image).toBe('newer-asset')
+    })
   })
 })
 

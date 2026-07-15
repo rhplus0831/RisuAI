@@ -324,16 +324,21 @@
     const target = currentModuleAssetUploadTarget()
     if (!target) return
 
-    const files = await selectMultipleFile(MODULE_ASSET_EXTENSIONS)
-    if (!files || files.length === 0) return
-
-    const operation = beginModuleAssetUpload(target)
+    let operation: ModuleAssetUploadOperation | null = null
     try {
-      const entries = await uploadModuleAssetEntries(files, operation)
+      const files = await selectMultipleFile(MODULE_ASSET_EXTENSIONS, {
+        onFilesSelected: () => {
+          operation = beginModuleAssetUpload(target)
+        },
+      })
+      if (!files || files.length === 0 || !operation) return
+
+      const activeOperation = operation
+      const entries = await uploadModuleAssetEntries(files, activeOperation)
       if (!entries || entries.length === 0) return
 
       const nextAssets = appendFreshModuleAssets({
-        operation,
+        operation: activeOperation,
         freshness: moduleAssetUploadFreshness(),
         entries,
       })
@@ -341,7 +346,9 @@
 
       currentModule.assets = nextAssets
     } finally {
-      clearModuleAssetUpload(operation)
+      if (operation) {
+        clearModuleAssetUpload(operation)
+      }
     }
   }
 

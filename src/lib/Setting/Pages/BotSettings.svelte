@@ -848,25 +848,32 @@
     const target = currentPromptPresetIconUploadTarget()
     if (!target) return
 
-    const selected = await selectSingleFile(['png', 'jpg', 'jpeg', 'webp'])
-    if (!selected) return
-
-    const operation = beginPromptPresetIconUpload(target)
+    let operation: PromptPresetIconUploadOperation | null = null
     try {
-      if (!isCurrentPromptPresetIconUpload(operation)) return
+      const selected = await selectSingleFile(['png', 'jpg', 'jpeg', 'webp'], {
+        onFileSelected: () => {
+          operation = beginPromptPresetIconUpload(target)
+        },
+      })
+      if (!selected || !operation) return
 
-      const data = await resizePromptPresetIconFile(selected, operation)
+      const activeOperation = operation
+      if (!isCurrentPromptPresetIconUpload(activeOperation)) return
+
+      const data = await resizePromptPresetIconFile(selected, activeOperation)
       if (!data) return
 
       const updateIndex = resolveFreshPromptPresetIconUploadIndex({
-        operation,
-        freshness: promptPresetIconUploadFreshness(operation),
+        operation: activeOperation,
+        freshness: promptPresetIconUploadFreshness(activeOperation),
       })
       if (updateIndex === null) return
 
       updatePromptPreset(updateIndex, { image: data }) // The 48×48 JPEG data URL is small enough to keep inline.
     } finally {
-      clearPromptPresetIconUpload(operation)
+      if (operation) {
+        clearPromptPresetIconUpload(operation)
+      }
     }
   }
 

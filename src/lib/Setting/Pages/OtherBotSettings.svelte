@@ -405,29 +405,34 @@
   }
 
   async function uploadSettingsMediaAsset(target: SettingsMediaAssetUploadTarget): Promise<void> {
-    const img = await selectSingleFile(['jpg', 'jpeg', 'png', 'webp'])
-    if (!img) {
-      return
-    }
-
-    const operation = beginSettingsMediaAssetUpload(target)
+    let operation: SettingsMediaAssetUploadOperation | null = null
     try {
-      if (!isCurrentSettingsMediaAssetUpload(operation)) return
+      const img = await selectSingleFile(['jpg', 'jpeg', 'png', 'webp'], {
+        onFileSelected: () => {
+          operation = beginSettingsMediaAssetUpload(target)
+        },
+      })
+      if (!img || !operation) return
+
+      const activeOperation = operation
+      if (!isCurrentSettingsMediaAssetUpload(activeOperation)) return
 
       const imageData = img.data
       const saveId = await saveAsset(imageData)
-      if (!isCurrentSettingsMediaAssetUpload(operation)) return
+      if (!isCurrentSettingsMediaAssetUpload(activeOperation)) return
 
       const nextConfig = applyFreshSettingsMediaAssetUpload({
-        operation,
-        freshness: settingsMediaAssetUploadFreshness(operation),
+        operation: activeOperation,
+        freshness: settingsMediaAssetUploadFreshness(activeOperation),
         image: saveId,
       })
       if (!nextConfig) return
 
-      writeSettingsMediaAssetUploadConfig(operation, nextConfig)
+      writeSettingsMediaAssetUploadConfig(activeOperation, nextConfig)
     } finally {
-      clearSettingsMediaAssetUpload(operation)
+      if (operation) {
+        clearSettingsMediaAssetUpload(operation)
+      }
     }
   }
 
