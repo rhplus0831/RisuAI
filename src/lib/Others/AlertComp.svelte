@@ -28,6 +28,7 @@
   import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from 'src/ts/platform'
   import versionData from '../../../version.json'
   import { normalizeMessagePromptInfo } from './alertPromptInfo'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   let showDetails = $state(false)
   let translatedStackTrace = $state('')
@@ -67,6 +68,20 @@
     return chat?.message?.[info.idx]
   })
   const promptInfoView = $derived.by(() => normalizeMessagePromptInfo(generationMessage))
+  const alertDialogRole = $derived(
+    $alertStore.type === 'error' || $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'
+      ? 'alertdialog'
+      : 'dialog',
+  )
+  const alertDialogTitle = $derived.by(() => {
+    if ($alertStore.type === 'error') return language.error
+    if ($alertStore.type === 'ask') return language.confirm
+    if ($alertStore.type === 'pluginconfirm') return language.pluginImport
+    if ($alertStore.type === 'selectChar') return language.select
+    if ($alertStore.type === 'input') return language.input
+    if ($alertStore.type === 'tos') return language.termsOfService
+    return $alertStore.msg || 'Risuai'
+  })
 
   let alertInputElement: HTMLInputElement | undefined = $state()
   let cardExportType = $state('')
@@ -272,19 +287,27 @@
 
 {#if $alertStore.type !== 'none' && $alertStore.type !== 'toast' && $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs'}
   <div
-    class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center"
+    data-modal-root
+    class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center"
     class:vis={$alertStore.type === 'wait2'}>
-    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto">
+    <div
+      use:modalFocusTrap
+      role={alertDialogRole}
+      aria-modal="true"
+      aria-labelledby="risu-alert-dialog-title"
+      tabindex="-1"
+      class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto">
+      <h2 id="risu-alert-dialog-title" class="sr-only">{alertDialogTitle}</h2>
       {#if $alertStore.type === 'error'}
-        <h2 class="text-red-700 mt-0 mb-2 w-40 max-w-full">Error</h2>
+        <h2 class="text-red-700 mt-0 mb-2 w-40 max-w-full">{language.error}</h2>
       {:else if $alertStore.type === 'ask'}
-        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Confirm</h2>
+        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.confirm}</h2>
       {:else if $alertStore.type === 'pluginconfirm'}
-        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Plugin Import</h2>
+        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.pluginImport}</h2>
       {:else if $alertStore.type === 'selectChar'}
-        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Select</h2>
+        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.select}</h2>
       {:else if $alertStore.type === 'input'}
-        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Input</h2>
+        <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.input}</h2>
       {/if}
       {#if $alertStore.type === 'markdown'}
         <div class="overflow-y-auto">
@@ -295,26 +318,27 @@
           </span>
         </div>
       {:else if $alertStore.type === 'tos'}
-        <!-- svelte-ignore a11y_missing_attribute -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-
         <div class="text-textcolor">
           You should accept
           <a
-            role="button"
-            tabindex="0"
+            href="https://account.sionyw.com/terms"
+            target="_blank"
+            rel="noopener noreferrer"
             class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
-            onclick={() => {
+            onclick={(event) => {
+              event.preventDefault()
               openURL('https://account.sionyw.com/terms')
             }}>Terms of Service</a>
 
           and
 
           <a
-            role="button"
-            tabindex="0"
+            href="https://account.sionyw.com/privacy"
+            target="_blank"
+            rel="noopener noreferrer"
             class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer"
-            onclick={() => {
+            onclick={(event) => {
+              event.preventDefault()
               openURL('https://account.sionyw.com/privacy')
             }}>Privacy Policy</a>
 
@@ -522,6 +546,7 @@
             {#if char.image}
               {#await getCharImage(char.image, 'css')}
                 <BarIcon
+                  ariaLabel={char.name || language.character}
                   onClick={() => {
                     alertStore.set({ type: 'none', msg: char.chaId })
                   }}>
@@ -529,6 +554,7 @@
                 </BarIcon>
               {:then im}
                 <BarIcon
+                  ariaLabel={char.name || language.character}
                   onClick={() => {
                     alertStore.set({ type: 'none', msg: char.chaId })
                   }}
@@ -536,6 +562,7 @@
               {/await}
             {:else}
               <BarIcon
+                ariaLabel={char.name || language.character}
                 onClick={() => {
                   alertStore.set({ type: 'none', msg: char.chaId })
                 }}>
@@ -585,6 +612,7 @@
           </Button>
           <button
             class="ml-auto"
+            aria-label={language.close}
             onclick={() => {
               alertStore.set({
                 type: 'none',
@@ -848,23 +876,32 @@
   </div>
 {:else if $alertStore.type === 'cardexport'}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-50 items-center justify-center"
-    role="button"
-    tabindex="0"
+    data-modal-root
+    class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-[100] items-center justify-center"
     onclick={cancelCardExport}>
     <div
+      use:modalFocusTrap
       class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl"
-      role="button"
-      tabindex="0"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-card-export-title"
+      tabindex="-1"
       onclick={(e) => {
         e.stopPropagation()
+      }}
+      onkeydown={(e) => {
+        if (e.key === 'Escape') cancelCardExport()
       }}>
-      <h1 class="font-bold text-2xl w-full">
+      <h1 id="risu-card-export-title" class="font-bold text-2xl w-full">
         <span>
           {language.shareExport}
         </span>
-        <button class="float-right text-textcolor2 hover:text-green-500" onclick={cancelCardExport}>
+        <button
+          class="float-right text-textcolor2 hover:text-green-500"
+          aria-label={language.close}
+          onclick={cancelCardExport}>
           <XIcon />
         </button>
       </h1>
@@ -945,6 +982,8 @@
 {:else if $alertStore.type === 'toast'}
   <div
     class="toast-anime absolute right-0 bottom-0 bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-11/12 overflow-y-auto z-50 text-textcolor"
+    role="status"
+    aria-live="polite"
     onanimationend={() => {
       alertStore.set({
         type: 'none',
@@ -966,13 +1005,26 @@
   <!-- Log Generator by dootaang, GPL3 -->
   <!-- Svelte, Typescript version by Kwaroran -->
 
-  <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center">
-    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto">
-      <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.preview}</h2>
+  <div data-modal-root class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center">
+    <div
+      use:modalFocusTrap
+      class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl max-h-full overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-preview-title"
+      tabindex="-1">
+      <h2 id="risu-preview-title" class="text-green-700 mt-0 mb-2 w-40 max-w-full">{language.preview}</h2>
     </div>
   </div>
 {:else if $alertStore.type === 'branches'}
-  <div class="absolute w-full h-full z-50 bg-black/80 flex justify-center items-center overflow-x-auto overflow-y-auto">
+  <div
+    use:modalFocusTrap
+    data-modal-root
+    class="fixed inset-0 z-[100] bg-black/80 flex justify-center items-center overflow-x-auto overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    aria-label={language.branch}
+    tabindex="-1">
     {#if branchHover !== null}
       <div
         class="z-30 whitespace-pre-wrap p-4 text-textcolor bg-darkbg border-darkborderc border rounded-md absolute"
@@ -984,6 +1036,7 @@
     <div class="x-50 right-2 top-2 absolute">
       <button
         class="bg-darkbg border-darkborderc border p-2 rounded-md"
+        aria-label={language.close}
         onclick={() => {
           alertStore.set({
             type: 'none',
@@ -1050,10 +1103,16 @@
   </div>
 {:else if $alertStore.type === 'requestlogs'}
   {@const logs = getFetchLogs()}
-  <div class="fixed inset-0 z-50 bg-black/80 flex justify-center items-start overflow-y-auto p-4">
-    <div class="bg-darkbg rounded-lg w-full max-w-4xl my-4 flex flex-col max-h-[90vh]">
+  <div data-modal-root class="fixed inset-0 z-[100] bg-black/80 flex justify-center items-start overflow-y-auto p-4">
+    <div
+      use:modalFocusTrap
+      class="bg-darkbg rounded-lg w-full max-w-4xl my-4 flex flex-col max-h-[90vh]"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-request-logs-title"
+      tabindex="-1">
       <div class="flex items-center justify-between p-4 border-b border-darkborderc sticky top-0 bg-darkbg z-10">
-        <h1 class="text-xl font-bold text-textcolor">{language.ShowLog}</h1>
+        <h1 id="risu-request-logs-title" class="text-xl font-bold text-textcolor">{language.ShowLog}</h1>
         <div class="flex items-center gap-2">
           <Button
             size="sm"
@@ -1069,6 +1128,7 @@
           </Button>
           <button
             class="text-textcolor2 hover:text-textcolor p-1"
+            aria-label={language.close}
             onclick={() => {
               alertStore.set({ type: 'none', msg: '' })
             }}>
@@ -1078,7 +1138,7 @@
       </div>
       <div class="flex-1 overflow-y-auto p-4">
         {#if logs.length === 0}
-          <div class="text-textcolor2 text-center py-8">{language.noRequestLogs}</div>
+          <div class="text-textcolor2 text-center py-8" role="status">{language.noRequestLogs}</div>
         {:else}
           <div class="flex flex-col gap-2">
             {#each logs as log, i}

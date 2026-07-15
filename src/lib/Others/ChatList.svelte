@@ -169,6 +169,7 @@
       <div class="grow flex justify-end">
         <button
           data-risu-chat-action="close"
+          aria-label={language.close}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           onclick={close}>
           <XIcon size={24} />
@@ -176,15 +177,10 @@
       </div>
     </div>
     {#each getDatabase().characters[$selectedCharID].chats as chat, i}
-      <button
+      <div
         data-risu-chat-id={chat.id ?? ''}
         data-risu-chat-idx={i}
         data-risu-chat-selected={i === getDatabase().characters[$selectedCharID].chatPage ? 'true' : 'false'}
-        onclick={() => {
-          if (!editMode) {
-            openChatRoute(i)
-          }
-        }}
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
         class:bg-selected={i === getDatabase().characters[$selectedCharID].chatPage}>
         {#if editMode}
@@ -195,39 +191,37 @@
               updateChatName(chat, chatNameDrafts[chat.id])
             }} />
         {:else}
-          <span>{chat.name}</span>
+          <button data-risu-chat-action="open" class="grow text-left" onclick={() => openChatRoute(i)}
+            >{chat.name}</button>
         {/if}
         <div class="grow flex justify-end">
-          <div
+          <button
+            type="button"
             data-risu-chat-action="export"
+            aria-label={`${language.export}: ${chat.name}`}
             class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-            role="button"
-            tabindex="0"
-            onclick={async (e) => {
-              e.stopPropagation()
+            onclick={async () => {
               exportChat(i)
-            }}
-            onkeydown={() => {}}>
+            }}>
             <DownloadIcon size={18} />
-          </div>
-          <div
+          </button>
+          <button
+            type="button"
             data-risu-chat-action="delete"
+            aria-label={`${language.remove}: ${chat.name}`}
             class="text-textcolor2 hover:text-green-500 cursor-pointer"
-            role="button"
-            tabindex="0"
-            onclick={async (e) => {
-              e.stopPropagation()
+            onclick={async () => {
               await deleteModalChat(chat)
-            }}
-            onkeydown={() => {}}>
+            }}>
             <TrashIcon size={18} />
-          </div>
+          </button>
         </div>
-      </button>
+      </div>
     {/each}
     <div class="flex mt-2 items-center">
       <button
         data-risu-chat-action="create"
+        aria-label={language.newChat}
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           const previous = currentChatStateSnapshot()
@@ -259,6 +253,7 @@
       </button>
       <button
         data-risu-chat-action="import"
+        aria-label={language.import}
         class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
         onclick={() => {
           importChat()
@@ -267,6 +262,7 @@
       </button>
       <button
         data-risu-chat-action="edit"
+        aria-label={language.edit}
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode

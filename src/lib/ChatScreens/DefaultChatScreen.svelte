@@ -1322,18 +1322,22 @@
           : 'mt-2 mb-2'} flex items-stretch w-full"
         style={getDatabase().fixedChatTextarea ? 'z-index:29;' : ''}>
         {#if getDatabase().useChatSticker}
-          <div
+          <button
+            type="button"
+            aria-label={language.stickers}
+            aria-pressed={toggleStickers}
             onclick={() => {
               toggleStickers = !toggleStickers
             }}
             class={'ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors ' +
               (toggleStickers ? 'text-green-500' : 'text-textcolor')}>
             <Laugh />
-          </div>
+          </button>
         {/if}
 
         <textarea
           data-testid="default-chat-composer"
+          aria-label={language.messageInput}
           class="peer text-input-area focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full placeholder:text-sm"
           bind:value={messageInput}
           bind:this={inputEle}
@@ -1362,7 +1366,8 @@
 
         {#if currentChatOwnsGeneration || doingChatInputTranslate}
           <button
-            aria-labelledby="cancel"
+            data-testid="default-chat-cancel-button"
+            aria-label={language.cancelGeneration}
             class="peer-focus:border-textcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors"
             onclick={abortChat}
             style:height={inputHeight}>
@@ -1371,6 +1376,7 @@
         {:else}
           <button
             data-testid="default-chat-send-button"
+            aria-label={language.hotkeyDesc.send}
             onclick={send}
             disabled={$doingChat}
             class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send disabled:cursor-not-allowed disabled:opacity-50"
@@ -1381,6 +1387,8 @@
         {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
           <button
             data-testid="default-chat-menu-button"
+            aria-label={language.menu}
+            aria-expanded={openMenu}
             onclick={(e) => {
               openMenu = !openMenu
               e.stopPropagation()
@@ -1390,12 +1398,14 @@
             <MenuIcon />
           </button>
         {:else}
-          <div
+          <button
+            type="button"
+            aria-label={language.addEmptyMessage}
             onclick={() => appendCurrentChatEmptyCharMessage()}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
             style:height={inputHeight}>
             <Plus />
-          </div>
+          </button>
         {/if}
       </div>
       {#if lastInputTranslationRollback && getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
@@ -1417,6 +1427,7 @@
             <LanguagesIcon />
           </label>
           <textarea
+            aria-label={language.messageInput}
             id="messageInputTranslate"
             class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
             bind:value={messageInputTranslate}

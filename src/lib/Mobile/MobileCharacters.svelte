@@ -112,6 +112,7 @@
   import { MobileSearch } from 'src/ts/stores.svelte'
   import { MessageSquareIcon, PlusIcon } from '@lucide/svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
+  import { language } from 'src/lang'
 
   interface Props {
     endGrid?: () => void
@@ -153,7 +154,7 @@
       onclick={() => {
         openCharacterRoute(char.index)
       }}>
-      <BarIcon additionalStyle={getCharImage(char.image, 'css')}></BarIcon>
+      <BarIcon additionalStyle={getCharImage(char.image, 'css')} interactive={false}></BarIcon>
       <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
         <span data-risu-mobile-character-name>{char.name}</span>
         <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
@@ -165,10 +166,14 @@
       </div>
     </button>
   {/each}
+  {#if visibleMobileCharacterRows.length === 0}
+    <p class="p-6 text-center text-textcolor2" role="status" aria-live="polite">{language.noSearchResults}</p>
+  {/if}
 </div>
 
 <button
   class="p-4 rounded-full absolute bottom-2 right-2 bg-borderc"
+  aria-label={language.addCharacter}
   data-risu-mobile-character-action="create"
   onclick={() => {
     addCharacter()

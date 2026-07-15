@@ -167,7 +167,7 @@ body {
   --risu-theme-selected: #44475a;
   --risu-theme-draculared: #ff5555;
   --risu-theme-textcolor: #f5f5f5;
-  --risu-theme-textcolor2: #64748b;
+  --risu-theme-textcolor2: #94a3b8;
   --risu-theme-darkborderc: #4b5563;
   --risu-theme-darkbutton: #374151;
   --risu-height-size: 100%;
@@ -227,6 +227,21 @@ body {
   --risu-theme-success-700: #15803d;
   --risu-theme-success-800: #166534;
   --risu-theme-success-900: #14532d;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --risu-animation-speed: 0.01ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 .x-risu-language-json {

@@ -213,39 +213,41 @@
         <button
           class="text-textcolor2 hover:text-green-500"
           onclick={toggleExpandAll}
-          title={expandAll ? language.collapseAll : language.expandAll}>
+          title={expandAll ? language.collapseAll : language.expandAll}
+          aria-label={expandAll ? language.collapseAll : language.expandAll}>
           {#if expandAll}
             <BookLockIcon size={20} />
           {:else}
             <BookOpenCheckIcon size={20} />
           {/if}
         </button>
-        <button class="text-textcolor2 hover:text-green-500" onclick={close}>
+        <button class="text-textcolor2 hover:text-green-500" aria-label={language.close} onclick={close}>
           <XIcon size={24} />
         </button>
       </div>
     </div>
 
     {#if bookmarkedMessages.length === 0}
-      <p class="text-textcolor2">{language.noBookmarks}</p>
+      <p class="text-textcolor2" role="status">{language.noBookmarks}</p>
     {:else}
       <div class="flex flex-col gap-2">
         {#each bookmarkedMessages as msg (msg.chatId)}
+          {@const bookmarkName =
+            chara.chats[chara.chatPage].bookmarkNames?.[msg.chatId] || msg.data.substring(0, 30) + '...'}
           <div data-risu-bookmark-id={msg.chatId} class="border border-darkborderc rounded-lg">
-            <div
-              class="flex items-center p-3 cursor-pointer hover:bg-selected transition-colors"
-              onclick={() => toggleExpand(msg.chatId)}
-              onkeydown={(e) => e.key === 'Enter' && toggleExpand(msg.chatId)}
-              role="button"
-              tabindex="0">
-              <span class="grow text-left truncate"
-                >{chara.chats[chara.chatPage].bookmarkNames?.[msg.chatId] || msg.data.substring(0, 30) + '...'}</span>
+            <div class="flex items-center p-3 hover:bg-selected transition-colors">
+              <button
+                class="grow text-left truncate cursor-pointer"
+                aria-expanded={expandAll || expandedBookmarks.has(msg.chatId)}
+                onclick={() => toggleExpand(msg.chatId)}>
+                {bookmarkName}
+              </button>
               <div class="shrink-0 flex items-center gap-2 ml-2">
                 <button
                   class="text-textcolor2 hover:text-blue-500"
                   title={language.goToChat}
-                  onclick={(e) => {
-                    e.stopPropagation()
+                  aria-label={language.goToChat}
+                  onclick={() => {
                     goToChat(msg.originalIndex)
                   }}>
                   <ArrowRightIcon size={20} />
@@ -253,8 +255,8 @@
                 <button
                   data-risu-bookmark-action="rename"
                   class="text-textcolor2 hover:text-green-500"
-                  onclick={(e) => {
-                    e.stopPropagation()
+                  aria-label={`${language.edit}: ${bookmarkName}`}
+                  onclick={() => {
                     editName(msg.chatId)
                   }}>
                   <PencilIcon size={16} />
@@ -262,8 +264,8 @@
                 <button
                   data-risu-bookmark-action="remove"
                   class="text-textcolor2 hover:text-red-500"
-                  onclick={(e) => {
-                    e.stopPropagation()
+                  aria-label={`${language.remove}: ${bookmarkName}`}
+                  onclick={() => {
                     removeBookmark(msg.chatId)
                   }}>
                   <TrashIcon size={16} />

@@ -334,15 +334,19 @@
   }
 
   function openRerollMenu(e: MouseEvent, children: import('svelte').Snippet): void {
+    const trigger = e.currentTarget as HTMLButtonElement
     if (popupStore.openId === rerollMenuButtonId && popupStore.children) {
       popupStore.children = null
       popupStore.openId = 0
+      popupStore.trigger = null
       return
     }
-    popupStore.mouseX = e.clientX
-    popupStore.mouseY = e.clientY
+    const rect = trigger.getBoundingClientRect()
+    popupStore.mouseX = e.detail === 0 ? rect.left : e.clientX
+    popupStore.mouseY = e.detail === 0 ? rect.bottom : e.clientY
     popupStore.children = children
     popupStore.openId = rerollMenuButtonId
+    popupStore.trigger = trigger
   }
 
   async function openAutoPopupMessageEditor() {
@@ -1450,6 +1454,7 @@
   <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
     {#if isComment}
       <button
+        aria-label={language.remove}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-remove ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         disabled={translationInProgress}
@@ -1460,7 +1465,7 @@
         <TrashIcon size={20} />
       </button>
     {:else if !isGenerationLoading}
-      <span class="text-xs">{statusMessage}</span>
+      <span class="text-xs" aria-live="polite">{statusMessage}</span>
       <div class="flex items-center ml-2 gap-2">
         {@render translationButton()}
         {#if $SizeStore.w >= 640}
@@ -1487,6 +1492,7 @@
 {#snippet majorIconButtonsBody(showNames: boolean)}
   {#if getDatabase().useChatCopy && !blankMessage}
     <button
+      aria-label={language.copy}
       class="flex items-center hover:text-blue-500 transition-colors button-icon-copy"
       onclick={async () => {
         if (window.navigator.clipboard.write) {
@@ -1770,6 +1776,7 @@
   {#if idx > -1}
     {#if getDatabase().characters[selIdState.selId].ttsMode !== 'none' && getDatabase().characters[selIdState.selId].ttsMode}
       <button
+        aria-label={language.readMessageAloud}
         class="flex items-center hover:text-blue-500 transition-colors button-icon-tts"
         onclick={() => {
           return sayTTS(null, message)
@@ -1781,6 +1788,7 @@
       </button>
     {/if}
     <button
+      aria-label={language.remove}
       class={'flex items-center hover:text-blue-500 transition-colors button-icon-remove ' +
         (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
       disabled={translationInProgress}
@@ -1840,6 +1848,7 @@
   {/if}
   {#if idx > -1}
     <button
+      aria-label={editMode ? language.save : language.edit}
       class={'flex items-center hover:text-blue-500 transition-colors button-icon-edit ' +
         (editMode ? 'text-blue-400' : '') +
         (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
@@ -1865,6 +1874,7 @@
   {#if rerollIcon || altGreeting}
     {#if altGreeting}
       <button
+        aria-label={language.hotkeyDesc.unreroll}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-unreroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
@@ -1879,6 +1889,7 @@
         <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
       {/if}
       <button
+        aria-label={language.reroll}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
@@ -1891,6 +1902,10 @@
       </button>
     {:else if getDatabase().swipe}
       <button
+        aria-label={language.reroll}
+        aria-haspopup="menu"
+        aria-controls="risu-popup-menu"
+        aria-expanded={popupStore.openId === rerollMenuButtonId && Boolean(popupStore.children)}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
@@ -1903,6 +1918,7 @@
       </button>
     {:else}
       <button
+        aria-label={language.reroll}
         class={'flex items-center hover:text-blue-500 transition-colors button-icon-reroll ' +
           (translationInProgress ? ' cursor-not-allowed opacity-50' : '')}
         class:dyna-icon={rerollIcon === 'dynamic'}
@@ -1924,6 +1940,7 @@
 {#snippet minorIconButtonsBody(showNames: boolean)}
   {#if getDatabase().enableBookmark}
     <button
+      aria-label={language.bookmark}
       class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked
         ? 'text-yellow-400'
         : ''}"
@@ -1938,6 +1955,7 @@
   {/if}
 
   <button
+    aria-label={language.branch}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
       const previous = currentChatStateSnapshot()
@@ -2011,6 +2029,7 @@
   </button>
 
   <button
+    aria-label={language.disableMessage}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
       const currentMessage =
@@ -2047,6 +2066,7 @@
   </button>
 
   <button
+    aria-label={language.disableAbove}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
       const currentMessage =
@@ -2338,6 +2358,7 @@
             </div>
             {#if editMode}
               <textarea
+                aria-label={language.messageInput}
                 class="grow h-138 sm:h-96 overflow-y-auto bg-transparent text-black p-2 mb-2 resize-none message-edit-area"
                 bind:value={message}></textarea>
             {:else}
@@ -2367,6 +2388,7 @@
                   ? 'Assistant'
                   : 'User'}</span>
               <button
+                aria-label={language.switchMessageRole}
                 class="ml-2 text-textcolor2 hover:text-textcolor"
                 onclick={() => {
                   const previous = currentChatScopedSnapshot()

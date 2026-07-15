@@ -282,6 +282,7 @@
         {#if mobileSettingsLayout && !$MobileGUI}
           <button
             class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
+            aria-label={language.close}
             onclick={() => {
               navigate('/')
             }}>
@@ -364,6 +365,7 @@
       {#if !$MobileGUI}
         <button
           class="absolute top-2 right-2 hover:text-green-500 text-textcolor"
+          aria-label={language.close}
           onclick={() => {
             navigate('/')
           }}>

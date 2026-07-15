@@ -4,6 +4,7 @@
 </script>
 
 <PopupButton>
-  <span data-testid="popup-content">Popup content</span>
+  <button data-testid="popup-content">First action</button>
+  <button data-testid="popup-second-action">Second action</button>
 </PopupButton>
 <PopupList />

@@ -275,6 +275,31 @@ describe('GridCatalog derived lists', () => {
     expect(characterSpies.removeChar).toHaveBeenCalledWith(4, 'Trashed Alpha', 'permanent')
   })
 
+  it('exposes named character controls and announces an empty search result', async () => {
+    mountCatalog()
+    await tick()
+
+    const mobileRows = target.querySelectorAll<HTMLElement>('[data-risu-mobile-character-row]')
+    expect(mobileRows.length).toBeGreaterThan(0)
+    expect(target.querySelector('button button')).toBeNull()
+    expect(
+      target.querySelector('[data-risu-mobile-character-action="create"]')?.getAttribute('aria-label'),
+    ).toBeTruthy()
+
+    await updateSearch('no-character-can-match-this')
+    const emptyStatus = target.querySelector<HTMLElement>('[role="status"]')
+    expect(emptyStatus?.textContent).toContain('No matching characters')
+
+    await clickCatalogTab('grid')
+    await updateSearch('alpha')
+    const gridButtons = target.querySelectorAll<HTMLButtonElement>(
+      '[data-risu-grid-list][data-risu-list-kind="grid"] button',
+    )
+    for (const button of gridButtons) {
+      expect(button.getAttribute('aria-label')).toBeTruthy()
+    }
+  })
+
   it('formats GridCatalog search by ignoring spaces, casing, trash state, and preserving order', () => {
     const lists = formatGridCatalogCharacterLists(
       {

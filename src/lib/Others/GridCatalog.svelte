@@ -121,11 +121,18 @@
           data-risu-grid-action="back"
           class="flex items-center justify-center p-2 rounded-lg hover:bg-selected transition-colors shrink-0"
           onclick={() => endGrid()}
-          title="Back">
+          title={language.goback}
+          aria-label={language.goback}>
           <ArrowLeft size={20} />
         </button>
         <div class="flex-1">
-          <TextInput placeholder="Search" bind:value={search} size="lg" autocomplete="off" fullwidth={true} />
+          <TextInput
+            placeholder={language.search}
+            ariaLabel={language.search}
+            bind:value={search}
+            size="lg"
+            autocomplete="off"
+            fullwidth={true} />
         </div>
       </div>
       <div class="flex flex-wrap gap-2 mt-2">
@@ -191,6 +198,7 @@
               {#if char.image}
                 <span data-risu-grid-action="open">
                   <BarIcon
+                    ariaLabel={language.openCharacter(char.name)}
                     onClick={() => {
                       openCharacterRoute(char.index)
                     }}
@@ -199,6 +207,7 @@
               {:else}
                 <span data-risu-grid-action="open">
                   <BarIcon
+                    ariaLabel={language.openCharacter(char.name)}
                     onClick={() => {
                       openCharacterRoute(char.index)
                     }}
@@ -209,6 +218,11 @@
               {/if}
             </div>
           {/each}
+          {#if catalogCharacters.active.length === 0}
+            <p class="p-6 text-center text-textcolor2" role="status" aria-live="polite">
+              {language.noSearchResults}
+            </p>
+          {/if}
         </div>
       </div>
     {:else if selected === 1}
@@ -224,6 +238,7 @@
             aria-current={char.index === $selectedCharID ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon
+                ariaLabel={language.openCharacter(char.name)}
                 onClick={() => {
                   openCharacterRoute(char.index)
                 }}
@@ -240,6 +255,7 @@
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="open"
+                  aria-label={language.openCharacter(char.name)}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
                     openCharacterRoute(char.index)
@@ -248,6 +264,7 @@
                 </button>
                 <button
                   data-risu-grid-action="delete"
+                  aria-label={`${language.removeCharacter}: ${char.name}`}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
                     removeChar(char.index, char.name)
@@ -258,6 +275,11 @@
             </div>
           </div>
         {/each}
+        {#if catalogCharacters.active.length === 0}
+          <p class="p-6 text-center text-textcolor2" role="status" aria-live="polite">
+            {language.noSearchResults}
+          </p>
+        {/if}
       </div>
     {:else if selected === 2}
       <div class="contents" data-risu-grid-list data-risu-list-kind="trash">
@@ -273,6 +295,7 @@
             aria-current={char.index === $selectedCharID ? 'true' : undefined}>
             <span data-risu-grid-action="open">
               <BarIcon
+                ariaLabel={language.openCharacter(char.name)}
                 onClick={() => {
                   openCharacterRoute(char.index)
                 }}
@@ -289,6 +312,7 @@
               <div class="flex gap-2 justify-end">
                 <button
                   data-risu-grid-action="restore"
+                  aria-label={language.restoreCharacter(char.name)}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
                     restoreTrashedCharacter(char.index)
@@ -297,6 +321,7 @@
                 </button>
                 <button
                   data-risu-grid-action="delete-permanent"
+                  aria-label={language.deleteCharacterPermanently(char.name)}
                   class="hover:text-textcolor text-textcolor2"
                   onclick={() => {
                     removeChar(char.index, char.name, 'permanent')
@@ -307,6 +332,11 @@
             </div>
           </div>
         {/each}
+        {#if catalogCharacters.trash.length === 0}
+          <p class="p-6 text-center text-textcolor2" role="status" aria-live="polite">
+            {language.noSearchResults}
+          </p>
+        {/if}
       </div>
     {:else if selected === 3}
       <div class="contents" data-risu-grid-list data-risu-list-kind="simple">

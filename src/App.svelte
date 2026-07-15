@@ -232,7 +232,11 @@
       <span class="absolute top-4 left-4 font-bold text-[#bbbbbb] text-md md:text-lg">RisyGTP 9+ Mytho Ultra Free</span>
     </div>
   {:else if !$loadedStore}
-    <div class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col">
+    <div
+      class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col"
+      role="status"
+      aria-live="polite"
+      aria-busy="true">
       <div class="flex flex-row items-center">
         <svg
           class="animate-spin -ml-1 mr-3 h-5 w-5 text-textcolor"

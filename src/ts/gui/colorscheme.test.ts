@@ -53,7 +53,13 @@ vi.mock('../util', () => ({
   selectSingleFile: colorSchemeMocks.selectSingleFile,
 }))
 
-import { importColorScheme, type ColorScheme } from './colorscheme'
+import {
+  builtInColorSchemes,
+  importColorScheme,
+  migrateLegacyBuiltInColorScheme,
+  updateColorScheme,
+  type ColorScheme,
+} from './colorscheme'
 
 type SelectedFile = {
   name: string
@@ -196,5 +202,66 @@ describe('importColorScheme freshness', () => {
     ])
     expect(colorSchemeMocks.database.colorScheme).toEqual(scheme('bbb'))
     expect(colorSchemeMocks.alertError).not.toHaveBeenCalled()
+  })
+})
+
+function relativeLuminance(hex: string): number {
+  const channels = hex
+    .slice(1)
+    .match(/.{2}/g)!
+    .map((channel) => Number.parseInt(channel, 16) / 255)
+    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722
+}
+
+function contrastRatio(first: string, second: string): number {
+  const lighter = Math.max(relativeLuminance(first), relativeLuminance(second))
+  const darker = Math.min(relativeLuminance(first), relativeLuminance(second))
+  return (lighter + 0.05) / (darker + 0.05)
+}
+
+describe('built-in color scheme contrast', () => {
+  it.each(Object.entries(builtInColorSchemes))(
+    '%s keeps primary and secondary text readable on its main surfaces',
+    (_name, colorScheme) => {
+      for (const background of [colorScheme.bgcolor, colorScheme.darkbg]) {
+        expect(contrastRatio(colorScheme.textcolor, background)).toBeGreaterThanOrEqual(4.5)
+        expect(contrastRatio(colorScheme.textcolor2, background)).toBeGreaterThanOrEqual(4.5)
+      }
+    },
+  )
+})
+
+describe('legacy built-in color scheme migration', () => {
+  it.each([
+    ['default', '#64748b'],
+    ['nature', '#4d908e'],
+  ] as const)('upgrades a persisted %s palette to the readable secondary text color', (name, legacyTextColor) => {
+    const legacy = { ...builtInColorSchemes[name], textcolor2: legacyTextColor } as ColorScheme
+
+    expect(migrateLegacyBuiltInColorScheme(name, legacy)).toEqual(builtInColorSchemes[name])
+  })
+
+  it('does not overwrite a custom or modified palette', () => {
+    const custom = { ...builtInColorSchemes.default, textcolor2: '#64748b', bgcolor: '#123456' } as ColorScheme
+
+    expect(migrateLegacyBuiltInColorScheme('custom', custom)).toBe(custom)
+    expect(migrateLegacyBuiltInColorScheme('default', custom)).toBe(custom)
+  })
+
+  it('persists the migration when applying an existing built-in theme', () => {
+    colorSchemeMocks.database = {
+      colorSchemeName: 'nature',
+      colorScheme: { ...builtInColorSchemes.nature, textcolor2: '#4d908e' },
+    }
+
+    updateColorScheme()
+
+    expect(colorSchemeMocks.applyServerBackedSettingsPatch).toHaveBeenCalledWith({
+      colorScheme: builtInColorSchemes.nature,
+    })
+    expect(document.documentElement.style.getPropertyValue('--risu-theme-textcolor2')).toBe(
+      builtInColorSchemes.nature.textcolor2,
+    )
   })
 })

@@ -37,13 +37,13 @@ export const defaultColorScheme: ColorScheme = {
   selected: '#44475a',
   draculared: '#ff5555',
   textcolor: '#f8f8f2',
-  textcolor2: '#64748b',
+  textcolor2: '#94a3b8',
   darkBorderc: '#4b5563',
   darkbutton: '#374151',
   type: 'dark',
 }
 
-const colorShemes = {
+export const builtInColorSchemes = {
   default: defaultColorScheme,
   dark: {
     bgcolor: '#1a1a1a',
@@ -64,7 +64,7 @@ const colorShemes = {
     selected: '#e0e0e0',
     draculared: '#ff5555',
     textcolor: '#0f172a',
-    textcolor2: '#64748b',
+    textcolor2: '#5b677a',
     darkBorderc: '#d1d5db',
     darkbutton: '#e5e7eb',
     type: 'light',
@@ -100,7 +100,7 @@ const colorShemes = {
     selected: '#4d908e',
     draculared: '#ff5555',
     textcolor: '#f8f8f2',
-    textcolor2: '#4d908e',
+    textcolor2: '#c4e4d4',
     darkBorderc: '#457b9d',
     darkbutton: '#2d6a4f',
     type: 'dark',
@@ -112,7 +112,7 @@ const colorShemes = {
     selected: '#44475a',
     draculared: '#ff5555',
     textcolor: '#f8f8f2',
-    textcolor2: '#64748b',
+    textcolor2: '#718096',
     darkBorderc: '#4b5563',
     darkbutton: '#374151',
     type: 'dark',
@@ -124,7 +124,7 @@ const colorShemes = {
     selected: '#d8d8d0',
     draculared: '#f92672',
     textcolor: '#272822',
-    textcolor2: '#75715e',
+    textcolor2: '#696555',
     darkBorderc: '#c0c0b8',
     darkbutton: '#d0d0c8',
     type: 'light',
@@ -148,22 +148,47 @@ const colorShemes = {
     selected: '#475569',
     draculared: '#ff5555',
     textcolor: '#f8f8f2',
-    textcolor2: '#64748b',
+    textcolor2: '#94a3b8',
     darkBorderc: '#030712',
     darkbutton: '#374151',
     type: 'dark',
   },
 } as const
 
+const legacyBuiltInSecondaryTextColors: Partial<Record<keyof typeof builtInColorSchemes, string>> = {
+  default: '#64748b',
+  light: '#64748b',
+  nature: '#4d908e',
+  realblack: '#64748b',
+  'monokai-light': '#75715e',
+  lite: '#64748b',
+}
+
+/** Upgrade only exact legacy built-in palettes; never rewrite custom themes. */
+export function migrateLegacyBuiltInColorScheme(name: unknown, scheme: ColorScheme | null): ColorScheme | null {
+  if (typeof name !== 'string' || name === 'custom' || !scheme) return scheme
+  if (!(name in builtInColorSchemes)) return scheme
+
+  const schemeName = name as keyof typeof builtInColorSchemes
+  const current = builtInColorSchemes[schemeName]
+  const legacyTextColor = legacyBuiltInSecondaryTextColors[schemeName]
+  if (!legacyTextColor || scheme.textcolor2.toLowerCase() !== legacyTextColor) return scheme
+
+  const unchangedFields = (Object.keys(current) as Array<keyof ColorScheme>)
+    .filter((key) => key !== 'textcolor2')
+    .every((key) => scheme[key] === current[key])
+  return unchangedFields ? ({ ...current } as ColorScheme) : scheme
+}
+
 export const ColorSchemeTypeStore = writable('dark' as 'dark' | 'light')
 
-export const colorSchemeList = Object.keys(colorShemes) as (keyof typeof colorShemes)[]
+export const colorSchemeList = Object.keys(builtInColorSchemes) as (keyof typeof builtInColorSchemes)[]
 
 export function changeColorScheme(colorScheme: string) {
   try {
     const patch: Record<string, unknown> = { colorSchemeName: colorScheme }
     if (colorScheme !== 'custom') {
-      patch.colorScheme = safeStructuredClone(colorShemes[colorScheme])
+      patch.colorScheme = safeStructuredClone(builtInColorSchemes[colorScheme])
     }
     applyServerBackedSettingsPatch(patch)
     updateColorScheme()
@@ -180,8 +205,14 @@ export function updateColorScheme() {
       colorScheme = safeStructuredClone(defaultColorScheme)
     }
 
+    const migratedColorScheme = migrateLegacyBuiltInColorScheme(db.colorSchemeName, colorScheme)
+    if (migratedColorScheme !== colorScheme) {
+      colorScheme = migratedColorScheme
+      applyServerBackedSettingsPatch({ colorScheme })
+    }
+
     if (get(isLite)) {
-      colorScheme = safeStructuredClone(colorShemes.lite)
+      colorScheme = safeStructuredClone(builtInColorSchemes.lite)
     }
 
     //set css variables

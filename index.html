@@ -31,6 +31,9 @@
     <!-- Startup placeholder; src/main.ts removes it after mounting the Svelte app. -->
     <div
       id="preloading"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
       class="w-full h-full flex justify-center items-center text-textcolor text-xl bg-gray-900 flex-col absolute top-0 left-0 z-50">
       <div class="flex flex-row items-center">
         <svg

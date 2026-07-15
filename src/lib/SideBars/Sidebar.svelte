@@ -344,6 +344,8 @@
     class:flex={!hidden}>
     {#if !getDatabase().hamburgerButtonBottom}
       <button
+        aria-label={language.menu}
+        aria-expanded={menuMode === 1}
         class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
         onclick={() => {
           menuMode = 1 - menuMode
@@ -354,14 +356,15 @@
         {#if menuMode === 1}
           <div
             class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
-            <BarIcon onClick={openSettingsRoute}><Settings /></BarIcon>
+            <BarIcon onClick={openSettingsRoute} ariaLabel={language.settings}><Settings /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openHomeRoute}><HomeIcon /></BarIcon>
+            <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openPlaygroundRoute}><ShellIcon /></BarIcon>
+            <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
             {#each additionalHamburgerMenu as menu}
               <div class="mt-2"></div>
               <BarIcon
+                ariaLabel={menu.name}
                 onClick={() => {
                   reseter()
                   menu.callback()
@@ -371,6 +374,7 @@
             {/each}
             <div class="mt-2"></div>
             <BarIcon
+              ariaLabel={language.grid}
               onClick={() => {
                 reseter()
                 openGrid()
@@ -590,6 +594,7 @@
       {/each}
       <div class="flex flex-col items-center gap-2 px-2">
         <BaseRoundedButton
+          ariaLabel={language.addCharacter}
           onClick={async () => {
             addCharacter({ reseter })
           }}
@@ -609,14 +614,15 @@
         {#if menuMode === 1}
           <div
             class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2">
-            <BarIcon onClick={openSettingsRoute}><Settings /></BarIcon>
+            <BarIcon onClick={openSettingsRoute} ariaLabel={language.settings}><Settings /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openHomeRoute}><HomeIcon /></BarIcon>
+            <BarIcon onClick={openHomeRoute} ariaLabel={language.home}><HomeIcon /></BarIcon>
             <div class="mt-2"></div>
-            <BarIcon onClick={openPlaygroundRoute}><ShellIcon /></BarIcon>
+            <BarIcon onClick={openPlaygroundRoute} ariaLabel={language.playground.playground}><ShellIcon /></BarIcon>
             {#each additionalHamburgerMenu as menu}
               <div class="mt-2"></div>
               <BarIcon
+                ariaLabel={menu.name}
                 onClick={() => {
                   reseter()
                   menu.callback()
@@ -626,6 +632,7 @@
             {/each}
             <div class="mt-2"></div>
             <BarIcon
+              ariaLabel={language.grid}
               onClick={() => {
                 reseter()
                 openGrid()
@@ -634,6 +641,8 @@
         {/if}
       </div>
       <button
+        aria-label={language.menu}
+        aria-expanded={menuMode === 1}
         class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
         onclick={() => {
           menuMode = 1 - menuMode
@@ -735,9 +744,9 @@
 </div>
 
 {#if $DynamicGUI}
-  <div
-    role="button"
-    tabindex="0"
+  <button
+    type="button"
+    aria-label={language.close}
     class="grow h-full min-w-12"
     class:hidden
     onclick={() => {
@@ -746,14 +755,9 @@
       }
       $sideBarClosing = true
     }}
-    onkeydown={(e) => {
-      if (e.key === 'Enter') {
-        e.currentTarget.click()
-      }
-    }}
     class:sidebar-dark-animation={!$sideBarClosing}
     class:sidebar-dark-close-animation={$sideBarClosing}>
-  </div>
+  </button>
 {/if}
 
 <style>

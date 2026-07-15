@@ -424,7 +424,7 @@ describe('generation control ownership', () => {
     await tick()
 
     expect(error).toBeNull()
-    expect(target.querySelector('button[aria-labelledby="cancel"]')).toBeTruthy()
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy()
 
     getResourceDatabase().characters[0].chatPage = 1
     shellMocks.setCurrentRoute({
@@ -435,7 +435,7 @@ describe('generation control ownership', () => {
     })
     await tick()
 
-    expect(target.querySelector('button[aria-labelledby="cancel"]')).toBeNull()
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
     expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(true)
 
     stream.resolve(undefined)

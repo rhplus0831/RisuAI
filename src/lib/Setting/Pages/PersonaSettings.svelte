@@ -149,6 +149,7 @@
     {/each}
     <div class="flex justify-center items-center ml-2 mr-2">
       <BaseRoundedButton
+        ariaLabel={`${language.add} ${language.persona}`}
         onClick={async () => {
           const sel = parseInt(await alertSelect([language.createfromScratch, language.importCharacter]))
           if (sel === 0) {

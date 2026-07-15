@@ -29,18 +29,16 @@
     <div class="flex items-center text-textcolor mb-4">
       <h2 class="mt-0 mb-0">{language.loreBook}</h2>
       <div class="grow flex justify-end">
-        <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center" onclick={close}>
+        <button
+          class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
+          aria-label={language.close}
+          onclick={close}>
           <XIcon size={24} />
         </button>
       </div>
     </div>
     {#each getDatabase().loreBook as lore, ind}
-      <button
-        onclick={() => {
-          if (!editMode) {
-            selectGlobalLorebook(ind)
-          }
-        }}
+      <div
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
         class:bg-selected={ind === getDatabase().loreBookPage}>
         {#if editMode}
@@ -49,15 +47,14 @@
             placeholder="string"
             padding={false} />
         {:else}
-          <span>{lore.name}</span>
+          <button class="grow text-left" onclick={() => selectGlobalLorebook(ind)}>{lore.name}</button>
         {/if}
         <div class="grow flex justify-end">
-          <div
+          <button
+            type="button"
             class="text-textcolor2 hover:text-green-500 cursor-pointer"
-            role="button"
-            tabindex="0"
-            onclick={async (e) => {
-              e.stopPropagation()
+            aria-label={`${language.remove}: ${lore.name}`}
+            onclick={async () => {
               if (getDatabase().loreBook.length === 1) {
                 return
               }
@@ -65,19 +62,15 @@
               if (d) {
                 deleteGlobalLorebook(ind)
               }
-            }}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') {
-                e.currentTarget.click()
-              }
             }}>
             <TrashIcon size={18} />
-          </div>
+          </button>
         </div>
-      </button>
+      </div>
     {/each}
     <div class="flex mt-2 items-center">
       <button
+        aria-label={language.add}
         class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
         onclick={() => {
           createGlobalLorebook()
@@ -85,6 +78,7 @@
         <PlusIcon />
       </button>
       <button
+        aria-label={language.edit}
         class="text-textcolor2 hover:text-green-500 cursor-pointer"
         onclick={() => {
           editMode = !editMode

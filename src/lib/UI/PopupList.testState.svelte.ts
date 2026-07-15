@@ -5,6 +5,7 @@ export const popupStore = $state({
   mouseX: 0,
   mouseY: 0,
   openId: 0,
+  trigger: null as HTMLButtonElement | null,
 })
 
 export const SizeStore = writable({ w: 1024, h: 768 })

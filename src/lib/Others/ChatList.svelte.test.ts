@@ -297,11 +297,11 @@ function modalRoot(): HTMLElement {
   return root!
 }
 
-function chatRows(): HTMLButtonElement[] {
-  return Array.from(modalRoot().querySelectorAll<HTMLButtonElement>('button[data-risu-chat-id]'))
+function chatRows(): HTMLElement[] {
+  return Array.from(modalRoot().querySelectorAll<HTMLElement>('[data-risu-chat-id]'))
 }
 
-function rowByChatId(chatId: string): HTMLButtonElement {
+function rowByChatId(chatId: string): HTMLElement {
   const row = chatRows().find((candidate) => candidate.dataset.risuChatId === chatId)
   expect(row, `chat row ${chatId}`).toBeTruthy()
   return row!
@@ -476,7 +476,7 @@ describe('ChatList DOM contract harness', () => {
 
     expectRowSelected('chat-b', true)
 
-    rowByChatId('chat-c').click()
+    rowActionButton(rowByChatId('chat-c'), 'open').click()
     await tick()
 
     expect(chatListMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-c')
@@ -507,7 +507,7 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-a', true)
     expectRowSelected('chat-c', false)
 
-    rowByChatId('chat-c').click()
+    rowActionButton(rowByChatId('chat-c'), 'open').click()
     await tick()
 
     expect(chatListMocks.navigate).not.toHaveBeenCalled()

@@ -197,6 +197,7 @@ export const popupStore = $state({
   mouseX: 0,
   mouseY: 0,
   openId: 0,
+  trigger: null as HTMLButtonElement | null,
 })
 export const popUpEditorStore = $state({
   open: false,

@@ -7,6 +7,7 @@
   import type { RisuModule } from 'src/ts/process/modules'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import { selectedCharID, SettingsMenuIndex, settingsOpen } from 'src/ts/stores.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
     close?: any
@@ -29,13 +30,20 @@
   }
 </script>
 
-<div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
-  <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-full max-h-full overflow-y-auto">
+<div data-modal-root class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center">
+  <div
+    use:modalFocusTrap
+    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-full max-h-full overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-module-chat-menu-title"
+    tabindex="-1">
     <div class="flex items-center text-textcolor">
-      <h2 class="mt-0 mb-0 text-lg">{language.modules}</h2>
+      <h2 id="risu-module-chat-menu-title" class="mt-0 mb-0 text-lg">{language.modules}</h2>
       <div class="grow flex justify-end">
         <button
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
+          aria-label={language.close}
           onclick={() => {
             close('')
           }}>
@@ -46,7 +54,7 @@
 
     <span class="text-sm text-textcolor2">{language.chatModulesInfo}</span>
 
-    <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
+    <TextInput className="mt-4" placeholder={language.search} ariaLabel={language.search} bind:value={moduleSearch} />
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md">
       {#if getResourceDatabase().modules.length === 0}
@@ -69,6 +77,7 @@
               {#if alertMode}
                 <button
                   class={'text-textcolor2 mr-2 cursor-pointer hover:text-blue-500 transition-colors'}
+                  aria-label={`${language.select}: ${rmodule.name}`}
                   onclick={async (e) => {
                     e.stopPropagation()
 

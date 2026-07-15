@@ -3,15 +3,25 @@
     onClick?: any
     additionalStyle?: string | Promise<string>
     children?: import('svelte').Snippet
+    interactive?: boolean
+    ariaLabel?: string
   }
 
-  let { onClick = () => {}, additionalStyle = '', children }: Props = $props()
+  let { onClick = () => {}, additionalStyle = '', children, interactive = true, ariaLabel }: Props = $props()
 </script>
 
 {#await additionalStyle}
-  <button onclick={onClick} class="ico">{@render children?.()}</button>
+  {#if interactive}
+    <button onclick={onClick} class="ico" aria-label={ariaLabel}>{@render children?.()}</button>
+  {:else}
+    <div class="ico" aria-hidden="true">{@render children?.()}</div>
+  {/if}
 {:then as}
-  <button onclick={onClick} class="ico" style={as}>{@render children?.()}</button>
+  {#if interactive}
+    <button onclick={onClick} class="ico" style={as} aria-label={ariaLabel}>{@render children?.()}</button>
+  {:else}
+    <div class="ico" style={as} aria-hidden="true">{@render children?.()}</div>
+  {/if}
 {/await}
 
 <style>

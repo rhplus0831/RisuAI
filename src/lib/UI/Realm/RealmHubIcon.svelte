@@ -4,6 +4,7 @@
   import { hubURL, type hubType } from 'src/ts/characterCards'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { parseMultilangString } from 'src/ts/util'
+  import { language } from 'src/lang'
 
   interface Props {
     onClick?: any
@@ -13,10 +14,8 @@
   let { onClick = () => {}, chara }: Props = $props()
 </script>
 
-<button
-  class="bg-darkbg rounded-lg p-4 flex flex-col hover:bg-selected transition-colors relative lg:w-96 w-full items-start"
-  onclick={onClick}>
-  <div class="flex gap-2 w-full">
+<div class="bg-darkbg rounded-lg p-4 hover:bg-selected transition-colors relative lg:w-96 w-full">
+  <button class="flex gap-2 w-full text-left pb-7" onclick={onClick} aria-label={language.openCharacter(chara.name)}>
     {#if getDatabase().hideAllImages}
       <div
         class="w-20 min-w-20 h-20 sm:h-28 sm:w-28 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
@@ -45,47 +44,35 @@
           {/if}
         {/each}
       </div>
-      <div class="grow"></div>
-      <div class="flex flex-wrap w-full flex-row-reverse gap-1">
-        {#if chara.hasEmotion}
-          <div
-            class="text-textcolor2 hover:text-green-500 transition-colors"
-            role="button"
-            tabindex="0"
-            onclick={(e) => {
-              e.stopPropagation()
-              alertNormal('This character includes emotion images')
-            }}
-            onkeydown={(e) => {}}>
-            <SmileIcon />
-          </div>
-        {/if}
-        {#if chara.hasAsset}
-          <div
-            class="text-textcolor2 hover:text-green-500 transition-colors"
-            role="button"
-            tabindex="0"
-            onclick={(e) => {
-              e.stopPropagation()
-              alertNormal('This character includes additional assets')
-            }}
-            onkeydown={(e) => {}}>
-            <ImageIcon />
-          </div>
-        {/if}
-        {#if chara.hasLore}
-          <div
-            class="text-textcolor2 hover:text-green-500 transition-colors"
-            role="button"
-            tabindex="0"
-            onclick={(e) => {
-              e.stopPropagation()
-              alertNormal('This character includes lorebook')
-            }}
-            onkeydown={(e) => {}}>
-            <BookIcon />
-          </div>
-        {/if}
-      </div>
     </div>
-  </div></button>
+  </button>
+  <div class="absolute bottom-4 right-4 flex flex-row-reverse gap-1">
+    {#if chara.hasEmotion}
+      <button
+        type="button"
+        class="text-textcolor2 hover:text-green-500 transition-colors"
+        aria-label={language.characterHasEmotionImages}
+        onclick={() => alertNormal(language.characterHasEmotionImages)}>
+        <SmileIcon />
+      </button>
+    {/if}
+    {#if chara.hasAsset}
+      <button
+        type="button"
+        class="text-textcolor2 hover:text-green-500 transition-colors"
+        aria-label={language.characterHasAdditionalAssets}
+        onclick={() => alertNormal(language.characterHasAdditionalAssets)}>
+        <ImageIcon />
+      </button>
+    {/if}
+    {#if chara.hasLore}
+      <button
+        type="button"
+        class="text-textcolor2 hover:text-green-500 transition-colors"
+        aria-label={language.characterHasLorebook}
+        onclick={() => alertNormal(language.characterHasLorebook)}>
+        <BookIcon />
+      </button>
+    {/if}
+  </div>
+</div>
