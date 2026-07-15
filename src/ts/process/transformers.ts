@@ -164,10 +164,25 @@ export interface RegisterOnnxModelOptions {
   shouldContinue?: () => boolean
 }
 
-export const runVITS = async (text: string, modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng') => {
+export interface RunVitsOptions {
+  signal?: AbortSignal
+}
+
+function throwIfVitsAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('VITS request aborted', 'AbortError')
+}
+
+export const runVITS = async (
+  text: string,
+  modelData: string | OnnxModelFiles = 'Xenova/mms-tts-eng',
+  options: RunVitsOptions = {},
+) => {
+  throwIfVitsAborted(options.signal)
   await initTransformers()
+  throwIfVitsAborted(options.signal)
   const { WaveFile } = await import('wavefile')
   const { pipeline, env } = await import('@huggingface/transformers')
+  throwIfVitsAborted(options.signal)
   if (modelData === null) {
     return
   }
@@ -185,17 +200,39 @@ export const runVITS = async (text: string, modelData: string | OnnxModelFiles =
     }
     await replaceVitsSynthesizer(modelData.id, () => pipeline<'text-to-speech'>('text-to-speech', modelData.id))
   }
+  throwIfVitsAborted(options.signal)
   let out = await synthesizer(text, {})
+  throwIfVitsAborted(options.signal)
   const wav = new WaveFile()
   wav.fromScratch(1, out.sampling_rate, '32f', out.audio)
   const audioContext = await getVitsAudioContext()
   const decodedData = await decodeVitsAudio(audioContext, asBuffer(wav.toBuffer().buffer))
+  throwIfVitsAborted(options.signal)
   const sourceNode = audioContext.createBufferSource()
   sourceNode.buffer = decodedData
   sourceNode.connect(audioContext.destination)
-  sourceNode.onended = () => {
+  let released = false
+  const cleanup = () => {
+    if (released) return
+    released = true
     sourceNode.onended = null
+    options.signal?.removeEventListener('abort', stopSource)
     sourceNode.disconnect()
+  }
+  const stopSource = () => {
+    try {
+      sourceNode.stop()
+    } catch (error) {
+      if (!options.signal?.aborted) throw error
+    } finally {
+      cleanup()
+    }
+  }
+  sourceNode.onended = cleanup
+  options.signal?.addEventListener('abort', stopSource, { once: true })
+  if (options.signal?.aborted) {
+    stopSource()
+    return
   }
   sourceNode.start()
 }

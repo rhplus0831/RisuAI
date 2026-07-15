@@ -74,6 +74,23 @@ describe('runHookPipeline', () => {
     }
   })
 
+  it('settles immediately when an in-flight hook pipeline is aborted', async () => {
+    const controller = new AbortController()
+    const pendingHook: TTSHookFn<BeforeTTSContext, BeforeTTSResult> = () =>
+      new Promise(() => {
+        /* intentionally never resolves */
+      })
+
+    const pending = runHookPipeline([pendingHook], makeCtx(), {
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    })
+    await Promise.resolve()
+    controller.abort()
+
+    await expect(pending).resolves.toMatchObject({ skip: true, aborted: true })
+  })
+
   it('treats an undefined return as a no-op', async () => {
     const noop: TTSHookFn<BeforeTTSContext, BeforeTTSResult> = async () => undefined
     const next: TTSHookFn<BeforeTTSContext, BeforeTTSResult> = async (c) => ({

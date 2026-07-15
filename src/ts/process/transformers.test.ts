@@ -37,6 +37,7 @@ interface StubSource {
   disconnect: ReturnType<typeof vi.fn>
   onended: (() => void) | null
   start: ReturnType<typeof vi.fn>
+  stop: ReturnType<typeof vi.fn>
 }
 
 class StubAudioContext {
@@ -76,6 +77,7 @@ class StubAudioContext {
       disconnect: vi.fn(),
       onended: null,
       start: vi.fn(),
+      stop: vi.fn(),
     } satisfies StubSource
     this.sources.push(source)
     return source as unknown as AudioBufferSourceNode
@@ -158,5 +160,39 @@ describe('runVITS lifecycle', () => {
     expect(synthA.dispose).toHaveBeenCalledTimes(1)
     expect(testState.pipeline).toHaveBeenCalledTimes(2)
     expect(synthA.dispose.mock.invocationCallOrder[0]).toBeLessThan(testState.pipeline.mock.invocationCallOrder[1])
+  })
+
+  it('does not start late VITS audio after its run is aborted', async () => {
+    let resolveSynthesis!: (value: { audio: Float32Array; sampling_rate: number }) => void
+    const synth = vi.fn(
+      () =>
+        new Promise<{ audio: Float32Array; sampling_rate: number }>((resolve) => {
+          resolveSynthesis = resolve
+        }),
+    )
+    testState.pipeline.mockResolvedValue(Object.assign(synth, { dispose: vi.fn() }))
+    const { runVITS } = await importTransformers()
+    const controller = new AbortController()
+
+    const pending = runVITS('hello', 'model-a', { signal: controller.signal })
+    await vi.waitFor(() => expect(synth).toHaveBeenCalledTimes(1))
+    controller.abort()
+    resolveSynthesis({ audio: new Float32Array([0.1]), sampling_rate: 22_050 })
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(StubAudioContext.instances).toHaveLength(0)
+  })
+
+  it('stops and disconnects active VITS playback when its run is aborted', async () => {
+    testState.pipeline.mockResolvedValue(makeSynthesizer())
+    const { runVITS } = await importTransformers()
+    const controller = new AbortController()
+
+    await runVITS('hello', 'model-a', { signal: controller.signal })
+    const source = StubAudioContext.instances[0].sources[0]
+    controller.abort()
+
+    expect(source.stop).toHaveBeenCalledTimes(1)
+    expect(source.disconnect).toHaveBeenCalledTimes(1)
   })
 })

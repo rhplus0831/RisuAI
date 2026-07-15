@@ -1,5 +1,3 @@
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
-
 export interface BeforeTTSContext {
   text: string
   ttsMode: string
@@ -25,6 +23,11 @@ export interface AfterTTSResult {
 }
 
 export type TTSHookFn<Ctx, Res> = (ctx: Ctx) => Promise<Res | void> | Res | void
+
+export interface TTSHookPipelineOptions {
+  timeoutMs?: number
+  signal?: AbortSignal
+}
 
 const preprocessors: TTSHookFn<BeforeTTSContext, BeforeTTSResult>[] = []
 const postprocessors: TTSHookFn<AfterTTSContext, AfterTTSResult>[] = []
@@ -61,23 +64,52 @@ export function getTTSPostprocessors(): ReadonlyArray<TTSHookFn<AfterTTSContext,
 export async function runHookPipeline<Ctx extends object, Res extends { skip?: boolean }>(
   hooks: ReadonlyArray<TTSHookFn<Ctx, Res>>,
   ctx: Ctx,
-  timeoutMs?: number,
-): Promise<{ ctx: Ctx; skip: boolean }> {
+  timeoutOrOptions?: number | TTSHookPipelineOptions,
+): Promise<{ ctx: Ctx; skip: boolean; aborted: boolean }> {
   const TIMEOUT = Symbol('TIMEOUT')
+  const ABORTED = Symbol('ABORTED')
+  const options = typeof timeoutOrOptions === 'number' ? { timeoutMs: timeoutOrOptions } : (timeoutOrOptions ?? {})
   let current: Ctx = { ...ctx }
 
   for (const hook of hooks) {
-    let result: Res | void | typeof TIMEOUT
+    if (options.signal?.aborted) {
+      return { ctx: current, skip: true, aborted: true }
+    }
+
+    let result: Res | void | typeof TIMEOUT | typeof ABORTED
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    let removeAbortListener = () => {}
     try {
       const hookPromise = Promise.resolve().then(() => hook(current))
-      if (timeoutMs !== undefined && timeoutMs > 0) {
-        result = await Promise.race<Res | void | typeof TIMEOUT>([hookPromise, sleep(timeoutMs).then(() => TIMEOUT)])
-      } else {
-        result = await hookPromise
+      const races: Array<Promise<Res | void | typeof TIMEOUT | typeof ABORTED>> = [hookPromise]
+      if (options.timeoutMs !== undefined && options.timeoutMs > 0) {
+        races.push(
+          new Promise((resolve) => {
+            timeout = setTimeout(() => resolve(TIMEOUT), options.timeoutMs)
+          }),
+        )
       }
+      if (options.signal) {
+        races.push(
+          new Promise((resolve) => {
+            const onAbort = () => resolve(ABORTED)
+            options.signal?.addEventListener('abort', onAbort, { once: true })
+            removeAbortListener = () => options.signal?.removeEventListener('abort', onAbort)
+            if (options.signal?.aborted) onAbort()
+          }),
+        )
+      }
+      result = await Promise.race(races)
     } catch (err) {
       console.error('[TTS hook] threw, continuing with next hook:', err)
       continue
+    } finally {
+      if (timeout !== undefined) clearTimeout(timeout)
+      removeAbortListener()
+    }
+
+    if (result === ABORTED) {
+      return { ctx: current, skip: true, aborted: true }
     }
 
     if (result === TIMEOUT) {
@@ -88,7 +120,7 @@ export async function runHookPipeline<Ctx extends object, Res extends { skip?: b
     if (!result) continue
 
     if (result.skip) {
-      return { ctx: current, skip: true }
+      return { ctx: current, skip: true, aborted: false }
     }
 
     for (const key of Object.keys(result) as (keyof Res)[]) {
@@ -98,5 +130,5 @@ export async function runHookPipeline<Ctx extends object, Res extends { skip?: b
     }
   }
 
-  return { ctx: current, skip: false }
+  return { ctx: current, skip: false, aborted: false }
 }

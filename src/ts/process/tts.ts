@@ -20,6 +20,7 @@ import {
 } from './ttsHooks'
 
 const TTS_CATALOG_CACHE_TTL_MS = 30_000
+const TTS_PLUGIN_HOOK_TIMEOUT_MS = 10_000
 
 export type ElevenTTSVoice = {
   voice_id: string
@@ -52,6 +53,11 @@ let sourceNode: AudioBufferSourceNode | null = null
 let sourceNodeCleanup: (() => void) | null = null
 let activeTtsRequest: AbortController | null = null
 let activeTtsRun = 0
+
+interface TtsRun {
+  id: number
+  controller: AbortController
+}
 
 type DisconnectableAudioNode = Pick<AudioNode, 'disconnect'>
 
@@ -102,19 +108,48 @@ function startSource(source: AudioBufferSourceNode, nodes: DisconnectableAudioNo
   }
 }
 
-function beginTtsRun(): number {
+function beginTtsRun(): TtsRun {
   activeTtsRequest?.abort()
-  activeTtsRequest = null
-  activeTtsRun += 1
-  return activeTtsRun
+  const controller = new AbortController()
+  activeTtsRequest = controller
+  return {
+    id: ++activeTtsRun,
+    controller,
+  }
 }
 
-function isCurrentTtsRun(run: number): boolean {
-  return run === activeTtsRun
+function isCurrentTtsRun(run: TtsRun): boolean {
+  return run.id === activeTtsRun && activeTtsRequest === run.controller && !run.controller.signal.aborted
 }
 
 function isAbortError(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+}
+
+function ttsAbortError(): DOMException {
+  return new DOMException('TTS request aborted', 'AbortError')
+}
+
+async function awaitTtsRun<T>(promise: PromiseLike<T> | T, run: TtsRun): Promise<T> {
+  if (!isCurrentTtsRun(run)) throw ttsAbortError()
+
+  return await new Promise<T>((resolve, reject) => {
+    const signal = run.controller.signal
+    let settled = false
+    const settle = (callback: () => void) => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      callback()
+    }
+    const onAbort = () => settle(() => reject(ttsAbortError()))
+    signal.addEventListener('abort', onAbort, { once: true })
+    Promise.resolve(promise).then(
+      (value) => settle(() => resolve(value)),
+      (error) => settle(() => reject(error)),
+    )
+    if (signal.aborted) onAbort()
+  })
 }
 
 function pcm16LeToWav(pcm: ArrayBuffer, sampleRate = 24_000): ArrayBuffer {
@@ -147,17 +182,10 @@ function pcm16LeToWav(pcm: ArrayBuffer, sampleRate = 24_000): ArrayBuffer {
 
 async function requestCredentialedTtsAudio(
   request: TtsSynthesisRequest,
-  run: number,
+  run: TtsRun,
 ): Promise<{ audio: ArrayBuffer; contentType: string }> {
   if (!isCurrentTtsRun(run)) throw new DOMException('Superseded TTS request', 'AbortError')
-  const controller = new AbortController()
-  activeTtsRequest?.abort()
-  activeTtsRequest = controller
-  try {
-    return await requestTtsSynthesis(request, { signal: controller.signal })
-  } finally {
-    if (activeTtsRequest === controller) activeTtsRequest = null
-  }
+  return await awaitTtsRun(requestTtsSynthesis(request, { signal: run.controller.signal }), run)
 }
 
 /**
@@ -175,6 +203,7 @@ async function runPostprocessorPipeline(
   audio: ArrayBuffer,
   mimeType: string,
   ctx: { ttsMode: string; characterId: string },
+  run: TtsRun,
 ): Promise<{ audio: ArrayBuffer; mimeType: string; skip: boolean }> {
   const hooks = getTTSPostprocessors()
   if (hooks.length === 0) return { audio, mimeType, skip: false }
@@ -183,26 +212,22 @@ async function runPostprocessorPipeline(
   let currentMime = mimeType
 
   for (const hook of hooks) {
+    if (!isCurrentTtsRun(run)) return { audio: currentAudio, mimeType: currentMime, skip: true }
     const disposable = currentAudio.slice(0) // fresh clone per hook
-    let result: AfterTTSResult | void
-    try {
-      result = await Promise.resolve().then(() =>
-        hook({
-          audio: disposable,
-          mimeType: currentMime,
-          ttsMode: ctx.ttsMode,
-          characterId: ctx.characterId,
-        }),
-      )
-    } catch (err) {
-      console.error('[TTS postprocessor] threw, continuing with next hook:', err)
-      continue
-    }
+    const result = await runHookPipeline<AfterTTSContext, AfterTTSResult>(
+      [hook],
+      {
+        audio: disposable,
+        mimeType: currentMime,
+        ttsMode: ctx.ttsMode,
+        characterId: ctx.characterId,
+      },
+      { timeoutMs: TTS_PLUGIN_HOOK_TIMEOUT_MS, signal: run.controller.signal },
+    )
 
-    if (!result) continue
-    if (result.skip) return { audio: currentAudio, mimeType: currentMime, skip: true }
-    if (result.audio && result.audio.byteLength > 0) currentAudio = result.audio
-    if (typeof result.mimeType === 'string' && result.mimeType) currentMime = result.mimeType
+    if (result.aborted || result.skip) return { audio: currentAudio, mimeType: currentMime, skip: true }
+    if (result.ctx.audio && result.ctx.audio.byteLength > 0) currentAudio = result.ctx.audio
+    if (typeof result.ctx.mimeType === 'string' && result.ctx.mimeType) currentMime = result.ctx.mimeType
   }
 
   return { audio: currentAudio, mimeType: currentMime, skip: false }
@@ -212,13 +237,13 @@ async function playAudio(
   audio: ArrayBuffer,
   mimeType: string,
   ctx: { ttsMode: string; characterId: string },
-  run: number,
+  run: TtsRun,
 ): Promise<void> {
-  const processed = await runPostprocessorPipeline(audio, mimeType, ctx)
+  const processed = await runPostprocessorPipeline(audio, mimeType, ctx, run)
   if (processed.skip || !isCurrentTtsRun(run)) return
 
-  const audioContext = await getNetworkAudioContext()
-  const decoded = await audioContext.decodeAudioData(processed.audio)
+  const audioContext = await awaitTtsRun(getNetworkAudioContext(), run)
+  const decoded = await awaitTtsRun(audioContext.decodeAudioData(processed.audio), run)
   if (!isCurrentTtsRun(run)) return
   const source = audioContext.createBufferSource()
   source.buffer = decoded
@@ -253,12 +278,16 @@ export async function sayTTS(character: character, text: string) {
       }
     }
 
-    const beforeResult = await runHookPipeline<BeforeTTSContext, BeforeTTSResult>(getTTSPreprocessors(), {
-      text,
-      ttsMode: character.ttsMode ?? '',
-      characterId: character.chaId,
-    })
-    if (beforeResult.skip) {
+    const beforeResult = await runHookPipeline<BeforeTTSContext, BeforeTTSResult>(
+      getTTSPreprocessors(),
+      {
+        text,
+        ttsMode: character.ttsMode ?? '',
+        characterId: character.chaId,
+      },
+      { timeoutMs: TTS_PLUGIN_HOOK_TIMEOUT_MS, signal: ttsRun.controller.signal },
+    )
+    if (beforeResult.skip || beforeResult.aborted) {
       return
     }
     text = beforeResult.ctx.text
@@ -304,13 +333,17 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'VOICEVOX': {
-        const jpText = await translateVox(text)
-        const query = await fetch(`${db.voicevoxUrl}/audio_query?text=${jpText}&speaker=${character.ttsSpeech}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        })
+        const jpText = await awaitTtsRun(translateVox(text), ttsRun)
+        const query = await awaitTtsRun(
+          fetch(`${db.voicevoxUrl}/audio_query?text=${jpText}&speaker=${character.ttsSpeech}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: ttsRun.controller.signal,
+          }),
+          ttsRun,
+        )
         if (query.status == 200) {
-          const queryJson = await query.json()
+          const queryJson = await awaitTtsRun(query.json(), ttsRun)
           const bodyData = {
             accent_phrases: queryJson.accent_phrases,
             speedScale: character.voicevoxConfig.SPEED_SCALE,
@@ -323,14 +356,18 @@ export async function sayTTS(character: character, text: string) {
             outputStereo: queryJson.outputStereo,
             kana: queryJson.kana,
           }
-          const getVoice = await fetch(`${db.voicevoxUrl}/synthesis?speaker=${character.ttsSpeech}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(bodyData),
-          })
+          const getVoice = await awaitTtsRun(
+            fetch(`${db.voicevoxUrl}/synthesis?speaker=${character.ttsSpeech}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bodyData),
+              signal: ttsRun.controller.signal,
+            }),
+            ttsRun,
+          )
           if (getVoice.status == 200 && getVoice.headers.get('content-type') === 'audio/wav') {
             await playAudio(
-              await getVoice.arrayBuffer(),
+              await awaitTtsRun(getVoice.arrayBuffer(), ttsRun),
               'audio/wav',
               {
                 ttsMode: character.ttsMode ?? '',
@@ -416,7 +453,9 @@ export async function sayTTS(character: character, text: string) {
       }
       case 'huggingface': {
         const inputText =
-          character.hfTTS.language === 'en' ? text : await runTranslator(text, false, 'en', character.hfTTS.language)
+          character.hfTTS.language === 'en'
+            ? text
+            : await awaitTtsRun(runTranslator(text, false, 'en', character.hfTTS.language), ttsRun)
         if (!isCurrentTtsRun(ttsRun)) return
         const response = await requestCredentialedTtsAudio(
           {
@@ -441,11 +480,11 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'vits': {
-        await runVITS(text, character.vits)
+        await awaitTtsRun(runVITS(text, character.vits, { signal: ttsRun.controller.signal }), ttsRun)
         break
       }
       case 'gptsovits': {
-        const audio: Uint8Array = await loadAsset(character.gptSoVitsConfig.ref_audio_data.assetId)
+        const audio: Uint8Array = await awaitTtsRun(loadAsset(character.gptSoVitsConfig.ref_audio_data.assetId), ttsRun)
         const base64Audio = btoa(new Uint8Array(audio).reduce((data, byte) => data + String.fromCharCode(byte), ''))
 
         const body = {
@@ -471,14 +510,18 @@ export async function sayTTS(character: character, text: string) {
         }
 
         if (character.gptSoVitsConfig.use_auto_path) {
-          const path = await globalFetch(`${character.gptSoVitsConfig.url}/get_path`, {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            rawResponse: false,
-            plainFetchDeforce: true,
-          })
+          const path = await awaitTtsRun(
+            globalFetch(`${character.gptSoVitsConfig.url}/get_path`, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              rawResponse: false,
+              plainFetchDeforce: true,
+              abortSignal: ttsRun.controller.signal,
+            }),
+            ttsRun,
+          )
           if (path.ok) {
             body.ref_audio_path =
               path.data.message + '/public/audio/' + character.gptSoVitsConfig.ref_audio_data.fileName
@@ -492,14 +535,18 @@ export async function sayTTS(character: character, text: string) {
             character.gptSoVitsConfig.ref_audio_data.fileName
         }
 
-        const response = await globalFetch(`${character.gptSoVitsConfig.url}/tts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: body,
-          rawResponse: true,
-        })
+        const response = await awaitTtsRun(
+          globalFetch(`${character.gptSoVitsConfig.url}/tts`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: body,
+            rawResponse: true,
+            abortSignal: ttsRun.controller.signal,
+          }),
+          ttsRun,
+        )
 
         if (response.ok) {
           const mimeType = 'audio/wav'
@@ -510,10 +557,10 @@ export async function sayTTS(character: character, text: string) {
             // route through playAudio directly. Run the postprocessor
             // pipeline first to honor plugin hooks consistently, then
             // build the gain-enabled graph with the final bytes.
-            const processed = await runPostprocessorPipeline(response.data.buffer, mimeType, hookCtx)
+            const processed = await runPostprocessorPipeline(response.data.buffer, mimeType, hookCtx, ttsRun)
             if (!processed.skip && isCurrentTtsRun(ttsRun)) {
-              const audioContext = await getNetworkAudioContext()
-              const decoded = await audioContext.decodeAudioData(processed.audio)
+              const audioContext = await awaitTtsRun(getNetworkAudioContext(), ttsRun)
+              const decoded = await awaitTtsRun(audioContext.decodeAudioData(processed.audio), ttsRun)
               if (!isCurrentTtsRun(ttsRun)) return
               const source = audioContext.createBufferSource()
               source.buffer = decoded

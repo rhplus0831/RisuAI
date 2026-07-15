@@ -649,6 +649,102 @@ describe('sayTTS AudioContext lifecycle', () => {
     expect(StubAudioContext.instances).toHaveLength(0)
   })
 
+  it('settles promptly when Stop aborts a never-resolving plugin preprocessor', async () => {
+    const hook = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* intentionally never resolves */
+        }),
+    )
+    const { registerTTSPreprocessor, unregisterTTSPreprocessor } = await import('./ttsHooks')
+    registerTTSPreprocessor(hook)
+    const { sayTTS, stopTTS } = await importTTS()
+
+    try {
+      const pending = sayTTS(makeCharacter(), 'hello')
+      await vi.waitFor(() => expect(hook).toHaveBeenCalledTimes(1))
+      stopTTS()
+      await pending
+    } finally {
+      unregisterTTSPreprocessor(hook)
+    }
+
+    expect(testState.requestTtsSynthesis).not.toHaveBeenCalled()
+    expect(testState.alertError).not.toHaveBeenCalled()
+  })
+
+  it('settles promptly when Stop aborts a never-resolving plugin postprocessor', async () => {
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio())
+    const hook = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* intentionally never resolves */
+        }),
+    )
+    const { registerTTSPostprocessor, unregisterTTSPostprocessor } = await import('./ttsHooks')
+    registerTTSPostprocessor(hook)
+    const { sayTTS, stopTTS } = await importTTS()
+
+    try {
+      const pending = sayTTS(makeCharacter(), 'hello')
+      await vi.waitFor(() => expect(hook).toHaveBeenCalledTimes(1))
+      stopTTS()
+      await pending
+    } finally {
+      unregisterTTSPostprocessor(hook)
+    }
+
+    expect(StubAudioContext.instances).toHaveLength(0)
+    expect(testState.alertError).not.toHaveBeenCalled()
+  })
+
+  it('times out a never-resolving plugin hook in production and continues synthesis', async () => {
+    vi.useFakeTimers()
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio())
+    const hook = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* intentionally never resolves */
+        }),
+    )
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { registerTTSPreprocessor, unregisterTTSPreprocessor } = await import('./ttsHooks')
+    registerTTSPreprocessor(hook)
+    const { sayTTS } = await importTTS()
+
+    try {
+      const pending = sayTTS(makeCharacter(), 'hello')
+      await vi.advanceTimersByTimeAsync(10_000)
+      await pending
+    } finally {
+      unregisterTTSPreprocessor(hook)
+      errorSpy.mockRestore()
+      vi.useRealTimers()
+    }
+
+    expect(testState.requestTtsSynthesis).toHaveBeenCalledTimes(1)
+    expect(StubAudioContext.instances).toHaveLength(1)
+  })
+
+  it('settles when a custom transport ignores abort and fences its late response', async () => {
+    testState.globalFetch.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          /* intentionally ignores abort */
+        }),
+    )
+    const { sayTTS, stopTTS } = await importTTS()
+
+    const pending = sayTTS(makeGptSoVitsCharacter(1), 'hello')
+    await vi.waitFor(() => expect(testState.globalFetch).toHaveBeenCalledTimes(1))
+    stopTTS()
+    await pending
+
+    expect(testState.globalFetch.mock.calls[0][1].abortSignal.aborted).toBe(true)
+    expect(StubAudioContext.instances).toHaveLength(0)
+    expect(testState.alertError).not.toHaveBeenCalled()
+  })
+
   it('does not play a superseded response even when its transport ignores cancellation', async () => {
     const firstResponse = deferred<ReturnType<typeof ttsAudio>>()
     testState.requestTtsSynthesis
