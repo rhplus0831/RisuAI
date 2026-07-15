@@ -11,6 +11,7 @@
   import BackgroundDom from './BackgroundDom.svelte'
   import SideBarArrow from '../UI/GUI/SideBarArrow.svelte'
   import ModuleChatMenu from '../Setting/Pages/Module/ModuleChatMenu.svelte'
+  import { createLatestBackgroundLoader } from './ChatScreenBackground'
   let openChatList = $state(false)
   let openModuleList = $state(false)
 
@@ -28,12 +29,16 @@
   })
   let bgImg = $state('')
   let lastBg = $state('')
+  const loadLatestBackground = createLatestBackgroundLoader(getCustomBackground)
   $effect.pre(() => {
     ;(async () => {
       const customBackground = getDatabase().customBackground
       if (customBackground !== lastBg) {
         lastBg = customBackground
-        bgImg = await getCustomBackground(customBackground)
+        const loadedBackground = await loadLatestBackground(customBackground)
+        if (loadedBackground !== undefined) {
+          bgImg = loadedBackground
+        }
       }
     })()
   })
