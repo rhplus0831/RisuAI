@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, HTTPMethods } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
 import {
@@ -14,7 +14,7 @@ import {
 import { proxyFetchRateLimit } from '../routeRateLimits.js'
 
 const METHODS_WITHOUT_BODY = new Set(['GET', 'HEAD'])
-const PROXY_FETCH_METHODS = ['GET', 'POST', 'PUT', 'DELETE'] as const
+const PROXY_FETCH_METHODS: HTTPMethods[] = ['GET', 'POST', 'PUT', 'DELETE']
 
 export function registerProxyRoutes(app: FastifyInstance, authState: AuthState): void {
   app.register(async (instance) => {
