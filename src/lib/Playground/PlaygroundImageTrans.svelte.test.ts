@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mount, tick, unmount } from 'svelte'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const imageMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
@@ -42,6 +43,86 @@ import {
   normalizeImageSelectionRect,
   parseImageTranslationRenderOutput,
 } from './PlaygroundImageTrans.svelte'
+import PlaygroundImageTrans from './PlaygroundImageTrans.svelte'
+import { language } from 'src/lang'
+
+type MountedComponent = Parameters<typeof unmount>[0]
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
+let component: MountedComponent | undefined
+let target: HTMLElement
+
+beforeEach(() => {
+  target = document.createElement('div')
+  document.body.append(target)
+  imageMocks.alertError.mockReset()
+  imageMocks.requestChatData.mockReset()
+  imageMocks.selectSingleFile.mockReset()
+})
+
+afterEach(() => {
+  if (component) {
+    unmount(component)
+    component = undefined
+  }
+  target.remove()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+function translationButton(): HTMLButtonElement {
+  const button = Array.from(target.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent?.trim() === language.imageTranslation,
+  )
+  if (!(button instanceof HTMLButtonElement)) throw new Error('Image translation button not found')
+  return button
+}
+
+async function setMode(mode: 'auto' | 'manual'): Promise<void> {
+  const select = target.querySelector('select')
+  if (!(select instanceof HTMLSelectElement)) throw new Error('Image translation mode selector not found')
+  select.value = mode
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+  await tick()
+}
+
+function installImageBrowserMocks(): void {
+  class LoadedImage extends EventTarget {
+    src = ''
+    width = 80
+    height = 40
+    naturalWidth = 80
+    naturalHeight = 40
+    decode = vi.fn(async () => {})
+  }
+
+  const canvasContext = {
+    clearRect: vi.fn(),
+    drawImage: vi.fn(),
+    fillRect: vi.fn(),
+    fillText: vi.fn(),
+    measureText: vi.fn(() => ({ width: 10 })),
+    fillStyle: '',
+    font: '',
+  }
+
+  vi.stubGlobal('Image', LoadedImage)
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:selected-image')
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(canvasContext as any)
+  vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,aW1hZ2U=')
+}
+
+async function waitForTranslationIdle(): Promise<void> {
+  await vi.waitFor(() => expect(translationButton().textContent?.trim()).toBe(language.imageTranslation))
+}
 
 describe('PlaygroundImageTrans JSON rendering', () => {
   it('releases temporary image URLs after decoding', async () => {
@@ -93,5 +174,70 @@ describe('PlaygroundImageTrans JSON rendering', () => {
         { left: 100, top: 50, width: 400, height: 200 },
       ),
     ).toEqual([0.125, 0.125, 0.375, 0.375])
+  })
+})
+
+describe('PlaygroundImageTrans request ownership', () => {
+  it('does not submit a model request when automatic file selection is cancelled', async () => {
+    imageMocks.selectSingleFile.mockResolvedValue(null)
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+
+    await vi.waitFor(() => expect(imageMocks.selectSingleFile).toHaveBeenCalledOnce())
+    await waitForTranslationIdle()
+    expect(imageMocks.requestChatData).not.toHaveBeenCalled()
+  })
+
+  it('does not submit after the mode changes while file selection is pending', async () => {
+    installImageBrowserMocks()
+    const selectedFile = deferred<{ name: string; data: Uint8Array }>()
+    imageMocks.selectSingleFile.mockReturnValue(selectedFile.promise)
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.selectSingleFile).toHaveBeenCalledOnce())
+    await setMode('manual')
+    await setMode('auto')
+    selectedFile.resolve({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+
+    await waitForTranslationIdle()
+    expect(imageMocks.requestChatData).not.toHaveBeenCalled()
+  })
+
+  it('drops a response when the mode changes during the model request', async () => {
+    installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    const response = deferred<{ type: 'success'; result: string }>()
+    imageMocks.requestChatData.mockReturnValue(response.promise)
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+    await setMode('manual')
+    await setMode('auto')
+    response.resolve({
+      type: 'success',
+      result:
+        '[{"x_min":0,"y_min":0,"x_max":1,"y_max":1,"bg_hex_color":"#fff","text_hex_color":"#000","content":"hello","translation":"translated"}]',
+    })
+
+    await waitForTranslationIdle()
+    expect(target.querySelectorAll('textarea')).toHaveLength(1)
+    expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('stops after reporting a failed model response', async () => {
+    installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    imageMocks.requestChatData.mockResolvedValue({ type: 'fail', result: 'provider failed' })
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+
+    await vi.waitFor(() => expect(imageMocks.alertError).toHaveBeenCalledWith('provider failed'))
+    await waitForTranslationIdle()
+    expect(imageMocks.alertError).toHaveBeenCalledOnce()
+    expect(target.querySelectorAll('textarea')).toHaveLength(1)
   })
 })

@@ -100,12 +100,12 @@
   let loading = $state(false)
   let aspectRatio = 1
   let fontFamily = $state('Arial')
+  let modeEpoch = 0
 
-  async function selectFile() {
+  async function selectFile(): Promise<boolean> {
     const file = await selectSingleFile(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'])
     if (!file) {
-      loading = false
-      return
+      return false
     }
 
     if (!ctx) {
@@ -113,8 +113,7 @@
     }
     if (!ctx) {
       alertError('Failed to create canvas context')
-      loading = false
-      return
+      return false
     }
     const img = new Image()
     //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
@@ -128,22 +127,35 @@
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
 
     output = ''
+    return true
+  }
+
+  function changeMode(nextMode: string) {
+    if (nextMode !== 'auto' && nextMode !== 'manual') return
+    if (nextMode === mode) return
+    mode = nextMode
+    modeEpoch += 1
   }
 
   async function imageTranslate(type: number = 0) {
     if (loading) {
       return
     }
+    const runMode = mode
+    const runModeEpoch = modeEpoch
+    const runPrompt = prompt
+    const runLanguage = selLang
+    const isCurrentMode = () => mode === runMode && modeEpoch === runModeEpoch
     loading = true
     try {
-      if (mode === 'auto') {
-        await selectFile()
+      if (runMode === 'auto') {
+        if (!(await selectFile()) || !isCurrentMode()) return
       }
 
       let data: string = ''
 
       let [x_min, y_min, x_max, y_max] = [0, 0, 1, 1]
-      if (mode === 'auto') {
+      if (runMode === 'auto') {
         data = canvas.toDataURL('image/png')
       } else {
         if (!inputImage) {
@@ -177,7 +189,7 @@
       }
 
       const schema =
-        mode === 'auto'
+        runMode === 'auto'
           ? {
               $schema: 'https://json-schema.org/draft/2020-12/schema',
               additionalProperties: false,
@@ -249,7 +261,7 @@
           formated: [
             {
               role: 'user',
-              content: prompt.replace('{{slot}}', selLang),
+              content: runPrompt.replace('{{slot}}', runLanguage),
               multimodals: [
                 {
                   type: 'image',
@@ -264,16 +276,17 @@
         'translate',
       )
 
+      if (!isCurrentMode()) return
+
       if (d.type === 'streaming' || d.type === 'multiline') {
-        loading = false
         return alertError('This model is not supported in the playground')
       }
 
       if (d.type !== 'success') {
-        alertError(d.result)
+        return alertError(d.result)
       }
 
-      if (mode === 'manual') {
+      if (runMode === 'manual') {
         let outputObj: any[] = []
         console.log(d.result)
         console.log(jsonOutputTrimmer(d.result))
@@ -421,7 +434,7 @@
   let selectionStart: { x: number; y: number } | null = null
 </script>
 
-<SelectInput bind:value={mode} className="w-1/2">
+<SelectInput value={mode} onchange={(event) => changeMode(event.currentTarget.value)} className="w-1/2">
   <option value="auto">{'auto'}</option>
   <option value="manual">{'manual'}</option>
 </SelectInput>
