@@ -11,6 +11,7 @@
   import localforage from 'localforage'
   import { getModelInfo, LLMFormat } from 'src/ts/model/modellist'
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface DialogueLine {
     speaker: string
@@ -218,6 +219,8 @@
 
   function handleKey(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
       if (showBacklog) {
         showBacklog = false
         return
@@ -234,6 +237,13 @@
       e.preventDefault()
       advance()
     }
+  }
+
+  function handleBacklogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    showBacklog = false
   }
 
   function handleInputKey(e: KeyboardEvent) {
@@ -369,13 +379,18 @@
   }
 </script>
 
-<svelte:window onkeydown={handleKey} />
-
 <div
+  use:modalFocusTrap
+  data-modal-root
   class="fixed inset-0 z-50 flex items-end justify-center bg-black/60"
   transition:fade={{ duration: 300 }}
-  role="presentation">
+  role="dialog"
+  aria-modal="true"
+  aria-label="Iris"
+  tabindex="-1"
+  onkeydown={handleKey}>
   <button
+    data-modal-initial-focus
     onclick={hide}
     class="absolute right-4 top-4 flex items-center gap-1 rounded-md bg-black/40 px-2 py-1 text-xs text-white/50 transition hover:bg-black/60 hover:text-white/80"
     aria-label="Close">
@@ -392,11 +407,20 @@
 
   <!-- Backlog overlay -->
   {#if showBacklog}
-    <div class="absolute inset-0 z-10 flex items-center justify-center bg-black/70" transition:fade={{ duration: 200 }}>
+    <div
+      data-modal-root
+      class="absolute inset-0 z-10 flex items-center justify-center bg-black/70"
+      in:fade={{ duration: 200 }}>
       <div
+        use:modalFocusTrap
         class="flex w-full max-w-2xl flex-col rounded-2xl border border-white/15 bg-black/90 shadow-2xl"
         style="max-height: 70vh;"
-        transition:fly={{ y: -20, duration: 250 }}>
+        in:fly={{ y: -20, duration: 250 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Iris backlog"
+        tabindex="-1"
+        onkeydown={handleBacklogKeydown}>
         <!-- Header -->
         <div class="flex items-center justify-end border-b border-white/10 px-6 py-3 gap-3">
           <button
@@ -414,6 +438,7 @@
             </svg>
           </button>
           <button
+            data-modal-initial-focus
             onclick={() => (showBacklog = false)}
             class="text-white/40 transition hover:text-white/80"
             aria-label="Close backlog">

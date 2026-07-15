@@ -36,6 +36,7 @@ vi.mock('src/ts/process/mcp/risuaccess', () => ({
 import IrisModal from './IrisModal.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
+import { irisStore } from 'src/ts/stores.svelte'
 
 const originalAnimate = Element.prototype.animate
 
@@ -102,6 +103,7 @@ beforeEach(() => {
   })
   target = document.createElement('div')
   document.body.appendChild(target)
+  irisStore.open = true
   setDatabaseLite({
     language: 'en',
     aiModel: 'echo_model',
@@ -274,6 +276,63 @@ describe('IrisModal model availability', () => {
     expect(savedDialogue).toHaveLength(1)
     expect(savedDialogue[0].speaker).toBe('Iris')
     expect(target.querySelector('[aria-live="polite"]')).not.toBeNull()
+  })
+
+  it('stacks backlog focus above Iris and restores each opener after Escape', async () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Open Iris'
+    document.body.insertBefore(opener, target)
+    opener.focus()
+    component = mount(IrisModal, { target })
+    await settle()
+
+    const irisDialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const irisClose = irisDialog?.querySelector<HTMLElement>(':scope > [data-modal-initial-focus]')
+    if (!irisDialog || !irisClose) throw new Error('Iris dialog not found')
+    expect(irisDialog.hasAttribute('data-modal-root')).toBe(true)
+    expect(irisDialog.getAttribute('aria-modal')).toBe('true')
+    expect(opener.inert).toBe(true)
+    expect(document.activeElement).toBe(irisClose)
+
+    const backlogTrigger = target.querySelector<HTMLButtonElement>('button[title^="View backlog"]')
+    if (!backlogTrigger) throw new Error('Iris backlog trigger not found')
+    backlogTrigger.focus()
+    backlogTrigger.click()
+    await settle()
+
+    const dialogs = target.querySelectorAll<HTMLElement>('[role="dialog"]')
+    expect(dialogs).toHaveLength(2)
+    const backlogDialog = dialogs[1]
+    const backlogClose = backlogDialog.querySelector<HTMLElement>('[data-modal-initial-focus]')
+    if (!backlogClose) throw new Error('Iris backlog close button not found')
+    expect(backlogDialog.parentElement?.hasAttribute('data-modal-root')).toBe(true)
+    expect(opener.inert).toBe(true)
+    expect(irisClose.inert).toBe(true)
+    expect(document.activeElement).toBe(backlogClose)
+
+    irisClose.focus()
+    expect(document.activeElement).toBe(backlogClose)
+
+    const backlogEscape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    backlogClose.dispatchEvent(backlogEscape)
+    await settle()
+
+    expect(backlogEscape.defaultPrevented).toBe(true)
+    expect(target.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(irisStore.open).toBe(true)
+    expect(document.activeElement).toBe(backlogTrigger)
+
+    const irisEscape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    backlogTrigger.dispatchEvent(irisEscape)
+    expect(irisEscape.defaultPrevented).toBe(true)
+    expect(irisStore.open).toBe(false)
+
+    unmount(component)
+    component = undefined
+    await settle()
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 })
 
