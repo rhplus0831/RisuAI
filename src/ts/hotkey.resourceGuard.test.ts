@@ -7,6 +7,7 @@ import { testDatabaseState } from './__tests__/resourceDatabaseState'
 // under the read-only server resource guard otherwise.
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
+const changeCharMock = vi.hoisted(() => vi.fn(async () => {}))
 
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
@@ -22,6 +23,10 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'hotkey-command-token',
 }))
 
+vi.mock('./characters', () => ({
+  changeChar: changeCharMock,
+}))
+
 // stores.svelte.ts installs a root $effect that calls moduleUpdate() whenever
 // testDatabaseState.db changes; stub it so seeding the database does not trigger the
 // module pipeline (and its circular-import init order) under test.
@@ -30,7 +35,7 @@ vi.mock('./process/modules', async (importActual) => {
   return { ...actual, getModuleTriggers: () => [], moduleUpdate: () => {} }
 })
 
-import { changeToPreset, hotkeyMatches } from './hotkey'
+import { adjacentCharacterIndex, changeToAdjacentCharacter, changeToPreset, hotkeyMatches } from './hotkey'
 import { applyServerBackedSetting } from './server/settingsBridge.svelte'
 import { settingsGroupForKey, clearCachedServerCommandRevision } from './server/commands'
 import { setResourceWriteGuardEnabled } from './server/resourceWriteGuard.svelte'
@@ -131,6 +136,7 @@ function seedDatabase(): void {
 }
 
 beforeEach(() => {
+  changeCharMock.mockClear()
   platformState.isFastifyServer = true
   selectedCharID.set(-1)
   clearCachedServerCommandRevision()
@@ -144,6 +150,35 @@ afterEach(() => {
 })
 
 describe('hotkey handling under the resource guard', () => {
+  it('finds adjacent characters at both ends of the alphabetized list', () => {
+    const characters = [{ name: 'Charlie' }, { name: 'Alpha' }, { name: 'Bravo' }] as any
+
+    expect(adjacentCharacterIndex(characters, 1, 'next')).toBe(2)
+    expect(adjacentCharacterIndex(characters, 0, 'previous')).toBe(2)
+    expect(adjacentCharacterIndex(characters, 1, 'previous')).toBeNull()
+    expect(adjacentCharacterIndex(characters, 0, 'next')).toBeNull()
+  })
+
+  it('uses the normal character selection flow for adjacent-character hotkeys', async () => {
+    testDatabaseState.db.characters = [
+      { name: 'Charlie', chaId: 'char-c' },
+      { name: 'Alpha', chaId: 'char-a' },
+      { name: 'Bravo', chaId: 'char-b' },
+    ] as any
+
+    selectedCharID.set(1)
+    await expect(changeToAdjacentCharacter('next')).resolves.toBe(true)
+    expect(changeCharMock).toHaveBeenLastCalledWith(2)
+
+    selectedCharID.set(0)
+    await expect(changeToAdjacentCharacter('previous')).resolves.toBe(true)
+    expect(changeCharMock).toHaveBeenLastCalledWith(2)
+
+    selectedCharID.set(1)
+    await expect(changeToAdjacentCharacter('previous')).resolves.toBe(false)
+    expect(changeCharMock).toHaveBeenCalledTimes(2)
+  })
+
   it('maps hotkeys to sidebar settings group', () => {
     expect(settingsGroupForKey('hotkeys')).toBe('sidebar')
   })

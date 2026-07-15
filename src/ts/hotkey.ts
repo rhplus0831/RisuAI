@@ -105,39 +105,11 @@ export function initHotkey() {
           break
         }
         case 'prevChar': {
-          const sorted = database.characters
-            .map((v, i) => {
-              return { name: v.name, i }
-            })
-            .sort((a, b) => a.name.localeCompare(b.name))
-          const currentIndex = sorted.findIndex((v) => v.i === get(selectedCharID))
-          if (currentIndex === 0) {
-            return
-          }
-          if (currentIndex >= sorted.length - 1) {
-            return
-          }
-          selectedCharID.set(sorted[currentIndex - 1].i)
-          PlaygroundStore.set(0)
-          OpenRealmStore.set(false)
+          await changeToAdjacentCharacter('previous')
           break
         }
         case 'nextChar': {
-          const sorted = database.characters
-            .map((v, i) => {
-              return { name: v.name, i }
-            })
-            .sort((a, b) => a.name.localeCompare(b.name))
-          const currentIndex = sorted.findIndex((v) => v.i === get(selectedCharID))
-          if (currentIndex === 0) {
-            return
-          }
-          if (currentIndex >= sorted.length - 1) {
-            return
-          }
-          selectedCharID.set(sorted[currentIndex + 1].i)
-          PlaygroundStore.set(0)
-          OpenRealmStore.set(false)
+          await changeToAdjacentCharacter('next')
           break
         }
         case 'quickMenu': {
@@ -363,6 +335,32 @@ export function hotkeyMatches(hotkey: Database['hotkeys'][number], ev: KeyboardE
   if (!ctrl && !alt && !shift) {
     if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return false
   }
+  return true
+}
+
+export function adjacentCharacterIndex(
+  characters: readonly Pick<Database['characters'][number], 'name'>[],
+  selectedIndex: number,
+  direction: 'previous' | 'next',
+): number | null {
+  const sorted = characters
+    .map((character, index) => ({ name: character.name ?? '', index }))
+    .sort((left, right) => left.name.localeCompare(right.name))
+  const currentSortedIndex = sorted.findIndex((character) => character.index === selectedIndex)
+  if (currentSortedIndex < 0) return null
+
+  const targetSortedIndex = currentSortedIndex + (direction === 'previous' ? -1 : 1)
+  return sorted[targetSortedIndex]?.index ?? null
+}
+
+export async function changeToAdjacentCharacter(direction: 'previous' | 'next'): Promise<boolean> {
+  const targetIndex = adjacentCharacterIndex(getDatabase().characters, get(selectedCharID), direction)
+  if (targetIndex === null) return false
+
+  PlaygroundStore.set(0)
+  OpenRealmStore.set(false)
+  const { changeChar } = await import('./characters')
+  await changeChar(targetIndex)
   return true
 }
 
