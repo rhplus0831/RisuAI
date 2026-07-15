@@ -86,9 +86,11 @@
   }
 
   async function applyPreset(): Promise<void> {
-    if (!selectedPresetId) return
+    const presetId = selectedPreset?.id
+    const target = captureActiveChatTarget()
+    if (!presetId) return
     if (!(await alertConfirm(language.chatGenerationTogglePresetApplyConfirm))) return
-    applyChatGenerationTogglePreset(selectedPresetId)
+    applyChatGenerationTogglePreset(presetId, { expectedTarget: target })
   }
 
   async function deletePreset(): Promise<void> {

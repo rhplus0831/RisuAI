@@ -90,7 +90,12 @@ export function overwriteCurrentChatGenerationTogglePreset(
   return nextPreset
 }
 
-export function applyChatGenerationTogglePreset(presetId: string): boolean {
+export function applyChatGenerationTogglePreset(
+  presetId: string,
+  options: Pick<ActiveChatGenerationSettingsSaveOptions, 'expectedTarget'> = {},
+): boolean {
+  if (options.expectedTarget !== undefined && !isActiveChatTargetFresh(options.expectedTarget)) return false
+
   const preset = getChatGenerationTogglePresets().find((candidate) => candidate.id === presetId)
   if (!preset) return false
 
@@ -104,7 +109,7 @@ export function applyChatGenerationTogglePreset(presetId: string): boolean {
     },
     state,
   )
-  return saveActiveChatGenerationSettings(generationSettings)
+  return saveActiveChatGenerationSettings(generationSettings, options)
 }
 
 export function deleteChatGenerationTogglePreset(presetId: string): boolean {

@@ -1679,6 +1679,55 @@ describe('sidebar chat generation settings controls', () => {
     expect(togglePresetSelect().value).toBe('')
   })
 
+  it('does not apply a toggle preset after confirmation resolves for a stale active chat', async () => {
+    const calls = stubCommandFetch()
+    testDatabaseState().chatGenerationTogglePresets = [
+      {
+        id: 'saved-late',
+        name: 'Saved Late',
+        createdAt: 1,
+        updatedAt: 1,
+        jailbreakToggle: false,
+        sidebarToggles: {
+          mood: '1',
+          flag: '1',
+          note: 'late-preset-note',
+          moduleFlag: '1',
+        },
+        sidebarToggleKinds: {
+          mood: 'select',
+          flag: 'boolean',
+          note: 'text',
+          moduleFlag: 'boolean',
+        },
+      },
+    ]
+    const chatASettings = clonePlain(testDatabaseState().characters[0].chats[0].generationSettings)
+    const chatBSettings = clonePlain(testDatabaseState().characters[0].chats[1].generationSettings)
+    const confirmation = deferred<boolean>()
+    alertSpies.alertConfirm.mockReturnValueOnce(confirmation.promise)
+
+    mountToggles()
+    await tick()
+    await chooseTogglePreset('saved-late')
+
+    expect(togglePresetButton(1).disabled).toBe(false)
+    togglePresetButton(1).click()
+    await tick()
+    expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
+
+    testDatabaseState().characters[0].chatPage = 1
+    await tick()
+
+    confirmation.resolve(true)
+    await flushAsyncWork()
+
+    expect(calls).toEqual([])
+    expect(testDatabaseState().characters[0].chats[0].generationSettings).toEqual(chatASettings)
+    expect(testDatabaseState().characters[0].chats[1].generationSettings).toEqual(chatBSettings)
+    expect(activeChat().id).toBe('chat-b')
+  })
+
   it('writes jailbreak and sidebar toggles to active chat settings without touching global state', async () => {
     const calls = stubCommandFetch()
     mountToggles()
