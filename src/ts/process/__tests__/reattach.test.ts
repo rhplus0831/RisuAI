@@ -80,6 +80,12 @@ describe('reattach open-chat generation (Phase 4)', () => {
       expect.objectContaining({
         signal: expect.any(AbortSignal),
         reattachJobId: 'job-1',
+        expectedTarget: {
+          selectedCharID: 0,
+          chatPage: 0,
+          characterId: 'char-a',
+          chatId: 'chat-1',
+        },
       }),
     )
     expect(get(activeGenerationJobs)).toEqual([])
@@ -148,6 +154,30 @@ describe('reattach open-chat generation (Phase 4)', () => {
     await maybeReattachOpenChatGeneration()
 
     expect(h.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('does not start the previous chat job after the active chat switches during runtime loading', async () => {
+    h.database = {
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-1', message: [] },
+            { id: 'chat-2', message: [] },
+          ],
+        },
+      ],
+    }
+    h.selectedCharID.set(0)
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
+
+    const reattach = maybeReattachOpenChatGeneration()
+    ;(h.database.characters as Array<{ chatPage: number }>)[0].chatPage = 1
+    await reattach
+
+    expect(h.sendChat).not.toHaveBeenCalled()
+    expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-1', jobId: 'job-1' }])
   })
 
   it('re-arms and reattaches a second live-job chat after the first completes (L30)', async () => {

@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store'
 import { selectedCharID } from '../stores.svelte'
 import type { ActiveGenerationJob } from '../server/bootstrap'
 import { getDatabase } from '../storage/database.svelte'
+import type { ActiveChatTarget } from '../chatCommands'
 
 /**
  * Durable generations still running server-side, as surfaced by the bootstrap
@@ -15,13 +16,34 @@ export function setActiveGenerationJobs(jobs: readonly ActiveGenerationJob[]): v
   activeGenerationJobs.set([...jobs])
 }
 
-function openChatId(): string | undefined {
-  const selId = get(selectedCharID)
-  if (selId < 0) return undefined
-  const character = getDatabase().characters?.[selId]
-  if (!character) return undefined
-  const chat = character.chats?.[character.chatPage ?? 0]
-  return chat?.id
+function openChatTarget(): ActiveChatTarget | null {
+  const selectedChar = get(selectedCharID)
+  if (selectedChar < 0) return null
+  const character = getDatabase().characters?.[selectedChar]
+  if (!character) return null
+  const chatPage = character.chatPage ?? 0
+  const chat = character.chats?.[chatPage]
+  if (!chat) return null
+  return {
+    selectedCharID: selectedChar,
+    chatPage,
+    characterId: character.chaId,
+    chatId: chat.id,
+  }
+}
+
+function isOpenChatTargetFresh(target: ActiveChatTarget): boolean {
+  const current = openChatTarget()
+  if (!current) return false
+  if (target.characterId !== undefined || current.characterId !== undefined) {
+    if (target.characterId !== current.characterId) return false
+  } else if (target.selectedCharID !== current.selectedCharID) {
+    return false
+  }
+  if (target.chatId !== undefined || current.chatId !== undefined) {
+    return target.chatId === current.chatId
+  }
+  return target.chatPage === current.chatPage
 }
 
 let reattaching = false
@@ -55,15 +77,19 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     reattachDeferred = true
     return
   }
-  const chatId = openChatId()
-  if (!chatId) return
-  const job = get(activeGenerationJobs).find((entry) => entry.chatId === chatId)
+  const target = openChatTarget()
+  if (!target?.chatId) return
+  const job = get(activeGenerationJobs).find((entry) => entry.chatId === target.chatId)
   if (!job) return
 
   reattaching = true
   try {
     const { sendChat, doingChat, createActiveGenerationAbortController, clearActiveGenerationAbortController } =
       await import('./index.svelte')
+    if (!isOpenChatTargetFresh(target)) {
+      reattachDeferred = true
+      return
+    }
     if (get(doingChat)) return
     // Consume the job up front so a re-render / re-selection does not double
     // reattach while this one streams.
@@ -76,6 +102,7 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
       await sendChat(-1, {
         signal: controller.signal,
         reattachJobId: job.jobId,
+        expectedTarget: target,
         continue: job.mode === 'continue' ? true : undefined,
         regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
       })
