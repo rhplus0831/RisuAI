@@ -69,12 +69,21 @@ afterEach(() => {
 })
 
 describe('HotkeySettings recorder keyboard behavior', () => {
+  it('names the key recorder for its action', () => {
+    expect(recorder().getAttribute('aria-label')).toBe(`${language.hotkeyDesc.send} ${language.hotkey}`)
+  })
+
   it('announces the selected modifier keys', () => {
     const buttons = Array.from(target.querySelectorAll('button'))
     expect(buttons.map((button) => [button.textContent?.trim(), button.getAttribute('aria-pressed')])).toEqual([
       ['Ctrl', 'true'],
       ['Shift', 'false'],
       ['Alt', 'true'],
+    ])
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      `${language.hotkeyDesc.send}: Ctrl`,
+      `${language.hotkeyDesc.send}: Shift`,
+      `${language.hotkeyDesc.send}: Alt`,
     ])
   })
 

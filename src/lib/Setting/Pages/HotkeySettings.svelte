@@ -49,6 +49,7 @@
           <td>{language.hotkeyDesc[hotkey.action]}</td>
           <td>
             <button
+              aria-label={`${language.hotkeyDesc[hotkey.action]}: Ctrl`}
               aria-pressed={hotkey.ctrl}
               class:text-textcolor={hotkey.ctrl}
               class:text-textcolor2={!hotkey.ctrl}
@@ -60,6 +61,7 @@
           </td>
           <td>
             <button
+              aria-label={`${language.hotkeyDesc[hotkey.action]}: Shift`}
               aria-pressed={hotkey.shift}
               class:text-textcolor={hotkey.shift}
               class:text-textcolor2={!hotkey.shift}
@@ -71,6 +73,7 @@
           </td>
           <td>
             <button
+              aria-label={`${language.hotkeyDesc[hotkey.action]}: Alt`}
               aria-pressed={hotkey.alt}
               class:text-textcolor={hotkey.alt}
               class:text-textcolor2={!hotkey.alt}
@@ -82,6 +85,7 @@
           </td>
           <td>
             <input
+              aria-label={`${language.hotkeyDesc[hotkey.action]} ${language.hotkey}`}
               value={hotkey.key === ' ' ? 'SPACE' : hotkey.key?.toLocaleUpperCase()}
               class="bg-bgcolor border-none w-16"
               onkeydown={(e) => {
