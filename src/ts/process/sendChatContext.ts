@@ -23,6 +23,7 @@ import {
 } from '../server/commands'
 import { isServerChatMessagePlaceholder } from '../server/chatMessagePlaceholders'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { captureChatBodyProjectionEpoch } from '../server/resourceState.svelte'
 import { getModuleToggles } from './modules'
 
 export interface SendChatContextResult {
@@ -197,12 +198,14 @@ export function setupSendChatContext(args: {
         if (selectedChatRecord.id && backfillTail) {
           const chatId = selectedChatRecord.id
           const messages = selectedChatRecord.message.slice(backfillTail.startIndex).map(toMessageSnapshot)
+          const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
           factories.push((baseRevision) =>
             replaceTailMessagesCommand({
               baseRevision,
               chatId,
               afterMessageId: backfillTail.afterMessageId,
               messages,
+              optimisticChatBodyProjectionEpoch,
             }),
           )
         }

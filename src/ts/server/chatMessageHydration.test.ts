@@ -292,6 +292,7 @@ describe('chat message hydration bridge', () => {
   })
 
   it('hydrates only the active chat tail window and keeps absolute indexes stable', async () => {
+    const projectionEpoch = captureChatBodyProjectionEpoch('chat-1')
     projectionState.fetchChat.mockResolvedValue(
       okWindowResult(
         'chat-1',
@@ -313,6 +314,7 @@ describe('chat message hydration bridge', () => {
     expect(messages[2]).toEqual({ role: 'user', data: 'tail-2', chatId: 'm3' })
     expect(messages[3]).toEqual({ role: 'char', data: 'tail-1', chatId: 'm4' })
     expect(projectionState.fetchChat).toHaveBeenCalledWith('chat-1', { tail: 2 })
+    expect(hasChatBodyProjectionEpochChanged('chat-1', projectionEpoch)).toBe(true)
   })
 
   it('fetches only newly visible unloaded ranges when the active window expands', async () => {
@@ -635,6 +637,25 @@ describe('chat message hydration bridge', () => {
 
     expect(db().characters[0].chats[0].message).toEqual([resident])
     expect(acknowledgeMessageMutationLocalEffect('missing-chat')).toBe(false)
+  })
+
+  it('fences a deferred stale hydration that begins after an optimistic transcript mutation', async () => {
+    const optimisticMessage = { role: 'user', data: 'optimistic edit', chatId: 'm-resident' }
+    db().characters[0].chats[0].message.push(optimisticMessage)
+    const optimisticProjectionEpoch = captureChatBodyProjectionEpoch('chat-1')
+    const staleHydration = deferred<ReturnType<typeof okResult>>()
+    projectionState.fetchChat.mockReturnValueOnce(staleHydration.promise)
+
+    // This request starts after the optimistic edit, so its freshness snapshot
+    // alone cannot distinguish a pre-command server response from the edit.
+    const pendingHydration = hydrateActiveChatFully()
+    staleHydration.resolve(okResult('chat-1', [{ role: 'user', data: 'pre-command body', chatId: 'm-resident' }]))
+    await pendingHydration
+
+    expect(db().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'pre-command body', chatId: 'm-resident' },
+    ])
+    expect(hasChatBodyProjectionEpochChanged('chat-1', optimisticProjectionEpoch)).toBe(true)
   })
 
   it('marks a complete created transcript hydrated and drops an older hydration', async () => {

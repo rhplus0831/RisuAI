@@ -180,6 +180,7 @@ import {
   applyCharacterResource,
   applySettingsResource,
   applySettingsGroupResource,
+  captureChatBodyProjectionEpoch,
   captureCollectionProjectionEpoch,
   captureLorebookPageProjectionEpoch,
   captureCharacterLorebookProjectionEpoch,
@@ -193,6 +194,7 @@ import {
   isSettingsGroupAcknowledgementTainted,
   markCollectionAcknowledgementTainted,
   markCharacterLorebookProjectionApplied,
+  markChatBodyProjectionApplied,
   markSettingsAcknowledgementTainted,
   markSettingsGroupAcknowledgementTainted,
   replaceResourceDatabase,
@@ -3294,6 +3296,7 @@ describe('API-backed client bootstrap', () => {
 
   it('acknowledges a contiguous optimistic message append without fetching the transcript', async () => {
     await loadWebInitialDatabase()
+    const chatBodyProjectionEpoch = captureChatBodyProjectionEpoch('chat-a')
     const event = {
       type: 'message.appended',
       revision: 6,
@@ -3313,6 +3316,7 @@ describe('API-backed client bootstrap', () => {
             operation: 'append',
             chatId: 'chat-a',
             messageId: 'message-a',
+            chatBodyProjectionEpoch,
           },
         ],
       ]),
@@ -3320,6 +3324,46 @@ describe('API-backed client bootstrap', () => {
 
     expect(resourceApi.refreshInvalidated).not.toHaveBeenCalled()
     expect(hydrationApi.acknowledgeMessageMutationLocalEffect).toHaveBeenCalledWith('chat-a')
+    expect(peekAppliedServerResourceRevision()).toBe(6)
+  })
+
+  it('authoritatively rereads a message mutation after a deferred stale chat read replaces its optimism', async () => {
+    await loadWebInitialDatabase()
+    const chatBodyProjectionEpoch = captureChatBodyProjectionEpoch('chat-a')
+    const event = {
+      type: 'message.updated',
+      revision: 6,
+      resource: 'message',
+      id: 'message-a',
+      parentId: 'chat-a',
+    }
+
+    // Model a chat read that began after the optimistic edit and applied its
+    // pre-command response before the accepted command is acknowledged.
+    markChatBodyProjectionApplied('chat-a')
+
+    await commandApi.reconciler?.(
+      event,
+      [event],
+      new Map([
+        [
+          6,
+          {
+            kind: 'messageMutation',
+            operation: 'update',
+            chatId: 'chat-a',
+            messageId: 'message-a',
+            chatBodyProjectionEpoch,
+          },
+        ],
+      ]),
+    )
+
+    expect(hydrationApi.acknowledgeMessageMutationLocalEffect).not.toHaveBeenCalled()
+    expect(resourceApi.refreshInvalidated).toHaveBeenCalledWith([event], {
+      appliedRevision: 5,
+      hooks: resourceApi.hooks,
+    })
     expect(peekAppliedServerResourceRevision()).toBe(6)
   })
 

@@ -32,6 +32,7 @@ import {
 import { withServerResourceApply, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   applyCharacterResource,
+  captureChatBodyProjectionEpoch,
   captureCharacterRowProjectionEpoch,
   getResourceDatabase as getDatabase,
   hasCharacterRowProjectionEpochChanged,
@@ -2483,8 +2484,14 @@ function buildCompatibleMessageListUpdate(
   nextMessages: Message[],
 ): CompatibleMessageListUpdate | null {
   if (snapshotJson(previousMessages) === snapshotJson(nextMessages)) return null
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
 
-  const narrowUpdate = buildNarrowCompatibleMessageListUpdate(chatId, previousMessages, nextMessages)
+  const narrowUpdate = buildNarrowCompatibleMessageListUpdate(
+    chatId,
+    previousMessages,
+    nextMessages,
+    optimisticChatBodyProjectionEpoch,
+  )
   if (narrowUpdate) return narrowUpdate
   if (hasServerChatMessagePlaceholders(nextMessages)) return null
 
@@ -2499,6 +2506,7 @@ function buildCompatibleMessageListUpdate(
         baseRevision,
         chatId,
         messages,
+        optimisticChatBodyProjectionEpoch,
       }),
     attemptedMessages,
   }
@@ -2508,6 +2516,7 @@ function buildNarrowCompatibleMessageListUpdate(
   chatId: string,
   previousMessages: Message[],
   nextMessages: Message[],
+  optimisticChatBodyProjectionEpoch: number,
 ): CompatibleMessageListUpdate | null {
   const appendedMessage = singleMessageAppend(previousMessages, nextMessages)
   if (appendedMessage) {
@@ -2519,6 +2528,7 @@ function buildNarrowCompatibleMessageListUpdate(
           baseRevision,
           chatId,
           message,
+          optimisticChatBodyProjectionEpoch,
         }),
       attemptedMessages: cloneJsonValue(nextMessages),
     }
@@ -2532,6 +2542,8 @@ function buildNarrowCompatibleMessageListUpdate(
           baseRevision,
           messageId: messagePatch.messageId,
           patch: messagePatch.patch,
+          optimisticChatId: chatId,
+          optimisticChatBodyProjectionEpoch,
         }),
       attemptedMessages: cloneJsonValue(nextMessages),
     }
@@ -2545,6 +2557,7 @@ function buildNarrowCompatibleMessageListUpdate(
           baseRevision,
           chatId,
           afterMessageId: truncation.afterMessageId,
+          optimisticChatBodyProjectionEpoch,
         }),
       attemptedMessages: cloneJsonValue(nextMessages),
     }
@@ -2557,6 +2570,8 @@ function buildNarrowCompatibleMessageListUpdate(
         deleteMessageCommand({
           baseRevision,
           messageId: deletedMessageId,
+          optimisticChatId: chatId,
+          optimisticChatBodyProjectionEpoch,
         }),
       attemptedMessages: cloneJsonValue(nextMessages),
     }
@@ -2576,6 +2591,7 @@ function buildNarrowCompatibleMessageListUpdate(
         chatId,
         afterMessageId: replacement.afterMessageId,
         messages,
+        optimisticChatBodyProjectionEpoch,
       }),
     attemptedMessages: cloneJsonValue(nextMessages),
   }
@@ -3218,12 +3234,14 @@ export function toChatFolderSnapshot(folder: ChatFolder): ChatFolderSnapshot {
 
 export function dispatchAppendMessage(chatId: string, message: Message, previous: ChatStateSnapshot): void {
   ensureMessageId(message)
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   runMessageCommand(
     (baseRevision) =>
       appendMessageCommand({
         baseRevision,
         chatId,
         message: toMessageSnapshot(message),
+        optimisticChatBodyProjectionEpoch,
       }),
     () => restoreChatState(previous),
   )
@@ -3252,6 +3270,7 @@ export function appendCurrentChatEmptyCharMessage(): void {
   })
 
   if (!applied || !chatId) return
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
 
   runMessageCommand(
     (baseRevision) =>
@@ -3259,6 +3278,7 @@ export function appendCurrentChatEmptyCharMessage(): void {
         baseRevision,
         chatId,
         message: toMessageSnapshot(message),
+        optimisticChatBodyProjectionEpoch,
       }),
     () =>
       removeOptimisticCurrentChatMessage({
@@ -3338,6 +3358,7 @@ export async function appendCurrentChatUserMessageForSend(
       chatId,
       messageId,
     })
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
 
   const result = await runServerCommand({
     command: (baseRevision) =>
@@ -3345,6 +3366,7 @@ export async function appendCurrentChatUserMessageForSend(
         baseRevision,
         chatId,
         message: toMessageSnapshot(message),
+        optimisticChatBodyProjectionEpoch,
       }),
     rollback: rollbackAppend,
   })
@@ -3637,6 +3659,35 @@ function findMessageIndexById(messages: readonly Message[], messageId: string): 
   return messages.findIndex((message) => message.chatId === messageId)
 }
 
+interface ChatBodyProjectionFence {
+  chatId: string
+  projectionEpoch: number
+}
+
+function captureChatBodyProjectionFenceForScopedSnapshot(
+  previous: ChatScopedSnapshot,
+): ChatBodyProjectionFence | undefined {
+  const chatId = previous.chatId ?? previous.chat?.id
+  return chatId ? { chatId, projectionEpoch: captureChatBodyProjectionEpoch(chatId) } : undefined
+}
+
+function captureChatBodyProjectionFenceForMessage(
+  previous: ChatStateSnapshot,
+  messageId: string,
+): ChatBodyProjectionFence | undefined {
+  const chatIds = new Set<string>()
+  for (const character of previous.characters) {
+    for (const chat of character.chats ?? []) {
+      if (chat.id && chat.message?.some((message) => message.chatId === messageId)) {
+        chatIds.add(chat.id)
+      }
+    }
+  }
+  if (chatIds.size !== 1) return undefined
+  const chatId = [...chatIds][0]
+  return { chatId, projectionEpoch: captureChatBodyProjectionEpoch(chatId) }
+}
+
 // Each message-dispatch helper has a `*With(... rollback)` core plus a broad
 // (`ChatStateSnapshot`) and a chat-scoped (`ChatScopedSnapshot`) export. The
 // scoped variants restore only the active chat row on failure; the broad ones
@@ -3645,6 +3696,7 @@ function dispatchSanitizedUpdateMessageWith(
   messageId: string,
   commandPatch: MessageSnapshot,
   rollback: () => void,
+  optimisticProjection?: ChatBodyProjectionFence,
 ): Promise<ServerCommandResult> | null {
   if (Object.keys(commandPatch).length === 0) return null
   return runChatCommandAsync(
@@ -3653,17 +3705,29 @@ function dispatchSanitizedUpdateMessageWith(
         baseRevision,
         messageId,
         patch: commandPatch,
+        optimisticChatId: optimisticProjection?.chatId,
+        optimisticChatBodyProjectionEpoch: optimisticProjection?.projectionEpoch,
       }),
     rollback,
   )
 }
 
-function dispatchUpdateMessageWith(messageId: string, patch: MessageSnapshot, rollback: () => void): void {
-  dispatchSanitizedUpdateMessageWith(messageId, sanitizeMessagePatch(patch), rollback)
+function dispatchUpdateMessageWith(
+  messageId: string,
+  patch: MessageSnapshot,
+  rollback: () => void,
+  optimisticProjection?: ChatBodyProjectionFence,
+): void {
+  dispatchSanitizedUpdateMessageWith(messageId, sanitizeMessagePatch(patch), rollback, optimisticProjection)
 }
 
 export function dispatchUpdateMessage(messageId: string, patch: MessageSnapshot, previous: ChatStateSnapshot): void {
-  dispatchUpdateMessageWith(messageId, patch, () => restoreChatState(previous))
+  dispatchUpdateMessageWith(
+    messageId,
+    patch,
+    () => restoreChatState(previous),
+    captureChatBodyProjectionFenceForMessage(previous, messageId),
+  )
 }
 
 export interface DispatchUpdateMessageScopedOptions {
@@ -3677,6 +3741,7 @@ export function dispatchUpdateMessageScoped(
   previous: ChatScopedSnapshot,
   options: DispatchUpdateMessageScopedOptions = {},
 ): void {
+  const optimisticProjection = captureChatBodyProjectionFenceForScopedSnapshot(previous)
   const { commandPatch, dispatcherAppliedKeys } = applyScopedMessagePatchAttempt(
     previous,
     messageId,
@@ -3695,8 +3760,11 @@ export function dispatchUpdateMessageScoped(
     (previousMessages) => messagesAfterPatch(previousMessages, messageId, commandPatch),
     (attempt) => restoreScopedMessagePatchAttempt(attempt.previous, messageId, commandPatch),
   )
-  const result = dispatchSanitizedUpdateMessageWith(messageId, commandPatch, () =>
-    pendingAttempt ? rollbackScopedTranscriptAttempt(pendingAttempt) : undefined,
+  const result = dispatchSanitizedUpdateMessageWith(
+    messageId,
+    commandPatch,
+    () => (pendingAttempt ? rollbackScopedTranscriptAttempt(pendingAttempt) : undefined),
+    optimisticProjection,
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
@@ -3751,22 +3819,33 @@ function messagesAfterPatch(
   return messages
 }
 
-function dispatchDeleteMessageWith(messageId: string, rollback: () => void): Promise<ServerCommandResult> | null {
+function dispatchDeleteMessageWith(
+  messageId: string,
+  rollback: () => void,
+  optimisticProjection?: ChatBodyProjectionFence,
+): Promise<ServerCommandResult> | null {
   return runChatCommandAsync(
     (baseRevision) =>
       deleteMessageCommand({
         baseRevision,
         messageId,
+        optimisticChatId: optimisticProjection?.chatId,
+        optimisticChatBodyProjectionEpoch: optimisticProjection?.projectionEpoch,
       }),
     rollback,
   )
 }
 
 export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnapshot): void {
-  dispatchDeleteMessageWith(messageId, () => restoreChatState(previous))
+  dispatchDeleteMessageWith(
+    messageId,
+    () => restoreChatState(previous),
+    captureChatBodyProjectionFenceForMessage(previous, messageId),
+  )
 }
 
 export function dispatchDeleteMessageScoped(messageId: string, previous: ChatScopedSnapshot): void {
+  const optimisticProjection = captureChatBodyProjectionFenceForScopedSnapshot(previous)
   const attemptedMessages = attemptedMessagesAfterDelete(previous, messageId)
   const pendingAttempt = registerScopedTranscriptAttempt(
     previous,
@@ -3775,9 +3854,13 @@ export function dispatchDeleteMessageScoped(messageId: string, previous: ChatSco
     (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
   )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  const result = dispatchDeleteMessageWith(messageId, () => {
-    if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
-  })
+  const result = dispatchDeleteMessageWith(
+    messageId,
+    () => {
+      if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
+    },
+    optimisticProjection,
+  )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
 
@@ -3789,6 +3872,7 @@ function dispatchTruncateMessagesWith(
   chatId: string,
   afterMessageId: string | null,
   rollback: () => void,
+  optimisticChatBodyProjectionEpoch: number,
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands()) return Promise.resolve(null)
@@ -3799,6 +3883,7 @@ function dispatchTruncateMessagesWith(
         chatId,
         afterMessageId,
         preserveRemovedAsAlternates: options.preserveRemovedAsAlternates,
+        optimisticChatBodyProjectionEpoch,
       }),
     rollback,
   })
@@ -3810,7 +3895,13 @@ export function dispatchTruncateMessages(
   previous: ChatStateSnapshot,
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
-  return dispatchTruncateMessagesWith(chatId, afterMessageId, () => restoreChatState(previous), options)
+  return dispatchTruncateMessagesWith(
+    chatId,
+    afterMessageId,
+    () => restoreChatState(previous),
+    captureChatBodyProjectionEpoch(chatId),
+    options,
+  )
 }
 
 export function dispatchTruncateMessagesScoped(
@@ -3819,6 +3910,7 @@ export function dispatchTruncateMessagesScoped(
   previous: ChatScopedSnapshot,
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const attemptedMessages = attemptedMessagesAfterTruncate(previous, afterMessageId)
   const pendingAttempt = registerScopedTranscriptAttempt(
     previous,
@@ -3833,6 +3925,7 @@ export function dispatchTruncateMessagesScoped(
     () => {
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
     },
+    optimisticChatBodyProjectionEpoch,
     options,
   )
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
@@ -3844,6 +3937,7 @@ function dispatchReplaceTailMessagesWith(
   afterMessageId: string | null,
   messages: Message[],
   rollback: () => void,
+  optimisticChatBodyProjectionEpoch: number,
 ): void {
   if (!prepareReplaceTailMessages(messages)) return
   runMessageCommand(
@@ -3853,6 +3947,7 @@ function dispatchReplaceTailMessagesWith(
         chatId,
         afterMessageId,
         messages: messages.map(toMessageSnapshot),
+        optimisticChatBodyProjectionEpoch,
       }),
     rollback,
   )
@@ -3864,7 +3959,13 @@ export function dispatchReplaceTailMessages(
   messages: Message[],
   previous: ChatStateSnapshot,
 ): void {
-  dispatchReplaceTailMessagesWith(chatId, afterMessageId, messages, () => restoreChatState(previous))
+  dispatchReplaceTailMessagesWith(
+    chatId,
+    afterMessageId,
+    messages,
+    () => restoreChatState(previous),
+    captureChatBodyProjectionEpoch(chatId),
+  )
 }
 
 export function dispatchReplaceTailMessagesScoped(
@@ -3874,6 +3975,7 @@ export function dispatchReplaceTailMessagesScoped(
   previous: ChatScopedSnapshot,
 ): void {
   if (!prepareReplaceTailMessages(messages)) return
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const attemptedMessages = attemptedMessagesAfterReplaceTail(previous, afterMessageId, messages)
   const replacementMessages = cloneJsonValue(messages)
   const pendingAttempt = registerScopedTranscriptAttempt(
@@ -3890,6 +3992,7 @@ export function dispatchReplaceTailMessagesScoped(
         chatId,
         afterMessageId,
         messages: messages.map(toMessageSnapshot),
+        optimisticChatBodyProjectionEpoch,
       }),
     () => {
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
@@ -3898,7 +4001,12 @@ export function dispatchReplaceTailMessagesScoped(
   trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
 
-function dispatchReplaceMessagesWith(chatId: string, messages: Message[], rollback: () => void): void {
+function dispatchReplaceMessagesWith(
+  chatId: string,
+  messages: Message[],
+  rollback: () => void,
+  optimisticChatBodyProjectionEpoch: number,
+): void {
   if (!prepareReplaceMessages(messages)) return
   runMessageCommand(
     (baseRevision) =>
@@ -3906,6 +4014,7 @@ function dispatchReplaceMessagesWith(chatId: string, messages: Message[], rollba
         baseRevision,
         chatId,
         messages: messages.map(toMessageSnapshot),
+        optimisticChatBodyProjectionEpoch,
       }),
     rollback,
   )
@@ -3916,11 +4025,17 @@ function hasServerChatMessagePlaceholders(messages: readonly Message[]): boolean
 }
 
 export function dispatchReplaceMessages(chatId: string, messages: Message[], previous: ChatStateSnapshot): void {
-  dispatchReplaceMessagesWith(chatId, messages, () => restoreChatState(previous))
+  dispatchReplaceMessagesWith(
+    chatId,
+    messages,
+    () => restoreChatState(previous),
+    captureChatBodyProjectionEpoch(chatId),
+  )
 }
 
 export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[], previous: ChatScopedSnapshot): void {
   if (!prepareReplaceMessages(messages)) return
+  const optimisticChatBodyProjectionEpoch = captureChatBodyProjectionEpoch(chatId)
   const attemptedMessages = cloneJsonValue(messages)
   const pendingAttempt = registerScopedTranscriptAttempt(
     previous,
@@ -3935,6 +4050,7 @@ export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[
         baseRevision,
         chatId,
         messages: messages.map(toMessageSnapshot),
+        optimisticChatBodyProjectionEpoch,
       }),
     () => {
       if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)

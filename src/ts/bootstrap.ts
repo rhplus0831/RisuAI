@@ -88,6 +88,7 @@ import {
   applyGlobalLorebookMutationLocalEffect,
   applyLoadoutMutationLocalEffect,
   applyLorebookMutationLocalEffect,
+  hasChatBodyProjectionEpochChanged,
   hasCharacterLorebookProjectionEpochChanged,
   hasCharacterRowProjectionEpochChanged,
   hasCollectionProjectionEpochChanged,
@@ -1398,7 +1399,10 @@ function applyContiguousServerCommandLocalEffect(event: CommandEvent, localEffec
         event.type !== expectedType ||
         event.resource !== 'message' ||
         event.parentId !== localEffect.chatId ||
-        (localEffect.messageId === undefined ? event.id !== undefined : event.id !== localEffect.messageId)
+        (localEffect.messageId === undefined ? event.id !== undefined : event.id !== localEffect.messageId) ||
+        !Number.isInteger(localEffect.chatBodyProjectionEpoch) ||
+        localEffect.chatBodyProjectionEpoch < 0 ||
+        hasChatBodyProjectionEpochChanged(localEffect.chatId, localEffect.chatBodyProjectionEpoch)
       ) {
         return false
       }

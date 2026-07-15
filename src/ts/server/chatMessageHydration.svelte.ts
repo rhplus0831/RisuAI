@@ -344,9 +344,9 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
         return
       }
       markChatBodyResourceRevision(chatId, result.revision)
+      markChatBodyProjectionApplied(chatId)
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
-        markChatBodyProjectionApplied(chatId)
       }
       // Only the open chat's tail drives the swipe buffer; seed it from this
       // chat's persisted reroll candidates so rerolls survive a reload.

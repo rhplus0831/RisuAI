@@ -437,6 +437,7 @@ export interface MessageMutationLocalEffect {
   operation: 'append' | 'update' | 'delete' | 'truncate' | 'replaceTail' | 'replaceAll'
   chatId: string
   messageId?: string
+  chatBodyProjectionEpoch: number
 }
 
 export interface CharacterRowMutationLocalEffect {
@@ -1470,11 +1471,14 @@ export interface BulkPluginStorageCommandInput extends PluginCommandInput {
 export interface AppendMessageCommandInput extends ChatCommandInput {
   chatId: string
   message: MessageSnapshot
+  optimisticChatBodyProjectionEpoch?: number
 }
 
 export interface UpdateMessageCommandInput extends ChatCommandInput {
   messageId: string
   patch: MessageSnapshot
+  optimisticChatId?: string
+  optimisticChatBodyProjectionEpoch?: number
 }
 
 export interface TranslateMessageCommandInput extends ChatCommandInput {
@@ -1483,23 +1487,28 @@ export interface TranslateMessageCommandInput extends ChatCommandInput {
 
 export interface DeleteMessageCommandInput extends ChatCommandInput {
   messageId: string
+  optimisticChatId?: string
+  optimisticChatBodyProjectionEpoch?: number
 }
 
 export interface TruncateMessagesCommandInput extends ChatCommandInput {
   chatId: string
   afterMessageId?: string | null
   preserveRemovedAsAlternates?: boolean
+  optimisticChatBodyProjectionEpoch?: number
 }
 
 export interface ReplaceTailMessagesCommandInput extends ChatCommandInput {
   chatId: string
   afterMessageId?: string | null
   messages: MessageSnapshot[]
+  optimisticChatBodyProjectionEpoch?: number
 }
 
 export interface ReplaceMessagesCommandInput extends ChatCommandInput {
   chatId: string
   messages: MessageSnapshot[]
+  optimisticChatBodyProjectionEpoch?: number
 }
 
 export interface PersistGenerationResultCommandInput extends ChatCommandInput {
@@ -4658,6 +4667,7 @@ export async function appendMessageCommand(
         operation: 'append',
         expectedChatId: input.chatId,
         expectedMessageId: input.message.chatId,
+        expectedChatBodyProjectionEpoch: input.optimisticChatBodyProjectionEpoch,
       }),
   })
 }
@@ -4676,7 +4686,9 @@ export async function updateMessageCommand(
     readLocalEffect: (body, event) =>
       readMessageMutationLocalEffect(body, event, {
         operation: 'update',
+        expectedChatId: input.optimisticChatId,
         expectedMessageId: input.messageId,
+        expectedChatBodyProjectionEpoch: input.optimisticChatBodyProjectionEpoch,
       }),
   })
 }
@@ -4713,7 +4725,9 @@ export async function deleteMessageCommand(
     readLocalEffect: (body, event) =>
       readMessageMutationLocalEffect(body, event, {
         operation: 'delete',
+        expectedChatId: input.optimisticChatId,
         expectedMessageId: input.messageId,
+        expectedChatBodyProjectionEpoch: input.optimisticChatBodyProjectionEpoch,
       }),
   })
 }
@@ -4735,6 +4749,7 @@ export async function truncateMessagesCommand(
         operation: 'truncate',
         expectedChatId: input.chatId,
         expectedAfterMessageId: input.afterMessageId ?? null,
+        expectedChatBodyProjectionEpoch: input.optimisticChatBodyProjectionEpoch,
       }),
   })
 }
@@ -4757,6 +4772,7 @@ export async function replaceTailMessagesCommand(
         expectedChatId: input.chatId,
         expectedAfterMessageId: input.afterMessageId ?? null,
         expectedMessageIds: input.messages.map((message) => message.chatId),
+        expectedChatBodyProjectionEpoch: input.optimisticChatBodyProjectionEpoch,
       }),
   })
 }
@@ -4777,6 +4793,7 @@ export async function replaceMessagesCommand(
         operation: 'replaceAll',
         expectedChatId: input.chatId,
         expectedMessageIds: input.messages.map((message) => message.chatId),
+        expectedChatBodyProjectionEpoch: input.optimisticChatBodyProjectionEpoch,
       }),
   })
 }
@@ -7297,6 +7314,7 @@ interface ReadMessageMutationLocalEffectOptions {
   expectedMessageId?: string
   expectedAfterMessageId?: string | null
   expectedMessageIds?: Array<string | undefined>
+  expectedChatBodyProjectionEpoch?: number
 }
 
 function readMessageMutationLocalEffect(
@@ -7308,6 +7326,11 @@ function readMessageMutationLocalEffect(
   const record = body as Record<string, unknown>
   const chatId = record.chatId
   if (typeof chatId !== 'string' || chatId.trim() === '') return undefined
+  if (!isProjectionEpoch(options.expectedChatBodyProjectionEpoch)) return undefined
+  const chatBodyProjectionEpoch = options.expectedChatBodyProjectionEpoch as number
+  if ((options.operation === 'update' || options.operation === 'delete') && !nonEmptyString(options.expectedChatId)) {
+    return undefined
+  }
   if (options.expectedChatId !== undefined && chatId !== options.expectedChatId) return undefined
   if (event.resource !== 'message' || event.parentId !== chatId) return undefined
 
@@ -7333,7 +7356,13 @@ function readMessageMutationLocalEffect(
     ) {
       return undefined
     }
-    return { kind: 'messageMutation', operation: options.operation, chatId, messageId }
+    return {
+      kind: 'messageMutation',
+      operation: options.operation,
+      chatId,
+      messageId,
+      chatBodyProjectionEpoch,
+    }
   }
 
   if (event.id !== undefined) return undefined
@@ -7345,7 +7374,7 @@ function readMessageMutationLocalEffect(
     if (!isUniqueStringArray(options.expectedMessageIds)) return undefined
   }
   if (options.operation === 'replaceAll' && !isNonEmptyStringArray(options.expectedMessageIds, true)) return undefined
-  return { kind: 'messageMutation', operation: options.operation, chatId }
+  return { kind: 'messageMutation', operation: options.operation, chatId, chatBodyProjectionEpoch }
 }
 
 function readCharacterRowMutationLocalEffect(

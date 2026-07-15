@@ -114,6 +114,7 @@
     syncServerBackedChatMetadataBaselines,
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
+  import { captureChatBodyProjectionEpoch } from 'src/ts/server/resourceState.svelte'
   import {
     captureChatButtonTriggerFreshness,
     chatButtonTriggerChatSignature,
@@ -831,12 +832,15 @@
     applyLocalTranslation(target, nextTranslation)
     editTranslationMode = false
     editTranslationTarget = null
+    const optimisticChatBodyProjectionEpoch = target.chatId ? captureChatBodyProjectionEpoch(target.chatId) : undefined
     await runServerCommand({
       command: (baseRevision) =>
         updateMessageCommand({
           baseRevision,
           messageId: target.messageId,
           patch: { translation: nextTranslation },
+          optimisticChatId: target.chatId,
+          optimisticChatBodyProjectionEpoch,
         }),
       rollback: () => {
         applyLocalTranslation(target, existing, {

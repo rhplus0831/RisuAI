@@ -5819,6 +5819,7 @@ describe('server command API adapter', () => {
         baseRevision: 0,
         chatId: 'chat-a',
         message: { role: 'user', data: 'hello', chatId: 'msg-a' },
+        optimisticChatBodyProjectionEpoch: 11,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 1, messageId: 'msg-a' })
 
@@ -5827,6 +5828,8 @@ describe('server command API adapter', () => {
         baseRevision: 1,
         messageId: 'msg-a',
         patch: { data: 'edited', disabled: true },
+        optimisticChatId: 'chat-a',
+        optimisticChatBodyProjectionEpoch: 11,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 2, messageId: 'msg-a' })
 
@@ -5834,6 +5837,8 @@ describe('server command API adapter', () => {
       deleteMessageCommand({
         baseRevision: 2,
         messageId: 'msg-a',
+        optimisticChatId: 'chat-a',
+        optimisticChatBodyProjectionEpoch: 11,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 3, messageId: 'msg-a' })
 
@@ -5842,6 +5847,7 @@ describe('server command API adapter', () => {
         baseRevision: 3,
         chatId: 'chat-a',
         afterMessageId: 'msg-a',
+        optimisticChatBodyProjectionEpoch: 11,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 4, removedCount: 2 })
 
@@ -5851,6 +5857,7 @@ describe('server command API adapter', () => {
         chatId: 'chat-a',
         afterMessageId: 'msg-a',
         messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
+        optimisticChatBodyProjectionEpoch: 11,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 5, chatId: 'chat-a', replacedCount: 1 })
 
@@ -5859,6 +5866,7 @@ describe('server command API adapter', () => {
         baseRevision: 5,
         chatId: 'chat-a',
         messages: [{ role: 'char', data: 'replacement', chatId: 'msg-b' }],
+        optimisticChatBodyProjectionEpoch: 11,
       }),
     ).resolves.toMatchObject({ status: 'ok', revision: 6, chatId: 'chat-a' })
 
@@ -5880,12 +5888,30 @@ describe('server command API adapter', () => {
     ).resolves.toMatchObject({ status: 'ok', revision: 7, messageId: 'gen-a' })
 
     expect(observedEffects).toEqual([
-      { kind: 'messageMutation', operation: 'append', chatId: 'chat-a', messageId: 'msg-a' },
-      { kind: 'messageMutation', operation: 'update', chatId: 'chat-a', messageId: 'msg-a' },
-      { kind: 'messageMutation', operation: 'delete', chatId: 'chat-a', messageId: 'msg-a' },
-      { kind: 'messageMutation', operation: 'truncate', chatId: 'chat-a' },
-      { kind: 'messageMutation', operation: 'replaceTail', chatId: 'chat-a' },
-      { kind: 'messageMutation', operation: 'replaceAll', chatId: 'chat-a' },
+      {
+        kind: 'messageMutation',
+        operation: 'append',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        chatBodyProjectionEpoch: 11,
+      },
+      {
+        kind: 'messageMutation',
+        operation: 'update',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        chatBodyProjectionEpoch: 11,
+      },
+      {
+        kind: 'messageMutation',
+        operation: 'delete',
+        chatId: 'chat-a',
+        messageId: 'msg-a',
+        chatBodyProjectionEpoch: 11,
+      },
+      { kind: 'messageMutation', operation: 'truncate', chatId: 'chat-a', chatBodyProjectionEpoch: 11 },
+      { kind: 'messageMutation', operation: 'replaceTail', chatId: 'chat-a', chatBodyProjectionEpoch: 11 },
+      { kind: 'messageMutation', operation: 'replaceAll', chatId: 'chat-a', chatBodyProjectionEpoch: 11 },
     ])
 
     expect(commandFetch.calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([

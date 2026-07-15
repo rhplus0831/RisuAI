@@ -1296,6 +1296,8 @@ describe('server raw translation controls', () => {
     expect(customHtmlMocks.updateMessageCommand).toHaveBeenCalledWith({
       baseRevision: 1,
       messageId: 'message-0',
+      optimisticChatId: 'custom-html-chat',
+      optimisticChatBodyProjectionEpoch: expect.any(Number),
       patch: {
         translation: expect.objectContaining({
           text: 'attempted raw translation',
