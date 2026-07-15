@@ -47,10 +47,10 @@
     dispatchReorderChats,
     dispatchReorderChatsByIds,
     dispatchSelectChat,
-    dispatchUpdateChat,
+    dispatchUpdateChatAsync,
     dispatchUpdateChatFolder,
   } from 'src/ts/chatCommands'
-  import { canUseServerCommands } from 'src/ts/server/commands'
+  import { canUseServerCommands, type ServerCommandResult } from 'src/ts/server/commands'
   import {
     rollbackServerBackedChatFolderRowMetadata,
     rollbackServerBackedChatRowMetadata,
@@ -67,6 +67,7 @@
 
   let { chara }: Props = $props()
   let editMode = $state(false)
+  let pendingPersonaBindings = $state<Record<string, boolean>>({})
 
   let chatsStb: Sortable[] = []
   let folderStb: Sortable = null
@@ -244,43 +245,62 @@
   }
 
   async function togglePersonaBinding(chatId: string | undefined): Promise<void> {
-    if (!chatId) return
-    const chat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-    if (!chat) return
+    if (!chatId || pendingPersonaBindings[chatId]) return
+    pendingPersonaBindings[chatId] = true
+    try {
+      const chat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+      if (!chat) return
 
-    const previousBinding = chat.bindedPersona ?? ''
-    const confirmed = await alertConfirm(
-      previousBinding ? language.doYouWantToUnbindCurrentPersona : language.doYouWantToBindCurrentPersona,
-    )
-    if (!confirmed) return
+      const previousBinding = chat.bindedPersona ?? ''
+      const confirmed = await alertConfirm(
+        previousBinding ? language.doYouWantToUnbindCurrentPersona : language.doYouWantToBindCurrentPersona,
+      )
+      if (!confirmed) return
 
-    const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
-    if (!liveChat || (liveChat.bindedPersona ?? '') !== previousBinding) return
+      const liveChat = currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)
+      if (!liveChat || (liveChat.bindedPersona ?? '') !== previousBinding) return
 
-    const previous = currentChatStateSnapshot()
-    if (previousBinding) {
-      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = ''))) return
-      dispatchUpdateChat(chatId, { bindedPersona: '' }, previous, false, rollbackServerBackedChatRowMetadata)
-      alertNormal(language.personaUnbindedSuccess)
-      return
-    }
-
-    const selectedPersona = getDatabase().selectedPersona
-    const persona = getDatabase().personas?.[selectedPersona]
-    if (!persona) return
-    const bindedPersona = persona.id || v4()
-    if (!persona.id) {
-      withTrustedResourceWrite(() => {
-        if (getDatabase().selectedPersona !== selectedPersona) return
-        const livePersona = getDatabase().personas?.[selectedPersona]
-        if (livePersona && !livePersona.id) {
-          livePersona.id = bindedPersona
+      const previous = currentChatStateSnapshot()
+      let bindedPersona = ''
+      if (!previousBinding) {
+        const selectedPersona = getDatabase().selectedPersona
+        const persona = getDatabase().personas?.[selectedPersona]
+        if (!persona) return
+        bindedPersona = persona.id || v4()
+        if (!persona.id) {
+          withTrustedResourceWrite(() => {
+            if (getDatabase().selectedPersona !== selectedPersona) return
+            const livePersona = getDatabase().personas?.[selectedPersona]
+            if (livePersona && !livePersona.id) {
+              livePersona.id = bindedPersona
+            }
+          })
         }
-      })
+      }
+
+      if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
+
+      let result: ServerCommandResult | null
+      try {
+        result = await dispatchUpdateChatAsync(
+          chatId,
+          { bindedPersona },
+          previous,
+          false,
+          rollbackServerBackedChatRowMetadata,
+        )
+      } catch {
+        alertError(language.personaBindingFailed)
+        return
+      }
+      if (result && result.status !== 'ok') {
+        alertError(language.personaBindingFailed)
+        return
+      }
+      alertNormal(previousBinding ? language.personaUnbindedSuccess : language.personaBindedSuccess)
+    } finally {
+      delete pendingPersonaBindings[chatId]
     }
-    if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
-    dispatchUpdateChat(chatId, { bindedPersona }, previous, false, rollbackServerBackedChatRowMetadata)
-    alertNormal(language.personaBindedSuccess)
   }
 
   async function deleteChat(chat: Chat, index: number): Promise<void> {
@@ -736,11 +756,15 @@
                           data-risu-chat-action="options"
                           role="button"
                           aria-label={`${language.chatOptions}: ${chat.name}`}
-                          tabindex="0"
+                          aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                          aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                          tabindex={pendingPersonaBindings[chat.id ?? ''] ? -1 : 0}
                           onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                          class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
                           onclick={async (e) => {
                             e.stopPropagation()
+                            if (pendingPersonaBindings[chat.id ?? '']) return
                             const option = await alertChatOptions()
                             switch (option) {
                               case 0: {
@@ -831,11 +855,15 @@
                     data-risu-chat-action="options"
                     role="button"
                     aria-label={`${language.chatOptions}: ${chat.name}`}
-                    tabindex="0"
+                    aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                    aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
+                    tabindex={pendingPersonaBindings[chat.id ?? ''] ? -1 : 0}
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                    class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
                     onclick={async (e) => {
                       e.stopPropagation()
+                      if (pendingPersonaBindings[chat.id ?? '']) return
                       const option = await alertChatOptions()
                       switch (option) {
                         case 0: {

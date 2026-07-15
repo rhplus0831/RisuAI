@@ -1413,6 +1413,7 @@ export const languageEnglish = {
   doYouWantToUnbindCurrentPersona: 'Do you want to unbind the persona from this chat?',
   personaBindedSuccess: 'Persona is successfully binded',
   personaUnbindedSuccess: 'Persona is successfully unbinded',
+  personaBindingFailed: 'Could not update the persona binding. Please try again.',
   parameters: 'Parameters',
   sizeAndSpeed: 'Size and Speed',
   useLegacyGUI: 'Use Legacy GUI',

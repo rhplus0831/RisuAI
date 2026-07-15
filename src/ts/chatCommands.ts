@@ -1727,18 +1727,18 @@ function chatImportDispatchResult(result: ServerCommandResult | null): ChatImpor
   return { status: 'ok' }
 }
 
-export function dispatchUpdateChat(
+function dispatchUpdateChatResult(
   chatId: string,
   patch: ChatSnapshot,
   previous: ChatStateSnapshot,
   select = false,
   rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
-): void {
+): Promise<ServerCommandResult> | null {
   const commandPatch = sanitizeFrozenChatPatch(patch)
-  if (Object.keys(commandPatch).length === 0 && !select) return
+  if (Object.keys(commandPatch).length === 0 && !select) return null
   const rollback = chatMetadataRollbackFromPatch(chatId, commandPatch, previous)
   if (!rollback) {
-    runChatCommand(
+    return runChatCommandAsync(
       (baseRevision) =>
         updateChatCommand({
           baseRevision,
@@ -1748,7 +1748,6 @@ export function dispatchUpdateChat(
         }),
       () => {},
     )
-    return
   }
 
   const pendingAttempt = registerChatMetadataAttempt(chatId, rollback)
@@ -1763,6 +1762,27 @@ export function dispatchUpdateChat(
     () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata),
   )
   trackChatMetadataAttemptResult(pendingAttempt, result)
+  return result
+}
+
+export function dispatchUpdateChat(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatStateSnapshot,
+  select = false,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
+): void {
+  void dispatchUpdateChatResult(chatId, patch, previous, select, rollbackRowMetadata)
+}
+
+export function dispatchUpdateChatAsync(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatStateSnapshot,
+  select = false,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
+): Promise<ServerCommandResult> | null {
+  return dispatchUpdateChatResult(chatId, patch, previous, select, rollbackRowMetadata)
 }
 
 // Scalar-rollback variant of `dispatchUpdateChat` for chat selection: the

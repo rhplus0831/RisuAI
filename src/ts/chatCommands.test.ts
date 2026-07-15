@@ -72,6 +72,7 @@ import {
   dispatchSelectChat,
   dispatchTruncateMessagesScoped,
   dispatchUpdateChat,
+  dispatchUpdateChatAsync,
   dispatchUpdateChatFolder,
   dispatchUpdateChatFolderRow,
   dispatchUpdateChatNoteScoped,
@@ -3009,6 +3010,31 @@ describe('H2 chat-selection snapshot', () => {
         select: false,
       },
     })
+  })
+
+  it('dispatchUpdateChatAsync resolves a failure only after metadata rollback', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].bindedPersona = 'persona-old'
+    })
+
+    const previous = currentChatStateSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].bindedPersona = ''
+    })
+
+    const resultPromise = dispatchUpdateChatAsync('chat-a', { bindedPersona: '' }, previous)
+    expect(resultPromise).toBeTruthy()
+    expect(getDatabase().characters[0].chats[0].bindedPersona).toBe('')
+
+    const result = await resultPromise
+
+    expect(calls).toHaveLength(2)
+    expect(result?.status).toBe('error')
+    expect(getDatabase().characters[0].chats[0].bindedPersona).toBe('persona-old')
   })
 
   it('dispatchSelectChat optimistically updates chatPage before the PATCH resolves', async () => {

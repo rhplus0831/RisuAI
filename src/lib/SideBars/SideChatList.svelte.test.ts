@@ -30,6 +30,7 @@ const sidebarMocks = vi.hoisted(() => {
   let pendingCreateFolderCommand: DeferredCommand | undefined
   let pendingDeleteCommand: DeferredCommand | undefined
   let pendingSelectCommand: DeferredCommand | undefined
+  let pendingUpdateCommand: DeferredCommand | undefined
 
   function createDeferredCommand(): DeferredCommand {
     let resolveCommand!: (value: unknown) => void
@@ -70,6 +71,11 @@ const sidebarMocks = vi.hoisted(() => {
   function createDeferredSelectCommand(): DeferredCommand {
     pendingSelectCommand = createDeferredCommand()
     return pendingSelectCommand
+  }
+
+  function createDeferredUpdateCommand(): DeferredCommand {
+    pendingUpdateCommand = createDeferredCommand()
+    return pendingUpdateCommand
   }
 
   function okCommandResult() {
@@ -123,6 +129,7 @@ const sidebarMocks = vi.hoisted(() => {
     createDeferredCreateFolderCommand,
     createDeferredDeleteCommand,
     createDeferredSelectCommand,
+    createDeferredUpdateCommand,
     createChatCopyName: vi.fn((name: string, suffix: string) => `${name} ${suffix}`),
     currentRoute,
     createChatFolderCommand: vi.fn((input: unknown) => {
@@ -163,6 +170,7 @@ const sidebarMocks = vi.hoisted(() => {
       pendingCreateFolderCommand = undefined
       pendingDeleteCommand = undefined
       pendingSelectCommand = undefined
+      pendingUpdateCommand = undefined
       SortableMock.instances = []
       serverCommandsEnabled = false
       setCurrentRoute({
@@ -205,6 +213,10 @@ const sidebarMocks = vi.hoisted(() => {
         pendingSelectCommand.input = input
         return pendingSelectCommand.promise
       }
+      if (pendingUpdateCommand) {
+        pendingUpdateCommand.input = input
+        return pendingUpdateCommand.promise
+      }
       return okCommandResult()
     }),
     updateChatFolderCommand: unusedCommand,
@@ -241,6 +253,7 @@ vi.mock('src/lang', () => ({
     newChat: 'New Chat',
     options: 'Options',
     personaBindedSuccess: 'Persona bound',
+    personaBindingFailed: 'Persona binding failed',
     personaUnbindedSuccess: 'Persona unbound',
     removeConfirm: 'Remove ',
     remove: 'Remove',
@@ -353,6 +366,7 @@ import {
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
+import { restoreChatRowMetadata } from 'src/ts/chatCommands'
 import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -1071,59 +1085,77 @@ describe('SideChatList DOM contract harness', () => {
     expect(folderHeader(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
   })
 
-  it('optimistically unbinds a foldered chat persona before dispatch', async () => {
+  it('keeps persona unbinding pending until failure rolls state and DOM back', async () => {
     const chara = seedSidebarDatabase()
     chara.chats[1].bindedPersona = 'persona-a'
     sidebarMocks.setServerCommandsEnabled(true)
     setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
-    sidebarMocks.dispatchUpdateChat.mockImplementationOnce(() => {
-      expect(selectedCharacter().chats[1].bindedPersona).toBe('')
-    })
+    sidebarMocks.rollbackServerBackedChatRowMetadata.mockImplementationOnce(restoreChatRowMetadata)
+    const command = sidebarMocks.createDeferredUpdateCommand()
 
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    rowActionButton(rowByChatId('chat-foldered'), 'options').click()
+    const options = rowActionButton(rowByChatId('chat-foldered'), 'options')
+    options.click()
     await flushCommandWork()
 
-    expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
-      'chat-foldered',
-      { bindedPersona: '' },
-      expect.any(Object),
-      false,
-      sidebarMocks.rollbackServerBackedChatRowMetadata,
-    )
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({ chatId: 'chat-foldered', patch: { bindedPersona: '' }, select: false })
     expect(selectedCharacter().chats[1].bindedPersona).toBe('')
-    expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona unbound')
+    expect(options.getAttribute('aria-busy')).toBe('true')
+    expect(options.getAttribute('aria-disabled')).toBe('true')
+    expect(sidebarMocks.alertNormal).not.toHaveBeenCalled()
+    expect(sidebarMocks.alertError).not.toHaveBeenCalled()
+
+    options.click()
+    await tick()
+    expect(sidebarMocks.alertChatOptions).toHaveBeenCalledOnce()
+
+    command.resolve({ error: 'persona update failed', status: 'error' })
+    await flushCommandWork()
+
+    expect(sidebarMocks.rollbackServerBackedChatRowMetadata).toHaveBeenCalledOnce()
+    expect(selectedCharacter().chats[1].bindedPersona).toBe('persona-a')
+    expect(options.getAttribute('aria-busy')).toBe('false')
+    expect(options.getAttribute('aria-disabled')).toBe('false')
+    expect(sidebarMocks.alertError).toHaveBeenCalledWith('Persona binding failed')
+    expect(sidebarMocks.alertNormal).not.toHaveBeenCalled()
   })
 
-  it('optimistically binds a root chat persona before dispatch', async () => {
+  it('shows persona binding success only after the deferred command settles', async () => {
     seedSidebarDatabase()
     getDatabase().personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
     sidebarMocks.setServerCommandsEnabled(true)
     setResourceWriteGuardEnabled(true)
     sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
     sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
-    sidebarMocks.dispatchUpdateChat.mockImplementationOnce(() => {
-      expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
-    })
+    const command = sidebarMocks.createDeferredUpdateCommand()
 
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    rowActionButton(rowByChatId('chat-root-a'), 'options').click()
+    const options = rowActionButton(rowByChatId('chat-root-a'), 'options')
+    options.click()
     await flushCommandWork()
 
-    expect(sidebarMocks.dispatchUpdateChat).toHaveBeenCalledWith(
-      'chat-root-a',
-      { bindedPersona: 'persona-selected' },
-      expect.any(Object),
-      false,
-      sidebarMocks.rollbackServerBackedChatRowMetadata,
-    )
+    expect(command.settled).toBe(false)
+    expect(command.input).toMatchObject({
+      chatId: 'chat-root-a',
+      patch: { bindedPersona: 'persona-selected' },
+      select: false,
+    })
     expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
+    expect(options.getAttribute('aria-busy')).toBe('true')
+    expect(sidebarMocks.alertNormal).not.toHaveBeenCalled()
+
+    command.resolve({ revision: 11, status: 'ok' })
+    await flushCommandWork()
+
+    expect(options.getAttribute('aria-busy')).toBe('false')
+    expect(sidebarMocks.alertError).not.toHaveBeenCalled()
     expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona bound')
   })
 
