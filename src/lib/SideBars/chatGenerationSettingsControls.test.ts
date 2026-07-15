@@ -465,6 +465,14 @@ function textToggleInput(key: string): HTMLInputElement {
   return input!
 }
 
+function textareaToggleInput(key: string): HTMLElement {
+  const control = toggleControl(key)
+  expect(control.dataset.risuInputKind).toBe('textarea')
+  const input = control.querySelector<HTMLElement>('textarea, [role="textbox"]')
+  expect(input, `${key} textarea toggle input`).toBeTruthy()
+  return input!
+}
+
 function selectToggleInput(key: string): HTMLSelectElement {
   const control = toggleControl(key)
   expect(control.dataset.risuInputKind).toBe('select')
@@ -928,6 +936,71 @@ describe('sidebar chat generation settings controls', () => {
 
     expect(selectToggleInput('mood').value).toBe('1')
     expect(toggleCheckbox('flag').checked).toBe(true)
+  })
+
+  it('does not transfer an open generated group to a different active chat layout', async () => {
+    testDatabaseState().promptPresets[0].customPromptTemplateToggle =
+      '=Alpha Group=group\nalphaFlag=Alpha Flag\n==groupEnd'
+    testDatabaseState().promptPresets[1].customPromptTemplateToggle =
+      '=Beta Group=group\nbetaFlag=Beta Flag\n==groupEnd'
+    testDatabaseState().characters[0].chats[0].generationSettings!.sidebarToggles = {
+      alphaFlag: '1',
+      moduleFlag: '1',
+    }
+    testDatabaseState().characters[0].chats[1].generationSettings!.sidebarToggles = {
+      betaFlag: '0',
+      moduleFlag: '0',
+    }
+
+    mountToggles()
+    await tick()
+
+    const alphaGroup = elementBySelector<HTMLElement>(
+      '[data-risu-generation-toggle-group][data-risu-toggle-label="Alpha Group"]',
+      'alpha toggle group',
+    )
+    const alphaButton = alphaGroup.querySelector<HTMLButtonElement>('button')
+    expect(alphaButton).toBeTruthy()
+    alphaButton!.click()
+    await tick()
+    expect(alphaButton!.getAttribute('aria-expanded')).toBe('true')
+    expect(toggleCheckbox('alphaFlag').checked).toBe(true)
+
+    activeChat().generationSettings!.sidebarToggles!.alphaFlag = '0'
+    await tick()
+    expect(alphaGroup.querySelector<HTMLButtonElement>('button')).toBe(alphaButton)
+    expect(alphaButton!.getAttribute('aria-expanded')).toBe('true')
+    expect(toggleCheckbox('alphaFlag').checked).toBe(false)
+
+    testDatabaseState().characters[0].chatPage = 1
+    await tick()
+
+    const betaGroup = elementBySelector<HTMLElement>(
+      '[data-risu-generation-toggle-group][data-risu-toggle-label="Beta Group"]',
+      'beta toggle group',
+    )
+    const betaButton = betaGroup.querySelector<HTMLButtonElement>('button')
+    expect(betaButton).toBeTruthy()
+    expect(betaButton!.getAttribute('aria-expanded')).toBe('false')
+    expect(target.querySelector('[data-risu-generation-toggle-control][data-risu-toggle-key="betaFlag"]')).toBeNull()
+  })
+
+  it('programmatically names generated select, text, and textarea controls', async () => {
+    testDatabaseState().promptPresets[0].customPromptTemplateToggle =
+      'mood=Mood=select=Calm,Spicy\nnote=Note=text\ndetails=Details=textarea'
+    testDatabaseState().characters[0].chats[0].generationSettings!.sidebarToggles = {
+      mood: '1',
+      note: 'alpha-note',
+      details: 'alpha-details',
+      moduleFlag: '1',
+    }
+
+    mountToggles()
+    await tick()
+
+    expect(selectToggleInput('mood').getAttribute('aria-label')).toBe('Mood')
+    expect(textToggleInput('note').getAttribute('aria-label')).toBe('Note')
+    expect(textareaToggleInput('details').getAttribute('aria-label')).toBe('Details')
   })
 
   it('updates mounted active-chat controls after a character-row projection changes generation settings', async () => {

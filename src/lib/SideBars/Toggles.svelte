@@ -140,17 +140,36 @@
       grouped.push(item)
     }
   }
+
+  function groupedToggleIdentity(toggle: GroupedSidebarToggle): unknown[] {
+    return [
+      toggle.source,
+      toggle.presetId ?? '',
+      toggle.moduleId ?? '',
+      toggle.moduleNamespace ?? '',
+      toggle.kind,
+      toggle.key ?? '',
+      toggle.label,
+      toggle.kind === 'group' ? toggle.children.map(groupedToggleIdentity) : [],
+    ]
+  }
+
+  function groupedToggleGroupKey(toggle: GroupedSidebarToggleGroup): string {
+    return JSON.stringify(groupedToggleIdentity(toggle))
+  }
 </script>
 
 {#snippet toggles(items: GroupedSidebarToggle[], reverse: boolean = false)}
   {#each items as toggle, index}
     {#if toggle.kind === 'group'}
       {#if toggle.children.length > 0}
-        <div class="w-full" data-risu-generation-toggle-group data-risu-toggle-label={toggle.label}>
-          <Accordion styled name={toggle.label}>
-            {@render toggles(toggle.children, reverse)}
-          </Accordion>
-        </div>
+        {#key groupedToggleGroupKey(toggle)}
+          <div class="w-full" data-risu-generation-toggle-group data-risu-toggle-label={toggle.label}>
+            <Accordion styled name={toggle.label}>
+              {@render toggles(toggle.children, reverse)}
+            </Accordion>
+          </div>
+        {/key}
       {/if}
     {:else if toggle.kind === 'caption'}
       <div class="w-full mt-1 text-xs text-textcolor2" data-risu-generation-toggle-caption>
@@ -181,6 +200,7 @@
         <span>{toggle.label}</span>
         <SelectInput
           className="w-32"
+          ariaLabel={toggle.label}
           bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, String(value))}>
           {#each toggle.options as option, i}
             <OptionInput value={i.toString()}>{option}</OptionInput>
@@ -201,6 +221,7 @@
         <span>{toggle.label}</span>
         <TextInput
           className="w-32"
+          ariaLabel={toggle.label}
           bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
       </div>
     {:else if toggle.kind === 'textarea'}
@@ -218,6 +239,7 @@
         <TextAreaInput
           className="w-32"
           height="20"
+          ariaLabel={toggle.label}
           bind:value={() => getToggleValue(toggle.key), (value) => setToggleValue(toggle.key, value)} />
       </div>
     {:else}
