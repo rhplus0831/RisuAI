@@ -23,6 +23,8 @@ const storedSettings = {
   claudeAPIKey: 'stored-anthropic-key',
   deeplOptions: { key: 'stored-deepl-key', freeApi: true },
   deeplXOptions: { token: 'stored-deeplx-token', url: 'http://127.0.0.1:1188/base/' },
+  elevenLabKey: 'stored-elevenlabs-key',
+  fishSpeechKey: 'stored-fish-key',
   modelProfiles: [
     {
       id: 'openrouter-profile',
@@ -145,6 +147,18 @@ describe('provider operation allowlist', () => {
       url: 'http://127.0.0.1:1188/base/translate',
       method: 'POST',
       header: ['authorization', 'Bearer stored-deeplx-token'],
+    },
+    {
+      operation: 'elevenlabs.voices' as const,
+      url: 'https://api.elevenlabs.io/v1/voices',
+      method: 'GET',
+      header: ['xi-api-key', 'stored-elevenlabs-key'],
+    },
+    {
+      operation: 'fish.models' as const,
+      url: 'https://api.fish.audio/model?self=true',
+      method: 'GET',
+      header: ['authorization', 'Bearer stored-fish-key'],
     },
   ])('maps $operation to its fixed upstream request', ({ operation, input, url, method, header: expected }) => {
     const upstream = resolveProviderUpstreamRequest(request(operation, input), storedSettings)

@@ -13,6 +13,8 @@ export const PROVIDER_OPERATIONS = [
   'anthropic.models',
   'deepl.translate',
   'deeplx.translate',
+  'elevenlabs.voices',
+  'fish.models',
 ] as const
 
 export type ProviderOperation = (typeof PROVIDER_OPERATIONS)[number]

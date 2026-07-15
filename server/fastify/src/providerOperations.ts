@@ -16,7 +16,17 @@ export const PROVIDER_OPERATION_MAX_TEXT_LENGTH = 512 * 1024
 export const PROVIDER_OPERATION_MAX_LANGUAGE_LENGTH = 64
 
 type JsonRecord = Record<string, unknown>
-type ProviderKind = 'nanogpt' | 'openrouter' | 'ollama' | 'wavespeed' | 'google' | 'anthropic' | 'deepl' | 'deeplx'
+type ProviderKind =
+  | 'nanogpt'
+  | 'openrouter'
+  | 'ollama'
+  | 'wavespeed'
+  | 'google'
+  | 'anthropic'
+  | 'deepl'
+  | 'deeplx'
+  | 'elevenlabs'
+  | 'fish'
 
 interface ProviderOperationSpec {
   provider: ProviderKind
@@ -224,6 +234,24 @@ const OPERATION_SPECS: Record<ProviderOperation, ProviderOperationSpec> = {
         },
       }
     },
+  },
+  'elevenlabs.voices': {
+    provider: 'elevenlabs',
+    credentialRequired: true,
+    storedCredential: (settings) => readString(settings.elevenLabKey),
+    buildRequest: (apiKey) => ({
+      url: 'https://api.elevenlabs.io/v1/voices',
+      init: fixedJsonRequest('GET', { 'xi-api-key': requiredApiKey(apiKey) }),
+    }),
+  },
+  'fish.models': {
+    provider: 'fish',
+    credentialRequired: true,
+    storedCredential: (settings) => readString(settings.fishSpeechKey),
+    buildRequest: (apiKey) => ({
+      url: 'https://api.fish.audio/model?self=true',
+      init: fixedJsonRequest('GET', bearerHeader(requiredApiKey(apiKey))),
+    }),
   },
 }
 

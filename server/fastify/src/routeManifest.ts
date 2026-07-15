@@ -751,6 +751,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'tts-synthesis',
+    methods: ['POST'],
+    path: '/api/v1/tts/synthesize',
+    auth: {
+      decision: 'required',
+      reason: 'TTS synthesis can use server-owned provider credentials and private character settings.',
+    },
+    activeWriter: {
+      decision: 'runtime-proxy',
+      reason: 'TTS synthesis forwards a bounded request without mutating durable state.',
+    },
+    streaming: 'binary',
+  },
+  {
     id: 'proxy-fetch',
     methods: ['POST'],
     path: '/api/v1/proxy/fetch',

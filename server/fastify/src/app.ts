@@ -43,6 +43,7 @@ import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
 import { registerSaveRoutes } from './routes/save.js'
 import { registerStreamJobRoutes } from './routes/streamJobs.js'
+import { registerTtsRoutes, type TtsSynthesisRouteOptions } from './routes/tts.js'
 import { SUPPORTED_ASSET_CONTENT_TYPES, ensureDbJsonImported, loadPersistedWithMessages } from './repository.js'
 import { ASSET_GC_INTERVAL_MS, type AssetGcOptions, runAssetGc } from './assetGc.js'
 import { JobRegistry, PROXY_STREAM_GC_INTERVAL_MS } from './streamJobs.js'
@@ -82,6 +83,7 @@ export interface BuildAppOptions {
   openAITranscription?: OpenAITranscriptionRouteOptions
   providerOperations?: ProviderOperationRouteOptions
   embeddingOperations?: EmbeddingOperationRouteOptions
+  ttsSynthesis?: TtsSynthesisRouteOptions
   /**
    * Periodic server-side asset GC. `false` disables the timer (tests that do
    * not exercise GC). An options object tunes the grace window / interval.
@@ -281,6 +283,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerOpenAITranscriptionRoutes(app, db, authState, opts.openAITranscription)
   registerEmbeddingOperationRoutes(app, db, authState, opts.embeddingOperations)
   registerProviderOperationRoutes(app, db, authState, opts.providerOperations)
+  registerTtsRoutes(app, db, authState, opts.ttsSynthesis)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, db, authState, config.hubUrl)

@@ -45,12 +45,20 @@ allowlist; it does not import the full browser UI registry.
 Dynamic NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`.
 OpenRouter, NanoGPT, Ollama, and Horde helpers carry richer browser catalog
 metadata for picker/filter UI than the server needs for dispatch. NanoGPT,
-OpenRouter, Ollama Cloud, WaveSpeed, Google, and Anthropic catalog/account calls
+OpenRouter, Ollama Cloud, WaveSpeed, Google, Anthropic, ElevenLabs, and Fish Speech catalog/account calls
 use the fixed allowlist in `server/fastify/src/providerOperations.ts` through
 `src/ts/server/providerOperations.ts`; callers cannot supply an upstream URL,
 method, or arbitrary headers. Stored and profile-local masked credentials are
 resolved only by Fastify and never projected back to the browser. A user-edited
 draft key is a one-shot override for the selected fixed provider operation.
+
+Credentialed browser TTS playback uses the bounded binary operation in
+`server/fastify/src/tts.ts` through `src/ts/server/tts.ts`. ElevenLabs, Fish
+Speech, Hugging Face, and NovelAI targets are fixed. OpenAI-compatible playback
+loads a masked per-character key, its persisted endpoint, and its options
+together by stable character id; an intentional caller-owned draft key may use
+only a validated explicit endpoint/config. Upstream errors are sanitized, audio
+is size- and time-bounded, and browser cancellation is propagated.
 
 OpenRouter model/provider and NanoGPT model/provider catalog requests are keyed
 by their full credential/model context and share an in-flight promise. Public

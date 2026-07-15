@@ -37,6 +37,11 @@ export const mcpOAuthRefreshRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const ttsSynthesisRateLimit: RateLimitOptions = {
+  max: 60,
+  timeWindow: MINUTE,
+}
+
 export const proxyStreamCreateRateLimit: RateLimitOptions = {
   max: 30,
   timeWindow: MINUTE,
