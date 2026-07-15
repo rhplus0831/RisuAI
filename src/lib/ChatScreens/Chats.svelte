@@ -8,6 +8,7 @@
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { chatProcessStage, doingChat } from 'src/ts/process/index.svelte'
+  import { didChatOwnerChange } from './ChatsUnread'
 
   const getCurrentChatRoomId = () => {
     const charId = get(selectedCharID)
@@ -118,6 +119,9 @@
     chatRows
     const currentChatRoomId = getCurrentChatRoomId()
     const isSameChat = currentChatRoomId === previousChatRoomId
+    if (didChatOwnerChange(previousChatRoomId, currentChatRoomId)) {
+      hasNewUnreadMessage = false
+    }
 
     // Only auto-scroll if it's the same chat and new messages were added
     if (isSameChat && messages.length > previousLength) {
