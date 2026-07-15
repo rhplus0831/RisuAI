@@ -47,6 +47,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import PlaygroundEmbedding from './PlaygroundEmbedding.svelte'
 import PlaygroundImageGen from './PlaygroundImageGen.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -151,8 +152,8 @@ describe('playground run-state recovery', () => {
     runMocks.similaritySearchScored.mockResolvedValue([['stale result', 0.75]])
     component = mount(PlaygroundEmbedding, { target })
 
-    const addButton = Array.from(target.querySelectorAll('button')).find(
-      (candidate) => candidate.textContent?.trim() === '+',
+    const addButton = Array.from(target.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes(language.playground.embeddingAddData),
     )
     expect(addButton).toBeTruthy()
     addButton!.click()
@@ -198,5 +199,53 @@ describe('playground run-state recovery', () => {
     await vi.waitFor(() => expect(target.querySelector('.loadmove')).toBeNull())
     expect(target.textContent).not.toContain('stale result')
     expect(target.textContent).toContain('No result')
+  })
+})
+
+describe('playground run control names', () => {
+  it('keeps image generation fields and the loading action named', async () => {
+    let finishGeneration: ((value: string) => void) | undefined
+    runMocks.generateAIImage.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          finishGeneration = resolve
+        }),
+    )
+    component = mount(PlaygroundImageGen, { target })
+
+    expect(Array.from(target.querySelectorAll('textarea'), (input) => input.getAttribute('aria-label'))).toEqual([
+      language.prompt,
+      language.negPrompt,
+    ])
+    const generate = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(language.playground.generateImage),
+    )
+    expect(generate).toBeTruthy()
+
+    generate!.click()
+    await vi.waitFor(() => expect(runMocks.generateAIImage).toHaveBeenCalledOnce())
+    expect(generate!.disabled).toBe(true)
+    expect(generate!.textContent).toContain(language.playground.generateImage)
+    expect(generate!.querySelector('.loadmove')?.getAttribute('aria-hidden')).toBe('true')
+
+    finishGeneration!('')
+    await vi.waitFor(() => expect(generate!.disabled).toBe(false))
+  })
+
+  it('names embedding model, query, repeated data, and the symbolic add control', async () => {
+    component = mount(PlaygroundEmbedding, { target })
+
+    const model = target.querySelector('select')
+    expect(model?.getAttribute('aria-label')).toBe(language.playground.embeddingModel)
+    expect(target.querySelector('input')?.getAttribute('aria-label')).toBe(language.playground.embeddingQuery)
+
+    const add = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes(language.playground.embeddingAddData),
+    )
+    expect(add?.querySelector('[aria-hidden="true"]')?.textContent).toBe('+')
+    expect(add?.querySelector('.sr-only')?.textContent).toBe(language.playground.embeddingAddData)
+    add!.click()
+    await tick()
+    expect(target.querySelector(`input[aria-label="${language.playground.embeddingData(1)}"]`)).toBeTruthy()
   })
 })

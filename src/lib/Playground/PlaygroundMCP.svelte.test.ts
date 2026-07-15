@@ -31,6 +31,7 @@ vi.mock('src/ts/alert', () => ({
 }))
 
 import PlaygroundMCP from './PlaygroundMCP.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -78,10 +79,31 @@ afterEach(() => {
 })
 
 function buttonsNamed(name: string): HTMLButtonElement[] {
-  return Array.from(target.querySelectorAll('button')).filter((button) => button.textContent?.trim() === name)
+  return Array.from(target.querySelectorAll('button')).filter(
+    (button) =>
+      button.textContent?.trim() === name || button.querySelector('[aria-hidden="true"]')?.textContent?.trim() === name,
+  )
 }
 
 describe('PlaygroundMCP tool execution', () => {
+  it('gives metadata and duplicate-name server tools distinct control names', async () => {
+    component = mount(PlaygroundMCP, { target })
+
+    expect(target.querySelector('textarea')?.getAttribute('aria-label')).toBe(language.playground.mcpMetadata)
+    buttonsNamed('Refresh')[0].click()
+    await vi.waitFor(() => expect(buttonsNamed('Execute shared_tool')).toHaveLength(2))
+
+    expect(Array.from(target.querySelectorAll('textarea'), (input) => input.getAttribute('aria-label'))).toEqual([
+      language.playground.mcpMetadata,
+      language.playground.mcpToolInput('shared_tool', 'plugin:first'),
+      language.playground.mcpToolInput('shared_tool', 'plugin:second'),
+    ])
+    expect(buttonsNamed('Execute shared_tool').map((button) => button.querySelector('.sr-only')?.textContent)).toEqual([
+      language.playground.mcpExecuteTool('shared_tool', 'plugin:first'),
+      language.playground.mcpExecuteTool('shared_tool', 'plugin:second'),
+    ])
+  })
+
   it('serializes refreshes and recovers after a refresh failure', async () => {
     const initialization = deferred<void>()
     mcpMocks.initializeMCPs.mockReturnValueOnce(initialization.promise)

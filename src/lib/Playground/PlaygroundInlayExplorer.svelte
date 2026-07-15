@@ -199,7 +199,7 @@
   <span class="text-textcolor2"
     >{language.playground.inlayTotalAssets.replace('{count}', allAssets.length.toString())}</span>
   {#if allAssets.length > 0}
-    <div class="flex gap-2 ml-auto">
+    <div class="ml-auto flex max-w-full flex-wrap justify-end gap-2">
       {#if hasSelection}
         <Button onclick={deleteSelected} styled="danger" size="sm">{language.playground.inlayDeleteSelected}</Button>
         <Button onclick={deselectAll} styled="primary" size="sm"
@@ -230,7 +230,12 @@
       {#key selection.has(id)}
         <div class="border border-darkborderc rounded-lg p-4 bg-darkbg">
           <div class="flex items-center gap-2 mb-3">
-            <CheckInput check={selection.has(id)} hiddenName margin={false} onChange={() => toggleSelect(id)} />
+            <CheckInput
+              check={selection.has(id)}
+              name={language.playground.inlaySelectAsset(asset.name)}
+              hiddenName
+              margin={false}
+              onChange={() => toggleSelect(id)} />
             <span class="px-2 py-1 text-xs rounded bg-darkbutton text-textcolor2">
               {asset.type}
             </span>

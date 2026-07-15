@@ -24,6 +24,7 @@ vi.mock('src/ts/alert', () => ({
 }))
 
 import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -112,6 +113,7 @@ describe('PlaygroundInlayExplorer', () => {
       button.textContent?.includes('Select All'),
     )
     expect(selectAll).toBeTruthy()
+    expect(selectAll?.parentElement?.classList.contains('flex-wrap')).toBe(true)
     selectAll!.click()
     await tick()
 
@@ -157,8 +159,13 @@ describe('PlaygroundInlayExplorer', () => {
 
     const checkbox = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
     expect(checkbox).toBeTruthy()
+    expect(checkbox?.getAttribute('aria-label')).toBe(language.playground.inlaySelectAsset('Asset 1'))
+    expect(checkbox?.checked).toBe(false)
     checkbox!.click()
     await vi.waitFor(() => expect(inlayMocks.getInlayAssetBlob).toHaveBeenCalledTimes(2))
+    const selectedCheckbox = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(selectedCheckbox?.getAttribute('aria-label')).toBe(language.playground.inlaySelectAsset('Asset 1'))
+    expect(selectedCheckbox?.checked).toBe(true)
 
     newerPreview.resolve({ data: new Blob(['newer'], { type: 'image/png' }) })
     await newerPreview.promise

@@ -661,6 +661,7 @@
   <span class="text-textcolor text-lg mt-4">{language.sourceLanguage}</span>
   <SelectInput
     value={sourceLang === null ? 'auto' : sourceLang}
+    ariaLabel={language.sourceLanguage}
     onchange={(event) => {
       sourceLang = event.currentTarget.value === 'auto' ? null : event.currentTarget.value
     }}>
@@ -672,14 +673,15 @@
 {/if}
 
 <span class="text-textcolor text-lg mt-4">{language.destinationLanguage}</span>
-<TextInput bind:value={selLang} />
+<TextInput bind:value={selLang} ariaLabel={language.destinationLanguage} />
 
 <span class="text-textcolor text-lg mt-4">{language.prompt}</span>
-<TextAreaInput bind:value={prompt} />
+<TextAreaInput bind:value={prompt} ariaLabel={language.prompt} />
 
 <span class="text-textcolor text-lg mt-4">{language.type}</span>
 <SelectInput
   bind:value={mode}
+  ariaLabel={language.type}
   onchange={(e) => {
     const selectedMode = e.currentTarget.value as typeof mode
     mode = selectedMode

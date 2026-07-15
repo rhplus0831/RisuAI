@@ -179,6 +179,37 @@ describe('PlaygroundImageTrans JSON rendering', () => {
 })
 
 describe('PlaygroundImageTrans request ownership', () => {
+  it('names its editable controls and exposes the busy action as disabled', async () => {
+    installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    const response = deferred<{ type: 'success'; result: string }>()
+    imageMocks.requestChatData.mockReturnValue(response.promise)
+    component = mount(PlaygroundImageTrans, { target })
+
+    expect(target.querySelector('select')?.getAttribute('aria-label')).toBe(language.playground.imageTranslationMode)
+    expect(Array.from(target.querySelectorAll('input'), (input) => input.getAttribute('aria-label'))).toEqual([
+      language.destinationLanguage,
+      language.font,
+      language.playground.fontSize,
+    ])
+    expect(target.querySelector('textarea')?.getAttribute('aria-label')).toBe(language.prompt)
+
+    const button = translationButton()
+    button.click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+    expect(button.disabled).toBe(true)
+    expect(button.textContent).toContain(language.imageTranslation)
+    expect(button.textContent).toContain(language.loading)
+
+    response.resolve({
+      type: 'success',
+      result:
+        '[{"x_min":0,"y_min":0,"x_max":1,"y_max":1,"bg_hex_color":"#fff","text_hex_color":"#000","content":"hello","translation":"translated"}]',
+    })
+    await waitForTranslationIdle()
+    expect(target.querySelectorAll('textarea')[1]?.getAttribute('aria-label')).toBe(language.playground.jsonOutput)
+  })
+
   it('does not submit a model request when automatic file selection is cancelled', async () => {
     imageMocks.selectSingleFile.mockResolvedValue(null)
     component = mount(PlaygroundImageTrans, { target })

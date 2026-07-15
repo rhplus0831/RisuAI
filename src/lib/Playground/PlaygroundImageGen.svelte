@@ -37,20 +37,19 @@
 <h2 class="text-4xl text-textcolor my-6 font-black relative">{language.imageGeneration}</h2>
 
 <span class="text-textcolor text-lg">Prompt</span>
-<TextAreaInput bind:value={prompt} />
+<TextAreaInput bind:value={prompt} ariaLabel={language.prompt} />
 
 <span class="text-textcolor text-lg">Neg. Prompt</span>
-<TextAreaInput bind:value={negPrompt} />
+<TextAreaInput bind:value={negPrompt} ariaLabel={language.negPrompt} />
 
 {#if img && prompt === generatedPrompt && negPrompt === generatedNegPrompt}
   <span class="text-textcolor text-lg">Generated</span>
   <img src={img} class="max-w-full mt-4" alt="Generated" />
 {/if}
 
-<Button className="mt-6" onclick={run}>
+<Button className="mt-6 flex justify-center" disabled={generating} onclick={run}>
+  <span class:sr-only={generating}>{language.playground.generateImage}</span>
   {#if generating}
-    <div class="loadmove"></div>
-  {:else}
-    Generate
+    <div class="loadmove" aria-hidden="true"></div>
   {/if}
 </Button>

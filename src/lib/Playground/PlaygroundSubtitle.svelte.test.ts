@@ -82,6 +82,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import PlaygroundSubtitle from './PlaygroundSubtitle.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -140,6 +141,24 @@ async function selectMode(value: 'llm' | 'whisper' | 'whisperLocal'): Promise<vo
 }
 
 describe('PlaygroundSubtitle run recovery', () => {
+  it('names its language, prompt, and mode controls and exposes the selected options', async () => {
+    component = mount(PlaygroundSubtitle, { target })
+
+    const destination = target.querySelector<HTMLInputElement>('input[type="text"]')
+    const prompt = target.querySelector('textarea')
+    const mode = target.querySelector('select')
+    expect(destination?.getAttribute('aria-label')).toBe(language.destinationLanguage)
+    expect(prompt?.getAttribute('aria-label')).toBe(language.prompt)
+    expect(mode?.getAttribute('aria-label')).toBe(language.type)
+    expect(mode?.value).toBe('llm')
+
+    await selectMode('whisperLocal')
+    const source = Array.from(target.querySelectorAll('select')).find(
+      (select) => select.getAttribute('aria-label') === language.sourceLanguage,
+    )
+    expect(source?.value).toBe('auto')
+  })
+
   it('restores the Run control when the selected model cannot stream subtitles', async () => {
     subtitleMocks.selectSingleFile.mockResolvedValue({
       name: 'sample.mp3',

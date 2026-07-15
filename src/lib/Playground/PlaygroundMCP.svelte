@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { language } from 'src/lang'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { type MCPToolWithURL, callMCPToolFrom, getMCPMeta, getMCPTools, initializeMCPs } from 'src/ts/process/mcp/mcp'
@@ -49,7 +50,7 @@
 <h2 class="text-4xl text-textcolor my-6 font-black relative">MCP</h2>
 
 <span class="text-textcolor text-lg">Metadatas</span>
-<TextAreaInput value={metadatas} />
+<TextAreaInput value={metadatas} ariaLabel={language.playground.mcpMetadata} />
 
 <span class="text-textcolor text-lg">Tools</span>
 <div class="flex flex-col gap-2">
@@ -61,9 +62,14 @@
       <div class="prose prose-gray w-full">
         <pre class="overflow-x-auto w-full">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
       </div>
-      <TextAreaInput bind:value={toolInputs[toolKey(tool)]} placeholder="Input for this tool" />
-      <Button disabled={pendingTools[toolKey(tool)] ?? false} onclick={() => executeTool(tool)}
-        >Execute {tool.name}</Button>
+      <TextAreaInput
+        bind:value={toolInputs[toolKey(tool)]}
+        placeholder={language.playground.mcpToolInput(tool.name, tool.mcpURL)}
+        ariaLabel={language.playground.mcpToolInput(tool.name, tool.mcpURL)} />
+      <Button disabled={pendingTools[toolKey(tool)] ?? false} onclick={() => executeTool(tool)}>
+        <span aria-hidden="true">Execute {tool.name}</span>
+        <span class="sr-only">{language.playground.mcpExecuteTool(tool.name, tool.mcpURL)}</span>
+      </Button>
     </div>
   {/each}
 </div>

@@ -446,22 +446,26 @@
   let selectionStart: { x: number; y: number } | null = null
 </script>
 
-<SelectInput value={mode} onchange={(event) => changeMode(event.currentTarget.value)} className="w-1/2">
+<SelectInput
+  value={mode}
+  onchange={(event) => changeMode(event.currentTarget.value)}
+  className="w-1/2"
+  ariaLabel={language.playground.imageTranslationMode}>
   <option value="auto">{'auto'}</option>
   <option value="manual">{'manual'}</option>
 </SelectInput>
 
 <span class="text-textcolor text-lg mt-4">{language.destinationLanguage}</span>
-<TextInput bind:value={selLang} />
+<TextInput bind:value={selLang} ariaLabel={language.destinationLanguage} />
 
 <span class="text-textcolor text-lg mt-4">{language.prompt}</span>
-<TextAreaInput bind:value={prompt} />
+<TextAreaInput bind:value={prompt} ariaLabel={language.prompt} />
 
 <span class="text-textcolor text-lg mt-4">{language.font}</span>
-<TextInput bind:value={fontFamily} />
+<TextInput bind:value={fontFamily} ariaLabel={language.font} />
 
 <span class="text-textcolor text-lg mt-4">fontSize</span>
-<NumberInput bind:value={fontSize} />
+<NumberInput bind:value={fontSize} ariaLabel={language.playground.fontSize} />
 
 {#if mode === 'manual'}
   <Button className="mt-4" onclick={selectFile}>
@@ -469,13 +473,21 @@
   </Button>
 {/if}
 
-<Button className="mt-4" onclick={() => imageTranslate(0)}>
-  {loading ? 'loading' : language.imageTranslation}
+<Button className="mt-4" disabled={loading} onclick={() => imageTranslate(0)}>
+  {#if loading}
+    <span class="sr-only">{language.imageTranslation}: </span>{language.loading}
+  {:else}
+    {language.imageTranslation}
+  {/if}
 </Button>
 
 {#if output}
   <span class="text-textcolor text-lg mt-4">JSON</span>
-  <TextAreaInput bind:value={output} className="overflow-x-auto" onchange={render} />
+  <TextAreaInput
+    bind:value={output}
+    className="overflow-x-auto"
+    onchange={render}
+    ariaLabel={language.playground.jsonOutput} />
 {/if}
 
 <div class="relative mt-2">

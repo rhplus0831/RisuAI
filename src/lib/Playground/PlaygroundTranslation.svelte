@@ -154,20 +154,26 @@
 </script>
 
 <span>{language.sourceLanguage}</span>
-<SelectInput value={sourceLang} onchange={(event) => (sourceLang = event.currentTarget.value)}>
+<SelectInput
+  value={sourceLang}
+  onchange={(event) => (sourceLang = event.currentTarget.value)}
+  ariaLabel={language.sourceLanguage}>
   {#each getLanguageCodes() as lang}
     <OptionInput value={lang.code}>{lang.name}</OptionInput>
   {/each}
 </SelectInput>
-<TextAreaInput bind:value={r} />
+<TextAreaInput bind:value={r} ariaLabel={language.playground.translationSourceText} />
 
 <span>{language.translatorLanguage}</span>
-<SelectInput value={outputLang} onchange={(event) => (outputLang = event.currentTarget.value)}>
+<SelectInput
+  value={outputLang}
+  onchange={(event) => (outputLang = event.currentTarget.value)}
+  ariaLabel={language.translatorLanguage}>
   {#each getLanguageCodes() as lang}
     <OptionInput value={lang.code}>{lang.name}</OptionInput>
   {/each}
 </SelectInput>
-<TextAreaInput value={output} />
+<TextAreaInput value={output} ariaLabel={language.playground.translationOutputText} />
 
 {#if failureMessages.length > 0}
   <div class="mt-3 rounded-md border border-red-500 p-3 text-sm text-red-400" role="alert">
@@ -180,9 +186,9 @@
   </div>
 {/if}
 
-<CheckInput bind:check={bulk}>Bulk</CheckInput>
+<CheckInput bind:check={bulk} name={language.playground.translationBulk} />
 {#if bulk}
-  <CheckInput bind:check={keepContext}>Keep Context</CheckInput>
+  <CheckInput bind:check={keepContext} name={language.playground.translationKeepContext} />
 {/if}
 
 <Button className="mt-4" onclick={translate}>
@@ -197,5 +203,5 @@
   onclick={async () => {
     await clearLLMCache()
   }}>
-  Clear Cache
+  {language.playground.translationClearCache}
 </Button>

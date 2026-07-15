@@ -88,7 +88,7 @@
 <h2 class="text-4xl text-textcolor my-6 font-black relative">{language.embedding}</h2>
 
 <span class="text-textcolor text-lg">Model</span>
-<SelectInput bind:value={model} className="mb-4" disabled={running}>
+<SelectInput bind:value={model} className="mb-4" disabled={running} ariaLabel={language.playground.embeddingModel}>
   {#if 'gpu' in navigator}
     <OptionInput value="MiniLMGPU">MiniLM L6 v2 (GPU)</OptionInput>
     <OptionInput value="nomicGPU">Nomic Embed Text v1.5 (GPU)</OptionInput>
@@ -111,31 +111,54 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
   <span class="text-textcolor text-lg">OpenAI API Key</span>
-  <SecretInput size="sm" marginBottom ownerKey="hypaV3Key" bind:value={hypaV3KeyDraft.value} disabled={running} />
+  <SecretInput
+    size="sm"
+    marginBottom
+    ownerKey="hypaV3Key"
+    bind:value={hypaV3KeyDraft.value}
+    disabled={running}
+    ariaLabel={language.playground.embeddingOpenAIKey} />
 {/if}
 
 {#if model === 'custom'}
   <span class="text-textcolor text-lg">URL</span>
-  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} disabled={running} />
+  <TextInput
+    size="sm"
+    marginBottom
+    bind:value={hypaCustomSettingsDraft.value.url}
+    disabled={running}
+    ariaLabel={language.playground.embeddingCustomUrl} />
   <span class="text-textcolor text-lg">Key/Password</span>
   <SecretInput
     size="sm"
     marginBottom
     ownerKey="hypaCustomSettings.key"
     bind:value={hypaCustomSettingsDraft.value.key}
-    disabled={running} />
+    disabled={running}
+    ariaLabel={language.playground.embeddingCustomKey} />
   <span class="text-textcolor text-lg">Request Model</span>
-  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} disabled={running} />
+  <TextInput
+    size="sm"
+    marginBottom
+    bind:value={hypaCustomSettingsDraft.value.model}
+    disabled={running}
+    ariaLabel={language.playground.embeddingRequestModel} />
 {/if}
 
 <div class="mb-4"></div>
 
 <span class="text-textcolor text-lg">Query</span>
-<TextInput bind:value={query} size="lg" fullwidth disabled={running} />
+<TextInput bind:value={query} size="lg" fullwidth disabled={running} ariaLabel={language.playground.embeddingQuery} />
 
 <span class="text-textcolor text-lg mt-6">Data</span>
 {#each data as item, i}
-  <TextInput bind:value={data[i]} size="lg" fullwidth marginBottom disabled={running} />
+  <TextInput
+    bind:value={data[i]}
+    size="lg"
+    fullwidth
+    marginBottom
+    disabled={running}
+    ariaLabel={language.playground.embeddingData(i + 1)} />
 {/each}
 <Button
   styled="outlined"
@@ -143,7 +166,10 @@
   onclick={() => {
     data.push('')
     data = data
-  }}>+</Button>
+  }}>
+  <span aria-hidden="true">+</span>
+  <span class="sr-only">{language.playground.embeddingAddData}</span>
+</Button>
 
 <span class="text-textcolor text-lg mt-6">Result</span>
 {#if dataresult.length === 0}
@@ -163,9 +189,8 @@
   onclick={() => {
     run()
   }}>
+  <span class:sr-only={running}>{language.run?.toLocaleUpperCase()}</span>
   {#if running}
-    <div class="loadmove"></div>
-  {:else}
-    {language.run?.toLocaleUpperCase()}
+    <div class="loadmove" aria-hidden="true"></div>
   {/if}
 </Button>

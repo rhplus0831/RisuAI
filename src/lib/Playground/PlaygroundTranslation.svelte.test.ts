@@ -37,6 +37,7 @@ vi.mock('src/ts/globalApi.svelte', async (importActual) => {
 })
 
 import PlaygroundTranslation from './PlaygroundTranslation.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -119,6 +120,33 @@ async function waitForIdle(): Promise<void> {
 }
 
 describe('PlaygroundTranslation run ownership and failures', () => {
+  it('names language, text, and toggle controls while exposing checked state', async () => {
+    component = mount(PlaygroundTranslation, { target })
+
+    expect(Array.from(target.querySelectorAll('select'), (select) => select.getAttribute('aria-label'))).toEqual([
+      language.sourceLanguage,
+      language.translatorLanguage,
+    ])
+    expect(Array.from(textareas(), (input) => input.getAttribute('aria-label'))).toEqual([
+      language.playground.translationSourceText,
+      language.playground.translationOutputText,
+    ])
+
+    const bulk = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(bulk?.getAttribute('aria-label')).toBe(language.playground.translationBulk)
+    expect(bulk?.checked).toBe(false)
+    bulk!.click()
+    await tick()
+    expect(bulk?.checked).toBe(true)
+
+    const keepContext = target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]
+    expect(keepContext?.getAttribute('aria-label')).toBe(language.playground.translationKeepContext)
+    expect(keepContext?.checked).toBe(false)
+    keepContext?.click()
+    await tick()
+    expect(keepContext?.checked).toBe(true)
+  })
+
   it('reports a rejected single translation and clears the failure after a successful retry', async () => {
     const firstTranslation = deferred<string>()
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
