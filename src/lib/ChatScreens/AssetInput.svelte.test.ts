@@ -29,6 +29,7 @@ vi.mock('src/ts/util', () => ({
 }))
 
 import AssetInput from './AssetInput.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -72,5 +73,10 @@ describe('AssetInput', () => {
 
     expect(target.querySelectorAll('img')).toHaveLength(2)
     expect(Array.from(target.querySelectorAll('img'), (image) => image.alt)).toEqual(['first.png', 'second.png'])
+    expect(Array.from(target.querySelectorAll('button'), (button) => button.getAttribute('aria-label'))).toEqual([
+      `${language.add} ${language.additionalAssets}`,
+      'first.png',
+      'second.png',
+    ])
   })
 })

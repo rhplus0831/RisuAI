@@ -15,7 +15,7 @@
   <div class="w-5/6 max-w-80vw bg-darkbg rounded-md p-3 text-textcolor text-sm">
     <h1 class="font-bold mb-2">
       {language.creatorNotes}
-      <button class="float-right" onclick={onRemove}>
+      <button aria-label={`${language.remove} ${language.creatorNotes}`} class="float-right" onclick={onRemove}>
         <XIcon />
       </button>
     </h1>

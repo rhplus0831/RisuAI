@@ -1,5 +1,6 @@
 <script lang="ts">
   import { FileMusicIcon, PlusIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
   import { getDatabase, setCharacterByIndex, type character } from 'src/ts/storage/database.svelte'
   import { getFileSrc, saveAsset } from 'src/ts/globalApi.svelte'
   import { selectedCharID } from 'src/ts/stores.svelte'
@@ -168,6 +169,7 @@
 
 {#if currentCharacter.type === 'character'}
   <button
+    aria-label={`${language.add} ${language.additionalAssets}`}
     class="hover:text-green-500 bg-textcolor2 flex justify-center items-center w-16 h-16 m-1 rounded-md"
     onclick={async () => {
       await uploadQuickAddAdditionalAssets()
@@ -177,6 +179,7 @@
   {#if currentCharacter.additionalAssets}
     {#each currentCharacter.additionalAssets as additionalAsset, index (assetListRenderKey(additionalAsset, index))}
       <button
+        aria-label={additionalAsset[0]}
         onclick={() => {
           onSelect(additionalAsset)
         }}>
