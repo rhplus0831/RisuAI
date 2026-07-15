@@ -238,6 +238,28 @@ afterEach(() => {
   selectedCharID.set(-1)
 })
 
+describe('OtherBotSettings navigation semantics', () => {
+  it('contains the narrow tab strip and exposes the selected panel', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const tabs = target.querySelector<HTMLElement>('[data-risu-media-settings-tabs]')
+    expect(tabs).toBeTruthy()
+    expect(tabs?.classList.contains('overflow-x-auto')).toBe(true)
+
+    const memory = buttonNamed(language.longTermMemory)
+    const image = buttonNamed(language.imageGeneration)
+    expect(memory.getAttribute('aria-pressed')).toBe('true')
+    expect(image.getAttribute('aria-pressed')).toBe('false')
+
+    image.click()
+    await tick()
+
+    expect(memory.getAttribute('aria-pressed')).toBe('false')
+    expect(image.getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
 describe('OtherBotSettings WaveSpeed LoRAs', () => {
   it('hydrates persisted rows without writing on mount and syncs later edits', async () => {
     component = mount(OtherBotSettings, { target })

@@ -592,8 +592,11 @@
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.settingsNavMediaMemory}</h2>
 
 {#if submenu !== -1}
-  <div class="flex w-full rounded-md border border-darkborderc mb-4">
+  <div
+    data-risu-media-settings-tabs
+    class="flex w-full max-w-full rounded-md border border-darkborderc mb-4 overflow-x-auto">
     <button
+      aria-pressed={submenu === 0}
       onclick={() => {
         submenu = 0
       }}
@@ -602,6 +605,7 @@
       <span>{language.longTermMemory}</span>
     </button>
     <button
+      aria-pressed={submenu === 1}
       onclick={() => {
         submenu = 1
       }}
@@ -610,6 +614,7 @@
       <span>TTS</span>
     </button>
     <button
+      aria-pressed={submenu === 2}
       onclick={() => {
         submenu = 2
       }}
@@ -618,6 +623,7 @@
       <span>{language.emotionImage}</span>
     </button>
     <button
+      aria-pressed={submenu === 3}
       onclick={() => {
         submenu = 3
       }}
