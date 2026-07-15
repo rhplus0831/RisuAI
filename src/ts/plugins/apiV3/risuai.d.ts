@@ -1448,7 +1448,9 @@ interface RisuaiPluginAPI {
   // ========== Network APIs ==========
 
   /**
-   * Makes a native fetch request (bypasses Risuai networking)
+   * Makes a consent-gated request to a public HTTP(S) service through Risuai.
+   * Private/local/metadata/RisuAI service targets are blocked, and every
+   * redirect hop is independently validated.
    * @param url - Request URL
    * @param options - Fetch options
    * @returns Response promise
@@ -1472,7 +1474,7 @@ interface RisuaiPluginAPI {
    *
    * @param name - Display name
    * @param callback - Callback function when clicked
-   * @param icon - Icon content (HTML or image URL)
+   * @param icon - Icon content. HTML icons have network-capable markup removed; image icons accept only local blob URLs or base64 raster data URLs.
    * @param iconType - Icon type ('html', 'img', or 'none')
    * @param id - Optional stable ID. If omitted, a UUID is generated. If provided and already registered, the existing entry is replaced in-place.
    *
@@ -1505,7 +1507,7 @@ interface RisuaiPluginAPI {
    *
    * @param arg - Button configuration
    * @param arg.name - Display name
-   * @param arg.icon - Icon content (HTML or image URL)
+   * @param arg.icon - Icon content. HTML icons have network-capable markup removed; image icons accept only local blob URLs or base64 raster data URLs.
    * @param arg.iconType - Icon type ('html', 'img', or 'none')
    * @param arg.location - Button location ('action', 'chat', or 'hamburger'). Ignored when replacing an existing button.
    * @param arg.id - Optional stable ID. If omitted, a UUID is generated. If provided and already registered, the existing button is replaced in-place.
@@ -1872,7 +1874,7 @@ interface RisuaiPluginAPI {
 
   /**
    * Requests permission for a specific action
-   * @param permission - Permission string (e.g. 'fetchLogs'|'db'|'mainDom')
+   * @param permission - Permission string (e.g. 'fetchLogs'|'db'|'mainDom'|'network')
    * @returns True if permission granted, false otherwise
    */
   requestPluginPermission(permission: string): Promise<boolean>

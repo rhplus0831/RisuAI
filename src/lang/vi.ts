@@ -1507,6 +1507,12 @@ export const languageVietnamese = {
   newMessageButtonFloatingCircle: 'Vòng tròn nổi (Góc dưới bên phải)',
   newMessageButtonBottomLeft: 'Phía dưới bên trái',
   newMessageButtonBottomCenter: 'Dưới cùng ở giữa (Mặc định)',
+  pluginNetworkConsent:
+    'Plugin {} đang yêu cầu truy cập thông qua trình hỗ trợ mạng Internet công cộng của RisuAI. Yêu cầu này có thể gửi dữ liệu trò chuyện hoặc tài khoản cho bên thứ ba. Trình hỗ trợ sẽ chặn các đích riêng tư, cục bộ, siêu dữ liệu và dịch vụ RisuAI. Bạn có muốn cho phép không?',
+  legacyRuntimeConsent:
+    'Plugin cũ {} đang yêu cầu quyền chạy dưới dạng mã được tin cậy trong trang RisuAI chính. Plugin có thể đọc hoặc sửa đổi dữ liệu trò chuyện và tài khoản, đồng thời truy cập các dịch vụ mạng công cộng, riêng tư hoặc cục bộ. Chỉ cho phép các plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
+  v3RuntimeConsent:
+    'Plugin {} đang yêu cầu quyền chạy mã giao diện trình duyệt được tin cậy. Plugin có thể liên hệ các đích mạng công cộng, riêng tư, cục bộ, siêu dữ liệu hoặc RisuAI và gửi dữ liệu trò chuyện hoặc tài khoản ra ngoài RisuAI, kể cả qua API trình duyệt bỏ qua sự đồng ý của trình hỗ trợ mạng. Chỉ chạy plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
   fetchLogConsent:
     'Plugin {} đang yêu cầu truy xuất nhật ký, hành động này có thể làm lộ thông tin nhạy cảm. Bạn có muốn cho phép điều này không?',
   newMessageButtonTopBar: 'Thanh trên cùng',

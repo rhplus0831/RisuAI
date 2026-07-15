@@ -10,6 +10,37 @@ const pluginStorage = localforage.createInstance({
 const DEVICE_LOCAL_PLUGIN_STORAGE_ERROR =
   'Device-local plugin storage is disabled in Fastify server mode. Enable Plugin Compatibility Mode to restore this device-local, unsynced API.'
 
+const BLOCKED_PLUGIN_NETWORK_MESSAGE =
+  'This network primitive is unavailable to plugins. Use fetch, nativeFetch, or risuFetch so consent and target validation are enforced.'
+
+export function BlockedPluginNetworkPrimitive(): never {
+  throw new Error(BLOCKED_PLUGIN_NETWORK_MESSAGE)
+}
+
+export const SafePluginNavigator = Object.freeze({
+  cookieEnabled: false,
+  hardwareConcurrency: navigator.hardwareConcurrency,
+  language: navigator.language,
+  languages: Object.freeze([...navigator.languages]),
+  maxTouchPoints: navigator.maxTouchPoints,
+  onLine: navigator.onLine,
+  platform: navigator.platform,
+  userAgent: navigator.userAgent,
+  sendBeacon: BlockedPluginNetworkPrimitive,
+})
+
+export const SafePluginLocation = Object.freeze({
+  hash: window.location.hash,
+  host: window.location.host,
+  hostname: window.location.hostname,
+  href: window.location.href,
+  origin: window.location.origin,
+  pathname: window.location.pathname,
+  port: window.location.port,
+  protocol: window.location.protocol,
+  search: window.location.search,
+})
+
 export function isDeviceLocalPluginStorageEnabled(): boolean {
   return getDatabase().pluginCompatibilityMode === true
 }
@@ -298,6 +329,16 @@ export const tagWhitelist = [
   'vkern',
 ]
 
+const networkLoadingTags = new Set(['audio', 'form', 'image', 'img', 'picture', 'source', 'track', 'video'])
+
+function assertNonNetworkLoadingTag(tagName: string): void {
+  if (networkLoadingTags.has(tagName)) {
+    throw new Error(
+      `Creation of <${tagName}> elements is unavailable to plugins because it can bypass network consent.`,
+    )
+  }
+}
+
 const restrictElement = <T extends Node>(element: T): T => {
   return element
 }
@@ -312,13 +353,14 @@ export const SafeDocument = {
   doctype: document.doctype,
   documentElement: document.documentElement,
   documentURI: document.documentURI,
-  location: document.location,
+  location: SafePluginLocation,
   readyState: document.readyState,
   title: document.title,
   head: document.head,
   createElement: (tagName: string): HTMLElement => {
     console.log('Creating element:', tagName)
     tagName = tagName.toLowerCase().trim()
+    assertNonNetworkLoadingTag(tagName)
     if (!tagWhitelist.includes(tagName.toLowerCase())) {
       throw new Error(`Creation of <${tagName}> elements is not allowed in plugin context.`)
     }
@@ -337,6 +379,7 @@ export const SafeDocument = {
   createElementNS: (namespaceURI: string, qualifiedName: string): Element => {
     console.log('Creating namespaced element:', qualifiedName)
     qualifiedName = qualifiedName.toLowerCase().trim()
+    assertNonNetworkLoadingTag(qualifiedName)
     if (!tagWhitelist.includes(qualifiedName.toLowerCase())) {
       throw new Error(`Creation of <${qualifiedName}> elements is not allowed in plugin context.`)
     }

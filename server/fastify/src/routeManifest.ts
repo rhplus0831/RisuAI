@@ -793,6 +793,21 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'proxy',
   },
   {
+    id: 'proxy-plugin-fetch',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'],
+    path: '/api/v1/proxy/plugin-fetch',
+    auth: {
+      decision: 'required',
+      reason: 'Plugin-scoped proxy requests carry user-approved data to caller-selected public URLs.',
+    },
+    activeWriter: {
+      decision: 'runtime-proxy',
+      reason:
+        'Forwards bounded DNS-pinned public request hops, revalidating each redirect, without local durable writes.',
+    },
+    streaming: 'proxy',
+  },
+  {
     id: 'proxy-stream-job-create',
     methods: ['POST'],
     path: '/api/v1/proxy/stream-jobs',

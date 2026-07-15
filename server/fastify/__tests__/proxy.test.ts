@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
 import { gzipSync } from 'node:zlib'
+import { EventEmitter } from 'node:events'
 import type { FastifyInstance } from 'fastify'
 import { REQUEST_RECEIVE_TIMEOUT_MS, buildApp } from '../src/app.js'
 import { NON_DURABLE_REQUEST_DEADLINE_MS } from '../src/requestAbort.js'
@@ -13,9 +14,12 @@ import {
   PROXY_FETCH_DEFAULT_TIMEOUT_MS,
   PROXY_FETCH_MAX_TIMEOUT_MS,
   createTimeoutController,
+  filterPluginResponseHeaders,
   filterResponseHeaders,
   getRequestTimeoutMs,
+  normalizeForwardHeaders,
 } from '../src/proxy.js'
+import { createProxyDisconnectController } from '../src/routes/proxy.js'
 
 const subtle = webcrypto.subtle
 
@@ -175,6 +179,79 @@ async function withShortenedProxyDeadline(timeoutMs: number, run: () => Promise<
   }
 }
 
+describe('proxy disconnect lifecycle', () => {
+  function rawPair(options: {
+    requestComplete: boolean
+    responseEnded: boolean
+    requestAborted?: boolean
+    requestDestroyed?: boolean
+    responseDestroyed?: boolean
+  }) {
+    const request = Object.assign(new EventEmitter(), {
+      aborted: options.requestAborted ?? false,
+      complete: options.requestComplete,
+      destroyed: options.requestDestroyed ?? false,
+    })
+    const response = Object.assign(new EventEmitter(), {
+      destroyed: options.responseDestroyed ?? false,
+      writableEnded: options.responseEnded,
+    })
+    return { request, response }
+  }
+
+  it('does not abort when a normally completed inbound request closes', () => {
+    const { request, response } = rawPair({ requestComplete: true, responseEnded: false })
+    const disconnect = createProxyDisconnectController(request as any, response as any)
+
+    request.emit('close')
+
+    expect(disconnect.signal.aborted).toBe(false)
+    disconnect.cleanup()
+  })
+
+  it('aborts on a premature request close or unfinished response close', () => {
+    const first = rawPair({ requestComplete: false, responseEnded: false })
+    const requestDisconnect = createProxyDisconnectController(first.request as any, first.response as any)
+    first.request.emit('close')
+    expect(requestDisconnect.signal.aborted).toBe(true)
+
+    const second = rawPair({ requestComplete: true, responseEnded: false })
+    const responseDisconnect = createProxyDisconnectController(second.request as any, second.response as any)
+    second.response.emit('close')
+    expect(responseDisconnect.signal.aborted).toBe(true)
+  })
+
+  it('does not abort when the completed response closes', () => {
+    const { request, response } = rawPair({ requestComplete: true, responseEnded: true })
+    const disconnect = createProxyDisconnectController(request as any, response as any)
+
+    response.emit('close')
+
+    expect(disconnect.signal.aborted).toBe(false)
+    disconnect.cleanup()
+  })
+
+  it('starts aborted when the inbound connection was already destroyed', () => {
+    const requestClosed = rawPair({
+      requestComplete: false,
+      requestDestroyed: true,
+      responseEnded: false,
+    })
+    expect(
+      createProxyDisconnectController(requestClosed.request as any, requestClosed.response as any).signal.aborted,
+    ).toBe(true)
+
+    const responseClosed = rawPair({
+      requestComplete: true,
+      responseDestroyed: true,
+      responseEnded: false,
+    })
+    expect(
+      createProxyDisconnectController(responseClosed.request as any, responseClosed.response as any).signal.aborted,
+    ).toBe(true)
+  })
+})
+
 function appPort(app: FastifyInstance): number {
   const addr = app.server.address() as AddressInfo
   return addr.port
@@ -250,6 +327,45 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     ).toEqual({ 'x-custom': 'preserved' })
   })
 
+  it('strips static and Connection-nominated hop-by-hop headers in both directions', () => {
+    expect(
+      normalizeForwardHeaders({
+        connection: 'keep-alive, x-remove-me',
+        'keep-alive': 'timeout=5',
+        te: 'trailers',
+        'x-remove-me': 'secret',
+        'x-keep-me': 'yes',
+      }),
+    ).toEqual({ 'x-keep-me': 'yes' })
+    expect(
+      filterResponseHeaders(
+        new Headers({
+          connection: 'keep-alive, x-remove-me',
+          'keep-alive': 'timeout=5',
+          trailer: 'x-checksum',
+          'x-remove-me': 'secret',
+          'x-keep-me': 'yes',
+        }),
+      ),
+    ).toEqual({ 'x-keep-me': 'yes' })
+  })
+
+  it('strips cookie setters and origin-scoped auth challenges from plugin proxy responses', () => {
+    expect(
+      filterPluginResponseHeaders(
+        new Headers({
+          'proxy-authenticate': 'Basic realm="proxy"',
+          'set-cookie': 'session=attacker',
+          'set-cookie2': 'legacy=attacker',
+          'www-authenticate': 'Basic realm="upstream"',
+          'content-encoding': 'gzip',
+          'content-length': '123',
+          'x-custom': 'preserved',
+        }),
+      ),
+    ).toEqual({ 'content-encoding': 'gzip', 'x-custom': 'preserved' })
+  })
+
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -276,6 +392,60 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.json()).toEqual({ error: 'URL has no param' })
     expect(echo.requests).toHaveLength(0)
   })
+
+  it.each(['http://127.0.0.1/private', 'http://169.254.169.254/latest/meta-data', 'http://[::ffff:7f00:1]/private'])(
+    'blocks plugin proxy access to non-public target %s without affecting the generic route',
+    async (url) => {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const blocked = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/proxy/plugin-fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(url),
+        },
+      })
+      expect(blocked.statusCode).toBe(403)
+      expect(echo.requests).toHaveLength(0)
+
+      const firstParty = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/proxy/fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(echo.url),
+        },
+      })
+      expect(firstParty.statusCode).toBe(200)
+      expect(echo.requests).toHaveLength(1)
+    },
+  )
+
+  it.each(['PATCH', 'HEAD', 'OPTIONS'] as const)(
+    'registers plugin proxy method %s without widening the generic route',
+    async (method) => {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const plugin = await harness.app.inject({
+        method,
+        url: '/api/v1/proxy/plugin-fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent('http://127.0.0.1/private'),
+        },
+      })
+      expect(plugin.statusCode).toBe(403)
+
+      const generic = await harness.app.inject({
+        method,
+        url: '/api/v1/proxy/fetch',
+        headers: {
+          'risu-auth': assertion,
+          'risu-url': encodeURIComponent(echo.url),
+        },
+      })
+      expect(generic.statusCode).toBe(404)
+    },
+  )
 
   it('forwards upstream status, body, and filters response headers', async () => {
     echo.setResponder((_req, res) => {

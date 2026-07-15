@@ -1444,6 +1444,12 @@ export const languageChinese = {
   mainDomAccessConsent: '插件 {} 正在请求访问主文档，这可能会泄露敏感信息。是否允许？',
   getFullDatabaseConsent: '插件 {} 正在请求访问完整数据库，这可能会泄露敏感信息。是否允许？',
   fetchLogConsent: '插件 {} 正在请求获取日志，这可能会泄露敏感信息。是否允许？',
+  pluginNetworkConsent:
+    '插件 {} 正在请求通过 RisuAI 的公共互联网网络助手访问服务。此请求可能会将聊天或账户数据发送给第三方。该助手会阻止私有、本地、元数据和 RisuAI 服务目标。是否允许？',
+  legacyRuntimeConsent:
+    '旧版插件 {} 正在请求以受信任代码的身份在 RisuAI 主页面中运行。它可以读取或修改聊天和账户数据，并访问公共、私有或本地网络服务。请仅允许您完全信任的插件。是否继续？',
+  v3RuntimeConsent:
+    '插件 {} 正在请求运行受信任的浏览器界面代码。它可以联系公共、私有、本地、元数据或 RisuAI 网络目标，并可通过绕过网络助手许可的浏览器 API 将聊天或账户数据发送到 RisuAI 之外。请仅运行您完全信任的插件。是否继续？',
   enableScrollToActiveChar: '启用滚动至当前角色',
   trimStartNewChat: '修剪“开始新对话”消息',
   hamburgerButtonBottom: '将菜单按钮移至侧边栏底部',

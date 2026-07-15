@@ -1465,6 +1465,12 @@ export const languageChineseTraditional = {
   newMessageButtonTopBar: '頂端列',
   trimStartNewChat: '略過「初始訊息」',
   pluginDevelopMode: '外掛開發模式',
+  pluginNetworkConsent:
+    '外掛 {} 正在請求透過 RisuAI 的公共網際網路網路助手存取服務。此請求可能會將聊天或帳戶資料傳送給第三方。該助手會封鎖私人、本機、詮釋資料和 RisuAI 服務目標。是否允許？',
+  legacyRuntimeConsent:
+    '舊版外掛 {} 正在請求以受信任程式碼的身分在 RisuAI 主頁面中執行。它可以讀取或修改聊天與帳戶資料，並存取公共、私人或本機網路服務。請只允許您完全信任的外掛。是否繼續？',
+  v3RuntimeConsent:
+    '外掛 {} 正在請求執行受信任的瀏覽器介面程式碼。它可以連線到公共、私人、本機、詮釋資料或 RisuAI 網路目標，並可透過繞過網路助手同意的瀏覽器 API，將聊天或帳戶資料傳送到 RisuAI 之外。請只執行您完全信任的外掛。是否繼續？',
   fetchLogConsent: '外掛 {} 正在請求存取記錄，此操作可能暴露敏感資訊。是否允許？',
   getFullDatabaseConsent: '外掛 {} 正在請求存取完整資料庫，此操作可能暴露敏感資訊。是否允許？',
   mainDomAccessConsent: '外掛 {} 正在請求存取主文件，此操作可能暴露敏感資訊。是否允許？',

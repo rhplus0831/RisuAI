@@ -4,13 +4,21 @@ import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from '
 import { alertConfirm, alertError, alertPluginConfirm } from '../alert'
 import { selectSingleFile, sleep } from '../util'
 import type { OpenAIChat } from '../process/index.svelte'
-import { fetchNative, globalFetch, readImage, saveAsset } from '../globalApi.svelte'
+import { pluginFetchNative, pluginGlobalFetch, readImage, saveAsset } from '../globalApi.svelte'
 import { hotReloading, pluginAlertModalStore, selectedCharID } from '../stores.svelte'
 import type { ScriptMode } from '../process/scripts'
 import type { RisuModule } from '../process/modules'
 import { safeStructuredClone } from '../polyfill'
 import { checkCodeSafety } from './pluginSafety'
-import { SafeDocument, SafeIdbFactory, SafeLocalStorage, isDeviceLocalPluginStorageEnabled } from './pluginSafeClass'
+import {
+  BlockedPluginNetworkPrimitive,
+  SafeDocument,
+  SafeIdbFactory,
+  SafeLocalStorage,
+  SafePluginLocation,
+  SafePluginNavigator,
+  isDeviceLocalPluginStorageEnabled,
+} from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
 import { pluginCodeTranspiler } from './apiV3/transpiler'
 import {
@@ -47,6 +55,8 @@ import {
   type PluginImportFreshness,
   type PluginImportOperation,
 } from '../server/pluginImport'
+import { createPluginNetworkAccess, createPluginWebFetch } from './pluginNetworkAccess'
+import { getPluginPermission } from './pluginPermissions'
 
 export const customProviderStore = writable([] as string[])
 
@@ -779,6 +789,7 @@ export const pluginV2 = {
 }
 
 const V2_PLUGIN_UNLOAD_TIMEOUT_MS = 1000
+let v2PluginLoadGeneration = 0
 
 async function runV2PluginUnloadCallbacks(callbacks: Array<() => void | Promise<void>>) {
   if (callbacks.length === 0) return
@@ -989,10 +1000,25 @@ function applyPluginDatabasePatch(newDb: Record<string, unknown>, options: { ful
   }
 }
 
-export const getV2PluginAPIs = () => {
-  return {
-    risuFetch: globalFetch,
-    nativeFetch: fetchNative,
+export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, assertActive?: () => void) => {
+  const networkAccess = createPluginNetworkAccess(
+    plugin,
+    {
+      risuFetch: pluginGlobalFetch,
+      nativeFetch: pluginFetchNative,
+    },
+    undefined,
+    assertActive,
+  )
+  const webFetch = createPluginWebFetch(networkAccess)
+  let pluginApis: any
+  pluginApis = {
+    risuFetch: networkAccess.risuFetch,
+    nativeFetch: networkAccess.nativeFetch,
+    fetch: webFetch,
+    BlockedPluginNetworkPrimitive,
+    safeNavigator: SafePluginNavigator,
+    safeLocation: SafePluginLocation,
     getArg: (arg: string) => {
       const db = getDatabase()
       const [name, realArg] = arg.split('::')
@@ -1094,8 +1120,8 @@ export const getV2PluginAPIs = () => {
     },
     safeGlobalThis: {} as any,
     getSafeGlobalThis: () => {
-      if (Object.keys(globalThis.__pluginApis__.safeGlobalThis).length > 0) {
-        return globalThis.__pluginApis__.safeGlobalThis
+      if (Object.keys(pluginApis.safeGlobalThis).length > 0) {
+        return pluginApis.safeGlobalThis
       }
       const keys = Object.keys(globalThis)
       const safeGlobal: any = {}
@@ -1133,10 +1159,11 @@ export const getV2PluginAPIs = () => {
       safeGlobal.innerWidth = window.innerWidth
       safeGlobal.innerHeight = window.innerHeight
       safeGlobal.getComputedStyle = window.getComputedStyle
-      safeGlobal.navigator = window.navigator
-      safeGlobal.localStorage = globalThis.__pluginApis__.safeLocalStorage
-      safeGlobal.indexedDB = globalThis.__pluginApis__.safeIdbFactory
-      safeGlobal.__pluginApis__ = globalThis.__pluginApis__
+      safeGlobal.navigator = pluginApis.safeNavigator
+      safeGlobal.location = pluginApis.safeLocation
+      safeGlobal.localStorage = pluginApis.safeLocalStorage
+      safeGlobal.indexedDB = pluginApis.safeIdbFactory
+      safeGlobal.__pluginApis__ = pluginApis
       safeGlobal.Object = Object
       safeGlobal.Array = Array
       safeGlobal.String = String
@@ -1146,8 +1173,8 @@ export const getV2PluginAPIs = () => {
       safeGlobal.Date = Date
       safeGlobal.RegExp = RegExp
       safeGlobal.Error = Error
-      safeGlobal.Function = globalThis.__pluginApis__.SafeFunction
-      safeGlobal.document = globalThis.__pluginApis__.safeDocument
+      safeGlobal.Function = pluginApis.SafeFunction
+      safeGlobal.document = pluginApis.safeDocument
       safeGlobal.addEventListener = (...args: any[]) => {
         //@ts-expect-error spreading any[] into addEventListener - expects (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions)
         window.addEventListener(...args)
@@ -1289,12 +1316,12 @@ export const getV2PluginAPIs = () => {
     SafeFunction: new Proxy(Function, {
       construct(target, args) {
         return function () {
-          return globalThis.__pluginApis__.getSafeGlobalThis()
+          return pluginApis.getSafeGlobalThis()
         }
       },
       apply(target, thisArg, args) {
         return function () {
-          return globalThis.__pluginApis__.getSafeGlobalThis()
+          return pluginApis.getSafeGlobalThis()
         }
       },
     }),
@@ -1317,9 +1344,11 @@ export const getV2PluginAPIs = () => {
       return saveAsset(data)
     },
   }
+  return pluginApis
 }
 
 export async function loadV2Plugin(plugins: RisuPlugin[]) {
+  const loadGeneration = ++v2PluginLoadGeneration
   if (pluginV2.loaded) {
     const unloadCallbacks = Array.from(pluginV2.unload)
     try {
@@ -1355,35 +1384,51 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
       const policy = policyFactory.createPolicy('plugin-policy', {
         createScript: (_input) => {
           return `(async () => {
-                        const risuFetch = globalThis.__pluginApis__.risuFetch
-                        const nativeFetch = globalThis.__pluginApis__.nativeFetch
-                        const getArg = globalThis.__pluginApis__.getArg
-                        const printLog = globalThis.__pluginApis__.printLog
-                        const getChar = globalThis.__pluginApis__.getChar
-                        const setChar = globalThis.__pluginApis__.setChar
-                        const addProvider = globalThis.__pluginApis__.addProvider
-                        const addRisuScriptHandler = globalThis.__pluginApis__.addRisuScriptHandler
-                        const removeRisuScriptHandler = globalThis.__pluginApis__.removeRisuScriptHandler
-                        const addRisuReplacer = globalThis.__pluginApis__.addRisuReplacer
-                        const removeRisuReplacer = globalThis.__pluginApis__.removeRisuReplacer
-                        const onUnload = globalThis.__pluginApis__.onUnload
-                        const setArg = globalThis.__pluginApis__.setArg
-                        const saveAsset = globalThis.__pluginApis__.saveAsset
-                        const readImage = globalThis.__pluginApis__.readImage
+                        const __pluginApi = globalThis.__pluginApis__
+                        const risuFetch = __pluginApi.risuFetch
+                        const nativeFetch = __pluginApi.nativeFetch
+                        const fetch = __pluginApi.fetch
+                        const XMLHttpRequest = __pluginApi.BlockedPluginNetworkPrimitive
+                        const WebSocket = __pluginApi.BlockedPluginNetworkPrimitive
+                        const WebSocketStream = __pluginApi.BlockedPluginNetworkPrimitive
+                        const EventSource = __pluginApi.BlockedPluginNetworkPrimitive
+                        const Image = __pluginApi.BlockedPluginNetworkPrimitive
+                        const Audio = __pluginApi.BlockedPluginNetworkPrimitive
+                        const Worker = __pluginApi.BlockedPluginNetworkPrimitive
+                        const SharedWorker = __pluginApi.BlockedPluginNetworkPrimitive
+                        const WebTransport = __pluginApi.BlockedPluginNetworkPrimitive
+                        const RTCPeerConnection = __pluginApi.BlockedPluginNetworkPrimitive
+                        const Navigator = __pluginApi.BlockedPluginNetworkPrimitive
+                        const open = __pluginApi.BlockedPluginNetworkPrimitive
+                        const navigator = __pluginApi.safeNavigator
+                        const location = __pluginApi.safeLocation
+                        const getArg = __pluginApi.getArg
+                        const printLog = __pluginApi.printLog
+                        const getChar = __pluginApi.getChar
+                        const setChar = __pluginApi.setChar
+                        const addProvider = __pluginApi.addProvider
+                        const addRisuScriptHandler = __pluginApi.addRisuScriptHandler
+                        const removeRisuScriptHandler = __pluginApi.removeRisuScriptHandler
+                        const addRisuReplacer = __pluginApi.addRisuReplacer
+                        const removeRisuReplacer = __pluginApi.removeRisuReplacer
+                        const onUnload = __pluginApi.onUnload
+                        const setArg = __pluginApi.setArg
+                        const saveAsset = __pluginApi.saveAsset
+                        const readImage = __pluginApi.readImage
                         ${
                           version === '2.1'
                             ? `
-                            const safeGlobalThis = globalThis.__pluginApis__.getSafeGlobalThis()
-                            const Risuai = globalThis.__pluginApis__
-                            const safeLocalStorage = globalThis.__pluginApis__.safeLocalStorage
-                            const safeIdbFactory = globalThis.__pluginApis__.safeIdbFactory
-                            const alertStore = globalThis.__pluginApis__.alertStore
-                            const safeDocument = globalThis.__pluginApis__.safeDocument
-                            const getDatabase = globalThis.__pluginApis__.getDatabase
-                            const setDatabaseLite = globalThis.__pluginApis__.setDatabaseLite
-                            const setDatabase = globalThis.__pluginApis__.setDatabase
-                            const loadPlugins = globalThis.__pluginApis__.loadPlugins
-                            const SafeFunction = globalThis.__pluginApis__.SafeFunction
+                            const safeGlobalThis = __pluginApi.getSafeGlobalThis()
+                            const Risuai = __pluginApi
+                            const safeLocalStorage = __pluginApi.safeLocalStorage
+                            const safeIdbFactory = __pluginApi.safeIdbFactory
+                            const alertStore = __pluginApi.alertStore
+                            const safeDocument = __pluginApi.safeDocument
+                            const getDatabase = __pluginApi.getDatabase
+                            const setDatabaseLite = __pluginApi.setDatabaseLite
+                            const setDatabase = __pluginApi.setDatabase
+                            const loadPlugins = __pluginApi.loadPlugins
+                            const SafeFunction = __pluginApi.SafeFunction
                         `
                             : ''
                         }
@@ -1397,12 +1442,27 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
     }
 
     if (version === '2.1') {
+      const legacyRuntimeAllowed = await getPluginPermission(plugin.name, 'legacyRuntime', false, plugin.script)
+      if (loadGeneration !== v2PluginLoadGeneration) return
+      if (!legacyRuntimeAllowed) {
+        console.warn(`Skipped V2.1 plugin "${plugin.name}" because trusted legacy runtime access was denied.`)
+        continue
+      }
+
       const safety = await checkCodeSafety(plugin.script)
+      if (loadGeneration !== v2PluginLoadGeneration) return
       data = safety.modifiedCode
       console.log('Safety check result:', safety)
       console.log('Loading V2.1 Plugin', plugin.name, data)
 
       try {
+        // Each script captures an API object whose network grant is bound to
+        // this exact plugin name and script, never the ambient last-loaded API.
+        globalThis.__pluginApis__ = getV2PluginAPIs(plugin, () => {
+          if (loadGeneration !== v2PluginLoadGeneration) {
+            throw new Error('Legacy plugin instance is no longer active.')
+          }
+        })
         new Function(createRealScript(data))()
       } catch (error) {
         console.error(error)

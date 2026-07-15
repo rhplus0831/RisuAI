@@ -1231,6 +1231,12 @@ export const languageKorean = {
   autoTranslateCachedOnly: '캐시된 메시지만 자동 번역',
   notification: '알림',
   permissionDenied: '브라우저 또는 OS에 의해 권한이 거부되었습니다',
+  pluginNetworkConsent:
+    '플러그인 {} 이(가) RisuAI의 공개 인터넷 네트워크 도우미를 통한 접근을 요청합니다. 이 요청으로 채팅 또는 계정 데이터가 제3자에게 전송될 수 있습니다. 도우미는 사설, 로컬, 메타데이터 및 RisuAI 서비스 대상을 차단합니다. 허용하시겠습니까?',
+  legacyRuntimeConsent:
+    '레거시 플러그인 {}이(가) RisuAI 기본 페이지에서 신뢰된 코드로 실행할 권한을 요청합니다. 이 플러그인은 채팅 및 계정 데이터를 읽거나 수정하고 공개, 사설 또는 로컬 네트워크 서비스에 접근할 수 있습니다. 완전히 신뢰하는 플러그인만 허용하세요. 계속하시겠습니까?',
+  v3RuntimeConsent:
+    '플러그인 {}이(가) 신뢰된 브라우저 UI 코드를 실행할 권한을 요청합니다. 공개, 사설, 로컬, 메타데이터 또는 RisuAI 네트워크 대상에 접속하고, 네트워크 도우미 동의를 우회하는 브라우저 API를 포함해 채팅 또는 계정 데이터를 RisuAI 외부로 보낼 수 있습니다. 완전히 신뢰하는 플러그인만 실행하세요. 계속하시겠습니까?',
   customFlags: '커스텀 플래그',
   enableCustomFlags: '커스텀 플래그 활성화',
   googleCloudTokenization: 'Google Cloud 토큰화',

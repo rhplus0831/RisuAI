@@ -22,7 +22,7 @@ vi.mock('./process/modules', async (importActual) => {
 })
 
 import { testDatabaseState } from './__tests__/resourceDatabaseState'
-import { fetchNative, globalFetch } from './globalApi.svelte'
+import { fetchNative, globalFetch, pluginFetchNative, pluginGlobalFetch } from './globalApi.svelte'
 
 class FakeWebSocket {
   static OPEN = 1
@@ -150,6 +150,68 @@ describe('Fastify proxy routing', () => {
       'risu-url': encodeURIComponent('https://provider.example.test/v1/chat/completions'),
       'risu-auth': 'proxy-auth-token',
     })
+  })
+
+  it('always routes plugin buffered requests through the public-only plugin proxy', async () => {
+    testDatabaseState.db.usePlainFetch = true
+
+    const response = await pluginGlobalFetch('https://public.example.test/data', {
+      method: 'GET',
+      plainFetchForce: true,
+      networkRoute: 'local_network',
+    })
+
+    expect(response.ok).toBe(true)
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0]).toMatchObject({
+      url: '/api/v1/proxy/plugin-fetch',
+      init: { method: 'GET' },
+    })
+  })
+
+  it('always routes plugin native requests through the public-only plugin proxy', async () => {
+    const response = await pluginFetchNative('https://public.example.test/data', {
+      method: 'GET',
+      networkRoute: 'local_network',
+    })
+
+    expect(response.ok).toBe(true)
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0]).toMatchObject({
+      url: '/api/v1/proxy/plugin-fetch',
+      init: { method: 'GET' },
+    })
+  })
+
+  it.each([
+    { method: 'PATCH' as const, body: 'patch-body' },
+    { method: 'HEAD' as const, body: undefined },
+    { method: 'OPTIONS' as const, body: undefined },
+  ])('preserves plugin native $method requests on the dedicated proxy', async ({ method, body }) => {
+    const response = await pluginFetchNative('https://public.example.test/resource', {
+      method,
+      ...(body === undefined ? {} : { body }),
+    })
+
+    expect(response.ok).toBe(true)
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0]).toMatchObject({
+      url: '/api/v1/proxy/plugin-fetch',
+      init: { method },
+    })
+    if (method === 'HEAD') expect(fetchCalls[0].init?.body).toBeUndefined()
+  })
+
+  it('preserves plugin proxy status text in the native response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('accepted', { status: 202, statusText: 'Upstream Accepted' })),
+    )
+
+    const response = await pluginFetchNative('https://public.example.test/resource', { method: 'GET' })
+
+    expect(response.status).toBe(202)
+    expect(response.statusText).toBe('Upstream Accepted')
   })
 
   it('preserves GET when globalFetch uses the buffered Fastify proxy', async () => {

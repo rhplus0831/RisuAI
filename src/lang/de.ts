@@ -1543,6 +1543,12 @@ export const languageGerman = {
   autoScrollToNewMessage: 'Automatisch zu neuen Nachrichten scrollen',
   newMessageButtonStyle: 'Stil der Schaltfläche „Neue Nachricht“',
   pluginDevelopMode: 'Plugin-Entwicklungsmodus',
+  pluginNetworkConsent:
+    'Plugin {} fordert Zugriff über den RisuAI-Netzwerkhelfer für das öffentliche Internet an. Diese Anfrage kann Chat- oder Kontodaten an Dritte senden. Der Helfer sperrt private, lokale, Metadaten- und RisuAI-Dienstziele. Möchten Sie dies zulassen?',
+  legacyRuntimeConsent:
+    'Das Legacy-Plugin {} fordert die Berechtigung an, als vertrauenswürdiger Code auf der RisuAI-Hauptseite ausgeführt zu werden. Es kann Chats und Kontodaten lesen oder ändern und auf öffentliche, private oder lokale Netzwerkdienste zugreifen. Erlauben Sie dies nur Plugins, denen Sie vollständig vertrauen. Möchten Sie fortfahren?',
+  v3RuntimeConsent:
+    'Plugin {} fordert die Berechtigung an, vertrauenswürdigen Browser-UI-Code auszuführen. Es kann öffentliche, private, lokale, Metadaten- oder RisuAI-Netzwerkziele kontaktieren und Chat- oder Kontodaten aus RisuAI senden, auch über Browser-APIs, die die Zustimmung des Netzwerkhelfers umgehen. Führen Sie nur Plugins aus, denen Sie vollständig vertrauen. Möchten Sie fortfahren?',
   newMessageButtonTopBar: 'Obere Leiste',
   fetchLogConsent:
     'Plugin {} möchte Protokolle abrufen, was sensible Informationen offenlegen könnte. Möchten Sie dies zulassen?',

@@ -1527,6 +1527,12 @@ export const languageSpanish = {
   trimStartNewChat: 'Recortar mensajes de «Iniciar nuevo chat»',
   getFullDatabaseConsent:
     'El plugin {} está solicitando acceso a la base de datos completa, lo que podría exponer información confidencial. ¿Desea permitir esto?',
+  pluginNetworkConsent:
+    'El plugin {} solicita acceso mediante el asistente de red de Internet pública de RisuAI. Esta solicitud puede enviar datos de chats o cuentas a terceros. El asistente bloquea destinos privados, locales, de metadatos y de servicios de RisuAI. ¿Desea permitirlo?',
+  legacyRuntimeConsent:
+    'El plugin heredado {} solicita permiso para ejecutarse como código de confianza en la página principal de RisuAI. Puede leer o modificar chats y datos de la cuenta, y acceder a servicios de red públicos, privados o locales. Permita únicamente plugins en los que confíe plenamente. ¿Desea continuar?',
+  v3RuntimeConsent:
+    'El plugin {} solicita permiso para ejecutar código de interfaz de navegador de confianza. Puede contactar destinos de red públicos, privados, locales, de metadatos o de RisuAI y enviar datos de chats o cuentas fuera de RisuAI, incluso mediante API del navegador que omiten el consentimiento del asistente de red. Ejecute solo plugins en los que confíe plenamente. ¿Desea continuar?',
   fetchLogConsent:
     'El complemento {} está solicitando obtener registros, lo cual podría exponer información confidencial. ¿Desea permitir esto?',
   disableAbove: 'Mensajes cortados para la IA',

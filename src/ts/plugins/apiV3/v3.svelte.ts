@@ -25,7 +25,6 @@ import {
   isDeviceLocalPluginStorageEnabled,
   tagWhitelist,
 } from '../pluginSafeClass'
-import DOMPurify from 'dompurify'
 import {
   additionalChatMenu,
   additionalFloatingActionButtons,
@@ -44,8 +43,6 @@ import { changeColorScheme, updateColorScheme, updateTextThemeAndCSS, type Color
 import { get } from 'svelte/store'
 import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import { getLLMCache, searchLLMCache } from 'src/ts/translator/translator'
-import { hasher } from 'src/ts/parser/parser.svelte'
-import localforage from 'localforage'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, type LLMModel } from 'src/ts/model/types'
 import { sendChat as processSendChat, doingChat } from 'src/ts/process/index.svelte'
 import { getModelInfo } from 'src/ts/model/modellist'
@@ -65,6 +62,15 @@ import {
 import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import { assertNoUnsupportedCharacterChanges, assertNoUnsupportedChatChanges } from '../unsupportedServerWriteGuard'
 import { applyAttemptedFieldRollback } from 'src/ts/server/staleStateGuards'
+import { clearInMemoryPluginPermissions, getPluginPermission } from '../pluginPermissions'
+import {
+  assertPluginNetworkDeadElementTree,
+  assertPluginNetworkDeadStyle,
+  isPluginNetworkCapableTag,
+  normalizePluginIcon,
+  normalizePluginNetworkDeadStyleAttribute,
+  sanitizePluginNetworkDeadHtml,
+} from '../pluginIconSafety'
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
@@ -154,6 +160,7 @@ class SafeElement {
   }
 
   public appendChild(child: SafeElement) {
+    assertPluginNetworkDeadElementTree(child.#element)
     this.#element.appendChild(child.#element)
   }
 
@@ -162,19 +169,23 @@ class SafeElement {
   }
 
   public replaceChild(newChild: SafeElement, oldChild: SafeElement) {
+    assertPluginNetworkDeadElementTree(newChild.#element)
     this.#element.replaceChild(newChild.#element, oldChild.#element)
   }
 
   public replaceWith(newElement: SafeElement) {
+    assertPluginNetworkDeadElementTree(newElement.#element)
     this.#element.replaceWith(newElement.#element)
   }
 
   public cloneNode(deep: boolean = false): SafeElement {
+    assertPluginNetworkDeadElementTree(this.#element)
     const cloned = this.#element.cloneNode(deep)
     return new SafeElement(cloned as HTMLElement, this.#lifecycle)
   }
 
   public prepend(child: SafeElement) {
+    assertPluginNetworkDeadElementTree(child.#element)
     this.#element.prepend(child.#element)
   }
 
@@ -191,10 +202,12 @@ class SafeElement {
   }
 
   public setTextContent(value: string) {
+    if (this.#element.localName === 'style') throw new Error('Plugin access to style element content is unavailable.')
     this.#element.textContent = value
   }
 
   public setInnerText(value: string) {
+    if (this.#element.localName === 'style') throw new Error('Plugin access to style element content is unavailable.')
     this.#element.innerText = value
   }
 
@@ -215,6 +228,7 @@ class SafeElement {
     return this.#element.getAttribute(name)
   }
   public setStyle(property: string, value: string) {
+    assertPluginNetworkDeadStyle(property, value)
     ;(this.#element.style as any)[property] = value
   }
   public getStyle(property: string): string {
@@ -224,7 +238,7 @@ class SafeElement {
     return this.#element.getAttribute('style') || ''
   }
   public setStyleAttribute(value: string) {
-    this.#element.setAttribute('style', value)
+    this.#element.setAttribute('style', normalizePluginNetworkDeadStyleAttribute(value))
   }
   public addClass(className: string) {
     this.#element.classList.add(className)
@@ -315,11 +329,12 @@ class SafeElement {
     return this.#element.getBoundingClientRect()
   }
   public setInnerHTML(value: string) {
-    const san = DOMPurify.sanitize(value)
+    if (this.#element.localName === 'style') throw new Error('Plugin access to style element content is unavailable.')
+    const san = sanitizePluginNetworkDeadHtml(value)
     this.#element.innerHTML = san
   }
   public setOuterHTML(value: string) {
-    const san = DOMPurify.sanitize(value)
+    const san = sanitizePluginNetworkDeadHtml(value)
     this.#element.outerHTML = san
   }
   public scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
@@ -468,7 +483,7 @@ class SafeDocument extends SafeElement {
     this.#lifecycle = lifecycle
   }
   createElement(tagName: string): SafeElement {
-    if (!tagWhitelist.includes(tagName.toLowerCase())) {
+    if (!tagWhitelist.includes(tagName.toLowerCase()) || isPluginNetworkCapableTag(tagName)) {
       console.warn(`Creation of <${tagName}> elements is restricted. Creating a <div> instead.`)
       tagName = 'div'
     }
@@ -488,6 +503,8 @@ class SafeDocument extends SafeElement {
         throw new Error('Invalid protocol')
       }
       anchor.setAttribute('href', url.toString())
+      anchor.setAttribute('target', '_blank')
+      anchor.setAttribute('rel', 'noopener noreferrer')
     } catch (error) {
       console.warn(`Invalid URL provided for anchor element: ${href}. Setting href to '#' instead.`)
       anchor.setAttribute('href', '#')
@@ -739,13 +756,6 @@ const unloadV3Plugin = async (pluginName: string) => {
   await unloadV3PluginInstance(instance)
 }
 
-const grantedPluginPermissions = new Set<string>()
-const deniedPluginPermissions = new Set<string>()
-const permissionForage = localforage.createInstance({
-  name: 'plugin_permissions',
-  storeName: 'plugin_permissions',
-})
-
 type PluginV3ProviderOptions = PluginV2ProviderOptions & {
   model?: LLMModel
 }
@@ -862,75 +872,6 @@ function registerV3Provider(registration: V3ProviderRegistration) {
   syncV3ProviderRegistrations()
 }
 
-const getPluginPermission = async (
-  pluginName: string,
-  permissionDesc: 'fetchLogs' | 'db' | 'mainDom' | 'replacer' | 'provider' | 'sendChat',
-  reconfirm: boolean | 'periodically' = false,
-) => {
-  const permissionKey = `${pluginName}\u0000${permissionDesc}`
-  let requiresReconfirm = false
-
-  if (reconfirm === 'periodically') {
-    const lastGrantTime: number = await permissionForage.getItem(pluginName + '_' + permissionDesc + '_lastGrantTime')
-    const now = Date.now()
-    if (!lastGrantTime || now - lastGrantTime > 3 * 24 * 60 * 60 * 1000) {
-      //3 days
-      requiresReconfirm = true
-    }
-  } else if (reconfirm === true) {
-    requiresReconfirm = true
-  }
-
-  if (!requiresReconfirm && grantedPluginPermissions.has(permissionKey)) {
-    return true
-  }
-  if (deniedPluginPermissions.has(permissionKey)) {
-    return false
-  }
-
-  const pluginHash =
-    (await hasher(new TextEncoder().encode(getDatabase().plugins.find((p) => p.name === pluginName)?.script))) +
-    `_${permissionDesc}`
-
-  if (!requiresReconfirm && (await permissionForage.getItem(pluginHash))) {
-    grantedPluginPermissions.add(permissionKey)
-    return true
-  }
-
-  let alertTitle =
-    permissionDesc === 'fetchLogs'
-      ? language.fetchLogConsent.replace('{}', pluginName)
-      : permissionDesc === 'db'
-        ? language.getFullDatabaseConsent.replace('{}', pluginName)
-        : permissionDesc === 'mainDom'
-          ? language.mainDomAccessConsent.replace('{}', pluginName)
-          : permissionDesc === 'replacer'
-            ? language.replacerPermissionConsent.replace('{}', pluginName)
-            : permissionDesc === 'provider'
-              ? language.providerPermissionConsent.replace('{}', pluginName)
-              : permissionDesc === 'sendChat'
-                ? language.sendChatConsent.replace('{}', pluginName)
-                : `Error`
-  if (alertTitle === 'Error') {
-    return false
-  }
-  const conf = await alertConfirm(alertTitle)
-  if (conf && pluginHash) {
-    deniedPluginPermissions.delete(permissionKey)
-    grantedPluginPermissions.add(permissionKey)
-    await permissionForage.setItem(pluginHash, true)
-    if (reconfirm === 'periodically') {
-      await permissionForage.setItem(pluginName + '_' + permissionDesc + '_lastGrantTime', Date.now())
-    }
-    return true
-  }
-  grantedPluginPermissions.delete(permissionKey)
-  deniedPluginPermissions.add(permissionKey)
-  return false
-}
-
-const urlBlacklist = ['risuai.xyz', 'risuai.net', 'sionyw.com']
-
 const authorizationHeaders = ['x-api-key', 'authorization', 'proxy-authorization']
 
 const guardV3Api = (api: Record<string, unknown>, instance: V3PluginInstance): Record<string, unknown> => {
@@ -954,7 +895,7 @@ const makeRisuaiAPIV3 = (
   lifecycle: PluginLifecycleCleanup,
   instance: V3PluginInstance,
 ) => {
-  const oldApis = getV2PluginAPIs()
+  const oldApis = getV2PluginAPIs(plugin, () => assertV3InstanceCurrent(instance))
   const registerOwnedMCP = async (
     arg: Parameters<typeof registerMCPModule>[0],
     getToolList: Parameters<typeof registerMCPModule>[1],
@@ -979,12 +920,6 @@ const makeRisuaiAPIV3 = (
       console.error(
         `[DEPRECATION WARNING] risuFetch is deprecated and will be removed in future versions. Please use nativeFetch instead.`,
       )
-      for (const blocked of urlBlacklist) {
-        if (url.toLowerCase().includes(blocked)) {
-          throw new Error(`Requests to ${blocked} are blocked for security reasons.`)
-        }
-      }
-
       //scan headers
       const headers = options?.headers || {}
       for (const headerName in headers) {
@@ -997,12 +932,6 @@ const makeRisuaiAPIV3 = (
       return oldApis.risuFetch(url, options)
     },
     nativeFetch: (url, options) => {
-      for (const blocked of urlBlacklist) {
-        if (url.toLowerCase().includes(blocked)) {
-          throw new Error(`Requests to ${blocked} are blocked for security reasons.`)
-        }
-      }
-
       //scan headers
       const headers = options?.headers || {}
       for (const headerName in headers) {
@@ -1029,7 +958,9 @@ const makeRisuaiAPIV3 = (
       )
       const handler = async (arg: PluginV2ProviderArgument, abortSignal?: AbortSignal) => {
         assertV3InstanceCurrent(instance)
-        const conf = await getPluginPermission(plugin.name, 'provider', 'periodically')
+        const conf = await getPluginPermission(plugin.name, 'provider', 'periodically', plugin.script, () =>
+          assertV3InstanceCurrent(instance),
+        )
         assertV3InstanceCurrent(instance)
         if (!conf) {
           return { success: false, content: language.permissionDenied }
@@ -1082,7 +1013,9 @@ const makeRisuaiAPIV3 = (
     removeRisuScriptHandler: oldApis.removeRisuScriptHandler,
     addRisuReplacer: async (name: string, func: Function) => {
       //permission check for replacer
-      const conf = await getPluginPermission(plugin.name, 'replacer', 'periodically')
+      const conf = await getPluginPermission(plugin.name, 'replacer', 'periodically', plugin.script, () =>
+        assertV3InstanceCurrent(instance),
+      )
       assertV3InstanceCurrent(instance)
       if (!conf) {
         return
@@ -1097,7 +1030,10 @@ const makeRisuaiAPIV3 = (
     saveAsset: oldApis.saveAsset,
     //Same functionality, but new implementation
     getDatabase: async (includeOnly: string[] | 'all' = 'all') => {
-      const conf = await getPluginPermission(plugin.name, 'db', 'periodically')
+      const conf = await getPluginPermission(plugin.name, 'db', 'periodically', plugin.script, () =>
+        assertV3InstanceCurrent(instance),
+      )
+      assertV3InstanceCurrent(instance)
       if (!conf) {
         return null
       }
@@ -1388,7 +1324,9 @@ const makeRisuaiAPIV3 = (
       iframe.style.display = 'none'
     },
     getRootDocument: async () => {
-      const conf = await getPluginPermission(plugin.name, 'mainDom')
+      const conf = await getPluginPermission(plugin.name, 'mainDom', false, plugin.script, () =>
+        assertV3InstanceCurrent(instance),
+      )
       assertV3InstanceCurrent(instance)
       if (!conf) {
         return null
@@ -1412,7 +1350,7 @@ const makeRisuaiAPIV3 = (
       const menuDef = ownMenuDef({
         id: menuId,
         name,
-        icon,
+        icon: normalizePluginIcon(icon, iconType),
         iconType,
         callback,
       })
@@ -1431,7 +1369,11 @@ const makeRisuaiAPIV3 = (
       return { id: menuId }
     },
     registerBodyIntercepter: async (callback: (body: any, type: string) => any) => {
-      if ((await getPluginPermission(plugin.name, 'replacer')) === false) {
+      if (
+        (await getPluginPermission(plugin.name, 'replacer', false, plugin.script, () =>
+          assertV3InstanceCurrent(instance),
+        )) === false
+      ) {
         return null
       }
       assertV3InstanceCurrent(instance)
@@ -1481,7 +1423,7 @@ const makeRisuaiAPIV3 = (
       const id = providedId || v4()
       const menuDef = ownMenuDef({
         name,
-        icon,
+        icon: normalizePluginIcon(icon, iconType),
         iconType,
         callback,
         id,
@@ -1553,7 +1495,9 @@ const makeRisuaiAPIV3 = (
     },
     getFetchLogs: async () => {
       const unsafeFetchLog = getFetchLogs()
-      const conf = await getPluginPermission(plugin.name, 'fetchLogs')
+      const conf = await getPluginPermission(plugin.name, 'fetchLogs', false, plugin.script, () =>
+        assertV3InstanceCurrent(instance),
+      )
       assertV3InstanceCurrent(instance)
       if (!conf) {
         return null
@@ -1592,7 +1536,9 @@ const makeRisuaiAPIV3 = (
     },
     checkCharOrder: checkCharOrder,
     requestPluginPermission: (permission: string) => {
-      return getPluginPermission(plugin.name, permission as any)
+      return getPluginPermission(plugin.name, permission as any, false, plugin.script, () =>
+        assertV3InstanceCurrent(instance),
+      )
     },
     //Internal use APIs
     _getOldKeys: () => {
@@ -1673,7 +1619,9 @@ const makeRisuaiAPIV3 = (
       )
     },
     sendChat: async (message: string) => {
-      const conf = await getPluginPermission(plugin.name, 'sendChat')
+      const conf = await getPluginPermission(plugin.name, 'sendChat', false, plugin.script, () =>
+        assertV3InstanceCurrent(instance),
+      )
       assertV3InstanceCurrent(instance)
       if (!conf) {
         return false
@@ -1796,6 +1744,15 @@ export async function executePluginV3(plugin: RisuPlugin, generation = ensureV3G
     return
   }
 
+  const runtimeAllowed = await getPluginPermission(plugin.name, 'v3Runtime', false, plugin.script, () => {
+    if (generation !== activeV3Generation) throw new Error('V3 plugin generation is no longer active.')
+  })
+  if (generation !== activeV3Generation) return
+  if (!runtimeAllowed) {
+    console.warn(`[RisuAI Plugin: ${plugin.name}] Skipped because trusted V3 browser runtime access was denied.`)
+    return
+  }
+
   const iframe = document.createElement('iframe')
   iframe.style.display = 'none'
   document.body.appendChild(iframe)
@@ -1842,8 +1799,7 @@ export const __v3PluginLifecycleTestHooks = {
     bodyIntercepterStore.splice(0, bodyIntercepterStore.length)
     pluginV2.providers.clear()
     pluginV2.providerOptions.clear()
-    grantedPluginPermissions.clear()
-    deniedPluginPermissions.clear()
+    clearInMemoryPluginPermissions()
     syncCustomProviderStoreFromMap()
   },
   createLifecycle() {

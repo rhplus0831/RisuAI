@@ -125,23 +125,36 @@ await (async function() {
         return val;
     }
 
-    function collectTransferables(obj, transferables = []) {
+    function collectTransferables(obj, transferables = [], seenObjects = new Set(), seenTransferables = new Set()) {
         if (!obj || typeof obj !== 'object') return transferables;
+        if (seenObjects.has(obj)) return transferables;
+        seenObjects.add(obj);
 
+        let transferable = null;
         if (obj instanceof ArrayBuffer ||
-            obj instanceof MessagePort ||
-            obj instanceof ImageBitmap ||
+            (typeof MessagePort !== 'undefined' && obj instanceof MessagePort) ||
+            (typeof ImageBitmap !== 'undefined' && obj instanceof ImageBitmap) ||
+            (typeof ReadableStream !== 'undefined' && obj instanceof ReadableStream) ||
+            (typeof WritableStream !== 'undefined' && obj instanceof WritableStream) ||
+            (typeof TransformStream !== 'undefined' && obj instanceof TransformStream) ||
             (typeof OffscreenCanvas !== 'undefined' && obj instanceof OffscreenCanvas)) {
-            transferables.push(obj);
+            transferable = obj;
         }
         else if (ArrayBuffer.isView(obj) && obj.buffer instanceof ArrayBuffer) {
-            transferables.push(obj.buffer);
+            transferable = obj.buffer;
         }
-        else if (Array.isArray(obj)) {
-            obj.forEach(item => collectTransferables(item, transferables));
+        if (transferable) {
+            if (!seenTransferables.has(transferable)) {
+                seenTransferables.add(transferable);
+                transferables.push(transferable);
+            }
+            return transferables;
+        }
+        if (Array.isArray(obj)) {
+            obj.forEach(item => collectTransferables(item, transferables, seenObjects, seenTransferables));
         }
         else if (obj.constructor === Object) {
-            Object.values(obj).forEach(value => collectTransferables(value, transferables));
+            Object.values(obj).forEach(value => collectTransferables(value, transferables, seenObjects, seenTransferables));
         }
 
         return transferables;
@@ -300,11 +313,22 @@ await (async function() {
 })();
 `
 
+export const V3_SANDBOX_CSP =
+  "default-src 'none'; connect-src 'none'; script-src 'unsafe-inline' 'wasm-unsafe-eval'; script-src-attr 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; object-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data: blob:; media-src data: blob:; form-action 'none'; navigate-to 'none'; base-uri 'none';"
+export const V3_GUARD_CSP =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-src 'none'; child-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none';"
+
+function inlineScriptString(value: string): string {
+  return JSON.stringify(value)
+    .replaceAll('<', '\\u003c')
+    .replaceAll('\u2028', '\\u2028')
+    .replaceAll('\u2029', '\\u2029')
+}
+
 export class SandboxHost {
   private iframe: HTMLIFrameElement
   private apiFactory: any
-  private nonce = crypto.randomUUID()
-  private csp = `connect-src 'none'; script-src 'nonce-${this.nonce}' 'wasm-unsafe-eval'; frame-src 'none'; object-src 'none'; style-src * 'unsafe-inline'; default-src 'none'; img-src * data: blob:; font-src * data: blob:; media-src * data: blob:; base-uri 'none';`
+  private csp = V3_SANDBOX_CSP
 
   private instanceRegistry = new Map<string, any>()
   private abortControllers = new Map<string, AbortController>()
@@ -362,9 +386,17 @@ export class SandboxHost {
     })
   }
 
-  private collectTransferables(obj: any, transferables: Transferable[] = []): Transferable[] {
+  private collectTransferables(
+    obj: any,
+    transferables: Transferable[] = [],
+    seenObjects = new Set<object>(),
+    seenTransferables = new Set<Transferable>(),
+  ): Transferable[] {
     if (!obj || typeof obj !== 'object') return transferables
+    if (seenObjects.has(obj)) return transferables
+    seenObjects.add(obj)
 
+    let transferable: Transferable | undefined
     if (
       obj instanceof ArrayBuffer ||
       (typeof MessagePort !== 'undefined' && obj instanceof MessagePort) ||
@@ -374,13 +406,23 @@ export class SandboxHost {
       (typeof TransformStream !== 'undefined' && obj instanceof TransformStream) ||
       (typeof OffscreenCanvas !== 'undefined' && obj instanceof OffscreenCanvas)
     ) {
-      transferables.push(obj)
+      transferable = obj
     } else if (ArrayBuffer.isView(obj) && obj.buffer instanceof ArrayBuffer) {
-      transferables.push(obj.buffer)
-    } else if (Array.isArray(obj)) {
-      obj.forEach((item) => this.collectTransferables(item, transferables))
+      transferable = obj.buffer
+    }
+    if (transferable) {
+      if (!seenTransferables.has(transferable)) {
+        seenTransferables.add(transferable)
+        transferables.push(transferable)
+      }
+      return transferables
+    }
+    if (Array.isArray(obj)) {
+      obj.forEach((item) => this.collectTransferables(item, transferables, seenObjects, seenTransferables))
     } else if (obj.constructor === Object) {
-      Object.values(obj).forEach((value) => this.collectTransferables(value, transferables))
+      Object.values(obj).forEach((value) =>
+        this.collectTransferables(value, transferables, seenObjects, seenTransferables),
+      )
     }
 
     return transferables
@@ -561,11 +603,15 @@ export class SandboxHost {
     this.iframe.style.backgroundColor = 'transparent'
     this.iframe.setAttribute('allowTransparency', 'true')
 
+    // This outer frame contains trusted relay code only. Its CSP governs the
+    // nested opaque guest and blocks later child-frame navigations. The guest
+    // cannot access this same-origin guard because it does not receive
+    // allow-same-origin itself.
     this.iframe.sandbox.add('allow-scripts')
+    this.iframe.sandbox.add('allow-same-origin')
     this.iframe.sandbox.add('allow-modals')
-    this.iframe.sandbox.add('allow-downloads')
 
-    this.iframe.setAttribute('csp', this.csp)
+    this.iframe.setAttribute('csp', V3_GUARD_CSP)
 
     const messageHandler = async (event: MessageEvent) => {
       if (event.source !== this.iframe.contentWindow) return
@@ -652,7 +698,7 @@ export class SandboxHost {
     this.runCleanup = cleanup
 
     try {
-      const html = `
+      const guestHtml = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -665,7 +711,7 @@ export class SandboxHost {
                   background-color: transparent;
               }
           </style>
-          <script nonce="${this.nonce}">
+          <script>
               document.querySelector('meta#csp-meta')?.remove();
               (async () => {
                   ${GUEST_BRIDGE_SCRIPT}
@@ -678,8 +724,95 @@ export class SandboxHost {
         </body>
         </html>
       `
+      const guestHtmlLiteral = inlineScriptString(guestHtml)
+      const guestCspLiteral = inlineScriptString(this.csp)
+      const guardHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <meta http-equiv="Content-Security-Policy" content="${V3_GUARD_CSP}">
+          <style>
+            html, body, #risu-plugin-guest {
+              width: 100%;
+              height: 100%;
+              margin: 0;
+              padding: 0;
+              border: 0;
+              background: transparent;
+            }
+          </style>
+        </head>
+        <body>
+          <script>
+            (() => {
+              const collectTransferables = (
+                value,
+                result = [],
+                seenObjects = new Set(),
+                seenTransferables = new Set(),
+              ) => {
+                if (!value || (typeof value !== 'object' && typeof value !== 'function') || seenObjects.has(value)) {
+                  return result
+                }
+                seenObjects.add(value)
+                let transferable = null
+                if (
+                  value instanceof ArrayBuffer ||
+                  (typeof MessagePort !== 'undefined' && value instanceof MessagePort) ||
+                  (typeof ImageBitmap !== 'undefined' && value instanceof ImageBitmap) ||
+                  (typeof ReadableStream !== 'undefined' && value instanceof ReadableStream) ||
+                  (typeof WritableStream !== 'undefined' && value instanceof WritableStream) ||
+                  (typeof TransformStream !== 'undefined' && value instanceof TransformStream) ||
+                  (typeof OffscreenCanvas !== 'undefined' && value instanceof OffscreenCanvas)
+                ) {
+                  transferable = value
+                } else if (ArrayBuffer.isView(value) && value.buffer instanceof ArrayBuffer) {
+                  transferable = value.buffer
+                }
+                if (transferable) {
+                  if (!seenTransferables.has(transferable)) {
+                    seenTransferables.add(transferable)
+                    result.push(transferable)
+                  }
+                  return result
+                }
+                if (Array.isArray(value)) {
+                  for (const item of value) {
+                    collectTransferables(item, result, seenObjects, seenTransferables)
+                  }
+                } else {
+                  for (const item of Object.values(value)) {
+                    collectTransferables(item, result, seenObjects, seenTransferables)
+                  }
+                }
+                return result
+              }
 
-      this.iframe.srcdoc = html
+              const guest = document.createElement('iframe')
+              guest.id = 'risu-plugin-guest'
+              guest.sandbox.add('allow-scripts')
+              guest.sandbox.add('allow-modals')
+              guest.setAttribute('allowTransparency', 'true')
+              guest.setAttribute('csp', ${guestCspLiteral})
+              guest.srcdoc = ${guestHtmlLiteral}
+
+              addEventListener('message', (event) => {
+                if (event.source === guest.contentWindow) {
+                  parent.postMessage(event.data, '*', collectTransferables(event.data))
+                } else if (event.source === parent) {
+                  guest.contentWindow?.postMessage(event.data, '*', collectTransferables(event.data))
+                }
+              })
+
+              document.documentElement.appendChild(guest)
+            })()
+          </script>
+        </body>
+        </html>
+      `
+
+      this.iframe.srcdoc = guardHtml
     } catch (error) {
       cleanup()
       throw error

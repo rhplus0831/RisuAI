@@ -1,5 +1,5 @@
 <script lang="ts">
-  import DOMPurify from 'dompurify'
+  import { normalizePluginIcon, sanitizePluginIconHtml } from 'src/ts/plugins/pluginIconSafety'
 
   let {
     ico,
@@ -12,25 +12,11 @@
     className?: string
   } = $props()
 
-  const iconPurify = (icon: string) => {
-    return DOMPurify.sanitize(icon, {
-      FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed'],
-      FORBID_ATTR: ['onerror', 'onclick', 'onload', 'onmouseover', 'style', 'class'],
-    })
-  }
-
-  const isSafeSchema = (url: string) => {
+  const safeImageIcon = (url: string) => {
     try {
-      const parsedUrl = new URL(url)
-      const allowedProtocols = ['http:', 'https:', 'data:', 'blob:']
-      if (allowedProtocols.includes(parsedUrl.protocol)) {
-        return url
-      } else {
-        console.warn(`Blocked URL with unsafe protocol: ${parsedUrl.protocol}`)
-        return ''
-      }
-    } catch (e) {
-      console.warn(`Invalid URL: ${url}`)
+      return normalizePluginIcon(url, 'img')
+    } catch (error) {
+      console.warn(error)
       return ''
     }
   }
@@ -42,8 +28,8 @@
     [className]: className,
   }}>
   {#if ico.iconType === 'html'}
-    {@html iconPurify(ico.icon)}
+    {@html sanitizePluginIconHtml(ico.icon)}
   {:else if ico.iconType === 'img'}
-    <img src={isSafeSchema(ico.icon)} alt="icon" />
+    <img src={safeImageIcon(ico.icon)} alt="icon" />
   {/if}
 </div>

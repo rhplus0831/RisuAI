@@ -15,11 +15,13 @@ does not execute browser plugin code.
 | `src/ts/plugins/apiV3/factory.ts`                            | `SandboxHost` iframe/RPC bridge between app and plugin guest code.                            |
 | `src/ts/plugins/apiV3/transpiler.ts`, `developMode.ts`       | Plugin V3 transpilation and development-mode loading.                                         |
 | `src/ts/plugins/apiV3/risuai.d.ts`                           | Plugin V3 TypeScript declarations for plugin authors.                                         |
+| `src/ts/plugins/pluginPermissions.ts`, `pluginNetworkAccess.ts` | Exact-script capability grants and the public-only plugin network adapters.                 |
 | `src/ts/plugins/pluginSafeClass.ts`, `pluginSafety.ts`       | Safe wrappers, static safety rewrite/checks, device-local storage gates.                      |
 | `src/ts/plugins/unsupportedServerWriteGuard.ts`              | Blocks Plugin API direct writes to fields unsupported in server-backed mode.                  |
 | `src/ts/pluginCommands.ts`                                   | Browser command wrappers for plugin records, provider selection, plugin storage, and settings-adjacent compatibility writes. |
 | `src/ts/server/pluginImport.ts`                              | Server-backed plugin import/update helper with stale import guards.                           |
 | `server/fastify/src/commands/plugins.ts`, `pluginStorage.ts` | Server validation for plugin records and plugin key/value JSON storage.                       |
+| `server/fastify/src/pluginNetwork.ts`, `routes/proxy.ts`     | DNS-pinned public-target validation and the dedicated plugin fetch proxy.                      |
 
 Plugin records live in `Database.plugins` and use the plugin `name` as the
 stable id. `currentPluginProvider` selects a plugin-defined provider when one is
@@ -29,18 +31,75 @@ registration also updates browser compatibility maps such as
 `pluginV2.providers` / `providerOptions` and provider stores; unload cleanup is
 guarded by provider ownership and active generation state.
 
-Plugin V3 code runs through an iframe RPC boundary. API functions must accept
-and return serializable data, callback functions, marked remote class instances,
-or abort signals. API `2.1` compatibility records can still load with warnings;
-API `2.0` import is blocked and older existing records only warn as removed/not
-supported. Plugin V2 edit/replacer hooks make server prompt assembly return
-`unsupported`; Fastify never executes browser plugin code. Server Lua scripting
-is separate from browser plugins.
+Plugin V3 code runs through an opaque-origin iframe RPC boundary nested inside
+a trusted guard iframe. The outer guard contains only the RPC relay and uses
+`frame-src 'none'` / `child-src 'none'`; that parent policy governs later
+navigations of the nested guest, including navigation of the guest's own frame.
+The inner guest sandbox grants scripts and modals, but not same-origin,
+downloads, popups, or top-navigation privileges. Its own CSP also denies direct
+connections, remote executable scripts, child frames, workers, objects, forms,
+and base URLs. Inline guest scripts and styles remain available, while image,
+font, and media sources are limited to local `data:` or `blob:` URLs. The guest
+bootstrap uses inline-only script authorization instead of a readable nonce
+that could be copied onto a remote script element. `navigate-to 'none'` remains
+best-effort defense in depth for browsers that recognize it, while the outer
+guard blocks nested-frame navigation. These controls reduce common egress paths
+but are not a hostile-code network sandbox: DOM-compatible browser APIs such as
+WebRTC can still contact public, private, local, metadata, or RisuAI targets.
+Before any V3 code runs, the exact installed script must therefore receive the
+script-bound `v3Runtime` trust grant. Denial skips execution. Only fully trusted
+V3 plugins should receive it. A future Worker-only guest with a constrained,
+declarative UI surface is the durable untrusted-plugin design. API functions
+must accept and return serializable data, callback functions, marked remote
+class instances, or abort signals.
 
-`checkPluginUpdate()` deduplicates concurrent range requests and keeps a bounded
-128-entry, five-minute LRU cache keyed by plugin name, update URL, and installed
-version. Successful no-update checks are cached as well as available updates;
-HTTP/network failures are not retained and can be retried immediately.
+V3 permission grants are bound to the plugin name, the exact running script
+hash, and the requested capability. A source change therefore cannot reuse an
+older grant. After the runtime trust gate, `risuFetch` and `nativeFetch` also
+require the granular `network` capability and route only through authenticated
+`/api/v1/proxy/plugin-fetch`; plugin input cannot select the ordinary generic or
+local-network route or attach RisuAI service credentials. The browser rejects
+obviously disallowed URLs before prompting. Fastify then parses the URL again,
+resolves every address, rejects private, loopback, link-local, metadata, and
+RisuAI service targets, and pins the approved public DNS result for the request.
+Redirects are bounded; every `Location` target is parsed, resolved, revalidated,
+and pinned as a new hop before it is followed, with sensitive credentials
+removed when the origin changes. The ordinary first-party proxy path remains
+available to app/provider integrations that intentionally need local services,
+but it is not exposed by the plugin network adapters. This public-only rule
+applies to those helper methods, not to every browser API available to trusted
+DOM-compatible plugin code.
+
+The `mainDom` bridge additionally removes network-loading HTML/SVG elements
+and attributes, rejects existing `<style>` content mutation, and accepts only a
+layout/color/text CSS allowlist with network-valued CSS disabled. Its explicit
+anchor helper creates user-clicked links in a new `noopener noreferrer` tab;
+ordinary HTML insertion cannot create an automatic network load. These are
+defense-in-depth controls after the V3 runtime trust decision.
+
+Before each enabled API `2.1` script runs, the exact script must receive the
+script-bound `legacyRuntime` grant. Denial skips that execution. This is a trust
+gate for code running in the main RisuAI page: after approval it can read or
+modify chats and account data and may reach public, private, or local network
+services. The compatibility wrapper routes its exposed fetch helpers through
+the public-only plugin proxy and lexically shadows common network globals, but
+those measures are defense in depth, not an enforceable hostile-code sandbox
+for main-realm JavaScript. Only fully trusted V2.1 plugins should receive this
+grant. API `2.0` import is blocked and older existing records only warn as
+removed/not supported. Plugin V2 edit/replacer hooks make server prompt assembly
+return `unsupported`; Fastify never executes browser plugin code. Server Lua
+scripting is separate from browser plugins.
+
+Plugin update checks start only from an explicit user action. They require an
+HTTPS, public-only URL and the exact installed script's `network` grant, then use
+the same dedicated plugin proxy and per-redirect-hop validation as other plugin
+helpers. `checkPluginUpdate()` reads at most a 4 KiB range probe, deduplicates
+concurrent requests, and keeps a bounded 128-entry, five-minute LRU cache keyed
+by plugin name, exact script hash, update URL, and installed version. Successful
+no-update checks are cached as well as available updates; HTTP/network failures
+are not retained and can be retried immediately. The explicit download action
+streams through the same authorization path and rejects scripts larger than
+8 MiB even when a server ignores the requested range.
 
 ## Plugin Storage
 

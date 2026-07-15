@@ -4,10 +4,18 @@ const STRIP_REQUEST_HEADERS = new Set([
   'host',
   'connection',
   'content-length',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'proxy-connection',
   'risu-auth',
   'risu-timeout-ms',
   'risu-url',
   'risu-header',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
 ])
 
 const STRIP_RESPONSE_HEADERS = new Set([
@@ -17,8 +25,25 @@ const STRIP_RESPONSE_HEADERS = new Set([
   'cache-control',
   'content-encoding',
   'content-length',
+  'connection',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'proxy-connection',
+  'te',
+  'trailer',
   'transfer-encoding',
+  'upgrade',
 ])
+
+function connectionHeaderTokens(value: string | null | undefined): Set<string> {
+  return new Set(
+    (value ?? '')
+      .split(',')
+      .map((token) => token.trim().toLowerCase())
+      .filter(Boolean),
+  )
+}
 
 export const PROXY_FETCH_DEFAULT_TIMEOUT_MS = SHARED_DEFAULT_REQUEST_TIMEOUT_MS
 export const PROXY_FETCH_MAX_TIMEOUT_MS = SHARED_MAX_REQUEST_TIMEOUT_MS
@@ -84,9 +109,17 @@ export function parseRisuHeader(raw: unknown): Record<string, string> | null {
 export function normalizeForwardHeaders(input: Record<string, unknown> | undefined | null): Record<string, string> {
   const out: Record<string, string> = {}
   if (!input || typeof input !== 'object') return out
+  let connection = ''
+  for (const [name, value] of Object.entries(input)) {
+    if (name.toLowerCase() !== 'connection') continue
+    connection = Array.isArray(value)
+      ? value.filter((entry) => typeof entry === 'string').join(',')
+      : String(value ?? '')
+  }
+  const dynamicHopHeaders = connectionHeaderTokens(connection)
   for (const [k, v] of Object.entries(input)) {
     if (typeof k !== 'string') continue
-    if (STRIP_REQUEST_HEADERS.has(k.toLowerCase())) continue
+    if (STRIP_REQUEST_HEADERS.has(k.toLowerCase()) || dynamicHopHeaders.has(k.toLowerCase())) continue
     if (typeof v === 'string') {
       out[k] = v
     } else if (Array.isArray(v)) {
@@ -99,9 +132,27 @@ export function normalizeForwardHeaders(input: Record<string, unknown> | undefin
 
 export function filterResponseHeaders(source: Headers): Record<string, string> {
   const out: Record<string, string> = {}
+  const dynamicHopHeaders = connectionHeaderTokens(source.get('connection'))
   for (const [k, v] of source.entries()) {
-    if (STRIP_RESPONSE_HEADERS.has(k.toLowerCase())) continue
+    if (STRIP_RESPONSE_HEADERS.has(k.toLowerCase()) || dynamicHopHeaders.has(k.toLowerCase())) continue
     out[k] = v
+  }
+  return out
+}
+
+const STRIP_PLUGIN_RESPONSE_HEADERS = new Set(['proxy-authenticate', 'set-cookie', 'set-cookie2', 'www-authenticate'])
+
+export function filterPluginResponseHeaders(source: Headers): Record<string, string> {
+  const out = filterResponseHeaders(source)
+  // Plugin transport uses node:http(s) and therefore returns the upstream's
+  // encoded bytes verbatim (unlike fetch, which transparently decompresses).
+  // Preserve the encoding label while continuing to strip stale framing.
+  const contentEncoding = source.get('content-encoding')
+  if (contentEncoding && !connectionHeaderTokens(source.get('connection')).has('content-encoding')) {
+    out['content-encoding'] = contentEncoding
+  }
+  for (const name of Object.keys(out)) {
+    if (STRIP_PLUGIN_RESPONSE_HEADERS.has(name.toLowerCase())) delete out[name]
   }
   return out
 }

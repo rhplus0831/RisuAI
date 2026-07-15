@@ -402,6 +402,10 @@ function getProxyFetchUrl() {
   return '/api/v1/proxy/fetch'
 }
 
+function getPluginProxyFetchUrl() {
+  return '/api/v1/proxy/plugin-fetch'
+}
+
 function getProxyStreamJobsCreateUrl() {
   return '/api/v1/proxy/stream-jobs'
 }
@@ -517,11 +521,7 @@ function retainFetchCancellationThroughBody(
       statusText: response.statusText,
     })
     Object.defineProperties(managedResponse, {
-      redirected: {
-        configurable: true,
-        enumerable: true,
-        get: () => response.redirected,
-      },
+      redirected: { configurable: true, enumerable: true, get: () => response.redirected },
       type: { configurable: true, enumerable: true, get: () => response.type },
       url: { configurable: true, enumerable: true, get: () => response.url },
     })
@@ -728,12 +728,7 @@ async function fetchWithPlainFetch(url: string, arg: GlobalFetchArgs): Promise<G
     const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json()
     const ok = response.ok && response.status >= 200 && response.status < 300
     addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
-    return {
-      ok,
-      data,
-      headers: Object.fromEntries(response.headers),
-      status: response.status,
-    }
+    return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
   } catch (error) {
     return { ok: false, data: `${error}`, headers: {}, status: 400 }
   }
@@ -758,12 +753,7 @@ async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<Glob
     const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json()
     const ok = response.ok && response.status >= 200 && response.status < 300
     addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
-    return {
-      ok,
-      data,
-      headers: Object.fromEntries(response.headers),
-      status: response.status,
-    }
+    return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
   } catch (error) {
     return { ok: false, data: `${error}`, headers: {}, status: 400 }
   }
@@ -776,15 +766,18 @@ async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<Glob
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  * @returns {Promise<GlobalFetchResult>} - The result of the fetch request.
  */
-async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<GlobalFetchResult> {
+async function fetchWithProxy(
+  url: string,
+  arg: GlobalFetchArgs,
+  proxyUrl: string = getProxyFetchUrl(),
+): Promise<GlobalFetchResult> {
   try {
-    const furl = getProxyFetchUrl()
-    arg.headers ??= {}
-    arg.headers['Content-Type'] ??=
+    const upstreamHeaders = { ...(arg.headers ?? {}) }
+    upstreamHeaders['Content-Type'] ??=
       arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json'
     const nodeProxyAuth = await getNodeServerProxyAuth()
     const headers = {
-      'risu-header': encodeURIComponent(JSON.stringify(arg.headers)),
+      'risu-header': encodeURIComponent(JSON.stringify(upstreamHeaders)),
       'risu-url': encodeURIComponent(url),
       'Content-Type': arg.body instanceof URLSearchParams ? 'application/x-www-form-urlencoded' : 'application/json',
       ...(arg.useRisuToken && { 'x-risu-tk': 'use' }),
@@ -792,14 +785,12 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
         'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
       }),
       ...(nodeProxyAuth && { 'risu-auth': nodeProxyAuth }),
-      ...(getDatabase()?.requestLocation && {
-        'risu-location': getDatabase().requestLocation,
-      }),
+      ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
     }
 
     const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
 
-    const response = await fetch(furl, {
+    const response = await fetch(proxyUrl, {
       body,
       headers,
       method: arg.method ?? 'POST',
@@ -841,6 +832,40 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
       }
     }
   } catch (error) {
+    return { ok: false, data: `${error}`, headers: {}, status: 400 }
+  }
+}
+
+/**
+ * Plugin-only buffered transport. It deliberately ignores plain-fetch and
+ * userscript routing so plugin requests always reach Fastify's public-network
+ * guard instead of inheriting first-party provider networking privileges.
+ */
+export async function pluginGlobalFetch(url: string, arg: GlobalFetchArgs = {}): Promise<GlobalFetchResult> {
+  try {
+    if (arg.abortSignal?.aborted) {
+      return { ok: false, data: 'aborted', headers: {}, status: 400 }
+    }
+
+    if (arg.interceptor) {
+      for (const interceptor of bodyIntercepterStore) {
+        try {
+          arg.body = (await interceptor.callback(arg.body, arg.interceptor)) || arg.body
+        } catch (error) {
+          console.error(error)
+        }
+      }
+    }
+
+    const timeoutSignal = buildTimeoutSignal(arg.abortSignal, arg.requestTimeoutMs)
+    const requestArg = timeoutSignal.signal === arg.abortSignal ? arg : { ...arg, abortSignal: timeoutSignal.signal }
+    try {
+      return await fetchWithProxy(url, requestArg, getPluginProxyFetchUrl())
+    } finally {
+      timeoutSignal.cleanup()
+    }
+  } catch (error) {
+    console.error(error)
     return { ok: false, data: `${error}`, headers: {}, status: 400 }
   }
 }
@@ -1372,32 +1397,41 @@ async function fetchViaProxyJobWs(
  * @returns {number} status - The response status code.
  * @throws {Error} - Throws an error if the request is aborted or if there is an error in the response.
  */
-export async function fetchNative(
+export interface NativeFetchArgs {
+  body?: string | Uint8Array | ArrayBuffer
+  headers?: { [key: string]: string }
+  method?: 'POST' | 'GET' | 'PUT' | 'DELETE'
+  signal?: AbortSignal
+  useRisuTk?: boolean
+  chatId?: string
+  interceptor?: string
+  requestTimeoutMs?: number
+  networkRoute?: 'auto' | 'local_network'
+  sensitive?: boolean
+}
+
+export interface PluginNativeFetchArgs extends Omit<NativeFetchArgs, 'method'> {
+  method?: 'POST' | 'GET' | 'PUT' | 'DELETE' | 'PATCH' | 'HEAD' | 'OPTIONS'
+}
+
+async function fetchNativeInternal(
   url: string,
-  arg: {
-    body?: string | Uint8Array | ArrayBuffer
-    headers?: { [key: string]: string }
-    method?: 'POST' | 'GET' | 'PUT' | 'DELETE'
-    signal?: AbortSignal
-    useRisuTk?: boolean
-    chatId?: string
-    interceptor?: string
-    requestTimeoutMs?: number
-    networkRoute?: 'auto' | 'local_network'
-    sensitive?: boolean
-  },
+  arg: NativeFetchArgs | PluginNativeFetchArgs = {},
+  pluginNetworkRequest = false,
 ): Promise<Response> {
   const useInterceptor = !!arg.interceptor
-  if (arg.body === undefined && (arg.method === 'POST' || arg.method === 'PUT')) {
+  if (!pluginNetworkRequest && arg.body === undefined && (arg.method === 'POST' || arg.method === 'PUT')) {
     throw new Error('Body is required for POST and PUT requests')
   }
 
   arg.method = arg.method ?? 'POST'
 
   let headers = arg.headers ?? {}
-  let realBody: Uint8Array
+  let realBody: Uint8Array | undefined
 
-  if (arg.method === 'GET' || arg.method === 'DELETE') {
+  if (arg.method === 'GET' || arg.method === 'HEAD' || (!pluginNetworkRequest && arg.method === 'DELETE')) {
+    realBody = undefined
+  } else if (arg.body === undefined) {
     realBody = undefined
   } else if (typeof arg.body === 'string') {
     let body: string = arg.body
@@ -1420,7 +1454,7 @@ export async function fetchNative(
   }
 
   const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
-  const throughProxy = useLocalNetworkRoute
+  const throughProxy = pluginNetworkRequest || useLocalNetworkRoute
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
   const requestSignal = timeoutSignal.signal
   let requestCleaned = false
@@ -1455,7 +1489,8 @@ export async function fetchNative(
         }),
       )
     } else if (throughProxy) {
-      const useProxyJobWs = arg.interceptor === 'openai_streaming' && arg.method === 'POST' && useLocalNetworkRoute
+      const useProxyJobWs =
+        !pluginNetworkRequest && arg.interceptor === 'openai_streaming' && arg.method === 'POST' && useLocalNetworkRoute
       const nodeProxyAuth = await getNodeServerProxyAuth()
 
       if (useProxyJobWs) {
@@ -1464,7 +1499,7 @@ export async function fetchNative(
             await fetchViaProxyJobWs(url, {
               body: realBody,
               headers,
-              method: arg.method,
+              method: 'POST',
               signal: requestSignal,
               requestTimeoutMs: arg.requestTimeoutMs,
               chatId: arg.chatId,
@@ -1476,7 +1511,7 @@ export async function fetchNative(
         }
       }
 
-      const r = await fetch(getProxyFetchUrl(), {
+      const r = await fetch(pluginNetworkRequest ? getPluginProxyFetchUrl() : getProxyFetchUrl(), {
         body: realBody as any,
         headers: arg.useRisuTk
           ? {
@@ -1488,9 +1523,7 @@ export async function fetchNative(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && {
-                'risu-location': getDatabase().requestLocation,
-              }),
+              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
             }
           : {
               'risu-header': encodeURIComponent(JSON.stringify(headers)),
@@ -1500,9 +1533,7 @@ export async function fetchNative(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && {
-                'risu-location': getDatabase().requestLocation,
-              }),
+              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
             },
         method: arg.method,
         signal: requestSignal,
@@ -1529,6 +1560,15 @@ export async function fetchNative(
     cleanupRequest()
     throw error
   }
+}
+
+export async function fetchNative(url: string, arg: NativeFetchArgs = {}): Promise<Response> {
+  return fetchNativeInternal(url, arg, false)
+}
+
+/** Plugin-only streaming transport; always uses the public-network proxy. */
+export async function pluginFetchNative(url: string, arg: PluginNativeFetchArgs = {}): Promise<Response> {
+  return fetchNativeInternal(url, arg, true)
 }
 
 /**
