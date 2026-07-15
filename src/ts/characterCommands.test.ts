@@ -3,7 +3,7 @@ import { get } from 'svelte/store'
 
 const alertConfirmState = vi.hoisted(() => ({
   messages: [] as string[],
-  responses: [] as boolean[],
+  responses: [] as Array<boolean | Promise<boolean>>,
 }))
 
 vi.mock('./platform', async (importActual) => {
@@ -268,6 +268,17 @@ function deferredResponse(): {
 } {
   let resolve!: (response: Response) => void
   const promise = new Promise<Response>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
+function deferredBoolean(): {
+  promise: Promise<boolean>
+  resolve: (value: boolean) => void
+} {
+  let resolve!: (value: boolean) => void
+  const promise = new Promise<boolean>((innerResolve) => {
     resolve = innerResolve
   })
   return { promise, resolve }
@@ -2047,6 +2058,97 @@ describe('Phase 3 kept-key character diff (M13)', () => {
 })
 
 describe('Phase 4 removeChar trashTime field rollback (L33)', () => {
+  it('trashes the original character when a preceding row is removed during confirmation', async () => {
+    const calls: CapturedFetch[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string> | undefined
+        const url = String(input)
+        calls.push({
+          url,
+          method: init.method ?? 'GET',
+          authHeader: headers?.['risu-auth'] ?? null,
+          body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+        })
+
+        if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+        if (url === '/api/v1/commands/characters/char-b') {
+          return jsonResponse({
+            revision: 11,
+            event: { type: 'character.updated', revision: 11, resource: 'character' },
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-c'],
+      currentChar: 1,
+    } as any
+    selectedCharID.set(1)
+    const confirmation = deferredBoolean()
+    alertConfirmState.responses = [confirmation.promise, true]
+
+    const removal = withMockedNow(444444, () => removeChar(1, 'B', 'normal'))
+    await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(1))
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.splice(0, 1)
+      testDatabaseState.db.characterOrder = ['char-b', 'char-c']
+      ;(testDatabaseState.db as unknown as { currentChar?: number }).currentChar = 0
+      selectedCharID.set(0)
+    })
+    confirmation.resolve(true)
+    await removal
+
+    expect(testDatabaseState.db.characters.find((character) => character.chaId === 'char-b')?.trashTime).toBe(444444)
+    expect(testDatabaseState.db.characters.find((character) => character.chaId === 'char-c')?.trashTime).toBeUndefined()
+    await waitForCharacterPatch(calls, 'char-b')
+  })
+
+  it('permanently deletes the original character when rows are reordered during confirmation', async () => {
+    const calls = stubCharacterCollectionCommandFetch()
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b', 'char-c'],
+      currentChar: 1,
+    } as any
+    selectedCharID.set(1)
+    const confirmation = deferredBoolean()
+    alertConfirmState.responses = [true, confirmation.promise]
+
+    const removal = removeChar(1, 'B', 'permanent')
+    await vi.waitFor(() => expect(alertConfirmState.messages).toHaveLength(2))
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters = [
+        testDatabaseState.db.characters[2],
+        testDatabaseState.db.characters[0],
+        testDatabaseState.db.characters[1],
+      ]
+      testDatabaseState.db.characterOrder = ['char-c', 'char-a', 'char-b']
+      ;(testDatabaseState.db as unknown as { currentChar?: number }).currentChar = 2
+      selectedCharID.set(2)
+    })
+    confirmation.resolve(true)
+    await removal
+
+    expect(testDatabaseState.db.characters.map((character) => character.chaId)).toEqual(['char-c', 'char-a'])
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/characters/char-b' && call.method === 'DELETE')).toBe(
+        true,
+      )
+    })
+  })
+
   it('L33: trashTime snapshots are scalar and restore only the target field plus order placement', () => {
     testDatabaseState.db = seedCloneCostDb() as any
     selectedCharID.set(1)

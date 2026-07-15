@@ -1249,7 +1249,8 @@ export async function removeChar(
   name: string,
   type: 'normal' | 'permanent' | 'permanentForce' = 'normal',
 ) {
-  const db = getDatabase()
+  const characterId = getDatabase().characters?.[index]?.chaId
+  if (!characterId) return
   if (type !== 'permanentForce') {
     const conf = await alertConfirm(language.removeConfirm + name)
     if (!conf) {
@@ -1260,28 +1261,21 @@ export async function removeChar(
       return
     }
   }
-  let chars = db.characters
+  const liveIndex = findLiveCharacterIndex(characterId)
+  if (liveIndex < 0) return
   if (type === 'normal') {
-    const previous = currentCharacterTrashTimeSnapshot(index)
-    const characterId = previous.characterId
+    const previous = currentCharacterTrashTimeSnapshot(liveIndex)
     const trashTime = Date.now()
     withTrustedResourceWrite(() => {
-      getDatabase().characters[index].trashTime = trashTime
-      chars = getDatabase().characters
+      getDatabase().characters[liveIndex].trashTime = trashTime
     })
-    if (characterId) {
-      dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
-    }
+    dispatchUpdateCharacterTrashTime(characterId, trashTime, previous)
   } else {
     const previous = currentCharacterStateSnapshot()
-    const characterId = chars[index]?.chaId
     withTrustedResourceWrite(() => {
-      getDatabase().characters.splice(index, 1)
-      chars = getDatabase().characters
+      getDatabase().characters.splice(liveIndex, 1)
     })
-    if (characterId) {
-      dispatchDeleteCharacter(characterId, previous)
-    }
+    dispatchDeleteCharacter(characterId, previous)
   }
   repairCharacterOrderOptimistically({ dispatchReorder: false })
   requiresFullEncoderReload.state = true
