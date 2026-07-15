@@ -1573,6 +1573,8 @@
                   <div class="max-w-24 max-h-24">{file}</div>
                 {/if}
                 <button
+                  type="button"
+                  aria-label={`${language.remove}: ${file}`}
                   class="absolute -right-1 -top-1 p-1 bg-darkbg text-textcolor rounded-md transition-colors hover:text-draculared focus:text-draculared"
                   onclick={() => {
                     fileInput.splice(i, 1)
@@ -1910,6 +1912,8 @@
   <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
     {#each additionalFloatingActionButtons as button}
       <button
+        type="button"
+        aria-label={button.name}
         class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors"
         onclick={() => {
           button.callback()

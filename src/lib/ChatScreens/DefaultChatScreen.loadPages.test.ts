@@ -616,6 +616,53 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
   })
 })
 
+describe('DefaultChatScreen floating action accessibility', () => {
+  it('names attachment removal for the selected attachment', async () => {
+    seedDatabase([1])
+    loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-menu-button"]')).toBeTruthy()
+    })
+    await clickPostFileMenuItem()
+
+    await waitFor(() => {
+      expect(target.querySelector('button[aria-label="remove: asset-a"]')).toBeTruthy()
+    })
+    const removeButton = target.querySelector<HTMLButtonElement>('button[aria-label="remove: asset-a"]')!
+    expect(removeButton.type).toBe('button')
+
+    removeButton.click()
+    await tick()
+
+    expect(target.querySelector('button[aria-label="remove: asset-a"]')).toBeNull()
+  })
+
+  it('uses each plugin action name for its floating button', async () => {
+    seedDatabase([1])
+    const callback = vi.fn()
+    additionalFloatingActionButtons.push({
+      id: 'plugin-action-a',
+      name: 'Open plugin action',
+      icon: '',
+      iconType: 'none',
+      callback,
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('button[aria-label="Open plugin action"]')).toBeTruthy()
+    })
+    const pluginButton = target.querySelector<HTMLButtonElement>('button[aria-label="Open plugin action"]')!
+    expect(pluginButton.type).toBe('button')
+
+    pluginButton.click()
+
+    expect(callback).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('DefaultChatScreen transcript window state', () => {
   it('offers the Stop TTS action for every active synthesis mode', async () => {
     seedDatabase([2])
