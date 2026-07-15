@@ -83,7 +83,16 @@ import { selectedCharID } from '../stores.svelte'
 import { getDatabase, setDatabaseLite, type Database } from '../storage/database.svelte'
 import { SafeLocalPluginStorage } from './pluginSafeClass'
 import { loadV3Plugins } from './apiV3/v3.svelte'
-import { checkPluginUpdate, getV2PluginAPIs, importPlugin, updatePlugin, type RisuPlugin } from './plugins.svelte'
+import {
+  checkPluginUpdate,
+  customProviderStore,
+  getV2PluginAPIs,
+  importPlugin,
+  loadV2Plugin,
+  pluginV2,
+  updatePlugin,
+  type RisuPlugin,
+} from './plugins.svelte'
 import type { RisuModule } from '../process/modules'
 
 interface CapturedFetch {
@@ -739,6 +748,97 @@ describe('plugin import/update freshness', () => {
         patch: expect.objectContaining({ displayName: null }),
       },
     })
+  })
+})
+
+describe('V2 plugin unload lifecycle', () => {
+  function clearPluginV2State() {
+    pluginV2.providers.clear()
+    pluginV2.providerOptions.clear()
+    pluginV2.editdisplay.clear()
+    pluginV2.editoutput.clear()
+    pluginV2.editprocess.clear()
+    pluginV2.editinput.clear()
+    pluginV2.replacerbeforeRequest.clear()
+    pluginV2.replacerafterRequest.clear()
+    pluginV2.unload.clear()
+    pluginV2.loaded = false
+    customProviderStore.set([])
+  }
+
+  function seedPluginV2Registrations() {
+    const edit = (content: string) => content
+    pluginV2.providers.set('stale-provider', async () => ({ success: true, content: '' }))
+    pluginV2.providerOptions.set('stale-provider', { tokenizer: 'stale-tokenizer' })
+    pluginV2.editdisplay.add(edit)
+    pluginV2.editoutput.add(edit)
+    pluginV2.editprocess.add(edit)
+    pluginV2.editinput.add(edit)
+    pluginV2.replacerbeforeRequest.add((content) => content)
+    pluginV2.replacerafterRequest.add((content) => content)
+    customProviderStore.set(['stale-provider'])
+  }
+
+  function expectPluginV2RegistrationsCleared() {
+    expect(pluginV2.providers.size).toBe(0)
+    expect(pluginV2.providerOptions.size).toBe(0)
+    expect(pluginV2.editdisplay.size).toBe(0)
+    expect(pluginV2.editoutput.size).toBe(0)
+    expect(pluginV2.editprocess.size).toBe(0)
+    expect(pluginV2.editinput.size).toBe(0)
+    expect(pluginV2.replacerbeforeRequest.size).toBe(0)
+    expect(pluginV2.replacerafterRequest.size).toBe(0)
+    expect(pluginV2.unload.size).toBe(0)
+    expect(get(customProviderStore)).toEqual([])
+  }
+
+  beforeEach(() => {
+    clearPluginV2State()
+    pluginV2.loaded = true
+  })
+
+  afterEach(() => {
+    clearPluginV2State()
+  })
+
+  it('isolates throwing unload callbacks and clears registrations before the next reload', async () => {
+    seedPluginV2Registrations()
+    const unload = vi.fn(() => {
+      throw new Error('unload failed')
+    })
+    pluginV2.unload.add(unload)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    await expect(loadV2Plugin([])).resolves.toBeUndefined()
+
+    expect(unload).toHaveBeenCalledOnce()
+    expect(error).toHaveBeenCalledWith('Error running V2 plugin unload callback:', expect.any(Error))
+    expectPluginV2RegistrationsCleared()
+    await expect(loadV2Plugin([])).resolves.toBeUndefined()
+    expect(unload).toHaveBeenCalledOnce()
+    error.mockRestore()
+  })
+
+  it('times out pending unload callbacks and lets a later reload proceed', async () => {
+    seedPluginV2Registrations()
+    pluginV2.unload.add(() => new Promise<void>(() => undefined))
+    const timeout = createDeferred<void>()
+    pluginImportMocks.sleep.mockReturnValueOnce(timeout.promise)
+
+    let settled = false
+    const load = loadV2Plugin([]).then(() => {
+      settled = true
+    })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(settled).toBe(false)
+    expect(pluginImportMocks.sleep).toHaveBeenCalledWith(1000)
+    timeout.resolve(undefined)
+    await load
+
+    expectPluginV2RegistrationsCleared()
+    await expect(loadV2Plugin([])).resolves.toBeUndefined()
   })
 })
 

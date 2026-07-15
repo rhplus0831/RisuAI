@@ -691,6 +691,35 @@ export const pluginV2 = {
   loaded: false,
 }
 
+const V2_PLUGIN_UNLOAD_TIMEOUT_MS = 1000
+
+async function runV2PluginUnloadCallbacks(callbacks: Array<() => void | Promise<void>>) {
+  if (callbacks.length === 0) return
+
+  const pendingCallbacks = callbacks.map(async (unload) => {
+    try {
+      await unload()
+    } catch (error) {
+      console.error('Error running V2 plugin unload callback:', error)
+    }
+  })
+
+  await Promise.race([Promise.all(pendingCallbacks), sleep(V2_PLUGIN_UNLOAD_TIMEOUT_MS)])
+}
+
+function clearV2PluginRegistrations() {
+  pluginV2.providers.clear()
+  pluginV2.providerOptions.clear()
+  pluginV2.editdisplay.clear()
+  pluginV2.editoutput.clear()
+  pluginV2.editprocess.clear()
+  pluginV2.editinput.clear()
+  pluginV2.replacerbeforeRequest.clear()
+  pluginV2.replacerafterRequest.clear()
+  pluginV2.unload.clear()
+  customProviderStore.set([])
+}
+
 export const allowedDbKeys = [
   'characters',
   'modules',
@@ -1205,17 +1234,12 @@ export const getV2PluginAPIs = () => {
 
 export async function loadV2Plugin(plugins: RisuPlugin[]) {
   if (pluginV2.loaded) {
-    for (const unload of pluginV2.unload) {
-      await unload()
+    const unloadCallbacks = Array.from(pluginV2.unload)
+    try {
+      await runV2PluginUnloadCallbacks(unloadCallbacks)
+    } finally {
+      clearV2PluginRegistrations()
     }
-
-    pluginV2.providers.clear()
-    pluginV2.providerOptions.clear()
-    pluginV2.editdisplay.clear()
-    pluginV2.editoutput.clear()
-    pluginV2.editprocess.clear()
-    pluginV2.editinput.clear()
-    customProviderStore.set([])
   }
 
   pluginV2.loaded = true
