@@ -240,6 +240,40 @@ afterEach(() => {
 })
 
 describe('ModuleSettings derived module rows', () => {
+  it('names module actions and exposes their enabled state', () => {
+    mountSettings()
+
+    expect(moduleAction('alpha-id', 'toggle-enabled').getAttribute('aria-label')).toBe(
+      `${language.enableGlobal}: Alpha Module`,
+    )
+    expect(moduleAction('alpha-id', 'toggle-enabled').getAttribute('aria-pressed')).toBe('true')
+    expect(moduleAction('beta-id', 'toggle-enabled').getAttribute('aria-pressed')).toBe('false')
+    expect(moduleAction('beta-id', 'export').getAttribute('aria-label')).toBe(`${language.download}: beta Module`)
+    expect(moduleAction('beta-id', 'edit').getAttribute('aria-label')).toBe(`${language.edit}: beta Module`)
+    expect(moduleAction('beta-id', 'delete').getAttribute('aria-label')).toBe(`${language.remove}: beta Module`)
+    expect(moduleAction('mcp-id', 'export').disabled).toBe(true)
+    expect(moduleAction('mcp-id', 'edit').disabled).toBe(true)
+    expect(moduleSurfaceAction('create').getAttribute('aria-label')).toBe(language.createModule)
+    expect(moduleSurfaceAction('import-mcp').getAttribute('aria-label')).toBe(`${language.import}: MCP`)
+    expect(moduleSurfaceAction('import').getAttribute('aria-label')).toBe(`${language.import}: ${language.module}`)
+  })
+
+  it('names module lorebook actions', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    buttonByText(language.loreBook).click()
+    await tick()
+
+    const labels = Array.from(target.querySelectorAll<HTMLButtonElement>('button'), (button) =>
+      button.getAttribute('aria-label'),
+    )
+    expect(labels).toContain(`${language.add}: ${language.loreBook}`)
+    expect(labels).toContain(`${language.export}: ${language.loreBook}`)
+    expect(labels).toContain(`${language.add}: ${language.folderName}`)
+    expect(labels).toContain(`${language.import}: ${language.loreBook}`)
+  })
+
   it('L43: ModuleSettings empty search shows every module in lowercase sorted order', () => {
     mountSettings()
 
@@ -324,7 +358,7 @@ describe('ModuleSettings derived module rows', () => {
 
     readCounter.count = 0
     await updateSearch('ALPHA')
-    expect(readCounter.count).toBe(getDatabase().modules.length + moduleRows().length)
+    expect(readCounter.count).toBe(getDatabase().modules.length)
 
     readCounter.count = 0
     await clickModuleSurfaceAction('create')

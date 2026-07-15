@@ -106,9 +106,14 @@
                   <CircleCheckIcon size={18} />
                 </button>
               {:else if getResourceDatabase().enabledModules.includes(rmodule.id)}
-                <button class="mr-2 text-textcolor2 cursor-not-allowed" aria-labelledby="disabled"> </button>
+                <span class="mr-2" aria-hidden="true"></span>
               {:else}
                 <button
+                  aria-label={`${language.module}: ${rmodule.name}`}
+                  aria-pressed={getResourceDatabase().characters[$selectedCharID].chats[
+                    getResourceDatabase().characters[$selectedCharID].chatPage
+                  ].modules?.includes(rmodule.id) ||
+                    getResourceDatabase().characters[$selectedCharID]?.modules?.includes(rmodule.id)}
                   class={getResourceDatabase().characters[$selectedCharID].chats[
                     getResourceDatabase().characters[$selectedCharID].chatPage
                   ].modules?.includes(rmodule.id)

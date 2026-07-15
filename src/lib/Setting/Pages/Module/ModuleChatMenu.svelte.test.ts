@@ -82,6 +82,25 @@ afterEach(() => {
 })
 
 describe('ModuleChatMenu modal behavior', () => {
+  it('names the per-chat module toggle and removes the globally enabled placeholder button', async () => {
+    moduleMenuDatabase.modules = [{ id: 'module-a', name: 'Module A' }]
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    const toggle = target.querySelector<HTMLButtonElement>('button[aria-label="Module: Module A"]')
+    expect(toggle).toBeTruthy()
+    expect(toggle!.getAttribute('aria-pressed')).toBe('false')
+
+    unmount(component)
+    component = undefined
+    moduleMenuDatabase.enabledModules = ['module-a']
+    component = mount(ModuleChatMenu, { target, props: { close: vi.fn() } })
+    await settle()
+
+    expect(target.querySelector('[aria-labelledby="disabled"]')).toBeNull()
+    expect(target.querySelector('button[aria-label="Module: Module A"]')).toBeNull()
+  })
+
   it('contains focus, owns Escape, and restores the opener', async () => {
     const close = vi.fn()
     opener.focus()

@@ -164,6 +164,7 @@
     {:else}
       {#each sortedModuleRows as moduleRow, i (moduleRow.rmodule.id)}
         {@const rmodule = moduleRow.rmodule}
+        {@const moduleName = rmodule.name}
         {#if i !== 0}
           <div class="border-t-1 border-selected"></div>
         {/if}
@@ -178,10 +179,12 @@
           {#if rmodule.mcp}
             <Waypoints size={18} class="mr-2" />
           {/if}
-          <span class="text-lg" data-risu-module-name>{rmodule.name}</span>
+          <span class="text-lg" data-risu-module-name>{moduleName}</span>
           <div class="grow flex justify-end">
             <button
               data-risu-module-action="toggle-enabled"
+              aria-label={`${language.enableGlobal}: ${moduleName}`}
+              aria-pressed={isModuleEnabled(rmodule.id)}
               class={isModuleEnabled(rmodule.id)
                 ? 'mr-2 cursor-pointer text-blue-500'
                 : rmodule.namespace && moduleIntegrationNamespaces.has(rmodule.namespace)
@@ -198,6 +201,7 @@
             {#if !rmodule.mcp}
               <button
                 data-risu-module-action="export"
+                aria-label={`${language.download}: ${moduleName}`}
                 class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                 use:tooltip={language.download}
                 onclick={async (e) => {
@@ -208,6 +212,7 @@
               </button>
               <button
                 data-risu-module-action="edit"
+                aria-label={`${language.edit}: ${moduleName}`}
                 class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
                 use:tooltip={language.edit}
                 onclick={async (e) => {
@@ -222,25 +227,30 @@
               <button
                 data-risu-module-action="export"
                 data-risu-action-state="disabled"
+                aria-label={`${language.download}: ${moduleName}`}
                 aria-disabled="true"
+                disabled
                 class="text-textcolor2 mr-2 cursor-not-allowed">
                 <Share2Icon size={18} />
               </button>
               <button
                 data-risu-module-action="edit"
                 data-risu-action-state="disabled"
+                aria-label={`${language.edit}: ${moduleName}`}
                 aria-disabled="true"
+                disabled
                 class="text-textcolor2 mr-2 cursor-not-allowed">
                 <SquarePen size={18} />
               </button>
             {/if}
             <button
               data-risu-module-action="delete"
+              aria-label={`${language.remove}: ${moduleName}`}
               class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
               use:tooltip={language.remove}
               onclick={async (e) => {
                 e.stopPropagation()
-                const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
+                const d = await alertConfirm(`${language.removeConfirm}` + moduleName)
                 if (d) {
                   deleteGlobalModule(rmodule.id)
                 }
@@ -259,6 +269,7 @@
   <div class="flex mr-2 mt-4">
     <button
       data-risu-module-action="create"
+      aria-label={language.createModule}
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
         tempModule = {
@@ -273,6 +284,7 @@
     </button>
     <button
       data-risu-module-action="import-mcp"
+      aria-label={`${language.import}: MCP`}
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
         importMCPModule()
@@ -281,6 +293,7 @@
     </button>
     <button
       data-risu-module-action="import"
+      aria-label={`${language.import}: ${language.module}`}
       class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer"
       onclick={async () => {
         await importModule()

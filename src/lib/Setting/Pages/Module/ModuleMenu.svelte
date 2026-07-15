@@ -576,6 +576,7 @@
     onEntrySettled={flushModuleLorebookValue} />
   <div class="text-textcolor2 mt-2 flex">
     <button
+      aria-label={`${language.add}: ${language.loreBook}`}
       onclick={() => {
         addLorebook()
       }}
@@ -583,6 +584,7 @@
       <PlusIcon />
     </button>
     <button
+      aria-label={`${language.export}: ${language.loreBook}`}
       onclick={() => {
         exportLoreBook()
       }}
@@ -590,6 +592,7 @@
       <DownloadIcon />
     </button>
     <button
+      aria-label={`${language.add}: ${language.folderName}`}
       onclick={() => {
         addLorebookFolder()
       }}
@@ -598,6 +601,7 @@
     </button>
     <button
       data-risu-module-action="import-lorebook"
+      aria-label={`${language.import}: ${language.loreBook}`}
       onclick={() => {
         importLoreBook()
       }}
@@ -616,17 +620,20 @@
   <RegexList bind:value={currentModule.regex} />
   <div class="text-textcolor2 mt-2 flex gap-2">
     <button
+      aria-label={`${language.add}: ${language.regexScript}`}
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         addRegex()
       }}><PlusIcon /></button>
     <button
+      aria-label={`${language.export}: ${language.regexScript}`}
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={() => {
         exportRegex(currentModule.regex)
       }}><DownloadIcon /></button>
     <button
       data-risu-module-action="import-regex"
+      aria-label={`${language.import}: ${language.regexScript}`}
       class="font-medium cursor-pointer hover:text-green-500"
       onclick={importModuleRegex}><HardDriveUploadIcon /></button>
   </div>
@@ -639,7 +646,10 @@
         <tr>
           <th class="font-medium">{language.value}</th>
           <th class="font-medium cursor-pointer w-10">
-            <button class="hover:text-green-500" onclick={uploadModuleAssets}>
+            <button
+              aria-label={`${language.add}: ${language.additionalAssets}`}
+              class="hover:text-green-500"
+              onclick={uploadModuleAssets}>
               <PlusIcon />
             </button>
           </th>
@@ -669,6 +679,7 @@
 
               <th class="font-medium cursor-pointer w-10">
                 <button
+                  aria-label={`${language.remove}: ${assets[0]}`}
                   class="hover:text-green-500"
                   onclick={() => {
                     let additionalAssets = currentModule.assets
