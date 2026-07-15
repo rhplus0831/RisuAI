@@ -94,6 +94,7 @@ export const languageSettingsItems: SettingItem[] = [
     bindKey: 'translator',
     classes: 'mt-4',
     options: {
+      selectFallbackValue: '',
       selectOptions: [
         { value: '', labelKey: 'disabled' },
         { value: 'ko', label: 'Korean' },

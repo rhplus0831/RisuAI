@@ -16,9 +16,22 @@
 
   let localValue: any = $state(untrack(() => getSettingValue(item, ctx)))
 
+  // Filter out conditionally hidden options.
+  let processedOptions = $derived(
+    (item.options?.selectOptions ?? []).filter((opt) => !opt.condition || opt.condition(ctx)),
+  )
+
+  function resolveConfiguredFallback(value: unknown, availableOptions: typeof processedOptions): unknown {
+    if (availableOptions.some((option) => option.value === value)) return value
+
+    const fallbackValue = item.options?.selectFallbackValue
+    if (fallbackValue === undefined) return value
+    return availableOptions.find((option) => option.value === fallbackValue)?.value ?? value
+  }
+
   // Sync: DB → local (one-way read)
   $effect(() => {
-    localValue = getSettingValue(item, ctx)
+    localValue = resolveConfiguredFallback(getSettingValue(item, ctx), processedOptions)
   })
 
   // Write-back: local → DB (guarded — only fires on actual user changes)
@@ -31,11 +44,6 @@
       }
     })
   })
-
-  // Filter out conditionally hidden options.
-  let processedOptions = $derived(
-    (item.options?.selectOptions ?? []).filter((opt) => !opt.condition || opt.condition(ctx)),
-  )
 
   let hasObservedInitialOptions = false
 
@@ -55,6 +63,11 @@
       currentValue !== undefined &&
       !availableOptions.some((o) => o.value === currentValue)
     ) {
+      const configuredFallback = resolveConfiguredFallback(currentValue, availableOptions)
+      if (configuredFallback !== currentValue) {
+        localValue = configuredFallback
+        return
+      }
       localValue = availableOptions[availableOptions.length - 1].value
     }
   })

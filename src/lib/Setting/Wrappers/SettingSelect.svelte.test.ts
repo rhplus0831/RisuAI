@@ -136,4 +136,45 @@ describe('SettingSelect initial values', () => {
     expect(selectMocks.setSettingValue).not.toHaveBeenCalled()
     expect(action).not.toHaveBeenCalled()
   })
+
+  it.each([
+    ['missing', undefined],
+    ['invalid', 'unsupported-target'],
+  ])('uses the explicit disabled fallback for a %s translation target', async (_case, value) => {
+    const action = vi.fn()
+    const item = {
+      ...languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorLang')!,
+      onChange: action,
+    }
+    selectMocks.currentValue = value
+
+    component = mount(SettingSelect, { target, props: { item, ctx } })
+    await tick()
+
+    const select = target.querySelector('select')
+    expect(select?.value).toBe('')
+    expect(select?.value).not.toBe('uk')
+    expect(selectMocks.currentValue).toBe('')
+    expect(selectMocks.setSettingValue).toHaveBeenCalledOnce()
+    expect(selectMocks.setSettingValue).toHaveBeenCalledWith(item, '', ctx)
+    expect(action).toHaveBeenCalledOnce()
+    expect(action).toHaveBeenCalledWith('', ctx)
+  })
+
+  it('preserves a valid configured translation target', async () => {
+    const action = vi.fn()
+    const item = {
+      ...languageSettingsItems.find((candidate) => candidate.id === 'lang.translatorLang')!,
+      onChange: action,
+    }
+    selectMocks.currentValue = 'ko'
+
+    component = mount(SettingSelect, { target, props: { item, ctx } })
+    await tick()
+
+    expect(target.querySelector('select')?.value).toBe('ko')
+    expect(selectMocks.currentValue).toBe('ko')
+    expect(selectMocks.setSettingValue).not.toHaveBeenCalled()
+    expect(action).not.toHaveBeenCalled()
+  })
 })

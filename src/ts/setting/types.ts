@@ -76,6 +76,8 @@ export interface SettingOptions {
 
   // select
   selectOptions?: SelectOption[]
+  /** Explicit option used when the current select value is missing or unavailable */
+  selectFallbackValue?: string
 
   // segmented control
   segmentOptions?: SegmentOption[]
