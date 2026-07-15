@@ -12,6 +12,41 @@
     y_min: number
   }
 
+  export type ImageSelectionRect = {
+    height: number
+    left: number
+    top: number
+    width: number
+  }
+
+  export function imageSelectionRectFromPoints(
+    startX: number,
+    startY: number,
+    currentX: number,
+    currentY: number,
+  ): ImageSelectionRect {
+    return {
+      left: Math.min(startX, currentX),
+      top: Math.min(startY, currentY),
+      width: Math.abs(currentX - startX),
+      height: Math.abs(currentY - startY),
+    }
+  }
+
+  export function normalizeImageSelectionRect(
+    selectionRect: Pick<DOMRect, 'bottom' | 'left' | 'right' | 'top'>,
+    canvasRect: Pick<DOMRect, 'height' | 'left' | 'top' | 'width'>,
+  ): [xMin: number, yMin: number, xMax: number, yMax: number] {
+    if (canvasRect.width <= 0 || canvasRect.height <= 0) return [0, 0, 0, 0]
+    const clampUnit = (value: number) => Math.max(0, Math.min(1, value))
+    return [
+      clampUnit((selectionRect.left - canvasRect.left) / canvasRect.width),
+      clampUnit((selectionRect.top - canvasRect.top) / canvasRect.height),
+      clampUnit((selectionRect.right - canvasRect.left) / canvasRect.width),
+      clampUnit((selectionRect.bottom - canvasRect.top) / canvasRect.height),
+    ]
+  }
+
   export function parseImageTranslationRenderOutput(output: string): ImageTranslationRenderItem[] | null {
     try {
       const parsed = JSON.parse(output)
@@ -112,12 +147,10 @@
         if (!slicedCtx) {
           return alertError('Failed to create canvas context')
         }
-        const selectionRect = selection.getBoundingClientRect()
-        const canvasRect = canvas.getBoundingClientRect()
-        x_min = (selectionRect.left - canvasRect.left) / canvas.width
-        y_min = (selectionRect.top - canvasRect.top) / canvas.height
-        x_max = (selectionRect.right - canvasRect.left) / canvas.width
-        y_max = (selectionRect.bottom - canvasRect.top) / canvas.height
+        ;[x_min, y_min, x_max, y_max] = normalizeImageSelectionRect(
+          selection.getBoundingClientRect(),
+          canvas.getBoundingClientRect(),
+        )
         const width = x_max - x_min
         const height = y_max - y_min
         slicedCtx.drawImage(
@@ -376,7 +409,7 @@
   })
 
   let selection: HTMLDivElement
-  let mouseDown = false
+  let selectionStart: { x: number; y: number } | null = null
 </script>
 
 <SelectInput bind:value={mode} className="w-1/2">
@@ -417,41 +450,39 @@
     class:blur-effect={loading && mode === 'auto'}
     onpointerdown={(e) => {
       if (mode === 'manual') {
-        mouseDown = true
+        canvas.setPointerCapture(e.pointerId)
         selection.classList.remove('hidden')
-        selection.style.width = '0px'
-        selection.style.height = '0px'
-        selection.style.left = '0px'
-        selection.style.top = '0px'
         const rect = canvas.getBoundingClientRect()
-
         const startX = e.clientX - rect.left
         const startY = e.clientY - rect.top
-
+        selectionStart = { x: startX, y: startY }
         selection.style.left = `${startX}px`
         selection.style.top = `${startY}px`
+        selection.style.width = '0px'
+        selection.style.height = '0px'
       }
     }}
     onpointermove={(e) => {
-      if (mode === 'manual' && mouseDown) {
+      if (mode === 'manual' && selectionStart) {
         const rect = canvas.getBoundingClientRect()
-        const currentX = e.clientX - rect.left
-        const currentY = e.clientY - rect.top
+        const currentX = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
+        const currentY = Math.max(0, Math.min(rect.height, e.clientY - rect.top))
+        const next = imageSelectionRectFromPoints(selectionStart.x, selectionStart.y, currentX, currentY)
 
-        const width = currentX - parseFloat(selection.style.left)
-        const height = currentY - parseFloat(selection.style.top)
-
-        selection.style.width = `${Math.abs(width)}px`
-        selection.style.height = `${Math.abs(height)}px`
-        selection.style.left = `${Math.min(currentX, parseFloat(selection.style.left))}px`
-        selection.style.top = `${Math.min(currentY, parseFloat(selection.style.top))}px`
-        console.log(selection.style.left, selection.style.top, selection.style.width, selection.style.height)
+        selection.style.width = `${next.width}px`
+        selection.style.height = `${next.height}px`
+        selection.style.left = `${next.left}px`
+        selection.style.top = `${next.top}px`
       }
     }}
     onpointerup={() => {
-      if (mode === 'manual') {
-        mouseDown = false
-      }
+      selectionStart = null
+    }}
+    onpointercancel={() => {
+      selectionStart = null
+    }}
+    onlostpointercapture={() => {
+      selectionStart = null
     }}></canvas>
   <div
     bind:this={selection}
