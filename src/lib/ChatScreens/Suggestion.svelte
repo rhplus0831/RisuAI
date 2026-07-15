@@ -8,9 +8,34 @@
     getCurrentRunId: () => number
     getCurrentRequestId: () => number
     getCurrentMessages: () => readonly string[] | undefined
+    isOwnerCurrent: () => boolean
     translateMessage: (message: string) => Promise<string>
     clear: () => void
     commit: (messages: string[]) => void
+  }
+
+  interface SharedSuggestionRequestOwnership {
+    key: string
+    token: number
+  }
+
+  let nextSuggestionRequestOwnershipToken = 0
+  const suggestionRequestOwners = new Map<string, number>()
+
+  function claimSuggestionRequestOwnership(key: string): SharedSuggestionRequestOwnership {
+    const ownership = { key, token: ++nextSuggestionRequestOwnershipToken }
+    suggestionRequestOwners.set(key, ownership.token)
+    return ownership
+  }
+
+  function isSharedSuggestionRequestOwnerCurrent(ownership: SharedSuggestionRequestOwnership): boolean {
+    return suggestionRequestOwners.get(ownership.key) === ownership.token
+  }
+
+  function releaseSuggestionRequestOwnership(ownership: SharedSuggestionRequestOwnership): void {
+    if (isSharedSuggestionRequestOwnerCurrent(ownership)) {
+      suggestionRequestOwners.delete(ownership.key)
+    }
   }
 
   function isSameSuggestionSource(currentMessages: readonly string[] | undefined, snapshot: readonly string[]) {
@@ -30,22 +55,24 @@
     getCurrentRunId,
     getCurrentRequestId,
     getCurrentMessages,
+    isOwnerCurrent,
     translateMessage,
     clear,
     commit,
   }: SuggestionTranslationRun) {
     const snapshot = messages ? [...messages] : []
 
-    const isCurrentRun = () =>
-      runId === getCurrentRunId() && requestId === getCurrentRequestId() && toggle && translationEnabled()
+    const isCurrentOwner = () => isOwnerCurrent() && runId === getCurrentRunId() && requestId === getCurrentRequestId()
+    const isCurrentRun = () => isCurrentOwner() && toggle && translationEnabled()
 
     if (!toggle || !translationEnabled() || snapshot.length === 0) {
-      if (runId === getCurrentRunId()) {
+      if (isCurrentOwner()) {
         clear()
       }
       return
     }
 
+    if (!isCurrentOwner()) return
     clear()
 
     const translatedMessages: string[] = []
@@ -96,6 +123,11 @@
     suggestMessages: string[]
   }
 
+  interface SuggestionRequestOwnership extends SharedSuggestionRequestOwnership {
+    requestId: number
+    controller: AbortController
+  }
+
   let { send, messageInput }: Props = $props()
   const initialCharacter = getDatabase().characters[$selectedCharID]
   let suggestMessages: string[] | undefined = $state(
@@ -104,15 +136,48 @@
   let suggestMessagesTranslated: string[] = $state()
   let toggleTranslate: boolean = $state(getDatabase().autoTranslate)
   let progress: boolean = $state()
-  let abortController: AbortController
+  let abortController: AbortController | undefined
   let chatPage: number | undefined = $state()
   let progressChatId: string | undefined
   let suggestionRequestId = 0
   let suggestionTranslationId = 0
   let suggestionTarget: SuggestionTargetSnapshot | undefined = $state()
+  let activeSuggestionRequest: SuggestionRequestOwnership | undefined
+  let destroyed = false
 
   function copySuggestionMessages(messages: readonly string[] | undefined): string[] {
     return [...(messages ?? [])]
+  }
+
+  function suggestionRequestOwnershipKey(target: SuggestionTargetSnapshot): string {
+    return JSON.stringify([target.characterId ?? target.selectedCharID, target.chatId ?? null])
+  }
+
+  function isSuggestionRequestOwnerCurrent(ownership: SuggestionRequestOwnership): boolean {
+    return (
+      !destroyed &&
+      activeSuggestionRequest === ownership &&
+      ownership.requestId === suggestionRequestId &&
+      !ownership.controller.signal.aborted &&
+      isSharedSuggestionRequestOwnerCurrent(ownership)
+    )
+  }
+
+  function abandonActiveSuggestionRequest(): void {
+    suggestionRequestId += 1
+    const ownership = activeSuggestionRequest
+    activeSuggestionRequest = undefined
+    if (ownership) {
+      ownership.controller.abort()
+      releaseSuggestionRequestOwnership(ownership)
+    } else {
+      abortController?.abort()
+    }
+    abortController = undefined
+    if (!destroyed) {
+      progress = false
+      progressChatId = undefined
+    }
   }
 
   function activeSuggestionTarget(messages: readonly string[] | undefined): SuggestionTargetSnapshot | undefined {
@@ -139,6 +204,7 @@
     messages: readonly string[] | undefined,
     target: SuggestionTargetSnapshot | undefined = activeSuggestionTarget(messages),
   ) {
+    if (destroyed) return
     suggestMessages = messages === undefined ? undefined : copySuggestionMessages(messages)
     suggestionTarget = target
       ? {
@@ -160,6 +226,7 @@
   }
 
   function isFreshSuggestionTarget(target: SuggestionTargetSnapshot | undefined) {
+    if (destroyed) return false
     if (!target) return false
     if ($selectedCharID !== target.selectedCharID) return false
     const currentChar = getDatabase().characters?.[target.selectedCharID]
@@ -172,21 +239,27 @@
   }
 
   const updateSuggestions = () => {
+    if (destroyed) return
     if ($selectedCharID > -1 && !$doingChat) {
       const currentChar = getDatabase().characters[$selectedCharID]
       const currentChat = currentChar?.chats[currentChar.chatPage]
       if (progress && progressChatId && progressChatId !== currentChat?.id) {
-        progress = false
-        abortController?.abort()
+        abandonActiveSuggestionRequest()
       }
       setVisibleSuggestions(currentChat?.suggestMessages)
     }
   }
 
-  function persistSuggestions(target: SuggestionTargetSnapshot, suggestions: string[]) {
+  function persistSuggestions(
+    target: SuggestionTargetSnapshot,
+    suggestions: string[],
+    ownership?: SuggestionRequestOwnership,
+  ) {
+    if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
     if (!target.chatId) return
     let applied = false
     withTrustedResourceWrite(() => {
+      if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
       const character = target.characterId
         ? getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
         : getDatabase().characters?.[target.selectedCharID]
@@ -195,8 +268,10 @@
       chat.suggestMessages = copySuggestionMessages(suggestions)
       applied = true
     })
-    if (!applied) return
+    if (!applied || destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
     syncServerBackedChatMetadataBaselines()
+
+    if (destroyed || (ownership && !isSuggestionRequestOwnerCurrent(ownership))) return
 
     const rollback: ChatRowMetadataSnapshot = {
       selectedCharID: target.selectedCharID,
@@ -216,6 +291,7 @@
   }
 
   function clearFreshSuggestions(target: SuggestionTargetSnapshot | undefined) {
+    if (destroyed) return false
     if (!target || !isFreshSuggestionTarget(target)) return false
     setVisibleSuggestions([], target)
     persistSuggestions(target, [])
@@ -223,6 +299,7 @@
   }
 
   function sendFreshSuggestion(suggest: string, index: number) {
+    if (destroyed) return
     const target = captureSuggestionTarget()
     if (target?.suggestMessages[index] !== suggest) return
     if (!clearFreshSuggestions(target)) return
@@ -231,14 +308,17 @@
   }
 
   function copyFreshSuggestion(suggest: string, index: number) {
+    if (destroyed) return
     const target = captureSuggestionTarget()
     if (target?.suggestMessages[index] !== suggest || !isFreshSuggestionTarget(target)) return
     messageInput(suggest)
   }
 
   function rerollFreshSuggestions() {
+    if (destroyed) return
     const target = captureSuggestionTarget()
     alertConfirm(language.askReRollAutoSuggestions).then((result) => {
+      if (destroyed) return
       if (result && clearFreshSuggestions(target)) {
         doingChat.set(true)
         doingChat.set(false)
@@ -247,9 +327,9 @@
   }
 
   const unsub = doingChat.subscribe(async (v) => {
+    if (destroyed) return
     if (v) {
-      progress = false
-      abortController?.abort()
+      abandonActiveSuggestionRequest()
       const target = captureSuggestionTarget() ?? activeSuggestionTarget(suggestMessages)
       if (!target || target.suggestMessages.length === 0 || !clearFreshSuggestions(target)) {
         setVisibleSuggestions([])
@@ -312,8 +392,16 @@
 
       progress = true
       progressChatId = requestChatId
-      abortController = new AbortController()
+      const controller = new AbortController()
+      abortController = controller
       const requestId = ++suggestionRequestId
+      const sharedOwnership = claimSuggestionRequestOwnership(suggestionRequestOwnershipKey(requestSuggestionTarget))
+      const ownership: SuggestionRequestOwnership = {
+        ...sharedOwnership,
+        requestId,
+        controller,
+      }
+      activeSuggestionRequest = ownership
       requestChatData(
         {
           formated: promptbody,
@@ -321,13 +409,14 @@
           currentChar: currentChar as character,
         },
         'otherAx',
-        abortController.signal,
+        controller.signal,
       )
         .then((rq2) => {
+          if (!isSuggestionRequestOwnerCurrent(ownership)) return
           const liveChar = getDatabase().characters[$selectedCharID]
           const liveChat = liveChar?.chats[liveChar.chatPage]
           const staleResponse =
-            requestId !== suggestionRequestId ||
+            !isSuggestionRequestOwnerCurrent(ownership) ||
             requestSelectedCharId !== $selectedCharID ||
             requestCharacterId !== liveChar?.chaId ||
             requestChatId !== liveChat?.id ||
@@ -343,28 +432,35 @@
               .split('\n')
               .filter((msg) => msg.startsWith('-'))
               .map((msg) => msg.replace('-', '').trim())
+            if (!isSuggestionRequestOwnerCurrent(ownership)) return
             setVisibleSuggestions(suggestMessagesNew, {
               ...requestSuggestionTarget,
               suggestMessages: suggestMessagesNew,
             })
-            persistSuggestions(requestSuggestionTarget, suggestMessagesNew)
+            persistSuggestions(requestSuggestionTarget, suggestMessagesNew, ownership)
           }
         })
         .catch((error) => {
+          if (!isSuggestionRequestOwnerCurrent(ownership)) return
           console.error('Failed to generate suggestions:', error)
         })
         .finally(() => {
-          if (requestId === suggestionRequestId) {
+          if (isSuggestionRequestOwnerCurrent(ownership)) {
+            activeSuggestionRequest = undefined
+            abortController = undefined
             progress = false
             progressChatId = undefined
           }
+          releaseSuggestionRequestOwnership(ownership)
         })
     }
   })
 
   const translateSuggest = async (toggle: boolean, messages: string[] | undefined) => {
+    if (destroyed) return
     const runId = ++suggestionTranslationId
     const requestId = suggestionRequestId
+    const isCurrentOwner = () => !destroyed && runId === suggestionTranslationId && requestId === suggestionRequestId
 
     await runSuggestionTranslation({
       runId,
@@ -375,17 +471,25 @@
       getCurrentRunId: () => suggestionTranslationId,
       getCurrentRequestId: () => suggestionRequestId,
       getCurrentMessages: () => suggestMessages,
+      isOwnerCurrent: () => !destroyed,
       translateMessage: (message) => translate(message, false),
       clear: () => {
+        if (!isCurrentOwner()) return
         suggestMessagesTranslated = []
       },
       commit: (messages) => {
+        if (!isCurrentOwner()) return
         suggestMessagesTranslated = messages
       },
     })
   }
 
-  onDestroy(unsub)
+  onDestroy(() => {
+    destroyed = true
+    suggestionTranslationId += 1
+    abandonActiveSuggestionRequest()
+    unsub()
+  })
 
   $effect.pre(() => {
     $selectedCharID

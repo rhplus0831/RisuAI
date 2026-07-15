@@ -194,6 +194,7 @@ describe('runSuggestionTranslation', () => {
       getCurrentRunId: () => currentRunId,
       getCurrentRequestId: () => 1,
       getCurrentMessages: () => currentMessages,
+      isOwnerCurrent: () => true,
       translateMessage: async (message) => (message === 'slow-a' ? slowFirstMessage.promise : `translated:${message}`),
       clear: vi.fn(),
       commit: (messages) => commits.push(messages),
@@ -211,6 +212,7 @@ describe('runSuggestionTranslation', () => {
       getCurrentRunId: () => currentRunId,
       getCurrentRequestId: () => 1,
       getCurrentMessages: () => currentMessages,
+      isOwnerCurrent: () => true,
       translateMessage: async (message) => `translated:${message}`,
       clear: vi.fn(),
       commit: (messages) => commits.push(messages),
@@ -236,6 +238,7 @@ describe('runSuggestionTranslation', () => {
       getCurrentRunId: () => 1,
       getCurrentRequestId: () => 1,
       getCurrentMessages: () => sourceMessages,
+      isOwnerCurrent: () => true,
       translateMessage: async (message) => {
         translatedInputs.push(message)
         if (message === 'one') {
@@ -251,6 +254,33 @@ describe('runSuggestionTranslation', () => {
     expect(commits).toEqual([])
   })
 
+  it('does not commit a translation after its owner is invalidated', async () => {
+    const translated = deferred<string>()
+    const commit = vi.fn()
+    let ownerCurrent = true
+
+    const run = runSuggestionTranslation({
+      runId: 1,
+      requestId: 1,
+      toggle: true,
+      messages: ['pending'],
+      translationEnabled: () => true,
+      getCurrentRunId: () => 1,
+      getCurrentRequestId: () => 1,
+      getCurrentMessages: () => ['pending'],
+      isOwnerCurrent: () => ownerCurrent,
+      translateMessage: () => translated.promise,
+      clear: vi.fn(),
+      commit,
+    })
+
+    ownerCurrent = false
+    translated.resolve('abandoned translation')
+    await run
+
+    expect(commit).not.toHaveBeenCalled()
+  })
+
   it('L58: clears translated suggestions when translation is disabled', async () => {
     const clear = vi.fn()
     const translateMessage = vi.fn(async (message: string) => `translated:${message}`)
@@ -264,6 +294,7 @@ describe('runSuggestionTranslation', () => {
       getCurrentRunId: () => 1,
       getCurrentRequestId: () => 1,
       getCurrentMessages: () => ['one'],
+      isOwnerCurrent: () => true,
       translateMessage,
       clear,
       commit: vi.fn(),
@@ -275,6 +306,70 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('aborts an unmounted request and lets only the remounted owner persist', async () => {
+    seedSuggestionDatabase([])
+    const abandonedRequest = deferred<{ type: 'success'; result: string }>()
+    const currentRequest = deferred<{ type: 'success'; result: string }>()
+    suggestionMocks.requestChatData
+      .mockReset()
+      .mockReturnValueOnce(abandonedRequest.promise)
+      .mockReturnValueOnce(currentRequest.promise)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let abandonedComponent: MountedComponent | undefined
+    let currentComponent: MountedComponent | undefined
+
+    try {
+      abandonedComponent = mount(Suggestion, {
+        target,
+        props: {
+          send: vi.fn(),
+          messageInput: vi.fn(),
+        },
+      })
+
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledTimes(1))
+      const abandonedSignal = suggestionMocks.requestChatData.mock.calls[0][2] as AbortSignal
+      expect(abandonedSignal.aborted).toBe(false)
+
+      unmount(abandonedComponent)
+      abandonedComponent = undefined
+      await settle()
+
+      expect(abandonedSignal.aborted).toBe(true)
+
+      currentComponent = mount(Suggestion, {
+        target,
+        props: {
+          send: vi.fn(),
+          messageInput: vi.fn(),
+        },
+      })
+      await waitFor(() => expect(suggestionMocks.requestChatData).toHaveBeenCalledTimes(2))
+      const currentSignal = suggestionMocks.requestChatData.mock.calls[1][2] as AbortSignal
+      expect(currentSignal.aborted).toBe(false)
+
+      abandonedRequest.resolve({ type: 'success', result: '- Abandoned suggestion' })
+      await settle()
+
+      expect(target.textContent).not.toContain('Abandoned suggestion')
+      expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
+      expect(suggestionMocks.syncServerBackedChatMetadataBaselines).not.toHaveBeenCalled()
+      expect(suggestionMocks.dispatchUpdateChatRow).not.toHaveBeenCalled()
+
+      currentRequest.resolve({ type: 'success', result: '- Current suggestion' })
+      await waitFor(() => {
+        expect(target.textContent).toContain('Current suggestion')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Current suggestion'])
+        expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledOnce()
+      })
+    } finally {
+      if (abandonedComponent) unmount(abandonedComponent)
+      if (currentComponent) unmount(currentComponent)
+      target.remove()
+    }
+  })
+
   it('releases the loading state when suggestion generation rejects', async () => {
     seedSuggestionDatabase([])
     suggestionMocks.requestChatData.mockRejectedValueOnce(new Error('provider hook failed'))
