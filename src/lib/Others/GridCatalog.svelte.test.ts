@@ -232,6 +232,22 @@ describe('GridCatalog derived lists', () => {
     expect(target.textContent).toContain('Trash alpha')
   })
 
+  it('reports the visible list count when switching between active characters and trash', async () => {
+    mountCatalog()
+    await tick()
+
+    expect(catalogCountText()).toBe('3Character')
+
+    await clickCatalogTab('trash')
+    expect(catalogCountText()).toBe('2Character')
+
+    await updateSearch('alpha')
+    expect(catalogCountText()).toBe('1Character')
+
+    await clickCatalogTab('list')
+    expect(catalogCountText()).toBe('2Character')
+  })
+
   it('L42: GridCatalog search recomputes formatted lists once per search edit and reuses them across tabs', async () => {
     seedCatalog()
     mountCatalog()

@@ -79,6 +79,9 @@
   let selectedListKind = $derived(
     selected === 0 ? 'grid' : selected === 1 ? 'list' : selected === 2 ? 'trash' : 'simple',
   )
+  let catalogCount = $derived(
+    selectedListKind === 'trash' ? catalogCharacters.trash.length : catalogCharacters.active.length,
+  )
 
   function openCharacterRoute(index: number) {
     const character = getDatabase().characters?.[index]
@@ -178,7 +181,7 @@
         </span>
         <div class="grow"></div>
         <span class="text-textcolor2 text-sm" data-risu-grid-catalog-count>
-          {catalogCharacters.active.length}
+          {catalogCount}
           {language.character}
         </span>
       </div>
