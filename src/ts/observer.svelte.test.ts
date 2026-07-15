@@ -198,6 +198,51 @@ describe('startObserveDom', () => {
     expect(AudioMock).toHaveBeenCalledTimes(1)
   })
 
+  it('clears rejected BGM playback and allows a later scan to retry it', async () => {
+    const play = vi.fn().mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+    const pause = vi.fn()
+    const remove = vi.fn()
+    const audioInstances: Array<{ src: string; volume: number }> = []
+    const AudioMock = vi.fn(function (
+      this: {
+        src: string
+        volume: number
+        addEventListener: (name: string, listener: EventListener) => void
+        play: () => Promise<void>
+        pause: () => void
+        remove: () => void
+      },
+      src: string,
+    ) {
+      this.src = src
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = pause
+      this.remove = remove
+      audioInstances.push(this)
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/blocked-bgm.mp3')
+    document.body.appendChild(ctrl)
+
+    startObserveDom()
+    await Promise.resolve()
+
+    expect(_getBgmElementForTesting()).toBeNull()
+    expect(pause).toHaveBeenCalledTimes(1)
+    expect(remove).toHaveBeenCalledTimes(1)
+
+    play.mockResolvedValueOnce(undefined)
+    startObserveDom()
+
+    expect(AudioMock).toHaveBeenCalledTimes(2)
+    expect(audioInstances[1]).toMatchObject({ src: '/blocked-bgm.mp3', volume: 0.5 })
+    expect(_getBgmElementForTesting()).toBe(audioInstances[1])
+  })
+
   it('L33: chat switch cleanup pauses current BGM and lets the next control attach', async () => {
     const play = vi.fn()
     const pause = vi.fn()

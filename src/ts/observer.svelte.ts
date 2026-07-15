@@ -98,7 +98,16 @@ function nodeObserve(node: HTMLElement) {
               bgmElement = null
             }
           })
-          audio.play()
+          const playback = audio.play()
+          if (playback && typeof playback.catch === 'function') {
+            void playback.catch(() => {
+              if (bgmElement !== audio) return
+              bgmElement = null
+              audio.pause()
+              audio.remove()
+              observedControlNodes.delete(node)
+            })
+          }
         }
         break
       }
