@@ -178,14 +178,20 @@
     path: string
     scale: number
   }
+
+  function createWavespeedLoraRows(loras: LoraItem[] | undefined): LoraItem[] {
+    const rows = (loras ?? []).map((lora) => ({ ...lora }))
+    while (rows.length < 3) {
+      rows.push({ path: '', scale: 1.0 })
+    }
+    return rows
+  }
+
   let wavespeedModels = $state<WavespeedModel[]>([])
   let isWavespeedLoading = $state(false)
   let wavespeedSearchQuery = $state('')
-  let wavespeedLoras = $state<LoraItem[]>([
-    { path: '', scale: 1.0 },
-    { path: '', scale: 1.0 },
-    { path: '', scale: 1.0 },
-  ])
+  let wavespeedLoras = $state<LoraItem[]>(createWavespeedLoraRows(wavespeedImageDraft.value.loras))
+  let wavespeedLorasInitialized = false
 
   /**
    * Fetch models from WaveSpeed API dynamically
@@ -492,14 +498,19 @@
 
   $effect(() => {
     // Sync loras to DB, filtering out empty URLs
-    if (wavespeedImageDraft.value) {
-      wavespeedImageDraft.value.loras = wavespeedLoras
-        .filter((item) => item.path && item.path.trim() !== '')
-        .map((item) => ({
-          path: item.path,
-          scale: item.scale,
-        }))
+    const normalizedLoras = wavespeedLoras
+      .filter((item) => item.path && item.path.trim() !== '')
+      .map((item) => ({
+        path: item.path,
+        scale: item.scale,
+      }))
+
+    if (!wavespeedLorasInitialized) {
+      wavespeedLorasInitialized = true
+      return
     }
+
+    wavespeedImageDraft.value.loras = normalizedLoras
   })
   // End wavespeed
 </script>
