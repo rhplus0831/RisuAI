@@ -17,14 +17,18 @@
   let search = $state('')
   let menuOpen = $state(false)
   let nsfw = $state(false)
+  let latestHubRequest = 0
 
   async function getHub() {
-    charas = await getRisuHub({
+    const request = ++latestHubRequest
+    const nextCharas = await getRisuHub({
       search: search,
       page: page,
       nsfw: nsfw,
       sort: sort,
     })
+    if (request !== latestHubRequest) return
+    charas = nextCharas
   }
 
   function changeSort(type: string) {
