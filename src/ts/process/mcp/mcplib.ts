@@ -1122,10 +1122,20 @@ export class MCPClient {
             client_secret: refreshTokenData.clientSecret,
           }).toString(),
         })
-        if (tokenResponse.status !== 200) {
-          const tokenData = await tokenResponse.json()
-          this.accessToken = tokenData.access_token
-          return
+        if (tokenResponse.ok) {
+          try {
+            const tokenData: unknown = await tokenResponse.json()
+            const accessToken =
+              tokenData && typeof tokenData === 'object' && !Array.isArray(tokenData)
+                ? (tokenData as Record<string, unknown>).access_token
+                : undefined
+            if (typeof accessToken === 'string' && accessToken.trim().length > 0) {
+              this.accessToken = accessToken
+              return
+            }
+          } catch {
+            // Invalid refresh responses fall through to the full OAuth flow.
+          }
         }
       }
     }

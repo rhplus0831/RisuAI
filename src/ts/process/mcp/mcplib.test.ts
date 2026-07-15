@@ -179,6 +179,54 @@ afterEach(() => {
   fetchNativeMock.mockReset()
 })
 
+describe('MCPClient OAuth refresh', () => {
+  function clientWithRefreshToken(): MCPClient {
+    const client = new MCPClient('https://mcp.example/messages')
+    client.getRefreshToken = async () => ({
+      clientId: 'client-id',
+      clientSecret: 'client-secret',
+      refreshToken: 'refresh-token',
+      tokenUrl: 'https://auth.example/token',
+    })
+    return client
+  }
+
+  it('accepts a successful refresh and skips OAuth discovery', async () => {
+    fetchNativeMock.mockResolvedValueOnce(jsonRpcResponse({ access_token: 'fresh-access-token' }))
+    const client = clientWithRefreshToken()
+
+    await client.oauthLogin()
+
+    expect(client.accessToken).toBe('fresh-access-token')
+    expect(fetchNativeMock).toHaveBeenCalledOnce()
+    expect(fetchNativeMock).toHaveBeenCalledWith(
+      'https://auth.example/token',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('grant_type=refresh_token'),
+      }),
+    )
+  })
+
+  it.each([
+    ['non-success response', jsonRpcResponse({ access_token: 'must-not-authenticate' }, 401)],
+    ['empty access token', jsonRpcResponse({ access_token: '' })],
+    ['missing access token', jsonRpcResponse({ token_type: 'Bearer' })],
+    ['invalid JSON response', new Response('not-json', { status: 200 })],
+  ])('does not authenticate from a %s', async (_label, refreshResponse) => {
+    fetchNativeMock
+      .mockResolvedValueOnce(refreshResponse)
+      .mockRejectedValueOnce(new Error('OAuth discovery reached after failed refresh'))
+    const client = clientWithRefreshToken()
+
+    await expect(client.oauthLogin()).rejects.toThrow('OAuth discovery reached after failed refresh')
+
+    expect(client.accessToken).toBeNull()
+    expect(fetchNativeMock).toHaveBeenCalledTimes(2)
+    expect(fetchNativeMock.mock.calls[1]?.[0]).toBe('https://mcp.example/.well-known/oauth-authorization-server')
+  })
+})
+
 describe('MCPClient deadlines and SSE listener cleanup', () => {
   it('M20: aborts a hung MCP HTTP request at the configured deadline', async () => {
     vi.useFakeTimers()
