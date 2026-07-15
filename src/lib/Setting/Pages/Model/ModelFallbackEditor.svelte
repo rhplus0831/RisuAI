@@ -13,10 +13,6 @@
 
   let { profileId = '', profiles = [], value = $bindable([]) }: Props = $props()
 
-  function fallbackKey(fallback: ModelProfileRecordFallbackRef, index: number): string {
-    return fallback.mode === 'profile' ? `profile:${fallback.profileId}:${index}` : `model:${fallback.modelId}:${index}`
-  }
-
   function profileName(id: string): string {
     return profiles.find((profile) => profile.id === id)?.name ?? language.modelProfiles.missingProfile(id)
   }
@@ -79,7 +75,7 @@
 </script>
 
 <div class="flex flex-col gap-3">
-  {#each value as fallback, index (fallbackKey(fallback, index))}
+  {#each value as fallback, index}
     <div class="grid gap-2 rounded-md border border-darkborderc p-2 md:grid-cols-[10rem_minmax(0,1fr)_2.25rem]">
       <select
         class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
