@@ -214,18 +214,21 @@
     <div class="flex justify-end">
       <button
         type="button"
+        aria-label={`${language.remove}: ${getName(promptItem)}`}
         onclick={(e) => {
           e.stopPropagation()
           onRemove()
         }}><XIcon /></button>
       <button
         type="button"
+        aria-label={`${language.moveDown}: ${getName(promptItem)}`}
         onclick={(e) => {
           e.stopPropagation()
           moveDown()
         }}><ArrowDown /></button>
       <button
         type="button"
+        aria-label={`${language.moveUp}: ${getName(promptItem)}`}
         onclick={(e) => {
           e.stopPropagation()
           moveUp()

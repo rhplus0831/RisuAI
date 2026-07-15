@@ -15,6 +15,7 @@ vi.mock('src/ts/server/resourceState.svelte', () => ({
 }))
 
 import PromptDataItemTestHost from './PromptDataItem.testHost.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -35,6 +36,22 @@ afterEach(() => {
 })
 
 describe('PromptDataItem disclosure control', () => {
+  it('names the remove and move actions for their prompt item', async () => {
+    component = mount(PromptDataItemTestHost, { target })
+    await tick()
+
+    const actionNames = Array.from(target.querySelectorAll<HTMLButtonElement>('button[aria-label]')).map((button) =>
+      button.getAttribute('aria-label'),
+    )
+
+    expect(actionNames).toEqual([
+      `${language.remove}: Cached context`,
+      `${language.moveDown}: Cached context`,
+      `${language.moveUp}: Cached context`,
+    ])
+    expect(new Set(actionNames).size).toBe(actionNames.length)
+  })
+
   it('uses native button activation and reports its expanded state', async () => {
     component = mount(PromptDataItemTestHost, { target })
     await tick()

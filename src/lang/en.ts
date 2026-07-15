@@ -1109,6 +1109,8 @@ export const languageEnglish = {
   icon: 'Icon',
   account: 'Account',
   remove: 'Remove',
+  moveUp: 'Move up',
+  moveDown: 'Move down',
   able: 'Able',
   assetWidth: 'Asset Images Max Width',
   animationSpeed: 'Animation Speed',
