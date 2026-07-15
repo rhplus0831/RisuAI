@@ -59,7 +59,7 @@
   import { registerOnnxModelFromFile } from 'src/ts/process/transformers'
   import MultiLangInput from '../UI/GUI/MultiLangInput.svelte'
   import { applyModule } from 'src/ts/process/modules'
-  import { exportRegex, importRegex } from 'src/ts/process/scripts'
+  import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import SliderInput from '../UI/GUI/SliderInput.svelte'
   import {
     createServerBackedCharacterDraft,
@@ -503,6 +503,18 @@
     if (characterDraft.characterId !== selectedCharacter.chaId) return null
 
     return target
+  }
+
+  async function importCharacterRegexScripts() {
+    const ownerCharacterId = scriptDraftCharacterId
+    if (!ownerCharacterId) return
+
+    const importedRows = await importRegexRows()
+    if (!importedRows || importedRows.length === 0) return
+
+    const target = currentRealCharacterDraftTarget()
+    if (!target || target.character.chaId !== ownerCharacterId || scriptDraftCharacterId !== ownerCharacterId) return
+    characterScriptsDraft = [...characterScriptsDraft, ...importedRows]
   }
 
   function moveAlternateGreetingUp(index: number) {
@@ -1148,24 +1160,40 @@
 
 {#if $CharConfigSubMenu === 0}
   {#if licensed !== 'private'}
-    <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={characterDraft.value.name} />
+    <TextInput
+      size="xl"
+      marginBottom
+      placeholder="Character Name"
+      ariaLabel="Character Name"
+      bind:value={characterDraft.value.name} />
     <TextInput
       size="lg"
       marginBottom
       placeholder={language.displayName}
+      ariaLabel={language.displayName}
       bind:value={characterDraft.value.displayName} />
     <span class="text-textcolor">{language.description} <Help key="charDesc" /></span>
-    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.desc}></TextAreaInput>
+    <TextAreaInput
+      highlight
+      margin="both"
+      autocomplete="off"
+      ariaLabel={language.description}
+      bind:value={characterDraft.value.desc}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
     <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage" /></span>
-    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.firstMessage}
-    ></TextAreaInput>
+    <TextAreaInput
+      highlight
+      margin="both"
+      autocomplete="off"
+      ariaLabel={language.firstMessage}
+      bind:value={characterDraft.value.firstMessage}></TextAreaInput>
     <span class="text-textcolor2 mb-6 text-sm">{tokens.firstMsg} {language.tokens}</span>
     <span class="text-textcolor">{language.customNotificationMessage} <Help key="customNotificationMessage" /></span>
     <TextAreaInput
       highlight
       margin="both"
       autocomplete="off"
+      ariaLabel={language.customNotificationMessage}
       bind:value={characterDraft.value.customNotificationMessage}></TextAreaInput>
   {/if}
 {:else if licensed === 'private'}
@@ -1344,6 +1372,7 @@
   {:else if viewSubMenu === 1}
     <SelectInput
       className="mb-2"
+      ariaLabel={language.characterDisplay}
       bind:value={characterDraft.value.viewScreen}
       onchange={() => {
         updateCharacterInlayScreen()
@@ -1378,7 +1407,11 @@
                     <td class="font-medium truncate w-1/3"><img src={im} alt="img" class="w-full" /></td>
                   {/await}
                   <td class="font-medium truncate w-1/2">
-                    <TextInput marginBottom size="lg" bind:value={characterDraft.value.emotionImages[i][0]} />
+                    <TextInput
+                      marginBottom
+                      size="lg"
+                      ariaLabel={`${language.emotion} ${i + 1}`}
+                      bind:value={characterDraft.value.emotionImages[i][0]} />
                   </td>
                   <td>
                     <button
@@ -1412,7 +1445,10 @@
 
       {#if characterDraft.value.inlayViewScreen}
         <span class="text-textcolor mt-2">{language.imgGenInstructions}</span>
-        <TextAreaInput highlight bind:value={characterDraft.value.newGenData.emotionInstructions} />
+        <TextAreaInput
+          highlight
+          ariaLabel={language.imgGenInstructions}
+          bind:value={characterDraft.value.newGenData.emotionInstructions} />
       {/if}
 
       <CheckInput
@@ -1435,11 +1471,17 @@
       <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
       <span class="text-textcolor mt-2">{language.imgGenPrompt}</span>
-      <TextAreaInput highlight bind:value={characterDraft.value.newGenData.prompt} />
+      <TextAreaInput highlight ariaLabel={language.imgGenPrompt} bind:value={characterDraft.value.newGenData.prompt} />
       <span class="text-textcolor mt-2">{language.imgGenNegatives}</span>
-      <TextAreaInput highlight bind:value={characterDraft.value.newGenData.negative} />
+      <TextAreaInput
+        highlight
+        ariaLabel={language.imgGenNegatives}
+        bind:value={characterDraft.value.newGenData.negative} />
       <span class="text-textcolor mt-2">{language.imgGenInstructions}</span>
-      <TextAreaInput highlight bind:value={characterDraft.value.newGenData.instructions} />
+      <TextAreaInput
+        highlight
+        ariaLabel={language.imgGenInstructions}
+        bind:value={characterDraft.value.newGenData.instructions} />
 
       <CheckInput
         bind:check={characterDraft.value.inlayViewScreen}
@@ -1456,7 +1498,10 @@
 
       {#if characterDraft.value.prebuiltAssetCommand}
         <span class="text-textcolor mt-2">{language.assetStyle}</span>
-        <SelectInput className="mb-2" bind:value={characterDraft.value.prebuiltAssetStyle}>
+        <SelectInput
+          className="mb-2"
+          ariaLabel={language.assetStyle}
+          bind:value={characterDraft.value.prebuiltAssetStyle}>
           <OptionInput value="">{language.static}</OptionInput>
           <OptionInput value="dynamic">{language.dynamic}</OptionInput>
         </SelectInput>
@@ -1501,6 +1546,7 @@
                   <TextInput
                     size="sm"
                     marginBottom
+                    ariaLabel={`${language.additionalAssets} ${i + 1}`}
                     bind:value={characterDraft.value.additionalAssets[i][0]}
                     placeholder="..." />
                 </td>
@@ -1559,8 +1605,12 @@
     {/if}
 
     <span class="text-textcolor mt-2">{language.backgroundHTML} <Help key="backgroundHTML" /></span>
-    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.backgroundHTML}
-    ></TextAreaInput>
+    <TextAreaInput
+      highlight
+      margin="both"
+      autocomplete="off"
+      ariaLabel={language.backgroundHTML}
+      bind:value={characterDraft.value.backgroundHTML}></TextAreaInput>
 
     <span class="text-textcolor mt-4">{language.regexScript} <Help key="regexScript" /></span>
     <RegexList bind:value={characterScriptsDraft} />
@@ -1591,9 +1641,7 @@
       <button
         class="font-medium cursor-pointer hover:text-green-500"
         aria-label={`${language.import}: ${language.regexScript}`}
-        onclick={async () => {
-          characterScriptsDraft = await importRegex(characterScriptsDraft)
-        }}><HardDriveUploadIcon /></button>
+        onclick={importCharacterRegexScripts}><HardDriveUploadIcon /></button>
     </div>
 
     <span class="text-textcolor mt-4">{language.triggerScript} <Help key="triggerScript" /></span>
@@ -1603,7 +1651,11 @@
 
     {#if characterDraft.value.virtualscript || getDatabase().showUnrecommended}
       <span class="text-textcolor mt-4">{language.charjs} <Help key="charjs" unrecommended /></span>
-      <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.virtualscript}></TextAreaInput>
+      <TextAreaInput
+        margin="both"
+        autocomplete="off"
+        ariaLabel={language.charjs}
+        bind:value={characterDraft.value.virtualscript}></TextAreaInput>
     {/if}
   {/if}
 {:else if $CharConfigSubMenu === 6}
@@ -1630,6 +1682,7 @@
     <span class="text-textcolor">{language.provider}</span>
     <SelectInput
       className="mb-4 mt-2"
+      ariaLabel={language.provider}
       bind:value={characterDraft.value.ttsMode}
       onchange={(e) => {
         if (currentRealCharacterDraftTarget()) {
@@ -1655,7 +1708,7 @@
         <span class="text-textcolor">Web Speech isn't supported in your browser or OS</span>
       {:else}
         <span class="text-textcolor">{language.Speech}</span>
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
+        <SelectInput className="mb-4 mt-2" ariaLabel={language.Speech} bind:value={characterDraft.value.ttsSpeech}>
           <OptionInput value="">Auto</OptionInput>
           {#each webSpeechVoices as voice}
             <OptionInput value={voice}>{voice}</OptionInput>
@@ -1671,7 +1724,7 @@
         >Please set the ElevenLabs API key in "global Settings → Bot Settings → Others → ElevenLabs API key"</span>
       {#await getElevenTTSVoices() then voices}
         <span class="text-textcolor">{language.Speech}</span>
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
+        <SelectInput className="mb-4 mt-2" ariaLabel={language.Speech} bind:value={characterDraft.value.ttsSpeech}>
           <OptionInput value="">Unset</OptionInput>
           {#each voices as voice}
             <OptionInput value={voice.voice_id}>{voice.name}</OptionInput>
@@ -1682,7 +1735,7 @@
       {/await}
     {:else if characterDraft.value.ttsMode === 'VOICEVOX'}
       <span class="text-textcolor">Speaker</span>
-      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.voicevoxConfig.speaker}>
+      <SelectInput className="mb-4 mt-2" ariaLabel="Speaker" bind:value={characterDraft.value.voicevoxConfig.speaker}>
         {#await getVOICEVOXVoices() then voices}
           {#each voices as voice}
             <OptionInput value={voice.list} selected={characterDraft.value.voicevoxConfig.speaker === voice.list}
@@ -1692,7 +1745,7 @@
       </SelectInput>
       {#if characterDraft.value.voicevoxConfig.speaker}
         <span class="text=neutral-200">Style</span>
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
+        <SelectInput className="mb-4 mt-2" ariaLabel="Style" bind:value={characterDraft.value.ttsSpeech}>
           {#each JSON.parse(characterDraft.value.voicevoxConfig.speaker) as styles}
             <OptionInput value={styles.id} selected={characterDraft.value.ttsSpeech === styles.id}
               >{styles.name}</OptionInput>
@@ -1700,16 +1753,32 @@
         </SelectInput>
       {/if}
       <span class="text-textcolor">Speed scale</span>
-      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.SPEED_SCALE} />
+      <NumberInput
+        size={'sm'}
+        marginBottom
+        ariaLabel="Speed scale"
+        bind:value={characterDraft.value.voicevoxConfig.SPEED_SCALE} />
 
       <span class="text-textcolor">Pitch scale</span>
-      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.PITCH_SCALE} />
+      <NumberInput
+        size={'sm'}
+        marginBottom
+        ariaLabel="Pitch scale"
+        bind:value={characterDraft.value.voicevoxConfig.PITCH_SCALE} />
 
       <span class="text-textcolor">Volume scale</span>
-      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.VOLUME_SCALE} />
+      <NumberInput
+        size={'sm'}
+        marginBottom
+        ariaLabel="Volume scale"
+        bind:value={characterDraft.value.voicevoxConfig.VOLUME_SCALE} />
 
       <span class="text-textcolor">Intonation scale</span>
-      <NumberInput size={'sm'} marginBottom bind:value={characterDraft.value.voicevoxConfig.INTONATION_SCALE} />
+      <NumberInput
+        size={'sm'}
+        marginBottom
+        ariaLabel="Intonation scale"
+        bind:value={characterDraft.value.voicevoxConfig.INTONATION_SCALE} />
       <span class="text-sm mb-2 text-textcolor2"
         >To use VOICEVOX, you need to run a colab and put the localtunnel URL in "Settings → Other Bots".
         https://colab.research.google.com/drive/1tyeXJSklNfjW-aZJAib1JfgOMFarAwze</span>
@@ -1718,7 +1787,7 @@
       <Check bind:check={characterDraft.value.naittsConfig.customvoice} name={language.ttsCustomVoiceSeed} hiddenName />
       {#if !characterDraft.value.naittsConfig.customvoice}
         <span class="text-textcolor">Voice</span>
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.naittsConfig.voice}>
+        <SelectInput className="mb-4 mt-2" ariaLabel="Voice" bind:value={characterDraft.value.naittsConfig.voice}>
           {#await getNovelAIVoices() then voices}
             {#each voices as voiceGroup}
               <optgroup label={voiceGroup.gender} class="bg-darkbg appearance-none">
@@ -1732,17 +1801,17 @@
         </SelectInput>
       {:else}
         <span class="text-textcolor">Voice</span>
-        <TextInput size={'sm'} bind:value={characterDraft.value.naittsConfig.voice} />
+        <TextInput size={'sm'} ariaLabel="Voice" bind:value={characterDraft.value.naittsConfig.voice} />
       {/if}
       <span class="text-textcolor">Version</span>
-      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.naittsConfig.version}>
+      <SelectInput className="mb-4 mt-2" ariaLabel="Version" bind:value={characterDraft.value.naittsConfig.version}>
         <OptionInput value="v1">v1</OptionInput>
         <OptionInput value="v2">v2</OptionInput>
       </SelectInput>
     {:else if characterDraft.value.ttsMode === 'openai'}
       <span class="text-textcolor">Voice</span>
       {#if !characterDraft.value.oaiTTSConfig?.enabled}
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiVoice}>
+        <SelectInput className="mb-4 mt-2" ariaLabel="Voice" bind:value={characterDraft.value.oaiVoice}>
           <OptionInput value="">Unset</OptionInput>
           {#each oaiVoices as voice}
             <OptionInput value={voice}>{voice}</OptionInput>
@@ -1751,6 +1820,7 @@
       {:else}
         <TextInput
           className="mb-4 mt-2"
+          ariaLabel="Voice"
           bind:value={characterDraft.value.oaiTTSConfig.voice}
           placeholder={characterDraft.value.oaiVoice || 'alloy'} />
       {/if}
@@ -1762,21 +1832,30 @@
         <span class="text-textcolor">Base URL</span>
         <TextInput
           className="mb-4 mt-2"
+          ariaLabel="Base URL"
           bind:value={characterDraft.value.oaiTTSConfig.baseURL}
           placeholder="https://api.openai.com/v1" />
 
         <span class="text-textcolor">API Key (overrides global)</span>
         <SecretInput
           className="mb-4 mt-2"
+          ariaLabel="API Key (overrides global)"
           ownerKey={characterDraft.value.chaId}
           bind:value={characterDraft.value.oaiTTSConfig.apiKey}
           placeholder="Leave empty to use global OpenAI API key" />
 
         <span class="text-textcolor">Model</span>
-        <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiTTSConfig.model} placeholder="tts-1" />
+        <TextInput
+          className="mb-4 mt-2"
+          ariaLabel="Model"
+          bind:value={characterDraft.value.oaiTTSConfig.model}
+          placeholder="tts-1" />
 
         <span class="text-textcolor">Response Format</span>
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.oaiTTSConfig.format}>
+        <SelectInput
+          className="mb-4 mt-2"
+          ariaLabel="Response Format"
+          bind:value={characterDraft.value.oaiTTSConfig.format}>
           <OptionInput value="mp3">mp3</OptionInput>
           <OptionInput value="opus">opus</OptionInput>
           <OptionInput value="aac">aac</OptionInput>
@@ -1787,10 +1866,14 @@
       {/if}
     {:else if characterDraft.value.ttsMode === 'huggingface'}
       <span class="text-textcolor">Model</span>
-      <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.hfTTS.model} />
+      <TextInput className="mb-4 mt-2" ariaLabel="Model" bind:value={characterDraft.value.hfTTS.model} />
 
       <span class="text-textcolor">Language</span>
-      <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.hfTTS.language} placeholder="en" />
+      <TextInput
+        className="mb-4 mt-2"
+        ariaLabel="Language"
+        bind:value={characterDraft.value.hfTTS.language}
+        placeholder="en" />
     {:else if characterDraft.value.ttsMode === 'vits'}
       {#if characterDraft.value.vits}
         <span class="text-textcolor">{characterDraft.value.vits.name ?? 'Unnamed VitsModel'}</span>
@@ -1808,7 +1891,7 @@
         bind:value={characterDraft.value.gptSoVitsConfig.volume}
         ariaLabel={language.ttsVolume} />
       <span class="text-textcolor">URL</span>
-      <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.url} />
+      <TextInput className="mb-4 mt-2" ariaLabel="URL" bind:value={characterDraft.value.gptSoVitsConfig.url} />
 
       <span class="text-textcolor">{language.ttsUseAutoPath}</span>
       <Check
@@ -1818,7 +1901,10 @@
 
       {#if !characterDraft.value.gptSoVitsConfig.use_auto_path}
         <span class="text-textcolor">Reference Audio Path (e.g. C:/Users/user/Downloads/GPT-SoVITS-v2-240821)</span>
-        <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.ref_audio_path} />
+        <TextInput
+          className="mb-4 mt-2"
+          ariaLabel="Reference Audio Path"
+          bind:value={characterDraft.value.gptSoVitsConfig.ref_audio_path} />
       {/if}
 
       <span class="text-textcolor">{language.ttsUseLongAudio}</span>
@@ -1836,7 +1922,10 @@
         {/if}
       </Button>
       <span class="text-textcolor">Text Language</span>
-      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.text_lang}>
+      <SelectInput
+        className="mb-4 mt-2"
+        ariaLabel="Text Language"
+        bind:value={characterDraft.value.gptSoVitsConfig.text_lang}>
         <OptionInput value="auto">Multi-language Mixed</OptionInput>
         <OptionInput value="auto_yue">Multi-language Mixed (Cantonese)</OptionInput>
         <OptionInput value="en">English</OptionInput>
@@ -1860,11 +1949,17 @@
 
       {#if characterDraft.value.gptSoVitsConfig.use_prompt && !characterDraft.value.gptSoVitsConfig.use_long_audio}
         <span class="text-textcolor">Reference Audio Script</span>
-        <TextAreaInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.prompt} />
+        <TextAreaInput
+          className="mb-4 mt-2"
+          ariaLabel="Reference Audio Script"
+          bind:value={characterDraft.value.gptSoVitsConfig.prompt} />
       {/if}
 
       <span class="text-textcolor">Reference Audio Language</span>
-      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.prompt_lang}>
+      <SelectInput
+        className="mb-4 mt-2"
+        ariaLabel="Reference Audio Language"
+        bind:value={characterDraft.value.gptSoVitsConfig.prompt_lang}>
         <OptionInput value="auto">Multi-language Mixed</OptionInput>
         <OptionInput value="auto_yue">Multi-language Mixed (Cantonese)</OptionInput>
         <OptionInput value="en">English</OptionInput>
@@ -1913,7 +2008,10 @@
         ariaLabel={language.modelProfiles.runtimeFields.topK} />
 
       <span class="text-textcolor">Text Split Method</span>
-      <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.text_split_method}>
+      <SelectInput
+        className="mb-4 mt-2"
+        ariaLabel="Text Split Method"
+        bind:value={characterDraft.value.gptSoVitsConfig.text_split_method}>
         <OptionInput value="cut0">Cut 0 (No splitting)</OptionInput>
         <OptionInput value="cut1">Cut 1 (Split every 4 sentences)</OptionInput>
         <OptionInput value="cut2">Cut 2 (Split every 50 characters)</OptionInput>
@@ -1926,7 +2024,10 @@
         <span class="text-textcolor">Loading...</span>
       {:then}
         <span class="text-textcolor">Model</span>
-        <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.fishSpeechConfig.model._id}>
+        <SelectInput
+          className="mb-4 mt-2"
+          ariaLabel="Model"
+          bind:value={characterDraft.value.fishSpeechConfig.model._id}>
           <OptionInput value="">Not selected</OptionInput>
           {#each fishSpeechModels as model}
             <OptionInput value={model._id}>
@@ -1942,7 +2043,10 @@
       {/await}
 
       <span class="text-textcolor">Chunk Length</span>
-      <NumberInput className="mb-4 mt-2" bind:value={characterDraft.value.fishSpeechConfig.chunk_length} />
+      <NumberInput
+        className="mb-4 mt-2"
+        ariaLabel="Chunk Length"
+        bind:value={characterDraft.value.fishSpeechConfig.chunk_length} />
 
       <span class="mt-2 text-textcolor">{language.ttsNormalize}</span>
       <Check
@@ -1988,10 +2092,21 @@
         {#each characterDraft.value.bias as bias, i}
           <tr class="align-middle text-center">
             <td class="font-medium truncate w-1/2">
-              <TextInput fullh fullwidth bind:value={characterDraft.value.bias[i][0]} placeholder="string" />
+              <TextInput
+                fullh
+                fullwidth
+                ariaLabel={`Bias ${i + 1}`}
+                bind:value={characterDraft.value.bias[i][0]}
+                placeholder="string" />
             </td>
             <td class="font-medium truncate w-1/3">
-              <NumberInput fullh fullwidth bind:value={characterDraft.value.bias[i][1]} max={100} min={-100} />
+              <NumberInput
+                fullh
+                fullwidth
+                ariaLabel={`${language.value} ${i + 1}`}
+                bind:value={characterDraft.value.bias[i][1]}
+                max={100}
+                min={-100} />
             </td>
             <td>
               <button
@@ -2011,8 +2126,12 @@
   </div>
 
   <span class="text-textcolor">{language.exampleMessage} <Help key="exampleMessage" /></span>
-  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.exampleMessage}
-  ></TextAreaInput>
+  <TextAreaInput
+    highlight
+    margin="both"
+    autocomplete="off"
+    ariaLabel={language.exampleMessage}
+    bind:value={characterDraft.value.exampleMessage}></TextAreaInput>
 
   <span class="text-textcolor">{language.creatorNotes} <Help key="creatorQuotes" /></span>
   <MultiLangInput
@@ -2025,47 +2144,90 @@
     }}></MultiLangInput>
 
   <span class="text-textcolor">{language.systemPrompt} <Help key="systemPrompt" /></span>
-  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.systemPrompt}
-  ></TextAreaInput>
+  <TextAreaInput
+    highlight
+    margin="both"
+    autocomplete="off"
+    ariaLabel={language.systemPrompt}
+    bind:value={characterDraft.value.systemPrompt}></TextAreaInput>
 
   <span class="text-textcolor">{language.replaceGlobalNote} <Help key="replaceGlobalNote" /></span>
-  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.replaceGlobalNote}
-  ></TextAreaInput>
+  <TextAreaInput
+    highlight
+    margin="both"
+    autocomplete="off"
+    ariaLabel={language.replaceGlobalNote}
+    bind:value={characterDraft.value.replaceGlobalNote}></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.additionalText} <Help key="additionalText" /></span>
-  <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.additionalText}
-  ></TextAreaInput>
+  <TextAreaInput
+    highlight
+    margin="both"
+    autocomplete="off"
+    ariaLabel={language.additionalText}
+    bind:value={characterDraft.value.additionalText}></TextAreaInput>
 
   {#if getDatabase().showUnrecommended || characterDraft.value.personality.length > 3}
     <span class="text-textcolor">{language.personality} <Help key="personality" unrecommended /></span>
-    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.personality}
-    ></TextAreaInput>
+    <TextAreaInput
+      highlight
+      margin="both"
+      autocomplete="off"
+      ariaLabel={language.personality}
+      bind:value={characterDraft.value.personality}></TextAreaInput>
   {/if}
   {#if getDatabase().showUnrecommended || characterDraft.value.scenario.length > 3}
     <span class="text-textcolor">{language.scenario} <Help key="scenario" unrecommended /></span>
-    <TextAreaInput highlight margin="both" autocomplete="off" bind:value={characterDraft.value.scenario}
-    ></TextAreaInput>
+    <TextAreaInput
+      highlight
+      margin="both"
+      autocomplete="off"
+      ariaLabel={language.scenario}
+      bind:value={characterDraft.value.scenario}></TextAreaInput>
   {/if}
 
   <span class="text-textcolor mt-2">{language.defaultVariables} <Help key="defaultVariables" /></span>
-  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.defaultVariables}></TextAreaInput>
+  <TextAreaInput
+    margin="both"
+    autocomplete="off"
+    ariaLabel={language.defaultVariables}
+    bind:value={characterDraft.value.defaultVariables}></TextAreaInput>
 
   <span class="text-textcolor mt-2">{language.translatorNote} <Help key="translatorNote" /></span>
-  <TextAreaInput margin="both" autocomplete="off" bind:value={characterDraft.value.translatorNote}></TextAreaInput>
+  <TextAreaInput
+    margin="both"
+    autocomplete="off"
+    ariaLabel={language.translatorNote}
+    bind:value={characterDraft.value.translatorNote}></TextAreaInput>
 
   <span class="text-textcolor">{language.creator}</span>
-  <TextInput size="sm" autocomplete="off" bind:value={characterDraft.value.additionalData.creator} />
+  <TextInput
+    size="sm"
+    autocomplete="off"
+    ariaLabel={language.creator}
+    bind:value={characterDraft.value.additionalData.creator} />
 
   <span class="text-textcolor">{language.CharVersion}</span>
-  <TextInput size="sm" bind:value={characterDraft.value.additionalData.character_version} />
+  <TextInput
+    size="sm"
+    ariaLabel={language.CharVersion}
+    bind:value={characterDraft.value.additionalData.character_version} />
 
   <span class="text-textcolor">{language.nickname} <Help key="nickname" /></span>
-  <TextInput size="sm" bind:value={characterDraft.value.nickname} />
+  <TextInput size="sm" ariaLabel={language.nickname} bind:value={characterDraft.value.nickname} />
 
   <span class="text-textcolor">{language.depthPrompt}</span>
   <div class="flex justify-center items-center">
-    <NumberInput size="sm" bind:value={characterDraft.value.depth_prompt.depth} className="w-12" />
-    <TextInput size="sm" bind:value={characterDraft.value.depth_prompt.prompt} className="flex-1" />
+    <NumberInput
+      size="sm"
+      ariaLabel={`${language.depthPrompt}: ${language.depth}`}
+      bind:value={characterDraft.value.depth_prompt.depth}
+      className="w-12" />
+    <TextInput
+      size="sm"
+      ariaLabel={`${language.depthPrompt}: ${language.prompt}`}
+      bind:value={characterDraft.value.depth_prompt.prompt}
+      className="flex-1" />
   </div>
 
   <span class="text-textcolor mt-2">{language.altGreet}</span>
@@ -2100,6 +2262,7 @@
             <td class="font-medium truncate">
               <TextAreaInput
                 highlight
+                ariaLabel={`${language.altGreet} ${i + 1}`}
                 bind:value={characterDraft.value.alternateGreetings[i]}
                 placeholder="..."
                 fullwidth />

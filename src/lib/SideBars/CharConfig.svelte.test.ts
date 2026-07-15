@@ -48,6 +48,10 @@ const serverCommandState = vi.hoisted(() => ({
   updateCharacterCalls: [] as Record<string, unknown>[],
 }))
 
+const regexImportMocks = vi.hoisted(() => ({
+  importRegexRows: vi.fn(),
+}))
+
 vi.mock('src/ts/server/commands', () => {
   const command =
     (kind: string) =>
@@ -200,7 +204,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 vi.mock('src/ts/process/scripts', () => ({
   exportRegex: vi.fn(),
-  importRegex: vi.fn(async (scripts) => scripts),
+  importRegexRows: regexImportMocks.importRegexRows,
   resetScriptCache: vi.fn(),
 }))
 
@@ -438,6 +442,7 @@ beforeEach(() => {
   ttsCatalogMocks.getFishSpeechModels.mockReset().mockResolvedValue([])
   serverCommandState.enabled = false
   serverCommandState.updateCharacterCalls.length = 0
+  regexImportMocks.importRegexRows.mockReset().mockResolvedValue(null)
   assetMocks.saveAsset.mockReset().mockResolvedValue('asset-id')
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
@@ -810,6 +815,37 @@ describe('CharConfig remote TTS catalogs', () => {
 })
 
 describe('CharConfig TTS control accessible names', () => {
+  it('names the character identity fields from their visible settings', async () => {
+    await mountCharConfig(0)
+
+    const names = Array.from(target.querySelectorAll<HTMLElement>('input, textarea, [role="textbox"]'), (control) =>
+      control.getAttribute('aria-label'),
+    )
+
+    expect(names).toEqual(
+      expect.arrayContaining([
+        'Character Name',
+        language.displayName,
+        language.description,
+        language.firstMessage,
+        language.customNotificationMessage,
+      ]),
+    )
+  })
+
+  it('keeps every direct shared form control named for its visible setting', () => {
+    const source = charConfigSource()
+
+    for (const componentName of ['TextInput', 'TextAreaInput', 'NumberInput', 'SelectInput', 'SecretInput']) {
+      const tags = source.match(new RegExp(`<${componentName}\\b[\\s\\S]*?(?:\\/>|</${componentName}>)`, 'g')) ?? []
+      expect(tags.length, componentName).toBeGreaterThan(0)
+      expect(
+        tags.filter((tag) => !tag.includes('ariaLabel=')),
+        `${componentName} controls without names`,
+      ).toEqual([])
+    }
+  })
+
   it.each([
     { mode: 'novelai', name: language.ttsCustomVoiceSeed },
     { mode: 'openai', name: language.ttsAdvancedEndpoint },
@@ -1059,6 +1095,45 @@ describe('CharConfig draft-type-less character actions', () => {
       out: '',
       type: 'editinput',
     })
+  })
+
+  it('merges imported regex rows into edits made while the picker is open', async () => {
+    const pendingImport = deferred<unknown[] | null>()
+    regexImportMocks.importRegexRows.mockReturnValue(pendingImport.promise)
+    await mountCharConfig(4)
+
+    buttonByAccessibleName(`${language.import}: ${language.regexScript}`).click()
+    expect(regexImportMocks.importRegexRows).toHaveBeenCalledOnce()
+    buttonByAccessibleName(`${language.add}: ${language.regexScript}`).click()
+    await settleComponent()
+
+    pendingImport.resolve([{ id: 'imported-script', comment: 'Imported', in: 'hello', out: 'hi', type: 'editinput' }])
+    await settleComponent()
+
+    expect(getDatabase().characters[0].customscript).toHaveLength(2)
+    expect(getDatabase().characters[0].customscript[0]).toMatchObject({ comment: '', type: 'editinput' })
+    expect(getDatabase().characters[0].customscript[1]).toMatchObject({
+      id: 'imported-script',
+      comment: 'Imported',
+    })
+  })
+
+  it('discards a regex import when character ownership changes while the picker is open', async () => {
+    const pendingImport = deferred<unknown[] | null>()
+    regexImportMocks.importRegexRows.mockReturnValue(pendingImport.promise)
+    await mountCharConfig(4)
+
+    buttonByAccessibleName(`${language.import}: ${language.regexScript}`).click()
+    expect(regexImportMocks.importRegexRows).toHaveBeenCalledOnce()
+    getDatabase().characters.push(makeCharacter({ chaId: 'char-2', name: 'Character B' }))
+    selectedCharID.set(1)
+    await settleComponent()
+
+    pendingImport.resolve([{ id: 'stale-import', comment: 'Wrong owner', in: 'hello', out: 'hi', type: 'editinput' }])
+    await settleComponent()
+
+    expect(getDatabase().characters[0].customscript).toEqual([])
+    expect(getDatabase().characters[1].customscript).toEqual([])
   })
 
   it('shows background, regex, and trigger scripts for a typeless real character row', async () => {
