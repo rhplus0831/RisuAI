@@ -45,11 +45,20 @@ for (const [network, prefix] of [
   ['::', 128],
   ['::1', 128],
   ['fc00::', 7],
+  ['fe80::', 10],
   ['ff00::', 8],
+  ['fec0::', 10],
+  ['100::', 64],
   // Deny transition forms wholesale so an embedded private IPv4 address
   // cannot bypass the address classifier.
   ['2002::', 16],
+  ['2001::', 32],
+  ['2001:2::', 48],
+  ['2001:10::', 28],
+  ['2001:20::', 28],
   ['2001:db8::', 32],
+  ['3fff::', 20],
+  ['5f00::', 16],
   ['64:ff9b::', 96],
   ['::ffff:0:0', 96],
 ] as const) {
@@ -58,7 +67,6 @@ for (const [network, prefix] of [
 for (const [network, prefix] of [
   ['::1', 128],
   ['fc00::', 7],
-  ['fe80::', 10],
 ] as const) {
   localIpv6Addresses.addSubnet(network, prefix, 'ipv6')
 }

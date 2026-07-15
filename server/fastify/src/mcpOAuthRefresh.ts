@@ -213,8 +213,12 @@ function readTokenUrl(value: unknown, error: () => McpOAuthRefreshError): string
 }
 
 function isLocalMcpIdentity(identity: string): boolean {
-  if (identity.startsWith('stdio:')) return true
-  const url = new URL(identity)
+  let rawUrl = identity
+  if (identity.startsWith('stdio:')) {
+    const parsed = JSON.parse(identity.slice('stdio:'.length)) as JsonRecord
+    rawUrl = parsed.url as string
+  }
+  const url = new URL(rawUrl)
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
   const lowerHostname = hostname.toLowerCase()
   if (lowerHostname === 'localhost' || lowerHostname.endsWith('.localhost') || lowerHostname.endsWith('.local')) {

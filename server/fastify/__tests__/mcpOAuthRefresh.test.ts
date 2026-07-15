@@ -223,6 +223,23 @@ describe('stored MCP OAuth refresh execution', () => {
       statusCode: 502,
     })
   })
+
+  it('does not treat an unrelated stdio wrapper as a local MCP identity', async () => {
+    const identity = 'stdio:{"url":"https://mcp.example/messages"}'
+    const settings = {
+      authRefreshes: [
+        {
+          ...storedSettings.authRefreshes[0],
+          url: identity,
+          tokenUrl: 'http://127.0.0.1:43119/token',
+        },
+      ],
+    }
+    await expect(executeStoredMcpOAuthRefresh({ url: identity }, settings)).rejects.toMatchObject({
+      code: 'mcp_oauth_refresh_failed',
+      statusCode: 502,
+    })
+  })
 })
 
 describe('MCP OAuth refresh egress validation', () => {
@@ -264,6 +281,14 @@ describe('MCP OAuth refresh egress validation', () => {
       resolveMcpOAuthRefreshAddresses('https://auth.example/token#fragment', { lookup: publicLookup }),
     ]) {
       await expect(promise).rejects.toThrow('unsafe MCP OAuth token URL')
+    }
+  })
+
+  it('rejects IPv6 link-local and deprecated site-local targets even when local OAuth is allowed', async () => {
+    for (const address of ['fe80::1', 'fec0::1']) {
+      await expect(
+        resolveMcpOAuthRefreshAddresses(`https://[${address}]/token`, { allowLocalTarget: true }),
+      ).rejects.toThrow('unsafe MCP OAuth token URL')
     }
   })
 
