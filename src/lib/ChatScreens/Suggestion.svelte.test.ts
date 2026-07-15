@@ -275,6 +275,37 @@ describe('runSuggestionTranslation', () => {
 })
 
 describe('Suggestion component persistence', () => {
+  it('releases the loading state when suggestion generation rejects', async () => {
+    seedSuggestionDatabase([])
+    suggestionMocks.requestChatData.mockRejectedValueOnce(new Error('provider hook failed'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send: vi.fn(),
+          messageInput: vi.fn(),
+        },
+      })
+
+      await waitFor(() => {
+        expect(suggestionMocks.requestChatData).toHaveBeenCalledOnce()
+        expect(target.querySelector('.loadmove')).toBeNull()
+      })
+
+      expect(target.querySelectorAll('button')).toHaveLength(1)
+      expect(consoleError).toHaveBeenCalledWith('Failed to generate suggestions:', expect.any(Error))
+    } finally {
+      consoleError.mockRestore()
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
   it('routes generated suggestions through otherAx and shapes prompts from the resolved otherAx model', async () => {
     seedSuggestionDatabase([])
     getResourceDatabase().autoSuggestPrompt = 'Suggest next lines for {{char}}'

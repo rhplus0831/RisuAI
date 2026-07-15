@@ -322,31 +322,43 @@
         },
         'otherAx',
         abortController.signal,
-      ).then((rq2) => {
-        const liveChar = getDatabase().characters[$selectedCharID]
-        const liveChat = liveChar?.chats[liveChar.chatPage]
-        const staleResponse =
-          requestId !== suggestionRequestId ||
-          requestSelectedCharId !== $selectedCharID ||
-          requestCharacterId !== liveChar?.chaId ||
-          requestChatId !== liveChat?.id ||
-          !isFreshSuggestionTarget(requestSuggestionTarget)
-        if (rq2.type !== 'fail' && rq2.type !== 'streaming' && rq2.type !== 'multiline' && progress && !staleResponse) {
-          var suggestMessagesNew = rq2.result
-            .split('\n')
-            .filter((msg) => msg.startsWith('-'))
-            .map((msg) => msg.replace('-', '').trim())
-          setVisibleSuggestions(suggestMessagesNew, {
-            ...requestSuggestionTarget,
-            suggestMessages: suggestMessagesNew,
-          })
-          persistSuggestions(requestSuggestionTarget, suggestMessagesNew)
-        }
-        if (requestId === suggestionRequestId) {
-          progress = false
-          progressChatId = undefined
-        }
-      })
+      )
+        .then((rq2) => {
+          const liveChar = getDatabase().characters[$selectedCharID]
+          const liveChat = liveChar?.chats[liveChar.chatPage]
+          const staleResponse =
+            requestId !== suggestionRequestId ||
+            requestSelectedCharId !== $selectedCharID ||
+            requestCharacterId !== liveChar?.chaId ||
+            requestChatId !== liveChat?.id ||
+            !isFreshSuggestionTarget(requestSuggestionTarget)
+          if (
+            rq2.type !== 'fail' &&
+            rq2.type !== 'streaming' &&
+            rq2.type !== 'multiline' &&
+            progress &&
+            !staleResponse
+          ) {
+            const suggestMessagesNew = rq2.result
+              .split('\n')
+              .filter((msg) => msg.startsWith('-'))
+              .map((msg) => msg.replace('-', '').trim())
+            setVisibleSuggestions(suggestMessagesNew, {
+              ...requestSuggestionTarget,
+              suggestMessages: suggestMessagesNew,
+            })
+            persistSuggestions(requestSuggestionTarget, suggestMessagesNew)
+          }
+        })
+        .catch((error) => {
+          console.error('Failed to generate suggestions:', error)
+        })
+        .finally(() => {
+          if (requestId === suggestionRequestId) {
+            progress = false
+            progressChatId = undefined
+          }
+        })
     }
   })
 
