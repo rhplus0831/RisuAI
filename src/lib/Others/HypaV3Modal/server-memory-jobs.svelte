@@ -151,7 +151,6 @@
 
     <button
       class="shrink-0 rounded-sm p-2 text-zinc-400 transition-colors hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-      tabindex="-1"
       disabled={loading}
       onclick={() => void refreshJobs()}
       title="Refresh jobs">
@@ -189,7 +188,6 @@
 
           <button
             class="inline-flex items-center justify-center gap-2 rounded-sm border border-rose-900/80 px-3 py-2 text-sm text-rose-200 transition-colors hover:bg-rose-950/60 disabled:cursor-not-allowed disabled:opacity-50"
-            tabindex="-1"
             disabled={cancellingJobIds.has(job.id)}
             onclick={() => void cancelJob(job.id)}
             title="Cancel job">
