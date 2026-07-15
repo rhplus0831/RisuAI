@@ -50,6 +50,7 @@ vi.mock('src/ts/storage/database.svelte', () => ({
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', () => ({
+  captureChatBodyProjectionEpoch: () => 0,
   getResourceDatabase: () => testState.databaseState.db,
   isResourceDatabaseWriteActive: () => false,
   replaceResourceDatabase: (value: typeof testState.databaseState.db) => {
