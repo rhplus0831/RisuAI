@@ -76,4 +76,36 @@ describe('global hotkey route ownership', () => {
     expect(event.defaultPrevented).toBe(true)
     expect(hotkeyNavigationMocks.navigate).toHaveBeenCalledWith('/')
   })
+
+  it('leaves Escape from an editable select to its owning control', async () => {
+    settingsOpen.set(true)
+    const select = document.createElement('select')
+    document.body.appendChild(select)
+    select.focus()
+
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape',
+    })
+    select.dispatchEvent(event)
+
+    expect(hotkeyNavigationMocks.navigate).not.toHaveBeenCalled()
+    select.remove()
+  })
+
+  it('ignores keyboard events already owned by a component', async () => {
+    settingsOpen.set(true)
+    const event = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape',
+    })
+    event.preventDefault()
+
+    document.dispatchEvent(event)
+    await Promise.resolve()
+
+    expect(hotkeyNavigationMocks.navigate).not.toHaveBeenCalled()
+  })
 })

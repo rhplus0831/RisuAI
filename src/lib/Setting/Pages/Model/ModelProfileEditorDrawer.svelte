@@ -321,6 +321,20 @@
     onCancel()
   }
 
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    requestClose()
+  }
+
+  function handleBackdropKeydown(event: KeyboardEvent): void {
+    if (event.target !== event.currentTarget) return
+    if (event.key !== 'Escape' && event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    requestClose()
+  }
+
   async function saveProfile(): Promise<void> {
     if (!canSave) return
     await onSave(snapshotForSave())
@@ -328,7 +342,12 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="fixed inset-0 z-50 flex justify-end bg-black/50" role="button" tabindex="0" onclick={requestClose}>
+<div
+  class="fixed inset-0 z-50 flex justify-end bg-black/50"
+  role="button"
+  tabindex="0"
+  onclick={requestClose}
+  onkeydown={handleBackdropKeydown}>
   <div
     class="flex h-full w-full max-w-3xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
@@ -337,7 +356,8 @@
     tabindex="-1"
     onclick={(event) => {
       event.stopPropagation()
-    }}>
+    }}
+    onkeydown={handleDialogKeydown}>
     <div class="flex items-start justify-between gap-3 border-b border-darkborderc p-4">
       <div class="min-w-0">
         <h3 class="truncate text-xl font-semibold">{drawerTitle}</h3>

@@ -35,13 +35,8 @@ import { navigate } from './router'
 
 export function initHotkey() {
   const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
-    if (
-      !ev.ctrlKey &&
-      !ev.altKey &&
-      !ev.shiftKey &&
-      (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName) ||
-        document.activeElement.getAttribute('contenteditable'))
-    ) {
+    if (ev.defaultPrevented) return
+    if (!ev.ctrlKey && !ev.altKey && !ev.shiftKey && isEditableHotkeyTarget(ev)) {
       return
     }
 
@@ -348,9 +343,18 @@ export function hotkeyMatches(hotkey: Database['hotkeys'][number], ev: KeyboardE
   if (shift !== ev.shiftKey) return false
   if (hotkey.key.toLowerCase() !== ev.key.toLowerCase()) return false
   if (!ctrl && !alt && !shift) {
-    if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return false
+    if (isEditableHotkeyTarget(ev)) return false
   }
   return true
+}
+
+function isEditableHotkeyTarget(event: KeyboardEvent): boolean {
+  const eventTarget = event
+    .composedPath()
+    .find((candidate): candidate is HTMLElement => candidate instanceof HTMLElement)
+  const target = eventTarget ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+  if (!target) return false
+  return !!target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')
 }
 
 export function adjacentCharacterIndex(

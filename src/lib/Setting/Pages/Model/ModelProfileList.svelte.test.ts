@@ -96,6 +96,7 @@ afterEach(() => {
   }
   target.remove()
   setDatabaseLite({} as any)
+  vi.restoreAllMocks()
 })
 
 describe('ModelProfileList', () => {
@@ -160,5 +161,65 @@ describe('ModelProfileList', () => {
       name: language.modelProfiles.copyName('Profile 1'),
       includeSecrets: true,
     })
+  })
+
+  it('keeps a dirty profile draft when Escape dismissal is rejected', async () => {
+    const confirm = vi.fn(() => false)
+    vi.stubGlobal('confirm', confirm)
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!profileEditButton) throw new Error('Profile edit button not found')
+    profileEditButton.click()
+    await tick()
+
+    const nameInput = target.querySelector<HTMLInputElement>('input')
+    const providerSelect = target.querySelector<HTMLSelectElement>('select')
+    if (!nameInput || !providerSelect) throw new Error('Profile editor fields not found')
+    nameInput.value = 'Unsaved profile name'
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    providerSelect.focus()
+    const rejectedEscape = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape',
+    })
+    providerSelect.dispatchEvent(rejectedEscape)
+    await tick()
+
+    expect(rejectedEscape.defaultPrevented).toBe(true)
+    expect(confirm).toHaveBeenCalledWith(language.modelProfiles.discardProfileChangesConfirm)
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(nameInput.value).toBe('Unsaved profile name')
+
+    const backdrop = target.querySelector<HTMLElement>('[role="dialog"]')?.parentElement
+    if (!backdrop) throw new Error('Profile editor backdrop not found')
+    backdrop.focus()
+    const backdropEscape = new KeyboardEvent('keydown', {
+      bubbles: true,
+      cancelable: true,
+      key: 'Escape',
+    })
+    backdrop.dispatchEvent(backdropEscape)
+    await tick()
+
+    expect(backdropEscape.defaultPrevented).toBe(true)
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+
+    confirm.mockReturnValue(true)
+    providerSelect.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: 'Escape',
+      }),
+    )
+    await tick()
+
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
   })
 })
