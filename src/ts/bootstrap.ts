@@ -108,6 +108,23 @@ import {
   markPromptTemplateProjectionApplied,
   peekPromptTemplateOwnerRevision,
 } from './server/promptTemplateHydration'
+import { setSettingsRuntimeProjectionHook } from './server/settingsRuntimeProjectionHooks'
+
+const COLOR_SCHEME_RUNTIME_KEYS = new Set(['colorScheme', 'colorSchemeName', 'customBackground'])
+const TEXT_THEME_RUNTIME_KEYS = new Set(['textTheme', 'customTextTheme', 'font', 'customFont', 'customCSS'])
+const GUI_SIZE_RUNTIME_KEYS = new Set(['textAreaSize', 'textAreaTextSize', 'sideBarSize'])
+
+function hasProjectedRuntimeKey(keys: readonly string[], candidates: ReadonlySet<string>): boolean {
+  return keys.some((key) => candidates.has(key))
+}
+
+setSettingsRuntimeProjectionHook((keys) => {
+  const colorSchemeChanged = hasProjectedRuntimeKey(keys, COLOR_SCHEME_RUNTIME_KEYS)
+  if (colorSchemeChanged) updateColorScheme()
+  if (colorSchemeChanged || hasProjectedRuntimeKey(keys, TEXT_THEME_RUNTIME_KEYS)) updateTextThemeAndCSS()
+  if (hasProjectedRuntimeKey(keys, GUI_SIZE_RUNTIME_KEYS)) updateGuisize()
+  if (keys.includes('animationSpeed')) updateAnimationSpeed()
+})
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
 const SERVER_RESOURCE_RECONNECT_MAX_DELAY_MS = 30_000

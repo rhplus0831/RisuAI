@@ -11,6 +11,7 @@ import {
   type SettingsGroupProjectionEpochs,
 } from './settingsGroups'
 import type { PromptItemMutationOperation, PromptTemplateOwnerStateSnapshot } from './commands'
+import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
 
 let nextCharacterRowProjectionEpoch = 0
 let characterRowProjectionBaseline = 0
@@ -689,6 +690,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
     : undefined
   const preserveLoreBookPage = (settingsResourceState.loreBookPageRevision ?? -1) > payload.revision
   const liveSettings = settingsResourceState.value as Record<string, unknown>
+  const runtimeProjectionKeys = Array.from(new Set([...Object.keys(liveSettings), ...Object.keys(payload.settings)]))
   const hasLiveLoreBookPage = Object.prototype.hasOwnProperty.call(liveSettings, 'loreBookPage')
   const liveLoreBookPage = preserveLoreBookPage ? cloneJsonValue(liveSettings.loreBookPage) : undefined
   settingsResourceState.value = cloneJsonValue(payload.settings)
@@ -715,6 +717,7 @@ export function applySettingsResource(payload: ServerSettingsResourcePayload): b
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   applyRuntimeLanguage(settingsResourceState.value.language)
+  applySettingsRuntimeProjectionEffects(runtimeProjectionKeys)
   advanceAllSettingsProjectionEpochs()
   advanceSettingsProjectionEpoch({ authoritativeFull: true })
   if (!preserveLoreBookPage) advanceLorebookPageProjectionEpoch()
@@ -754,6 +757,7 @@ export function applySettingsGroupResource(
   settingsResourceState.status = 'ready'
   settingsResourceState.error = null
   if (groupKeys.includes('language')) applyRuntimeLanguage(target.language)
+  applySettingsRuntimeProjectionEffects(groupKeys)
   advanceSettingsGroupProjectionEpoch(payload.group)
   if (payload.group === 'providers') advanceSettingsGroupProjectionEpoch('models')
   if (payload.group === 'models') {
@@ -804,6 +808,7 @@ export function applySettingsPatchLocalEffect(payload: ServerSettingsPatchLocalE
     }
   }
   if (attemptedKeys.includes('language')) applyRuntimeLanguage(settingsTarget.language)
+  applySettingsRuntimeProjectionEffects(attemptedKeys)
 
   if (knownSettingsRevision < payload.revision) {
     settingsResourceState.groupRevisions[payload.group] = payload.revision

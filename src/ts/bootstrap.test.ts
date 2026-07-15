@@ -202,6 +202,9 @@ import {
 import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
 import { selectedCharID } from './stores.svelte'
+import { updateAnimationSpeed } from './gui/animation'
+import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
+import { updateGuisize } from './gui/guisize'
 
 function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
   return {
@@ -309,6 +312,40 @@ afterEach(() => {
 })
 
 describe('API-backed client bootstrap', () => {
+  it('reapplies display runtime effects after an authoritative settings projection', () => {
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 6,
+          group: 'display',
+          settings: {
+            animationSpeed: 0.5,
+            colorScheme: {
+              bgcolor: '#282a36',
+              darkbg: '#21222c',
+              borderc: '#6272a4',
+              selected: '#44475a',
+              draculared: '#ff5555',
+              textcolor: '#f8f8f2',
+              textcolor2: '#94a3b8',
+              darkBorderc: '#4b5563',
+              darkbutton: '#374151',
+              type: 'dark',
+            },
+            textAreaSize: 2,
+            textTheme: 'highcontrast',
+          },
+        },
+        ['animationSpeed', 'colorScheme', 'textAreaSize', 'textTheme'],
+      ),
+    ).toBe(true)
+
+    expect(updateColorScheme).toHaveBeenCalledOnce()
+    expect(updateTextThemeAndCSS).toHaveBeenCalledOnce()
+    expect(updateGuisize).toHaveBeenCalledOnce()
+    expect(updateAnimationSpeed).toHaveBeenCalledOnce()
+  })
+
   it('loads resource APIs, seeds the resource revision, and starts runtime services', async () => {
     await loadWebInitialDatabase()
 
