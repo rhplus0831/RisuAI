@@ -329,8 +329,8 @@
               language.removeConfirm + (target.snapshot.comment || 'Unnamed Folder'),
             )
             if (secondConfirm) {
-              if (!open) {
-                onClose()
+              if (open) {
+                onClose(target.mode !== 'folder')
               }
               deactivateLocally(target.snapshot)
               onRemove(target)
@@ -351,8 +351,8 @@
           const target = captureDeletionTarget()
           const d = await alertConfirm(language.removeConfirm + getParentLoreName(target.snapshot))
           if (d) {
-            if (!open) {
-              onClose()
+            if (open) {
+              onClose(target.mode !== 'folder')
             }
             onRemove(target)
           }

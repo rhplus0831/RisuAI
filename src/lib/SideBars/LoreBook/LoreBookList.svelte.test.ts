@@ -87,6 +87,7 @@ const lorebookListMocks = vi.hoisted(() => {
           loreorder: 'Lore order',
           useRegexLorebook: 'Use regex lorebook',
         },
+        hotkeyDesc: { popupEditor: 'Popup editor' },
         insertOrder: 'Insert order',
         name: 'Name',
         prompt: 'Prompt',
@@ -194,6 +195,12 @@ function rowByText(text: string): HTMLElement {
 function deleteButtonForRow(row: HTMLElement): HTMLButtonElement {
   const button = row.querySelector<HTMLButtonElement>('[data-risu-lorebook-action="delete"]')
   expect(button, 'lorebook delete button').toBeTruthy()
+  return button!
+}
+
+function toggleButtonForRow(row: HTMLElement): HTMLButtonElement {
+  const button = row.querySelector<HTMLButtonElement>('button.endflex')
+  expect(button, 'lorebook detail toggle').toBeTruthy()
   return button!
 }
 
@@ -343,6 +350,26 @@ describe('LoreBookList', () => {
     await flushAsyncWork()
 
     expect(component.getEntries().map((entry) => entry.comment)).toEqual(['Legacy A', 'Legacy C'])
+  })
+
+  it('does not poison detail tracking when a closed row is deleted', async () => {
+    lorebookListMocks.queueConfirm(true)
+    component = mountHarness([
+      makeLoreBook({ id: 'entry-a', comment: 'Entry A' }),
+      makeLoreBook({ id: 'entry-b', comment: 'Entry B' }),
+    ])
+    await tick()
+    const initialSortableCount = lorebookListMocks.SortableMock.create.mock.calls.length
+
+    deleteButtonForRow(rowByEntryId('entry-a')).click()
+    await flushAsyncWork()
+
+    toggleButtonForRow(rowByEntryId('entry-b')).click()
+    await tick()
+    toggleButtonForRow(rowByEntryId('entry-b')).click()
+    await tick()
+
+    expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
   })
 
   it('reacts to resource-backed character lorebook replacement and dispatches deletion for the current character', async () => {
