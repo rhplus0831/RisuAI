@@ -40,6 +40,7 @@
     <div class="flex max-h-72 flex-col gap-1 overflow-y-auto pr-1">
       {#each candidates as candidate (candidate.index)}
         <button
+          aria-pressed={candidate.active}
           class="reroll-candidate flex w-full min-w-0 items-start gap-2 rounded-md border px-2 py-2 text-left transition-colors"
           class:border-selected={candidate.active}
           class:border-darkborderc={!candidate.active}

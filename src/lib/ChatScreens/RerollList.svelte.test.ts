@@ -47,6 +47,33 @@ afterEach(() => {
 })
 
 describe('RerollList', () => {
+  it('announces which response candidate is active', async () => {
+    rerollListMocks.getRerollCandidates.mockReturnValueOnce([
+      {
+        index: 0,
+        active: true,
+        messages: [{ data: 'active text', role: 'char', chatId: 'active-message' }],
+      },
+      {
+        index: 1,
+        active: false,
+        messages: [{ data: 'other text', role: 'char', chatId: 'other-message' }],
+      },
+    ])
+    component = mount(RerollList, {
+      target,
+      props: {
+        currentMessage: 'active text',
+        onSelectRerollCandidate: vi.fn(),
+        onNewReroll: vi.fn(),
+      },
+    }) as MountedComponent
+    await tick()
+
+    const candidates = target.querySelectorAll<HTMLButtonElement>('.reroll-candidate')
+    expect(Array.from(candidates, (candidate) => candidate.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+  })
+
   it('does not fire candidate or new-reroll actions while disabled', async () => {
     const onSelectRerollCandidate = vi.fn()
     const onNewReroll = vi.fn()

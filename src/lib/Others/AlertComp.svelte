@@ -928,6 +928,7 @@
       <div class="flex items-center flex-wrap mt-2">
         {#if $alertStore.submsg === 'preset'}
           <button
+            aria-pressed={cardExportType === ''}
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
@@ -935,6 +936,7 @@
             }}>Risupreset</button>
         {:else if $alertStore.submsg === 'module'}
           <button
+            aria-pressed={cardExportType === ''}
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
@@ -942,6 +944,7 @@
             }}>RisuM</button>
         {:else}
           <button
+            aria-pressed={cardExportType === ''}
             class="bg-bgcolor px-2 py-4 rounded-lg flex-1"
             class:ring-1={cardExportType === ''}
             onclick={() => {
@@ -949,6 +952,7 @@
               cardExportType2 = 'charxJpeg'
             }}>Character Card V3</button>
           <button
+            aria-pressed={cardExportType === 'ccv2'}
             class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1"
             class:ring-1={cardExportType === 'ccv2'}
             onclick={() => {
