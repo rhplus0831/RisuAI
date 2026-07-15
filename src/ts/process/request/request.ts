@@ -1121,46 +1121,136 @@ async function requestOobaLegacy(arg: RequestDataArgumentExtended): Promise<requ
   }
 
   if (useStreaming) {
-    const oobaboogaSocket = new WebSocket(streamUrl)
-    const statusCode = await new Promise((resolve) => {
-      oobaboogaSocket.onopen = () => resolve(0)
-      oobaboogaSocket.onerror = () => resolve(1001)
-      oobaboogaSocket.onclose = ({ code }) => resolve(code)
-    })
-    if (abortSignal?.aborted || statusCode !== 0) {
-      oobaboogaSocket.close()
+    const fallbackConnectionError = `WebSocket connection to '${streamUrl}' failed.`
+    const normalizeSocketError = (reason: unknown, fallback = fallbackConnectionError): Error => {
+      if (reason instanceof Error) return reason
+      if (typeof reason === 'string' && reason) return new Error(reason)
+      return new Error(fallback)
+    }
+
+    if (abortSignal?.aborted) {
       return {
         type: 'fail',
-        result: abortSignal?.reason || `WebSocket connection failed to '${streamUrl}' failed!`,
+        result: normalizeSocketError(abortSignal.reason, 'Request aborted.').message,
       }
     }
 
-    const close = () => {
-      oobaboogaSocket.close()
+    const oobaboogaSocket = new WebSocket(streamUrl)
+    let connectionOpened = false
+    let settled = false
+    let terminalError: Error | undefined
+    let streamController: ReadableStreamDefaultController<StreamResponseChunk> | undefined
+    let readed = ''
+    let resolveConnection!: (opened: boolean) => void
+    const connection = new Promise<boolean>((resolve) => {
+      resolveConnection = resolve
+    })
+
+    const cleanup = () => {
+      oobaboogaSocket.removeEventListener('open', onOpen)
+      oobaboogaSocket.removeEventListener('message', onMessage)
+      oobaboogaSocket.removeEventListener('error', onError)
+      oobaboogaSocket.removeEventListener('close', onClose)
+      abortSignal?.removeEventListener('abort', onAbort)
     }
-    const stream = new ReadableStream({
-      start(controller) {
-        let readed = ''
-        oobaboogaSocket.onmessage = (event) => {
-          const json = JSON.parse(event.data)
-          if (json.event === 'stream_end') {
-            close()
-            controller.close()
-            return
-          }
-          if (json.event !== 'text_stream') return
-          readed += json.text
-          controller.enqueue(readed)
+
+    const closeSocket = () => {
+      if (oobaboogaSocket.readyState === WebSocket.CONNECTING || oobaboogaSocket.readyState === WebSocket.OPEN) {
+        oobaboogaSocket.close()
+      }
+    }
+
+    const settle = (outcome: 'close' | 'error' | 'cancel', reason?: unknown) => {
+      if (settled) return
+      settled = true
+      terminalError = outcome === 'error' ? normalizeSocketError(reason) : undefined
+      cleanup()
+      closeSocket()
+
+      if (!connectionOpened) {
+        resolveConnection(false)
+        return
+      }
+      if (!streamController) return
+
+      if (outcome === 'close') {
+        streamController.close()
+      } else if (outcome === 'error') {
+        streamController.error(terminalError)
+      }
+    }
+
+    const onOpen = () => {
+      if (settled) return
+      connectionOpened = true
+      oobaboogaSocket.removeEventListener('open', onOpen)
+      resolveConnection(true)
+    }
+    const onError = () => {
+      settle('error', fallbackConnectionError)
+    }
+    const onClose = (event: CloseEvent) => {
+      settle(
+        'error',
+        `WebSocket connection to '${streamUrl}' closed unexpectedly${event.code ? ` (code ${event.code})` : ''}.`,
+      )
+    }
+    const onAbort = () => {
+      settle('error', normalizeSocketError(abortSignal?.reason, 'Request aborted.'))
+    }
+    const onMessage = (event: MessageEvent) => {
+      try {
+        if (typeof event.data !== 'string') {
+          throw new Error('Oobabooga WebSocket returned a non-text frame.')
         }
-        oobaboogaSocket.send(JSON.stringify(bodyTemplate))
+        const json = JSON.parse(event.data) as { event?: unknown; text?: unknown }
+        if (json.event === 'stream_end') {
+          settle('close')
+          return
+        }
+        if (json.event !== 'text_stream') return
+        if (typeof json.text !== 'string') {
+          throw new Error('Oobabooga text_stream frame is missing text.')
+        }
+        readed += json.text
+        streamController?.enqueue(readed as unknown as StreamResponseChunk)
+      } catch (error) {
+        settle('error', error)
+      }
+    }
+
+    oobaboogaSocket.addEventListener('open', onOpen)
+    oobaboogaSocket.addEventListener('error', onError)
+    oobaboogaSocket.addEventListener('close', onClose)
+    abortSignal?.addEventListener('abort', onAbort, { once: true })
+    if (abortSignal?.aborted) onAbort()
+
+    const opened = await connection
+    if (!opened || settled) {
+      return {
+        type: 'fail',
+        result: terminalError?.message ?? fallbackConnectionError,
+      }
+    }
+
+    const stream = new ReadableStream<StreamResponseChunk>({
+      start(controller) {
+        streamController = controller
+        if (settled) {
+          controller.error(terminalError ?? new Error(fallbackConnectionError))
+          return
+        }
+        oobaboogaSocket.addEventListener('message', onMessage)
+        try {
+          oobaboogaSocket.send(JSON.stringify(bodyTemplate))
+        } catch (error) {
+          settle('error', error)
+        }
       },
       cancel() {
-        close()
+        settle('cancel')
       },
     })
-    oobaboogaSocket.onerror = close
-    oobaboogaSocket.onclose = close
-    abortSignal?.addEventListener('abort', close)
 
     return {
       type: 'streaming',

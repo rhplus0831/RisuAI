@@ -36,6 +36,76 @@ interface PreviewPayload {
   headers: Record<string, string>
 }
 
+class FakeWebSocket extends EventTarget {
+  static readonly CONNECTING = 0
+  static readonly OPEN = 1
+  static readonly CLOSING = 2
+  static readonly CLOSED = 3
+  static instances: FakeWebSocket[] = []
+
+  readonly url: string
+  readyState = FakeWebSocket.CONNECTING
+  readonly sent: string[] = []
+  readonly close = vi.fn(() => {
+    this.readyState = FakeWebSocket.CLOSED
+  })
+  private readonly listeners = new Map<string, Set<EventListenerOrEventListenerObject>>()
+
+  constructor(url: string | URL) {
+    super()
+    this.url = url.toString()
+    FakeWebSocket.instances.push(this)
+  }
+
+  override addEventListener(
+    type: string,
+    callback: EventListenerOrEventListenerObject | null,
+    options?: AddEventListenerOptions | boolean,
+  ): void {
+    if (callback) {
+      const listeners = this.listeners.get(type) ?? new Set<EventListenerOrEventListenerObject>()
+      listeners.add(callback)
+      this.listeners.set(type, listeners)
+    }
+    super.addEventListener(type, callback, options)
+  }
+
+  override removeEventListener(
+    type: string,
+    callback: EventListenerOrEventListenerObject | null,
+    options?: EventListenerOptions | boolean,
+  ): void {
+    if (callback) {
+      const listeners = this.listeners.get(type)
+      listeners?.delete(callback)
+      if (listeners?.size === 0) this.listeners.delete(type)
+    }
+    super.removeEventListener(type, callback, options)
+  }
+
+  send(data: string): void {
+    this.sent.push(data)
+  }
+
+  open(): void {
+    this.readyState = FakeWebSocket.OPEN
+    this.dispatchEvent(new Event('open'))
+  }
+
+  unexpectedClose(code: number): void {
+    this.readyState = FakeWebSocket.CLOSED
+    this.dispatchEvent(Object.assign(new Event('close'), { code }))
+  }
+
+  message(data: string): void {
+    this.dispatchEvent(new MessageEvent('message', { data }))
+  }
+
+  listenerCount(): number {
+    return Array.from(this.listeners.values()).reduce((count, listeners) => count + listeners.size, 0)
+  }
+}
+
 function oobaSettings(overrides: Partial<Database['ooba']> = {}): Database['ooba'] {
   return {
     max_new_tokens: 180,
@@ -179,6 +249,14 @@ async function runHordeRequest() {
   await vi.advanceTimersByTimeAsync(0)
   await vi.advanceTimersByTimeAsync(2000)
   return resultPromise
+}
+
+async function waitForFakeWebSocket(): Promise<FakeWebSocket> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (FakeWebSocket.instances[0]) return FakeWebSocket.instances[0]
+    await Promise.resolve()
+  }
+  throw new Error('Oobabooga request did not create a WebSocket')
 }
 
 beforeEach(() => {
@@ -347,6 +425,73 @@ describe('requestOobaLegacy profile provider options through requestChatDataMain
 
     expect(payload.url).toBe('https://profile-blank-key.ooba.example/api/v1/generate')
     expect(payload.headers['X-API-KEY']).toBeUndefined()
+  })
+})
+
+describe('requestOobaLegacy WebSocket lifecycle', () => {
+  beforeEach(() => {
+    FakeWebSocket.instances = []
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    setDatabase(
+      db({
+        aiModel: 'mancer',
+        subModel: 'mancer',
+        useStreaming: true,
+        textgenWebUIBlockingURL: 'https://stream.ooba.example/api/v1/generate',
+        textgenWebUIStreamURL: 'wss://stream.ooba.example/api/v1/stream',
+      }),
+    )
+  })
+
+  it('settles and cleans up when aborted while the socket is connecting', async () => {
+    const abortController = new AbortController()
+    const removeAbortListener = vi.spyOn(abortController.signal, 'removeEventListener')
+    const request = requestChatDataMain(makeRequest({ useStreaming: true }), 'model', abortController.signal)
+    const socket = await waitForFakeWebSocket()
+
+    abortController.abort(new Error('stop connecting'))
+
+    await expect(request).resolves.toEqual({ type: 'fail', result: 'stop connecting' })
+    expect(socket.close).toHaveBeenCalledOnce()
+    expect(socket.listenerCount()).toBe(0)
+    expect(removeAbortListener).toHaveBeenCalledWith('abort', expect.any(Function))
+  })
+
+  it('errors the stream and removes listeners on an unexpected socket close', async () => {
+    const abortController = new AbortController()
+    const removeAbortListener = vi.spyOn(abortController.signal, 'removeEventListener')
+    const request = requestChatDataMain(makeRequest({ useStreaming: true }), 'model', abortController.signal)
+    const socket = await waitForFakeWebSocket()
+    socket.open()
+    const response = await request
+    expect(response.type).toBe('streaming')
+    if (response.type !== 'streaming') throw new Error('Expected streaming response')
+    const reader = response.result.getReader()
+
+    socket.unexpectedClose(1006)
+
+    await expect(reader.read()).rejects.toThrow(/closed unexpectedly \(code 1006\)/)
+    expect(socket.listenerCount()).toBe(0)
+    expect(removeAbortListener).toHaveBeenCalledWith('abort', expect.any(Function))
+  })
+
+  it('errors the stream, closes the socket, and removes listeners for malformed JSON', async () => {
+    const abortController = new AbortController()
+    const removeAbortListener = vi.spyOn(abortController.signal, 'removeEventListener')
+    const request = requestChatDataMain(makeRequest({ useStreaming: true }), 'model', abortController.signal)
+    const socket = await waitForFakeWebSocket()
+    socket.open()
+    const response = await request
+    expect(response.type).toBe('streaming')
+    if (response.type !== 'streaming') throw new Error('Expected streaming response')
+    const reader = response.result.getReader()
+
+    socket.message('{malformed')
+
+    await expect(reader.read()).rejects.toBeInstanceOf(SyntaxError)
+    expect(socket.close).toHaveBeenCalledOnce()
+    expect(socket.listenerCount()).toBe(0)
+    expect(removeAbortListener).toHaveBeenCalledWith('abort', expect.any(Function))
   })
 })
 
