@@ -468,7 +468,6 @@
       <!-- Translate Button -->
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-        tabindex="-1"
         use:handleDualAction={{
           onMainAction: () => toggleTranslate(false),
           onAlternativeAction: () => toggleTranslate(true),
@@ -483,7 +482,6 @@
             ? 'text-yellow-400 hover:text-yellow-300'
             : 'text-zinc-400 hover:text-zinc-200'}"
           data-summary-action="important"
-          tabindex="-1"
           onclick={toggleImportant}>
           <StarIcon class="w-4 h-4" />
         </button>
@@ -491,7 +489,6 @@
         <!-- Reroll Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-          tabindex="-1"
           disabled={isOrphan()}
           onclick={async () => await toggleReroll()}>
           <RefreshCw class="w-4 h-4" />
@@ -500,7 +497,6 @@
         <!-- Delete This Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-          tabindex="-1"
           onclick={async () => await deleteThis()}>
           <Trash2Icon class="w-4 h-4" />
         </button>
@@ -508,7 +504,6 @@
         <!-- Delete After Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
-          tabindex="-1"
           onclick={async () => await deleteAfter()}>
           <ScissorsLineDashed class="w-4 h-4" />
         </button>
@@ -558,7 +553,6 @@
           <!-- Translate Rerolled Button -->
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-            tabindex="-1"
             use:handleDualAction={{
               onMainAction: () => toggleTranslateRerolled(false),
               onAlternativeAction: () => toggleTranslateRerolled(true),
@@ -567,15 +561,12 @@
           </button>
 
           <!-- Cancel Button -->
-          <button
-            class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-            tabindex="-1"
-            onclick={cancelRerolled}>
+          <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" onclick={cancelRerolled}>
             <XIcon class="w-4 h-4" />
           </button>
 
           <!-- Apply Button -->
-          <button class="p-2 transition-colors text-zinc-400 hover:text-rose-300" tabindex="-1" onclick={applyRerolled}>
+          <button class="p-2 transition-colors text-zinc-400 hover:text-rose-300" onclick={applyRerolled}>
             <CheckIcon class="w-4 h-4" />
           </button>
         </div>
@@ -613,7 +604,6 @@
     <div class="flex items-center justify-between">
       <button
         class="flex items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
-        tabindex="-1"
         onclick={toggleSummaryCollapse}>
         {#if isCollapsed()}
           <ChevronDownIcon class="w-4 h-4" />
@@ -628,7 +618,6 @@
         <!-- Translate Message Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-          tabindex="-1"
           use:handleDualAction={{
             onMainAction: () => toggleTranslateExpandedMessage(false),
             onAlternativeAction: () => toggleTranslateExpandedMessage(true),
@@ -650,7 +639,6 @@
             )
               ? 'ring-2 ring-zinc-500'
               : ''}"
-            tabindex="-1"
             bind:this={summaryItemState.chatMemoRefs[memoIndex]}
             onclick={() => toggleExpandMessage(chatMemo)}>
             {chatMemo == null ? language.hypaV3Modal.connectedFirstMessageLabel : chatMemo}
