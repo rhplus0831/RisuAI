@@ -32,6 +32,10 @@ import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerMemoryJobRoutes } from './routes/memoryJobs.js'
 import { registerMemoryReadRoutes } from './routes/memoryReads.js'
 import { registerMcpOAuthRefreshRoutes, type McpOAuthRefreshRouteOptions } from './routes/mcpOAuthRefresh.js'
+import {
+  registerOpenAITranscriptionRoutes,
+  type OpenAITranscriptionRouteOptions,
+} from './routes/openAITranscription.js'
 import { registerProviderOperationRoutes, type ProviderOperationRouteOptions } from './routes/providerOperations.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
@@ -74,6 +78,7 @@ export interface BuildAppOptions {
   memoryEvents?: MemoryEventSink
   commandEvents?: CommandEventSink
   mcpOAuthRefresh?: McpOAuthRefreshRouteOptions
+  openAITranscription?: OpenAITranscriptionRouteOptions
   providerOperations?: ProviderOperationRouteOptions
   /**
    * Periodic server-side asset GC. `false` disables the timer (tests that do
@@ -271,6 +276,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerPushNotificationRoutes(app, authState, pushNotifications)
   registerMcpOAuthRefreshRoutes(app, db, authState, opts.mcpOAuthRefresh)
+  registerOpenAITranscriptionRoutes(app, db, authState, opts.openAITranscription)
   registerProviderOperationRoutes(app, db, authState, opts.providerOperations)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)

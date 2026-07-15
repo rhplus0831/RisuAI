@@ -723,6 +723,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'openai-transcription',
+    methods: ['POST'],
+    path: '/api/v1/media/openai/transcriptions',
+    auth: {
+      decision: 'required',
+      reason: 'Transcription uploads use a server-owned OpenAI credential and contain private media.',
+    },
+    activeWriter: {
+      decision: 'runtime-proxy',
+      reason: 'Transcription forwards media without mutating local durable state.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'proxy-fetch',
     methods: ['POST'],
     path: '/api/v1/proxy/fetch',

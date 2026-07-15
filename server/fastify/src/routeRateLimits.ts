@@ -27,6 +27,11 @@ export const providerOperationRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const openAITranscriptionRateLimit: RateLimitOptions = {
+  max: 10,
+  timeWindow: MINUTE,
+}
+
 export const mcpOAuthRefreshRateLimit: RateLimitOptions = {
   max: 30,
   timeWindow: MINUTE,
