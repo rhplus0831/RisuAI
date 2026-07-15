@@ -5,6 +5,7 @@
   import { getEmotion } from '../../ts/util'
 
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { readResizePointer } from './ResizeBoxPointer'
 
   let box = $state()
   let isResizing = false
@@ -14,11 +15,13 @@
   let initialY
 
   function handleStart(event) {
+    const pointer = readResizePointer(event)
+    if (!pointer) return
     isResizing = true
     initialWidth = box.clientWidth
     initialHeight = box.clientHeight
-    initialX = event.clientX || event.touches[0].clientX
-    initialY = event.clientY || event.touches[0].clientY
+    initialX = pointer.x
+    initialY = pointer.y
   }
 
   function handleEnd() {
@@ -29,10 +32,10 @@
     if (!isResizing) return
     event.preventDefault()
 
-    const clientX = event.clientX || event.touches[0].clientX
-    const clientY = event.clientY || event.touches[0].clientY
-    const deltaX = initialX - clientX
-    const deltaY = clientY - initialY
+    const pointer = readResizePointer(event)
+    if (!pointer) return
+    const deltaX = initialX - pointer.x
+    const deltaY = pointer.y - initialY
 
     const newWidth = Math.min(initialWidth + deltaX, window.innerWidth * 0.8)
     const newHeight = Math.min(initialHeight + deltaY, window.innerHeight * 0.8)
