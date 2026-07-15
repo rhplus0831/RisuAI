@@ -455,3 +455,39 @@ describe('router character route freshness', () => {
     expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-target')
   })
 })
+
+describe('router playground route freshness', () => {
+  it('passes route ownership into an asynchronous playground open', async () => {
+    const router = await importRouterAt('/playground/chat')
+    const stores = await import('./stores.svelte')
+    const { PlaygroundStore, selectedCharID } = stores
+    const pendingOpen = deferred()
+    let routeIsFresh: (() => boolean) | undefined
+    routerMocks.openPlaygroundChat.mockImplementationOnce(async (options: { isFresh?: () => boolean } = {}) => {
+      routeIsFresh = options.isFresh
+      await pendingOpen.promise
+      if (routeIsFresh?.()) {
+        selectedCharID.set(3)
+      }
+    })
+
+    const staleRoute = router.applyRouteToStores({
+      kind: 'playground',
+      path: '/playground/chat',
+      tool: 'chat',
+      index: 2,
+    })
+    await vi.waitFor(() => expect(routerMocks.openPlaygroundChat).toHaveBeenCalledTimes(1))
+
+    await router.applyRouteToStores({ kind: 'home', path: '/' })
+    await flushMicrotasks()
+    expect(routeIsFresh?.()).toBe(false)
+
+    pendingOpen.resolve()
+    await staleRoute
+    await flushMicrotasks()
+
+    expect(get(PlaygroundStore)).toBe(0)
+    expect(get(selectedCharID)).toBe(-1)
+  })
+})

@@ -9,7 +9,10 @@ import { canUseServerCommands, createAndSelectCharacterCommand, runServerCommand
 
 export const PLAYGROUND_CHARACTER_ID = '§playground'
 
-export async function openPlaygroundChat(): Promise<void> {
+export async function openPlaygroundChat(options: { isFresh?: () => boolean } = {}): Promise<void> {
+  const isFresh = options.isFresh ?? (() => true)
+  if (!isFresh()) return
+
   const charIndex = findCharacterIndexbyId(PLAYGROUND_CHARACTER_ID)
   PlaygroundStore.set(2)
 
@@ -55,6 +58,7 @@ export async function openPlaygroundChat(): Promise<void> {
       console.warn('Unable to create playground character', result)
       return
     }
+    if (!isFresh()) return
     selectPlaygroundCharacter()
     return
   }

@@ -238,7 +238,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
         settingsOpen.set(false)
         OpenRealmStore.set(false)
         if (route.index === 2) {
-          await openPlaygroundChat()
+          await openPlaygroundChat({ isFresh: isFreshRouteApplication })
           if (!isFreshRouteApplication()) return
         } else {
           selectedCharID.set(-1)

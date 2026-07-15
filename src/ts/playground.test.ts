@@ -82,6 +82,14 @@ vi.mock('./server/lorebookBridge.svelte', () => ({
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
 import { PlaygroundStore, selectedCharID } from './stores.svelte'
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   playgroundState.database.characters = []
   playgroundState.database.currentChar = -1
@@ -161,5 +169,24 @@ describe('openPlaygroundChat', () => {
       'Unable to create playground character',
       expect.objectContaining({ status: 'error' }),
     )
+  })
+
+  it('does not select a newly created playground character after its route becomes stale', async () => {
+    const command = deferred<{ status: 'ok' }>()
+    playgroundMocks.runServerCommand.mockReturnValueOnce(command.promise)
+    let routeIsFresh = true
+
+    const opening = openPlaygroundChat({ isFresh: () => routeIsFresh })
+    expect(get(PlaygroundStore)).toBe(2)
+
+    routeIsFresh = false
+    PlaygroundStore.set(0)
+    selectedCharID.set(-1)
+    playgroundState.database.characters = [{ chaId: PLAYGROUND_CHARACTER_ID }]
+    command.resolve({ status: 'ok' })
+    await opening
+
+    expect(get(PlaygroundStore)).toBe(0)
+    expect(get(selectedCharID)).toBe(-1)
   })
 })
