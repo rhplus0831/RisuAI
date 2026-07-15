@@ -135,6 +135,11 @@ interface PendingPromptItemUpdate {
   projectionFence: PromptTemplateOwnerMutationFence
 }
 
+interface PendingPromptItemAttempt {
+  sequence: number
+  pending: PendingPromptItemUpdate
+}
+
 interface SparsePromptItemUpdate {
   patch: PromptItemSnapshot
   deleteKeys: string[]
@@ -148,7 +153,15 @@ interface PendingPromptSettingsPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
+interface PendingPromptSettingsAttempt {
+  sequence: number
+  previous: SettingsPatch
+  attempted: SettingsPatch
+  projectionEpoch: number | null
+}
+
 const pendingPromptItemUpdates = new Map<string, PendingPromptItemUpdate>()
+const pendingPromptItemAttempts: PendingPromptItemAttempt[] = []
 const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   patch: {},
   previous: {},
@@ -156,6 +169,9 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   projectionEpoch: null,
   timer: null,
 }
+const pendingPromptSettingsAttempts: PendingPromptSettingsAttempt[] = []
+let nextPromptItemAttemptSequence = 0
+let nextPromptSettingsAttemptSequence = 0
 const promptItemDirtyFieldsByOwnerAndId = new Map<string, Set<string>>()
 
 /**
@@ -451,6 +467,7 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
   const sparseUpdate = sparsePromptItemUpdate(pending.previousItem, pending.attemptedItem)
   if (!sparseUpdate) return
   const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(pending.projectionFence)
+  const attempt = registerPromptItemAttempt(pending)
 
   void runServerCommand({
     command: (baseRevision) =>
@@ -466,31 +483,21 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
         options.signal,
         options.keepalive,
       ),
-    rollback: () => {
-      if (!isCurrentPromptTemplateOwner(pending.ownerId)) {
-        promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
-        markPromptTemplateOwnerAcknowledgementTainted(pending.ownerId)
-        return
-      }
-      rollbackPendingPromptItemUpdate(
-        pending.binding,
-        pending.ownerId,
-        pending.itemId,
-        pending.previousItem,
-        pending.attemptedItem,
-        pending.projectionFence,
-      )
-    },
+    rollback: () => rollbackPromptItemAttempt(attempt),
     signal: options.signal,
     keepalive: options.keepalive,
-  }).then((result) => {
-    if (result.status !== 'ok') return
-    clearDirtyPromptItemFieldsMatchingProjection(
-      pending.ownerId,
-      pending.binding.getItems(),
-      (getDatabase().promptTemplate ?? []) as PromptItem[],
-    )
-  })
+  }).then(
+    (result) => {
+      clearPromptItemAttempt(attempt)
+      if (result.status !== 'ok') return
+      clearDirtyPromptItemFieldsMatchingProjection(
+        pending.ownerId,
+        pending.binding.getItems(),
+        (getDatabase().promptTemplate ?? []) as PromptItem[],
+      )
+    },
+    () => clearPromptItemAttempt(attempt),
+  )
 }
 
 function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = {}): void {
@@ -509,6 +516,8 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
 
   if (Object.keys(commandPatch).length === 0) return
 
+  const attempt = registerPromptSettingsAttempt(commandPrevious, commandAttempted, commandProjectionEpoch)
+
   void runServerCommand({
     command: (baseRevision) =>
       patchPromptSettingsCommand(
@@ -521,10 +530,156 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
         options.signal,
         options.keepalive,
       ),
-    rollback: () => rollbackPromptSettingsPatch(commandPrevious, commandAttempted, commandProjectionEpoch),
+    rollback: () => rollbackPromptSettingsAttempt(attempt),
     signal: options.signal,
     keepalive: options.keepalive,
-  })
+  }).then(
+    () => clearPromptSettingsAttempt(attempt),
+    () => clearPromptSettingsAttempt(attempt),
+  )
+}
+
+function registerPromptItemAttempt(pending: PendingPromptItemUpdate): PendingPromptItemAttempt {
+  const attempt = {
+    sequence: ++nextPromptItemAttemptSequence,
+    pending,
+  }
+  pendingPromptItemAttempts.push(attempt)
+  return attempt
+}
+
+function rollbackPromptItemAttempt(attempt: PendingPromptItemAttempt): void {
+  const pending = attempt.pending
+  const ownerIsCurrent = isCurrentPromptTemplateOwner(pending.ownerId)
+  const fenceIsCurrent = !hasPromptTemplateOwnerMutationFenceChanged(pending.projectionFence)
+  if (!ownerIsCurrent) {
+    promptItemDirtyFieldsByOwnerAndId.delete(promptItemStateKey(pending.ownerId, pending.itemId))
+    markPromptTemplateOwnerAcknowledgementTainted(pending.ownerId)
+  } else {
+    rollbackPendingPromptItemUpdate(
+      pending.binding,
+      pending.ownerId,
+      pending.itemId,
+      pending.previousItem,
+      pending.attemptedItem,
+      pending.projectionFence,
+    )
+  }
+  if (ownerIsCurrent && fenceIsCurrent) rebaseLaterPromptItemAttempts(attempt)
+  clearPromptItemAttempt(attempt)
+}
+
+function rebaseLaterPromptItemAttempts(failed: PendingPromptItemAttempt): void {
+  const failedPending = failed.pending
+  const fields = changedPromptItemFields(failedPending.previousItem, failedPending.attemptedItem)
+  for (const field of fields) {
+    let rebased = false
+    for (const later of pendingPromptItemAttempts) {
+      const pending = later.pending
+      if (
+        later.sequence <= failed.sequence ||
+        pending.ownerId !== failedPending.ownerId ||
+        pending.itemId !== failedPending.itemId
+      ) {
+        continue
+      }
+      if (!changedPromptItemFields(pending.previousItem, pending.attemptedItem).includes(field)) continue
+      if (!samePromptItemFieldValue(pending.previousItem, failedPending.attemptedItem, field)) continue
+      copyPromptItemFieldValue(pending.previousItem, failedPending.previousItem, field)
+      rebased = true
+      break
+    }
+
+    if (rebased) continue
+    const queued = pendingPromptItemUpdates.get(promptItemStateKey(failedPending.ownerId, failedPending.itemId))
+    if (
+      queued &&
+      changedPromptItemFields(queued.previousItem, queued.attemptedItem).includes(field) &&
+      samePromptItemFieldValue(queued.previousItem, failedPending.attemptedItem, field)
+    ) {
+      copyPromptItemFieldValue(queued.previousItem, failedPending.previousItem, field)
+    }
+  }
+}
+
+function clearPromptItemAttempt(attempt: PendingPromptItemAttempt): void {
+  const index = pendingPromptItemAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingPromptItemAttempts.splice(index, 1)
+}
+
+function registerPromptSettingsAttempt(
+  previous: SettingsPatch,
+  attempted: SettingsPatch,
+  projectionEpoch: number | null,
+): PendingPromptSettingsAttempt {
+  const attempt = {
+    sequence: ++nextPromptSettingsAttemptSequence,
+    previous,
+    attempted,
+    projectionEpoch,
+  }
+  pendingPromptSettingsAttempts.push(attempt)
+  return attempt
+}
+
+function rollbackPromptSettingsAttempt(attempt: PendingPromptSettingsAttempt): void {
+  const canRebase =
+    attempt.projectionEpoch !== null && !hasSettingsGroupProjectionEpochChanged('prompt', attempt.projectionEpoch)
+  rollbackPromptSettingsPatch(attempt.previous, attempt.attempted, attempt.projectionEpoch)
+  if (canRebase) rebaseLaterPromptSettingsAttempts(attempt)
+  clearPromptSettingsAttempt(attempt)
+}
+
+function rebaseLaterPromptSettingsAttempts(failed: PendingPromptSettingsAttempt): void {
+  for (const key of Object.keys(failed.attempted)) {
+    let rebased = false
+    for (const later of pendingPromptSettingsAttempts) {
+      if (later.sequence <= failed.sequence || !hasOwnField(later.attempted, key)) continue
+      if (!sameSettingsFieldValue(later.previous, failed.attempted, key)) continue
+      copySettingsFieldValue(later.previous, failed.previous, key)
+      rebased = true
+      break
+    }
+
+    if (
+      !rebased &&
+      hasOwnField(pendingPromptSettingsPatch.attempted, key) &&
+      sameSettingsFieldValue(pendingPromptSettingsPatch.previous, failed.attempted, key)
+    ) {
+      copySettingsFieldValue(pendingPromptSettingsPatch.previous, failed.previous, key)
+    }
+  }
+}
+
+function samePromptItemFieldValue(left: PromptItem, right: PromptItem, field: string): boolean {
+  const leftRecord = promptItemAsRecord(left)
+  const rightRecord = promptItemAsRecord(right)
+  return sameSettingsFieldValue(leftRecord, rightRecord, field)
+}
+
+function copyPromptItemFieldValue(target: PromptItem, source: PromptItem, field: string): void {
+  copySettingsFieldValue(promptItemAsRecord(target), promptItemAsRecord(source), field)
+}
+
+function sameSettingsFieldValue(left: Record<string, unknown>, right: Record<string, unknown>, key: string): boolean {
+  return hasOwnField(left, key) === hasOwnField(right, key) && snapshotJson(left[key]) === snapshotJson(right[key])
+}
+
+function copySettingsFieldValue(target: Record<string, unknown>, source: Record<string, unknown>, key: string): void {
+  if (hasOwnField(source, key)) {
+    target[key] = cloneJsonValue(source[key])
+  } else {
+    delete target[key]
+  }
+}
+
+function hasOwnField(target: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(target, key)
+}
+
+function clearPromptSettingsAttempt(attempt: PendingPromptSettingsAttempt): void {
+  const index = pendingPromptSettingsAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingPromptSettingsAttempts.splice(index, 1)
 }
 
 function rollbackPendingPromptItemUpdate(

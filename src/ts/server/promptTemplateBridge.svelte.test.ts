@@ -11,6 +11,7 @@ const commandState = vi.hoisted(() => ({
     keepalive?: boolean
   }>,
   beforeBuild: null as (() => void) | null,
+  runResults: [] as Array<Promise<{ status: string; error?: string }>>,
 }))
 
 const resourceGuardState = vi.hoisted(() => ({
@@ -45,7 +46,10 @@ const commandMocks = vi.hoisted(() => ({
         rollback: args.rollback,
         ...(args.keepalive ? { keepalive: args.keepalive } : {}),
       })
-      return { status: 'ok', revision: 1 }
+      const queuedResult = commandState.runResults.shift()
+      const result = queuedResult ? await queuedResult : { status: 'ok', revision: 1 }
+      if (result.status !== 'ok') args.rollback?.()
+      return result
     },
   ),
   updatePromptItemCommand: vi.fn(async (args: Record<string, unknown>) => {
@@ -214,6 +218,19 @@ import {
 const BIG = 'x'.repeat(5000)
 type MountedComponent = Parameters<typeof unmount>[0]
 
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T | PromiseLike<T>) => void
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve!: Deferred<T>['resolve']
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 const resourceDatabase = {
   set current(value: unknown) {
     replaceResourceDatabase(value as Database)
@@ -369,6 +386,7 @@ beforeEach(() => {
   commandState.revision = 1
   commandState.commands.length = 0
   commandState.beforeBuild = null
+  commandState.runResults.length = 0
   commandMocks.patchPromptSettingsCommand.mockClear()
   commandMocks.updatePromptItemCommand.mockClear()
   commandMocks.createPromptItemCommand.mockClear()
@@ -973,6 +991,43 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(textOf((getResourceDatabase().promptTemplate as PromptItem[])[0])).toBe('small')
   })
 
+  it('rebases a debounced same-field prompt item edit after two saves fail', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    const secondResult = createDeferred<{ status: string; error?: string }>()
+    commandState.runResults.push(firstResult.promise, secondResult.promise)
+    seedTemplate()
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('p-0', 'first attempt')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 0)
+    await vi.advanceTimersByTimeAsync(0)
+
+    draftItems[0] = item('p-0', 'second attempt')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'first attempt'), 50)
+    expect(textOf(draftItems[0])).toBe('second attempt')
+
+    firstResult.resolve({ status: 'network-error', error: 'first failed' })
+    await flushMicrotasks()
+    expect(textOf(draftItems[0])).toBe('second attempt')
+
+    await vi.advanceTimersByTimeAsync(50)
+    expect(commandState.commands.map((entry) => entry.built)).toEqual([
+      expect.objectContaining({ patch: { text: 'first attempt' } }),
+      expect.objectContaining({ patch: { text: 'second attempt' } }),
+    ])
+
+    secondResult.resolve({ status: 'network-error', error: 'second failed' })
+    await flushMicrotasks()
+    expect(textOf(draftItems[0])).toBe('small')
+    expect(textOf((getResourceDatabase().promptTemplate as PromptItem[])[0])).toBe('small')
+  })
+
   it('rolls back only failed update fields while preserving a newer different-field preset edit', async () => {
     hydrationState.setOwner('preset-a')
     const original = item('p-0', 'server text')
@@ -1012,6 +1067,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands[1].built).toMatchObject({ patch: { role: 'user' } })
+    expect(commandState.commands[1].built.patch).toEqual({ role: 'user' })
     const secondInput = commandMocks.updatePromptItemCommand.mock.calls[1][0] as {
       optimisticAcknowledgement: PromptItemOptimisticAcknowledgement
     }
@@ -1750,6 +1806,37 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands).toHaveLength(1)
+  })
+
+  it('rebases a debounced same-key prompt setting after two saves fail', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    const secondResult = createDeferred<{ status: string; error?: string }>()
+    commandState.runResults.push(firstResult.promise, secondResult.promise)
+    resourceDatabase.current = { customPromptTemplateToggle: 'server baseline' }
+
+    getResourceDatabase().customPromptTemplateToggle = 'first attempt'
+    queuePromptSettingsProjectionPatch(
+      { customPromptTemplateToggle: 'first attempt' },
+      { customPromptTemplateToggle: 'server baseline' },
+      0,
+    )
+    await vi.advanceTimersByTimeAsync(0)
+
+    getResourceDatabase().customPromptTemplateToggle = 'second attempt'
+    queuePromptSettingsProjectionPatch(
+      { customPromptTemplateToggle: 'second attempt' },
+      { customPromptTemplateToggle: 'first attempt' },
+      50,
+    )
+
+    firstResult.resolve({ status: 'network-error', error: 'first failed' })
+    await flushMicrotasks()
+    expect(getResourceDatabase().customPromptTemplateToggle).toBe('second attempt')
+
+    await vi.advanceTimersByTimeAsync(50)
+    secondResult.resolve({ status: 'network-error', error: 'second failed' })
+    await flushMicrotasks()
+    expect(getResourceDatabase().customPromptTemplateToggle).toBe('server baseline')
   })
 
   it('drops a pending prompt settings patch when the value returns to its original snapshot', async () => {
