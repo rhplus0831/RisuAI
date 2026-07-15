@@ -4,6 +4,12 @@
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import type { Hotkey } from 'src/ts/defaulthotkeys'
 
+  let viewportWidth = $state(window.innerWidth)
+
+  function updateViewportWidth(): void {
+    viewportWidth = window.innerWidth
+  }
+
   // Replace the projected array instead of mutating a hotkey row in place.
   function patchHotkey(index: number, patch: Partial<Hotkey>): void {
     const next = getDatabase().hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
@@ -24,7 +30,9 @@
   }
 </script>
 
-{#if window.innerWidth < 768}
+<svelte:window onresize={updateViewportWidth} />
+
+{#if viewportWidth < 768}
   <span class="text-red-500">
     {language.screenTooSmall}
   </span>

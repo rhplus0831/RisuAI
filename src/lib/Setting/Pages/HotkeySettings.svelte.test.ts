@@ -33,6 +33,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import HotkeySettings from './HotkeySettings.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -68,6 +69,24 @@ afterEach(() => {
 })
 
 describe('HotkeySettings recorder keyboard behavior', () => {
+  it('updates the layout when the viewport crosses the mobile breakpoint', async () => {
+    expect(target.querySelector('table')).toBeTruthy()
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
+    window.dispatchEvent(new Event('resize'))
+    await tick()
+
+    expect(target.querySelector('table')).toBeNull()
+    expect(target.textContent).toContain(language.screenTooSmall)
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1024 })
+    window.dispatchEvent(new Event('resize'))
+    await tick()
+
+    expect(target.querySelector('table')).toBeTruthy()
+    expect(target.textContent).not.toContain(language.screenTooSmall)
+  })
+
   it('leaves Tab unhandled so native keyboard navigation can move focus', () => {
     const input = recorder()
     input.focus()
