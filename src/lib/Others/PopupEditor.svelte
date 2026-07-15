@@ -1,19 +1,19 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import { popUpEditorStore } from '../../ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import type MonacoEditorType from './MonacoEditor.svelte'
   import { language } from 'src/lang'
-  import { ParseMarkdown, risuChatParser } from 'src/ts/parser/parser.svelte'
+  import { risuChatParser } from 'src/ts/parser/parser.svelte'
   import { tokenize } from 'src/ts/tokenizer'
   import Toggles from '../SideBars/Toggles.svelte'
-  import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
 
   let languageMode = $state(popUpEditorStore.language || 'markdown')
   let previewing = $state(false)
   let tokens = $state(0)
   let MonacoComponent: typeof MonacoEditorType | null = $state(null)
   let showToggles = $state(false)
+  let tokenCountRun = 0
 
   let chatParserValue = $derived.by(() => {
     if (!previewing) {
@@ -27,14 +27,18 @@
   })
 
   $effect(() => {
+    const value = chatParserValue
+    const run = ++tokenCountRun
     if (!previewing) {
       return
     }
-    tokenize(chatParserValue)
+    tokenize(value)
       .then((toks) => {
+        if (run !== tokenCountRun) return
         tokens = toks
       })
       .catch(() => {
+        if (run !== tokenCountRun) return
         tokens = 0
       })
   })
@@ -43,6 +47,10 @@
     import('./MonacoEditor.svelte').then((module) => {
       MonacoComponent = module.default
     })
+  })
+
+  onDestroy(() => {
+    tokenCountRun += 1
   })
 </script>
 
