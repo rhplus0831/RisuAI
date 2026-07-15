@@ -3,17 +3,20 @@ import { type HypaModel, localModels } from './hypamemory'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
 import { TaskRateLimiter, TaskCanceledError } from './taskRateLimiter'
 import { runEmbedding } from '../transformers'
-import { globalFetch } from 'src/ts/globalApi.svelte'
 import { getDatabase } from 'src/ts/storage/database.svelte'
-import { appendLastPath } from 'src/ts/util'
 import { isMobile } from 'src/ts/platform'
+import { embeddingOperationCredential, requestRemoteEmbeddingTexts } from 'src/ts/server/embeddingOperations'
+import type { CustomEmbeddingConfiguration } from 'src/ts/server/embeddingOperationsProtocol'
 import { getEmbeddingCacheKey } from './embeddingCacheKey'
 
 export interface HypaProcessorV2Options {
   model?: HypaModel
   customEmbeddingUrl?: string
+  customEmbeddingKey?: string
+  customEmbeddingModel?: string
   oaiKey?: string
   rateLimiter?: TaskRateLimiter
+  signal?: AbortSignal
 }
 
 export interface EmbeddingText<TMetadata> {
@@ -36,9 +39,18 @@ export class HypaProcessorV2<TMetadata> {
   private forage: LocalForage = localforage.createInstance({
     name: 'hypaVector',
   })
+  private readonly operationAbort = new AbortController()
+  private readonly operationSignal: AbortSignal
+  private readonly customEmbeddingConfigurationProvided: boolean
 
   public constructor(options?: HypaProcessorV2Options) {
     const db = getDatabase()
+
+    this.customEmbeddingConfigurationProvided =
+      !!options &&
+      (Object.prototype.hasOwnProperty.call(options, 'customEmbeddingUrl') ||
+        Object.prototype.hasOwnProperty.call(options, 'customEmbeddingModel') ||
+        Object.prototype.hasOwnProperty.call(options, 'customEmbeddingKey'))
 
     this.options = {
       model: db.hypaModel || 'MiniLM',
@@ -47,6 +59,16 @@ export class HypaProcessorV2<TMetadata> {
       rateLimiter: new TaskRateLimiter(),
       ...options,
     }
+    this.operationSignal = options?.signal
+      ? AbortSignal.any([this.operationAbort.signal, options.signal])
+      : this.operationAbort.signal
+    const cancelPending = () => this.options.rateLimiter.cancelPendingTasks('Embedding operation canceled')
+    if (this.operationSignal.aborted) cancelPending()
+    else this.operationSignal.addEventListener('abort', cancelPending, { once: true })
+  }
+
+  public abort(reason = 'Embedding operation canceled'): void {
+    this.operationAbort.abort(reason)
   }
 
   public async addTexts(ebdTexts: EmbeddingText<TMetadata>[]): Promise<void> {
@@ -204,7 +226,7 @@ export class HypaProcessorV2<TMetadata> {
       const groupEntries = Array.from(metadataGroups.entries())
       const groups = groupEntries.map(([, group]) => group.map((item) => item.content))
 
-      const results = await ctxProvider.embedDocumentGroups(groups)
+      const results = await ctxProvider.embedDocumentGroups(groups, this.operationSignal)
 
       for (let i = 0; i < groupEntries.length; i++) {
         const [, group] = groupEntries[i]
@@ -273,7 +295,7 @@ export class HypaProcessorV2<TMetadata> {
       const embeddingTasks = chunks.map((chunk) => {
         const contents = chunk.map((item) => item.content)
 
-        return () => this.getAPIEmbeds(contents)
+        return () => this.getAPIEmbeds(contents, saveToMemory ? 'document' : 'query')
       })
 
       // Progress callback
@@ -356,7 +378,7 @@ export class HypaProcessorV2<TMetadata> {
     return getEmbeddingCacheKey(content, {
       model: this.options.model,
       customEmbeddingUrl: this.options.customEmbeddingUrl,
-      customEmbeddingModel: db.hypaCustomSettings?.model,
+      customEmbeddingModel: this.options.customEmbeddingModel ?? db.hypaCustomSettings?.model,
       contextSuffix: ctxSuffix,
     })
   }
@@ -403,69 +425,41 @@ export class HypaProcessorV2<TMetadata> {
     return results
   }
 
-  private async getAPIEmbeds(contents: string[]): Promise<EmbeddingVector[]> {
+  private async getAPIEmbeds(contents: string[], inputType: 'query' | 'document'): Promise<EmbeddingVector[]> {
     const db = getDatabase()
-    let response = null
 
     if (this.options.model === 'custom') {
       if (!this.options.customEmbeddingUrl) {
         throw new Error('Custom model requires a Custom Server URL')
       }
-
-      const replaceUrl = this.options.customEmbeddingUrl.endsWith('/embeddings')
-        ? this.options.customEmbeddingUrl
-        : appendLastPath(this.options.customEmbeddingUrl, 'embeddings')
-
-      const fetchArgs = {
-        headers: {
-          ...(db.hypaCustomSettings?.key?.trim()
-            ? { Authorization: 'Bearer ' + db.hypaCustomSettings.key.trim() }
-            : {}),
-        },
-        body: {
-          input: contents,
-          ...(db.hypaCustomSettings?.model?.trim() ? { model: db.hypaCustomSettings.model.trim() } : {}),
-        },
-      }
-
-      response = await globalFetch(replaceUrl, fetchArgs)
+      const custom: CustomEmbeddingConfiguration = this.customEmbeddingConfigurationProvided
+        ? {
+            source: 'provided',
+            url: this.options.customEmbeddingUrl,
+            ...(this.options.customEmbeddingModel?.trim() ? { model: this.options.customEmbeddingModel.trim() } : {}),
+          }
+        : { source: 'stored' }
+      return await requestRemoteEmbeddingTexts({
+        model: 'custom',
+        inputType,
+        input: contents,
+        credential: embeddingOperationCredential(this.options.customEmbeddingKey ?? db.hypaCustomSettings?.key),
+        custom,
+        signal: this.operationSignal,
+      })
     } else if (['ada', 'openai3small', 'openai3large'].includes(this.options.model)) {
-      const models = {
-        ada: 'text-embedding-ada-002',
-        openai3small: 'text-embedding-3-small',
-        openai3large: 'text-embedding-3-large',
-      }
-
-      const fetchArgs = {
-        headers: {
-          Authorization: 'Bearer ' + (this.options.oaiKey?.trim() || db.hypaV3Key?.trim()),
-        },
-        body: {
-          input: contents,
-          model: models[this.options.model],
-        },
-      }
-
-      response = await globalFetch('https://api.openai.com/v1/embeddings', fetchArgs)
+      return await requestRemoteEmbeddingTexts({
+        model: this.options.model as 'ada' | 'openai3small' | 'openai3large',
+        inputType,
+        input: contents,
+        credential: embeddingOperationCredential(this.options.oaiKey ?? db.hypaV3Key),
+        signal: this.operationSignal,
+      })
     } else if (isContextModel(this.options.model)) {
       const provider = getContextProvider(this.options.model)
-      return await provider.embedQueries(contents)
+      return await provider.embedQueries(contents, this.operationSignal)
     } else {
       throw new Error(`Unsupported model: ${this.options.model}`)
     }
-
-    if (!response.ok || !response.data.data) {
-      throw new Error(JSON.stringify(response.data))
-    }
-
-    const embeddings: EmbeddingVector[] = response.data.data.map((item: { embedding: EmbeddingVector }) => {
-      if (!item.embedding) {
-        throw new Error('No embeddings found in the response.')
-      }
-
-      return item.embedding
-    })
-
-    return embeddings
   }
 }

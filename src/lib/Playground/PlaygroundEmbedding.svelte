@@ -14,6 +14,7 @@
   let data: string[] = $state([])
   let dataresult: [string, number][] = $state([])
   let running = $state(false)
+  let runAbort: AbortController | undefined
   let displayedInputSignature: string | undefined = $state()
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
   const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>('hypaCustomSettings', {
@@ -52,11 +53,18 @@
   const run = async () => {
     if (running) return
     const input = captureRunInput()
+    const abort = new AbortController()
+    runAbort = abort
     running = true
     displayedInputSignature = undefined
     dataresult = []
     try {
-      const processer = new HypaProcesser(input.model as any, input.customEmbeddingUrl)
+      const processer = new HypaProcesser(input.model as any, input.customEmbeddingUrl, {
+        openAIKey: input.openAiKey,
+        customKey: input.customKey,
+        customModel: input.customModel,
+        signal: abort.signal,
+      })
       await processer.addText(input.data)
       console.log(processer.vectors)
       const result = await processer.similaritySearchScored(input.query)
@@ -64,11 +72,17 @@
       displayedInputSignature = input.signature
       dataresult = result
     } catch (error) {
+      if (abort.signal.aborted) return
       alertError(error)
     } finally {
-      running = false
+      if (runAbort === abort) {
+        runAbort = undefined
+        running = false
+      }
     }
   }
+
+  $effect(() => () => runAbort?.abort())
 </script>
 
 <h2 class="text-4xl text-textcolor my-6 font-black relative">{language.embedding}</h2>

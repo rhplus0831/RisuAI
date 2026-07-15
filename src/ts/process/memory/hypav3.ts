@@ -1776,7 +1776,7 @@ class HypaProcesserEx extends HypaProcesser {
     if (groupsToEmbed.length > 0) {
       const groups = groupsToEmbed.map((group) => group.map((chunk) => chunk.text))
 
-      const results = await provider.embedDocumentGroups(groups)
+      const results = await provider.embedDocumentGroups(groups, this.operationSignal)
 
       for (let i = 0; i < groupsToEmbed.length; i++) {
         const group = groupsToEmbed[i]

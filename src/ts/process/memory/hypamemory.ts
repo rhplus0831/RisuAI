@@ -1,8 +1,8 @@
 import localforage from 'localforage'
-import { globalFetch } from 'src/ts/globalApi.svelte'
 import { runEmbedding } from '../transformers'
-import { appendLastPath } from 'src/ts/util'
 import { getDatabase } from 'src/ts/storage/database.svelte'
+import { embeddingOperationCredential, requestRemoteEmbeddingTexts } from 'src/ts/server/embeddingOperations'
+import type { CustomEmbeddingConfiguration } from 'src/ts/server/embeddingOperationsProtocol'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
 import { getEmbeddingCacheKey } from './embeddingCacheKey'
 
@@ -46,14 +46,26 @@ export const localModels = {
   gpuModels: ['MiniLMGPU', 'nomicGPU', 'bgeSmallEnGPU', 'bgem3GPU', 'multiMiniLMGPU', 'bgeM3KoGPU'],
 }
 
+export interface HypaProcesserOptions {
+  openAIKey?: string
+  customKey?: string
+  customModel?: string
+  signal?: AbortSignal
+}
+
 export class HypaProcesser {
-  oaikey: string
+  oaikey?: string
   vectors: memoryVector[]
   forage: LocalForage
   model: HypaModel
   customEmbeddingUrl: string
+  protected readonly operationSignal: AbortSignal
+  private readonly operationAbort = new AbortController()
+  private readonly customEmbeddingConfigurationProvided: boolean
+  private readonly customEmbeddingKey?: string
+  private readonly customEmbeddingModel?: string
 
-  constructor(model: HypaModel | 'auto' = 'auto', customEmbeddingUrl?: string) {
+  constructor(model: HypaModel | 'auto' = 'auto', customEmbeddingUrl?: string, options: HypaProcesserOptions = {}) {
     this.forage = localforage.createInstance({
       name: 'hypaVector',
     })
@@ -64,7 +76,20 @@ export class HypaProcesser {
     } else {
       this.model = model
     }
-    this.customEmbeddingUrl = customEmbeddingUrl?.trim() || db.hypaCustomSettings?.url?.trim() || ''
+    this.customEmbeddingConfigurationProvided =
+      customEmbeddingUrl !== undefined || options.customModel !== undefined || options.customKey !== undefined
+    this.customEmbeddingUrl =
+      customEmbeddingUrl !== undefined ? customEmbeddingUrl.trim() : db.hypaCustomSettings?.url?.trim() || ''
+    this.customEmbeddingKey = options.customKey
+    this.customEmbeddingModel = options.customModel
+    this.oaikey = options.openAIKey
+    this.operationSignal = options.signal
+      ? AbortSignal.any([this.operationAbort.signal, options.signal])
+      : this.operationAbort.signal
+  }
+
+  abort(reason?: unknown): void {
+    this.operationAbort.abort(reason)
   }
 
   async embedDocuments(texts: string[]): Promise<VectorArray[]> {
@@ -88,10 +113,10 @@ export class HypaProcesser {
       const provider = getContextProvider(this.model)
       const inputs: string[] = Array.isArray(input) ? input : [input]
       if (inputType === 'query') {
-        return await provider.embedQueries(inputs)
+        return await provider.embedQueries(inputs, this.operationSignal)
       }
       const groups = inputs.map((s) => [s])
-      const results = await provider.embedDocumentGroups(groups)
+      const results = await provider.embedDocumentGroups(groups, this.operationSignal)
       return results.map((group) => group[0])
     }
     if (Object.keys(localModels.models).includes(this.model)) {
@@ -103,61 +128,38 @@ export class HypaProcesser {
       )
       return results
     }
-    let gf = null
+    const inputs = Array.isArray(input) ? input : [input]
+    const db = getDatabase()
     if (this.model === 'custom') {
       if (!this.customEmbeddingUrl) {
         throw new Error('Custom model requires a Custom Server URL')
       }
-      const { customEmbeddingUrl } = this
-      const replaceUrl = customEmbeddingUrl.endsWith('/embeddings')
-        ? customEmbeddingUrl
-        : appendLastPath(customEmbeddingUrl, 'embeddings')
-
-      const db = getDatabase()
-      const fetchArgs = {
-        headers: {
-          ...(db.hypaCustomSettings?.key?.trim()
-            ? { Authorization: 'Bearer ' + db.hypaCustomSettings.key.trim() }
-            : {}),
-        },
-        body: {
-          input: input,
-          ...(db.hypaCustomSettings?.model?.trim() ? { model: db.hypaCustomSettings.model.trim() } : {}),
-        },
-      }
-
-      gf = await globalFetch(replaceUrl.toString(), fetchArgs)
-    }
-    if (this.model === 'ada' || this.model === 'openai3small' || this.model === 'openai3large') {
-      const db = getDatabase()
-      const models = {
-        ada: 'text-embedding-ada-002',
-        openai3small: 'text-embedding-3-small',
-        openai3large: 'text-embedding-3-large',
-      }
-
-      gf = await globalFetch('https://api.openai.com/v1/embeddings', {
-        headers: {
-          Authorization: 'Bearer ' + (this.oaikey?.trim() || db.hypaV3Key?.trim()),
-        },
-        body: {
-          input: input,
-          model: models[this.model],
-        },
+      const custom: CustomEmbeddingConfiguration = this.customEmbeddingConfigurationProvided
+        ? {
+            source: 'provided',
+            url: this.customEmbeddingUrl,
+            ...(this.customEmbeddingModel?.trim() ? { model: this.customEmbeddingModel.trim() } : {}),
+          }
+        : { source: 'stored' }
+      return await requestRemoteEmbeddingTexts({
+        model: 'custom',
+        inputType,
+        input: inputs,
+        credential: embeddingOperationCredential(this.customEmbeddingKey ?? db.hypaCustomSettings?.key),
+        custom,
+        signal: this.operationSignal,
       })
     }
-    const data = gf.data
-
-    if (!gf.ok) {
-      throw JSON.stringify(gf.data)
+    if (this.model === 'ada' || this.model === 'openai3small' || this.model === 'openai3large') {
+      return await requestRemoteEmbeddingTexts({
+        model: this.model,
+        inputType,
+        input: inputs,
+        credential: embeddingOperationCredential(this.oaikey ?? db.hypaV3Key),
+        signal: this.operationSignal,
+      })
     }
-
-    const result: number[][] = []
-    for (let i = 0; i < data.data.length; i++) {
-      result.push(data.data[i].embedding)
-    }
-
-    return result
+    throw new Error(`Unsupported embedding model: ${this.model}`)
   }
 
   async testText(text: string) {
@@ -165,7 +167,7 @@ export class HypaProcesser {
     const cacheKey = getEmbeddingCacheKey(text, {
       model: this.model,
       customEmbeddingUrl: this.customEmbeddingUrl,
-      customEmbeddingModel: db.hypaCustomSettings?.model,
+      customEmbeddingModel: this.customEmbeddingModel ?? db.hypaCustomSettings?.model,
     })
     const forageResult: number[] = await this.forage.getItem(cacheKey)
     if (forageResult) {
@@ -182,7 +184,7 @@ export class HypaProcesser {
       getEmbeddingCacheKey(text, {
         model: this.model,
         customEmbeddingUrl: this.customEmbeddingUrl,
-        customEmbeddingModel: db.hypaCustomSettings?.model,
+        customEmbeddingModel: this.customEmbeddingModel ?? db.hypaCustomSettings?.model,
       })
 
     for (let i = 0; i < texts.length; i++) {

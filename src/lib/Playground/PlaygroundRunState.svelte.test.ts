@@ -5,6 +5,7 @@ const runMocks = vi.hoisted(() => ({
   addText: vi.fn(),
   alertError: vi.fn(),
   generateAIImage: vi.fn(),
+  processerConstructor: vi.fn(),
   similaritySearchScored: vi.fn(),
 }))
 
@@ -21,6 +22,10 @@ vi.mock('src/ts/process/memory/hypamemory', () => ({
     vectors = []
     addText = runMocks.addText
     similaritySearchScored = runMocks.similaritySearchScored
+
+    constructor(...args: unknown[]) {
+      runMocks.processerConstructor(...args)
+    }
   },
 }))
 
@@ -54,6 +59,7 @@ beforeEach(() => {
   runMocks.addText.mockReset()
   runMocks.alertError.mockReset()
   runMocks.generateAIImage.mockReset()
+  runMocks.processerConstructor.mockReset()
   runMocks.similaritySearchScored.mockReset()
 })
 
@@ -164,6 +170,16 @@ describe('playground run-state recovery', () => {
     runButton!.click()
 
     await vi.waitFor(() => expect(runMocks.addText).toHaveBeenCalledWith(['submitted data']))
+    expect(runMocks.processerConstructor).toHaveBeenCalledWith(
+      'MiniLM',
+      '',
+      expect.objectContaining({
+        openAIKey: '',
+        customKey: '',
+        customModel: '',
+        signal: expect.any(AbortSignal),
+      }),
+    )
     expect(target.querySelector('select')).toHaveProperty('disabled', true)
     expect(queryInput.disabled).toBe(true)
     expect(dataInput.disabled).toBe(true)
