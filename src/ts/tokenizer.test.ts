@@ -28,7 +28,8 @@ const moduleState = vi.hoisted(() => {
       google: { accessToken: 'test-google-key' },
       useTokenizerCaching: false,
     },
-    fetchMock: vi.fn(),
+    requestProviderOperationMock: vi.fn(),
+    providerOperationCredentialMock: vi.fn(() => ({ source: 'stored' as const })),
     internalIDsByModel: new Map<string, string>([
       ['google-default', 'gemini-default'],
       ['google-a', 'c'],
@@ -74,20 +75,13 @@ vi.mock('./globalApi.svelte', () => ({
   globalFetch: vi.fn(),
 }))
 
+vi.mock('./server/providerOperations', () => ({
+  requestProviderOperation: moduleState.requestProviderOperationMock,
+  providerOperationCredential: moduleState.providerOperationCredentialMock,
+}))
+
 function tokenCountFor(text: string, modelInternalID: string): number {
   return text.length + modelInternalID.length * 100 + 1
-}
-
-function parseGoogleCloudCountRequest(input: string | URL | Request, init?: RequestInit) {
-  const url = String(input)
-  const modelInternalID = url.match(/\/models\/([^:]+):countTokens/)?.[1] ?? ''
-  const body = JSON.parse(String(init?.body ?? '{}')) as {
-    contents?: Array<{ parts?: Array<{ text?: string }> }>
-  }
-  return {
-    modelInternalID,
-    text: body.contents?.[0]?.parts?.[0]?.text ?? '',
-  }
 }
 
 async function loadTokenizer() {
@@ -100,17 +94,12 @@ describe('Google Cloud tokenizer cache', () => {
     moduleState.db.aiModel = 'google-default'
     moduleState.db.useTokenizerCaching = false
     moduleState.db.googleClaudeTokenizing = true
-    moduleState.fetchMock.mockReset()
-    moduleState.fetchMock.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
-      const { modelInternalID, text } = parseGoogleCloudCountRequest(input, init)
-      return {
-        status: 200,
-        json: async () => ({
-          totalTokens: tokenCountFor(text, modelInternalID),
-        }),
-      }
+    moduleState.requestProviderOperationMock.mockReset()
+    moduleState.providerOperationCredentialMock.mockClear()
+    moduleState.requestProviderOperationMock.mockImplementation(async (_operation, options) => {
+      const input = options.input as { modelId: string; text: string }
+      return { totalTokens: tokenCountFor(input.text, input.modelId) }
     })
-    vi.stubGlobal('fetch', moduleState.fetchMock)
   })
 
   afterEach(() => {
@@ -123,7 +112,11 @@ describe('Google Cloud tokenizer cache', () => {
     await expect(tokenize('repeatable prompt')).resolves.toBe(tokenCountFor('repeatable prompt', 'gemini-default'))
     await expect(tokenize('repeatable prompt')).resolves.toBe(tokenCountFor('repeatable prompt', 'gemini-default'))
 
-    expect(moduleState.fetchMock).toHaveBeenCalledTimes(1)
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(1)
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledWith('google.count-tokens', {
+      credential: { source: 'stored' },
+      input: { modelId: 'gemini-default', text: 'repeatable prompt' },
+    })
   })
 
   it('L42: GoogleCloud cache keys keep model and text boundaries collision-safe', async () => {
@@ -135,7 +128,7 @@ describe('Google Cloud tokenizer cache', () => {
     moduleState.db.aiModel = 'google-b'
     await expect(tokenize('a')).resolves.toBe(tokenCountFor('a', 'bc'))
 
-    expect(moduleState.fetchMock).toHaveBeenCalledTimes(2)
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(2)
   })
 
   it('L42: GoogleCloud token cache evicts oldest entries and refills with the same count', async () => {
@@ -145,25 +138,25 @@ describe('Google Cloud tokenizer cache', () => {
       await tokenize(`cached-${i}`)
     }
 
-    moduleState.fetchMock.mockClear()
+    moduleState.requestProviderOperationMock.mockClear()
 
     await expect(tokenize('cached-0')).resolves.toBe(tokenCountFor('cached-0', 'gemini-default'))
-    expect(moduleState.fetchMock).not.toHaveBeenCalled()
+    expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
 
     await tokenize(`cached-${GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT}`)
-    expect(moduleState.fetchMock).toHaveBeenCalledTimes(1)
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(1)
 
-    moduleState.fetchMock.mockClear()
+    moduleState.requestProviderOperationMock.mockClear()
 
     await expect(tokenize('cached-0')).resolves.toBe(tokenCountFor('cached-0', 'gemini-default'))
-    expect(moduleState.fetchMock).not.toHaveBeenCalled()
+    expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
 
     await expect(tokenize('cached-1')).resolves.toBe(tokenCountFor('cached-1', 'gemini-default'))
-    expect(moduleState.fetchMock).toHaveBeenCalledTimes(1)
+    expect(moduleState.requestProviderOperationMock).toHaveBeenCalledTimes(1)
 
-    moduleState.fetchMock.mockClear()
+    moduleState.requestProviderOperationMock.mockClear()
 
     await expect(tokenize('cached-1')).resolves.toBe(tokenCountFor('cached-1', 'gemini-default'))
-    expect(moduleState.fetchMock).not.toHaveBeenCalled()
+    expect(moduleState.requestProviderOperationMock).not.toHaveBeenCalled()
   })
 })

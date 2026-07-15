@@ -12,6 +12,7 @@ export const PROVIDER_OPERATION_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 export const PROVIDER_OPERATION_MAX_API_KEY_LENGTH = 16 * 1024
 export const PROVIDER_OPERATION_MAX_PROFILE_ID_LENGTH = 256
 export const PROVIDER_OPERATION_MAX_MODEL_ID_LENGTH = 512
+export const PROVIDER_OPERATION_MAX_TEXT_LENGTH = 512 * 1024
 
 type JsonRecord = Record<string, unknown>
 type ProviderKind = 'nanogpt' | 'openrouter' | 'ollama' | 'wavespeed' | 'google' | 'anthropic'
@@ -151,6 +152,26 @@ const OPERATION_SPECS: Record<ProviderOperation, ProviderOperationSpec> = {
       }
     },
   },
+  'google.count-tokens': {
+    provider: 'google',
+    credentialRequired: true,
+    storedCredential: (settings) => readNestedString(settings, 'google', 'accessToken'),
+    buildRequest: (apiKey, input) => {
+      const url = new URL(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(requiredGoogleModelId(input))}:countTokens`,
+      )
+      url.searchParams.set('key', requiredApiKey(apiKey))
+      return {
+        url: url.toString(),
+        init: {
+          ...fixedJsonRequest('POST'),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: requiredText(input) }] }],
+          }),
+        },
+      }
+    },
+  },
   'anthropic.models': {
     provider: 'anthropic',
     credentialRequired: true,
@@ -260,6 +281,16 @@ function requiredModelId(input: ProviderOperationRequest['input']): string {
   return input.modelId
 }
 
+function requiredText(input: ProviderOperationRequest['input']): string {
+  if (!input || !('text' in input)) throw invalidRequest()
+  return input.text
+}
+
+function requiredGoogleModelId(input: ProviderOperationRequest['input']): string {
+  const modelId = requiredModelId(input)
+  return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
+}
+
 function parseCredential(value: unknown): ProviderOperationCredential {
   const record = readExactRecord(value, ['source', 'apiKey', 'profileId'])
   const source = record.source
@@ -287,15 +318,25 @@ function parseOperationInput(
   operation: ProviderOperation,
   value: unknown,
 ): ProviderOperationRequest['input'] | undefined {
-  if (operation !== 'nanogpt.model-providers') {
-    if (value !== undefined) throw invalidRequest()
-    return undefined
+  if (operation === 'nanogpt.model-providers') {
+    const record = readExactRecord(value, ['modelId'])
+    if (Object.keys(record).length !== 1) throw invalidRequest()
+    return {
+      modelId: readBoundedNonBlankString(record.modelId, PROVIDER_OPERATION_MAX_MODEL_ID_LENGTH),
+    }
   }
-  const record = readExactRecord(value, ['modelId'])
-  if (Object.keys(record).length !== 1) throw invalidRequest()
-  return {
-    modelId: readBoundedNonBlankString(record.modelId, PROVIDER_OPERATION_MAX_MODEL_ID_LENGTH),
+
+  if (operation === 'google.count-tokens') {
+    const record = readExactRecord(value, ['modelId', 'text'])
+    if (Object.keys(record).length !== 2) throw invalidRequest()
+    return {
+      modelId: readBoundedNonBlankString(record.modelId, PROVIDER_OPERATION_MAX_MODEL_ID_LENGTH),
+      text: readBoundedString(record.text, PROVIDER_OPERATION_MAX_TEXT_LENGTH),
+    }
   }
+
+  if (value !== undefined) throw invalidRequest()
+  return undefined
 }
 
 function resolveCredential(
@@ -337,6 +378,11 @@ function readExactRecord(value: unknown, allowedKeys: readonly string[]): JsonRe
 
 function readBoundedNonBlankString(value: unknown, maxLength: number): string {
   if (typeof value !== 'string' || value.trim().length === 0 || value.length > maxLength) throw invalidRequest()
+  return value
+}
+
+function readBoundedString(value: unknown, maxLength: number): string {
+  if (typeof value !== 'string' || value.length > maxLength) throw invalidRequest()
   return value
 }
 

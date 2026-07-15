@@ -9,6 +9,7 @@ export const PROVIDER_OPERATIONS = [
   'ollama.cloud-models',
   'wavespeed.models',
   'google.models',
+  'google.count-tokens',
   'anthropic.models',
 ] as const
 
@@ -23,9 +24,7 @@ export type ProviderOperationCredential =
 export interface ProviderOperationRequest {
   operation: ProviderOperation
   credential: ProviderOperationCredential
-  input?: {
-    modelId: string
-  }
+  input?: { modelId: string } | { modelId: string; text: string }
 }
 
 export interface ProviderOperationSuccess {

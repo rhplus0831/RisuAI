@@ -119,6 +119,12 @@ describe('provider operation allowlist', () => {
       method: 'GET',
     },
     {
+      operation: 'google.count-tokens' as const,
+      input: { modelId: 'models/gemini-2.5-pro', text: 'hello world' },
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:countTokens?key=stored-google-key',
+      method: 'POST',
+    },
+    {
       operation: 'anthropic.models' as const,
       url: 'https://api.anthropic.com/v1/models',
       method: 'GET',
@@ -134,6 +140,11 @@ describe('provider operation allowlist', () => {
     if (expected) expect(header(upstream.init, expected[0])).toBe(expected[1])
     if (operation === 'anthropic.models') {
       expect(header(upstream.init, 'anthropic-version')).toBe('2023-06-01')
+    }
+    if (operation === 'google.count-tokens') {
+      expect(JSON.parse(String(upstream.init.body))).toEqual({
+        contents: [{ parts: [{ text: 'hello world' }] }],
+      })
     }
   })
 
@@ -194,6 +205,24 @@ describe('provider operation allowlist', () => {
       parseProviderOperationRequest({
         operation: 'openrouter.models',
         credential: { source: 'provided', apiKey: '__RISU_SECRET_MASKED__' },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'invalid_provider_operation_request' }))
+  })
+
+  it('strictly validates Google token count inputs', () => {
+    expect(() =>
+      parseProviderOperationRequest({
+        operation: 'google.count-tokens',
+        credential: { source: 'stored' },
+        input: { modelId: 'gemini-2.5-pro', text: 'hello', url: 'https://attacker.example' },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'invalid_provider_operation_request' }))
+
+    expect(() =>
+      parseProviderOperationRequest({
+        operation: 'google.count-tokens',
+        credential: { source: 'stored' },
+        input: { modelId: 'gemini-2.5-pro', text: 'x'.repeat(512 * 1024 + 1) },
       }),
     ).toThrow(expect.objectContaining({ code: 'invalid_provider_operation_request' }))
   })

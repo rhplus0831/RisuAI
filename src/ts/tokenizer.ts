@@ -10,6 +10,7 @@ import { getModelInfo, LLMTokenizer, type LLMModel } from './model/modellist'
 import { pluginV2 } from './plugins/plugins.svelte'
 import type { GemmaTokenizer } from '@huggingface/transformers'
 import { LRUMap } from 'mnemonist'
+import { providerOperationCredential, requestProviderOperation } from './server/providerOperations'
 
 const MAX_CACHE_SIZE = 1500
 export const GOOGLE_CLOUD_TOKENIZED_CACHE_LIMIT = MAX_CACHE_SIZE
@@ -278,34 +279,26 @@ async function tokenizeGoogleCloud(text: string) {
     return new Uint32Array(count)
   }
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model.internalID}:countTokens?key=${db.google?.accessToken}`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              {
-                text: text,
-              },
-            ],
-          },
-        ],
-      }),
-    },
-  )
-
-  if (res.status !== 200) {
+  let count: number
+  try {
+    const result = await requestProviderOperation<{ totalTokens?: unknown }>('google.count-tokens', {
+      credential: providerOperationCredential(db.google?.accessToken),
+      input: { modelId: model.internalID, text },
+    })
+    if (
+      typeof result.totalTokens !== 'number' ||
+      !Number.isSafeInteger(result.totalTokens) ||
+      result.totalTokens < 0 ||
+      result.totalTokens > 2_000_000
+    ) {
+      throw new Error('Google token count response was malformed')
+    }
+    count = result.totalTokens
+  } catch {
     return await tokenizeWebTokenizers(text, 'gemma')
   }
 
-  const json = await res.json()
-  googleCloudTokenizedCache.set(cacheKey, json.totalTokens as number)
-  const count = json.totalTokens as number
+  googleCloudTokenizedCache.set(cacheKey, count)
 
   return new Uint32Array(count)
 }
