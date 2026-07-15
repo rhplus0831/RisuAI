@@ -629,6 +629,7 @@
                   <div
                     data-risu-chat-action="folder-options"
                     role="button"
+                    aria-label={`${language.options}: ${folder.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -658,6 +659,7 @@
                   <div
                     data-risu-chat-action="folder-edit"
                     role="button"
+                    aria-label={`${language.edit}: ${folder.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -670,6 +672,7 @@
                   <div
                     data-risu-chat-action="folder-delete"
                     role="button"
+                    aria-label={`${language.remove}: ${folder.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
@@ -732,6 +735,7 @@
                         <div
                           data-risu-chat-action="options"
                           role="button"
+                          aria-label={`${language.chatOptions}: ${chat.name}`}
                           tabindex="0"
                           onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -754,6 +758,7 @@
                         <div
                           data-risu-chat-action="edit"
                           role="button"
+                          aria-label={`${language.edit}: ${chat.name}`}
                           tabindex="0"
                           onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -766,6 +771,7 @@
                         <div
                           data-risu-chat-action="export"
                           role="button"
+                          aria-label={`${language.export}: ${chat.name}`}
                           tabindex="0"
                           onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -778,6 +784,7 @@
                         <div
                           data-risu-chat-action="delete"
                           role="button"
+                          aria-label={`${language.remove}: ${chat.name}`}
                           tabindex="0"
                           onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 cursor-pointer"
@@ -823,6 +830,7 @@
                   <div
                     data-risu-chat-action="options"
                     role="button"
+                    aria-label={`${language.chatOptions}: ${chat.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -845,6 +853,7 @@
                   <div
                     data-risu-chat-action="edit"
                     role="button"
+                    aria-label={`${language.edit}: ${chat.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -857,6 +866,7 @@
                   <div
                     data-risu-chat-action="export"
                     role="button"
+                    aria-label={`${language.export}: ${chat.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
@@ -869,6 +879,7 @@
                   <div
                     data-risu-chat-action="delete"
                     role="button"
+                    aria-label={`${language.remove}: ${chat.name}`}
                     tabindex="0"
                     onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
@@ -890,6 +901,7 @@
       <div class="flex mt-2 ml-2 items-center">
         <button
           data-risu-chat-action="export-all"
+          aria-label={language.chatListExportAll}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             exportAllChats()
@@ -898,6 +910,7 @@
         </button>
         <button
           data-risu-chat-action="import"
+          aria-label={language.chatListImport}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             importChat()
@@ -906,6 +919,7 @@
         </button>
         <button
           data-risu-chat-action="edit-list"
+          aria-label={language.chatListEdit}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             editMode = !editMode
@@ -914,6 +928,7 @@
         </button>
         <button
           data-risu-chat-action="branches"
+          aria-label={language.branch}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={async () => {
             // Branch tree hashes require all lazily-loaded chats first.
@@ -932,6 +947,7 @@
         </button>
         <button
           data-risu-chat-action="bookmarks"
+          aria-label={language.bookmarks}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             $bookmarkListOpen = true
@@ -940,6 +956,7 @@
         </button>
         <button
           data-risu-chat-action="create-folder"
+          aria-label={language.chatListCreateFolder}
           class="ml-auto text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             const previous = currentChatStateSnapshot()

@@ -220,19 +220,30 @@ vi.mock('sortablejs/modular/sortable.core.esm.js', () => ({
 vi.mock('src/lang', () => ({
   language: {
     cancel: 'Cancel',
+    bookmarks: 'Bookmarks',
+    branch: 'Branch',
     chatDataLoadFailed: 'Chat data could not be loaded.',
+    chatListCreateFolder: 'Create chat folder',
+    chatListEdit: 'Edit chat list',
+    chatListExportAll: 'Export all chats',
+    chatListImport: 'Import chat',
+    chatOptions: 'Chat options',
     changeFolderColor: 'Change folder color',
     doYouWantToBindCurrentPersona: 'Bind persona?',
     doYouWantToUnbindCurrentPersona: 'Unbind persona?',
     errors: { onlyOneChat: 'Only one chat' },
+    edit: 'Edit',
+    export: 'Export',
     goback: 'Back',
     authorNote: "Author's Note",
     help: { chatNote: 'Chat note help' },
     hotkeyDesc: { popupEditor: 'Open popup editor' },
     newChat: 'New Chat',
+    options: 'Options',
     personaBindedSuccess: 'Persona bound',
     personaUnbindedSuccess: 'Persona unbound',
     removeConfirm: 'Remove ',
+    remove: 'Remove',
     showHelp: 'Show help',
     tokens: 'tokens',
   },
@@ -342,6 +353,7 @@ import {
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
 import type { Chat, character } from 'src/ts/storage/database.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -566,6 +578,41 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarRoot().dataset.risuChatOpen).toBe('false')
     expect(target.querySelector('[data-testid="side-chat-list-toggles-stub"]')).toBeNull()
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
+  })
+
+  it('gives every icon-only chat and folder action a specific accessible name', async () => {
+    seedSidebarDatabase()
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const rootChat = rowByChatId('chat-root-a')
+    expect(rowActionButton(rootChat, 'options').getAttribute('aria-label')).toBe(`${language.chatOptions}: Root Chat A`)
+    expect(rowActionButton(rootChat, 'edit').getAttribute('aria-label')).toBe(`${language.edit}: Root Chat A`)
+    expect(rowActionButton(rootChat, 'export').getAttribute('aria-label')).toBe(`${language.export}: Root Chat A`)
+    expect(rowActionButton(rootChat, 'delete').getAttribute('aria-label')).toBe(`${language.remove}: Root Chat A`)
+
+    const folder = folderElementById('folder-a')
+    expect(rowActionButton(folder, 'folder-options').getAttribute('aria-label')).toBe(
+      `${language.options}: Pinned Folder`,
+    )
+    expect(rowActionButton(folder, 'folder-edit').getAttribute('aria-label')).toBe(`${language.edit}: Pinned Folder`)
+    expect(rowActionButton(folder, 'folder-delete').getAttribute('aria-label')).toBe(
+      `${language.remove}: Pinned Folder`,
+    )
+
+    const footerActions = {
+      'export-all': language.chatListExportAll,
+      import: language.chatListImport,
+      'edit-list': language.chatListEdit,
+      branches: language.branch,
+      bookmarks: language.bookmarks,
+      'create-folder': language.chatListCreateFolder,
+    }
+    for (const [action, expectedName] of Object.entries(footerActions)) {
+      expect(
+        sidebarRoot().querySelector<HTMLElement>(`[data-risu-chat-action="${action}"]`)?.getAttribute('aria-label'),
+      ).toBe(expectedName)
+    }
   })
 
   it('activates chat and folder icon actions with Space without scrolling', async () => {
