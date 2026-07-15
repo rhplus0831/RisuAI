@@ -161,6 +161,16 @@
     chatId?: string
   }
 
+  interface MessageEditorTarget {
+    characterId?: string
+    characterReference: object
+    chatId?: string
+    chatReference: Chat
+    messageId?: string
+    messageReference: Message
+    messageIndex: number
+  }
+
   let {
     message = $bindable(''),
     translation = null,
@@ -228,10 +238,83 @@
   let lastDisplayParseKey = ''
   let rerollMenuButtonId = Math.random()
   let messageEditOriginalText: string | null = $state(null)
+  let messageEditTarget: MessageEditorTarget | null = null
+
+  function captureMessageEditorTarget(): MessageEditorTarget | null {
+    const character = getDatabase().characters?.[selIdState.selId]
+    const chatPage = character?.chatPage
+    if (!character || typeof chatPage !== 'number' || idx < 0) return null
+
+    const chat = character.chats?.[chatPage]
+    const liveMessage = chat?.message?.[idx]
+    if (!chat || !liveMessage) return null
+
+    return {
+      characterId: character.chaId || undefined,
+      characterReference: character,
+      chatId: chat.id || undefined,
+      chatReference: chat,
+      messageId: liveMessage.chatId || undefined,
+      messageReference: liveMessage,
+      messageIndex: idx,
+    }
+  }
+
+  function matchesMessageEditorIdentity(
+    currentId: string | undefined,
+    capturedId: string | undefined,
+    currentReference: object,
+    capturedReference: object,
+  ): boolean {
+    return capturedId ? currentId === capturedId : currentReference === capturedReference
+  }
+
+  function isCurrentMessageEditorTarget(target: MessageEditorTarget): boolean {
+    if (idx !== target.messageIndex) return false
+
+    const character = getDatabase().characters?.[selIdState.selId]
+    const chatPage = character?.chatPage
+    if (!character || typeof chatPage !== 'number') return false
+    if (
+      !matchesMessageEditorIdentity(
+        character.chaId || undefined,
+        target.characterId,
+        character,
+        target.characterReference,
+      )
+    ) {
+      return false
+    }
+
+    const chat = character.chats?.[chatPage]
+    if (!chat || !matchesMessageEditorIdentity(chat.id || undefined, target.chatId, chat, target.chatReference)) {
+      return false
+    }
+
+    const liveMessage = chat.message?.[idx]
+    return (
+      !!liveMessage &&
+      matchesMessageEditorIdentity(
+        liveMessage.chatId || undefined,
+        target.messageId,
+        liveMessage,
+        target.messageReference,
+      )
+    )
+  }
+
+  function cancelMessageEdit(): void {
+    editMode = false
+    messageEditOriginalText = null
+    messageEditTarget = null
+  }
 
   function beginMessageEdit() {
     if (translationInProgress) return
     if (editMode) return
+    const target = captureMessageEditorTarget()
+    if (!target) return
+    messageEditTarget = target
     messageEditOriginalText = message
     editMode = true
   }
@@ -239,8 +322,13 @@
   async function saveMessageEdit() {
     if (translationInProgress) return
     if (!editMode) return
+    const target = messageEditTarget
+    if (!target || !isCurrentMessageEditorTarget(target)) {
+      cancelMessageEdit()
+      return
+    }
     editMode = false
-    await edit()
+    await edit(target)
   }
 
   function openRerollMenu(e: MouseEvent, children: import('svelte').Snippet): void {
@@ -258,8 +346,13 @@
   async function openAutoPopupMessageEditor() {
     if (autoPopupMessageEditorOpen || popUpEditorStore.open) return
 
+    const target = messageEditTarget
+    if (!target || !isCurrentMessageEditorTarget(target)) {
+      cancelMessageEdit()
+      return
+    }
+
     autoPopupMessageEditorOpen = true
-    const messageIndex = idx
     messageEditOriginalText ??= message
     popUpEditorStore.value = message
     popUpEditorStore.mode = 'default'
@@ -271,7 +364,11 @@
         await sleep(100)
       }
 
-      if (idx !== messageIndex || !editMode) return
+      if (messageEditTarget !== target || !editMode) return
+      if (!isCurrentMessageEditorTarget(target)) {
+        cancelMessageEdit()
+        return
+      }
 
       message = popUpEditorStore.value
       await saveMessageEdit()
@@ -650,10 +747,12 @@
     }
   }
 
-  async function edit() {
+  async function edit(target: MessageEditorTarget) {
     const originalText = messageEditOriginalText
     messageEditOriginalText = null
+    messageEditTarget = null
     if (originalText !== null && message === originalText) return
+    if (!isCurrentMessageEditorTarget(target)) return
 
     const previous = currentChatScopedSnapshot()
     const chat = getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]

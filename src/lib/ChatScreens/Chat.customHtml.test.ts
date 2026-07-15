@@ -102,6 +102,7 @@ const customHtmlMocks = vi.hoisted(() => {
     runTrigger: vi.fn<(...args: any[]) => Promise<any>>(async () => undefined),
     sayTTS: vi.fn(),
     setLLMCache: vi.fn(async () => undefined),
+    sleep: vi.fn(async () => undefined),
     rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
   }
@@ -247,7 +248,7 @@ vi.mock('src/ts/util', () => ({
   capitalize: (value: string) => value.charAt(0).toUpperCase() + value.slice(1),
   getUserIcon: () => '',
   getUserName: () => 'User',
-  sleep: vi.fn(async () => undefined),
+  sleep: customHtmlMocks.sleep,
 }))
 
 import Chat from './Chat.svelte'
@@ -263,6 +264,7 @@ import {
   ReloadGUIPointer,
   SizeStore,
   VariableReloadGUIPointer,
+  popUpEditorStore,
   popupStore,
   selIdState,
   selectedCharID,
@@ -322,6 +324,10 @@ function seedDatabase(messageCount: number, guiHTML = customHtmlMocks.templates.
   popupStore.openId = 0
   popupStore.mouseX = 0
   popupStore.mouseY = 0
+  popUpEditorStore.open = false
+  popUpEditorStore.value = ''
+  popUpEditorStore.mode = 'default'
+  popUpEditorStore.language = 'markdown'
   HideIconStore.set(false)
   SizeStore.set({ w: 900, h: 700 })
   testDatabaseState.db = {
@@ -464,6 +470,7 @@ beforeEach(() => {
   NativeDOMParser = globalThis.DOMParser
   vi.stubGlobal('DOMParser', CountingDOMParser)
   vi.clearAllMocks()
+  customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
   customHtmlMocks.runServerCommand.mockImplementation(
     async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
@@ -540,6 +547,8 @@ afterEach(() => {
   popupStore.openId = 0
   popupStore.mouseX = 0
   popupStore.mouseY = 0
+  popUpEditorStore.open = false
+  popUpEditorStore.value = ''
   setActiveMessageTranslations([])
   target.remove()
   document.body.innerHTML = ''
@@ -712,6 +721,33 @@ describe('customHTML rendered button trigger freshness', () => {
     expect(testDatabaseState.db.characters[0].chats[0].scriptstate?.$choice).toBe('applied')
     expect(get(VariableReloadGUIPointer)).toBe(previousVariableEpoch + 1)
     expect(dispatchCompatibleChatUpdateScoped).toHaveBeenCalled()
+  })
+})
+
+describe('message popup editor target freshness', () => {
+  it('does not write a delayed edit into the newly active chat', async () => {
+    const pendingEditorWait = deferred<void>()
+    customHtmlMocks.sleep.mockReturnValueOnce(pendingEditorWait.promise)
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.disableAutoPopupMessageEditor = false
+    mountCustomHtmlRows(1)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    expect(popUpEditorStore.open).toBe(true)
+    expect(popUpEditorStore.value).toBe('visible message 0')
+
+    popUpEditorStore.value = 'stale edit from original chat'
+    testDatabaseState.db.characters[0].chatPage = 1
+    popUpEditorStore.open = false
+    pendingEditorWait.resolve()
+    await settle()
+
+    expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('visible message 0')
+    expect(testDatabaseState.db.characters[0].chats[1].message[0].data).toBe('other chat message')
+    expect(dispatchUpdateMessageScoped).not.toHaveBeenCalled()
   })
 })
 
