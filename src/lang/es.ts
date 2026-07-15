@@ -1510,6 +1510,16 @@ export const languageSpanish = {
   duplicatePluginFoundUpdateIt: 'Se encontró un plugin duplicado. ¿Desea actualizar el plugin existente?',
   branchedText: 'Este chat se ha ramificado desde {}.',
   pluginUpdateFoundInstallIt: 'Se ha encontrado una actualización del plugin. ¿Desea instalar la actualización?',
+  pluginCheckForUpdates: 'Buscar actualizaciones del plugin',
+  pluginCheckingForUpdates: 'Buscando actualizaciones del plugin…',
+  pluginUpdateAvailableVersion: 'Actualización del plugin disponible: {}',
+  pluginInstallUpdateVersion: 'Instalar la actualización {} del plugin',
+  pluginUpToDate: 'El plugin está actualizado.',
+  pluginUpdatePermissionDenied: 'Se denegó el permiso para actualizar el plugin.',
+  pluginUpdateCheckFailed: 'No se pudo buscar actualizaciones del plugin. Inténtelo de nuevo.',
+  pluginInstallingUpdate: 'Instalando la actualización del plugin…',
+  pluginUpdateInstallFailed: 'No se pudo instalar la actualización del plugin. Inténtelo de nuevo.',
+  pluginUpdateInstalled: 'Actualización del plugin instalada.',
   branch: 'Rama',
   newMessageButtonBottomLeft: 'Abajo a la izquierda',
   newMessage: 'Nuevo mensaje',
@@ -1529,6 +1539,8 @@ export const languageSpanish = {
     'El plugin {} está solicitando acceso a la base de datos completa, lo que podría exponer información confidencial. ¿Desea permitir esto?',
   pluginNetworkConsent:
     'El plugin {} solicita acceso mediante el asistente de red de Internet pública de RisuAI. Esta solicitud puede enviar datos de chats o cuentas a terceros. El asistente bloquea destinos privados, locales, de metadatos y de servicios de RisuAI. ¿Desea permitirlo?',
+  pluginUpdateSourceConsent:
+    'RisuAI comprobará y descargará actualizaciones del plugin {{plugin}} únicamente desde su fuente HTTPS declarada:\n{{url}}\nEste permiso se limita a comprobar y descargar actualizaciones; no concede al plugin acceso a los asistentes de red durante la ejecución. ¿Desea continuar?',
   legacyRuntimeConsent:
     'El plugin heredado {} solicita permiso para ejecutarse como código de confianza en la página principal de RisuAI. Puede leer o modificar chats y datos de la cuenta, y acceder a servicios de red públicos, privados o locales. Permita únicamente plugins en los que confíe plenamente. ¿Desea continuar?',
   v3RuntimeConsent:

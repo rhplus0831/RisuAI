@@ -1233,6 +1233,8 @@ export const languageKorean = {
   permissionDenied: '브라우저 또는 OS에 의해 권한이 거부되었습니다',
   pluginNetworkConsent:
     '플러그인 {} 이(가) RisuAI의 공개 인터넷 네트워크 도우미를 통한 접근을 요청합니다. 이 요청으로 채팅 또는 계정 데이터가 제3자에게 전송될 수 있습니다. 도우미는 사설, 로컬, 메타데이터 및 RisuAI 서비스 대상을 차단합니다. 허용하시겠습니까?',
+  pluginUpdateSourceConsent:
+    'RisuAI가 플러그인 {{plugin}}의 업데이트를 다음에 선언된 HTTPS 소스에서만 확인하고 다운로드합니다:\n{{url}}\n이 권한은 업데이트 확인 및 다운로드에만 사용되며 플러그인의 런타임 네트워크 도우미 접근을 허용하지 않습니다. 계속하시겠습니까?',
   legacyRuntimeConsent:
     '레거시 플러그인 {}이(가) RisuAI 기본 페이지에서 신뢰된 코드로 실행할 권한을 요청합니다. 이 플러그인은 채팅 및 계정 데이터를 읽거나 수정하고 공개, 사설 또는 로컬 네트워크 서비스에 접근할 수 있습니다. 완전히 신뢰하는 플러그인만 허용하세요. 계속하시겠습니까?',
   v3RuntimeConsent:
@@ -1516,6 +1518,16 @@ export const languageKorean = {
   duplicatePluginFoundUpdateIt: '중복된 플러그인이 발견되었습니다. 기존 플러그인을 업데이트하시겠습니까?',
   loadMore: '더 보기',
   pluginUpdateFoundInstallIt: '플러그인 업데이트가 발견되었습니다. 업데이트를 설치하시겠습니까?',
+  pluginCheckForUpdates: '플러그인 업데이트 확인',
+  pluginCheckingForUpdates: '플러그인 업데이트를 확인하는 중…',
+  pluginUpdateAvailableVersion: '플러그인 업데이트 사용 가능: {}',
+  pluginInstallUpdateVersion: '플러그인 업데이트 {} 설치',
+  pluginUpToDate: '플러그인이 최신 상태입니다.',
+  pluginUpdatePermissionDenied: '플러그인 업데이트 권한이 거부되었습니다.',
+  pluginUpdateCheckFailed: '플러그인 업데이트를 확인하지 못했습니다. 다시 시도하세요.',
+  pluginInstallingUpdate: '플러그인 업데이트를 설치하는 중…',
+  pluginUpdateInstallFailed: '플러그인 업데이트를 설치하지 못했습니다. 다시 시도하세요.',
+  pluginUpdateInstalled: '플러그인 업데이트가 설치되었습니다.',
   noRequestLogs: '요청 로그가 없습니다.',
   branchedText: '이 채팅은 {}에서 분기되었습니다.',
   disableMessage: '메시지 비활성화',

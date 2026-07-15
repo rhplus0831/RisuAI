@@ -208,6 +208,8 @@ vi.mock('src/lang', () => ({
     fetchLogConsent: '{}',
     getFullDatabaseConsent: '{}',
     mainDomAccessConsent: '{}',
+    pluginNetworkConsent: 'network:{}',
+    pluginUpdateSourceConsent: 'update:{{plugin}}:{{url}}',
     replacerPermissionConsent: '{}',
     providerPermissionConsent: '{}',
     sendChatConsent: '{}',
@@ -650,6 +652,49 @@ describe('V3 plugin permissions', () => {
     await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'mainDom')).resolves.toBe(false)
     await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
     await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'mainDom')).resolves.toBe(false)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not let an update-source grant satisfy the plugin runtime network capability', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    const updateURL = 'https://plugins.example/plugin.js'
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(
+      __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'pluginUpdate', false, plugin.script, undefined, {
+        updateURL,
+      }),
+    ).resolves.toBe(true)
+    await expect(
+      __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'network', false, plugin.script),
+    ).resolves.toBe(false)
+    await expect(
+      __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'pluginUpdate', false, plugin.script, undefined, {
+        updateURL,
+      }),
+    ).resolves.toBe(true)
+
+    expect(alertConfirm).toHaveBeenNthCalledWith(1, `update:${plugin.name}:${updateURL}`)
+    expect(alertConfirm).toHaveBeenNthCalledWith(2, `network:${plugin.name}`)
+  })
+
+  it('does not reuse an update grant for another declared HTTPS source', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(
+      __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'pluginUpdate', false, plugin.script, undefined, {
+        updateURL: 'https://first.example/plugin.js',
+      }),
+    ).resolves.toBe(true)
+    await expect(
+      __v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'pluginUpdate', false, plugin.script, undefined, {
+        updateURL: 'https://second.example/plugin.js',
+      }),
+    ).resolves.toBe(false)
 
     expect(alertConfirm).toHaveBeenCalledTimes(2)
   })

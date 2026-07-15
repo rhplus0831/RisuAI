@@ -91,15 +91,18 @@ return `unsupported`; Fastify never executes browser plugin code. Server Lua
 scripting is separate from browser plugins.
 
 Plugin update checks start only from an explicit user action. They require an
-HTTPS, public-only URL and the exact installed script's `network` grant, then use
-the same dedicated plugin proxy and per-redirect-hop validation as other plugin
-helpers. `checkPluginUpdate()` reads at most a 4 KiB range probe, deduplicates
-concurrent requests, and keeps a bounded 128-entry, five-minute LRU cache keyed
-by plugin name, exact script hash, update URL, and installed version. Successful
-no-update checks are cached as well as available updates; HTTP/network failures
-are not retained and can be retried immediately. The explicit download action
-streams through the same authorization path and rejects scripts larger than
-8 MiB even when a server ignores the requested range.
+HTTPS, public-only URL and a `pluginUpdate` grant bound to the exact installed
+script and declared update source. The consent prompt names both the plugin and
+source. This capability permits only RisuAI's update check/download flow and is
+distinct from the plugin runtime's `network` capability. Both operations use the
+dedicated plugin proxy and per-redirect-hop validation. `checkPluginUpdate()`
+reads at most a 4 KiB range probe, deduplicates concurrent requests, and keeps a
+bounded 128-entry, five-minute LRU cache keyed by plugin name, exact script hash,
+update URL, and installed version. Successful no-update checks are cached as
+well as available updates; HTTP/network failures are not retained and can be
+retried immediately. The explicit download action streams through the same
+authorization path and rejects scripts larger than 8 MiB even when a server
+ignores the requested range.
 
 ## Plugin Storage
 

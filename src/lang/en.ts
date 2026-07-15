@@ -1772,6 +1772,16 @@ export const languageEnglish = {
   aiGenerationWarning: 'Contents will be AI generated and may contain inaccuracies or biases.',
   duplicatePluginFoundUpdateIt: 'Duplicate plugin found. do you want to update the existing plugin?',
   pluginUpdateFoundInstallIt: 'Plugin update found. Do you want to install the update?',
+  pluginCheckForUpdates: 'Check for plugin updates',
+  pluginCheckingForUpdates: 'Checking for plugin updates…',
+  pluginUpdateAvailableVersion: 'Plugin update available: {}',
+  pluginInstallUpdateVersion: 'Install plugin update {}',
+  pluginUpToDate: 'Plugin is up to date.',
+  pluginUpdatePermissionDenied: 'Plugin update permission was denied.',
+  pluginUpdateCheckFailed: 'Could not check for plugin updates. Try again.',
+  pluginInstallingUpdate: 'Installing plugin update…',
+  pluginUpdateInstallFailed: 'Could not install plugin update. Try again.',
+  pluginUpdateInstalled: 'Plugin update installed.',
   goToChat: 'Go to Chat',
   bookmark: 'Bookmark',
   translate: 'Translate',
@@ -1802,6 +1812,8 @@ export const languageEnglish = {
   pluginDevelopMode: 'Plugin Develop Mode',
   pluginNetworkConsent:
     "Plugin {} is requesting access through RisuAI's public-internet network helper. This request may send chat or account data to third parties. The helper blocks private, local, metadata, and RisuAI service targets. Do you want to allow this?",
+  pluginUpdateSourceConsent:
+    "RisuAI will check and download updates for plugin {{plugin}} only from its declared HTTPS source:\n{{url}}\nThis permission is limited to update checks and downloads; it does not grant the plugin's runtime network helpers. Do you want to continue?",
   legacyRuntimeConsent:
     'Legacy plugin {} is requesting permission to run as trusted code in the main RisuAI page. It can read or modify chats and account data, and it can access public, private, or local network services. Only allow plugins you fully trust. Do you want to continue?',
   v3RuntimeConsent:

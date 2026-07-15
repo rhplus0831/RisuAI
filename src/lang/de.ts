@@ -1530,6 +1530,16 @@ export const languageGerman = {
   branchedText: 'Dieser Chat wurde von {} abgezweigt.',
   duplicatePluginFoundUpdateIt: 'Doppeltes Plugin gefunden. Möchten Sie das bestehende Plugin aktualisieren?',
   pluginUpdateFoundInstallIt: 'Plugin-Update gefunden. Möchten Sie das Update installieren?',
+  pluginCheckForUpdates: 'Nach Plugin-Updates suchen',
+  pluginCheckingForUpdates: 'Plugin-Updates werden gesucht…',
+  pluginUpdateAvailableVersion: 'Plugin-Update verfügbar: {}',
+  pluginInstallUpdateVersion: 'Plugin-Update {} installieren',
+  pluginUpToDate: 'Das Plugin ist auf dem neuesten Stand.',
+  pluginUpdatePermissionDenied: 'Die Berechtigung für das Plugin-Update wurde verweigert.',
+  pluginUpdateCheckFailed: 'Plugin-Updates konnten nicht geprüft werden. Versuchen Sie es erneut.',
+  pluginInstallingUpdate: 'Plugin-Update wird installiert…',
+  pluginUpdateInstallFailed: 'Das Plugin-Update konnte nicht installiert werden. Versuchen Sie es erneut.',
+  pluginUpdateInstalled: 'Plugin-Update installiert.',
   goToChat: 'Zum Chat',
   branch: 'Zweig',
   newMessageButtonBottomLeft: 'Unten links',
@@ -1545,6 +1555,8 @@ export const languageGerman = {
   pluginDevelopMode: 'Plugin-Entwicklungsmodus',
   pluginNetworkConsent:
     'Plugin {} fordert Zugriff über den RisuAI-Netzwerkhelfer für das öffentliche Internet an. Diese Anfrage kann Chat- oder Kontodaten an Dritte senden. Der Helfer sperrt private, lokale, Metadaten- und RisuAI-Dienstziele. Möchten Sie dies zulassen?',
+  pluginUpdateSourceConsent:
+    'RisuAI prüft und lädt Updates für das Plugin {{plugin}} ausschließlich von seiner angegebenen HTTPS-Quelle herunter:\n{{url}}\nDiese Berechtigung gilt nur für Update-Prüfungen und Downloads; sie gewährt dem Plugin keinen Zugriff auf die Laufzeit-Netzwerkhelfer. Möchten Sie fortfahren?',
   legacyRuntimeConsent:
     'Das Legacy-Plugin {} fordert die Berechtigung an, als vertrauenswürdiger Code auf der RisuAI-Hauptseite ausgeführt zu werden. Es kann Chats und Kontodaten lesen oder ändern und auf öffentliche, private oder lokale Netzwerkdienste zugreifen. Erlauben Sie dies nur Plugins, denen Sie vollständig vertrauen. Möchten Sie fortfahren?',
   v3RuntimeConsent:

@@ -198,11 +198,12 @@ function stubRemotePluginUpdateFetch(input: {
     'fetch',
     vi.fn(async (request: RequestInfo | URL, init: RequestInit = {}) => {
       const url = String(request)
-      if (url === input.remoteUrl) {
-        return {
-          status: 200,
-          text: vi.fn(async () => input.remoteSource),
-        } as unknown as Response
+      const requestHeaders = new Headers(init.headers)
+      if (
+        url === '/api/v1/proxy/plugin-fetch' &&
+        requestHeaders.get('risu-url') === encodeURIComponent(input.remoteUrl)
+      ) {
+        return new Response(await input.remoteSource, { status: 200 })
       }
       const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
       if (url === '/api/v1/bootstrap') {
@@ -490,18 +491,25 @@ describe('plugin import/update freshness', () => {
       updateURL,
       versionOfPlugin: '1.0.0',
     })
+    getDatabase().plugins = [plugin]
 
     await expect(Promise.all([checkPluginUpdate(plugin), checkPluginUpdate(plugin)])).resolves.toEqual([
-      undefined,
-      undefined,
+      { status: 'up-to-date' },
+      { status: 'up-to-date' },
     ])
-    await expect(checkPluginUpdate({ ...plugin })).resolves.toBeUndefined()
+    await expect(checkPluginUpdate({ ...plugin })).resolves.toEqual({ status: 'up-to-date' })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith(updateURL, {
-      method: 'GET',
-      headers: { Range: 'bytes=0-512' },
-    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/proxy/plugin-fetch',
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({
+          'risu-auth': 'plugin-test-auth',
+          'risu-url': encodeURIComponent(updateURL),
+        }),
+      }),
+    )
   })
 
   it('does not reuse an update check after the source URL or installed version changes', async () => {
@@ -511,16 +519,23 @@ describe('plugin import/update freshness', () => {
       updateURL: 'https://plugins.example/first.js',
       versionOfPlugin: '1.0.0',
     })
+    getDatabase().plugins = [plugin]
 
-    await expect(checkPluginUpdate(plugin)).resolves.toMatchObject({ version: '2.0.0' })
-    await expect(
-      checkPluginUpdate({
-        ...plugin,
-        updateURL: 'https://plugins.example/second.js',
-      }),
-    ).resolves.toMatchObject({ version: '2.0.0' })
-    await expect(checkPluginUpdate({ ...plugin, versionOfPlugin: '1.1.0' })).resolves.toMatchObject({
-      version: '2.0.0',
+    await expect(checkPluginUpdate(plugin)).resolves.toMatchObject({
+      status: 'available',
+      update: { version: '2.0.0' },
+    })
+    const secondSource = { ...plugin, updateURL: 'https://plugins.example/second.js' }
+    getDatabase().plugins = [secondSource]
+    await expect(checkPluginUpdate(secondSource)).resolves.toMatchObject({
+      status: 'available',
+      update: { version: '2.0.0' },
+    })
+    const newerInstalledVersion = { ...plugin, versionOfPlugin: '1.1.0' }
+    getDatabase().plugins = [newerInstalledVersion]
+    await expect(checkPluginUpdate(newerInstalledVersion)).resolves.toMatchObject({
+      status: 'available',
+      update: { version: '2.0.0' },
     })
 
     expect(fetchMock).toHaveBeenCalledTimes(3)
@@ -536,9 +551,13 @@ describe('plugin import/update freshness', () => {
       updateURL: 'https://plugins.example/retry.js',
       versionOfPlugin: '1.0.0',
     })
+    getDatabase().plugins = [plugin]
 
-    await expect(checkPluginUpdate(plugin)).resolves.toBeUndefined()
-    await expect(checkPluginUpdate(plugin)).resolves.toMatchObject({ version: '2.0.0' })
+    await expect(checkPluginUpdate(plugin)).resolves.toEqual({ status: 'failed' })
+    await expect(checkPluginUpdate(plugin)).resolves.toMatchObject({
+      status: 'available',
+      update: { version: '2.0.0' },
+    })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
@@ -670,7 +689,13 @@ describe('plugin import/update freshness', () => {
 
     const updatePromise = updatePlugin(getDatabase().plugins[0])
     await vi.waitFor(() => {
-      expect(fetch).toHaveBeenCalledWith(remoteUrl)
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/proxy/plugin-fetch',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({ 'risu-url': encodeURIComponent(remoteUrl) }),
+        }),
+      )
     })
 
     getDatabase().plugins[0] = seedPlugin('plugin-a', {

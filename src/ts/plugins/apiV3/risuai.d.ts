@@ -55,11 +55,12 @@
  *   //@link https://example.com/support Get Support
  *   ```
  *
- * - **`//@update-url`** - URL to check for updates (must support CORS and Range requests)
+ * - **`//@update-url`** - Public HTTPS URL used for explicit, user-approved update checks
  *   ```javascript
  *   //@update-url https://raw.githubusercontent.com/username/repo/branch/plugin.js
  *   ```
- *   Recommended: Use GitHub raw file URLs for automatic update checks
+ *   The source does not need CORS. Range responses are recommended; RisuAI safely bounds ignored Range requests.
+ *   Recommended: Use GitHub raw file URLs for user-initiated update checks.
  *
  * - **`//@version`** - Plugin version (required for update checks, use Semantic Versioning)
  *   ```javascript

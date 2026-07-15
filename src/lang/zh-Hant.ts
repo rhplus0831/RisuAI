@@ -1445,6 +1445,16 @@ export const languageChineseTraditional = {
   aiGenerationWarning: '內容將由 AI 生成，可能包含不準確資訊或偏見。',
   duplicatePluginFoundUpdateIt: '偵測到已安裝相同的外掛。是否要更新現有外掛？',
   pluginUpdateFoundInstallIt: '發現外掛更新，是否要進行安裝？',
+  pluginCheckForUpdates: '檢查外掛更新',
+  pluginCheckingForUpdates: '正在檢查外掛更新…',
+  pluginUpdateAvailableVersion: '有可用的外掛更新：{}',
+  pluginInstallUpdateVersion: '安裝外掛更新 {}',
+  pluginUpToDate: '外掛已是最新版本。',
+  pluginUpdatePermissionDenied: '外掛更新權限已被拒絕。',
+  pluginUpdateCheckFailed: '無法檢查外掛更新，請再試一次。',
+  pluginInstallingUpdate: '正在安裝外掛更新…',
+  pluginUpdateInstallFailed: '無法安裝外掛更新，請再試一次。',
+  pluginUpdateInstalled: '外掛更新已安裝。',
   goToChat: '前往對話',
   bookmark: '書籤',
   translate: '翻譯',
@@ -1467,6 +1477,8 @@ export const languageChineseTraditional = {
   pluginDevelopMode: '外掛開發模式',
   pluginNetworkConsent:
     '外掛 {} 正在請求透過 RisuAI 的公共網際網路網路助手存取服務。此請求可能會將聊天或帳戶資料傳送給第三方。該助手會封鎖私人、本機、詮釋資料和 RisuAI 服務目標。是否允許？',
+  pluginUpdateSourceConsent:
+    'RisuAI 將只從外掛 {{plugin}} 宣告的以下 HTTPS 來源檢查並下載更新：\n{{url}}\n此權限僅用於檢查與下載更新，不會授予外掛使用執行階段網路助手的權限。是否繼續？',
   legacyRuntimeConsent:
     '舊版外掛 {} 正在請求以受信任程式碼的身分在 RisuAI 主頁面中執行。它可以讀取或修改聊天與帳戶資料，並存取公共、私人或本機網路服務。請只允許您完全信任的外掛。是否繼續？',
   v3RuntimeConsent:

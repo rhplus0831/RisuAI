@@ -1,8 +1,16 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+type MockPluginUpdateCheckResult =
+  | { status: 'available'; update: { version: string; updateURL: string } }
+  | { status: 'up-to-date' | 'denied' | 'failed' }
+type MockPluginUpdateInstallResult = 'installed' | 'denied' | 'failed' | 'stale'
+
 const pluginSettingsMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(async () => false),
   alertSelect: vi.fn(),
+  checkPluginUpdate: vi.fn<() => Promise<MockPluginUpdateCheckResult>>(async () => ({ status: 'up-to-date' })),
+  installPluginUpdate: vi.fn<() => Promise<MockPluginUpdateInstallResult>>(async () => 'installed'),
   setPluginArgument: vi.fn(),
 }))
 
@@ -14,17 +22,17 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 vi.mock('src/ts/alert', () => ({
-  alertConfirm: vi.fn(async () => false),
+  alertConfirm: pluginSettingsMocks.alertConfirm,
   alertMd: vi.fn(),
   alertSelect: pluginSettingsMocks.alertSelect,
 }))
 
 vi.mock('src/ts/plugins/plugins.svelte', () => ({
-  checkPluginUpdate: vi.fn(async () => null),
+  checkPluginUpdate: pluginSettingsMocks.checkPluginUpdate,
   createBlankPlugin: vi.fn(),
   importPlugin: vi.fn(),
+  installPluginUpdate: pluginSettingsMocks.installPluginUpdate,
   loadPlugins: vi.fn(),
-  updatePlugin: vi.fn(),
 }))
 
 vi.mock('src/ts/pluginCommands', () => ({
@@ -42,7 +50,13 @@ describe('PluginSettings', () => {
   let component: Record<string, never> | undefined
 
   beforeEach(() => {
+    pluginSettingsMocks.alertConfirm.mockReset()
+    pluginSettingsMocks.alertConfirm.mockResolvedValue(false)
     pluginSettingsMocks.alertSelect.mockReset()
+    pluginSettingsMocks.checkPluginUpdate.mockReset()
+    pluginSettingsMocks.checkPluginUpdate.mockResolvedValue({ status: 'up-to-date' })
+    pluginSettingsMocks.installPluginUpdate.mockReset()
+    pluginSettingsMocks.installPluginUpdate.mockResolvedValue('installed')
     pluginSettingsMocks.setPluginArgument.mockReset()
     target = document.createElement('div')
     document.body.appendChild(target)
@@ -234,5 +248,118 @@ describe('PluginSettings', () => {
     await vi.waitFor(() => expect(click).toHaveBeenCalledOnce())
     expect(document.querySelector('a[download="plugin_starter.7z"]')).toBeNull()
     click.mockRestore()
+  })
+
+  it('does not check plugin-authored update URLs until the user requests it', async () => {
+    const updater = {
+      name: 'plugin-updater',
+      displayName: 'Plugin Updater',
+      script: 'Risuai.log("updater")',
+      updateURL: 'https://plugins.example/updater.js',
+      versionOfPlugin: '1.0.0',
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+      version: '3.0' as const,
+      enabled: true,
+    }
+    setDatabaseLite({
+      characters: [],
+      currentPluginProvider: '',
+      enabledModules: [],
+      modules: [],
+      plugins: [updater],
+    } as any)
+
+    component = mount(PluginSettings, { target })
+    await tick()
+
+    expect(pluginSettingsMocks.checkPluginUpdate).not.toHaveBeenCalled()
+    const checkButton = target.querySelector<HTMLButtonElement>('[aria-label="Check for plugin updates"]')
+    expect(checkButton).toBeTruthy()
+    expect(checkButton?.title).toBe('Check for plugin updates')
+
+    checkButton?.click()
+    await vi.waitFor(() => expect(pluginSettingsMocks.checkPluginUpdate).toHaveBeenCalledWith(updater))
+    await vi.waitFor(() =>
+      expect(target.querySelector('[role="status"]')?.textContent).toContain('Plugin is up to date.'),
+    )
+  })
+
+  it.each([
+    ['denied', 'Plugin update permission was denied.'],
+    ['failed', 'Could not check for plugin updates. Try again.'],
+  ] as const)('shows the %s update-check outcome', async (status, message) => {
+    pluginSettingsMocks.checkPluginUpdate.mockResolvedValue({ status })
+    setDatabaseLite({
+      characters: [],
+      currentPluginProvider: '',
+      enabledModules: [],
+      modules: [],
+      plugins: [
+        {
+          name: `plugin-${status}`,
+          displayName: `Plugin ${status}`,
+          script: `Risuai.log("${status}")`,
+          updateURL: `https://plugins.example/${status}.js`,
+          versionOfPlugin: '1.0.0',
+          arguments: {},
+          realArg: {},
+          customLink: [],
+          argMeta: {},
+          version: '3.0',
+          enabled: true,
+        },
+      ],
+    } as any)
+
+    component = mount(PluginSettings, { target })
+    target.querySelector<HTMLButtonElement>('[aria-label="Check for plugin updates"]')?.click()
+
+    await vi.waitFor(() => expect(target.querySelector('[role="status"]')?.textContent).toContain(message))
+    expect(pluginSettingsMocks.installPluginUpdate).not.toHaveBeenCalled()
+  })
+
+  it('requires a second confirmed action to install an available update', async () => {
+    pluginSettingsMocks.checkPluginUpdate.mockResolvedValue({
+      status: 'available',
+      update: { version: '1.1.0', updateURL: 'https://plugins.example/available.js' },
+    })
+    pluginSettingsMocks.alertConfirm.mockResolvedValue(true)
+    const updater = {
+      name: 'plugin-available',
+      displayName: 'Plugin Available',
+      script: 'Risuai.log("available")',
+      updateURL: 'https://plugins.example/available.js',
+      versionOfPlugin: '1.0.0',
+      arguments: {},
+      realArg: {},
+      customLink: [],
+      argMeta: {},
+      version: '3.0' as const,
+      enabled: true,
+    }
+    setDatabaseLite({
+      characters: [],
+      currentPluginProvider: '',
+      enabledModules: [],
+      modules: [],
+      plugins: [updater],
+    } as any)
+
+    component = mount(PluginSettings, { target })
+    target.querySelector<HTMLButtonElement>('[aria-label="Check for plugin updates"]')?.click()
+    const installButton = await vi.waitFor(() => {
+      const button = target.querySelector<HTMLButtonElement>('[aria-label="Install plugin update 1.1.0"]')
+      expect(button).toBeTruthy()
+      return button
+    })
+    expect(pluginSettingsMocks.installPluginUpdate).not.toHaveBeenCalled()
+
+    installButton?.click()
+    await vi.waitFor(() => expect(pluginSettingsMocks.installPluginUpdate).toHaveBeenCalledWith(updater))
+    expect(pluginSettingsMocks.alertConfirm).toHaveBeenCalledOnce()
+    expect(target.querySelector('[role="status"]')?.textContent).toContain('Plugin update installed.')
   })
 })

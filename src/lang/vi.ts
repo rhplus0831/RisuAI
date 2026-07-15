@@ -1493,6 +1493,16 @@ export const languageVietnamese = {
   bookmark: 'Dấu trang',
   duplicatePluginFoundUpdateIt: 'Phát hiện plugin trùng lặp. Bạn có muốn cập nhật plugin hiện có không?',
   pluginUpdateFoundInstallIt: 'Đã tìm thấy bản cập nhật plugin. Bạn có muốn cài đặt bản cập nhật này không?',
+  pluginCheckForUpdates: 'Kiểm tra bản cập nhật plugin',
+  pluginCheckingForUpdates: 'Đang kiểm tra bản cập nhật plugin…',
+  pluginUpdateAvailableVersion: 'Có bản cập nhật plugin: {}',
+  pluginInstallUpdateVersion: 'Cài đặt bản cập nhật plugin {}',
+  pluginUpToDate: 'Plugin đã được cập nhật.',
+  pluginUpdatePermissionDenied: 'Quyền cập nhật plugin đã bị từ chối.',
+  pluginUpdateCheckFailed: 'Không thể kiểm tra bản cập nhật plugin. Hãy thử lại.',
+  pluginInstallingUpdate: 'Đang cài đặt bản cập nhật plugin…',
+  pluginUpdateInstallFailed: 'Không thể cài đặt bản cập nhật plugin. Hãy thử lại.',
+  pluginUpdateInstalled: 'Đã cài đặt bản cập nhật plugin.',
   branchedText: 'Cuộc trò chuyện này đã được rẽ nhánh từ {}.',
   loadMore: 'Tải thêm',
   goToChat: 'Đi đến Chat',
@@ -1509,6 +1519,8 @@ export const languageVietnamese = {
   newMessageButtonBottomCenter: 'Dưới cùng ở giữa (Mặc định)',
   pluginNetworkConsent:
     'Plugin {} đang yêu cầu truy cập thông qua trình hỗ trợ mạng Internet công cộng của RisuAI. Yêu cầu này có thể gửi dữ liệu trò chuyện hoặc tài khoản cho bên thứ ba. Trình hỗ trợ sẽ chặn các đích riêng tư, cục bộ, siêu dữ liệu và dịch vụ RisuAI. Bạn có muốn cho phép không?',
+  pluginUpdateSourceConsent:
+    'RisuAI sẽ chỉ kiểm tra và tải bản cập nhật cho plugin {{plugin}} từ nguồn HTTPS đã khai báo:\n{{url}}\nQuyền này chỉ dành cho việc kiểm tra và tải bản cập nhật; quyền này không cấp cho plugin quyền sử dụng trình hỗ trợ mạng khi chạy. Bạn có muốn tiếp tục không?',
   legacyRuntimeConsent:
     'Plugin cũ {} đang yêu cầu quyền chạy dưới dạng mã được tin cậy trong trang RisuAI chính. Plugin có thể đọc hoặc sửa đổi dữ liệu trò chuyện và tài khoản, đồng thời truy cập các dịch vụ mạng công cộng, riêng tư hoặc cục bộ. Chỉ cho phép các plugin mà bạn hoàn toàn tin tưởng. Bạn có muốn tiếp tục không?',
   v3RuntimeConsent:

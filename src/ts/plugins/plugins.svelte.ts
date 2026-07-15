@@ -57,6 +57,11 @@ import {
 } from '../server/pluginImport'
 import { createPluginNetworkAccess, createPluginWebFetch } from './pluginNetworkAccess'
 import { getPluginPermission } from './pluginPermissions'
+import {
+  checkPluginUpdate as checkPluginUpdateRequest,
+  comparePluginVersions,
+  downloadPluginUpdate,
+} from './pluginUpdates'
 
 export const customProviderStore = writable([] as string[])
 
@@ -94,141 +99,47 @@ Risuai.log("Hello from New Plugin!");
   )
 }
 
-const compareVersions = (v1: string, v2: string): 0 | 1 | -1 => {
-  const v1parts = v1.split('.').map(Number)
-  const v2parts = v2.split('.').map(Number)
-  const len = Math.max(v1parts.length, v2parts.length)
-  for (let i = 0; i < len; i++) {
-    const part1 = v1parts[i] || 0
-    const part2 = v2parts[i] || 0
-    if (part1 > part2) return 1
-    if (part1 < part2) return -1
-  }
-  return 0
-}
-
-interface PluginUpdateInfo {
-  version: string
-  updateURL: string
-}
-
-interface PluginUpdateCacheEntry {
-  checkedAt: number
-  result: PluginUpdateInfo | undefined
-}
-
-const PLUGIN_UPDATE_CACHE_TTL_MS = 5 * 60 * 1000
-const PLUGIN_UPDATE_CACHE_MAX_ENTRIES = 128
-const updateCache = new Map<string, PluginUpdateCacheEntry>()
-const updateRequests = new Map<string, Promise<PluginUpdateInfo | undefined>>()
-
-function pluginUpdateCacheKey(plugin: RisuPlugin): string {
-  return JSON.stringify([plugin.name, plugin.updateURL, plugin.versionOfPlugin || '0.0.0'])
-}
-
-function readPluginUpdateCache(key: string): PluginUpdateInfo | undefined | null {
-  const cached = updateCache.get(key)
-  if (!cached) return null
-  if (Date.now() - cached.checkedAt >= PLUGIN_UPDATE_CACHE_TTL_MS) {
-    updateCache.delete(key)
-    return null
-  }
-
-  // Refresh insertion order so the bounded map behaves as a small LRU cache.
-  updateCache.delete(key)
-  updateCache.set(key, cached)
-  return cached.result
-}
-
-function writePluginUpdateCache(key: string, result: PluginUpdateInfo | undefined): void {
-  updateCache.delete(key)
-  while (updateCache.size >= PLUGIN_UPDATE_CACHE_MAX_ENTRIES) {
-    const oldest = updateCache.keys().next().value
-    if (typeof oldest !== 'string') break
-    updateCache.delete(oldest)
-  }
-  updateCache.set(key, { checkedAt: Date.now(), result })
-}
-
-export const checkPluginUpdate = async (plugin: RisuPlugin): Promise<PluginUpdateInfo | undefined> => {
-  if (!plugin.updateURL) return
-
-  const cacheKey = pluginUpdateCacheKey(plugin)
-  const cached = readPluginUpdateCache(cacheKey)
-  if (cached !== null) return cached
-
-  const pending = updateRequests.get(cacheKey)
-  if (pending) return pending
-
-  const request = (async (): Promise<PluginUpdateInfo | undefined> => {
-    try {
-      const response = await fetch(plugin.updateURL!, {
-        method: 'GET',
-        headers: {
-          Range: 'bytes=0-512',
-        },
-      })
-
-      if (response.status >= 200 && response.status < 300) {
-        const text = await response.text()
-        const versioRegex = /\/\/@version\s+([^\s]+)/
-        const match = text.match(versioRegex)
-        let result: PluginUpdateInfo | undefined
-        if (match && match[1]) {
-          const latestVersion = match[1].trim()
-          if (compareVersions(latestVersion, plugin.versionOfPlugin || '0.0.0') === 1) {
-            result = {
-              version: latestVersion,
-              updateURL: plugin.updateURL!,
-            }
-          }
-        }
-        // Cache a successful no-update check too; this is the common result and
-        // prevents Svelte await-block rerenders from repeating the range request.
-        writePluginUpdateCache(cacheKey, result)
-        return result
-      }
-    } catch (error) {
-      console.warn('Failed to check plugin update:', error)
-    } finally {
-      updateRequests.delete(cacheKey)
-    }
-    return undefined
-  })()
-
-  updateRequests.set(cacheKey, request)
-  return request
-}
-
 function currentPluginImportFreshness(): PluginImportFreshness<RisuPlugin> {
   return {
     plugins: getDatabase().plugins ?? [],
   }
 }
 
-export async function updatePlugin(plugin: RisuPlugin): Promise<boolean> {
+function isCurrentPluginUpdateTarget(plugin: Pick<RisuPlugin, 'name' | 'script' | 'updateURL'>): boolean {
+  const current = (getDatabase().plugins ?? []).find((candidate) => candidate.name === plugin.name)
+  return current?.script === plugin.script && current.updateURL === plugin.updateURL
+}
+
+export async function checkPluginUpdate(plugin: RisuPlugin) {
+  const target = { ...plugin }
+  return checkPluginUpdateRequest(target, () => isCurrentPluginUpdateTarget(target))
+}
+
+export type PluginUpdateInstallResult = 'installed' | 'denied' | 'failed' | 'stale'
+
+export async function installPluginUpdate(plugin: RisuPlugin): Promise<PluginUpdateInstallResult> {
   let operation: PluginImportOperation | null = null
   try {
     if (!plugin.updateURL) {
-      return false
+      return 'failed'
     }
 
     operation = beginPluginImport(capturePluginImportTarget(currentPluginImportFreshness()))
-    const response = await fetch(plugin.updateURL)
+    const download = await downloadPluginUpdate(plugin, () => isCurrentPluginUpdateTarget(plugin))
+    if (download.status !== 'downloaded') return download.status
+    if (!isFreshPluginImport(operation, currentPluginImportFreshness()) || !isCurrentPluginUpdateTarget(plugin)) {
+      return 'stale'
+    }
+    const imported = await importPlugin(download.source, {
+      isUpdate: true,
+      originalPluginName: plugin.name,
+      operation,
+    })
+    if (imported) return 'installed'
     if (!isFreshPluginImport(operation, currentPluginImportFreshness())) {
-      return false
+      return 'stale'
     }
-    if (response.status >= 200 && response.status < 300) {
-      const jsFile = await response.text()
-      if (!isFreshPluginImport(operation, currentPluginImportFreshness())) {
-        return false
-      }
-      return await importPlugin(jsFile, {
-        isUpdate: true,
-        originalPluginName: plugin.name,
-        operation,
-      })
-    }
+    return 'failed'
   } catch (error) {
     if (!operation || isFreshPluginImport(operation, currentPluginImportFreshness())) {
       console.error('Failed to update plugin:', error)
@@ -238,7 +149,11 @@ export async function updatePlugin(plugin: RisuPlugin): Promise<boolean> {
       clearPluginImport(operation)
     }
   }
-  return false
+  return 'failed'
+}
+
+export async function updatePlugin(plugin: RisuPlugin): Promise<boolean> {
+  return (await installPluginUpdate(plugin)) === 'installed'
 }
 
 export async function importPlugin(
@@ -452,7 +367,7 @@ export async function importPlugin(
       )
     }
 
-    if (versionOfPlugin && compareVersions(versionOfPlugin, '0.0.1') === -1) {
+    if (versionOfPlugin && comparePluginVersions(versionOfPlugin, '0.0.1') === -1) {
       return showError('plugin version must be at least 0.0.1')
     }
 

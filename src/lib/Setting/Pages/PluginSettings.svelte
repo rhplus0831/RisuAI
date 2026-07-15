@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon } from '@lucide/svelte'
+  import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon, RefreshCwIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { alertConfirm, alertMd, alertSelect } from 'src/ts/alert'
   import { TriangleAlert } from '@lucide/svelte'
@@ -10,8 +10,8 @@
     checkPluginUpdate,
     createBlankPlugin,
     importPlugin,
+    installPluginUpdate,
     type RisuPlugin,
-    updatePlugin,
   } from 'src/ts/plugins/plugins.svelte'
   import { deletePlugin, setPluginArgument, togglePluginEnabled } from 'src/ts/pluginCommands'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
@@ -24,6 +24,27 @@
   import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
 
   let expandedPluginNames = $state<string[]>([])
+
+  type PluginUpdateUiStatus =
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'up-to-date'
+    | 'denied'
+    | 'failed'
+    | 'installing'
+    | 'install-failed'
+    | 'installed'
+
+  interface PluginUpdateUiState {
+    script: string
+    updateURL: string
+    versionOfPlugin: string
+    status: PluginUpdateUiStatus
+    availableVersion?: string
+  }
+
+  let pluginUpdateStates = $state<Record<string, PluginUpdateUiState>>({})
 
   function findPluginByName(pluginName: string): { plugin: RisuPlugin; index: number } | null {
     const plugins = getDatabase().plugins ?? []
@@ -56,6 +77,134 @@
 
   function setPluginArg(pluginName: string, arg: string, value: number | string) {
     setPluginArgument(pluginName, arg, value)
+  }
+
+  function pluginUpdateStateKey(pluginName: string): string {
+    return `plugin:${pluginName}`
+  }
+
+  function pluginUpdateState(plugin: RisuPlugin): PluginUpdateUiState {
+    const state = pluginUpdateStates[pluginUpdateStateKey(plugin.name)]
+    if (
+      state?.script === plugin.script &&
+      state.updateURL === (plugin.updateURL ?? '') &&
+      state.versionOfPlugin === (plugin.versionOfPlugin ?? '')
+    ) {
+      return state
+    }
+    return {
+      script: plugin.script,
+      updateURL: plugin.updateURL ?? '',
+      versionOfPlugin: plugin.versionOfPlugin ?? '',
+      status: 'idle',
+    }
+  }
+
+  function setPluginUpdateState(plugin: RisuPlugin, status: PluginUpdateUiStatus, availableVersion?: string): void {
+    pluginUpdateStates[pluginUpdateStateKey(plugin.name)] = {
+      script: plugin.script,
+      updateURL: plugin.updateURL ?? '',
+      versionOfPlugin: plugin.versionOfPlugin ?? '',
+      status,
+      availableVersion,
+    }
+  }
+
+  function isSamePluginUpdateTarget(left: RisuPlugin, right: RisuPlugin): boolean {
+    return (
+      left.name === right.name &&
+      left.script === right.script &&
+      left.updateURL === right.updateURL &&
+      left.versionOfPlugin === right.versionOfPlugin
+    )
+  }
+
+  function pluginUpdateActionLabel(state: PluginUpdateUiState): string {
+    switch (state.status) {
+      case 'checking':
+        return language.pluginCheckingForUpdates
+      case 'available':
+        return language.pluginInstallUpdateVersion.replace('{}', state.availableVersion ?? '')
+      case 'installing':
+        return language.pluginInstallingUpdate
+      default:
+        return language.pluginCheckForUpdates
+    }
+  }
+
+  function pluginUpdateStatusText(state: PluginUpdateUiState): string {
+    switch (state.status) {
+      case 'checking':
+        return language.pluginCheckingForUpdates
+      case 'available':
+        return language.pluginUpdateAvailableVersion.replace('{}', state.availableVersion ?? '')
+      case 'up-to-date':
+        return language.pluginUpToDate
+      case 'denied':
+        return language.pluginUpdatePermissionDenied
+      case 'failed':
+        return language.pluginUpdateCheckFailed
+      case 'installing':
+        return language.pluginInstallingUpdate
+      case 'install-failed':
+        return language.pluginUpdateInstallFailed
+      case 'installed':
+        return language.pluginUpdateInstalled
+      default:
+        return ''
+    }
+  }
+
+  async function handlePluginUpdateAction(plugin: RisuPlugin): Promise<void> {
+    const state = pluginUpdateState(plugin)
+    if (state.status === 'checking' || state.status === 'installing') return
+
+    if (state.status === 'available') {
+      const confirmed = await alertConfirm(language.pluginUpdateFoundInstallIt)
+      if (!confirmed) return
+
+      const current = findPluginByName(plugin.name)?.plugin
+      if (!current || !isSamePluginUpdateTarget(plugin, current)) {
+        delete pluginUpdateStates[pluginUpdateStateKey(plugin.name)]
+        return
+      }
+
+      setPluginUpdateState(current, 'installing', state.availableVersion)
+      const result = await installPluginUpdate(current)
+      const latest = findPluginByName(plugin.name)?.plugin
+      if (result === 'installed' && latest) {
+        setPluginUpdateState(latest, 'installed')
+      } else if (latest && isSamePluginUpdateTarget(current, latest)) {
+        setPluginUpdateState(latest, result === 'denied' ? 'denied' : 'install-failed')
+      } else {
+        delete pluginUpdateStates[pluginUpdateStateKey(plugin.name)]
+      }
+      return
+    }
+
+    const target = { ...plugin }
+    setPluginUpdateState(target, 'checking')
+    const result = await checkPluginUpdate(target)
+    const current = findPluginByName(target.name)?.plugin
+    if (!current || !isSamePluginUpdateTarget(target, current)) {
+      delete pluginUpdateStates[pluginUpdateStateKey(target.name)]
+      return
+    }
+
+    switch (result.status) {
+      case 'available':
+        setPluginUpdateState(current, 'available', result.update.version)
+        break
+      case 'up-to-date':
+        setPluginUpdateState(current, 'up-to-date')
+        break
+      case 'denied':
+        setPluginUpdateState(current, 'denied')
+        break
+      case 'failed':
+        setPluginUpdateState(current, 'failed')
+        break
+    }
   }
 </script>
 
@@ -116,22 +265,21 @@
       {/if}
 
       {#if plugin.updateURL}
-        {#await checkPluginUpdate(plugin) then updateInfo}
-          {#if updateInfo}
-            <button
-              class="text-green-400 hover:gray-200 cursor-pointer"
-              onclick={async (e) => {
-                e.stopPropagation()
-                const v = await alertConfirm(language.pluginUpdateFoundInstallIt)
-                if (v) {
-                  const current = findPluginByName(plugin.name)
-                  if (current) updatePlugin(current.plugin)
-                }
-              }}>
-              <PlusIcon />
-            </button>
-          {/if}
-        {/await}
+        {@const updateState = pluginUpdateState(plugin)}
+        <button
+          class:text-green-400={updateState.status === 'available'}
+          class:textcolor2={updateState.status !== 'available'}
+          class="hover:gray-200 cursor-pointer disabled:cursor-wait disabled:opacity-60"
+          disabled={updateState.status === 'checking' || updateState.status === 'installing'}
+          aria-label={pluginUpdateActionLabel(updateState)}
+          title={pluginUpdateActionLabel(updateState)}
+          onclick={(e) => {
+            e.stopPropagation()
+            void handlePluginUpdateAction(plugin)
+          }}>
+          <RefreshCwIcon
+            class={updateState.status === 'checking' || updateState.status === 'installing' ? 'animate-spin' : ''} />
+        </button>
       {/if}
 
       <button
@@ -163,6 +311,14 @@
         <TrashIcon />
       </button>
     </div>
+    {#if plugin.updateURL}
+      {@const updateStatus = pluginUpdateState(plugin)}
+      {#if updateStatus.status !== 'idle'}
+        <span class="text-textcolor2 mt-1 block w-full break-words text-xs" role="status">
+          {pluginUpdateStatusText(updateStatus)}
+        </span>
+      {/if}
+    {/if}
     {#if plugin.version === 1}
       <span class="text-draculared text-xs">
         {language.pluginVersionWarn.replace('{{plugin_version}}', 'API V1').replace('{{required_version}}', 'API V3')}

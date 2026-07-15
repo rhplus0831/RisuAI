@@ -10,11 +10,16 @@ export type PluginPermission =
   | 'legacyRuntime'
   | 'mainDom'
   | 'network'
+  | 'pluginUpdate'
   | 'replacer'
   | 'provider'
   | 'sendChat'
   | 'v3Runtime'
 export type PluginPermissionReconfirmation = boolean | 'periodically'
+
+export interface PluginPermissionContext {
+  updateURL?: string
+}
 
 const grantedPluginPermissions = new Set<string>()
 const deniedPluginPermissions = new Set<string>()
@@ -24,7 +29,22 @@ const permissionForage = localforage.createInstance({
   storeName: 'plugin_permissions',
 })
 
-function permissionPrompt(pluginName: string, permission: PluginPermission): string | null {
+function pluginUpdatePermissionScope(context?: PluginPermissionContext): string | null {
+  if (typeof context?.updateURL !== 'string') return null
+  try {
+    const url = new URL(context.updateURL)
+    if (url.protocol !== 'https:' || url.username || url.password) return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+function permissionPrompt(
+  pluginName: string,
+  permission: PluginPermission,
+  context?: PluginPermissionContext,
+): string | null {
   switch (permission) {
     case 'fetchLogs':
       return language.fetchLogConsent.replace('{}', pluginName)
@@ -36,6 +56,11 @@ function permissionPrompt(pluginName: string, permission: PluginPermission): str
       return language.legacyRuntimeConsent.replace('{}', pluginName)
     case 'network':
       return language.pluginNetworkConsent.replace('{}', pluginName)
+    case 'pluginUpdate': {
+      const updateURL = pluginUpdatePermissionScope(context)
+      if (!updateURL) return null
+      return language.pluginUpdateSourceConsent.replace('{{plugin}}', pluginName).replace('{{url}}', updateURL)
+    }
     case 'replacer':
       return language.replacerPermissionConsent.replace('{}', pluginName)
     case 'provider':
@@ -58,6 +83,7 @@ export async function getPluginPermission(
   reconfirm: PluginPermissionReconfirmation = false,
   runtimeScript?: string,
   assertActive?: () => void,
+  context?: PluginPermissionContext,
 ): Promise<boolean> {
   const installedScript = getDatabase().plugins.find((plugin) => plugin.name === pluginName)?.script
   const script = runtimeScript ?? installedScript
@@ -73,8 +99,15 @@ export async function getPluginPermission(
   const scriptHash = await hasher(new TextEncoder().encode(script))
   if (!scriptHash || !validateFreshRuntime()) return false
 
-  const permissionKey = `${pluginName}\u0000${scriptHash}\u0000${permission}`
-  const persistedGrantKey = `plugin_permission:${JSON.stringify([pluginName, scriptHash, permission])}`
+  const permissionScope = permission === 'pluginUpdate' ? pluginUpdatePermissionScope(context) : undefined
+  if (permission === 'pluginUpdate' && !permissionScope) return false
+
+  const permissionKey = permissionScope
+    ? `${pluginName}\u0000${scriptHash}\u0000${permission}\u0000${permissionScope}`
+    : `${pluginName}\u0000${scriptHash}\u0000${permission}`
+  const persistedGrantKey = `plugin_permission:${JSON.stringify(
+    permissionScope ? [pluginName, scriptHash, permission, permissionScope] : [pluginName, scriptHash, permission],
+  )}`
   const periodicGrantKey = `${persistedGrantKey}_lastGrantTime`
   let requiresReconfirm = false
 
@@ -106,7 +139,7 @@ export async function getPluginPermission(
       return true
     }
 
-    const prompt = permissionPrompt(pluginName, permission)
+    const prompt = permissionPrompt(pluginName, permission, context)
     if (!prompt) return false
 
     const confirmed = await alertConfirm(prompt)
