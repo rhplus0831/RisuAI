@@ -3,11 +3,19 @@
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   let input = $state('')
   let output = $state('')
+  let parseEpoch = 0
   const onInput = async () => {
+    const epoch = ++parseEpoch
+    const source = input
     try {
-      output = await ParseMarkdown(input)
+      const parsed = await ParseMarkdown(source)
+      if (epoch === parseEpoch) {
+        output = parsed
+      }
     } catch (e) {
-      output = `Error: ${e}`
+      if (epoch === parseEpoch) {
+        output = `Error: ${e}`
+      }
     }
   }
 </script>

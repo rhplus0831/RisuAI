@@ -9,17 +9,25 @@
   let outputLength = $state(0)
   let time = $state(0)
   let selectedTokenizer = $state('tik')
+  let tokenizeEpoch = 0
 
   const onInput = async () => {
+    const epoch = ++tokenizeEpoch
+    const source = input
+    const tokenizer = selectedTokenizer
     try {
       const start = performance.now()
-      const tokenized = await encodeWithTokenizer(input, selectedTokenizer)
-      time = performance.now() - start
+      const tokenized = await encodeWithTokenizer(source, tokenizer)
       const tokenizedNumArray = Array.from(tokenized)
-      outputLength = tokenizedNumArray.length
-      output = JSON.stringify(tokenizedNumArray)
+      if (epoch === tokenizeEpoch) {
+        time = performance.now() - start
+        outputLength = tokenizedNumArray.length
+        output = JSON.stringify(tokenizedNumArray)
+      }
     } catch (e) {
-      output = `Error: ${e}`
+      if (epoch === tokenizeEpoch) {
+        output = `Error: ${e}`
+      }
     }
   }
 
