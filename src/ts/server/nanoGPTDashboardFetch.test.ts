@@ -11,13 +11,13 @@ function resolveSubscriptionState(
   operation: NanoGPTDashboardFetchOperation,
   input?: Partial<{
     currentApiKey: string | null
-    subscriptionState: string
+    subscriptionState: unknown
   }>,
 ): string | null {
   return resolveFreshNanoGPTSubscriptionState({
     operation,
     currentApiKey: Object.hasOwn(input ?? {}, 'currentApiKey') ? input?.currentApiKey : operation.apiKey,
-    subscriptionState: Object.hasOwn(input ?? {}, 'subscriptionState') ? (input?.subscriptionState ?? '') : 'active',
+    subscriptionState: Object.hasOwn(input ?? {}, 'subscriptionState') ? (input?.subscriptionState ?? null) : 'active',
   })
 }
 
@@ -66,11 +66,22 @@ describe('NanoGPT dashboard fetch freshness', () => {
     expect(resolveSubscriptionState(operation)).toBeNull()
   })
 
-  it('returns an empty subscription state for a fresh request with no subscription', () => {
+  it('does not replace a saved subscription state when a fresh account request fails', () => {
     const operation = beginNanoGPTDashboardFetch('key-a')
 
     try {
-      expect(resolveSubscriptionState(operation, { subscriptionState: '' })).toBe('')
+      expect(resolveSubscriptionState(operation, { subscriptionState: null })).toBeNull()
+    } finally {
+      clearNanoGPTDashboardFetch(operation)
+    }
+  })
+
+  it('rejects a malformed subscription state from a fresh provider response', () => {
+    const operation = beginNanoGPTDashboardFetch('key-a')
+
+    try {
+      expect(resolveSubscriptionState(operation, { subscriptionState: 'unexpected-state' })).toBeNull()
+      expect(resolveSubscriptionState(operation, { subscriptionState: { state: 'active' } })).toBeNull()
     } finally {
       clearNanoGPTDashboardFetch(operation)
     }

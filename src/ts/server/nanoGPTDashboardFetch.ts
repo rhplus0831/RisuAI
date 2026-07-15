@@ -11,6 +11,8 @@ export interface NanoGPTDashboardFetchFreshness {
   readonly currentApiKey: string | null | undefined
 }
 
+export type NanoGPTSubscriptionState = 'active' | 'grace' | 'inactive'
+
 const nanoGPTDashboardFetchGuard = createLatestOperationGuard<typeof NANO_GPT_DASHBOARD_FETCH_TARGET>()
 
 export function beginNanoGPTDashboardFetch(apiKey: string): NanoGPTDashboardFetchOperation {
@@ -35,8 +37,15 @@ export function isFreshNanoGPTDashboardFetch(
 export function resolveFreshNanoGPTSubscriptionState(input: {
   operation: NanoGPTDashboardFetchOperation
   currentApiKey: string | null | undefined
-  subscriptionState: string
-}): string | null {
+  subscriptionState: unknown
+}): NanoGPTSubscriptionState | null {
   if (!isFreshNanoGPTDashboardFetch(input.operation, { currentApiKey: input.currentApiKey })) return null
+  if (
+    input.subscriptionState !== 'active' &&
+    input.subscriptionState !== 'grace' &&
+    input.subscriptionState !== 'inactive'
+  ) {
+    return null
+  }
   return input.subscriptionState
 }

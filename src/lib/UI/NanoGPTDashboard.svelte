@@ -41,7 +41,7 @@
       const subscriptionState = resolveFreshNanoGPTSubscriptionState({
         operation,
         currentApiKey,
-        subscriptionState: subscription?.state ?? '',
+        subscriptionState: subscription?.state ?? null,
       })
       if (subscriptionState !== null && subscriptionState !== (getDatabase().nanogptSubscriptionState ?? '')) {
         if (canUseServerCommands()) {
