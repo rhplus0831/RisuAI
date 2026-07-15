@@ -1,5 +1,6 @@
 import { Buffer } from 'buffer'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { language } from '../../lang'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { imageGenerationCredential, requestImageGeneration } from './imageGeneration'
 
@@ -70,7 +71,7 @@ describe('requestImageGeneration', () => {
       prompt: 'prompt',
       quality: 'standard',
     }
-    await expect(requestImageGeneration(request)).rejects.toThrow('response was malformed')
+    await expect(requestImageGeneration(request)).rejects.toThrow(language.errors.imageGenerationResponseMalformed)
 
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -88,7 +89,7 @@ describe('requestImageGeneration', () => {
         ),
       ),
     )
-    await expect(requestImageGeneration(request)).rejects.toThrow('exceeded the size limit')
+    await expect(requestImageGeneration(request)).rejects.toThrow(language.errors.imageGenerationResponseTooLarge)
   })
 
   it('does not include a sanitized server error body in the thrown browser error', async () => {
@@ -103,6 +104,6 @@ describe('requestImageGeneration', () => {
         prompt: 'prompt',
         quality: 'standard',
       }),
-    ).rejects.toThrow('Image generation failed (502)')
+    ).rejects.toThrow(language.errors.imageGenerationFailed(502))
   })
 })

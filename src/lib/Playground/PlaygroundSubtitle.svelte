@@ -293,7 +293,7 @@
       const d = await awaitRun(probeVideoDuration(file), run)
       requireCurrentRun(run)
       if (isNaN(d)) {
-        alertError('This video does not have a duration')
+        alertError(language.errors.subtitleVideoDurationMissing)
         return false
       }
       duration = d

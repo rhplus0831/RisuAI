@@ -1,4 +1,5 @@
 import { get } from 'svelte/store'
+import { language } from '../../lang'
 import { getDatabase, type character } from '../storage/database.svelte'
 import { requestChatData } from './request/request'
 import { alertError } from '../alert'
@@ -191,7 +192,7 @@ export async function loadStableDiffReferenceImageForTests(
     const onAbort = () => settle(() => reject(mediaAbortError()))
 
     imageObj.onload = () => settle(resolve)
-    imageObj.onerror = () => settle(() => reject(new Error('Reference image failed to load')))
+    imageObj.onerror = () => settle(() => reject(new Error(language.errors.referenceImageLoadFailed)))
     options.signal?.addEventListener('abort', onAbort, { once: true })
     imageObj.src = src
   })
@@ -201,7 +202,7 @@ export async function stableDiff(currentChar: character, prompt: string, options
   let db = getDatabase()
 
   if (db.sdProvider === '') {
-    alertError('Stable diffusion is not set in settings.')
+    alertError(language.errors.stableDiffusionNotConfigured)
     return false
   }
 
@@ -241,7 +242,7 @@ export async function stableDiff(currentChar: character, prompt: string, options
     return false
   }
   if (rq.type === 'streaming' || rq.type === 'multiline') {
-    alertError('Unexpected response type')
+    alertError(language.errors.unexpectedResponseType)
     return false
   }
 
@@ -525,7 +526,7 @@ export async function generateAIImage(
           clearImageGeneration(serverOperation!)
           return false
         }
-        alertError(`Reference image failed to load: ${error}`)
+        alertError(language.errors.referenceImageLoadFailedWithCause(String(error)))
         clearImageGeneration(serverOperation!)
         return false
       }
@@ -564,7 +565,7 @@ export async function generateAIImage(
           clearImageGeneration(serverOperation!)
           return false
         }
-        alertError('Reference image failed to load')
+        alertError(language.errors.referenceImageLoadFailed)
         clearImageGeneration(serverOperation!)
         return false
       }
@@ -682,7 +683,7 @@ export async function generateAIImage(
         )[id])
       ) {
         if (Date.now() - startTime >= timeout) {
-          alertError('Error: Image generation took longer than expected.')
+          alertError(language.errors.imageGenerationTimedOut)
           return false
         }
         if (!(await waitForPollInterval(1000, options.signal))) {
@@ -781,7 +782,7 @@ export async function generateAIImage(
   if (db.sdProvider === 'openai-compat') {
     const config = db.openaiCompatImage
     if (!config.url) {
-      alertError('OpenAI Compatible API URL is not set')
+      alertError(language.errors.openAICompatibleImageUrlMissing)
       clearImageGeneration(serverOperation!)
       return false
     }
@@ -800,7 +801,7 @@ export async function generateAIImage(
   if (db.sdProvider === 'wavespeed') {
     const config = db.wavespeedImage
     if (!config.key) {
-      alertError('Please enter wavespeed API key')
+      alertError(language.errors.waveSpeedApiKeyMissing)
       clearImageGeneration(serverOperation!)
       return false
     }

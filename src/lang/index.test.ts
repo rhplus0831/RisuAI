@@ -1,9 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+function cloneWithFunctions<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((item) => cloneWithFunctions(item)) as T
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneWithFunctions(item)])) as T
+  }
+  return value
+}
+
 async function loadLanguageModule() {
   vi.resetModules()
 
-  const cloneSpy = vi.fn((value: unknown) => JSON.parse(JSON.stringify(value)))
+  const cloneSpy = vi.fn(cloneWithFunctions)
   vi.stubGlobal('safeStructuredClone', cloneSpy)
   const langModule = await import('./index')
   const { languageEnglish } = await import('./en')
@@ -134,5 +142,19 @@ describe('changeLanguage same-code cache', () => {
     expect(langModule.language.modelProfiles.runtimeFields.maxContext).toBe(
       languageEnglish.modelProfiles.runtimeFields.maxContext,
     )
+  })
+
+  it('L37: non-English languages inherit provider operation error strings and formatters from English', async () => {
+    const { langModule, languageEnglish } = await loadLanguageModule()
+
+    langModule.changeLanguage('ko')
+
+    expect(langModule.language.errors.imageGenerationResponseMalformed).toBe(
+      languageEnglish.errors.imageGenerationResponseMalformed,
+    )
+    expect(langModule.language.errors.imageGenerationFailed(502)).toBe(
+      languageEnglish.errors.imageGenerationFailed(502),
+    )
+    expect(langModule.language.waveSpeedCatalogModelsLoaded(3)).toBe(languageEnglish.waveSpeedCatalogModelsLoaded(3))
   })
 })

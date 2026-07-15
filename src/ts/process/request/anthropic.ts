@@ -1,6 +1,7 @@
 import { Sha256 } from '@aws-crypto/sha256-js'
 import { HttpRequest } from '@smithy/protocol-http'
 import { SignatureV4 } from '@smithy/signature-v4'
+import { language } from 'src/lang'
 import { fetchNative, globalFetch, textifyReadableStream } from 'src/ts/globalApi.svelte'
 import { LLMFlags, LLMFormat } from 'src/ts/model/modellist'
 import { registerClaudeObserver } from 'src/ts/observer.svelte'
@@ -466,7 +467,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
       const [accessKeyId, secretAccessKey, region] = key.split(':')
 
       if (!accessKeyId || !secretAccessKey || !region) {
-        throw new Error('The key assigned to this request is invalid.')
+        throw new Error(language.errors.anthropicCredentialInvalid)
       }
 
       return { accessKeyId, secretAccessKey, region }
@@ -711,7 +712,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
     if (!r.id) {
       return {
         type: 'fail',
-        result: 'No results URL returned from Claude batch request',
+        result: language.errors.claudeBatchResultMissing,
       }
     }
 
@@ -745,7 +746,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
               }
             }
             if (Date.now() - batchStartTime > BATCH_TIMEOUT) {
-              controller.error(new Error('Claude batch request timed out after 24 hours'))
+              controller.error(new Error(language.errors.claudeBatchTimedOut))
               return
             }
 
@@ -847,7 +848,7 @@ export async function requestClaude(arg: RequestDataArgumentExtended): Promise<r
                 return
               }
               if (batchData?.result?.type === 'expired') {
-                controller.error(new Error('Claude batch request expired'))
+                controller.error(new Error(language.errors.claudeBatchExpired))
                 return
               }
             }
@@ -1244,7 +1245,7 @@ async function requestClaudeToolStream(
               return
             }
             if (event?.type === 'error') {
-              throw new Error(event?.error?.message || 'Anthropic stream failed')
+              throw new Error(event?.error?.message || language.errors.anthropicStreamFailed)
             }
             const index = typeof event?.index === 'number' ? event.index : 0
             if (event?.type === 'content_block_start') {
@@ -1381,7 +1382,7 @@ async function requestClaudeToolStream(
           controller.enqueue({ '0': prefix })
         }
 
-        controller.error(new Error('Anthropic tool call limit reached'))
+        controller.error(new Error(language.errors.anthropicToolCallLimit))
       } catch (error) {
         controller.error(error)
       }

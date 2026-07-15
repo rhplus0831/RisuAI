@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer'
+import { language } from '../../lang'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type { ImageGenerationCredential, ImageGenerationRequest } from './imageGenerationProtocol'
@@ -32,18 +33,18 @@ export async function requestImageGeneration(
 
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined)
-    throw new Error(`Image generation failed (${response.status})`)
+    throw new Error(language.errors.imageGenerationFailed(response.status))
   }
 
   const contentType = response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
   if (!SUPPORTED_IMAGE_CONTENT_TYPES.has(contentType)) {
     await response.body?.cancel().catch(() => undefined)
-    throw new Error('Image generation response was malformed')
+    throw new Error(language.errors.imageGenerationResponseMalformed)
   }
 
   const bytes = await readBoundedResponse(response, MAX_IMAGE_RESPONSE_BYTES)
   if (bytes.byteLength === 0) {
-    throw new Error('Image generation response was empty')
+    throw new Error(language.errors.imageGenerationResponseEmpty)
   }
   return `data:${contentType};base64,${Buffer.from(bytes).toString('base64')}`
 }
@@ -52,7 +53,7 @@ async function readBoundedResponse(response: Response, maxBytes: number): Promis
   const declaredLength = Number(response.headers.get('content-length'))
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     await response.body?.cancel().catch(() => undefined)
-    throw new Error('Image generation response exceeded the size limit')
+    throw new Error(language.errors.imageGenerationResponseTooLarge)
   }
 
   const body = response.body
@@ -66,7 +67,7 @@ async function readBoundedResponse(response: Response, maxBytes: number): Promis
       if (done) break
       total += value.byteLength
       if (total > maxBytes) {
-        throw new Error('Image generation response exceeded the size limit')
+        throw new Error(language.errors.imageGenerationResponseTooLarge)
       }
       chunks.push(value)
     }

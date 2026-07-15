@@ -69,6 +69,9 @@ vi.mock('src/lang', () => ({
   language: {
     errors: {
       httpError: 'HTTP: ',
+      ttsFailed: (error: string) => `TTS Error: ${error}`,
+      gptSoVitsPathLookupFailed: 'Failed to Auto get path',
+      fishSpeechModelMissing: 'FishSpeech Model is not selected',
     },
   },
 }))

@@ -246,7 +246,7 @@
   async function fetchWavespeedModels() {
     const apiKey = wavespeedImageDraft.value.key
     if (!apiKey || apiKey.trim() === '') {
-      alertError('WaveSpeed API Key not set')
+      alertError(language.errors.waveSpeedCatalogApiKeyMissing)
       return []
     }
 
@@ -264,12 +264,12 @@
       try {
         responseData = typeof result === 'string' ? JSON.parse(result) : result
       } catch (e) {
-        alertError('Failed to parse WaveSpeed response')
+        alertError(language.errors.waveSpeedCatalogParseFailed)
         return
       }
 
       if (responseData.code !== 200 || !Array.isArray(responseData.data)) {
-        alertError('Invalid WaveSpeed API response')
+        alertError(language.errors.waveSpeedCatalogResponseInvalid)
         return
       }
 
@@ -295,9 +295,9 @@
         .sort((a, b) => a.name.localeCompare(b.name) || a.model_id.localeCompare(b.model_id))
 
       wavespeedModels = filteredModels
-      alertNormal(`Successfully loaded ${filteredModels.length} models`)
+      alertNormal(language.waveSpeedCatalogModelsLoaded(filteredModels.length))
     } catch (error) {
-      if (isFresh()) alertError(`Failed to fetch models: ${error}`)
+      if (isFresh()) alertError(language.errors.waveSpeedCatalogFetchFailed(String(error)))
     } finally {
       if (wavespeedModelFetchGuard.isLatest(token)) {
         isWavespeedLoading = false

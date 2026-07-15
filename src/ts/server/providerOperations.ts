@@ -1,3 +1,4 @@
+import { language } from '../../lang'
 import { MASKED_MODEL_PROFILE_SECRET } from '../model/modelProfileSecrets'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
 import type {
@@ -52,12 +53,12 @@ export async function requestProviderOperation<T>(
     signal: options.signal ?? undefined,
   })
   if (!response.ok) {
-    throw new Error(`Provider operation failed (${response.status})`)
+    throw new Error(language.errors.providerOperationFailed(response.status))
   }
 
   const body = (await response.json()) as Partial<ProviderOperationSuccess>
   if (!body || body.operation !== operation || !Object.prototype.hasOwnProperty.call(body, 'data')) {
-    throw new Error('Provider operation response was malformed')
+    throw new Error(language.errors.providerOperationResponseMalformed)
   }
   return body.data as T
 }

@@ -493,7 +493,7 @@ function createOllamaCloudFetch(endpoint: string, auth: string) {
       | 'DELETE'
     const body = init.body ?? (input instanceof Request ? await input.arrayBuffer() : undefined)
     if (method !== 'POST' || body === undefined) {
-      throw new Error('Ollama Cloud tool proxy only accepts POST requests with a body')
+      throw new Error(language.errors.ollamaCloudToolPostRequired)
     }
 
     const response = await fetchNative(endpoint, {
@@ -1694,7 +1694,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
   if (isCloud && arg.tools?.length && !cloudToolProtocol) {
     return {
       type: 'fail',
-      result: 'The selected Ollama Cloud request format does not support MCP tools.',
+      result: language.errors.ollamaCloudToolsUnsupported,
       noRetry: true,
     }
   }
@@ -1812,7 +1812,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
     return {
       type: 'fail',
-      result: 'Ollama tool call limit reached',
+      result: language.errors.ollamaToolCallLimit,
       noRetry: true,
     }
   }
@@ -1857,7 +1857,7 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
         )
         controller.enqueue({ '0': prefix })
       }
-      controller.error(new Error('Ollama tool call limit reached'))
+      controller.error(new Error(language.errors.ollamaToolCallLimit))
     },
   })
 

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { language } from '../../lang'
 import { OPENAI_TRANSCRIPTION_MAX_FILE_BYTES, requestOpenAITranscription } from './openAITranscription'
 
 const getProxyAuth = vi.hoisted(() => vi.fn(async () => 'browser-auth'))
@@ -41,14 +42,16 @@ describe('requestOpenAITranscription', () => {
   })
 
   it('rejects empty or oversized uploads before authentication or fetch', async () => {
-    await expect(requestOpenAITranscription(new File([], 'empty.mp3'))).rejects.toThrow('between 1 byte and 25 MiB')
+    await expect(requestOpenAITranscription(new File([], 'empty.mp3'))).rejects.toThrow(
+      language.errors.openAITranscriptionFileSize,
+    )
     const oversized = new Proxy(new File(['audio'], 'oversized.mp3'), {
       get(target, property, receiver) {
         if (property === 'size') return OPENAI_TRANSCRIPTION_MAX_FILE_BYTES + 1
         return Reflect.get(target, property, receiver)
       },
     })
-    await expect(requestOpenAITranscription(oversized)).rejects.toThrow('between 1 byte and 25 MiB')
+    await expect(requestOpenAITranscription(oversized)).rejects.toThrow(language.errors.openAITranscriptionFileSize)
     expect(getProxyAuth).not.toHaveBeenCalled()
     expect(fetchMock).not.toHaveBeenCalled()
   })
@@ -56,9 +59,9 @@ describe('requestOpenAITranscription', () => {
   it('rejects failed and malformed server responses', async () => {
     const file = new File(['audio'], 'sample.mp3')
     fetchMock.mockResolvedValueOnce(new Response('private upstream detail', { status: 502 }))
-    await expect(requestOpenAITranscription(file)).rejects.toThrow('OpenAI transcription failed (502)')
+    await expect(requestOpenAITranscription(file)).rejects.toThrow(language.errors.openAITranscriptionFailed(502))
 
     fetchMock.mockResolvedValueOnce(new Response('{"text":"not vtt"}'))
-    await expect(requestOpenAITranscription(file)).rejects.toThrow('response was malformed')
+    await expect(requestOpenAITranscription(file)).rejects.toThrow(language.errors.openAITranscriptionResponseMalformed)
   })
 })

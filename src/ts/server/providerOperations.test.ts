@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { language } from '../../lang'
 import { MASKED_MODEL_PROFILE_SECRET } from '../model/modelProfileSecrets'
 import { providerOperationCredential, requestProviderOperation } from './providerOperations'
 
@@ -76,12 +77,12 @@ describe('requestProviderOperation', () => {
   it('rejects failed and mismatched operation responses', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'provider_operation_failed' }, 502))
     await expect(requestProviderOperation('openrouter.models', { credential: { source: 'none' } })).rejects.toThrow(
-      'Provider operation failed (502)',
+      language.errors.providerOperationFailed(502),
     )
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ operation: 'nanogpt.models', data: [] }))
     await expect(requestProviderOperation('openrouter.models', { credential: { source: 'none' } })).rejects.toThrow(
-      'Provider operation response was malformed',
+      language.errors.providerOperationResponseMalformed,
     )
   })
 })

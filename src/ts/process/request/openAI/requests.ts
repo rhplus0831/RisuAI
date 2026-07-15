@@ -1012,7 +1012,7 @@ export async function requestHTTPOpenAI(
         const result = (db.simplifiedToolUse ? '' : (processTextResponse(dat) ?? '') + '\n\n') + callCode
 
         if (resRec.type === 'fail') {
-          alertError(`Failed to fetch model response after tool execution`)
+          alertError(language.errors.toolFollowupRequestFailed)
           return {
             type: 'success',
             result: result,
@@ -1492,7 +1492,7 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
     if (callCodes.length) prefix = [prefix, callCodes.join('\n\n')].filter(Boolean).join('\n\n')
   }
 
-  return { type: 'fail', result: 'OpenAI Responses tool call limit reached', noRetry: true }
+  return { type: 'fail', result: language.errors.openAIResponsesToolCallLimit, noRetry: true }
 }
 
 function getTranStream(arg: RequestDataArgumentExtended): TransformStream<Uint8Array, StreamResponseChunk> {
@@ -1815,7 +1815,7 @@ function wrapToolStream(
             } while (attempt <= db.requestRetrys) // Retry up to db.requestRetrys times
 
             if (errorFlag) {
-              alertError(`Failed to fetch model response after tool execution`)
+              alertError(language.errors.toolFollowupRequestFailed)
               return controller.close()
             }
 

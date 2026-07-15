@@ -546,7 +546,7 @@ export async function sayTTS(character: character, text: string) {
             body.ref_audio_path =
               path.data.message + '/public/audio/' + character.gptSoVitsConfig.ref_audio_data.fileName
           } else {
-            throw new Error('Failed to Auto get path')
+            throw new Error(language.errors.gptSoVitsPathLookupFailed)
           }
         } else {
           body.ref_audio_path =
@@ -602,7 +602,7 @@ export async function sayTTS(character: character, text: string) {
       }
       case 'fishspeech': {
         if (character.fishSpeechConfig.model._id === '') {
-          throw new Error('FishSpeech Model is not selected')
+          throw new Error(language.errors.fishSpeechModelMissing)
         }
 
         const response = await requestCredentialedTtsAudio(
@@ -638,7 +638,7 @@ export async function sayTTS(character: character, text: string) {
       alertError(`${language.errors.httpError}${error.status}`)
       return
     }
-    alertError(`TTS Error: ${error}`)
+    alertError(language.errors.ttsFailed(String(error)))
   }
 }
 
