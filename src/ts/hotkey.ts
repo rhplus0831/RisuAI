@@ -1,5 +1,13 @@
 import { get } from 'svelte/store'
-import { alertMd, alertSelect, alertToast, alertWait, doingAlert, alertRequestLogs } from './alert'
+import {
+  alertMd,
+  alertSelect,
+  alertToast,
+  alertWait,
+  doingAlert,
+  alertRequestLogs,
+  cardExportCancelMessage,
+} from './alert'
 import { getDatabase, selectModelPreset, type Database } from './storage/database.svelte'
 import {
   alertStore,
@@ -235,7 +243,11 @@ export function initHotkey() {
     }
     if (ev.key === 'Escape') {
       if (doingAlert()) {
-        alertToast('Alert Closed')
+        if (get(alertStore).type === 'cardexport') {
+          alertStore.set({ type: 'none', msg: cardExportCancelMessage() })
+        } else {
+          alertToast('Alert Closed')
+        }
       }
       if (get(settingsOpen)) {
         settingsOpen.set(false)

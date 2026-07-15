@@ -254,7 +254,28 @@ export async function alertPluginConfirm(msg: string) {
   return get(alertStoreImported).msg === 'yes'
 }
 
-export async function alertCardExport(type: string = '') {
+export interface CardExportResult {
+  type: string
+  type2: string
+}
+
+export function cardExportCancelMessage(type2 = ''): string {
+  return JSON.stringify({ type: 'cancel', type2 })
+}
+
+export function parseCardExportResult(message: string): CardExportResult {
+  try {
+    const result = JSON.parse(message) as Partial<CardExportResult> | null
+    if (result && typeof result.type === 'string' && typeof result.type2 === 'string') {
+      return { type: result.type, type2: result.type2 }
+    }
+  } catch {
+    // Modal dismissal can replace the alert before it writes a result.
+  }
+  return { type: 'cancel', type2: '' }
+}
+
+export async function alertCardExport(type: string = ''): Promise<CardExportResult> {
   alertStoreImported.set({
     type: 'cardexport',
     msg: '',
@@ -263,10 +284,7 @@ export async function alertCardExport(type: string = '') {
 
   await waitAlert()
 
-  return JSON.parse(get(alertStoreImported).msg) as {
-    type: string
-    type2: string
-  }
+  return parseCardExportResult(get(alertStoreImported).msg)
 }
 
 export async function alertTOS() {

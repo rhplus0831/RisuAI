@@ -44,7 +44,7 @@ vi.mock('src/lang', () => ({
   },
 }))
 
-import { alertError, alertProgress, alertTOS } from './alert'
+import { alertError, alertProgress, alertTOS, cardExportCancelMessage, parseCardExportResult } from './alert'
 
 beforeEach(() => {
   vi.unstubAllEnvs()
@@ -90,6 +90,18 @@ describe('alertError', () => {
     } finally {
       consoleErrorSpy.mockRestore()
     }
+  })
+})
+
+describe('card export results', () => {
+  it('preserves valid selections', () => {
+    expect(parseCardExportResult('{"type":"ccv2","type2":"png"}')).toEqual({ type: 'ccv2', type2: 'png' })
+  })
+
+  it('turns empty and malformed dismissal values into cancellation', () => {
+    expect(parseCardExportResult('')).toEqual({ type: 'cancel', type2: '' })
+    expect(parseCardExportResult('{"type":"ccv2"}')).toEqual({ type: 'cancel', type2: '' })
+    expect(parseCardExportResult(cardExportCancelMessage('charx'))).toEqual({ type: 'cancel', type2: 'charx' })
   })
 })
 

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { alertGenerationInfoStore, type alertData } from '../../ts/alert'
+  import { alertGenerationInfoStore, cardExportCancelMessage, type alertData } from '../../ts/alert'
 
   import { getCharImage } from '../../ts/characters'
   import { ParseMarkdown } from '../../ts/parser/parser.svelte'
@@ -218,6 +218,13 @@
     }
 
     return data.submsg
+  }
+
+  function cancelCardExport() {
+    alertStore.set({
+      type: 'none',
+      msg: cardExportCancelMessage(cardExportType2),
+    })
   }
 </script>
 
@@ -814,7 +821,7 @@
     class="fixed top-0 left-0 h-full w-full bg-black/50 flex flex-col z-50 items-center justify-center"
     role="button"
     tabindex="0"
-    onclick={close}>
+    onclick={cancelCardExport}>
     <div
       class="bg-darkbg rounded-md p-4 max-w-full flex flex-col w-2xl"
       role="button"
@@ -826,17 +833,7 @@
         <span>
           {language.shareExport}
         </span>
-        <button
-          class="float-right text-textcolor2 hover:text-green-500"
-          onclick={() => {
-            alertStore.set({
-              type: 'none',
-              msg: JSON.stringify({
-                type: 'cancel',
-                type2: cardExportType2,
-              }),
-            })
-          }}>
+        <button class="float-right text-textcolor2 hover:text-green-500" onclick={cancelCardExport}>
           <XIcon />
         </button>
       </h1>
