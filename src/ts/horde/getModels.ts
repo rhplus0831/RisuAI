@@ -1,37 +1,42 @@
-import { sleep } from '../util'
-
 interface HordeModel {
   performance: number
   queued: number
   jobs: number
   eta: number
   type: 'text'
-  name: 'aphrodite\/Undi95\/Toppy-M-7B'
+  name: string
   count: number
 }
 
-let modelList: HordeModel[] | 'loading' = null
+let modelList: HordeModel[] | null = null
+let modelRequest: Promise<HordeModel[]> | null = null
 
 export async function getHordeModels(): Promise<HordeModel[]> {
-  if (modelList === null) {
+  if (modelList) return modelList
+  if (modelRequest) return modelRequest
+
+  modelRequest = (async () => {
     try {
-      modelList = 'loading'
-      const models = await fetch('https://stablehorde.net/api/v2/status/models?type=text')
-      const res = await models.json()
-      modelList = res
-      return res
-    } catch (error) {
-      modelList = null
+      const response = await fetch('https://stablehorde.net/api/v2/status/models?type=text')
+      if (!response.ok) return []
+
+      const body: unknown = await response.json()
+      if (!Array.isArray(body) || !body.every(isHordeModel)) return []
+
+      modelList = body
+      return modelList
+    } catch {
       return []
+    } finally {
+      modelRequest = null
     }
-  } else if (modelList === 'loading') {
-    while (true) {
-      if (modelList !== 'loading') {
-        return getHordeModels()
-      }
-      await sleep(10)
-    }
-  } else {
-    return modelList
-  }
+  })()
+
+  return modelRequest
+}
+
+function isHordeModel(value: unknown): value is HordeModel {
+  if (!value || typeof value !== 'object') return false
+  const model = value as Record<string, unknown>
+  return typeof model.name === 'string' && model.name.trim().length > 0 && typeof model.performance === 'number'
 }
