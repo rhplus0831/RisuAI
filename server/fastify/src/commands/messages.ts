@@ -7,6 +7,8 @@ import { readJsonObject } from './characters.js'
 
 type JsonRecord = Record<string, unknown>
 
+const SERVER_UNLOADED_CHAT_MESSAGE_MARKER = '__risuServerUnloadedMessage'
+
 export interface MessageRecord extends JsonRecord {
   role: 'user' | 'char'
   data: string
@@ -245,6 +247,9 @@ function updateChatMessageReferences(chat: ChatRecord, renamed: ReadonlyMap<stri
 }
 
 function validateMessageRecord(record: JsonRecord, label: string, options: { partial?: boolean } = {}): void {
+  if (record[SERVER_UNLOADED_CHAT_MESSAGE_MARKER] === true) {
+    throw new ValidationError(`${label} is an unloaded server-message placeholder`)
+  }
   if ((!options.partial || 'chatId' in record) && (typeof record.chatId !== 'string' || record.chatId.trim() === '')) {
     throw new ValidationError(`${label}.chatId must be a non-empty string`)
   }

@@ -201,6 +201,27 @@ function readChatMessageIds(chatId: string): string[] {
   }
 }
 
+function readChatMessages(chatId: string): Record<string, unknown>[] {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    const rows = db
+      .prepare('SELECT json FROM messages WHERE chat_id = ? AND alternate = 0 ORDER BY seq')
+      .all(chatId) as Array<{ json: string }>
+    return rows.map((row) => JSON.parse(row.json) as Record<string, unknown>)
+  } finally {
+    db.close()
+  }
+}
+
+function readRevision(): number {
+  const db = new DatabaseSync(path.join(harness.dataDir, 'risu.db'))
+  try {
+    return (db.prepare('SELECT revision FROM schema_version WHERE id = 1').get() as { revision: number }).revision
+  } finally {
+    db.close()
+  }
+}
+
 function rowidSnapshot(): { characters: Record<string, number>; chats: Record<string, number> } {
   return {
     characters: tableRowidsById(harness.dataDir, 'characters'),
@@ -788,7 +809,12 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
           name: 'Forked',
           message: [
             { role: 'user', data: 'forked 1', chatId: 'fork-msg-1' },
-            { role: 'char', data: 'forked 2', chatId: 'fork-msg-2' },
+            {
+              role: 'char',
+              data: 'forked 2',
+              chatId: 'fork-msg-2',
+              extensionPayload: { preserved: true },
+            },
           ],
         },
       },
@@ -806,7 +832,68 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
     expect(readCharacter('char-a').chatPage).toBe(0)
     // The forked chat's messages persisted; the source chat's message survived.
     expect(readChatMessageIds('fork-1')).toEqual(['fork-msg-1', 'fork-msg-2'])
+    expect(readChatMessages('fork-1')[1]).toMatchObject({
+      chatId: 'fork-msg-2',
+      extensionPayload: { preserved: true },
+    })
     expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+  })
+
+  it('rejects unloaded placeholders in fork and create transcripts without writing anything', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const appended = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a-1/messages',
+      payload: {
+        baseRevision: revision,
+        message: { role: 'user', data: 'source message', chatId: 'src-msg-1' },
+      },
+    })
+    const before = rowidSnapshot()
+
+    const placeholder = {
+      role: 'char',
+      data: '',
+      chatId: 'unloaded-placeholder',
+      disabled: true,
+      isComment: true,
+      __risuServerUnloadedMessage: true,
+    }
+    const requests: CommandRequest[] = [
+      {
+        method: 'POST',
+        url: '/api/v1/commands/chats/chat-a-1/fork',
+        payload: {
+          baseRevision: appended.revision,
+          chat: { id: 'fork-placeholder', name: 'Invalid fork', message: [placeholder] },
+        },
+      },
+      {
+        method: 'POST',
+        url: '/api/v1/commands/characters/char-a/chats',
+        payload: {
+          baseRevision: appended.revision,
+          chat: { id: 'created-placeholder', name: 'Invalid chat', message: [placeholder] },
+        },
+      },
+    ]
+    const inject = harness.app.inject as unknown as (request: CommandRequest) => Promise<CommandResponse>
+
+    for (const request of requests) {
+      const res = await inject({
+        ...request,
+        headers: { 'risu-auth': assertion },
+      })
+      expect(res.statusCode).toBe(400)
+      expect((res.json() as { error: string }).error).toBe('messages[0] is an unloaded server-message placeholder')
+    }
+
+    expect(readRevision()).toBe(appended.revision)
+    expectNoChurn(before)
+    expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-2'])
+    expect(readChatMessageIds('chat-a-1')).toEqual(['src-msg-1'])
+    expect(readChatMessageIds('fork-placeholder')).toEqual([])
+    expect(readChatMessageIds('created-placeholder')).toEqual([])
   })
 
   it('rejects a forked message whose id already exists', async () => {
@@ -838,5 +925,46 @@ describe('Phase 3 fork (character row + chat rows + surgical messages)', () => {
     expect((res.json() as { error: string }).error).toContain('Duplicate message id')
     // The rejected fork wrote nothing: no new chat row.
     expect(readChatOrder('char-a')).toEqual(['chat-a-1', 'chat-a-2'])
+  })
+})
+
+describe('Phase 3 message replacement placeholder guard', () => {
+  it('rejects an unloaded placeholder atomically instead of replacing the transcript', async () => {
+    const revision = await importDatabase(seedDatabase())
+    const appended = await runCommand({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-a-1/messages',
+      payload: {
+        baseRevision: revision,
+        message: { role: 'user', data: 'source message', chatId: 'src-msg-1' },
+      },
+    })
+    const before = rowidSnapshot()
+
+    const res = await harness.app.inject({
+      method: 'PUT',
+      url: '/api/v1/commands/chats/chat-a-1/messages',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: appended.revision,
+        messages: [
+          { role: 'user', data: 'replacement', chatId: 'replacement-msg' },
+          {
+            role: 'char',
+            data: '',
+            chatId: 'unloaded-placeholder',
+            disabled: true,
+            isComment: true,
+            __risuServerUnloadedMessage: true,
+          },
+        ],
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error).toBe('messages[1] is an unloaded server-message placeholder')
+    expect(readRevision()).toBe(appended.revision)
+    expectNoChurn(before)
+    expect(readChatMessages('chat-a-1')).toEqual([{ role: 'user', data: 'source message', chatId: 'src-msg-1' }])
   })
 })
