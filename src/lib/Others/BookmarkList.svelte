@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte'
   import { XIcon, TrashIcon, PencilIcon, BookOpenCheckIcon, BookLockIcon, ArrowRightIcon } from '@lucide/svelte'
   import Chat from '../ChatScreens/Chat.svelte'
   import { getCharImage } from 'src/ts/characters'
@@ -21,6 +20,7 @@
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   const close = () => ($bookmarkListOpen = false)
   let chara = $derived(getDatabase().characters[$selectedCharID])
@@ -62,17 +62,12 @@
   let expandedBookmarks = $state(new Set<string>())
   let expandAll = $state(false)
 
-  onMount(() => {
-    const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        close()
-      }
-    }
-    window.addEventListener('keydown', handleKeydown)
-    return () => {
-      window.removeEventListener('keydown', handleKeydown)
-    }
-  })
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  }
 
   function toggleExpand(chatId: string) {
     if (expandAll) {
@@ -193,22 +188,26 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  data-modal-root
   class="fixed top-0 left-0 w-full h-full z-30 bg-black/50 flex justify-center items-center"
   onclick={(event) => {
     if (event.target === event.currentTarget) {
       close()
     }
-  }}
-  onkeydown={(event) => {
-    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
-      close()
-    }
   }}>
-  <div class="bg-darkbg p-3 rounded-md flex flex-col max-w-4xl w-full max-h-[90%] overflow-y-auto">
+  <div
+    use:modalFocusTrap
+    class="bg-darkbg p-3 rounded-md flex flex-col max-w-4xl w-full max-h-[90%] overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-bookmark-list-title"
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor mb-4">
-      <h2 class="text-xl font-bold">{language.bookmarks}</h2>
+      <h2 id="risu-bookmark-list-title" class="text-xl font-bold">{language.bookmarks}</h2>
       <div class="ml-auto flex items-center gap-2">
         <button
           class="text-textcolor2 hover:text-green-500"
@@ -221,7 +220,11 @@
             <BookOpenCheckIcon size={20} />
           {/if}
         </button>
-        <button class="text-textcolor2 hover:text-green-500" aria-label={language.close} onclick={close}>
+        <button
+          data-modal-initial-focus
+          class="text-textcolor2 hover:text-green-500"
+          aria-label={language.close}
+          onclick={close}>
           <XIcon size={24} />
         </button>
       </div>

@@ -4,6 +4,7 @@
   import { loadoutModalStore } from 'src/ts/stores.svelte'
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
@@ -25,6 +26,13 @@
 
   function close() {
     loadoutModalStore.open = false
+  }
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
   }
 
   const RECENT_LIMIT = 3
@@ -109,16 +117,29 @@
   </div>
 {/snippet}
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  data-modal-root
   class="fixed inset-0 z-40 bg-black/60 flex justify-center items-center"
-  role="presentation"
   onclick={(e) => {
     if (e.target === e.currentTarget) close()
   }}>
-  <div class="bg-darkbg rounded-lg flex flex-col w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-xl">
+  <div
+    use:modalFocusTrap
+    class="bg-darkbg rounded-lg flex flex-col w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-xl"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-loadout-modal-title"
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}>
     <div class="flex items-center justify-between px-5 py-3 border-b border-textcolor/10 shrink-0">
-      <span class="text-base font-semibold text-textcolor/90">Select Loadout</span>
-      <button class="text-textcolor/50 hover:text-textcolor/90 transition-colors" onclick={close} aria-label="Close">
+      <span id="risu-loadout-modal-title" class="text-base font-semibold text-textcolor/90">Select Loadout</span>
+      <button
+        data-modal-initial-focus
+        class="text-textcolor/50 hover:text-textcolor/90 transition-colors"
+        onclick={close}
+        aria-label="Close">
         <XIcon size={18} />
       </button>
     </div>

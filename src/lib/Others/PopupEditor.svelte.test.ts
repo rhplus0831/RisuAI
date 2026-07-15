@@ -25,6 +25,7 @@ vi.mock('./MonacoEditor.svelte', async () => {
 vi.mock('src/lang', () => ({
   language: {
     customPromptTemplateToggle: 'Toggles',
+    close: 'Close',
     edit: 'Edit',
     loading: 'Loading',
     preview: 'Preview',
@@ -46,6 +47,13 @@ function deferred<T>() {
 
 let component: Parameters<typeof unmount>[0] | undefined
 let target: HTMLElement
+let opener: HTMLButtonElement
+
+async function settle(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await tick()
+}
 
 beforeEach(() => {
   popupMocks.tokenize.mockReset()
@@ -53,8 +61,10 @@ beforeEach(() => {
   popUpEditorStore.open = true
   popUpEditorStore.language = 'markdown'
   popUpEditorStore.value = 'first text'
+  opener = document.createElement('button')
+  opener.textContent = 'Open editor'
   target = document.createElement('div')
-  document.body.appendChild(target)
+  document.body.append(opener, target)
 })
 
 afterEach(() => {
@@ -62,6 +72,7 @@ afterEach(() => {
     unmount(component)
     component = undefined
   }
+  opener.remove()
   target.remove()
 })
 
@@ -92,5 +103,34 @@ describe('PopupEditor token count', () => {
 
     expect(target.textContent).toContain('tokens: 2')
     expect(target.textContent).not.toContain('tokens: 1')
+  })
+
+  it('contains focus and restores the opener after Escape closes the editor', async () => {
+    opener.focus()
+    component = mount(PopupEditor, { target })
+    await settle()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const backdrop = dialog?.parentElement
+    const close = dialog?.querySelector<HTMLElement>('[data-modal-initial-focus]')
+    if (!dialog || !backdrop || !close) throw new Error('Popup editor modal not found')
+    expect(backdrop.hasAttribute('data-modal-root')).toBe(true)
+    expect(dialog.getAttribute('aria-labelledby')).toBe('risu-popup-editor-title')
+    expect(opener.inert).toBe(true)
+    expect(document.activeElement).toBe(close)
+
+    opener.focus()
+    expect(document.activeElement).toBe(close)
+
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    close.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(popUpEditorStore.open).toBe(false)
+
+    unmount(component)
+    component = undefined
+    await settle()
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
   })
 })

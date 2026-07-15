@@ -7,6 +7,7 @@
   import { risuChatParser } from 'src/ts/parser/parser.svelte'
   import { tokenize } from 'src/ts/tokenizer'
   import Toggles from '../SideBars/Toggles.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   let languageMode = $state(popUpEditorStore.language || 'markdown')
   let previewing = $state(false)
@@ -14,6 +15,17 @@
   let MonacoComponent: typeof MonacoEditorType | null = $state(null)
   let showToggles = $state(false)
   let tokenCountRun = 0
+
+  function close(): void {
+    popUpEditorStore.open = false
+  }
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  }
 
   let chatParserValue = $derived.by(() => {
     if (!previewing) {
@@ -57,11 +69,20 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
+  data-modal-root
   class="fixed top-0 left-0 w-full h-full bg-black/50 backdrop-blur-sm flex items-center justify-center z-50"
-  onclick={() => (popUpEditorStore.open = false)}>
-  <div class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2" onclick={(e) => e.stopPropagation()}>
+  onclick={close}>
+  <div
+    use:modalFocusTrap
+    class="bg-darkbg rounded-lg p-4 w-11/12 h-11/12 flex flex-col gap-2"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-popup-editor-title"
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}
+    onclick={(e) => e.stopPropagation()}>
     <div class="flex items-center justify-between">
-      <h2 class="text-xl font-bold">Popup Editor</h2>
+      <h2 id="risu-popup-editor-title" class="text-xl font-bold">Popup Editor</h2>
       <div class="flex items-center gap-2">
         {#if ['markdown', 'cbs'].includes(languageMode)}
           {#if !previewing}
@@ -79,8 +100,10 @@
           <span class="bg-bgcolor border-none rounded px-2 py-1 text-sm">{languageMode}</span>
         {/if}
         <button
+          data-modal-initial-focus
           class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition"
-          onclick={() => (popUpEditorStore.open = false)}>
+          aria-label={language.close}
+          onclick={close}>
           X
         </button>
       </div>

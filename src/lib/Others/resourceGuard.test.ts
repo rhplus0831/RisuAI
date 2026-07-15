@@ -1,4 +1,5 @@
 import { mount, tick, unmount } from 'svelte'
+import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const platformState = vi.hoisted(() => ({ isFastifyServer: true }))
@@ -300,6 +301,43 @@ describe('server resource guarded UI paths', () => {
     await tick()
     expect(target.textContent).toContain('New name')
     expect(target.textContent).not.toContain('Old name')
+  })
+
+  it('contains bookmark focus and restores the opener after Escape', async () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Open bookmarks'
+    document.body.insertBefore(opener, target)
+    bookmarkListOpen.set(true)
+    opener.focus()
+
+    component = mount(BookmarkList, { target })
+    await Promise.resolve()
+    await tick()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const backdrop = dialog?.parentElement
+    const close = dialog?.querySelector<HTMLElement>('[data-modal-initial-focus]')
+    if (!dialog || !backdrop || !close) throw new Error('Bookmark modal not found')
+    expect(backdrop.hasAttribute('data-modal-root')).toBe(true)
+    expect(dialog.getAttribute('aria-labelledby')).toBe('risu-bookmark-list-title')
+    expect(opener.inert).toBe(true)
+    expect(document.activeElement).toBe(close)
+
+    opener.focus()
+    expect(document.activeElement).toBe(close)
+
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    close.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(get(bookmarkListOpen)).toBe(false)
+
+    unmount(component)
+    component = undefined
+    await Promise.resolve()
+    await tick()
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 
   it('removes bookmarks immediately while the command patch is pending', async () => {
