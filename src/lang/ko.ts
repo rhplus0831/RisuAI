@@ -1,4 +1,9 @@
 export const languageKorean = {
+  secretInput: {
+    savedPlaceholder: '저장된 인증 정보',
+    savedStatus: '인증 정보가 저장되어 있습니다.',
+    clearSaved: '저장된 인증 정보 지우기',
+  },
   formating: {
     main: '메인 프롬프트',
     jailbreak: '탈옥 프롬프트',

@@ -1,4 +1,9 @@
 export const languageSpanish = {
+  secretInput: {
+    savedPlaceholder: 'Credencial guardada',
+    savedStatus: 'Hay una credencial guardada.',
+    clearSaved: 'Borrar credencial guardada',
+  },
   formating: {
     main: 'Prompt Principal',
     jailbreak: 'Prompt Jailbreak',

@@ -3,6 +3,7 @@
   import { language } from 'src/lang'
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import SecretInput from 'src/lib/UI/GUI/SecretInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
@@ -196,9 +197,9 @@
             <OptionInput value="18">OpenAIResponseAPI</OptionInput>
           </SelectInput>
           <span class="text-textcolor">{language.proxyAPIKey}</span>
-          <TextInput
-            hideText
+          <SecretInput
             size={'sm'}
+            ownerKey={customModelsDraft.value[index]?.id}
             bind:value={
               () => customModelsDraft.value[index]?.key ?? '', (value) => updateCustomModel(index, { key: value })
             } />

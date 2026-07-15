@@ -46,6 +46,7 @@
   } from 'src/ts/process/tts'
   import { getFileSrc } from 'src/ts/globalApi.svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import SecretInput from '../UI/GUI/SecretInput.svelte'
   import NumberInput from '../UI/GUI/NumberInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -1712,9 +1713,9 @@
           placeholder="https://api.openai.com/v1" />
 
         <span class="text-textcolor">API Key (overrides global)</span>
-        <TextInput
+        <SecretInput
           className="mb-4 mt-2"
-          hideText
+          ownerKey={characterDraft.value.chaId}
           bind:value={characterDraft.value.oaiTTSConfig.apiKey}
           placeholder="Leave empty to use global OpenAI API key" />
 

@@ -1,4 +1,9 @@
 export const languageGerman = {
+  secretInput: {
+    savedPlaceholder: 'Gespeicherte Zugangsdaten',
+    savedStatus: 'Zugangsdaten sind gespeichert.',
+    clearSaved: 'Gespeicherte Zugangsdaten löschen',
+  },
   formating: {
     main: 'Haupt-Anweisung',
     jailbreak: 'Jailbreak Anweisung',

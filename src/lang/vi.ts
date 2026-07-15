@@ -1,4 +1,9 @@
 export const languageVietnamese = {
+  secretInput: {
+    savedPlaceholder: 'Thông tin xác thực đã lưu',
+    savedStatus: 'Đã lưu thông tin xác thực.',
+    clearSaved: 'Xóa thông tin xác thực đã lưu',
+  },
   formating: {
     main: 'Lời nhắc chính',
     jailbreak: 'Lời nhắc bẻ khóa',

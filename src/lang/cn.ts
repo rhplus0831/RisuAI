@@ -1,4 +1,9 @@
 export const languageChinese = {
+  secretInput: {
+    savedPlaceholder: '已保存的凭据',
+    savedStatus: '已保存凭据。',
+    clearSaved: '清除已保存的凭据',
+  },
   formating: {
     main: '主提示词',
     jailbreak: '越狱提示词',

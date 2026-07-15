@@ -1,6 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import SecretInput from '../UI/GUI/SecretInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
@@ -96,14 +97,19 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
   <span class="text-textcolor text-lg">OpenAI API Key</span>
-  <TextInput hideText size="sm" marginBottom bind:value={hypaV3KeyDraft.value} disabled={running} />
+  <SecretInput size="sm" marginBottom ownerKey="hypaV3Key" bind:value={hypaV3KeyDraft.value} disabled={running} />
 {/if}
 
 {#if model === 'custom'}
   <span class="text-textcolor text-lg">URL</span>
   <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} disabled={running} />
   <span class="text-textcolor text-lg">Key/Password</span>
-  <TextInput hideText size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} disabled={running} />
+  <SecretInput
+    size="sm"
+    marginBottom
+    ownerKey="hypaCustomSettings.key"
+    bind:value={hypaCustomSettingsDraft.value.key}
+    disabled={running} />
   <span class="text-textcolor text-lg">Request Model</span>
   <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} disabled={running} />
 {/if}

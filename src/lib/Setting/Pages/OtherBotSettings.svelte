@@ -8,6 +8,7 @@
   import { saveAsset, downloadFile, globalFetch } from 'src/ts/globalApi.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import SecretInput from 'src/lib/UI/GUI/SecretInput.svelte'
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
@@ -659,7 +660,12 @@
       <span class="text-textcolor mt-2">Novel AI {language.providerURL}</span>
       <TextInput size="sm" marginBottom placeholder="https://image.novelai.net" bind:value={NAIImgUrlDraft.value} />
       <span class="text-textcolor">API Key</span>
-      <TextInput hideText size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
+      <SecretInput
+        size="sm"
+        marginBottom
+        placeholder="pst-..."
+        ownerKey="NAIApiKey"
+        bind:value={NAIApiKeyDraft.value} />
 
       <span class="text-textcolor">Model</span>
       <SelectInput className="mb-4" bind:value={NAIImgModelDraft.value}>
@@ -913,7 +919,7 @@
 
     {#if sdProviderDraft.value === 'dalle'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput hideText size="sm" marginBottom placeholder="sk-..." bind:value={openAIKeyDraft.value} />
+      <SecretInput size="sm" marginBottom placeholder="sk-..." ownerKey="openAIKey" bind:value={openAIKeyDraft.value} />
 
       <span class="text-textcolor mt-4">Dall-E Quality</span>
       <SelectInput className="mt-2 mb-4" bind:value={dallEQualityDraft.value}>
@@ -924,7 +930,12 @@
 
     {#if sdProviderDraft.value === 'stability'}
       <span class="text-textcolor">Stability API Key</span>
-      <TextInput hideText size="sm" marginBottom placeholder="..." bind:value={stabilityKeyDraft.value} />
+      <SecretInput
+        size="sm"
+        marginBottom
+        placeholder="..."
+        ownerKey="stabilityKey"
+        bind:value={stabilityKeyDraft.value} />
 
       <span class="text-textcolor">Stability Model</span>
       <SelectInput className="mt-2 mb-4" bind:value={stabilityModelDraft.value}>
@@ -996,7 +1007,7 @@
 
     {#if sdProviderDraft.value === 'fal'}
       <span class="text-textcolor">Fal.ai API Key</span>
-      <TextInput hideText size="sm" marginBottom placeholder="..." bind:value={falTokenDraft.value} />
+      <SecretInput size="sm" marginBottom placeholder="..." ownerKey="falToken" bind:value={falTokenDraft.value} />
 
       <span class="text-textcolor mt-4">Width</span>
       <NumberInput size="sm" marginBottom min={0} max={2048} bind:value={sdConfigDraft.value.width} />
@@ -1022,11 +1033,11 @@
 
     {#if sdProviderDraft.value === 'Imagen'}
       <span class="text-textcolor mt-2">GoogleAI API Key</span>
-      <TextInput
+      <SecretInput
         marginBottom={true}
         size={'sm'}
         placeholder="..."
-        hideText
+        ownerKey="google.accessToken"
         bind:value={googleDraft.value.accessToken} />
 
       <span class="text-textcolor">Model</span>
@@ -1071,7 +1082,12 @@
         bind:value={openaiCompatImageDraft.value.url} />
 
       <span class="text-textcolor">API Key</span>
-      <TextInput size="sm" marginBottom placeholder="sk-..." hideText bind:value={openaiCompatImageDraft.value.key} />
+      <SecretInput
+        size="sm"
+        marginBottom
+        placeholder="sk-..."
+        ownerKey="openaiCompatImage.key"
+        bind:value={openaiCompatImageDraft.value.key} />
 
       <span class="text-textcolor">Model</span>
       <TextInput size="sm" marginBottom placeholder="dall-e-3" bind:value={openaiCompatImageDraft.value.model} />
@@ -1096,7 +1112,12 @@
 
     {#if sdProviderDraft.value === 'wavespeed'}
       <span class="text-textcolor">API Key</span>
-      <TextInput size="sm" marginBottom placeholder="sk-..." hideText bind:value={wavespeedImageDraft.value.key} />
+      <SecretInput
+        size="sm"
+        marginBottom
+        placeholder="sk-..."
+        ownerKey="wavespeedImage.key"
+        bind:value={wavespeedImageDraft.value.key} />
 
       <span class="text-textcolor">Model</span>
       <button
@@ -1202,22 +1223,27 @@
     <CheckInput bind:check={ttsAutoSpeechDraft.value} />
 
     <span class="text-textcolor mt-2">ElevenLabs API key</span>
-    <TextInput hideText size="sm" marginBottom bind:value={elevenLabKeyDraft.value} />
+    <SecretInput ownerKey="elevenLabKey" size="sm" marginBottom bind:value={elevenLabKeyDraft.value} />
 
     <span class="text-textcolor mt-2">VOICEVOX URL</span>
     <TextInput size="sm" marginBottom bind:value={voicevoxUrlDraft.value} />
 
     <span class="text-textcolor">OpenAI Key</span>
-    <TextInput hideText size="sm" marginBottom bind:value={openAIKeyDraft.value} />
+    <SecretInput ownerKey="openAIKey" size="sm" marginBottom bind:value={openAIKeyDraft.value} />
 
     <span class="text-textcolor mt-2">NovelAI API key</span>
-    <TextInput hideText size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
+    <SecretInput ownerKey="NAIApiKey" size="sm" marginBottom placeholder="pst-..." bind:value={NAIApiKeyDraft.value} />
 
     <span class="text-textcolor">Huggingface Key</span>
-    <TextInput hideText size="sm" marginBottom bind:value={huggingfaceKeyDraft.value} placeholder="hf_..." />
+    <SecretInput
+      ownerKey="huggingfaceKey"
+      size="sm"
+      marginBottom
+      bind:value={huggingfaceKeyDraft.value}
+      placeholder="hf_..." />
 
     <span class="text-textcolor">fish-speech API Key</span>
-    <TextInput hideText size="sm" marginBottom bind:value={fishSpeechKeyDraft.value} />
+    <SecretInput ownerKey="fishSpeechKey" size="sm" marginBottom bind:value={fishSpeechKeyDraft.value} />
   </Accordion>
 {/if}
 
@@ -1527,21 +1553,25 @@
 
     {#if hypaModelDraft.value === 'openai3small' || hypaModelDraft.value === 'openai3large' || hypaModelDraft.value === 'ada'}
       <span class="text-textcolor">OpenAI API Key</span>
-      <TextInput hideText size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
+      <SecretInput ownerKey="hypaV3Key" size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
     {/if}
 
     {#if hypaModelDraft.value === 'custom'}
       <span class="text-textcolor">URL</span>
       <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} />
       <span class="text-textcolor">Key/Password</span>
-      <TextInput hideText size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
+      <SecretInput
+        ownerKey="hypaCustomSettings.key"
+        size="sm"
+        marginBottom
+        bind:value={hypaCustomSettingsDraft.value.key} />
       <span class="text-textcolor">Request Model</span>
       <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
     {/if}
 
     {#if hypaModelDraft.value === 'voyageContext3'}
       <span class="text-textcolor">Voyage API Key</span>
-      <TextInput size="sm" marginBottom hideText bind:value={voyageApiKeyDraft.value} />
+      <SecretInput ownerKey="voyageApiKey" size="sm" marginBottom bind:value={voyageApiKeyDraft.value} />
     {/if}
   </Accordion>
 {/if}

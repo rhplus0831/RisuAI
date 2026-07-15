@@ -9,6 +9,7 @@
   import DropList from 'src/lib/SideBars/DropList.svelte'
   import { PlusIcon, TrashIcon, HardDriveUploadIcon, DownloadIcon, UploadIcon } from '@lucide/svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
+  import SecretInput from 'src/lib/UI/GUI/SecretInput.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
@@ -1092,11 +1093,11 @@
 
     {#if usesGoogleCloudProvider}
       <span class="text-textcolor">GoogleAI API Key</span>
-      <TextInput
+      <SecretInput
         marginBottom={true}
         size={'sm'}
         placeholder="..."
-        hideText
+        ownerKey="google.accessToken"
         bind:value={googleDraft.value.accessToken} />
     {/if}
     {#if usesVertexAIProvider}
@@ -1115,11 +1116,11 @@
         bind:value={vertexClientEmailDraft.value}
         oninput={clearVertexToken} />
       <span class="text-textcolor">Vertex Private Key</span>
-      <TextInput
+      <SecretInput
         marginBottom={true}
         size={'sm'}
         placeholder="..."
-        hideText
+        ownerKey="vertexPrivateKey"
         bind:value={vertexPrivateKeyDraft.value}
         oninput={clearVertexToken} />
       <span class="text-textcolor">Region</span>
@@ -1136,33 +1137,53 @@
     {/if}
     {#if usesNovelListProvider}
       <span class="text-textcolor">NovelList {language.apiKey}</span>
-      <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={novellistAPIDraft.value} />
+      <SecretInput
+        marginBottom={true}
+        size={'sm'}
+        placeholder="..."
+        ownerKey="novellistAPI"
+        bind:value={novellistAPIDraft.value} />
     {/if}
     {#if usesMancerModel}
       <span class="text-textcolor">Mancer {language.apiKey}</span>
-      <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={mancerHeaderDraft.value} />
+      <SecretInput
+        marginBottom={true}
+        size={'sm'}
+        placeholder="..."
+        ownerKey="mancerHeader"
+        bind:value={mancerHeaderDraft.value} />
     {/if}
     {#if usesAnthropicProvider}
       <span class="text-textcolor">Claude {language.apiKey}</span>
-      <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={claudeAPIKeyDraft.value} />
+      <SecretInput
+        marginBottom={true}
+        size={'sm'}
+        placeholder="..."
+        ownerKey="claudeAPIKey"
+        bind:value={claudeAPIKeyDraft.value} />
     {/if}
     {#if usesMistralProvider}
       <span class="text-textcolor">Mistral {language.apiKey}</span>
-      <TextInput hideText marginBottom={true} size={'sm'} placeholder="..." bind:value={mistralKeyDraft.value} />
+      <SecretInput
+        marginBottom={true}
+        size={'sm'}
+        placeholder="..."
+        ownerKey="mistralKey"
+        bind:value={mistralKeyDraft.value} />
     {/if}
     {#if usesNovelAIProvider}
       <span class="text-textcolor">NovelAI Bearer Token</span>
-      <TextInput hideText bind:value={novelaiDraft.value.token} />
+      <SecretInput ownerKey="novelai.token" bind:value={novelaiDraft.value.token} />
     {/if}
     {#if usesReverseProxyModel}
       <span class="text-textcolor mt-2">URL <Help key="forceUrl" /></span>
       <TextInput marginBottom={false} size={'sm'} bind:value={forceReplaceUrlDraft.value} placeholder="https//..." />
       <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
-      <TextInput
-        hideText
+      <SecretInput
         marginBottom={false}
         size={'sm'}
         placeholder="leave it blank if it hasn't password"
+        ownerKey="proxyKey"
         bind:value={proxyKeyDraft.value} />
       <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
       <TextInput marginBottom={false} size={'sm'} bind:value={customProxyRequestModelDraft.value} placeholder="Name" />
@@ -1182,7 +1203,7 @@
     {/if}
     {#if usesCohereProvider}
       <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
-      <TextInput hideText marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
+      <SecretInput ownerKey="cohereAPIKey" marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
     {/if}
     {#if usesOllamaLocal || usesOllamaCloud}
       {#if usesOllamaLocal}
@@ -1225,7 +1246,7 @@
         {/if}
 
         <span class="text-textcolor mt-4">Ollama {language.apiKey}</span>
-        <TextInput hideText marginBottom={false} size={'sm'} bind:value={ollamaApiKeyDraft.value} />
+        <SecretInput ownerKey="ollamaApiKey" marginBottom={false} size={'sm'} bind:value={ollamaApiKeyDraft.value} />
 
         <span class="text-textcolor mt-4">Ollama {language.format}</span>
         <SelectInput
@@ -1271,7 +1292,7 @@
     {/if}
     {#if usesNanoGPTModel}
       <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
-      <TextInput hideText marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
+      <SecretInput ownerKey="nanogptKey" marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
 
       <NanoGPTDashboard apiKey={nanogptCatalogApiKey} currentApiKey={nanogptKeyDraft.value} />
 
@@ -1324,7 +1345,7 @@
     {/if}
     {#if usesOpenRouterModel}
       <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
-      <TextInput hideText marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
+      <SecretInput ownerKey="openrouterKey" marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
 
       <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
       {#await getOpenRouterModels({ apiKey: openrouterCatalogApiKey })}
@@ -1346,20 +1367,20 @@
     {/if}
     {#if usesOpenAIProvider}
       <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey" /></span>
-      <TextInput
-        hideText
+      <SecretInput
         marginBottom={false}
         size={'sm'}
+        ownerKey="openAIKey"
         bind:value={openAIKeyDraft.value}
         placeholder="sk-XXXXXXXXXXXXXXXXXXXX" />
     {/if}
 
     {#each effectiveRoleApiKeyModels as apiKeyModel (apiKeyModel.keyIdentifier)}
       <span class="text-textcolor">{apiKeyModel.name} {language.apiKey}</span>
-      <TextInput
-        hideText
+      <SecretInput
         marginBottom={false}
         size={'sm'}
+        ownerKey={`OaiCompAPIKeys.${apiKeyModel.keyIdentifier}`}
         bind:value={OaiCompAPIKeysDraft.value[apiKeyModel.keyIdentifier]}
         placeholder="..." />
     {/each}
@@ -1410,7 +1431,7 @@
 
     {#if usesHordeModel}
       <span class="text-textcolor">Horde {language.apiKey}</span>
-      <TextInput hideText marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
+      <SecretInput ownerKey="hordeConfig.apiKey" marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
     {/if}
     {#if usesTextgenWebUIModel || usesMancerModel}
       <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>

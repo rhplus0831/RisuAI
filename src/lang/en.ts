@@ -1,4 +1,9 @@
 export const languageEnglish = {
+  secretInput: {
+    savedPlaceholder: 'Saved credential',
+    savedStatus: 'A credential is saved.',
+    clearSaved: 'Clear saved credential',
+  },
   formating: {
     main: 'Main Prompt',
     jailbreak: 'Jailbreak Prompt',
