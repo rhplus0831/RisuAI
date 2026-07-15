@@ -11,7 +11,11 @@ import { v4 } from 'uuid'
 import type { MCPClientLike } from './internalmcp'
 import localforage from 'localforage'
 import { sleep } from 'src/ts/util'
-import { registeredCustomPluginMCPs } from './pluginmcp'
+import {
+  registeredCustomPluginMCPs,
+  setCustomPluginMCPRegistryReconciler,
+  type CustomPluginMCPRegistryChange,
+} from './pluginmcp'
 import { applyAttemptedFieldRollback } from '../../server/staleStateGuards'
 
 export type MCPToolWithURL = MCPTool & {
@@ -35,6 +39,8 @@ let mcpToolClientIndexGeneration = 0
 let mcpInitializationDepth = 0
 let mcpInitializationIdleWaiters: Array<() => void> = []
 const mcpClientInitializationBuilds = new Map<string, Promise<void>>()
+
+setCustomPluginMCPRegistryReconciler(reconcileCustomPluginMCPRegistryChange)
 
 type MCPRefreshToken = {
   clientId: string
@@ -72,6 +78,8 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
       invalidateMCPToolClientIndex()
     }
     for (const mcp of mcpUrls) {
+      reconcileCustomPluginMCPClientForKey(mcp)
+      let attemptedPluginClient = mcp.startsWith('plugin:') ? registeredCustomPluginMCPs.get(mcp) : undefined
       const isCallOnlyDefault = callOnlyMCPUrlsThatIsNotInDefault.includes(mcp)
       if (isCallOnlyDefault && callOnlyMCPs[mcp]) {
         continue
@@ -84,6 +92,16 @@ export async function initializeMCPs(additionalMCPs?: string[]) {
       }
 
       if (!MCPs[mcp]) {
+        await initializeMCPClientForKey(mcp)
+      }
+
+      while (mcp.startsWith('plugin:')) {
+        const currentPluginClient = registeredCustomPluginMCPs.get(mcp)
+        if (!currentPluginClient || MCPs[mcp] === currentPluginClient) break
+        if (currentPluginClient === attemptedPluginClient) break
+
+        attemptedPluginClient = currentPluginClient
+        reconcileCustomPluginMCPClientForKey(mcp)
         await initializeMCPClientForKey(mcp)
       }
     }
@@ -180,6 +198,7 @@ async function constructMCPClientForKey(mcp: string): Promise<void> {
       await checkHandshakeOrRemoveClient(mcp)
       return
     }
+    return
   }
 
   if (mcp.startsWith('stdio:')) {
@@ -231,8 +250,10 @@ async function checkHandshakeOrRemoveClient(mcp: string): Promise<boolean> {
   } catch (error) {
     console.error(`MCP: Failed to initialize MCP at ${mcp}:`, error)
     client.destroy()
-    delete MCPs[mcp]
-    invalidateMCPToolClientIndex()
+    if (MCPs[mcp] === client) {
+      delete MCPs[mcp]
+      invalidateMCPToolClientIndex()
+    }
     return false
   }
 }
@@ -264,6 +285,35 @@ function invalidateMCPToolClientIndex() {
   mcpToolClientIndexGeneration += 1
   mcpToolClientIndex = null
   mcpToolClientIndexBuild = null
+}
+
+function reconcileCustomPluginMCPRegistryChange(change: CustomPluginMCPRegistryChange): void {
+  const destroyedClients = new Set<MCPRegistryClient>()
+  for (const registry of [MCPs, callOnlyMCPs]) {
+    const registeredClient = registry[change.identifier]
+    if (!registeredClient || registeredClient === change.current) continue
+
+    registeredClient.destroy()
+    destroyedClients.add(registeredClient)
+    delete registry[change.identifier]
+  }
+
+  if (change.previous && change.previous !== change.current && !destroyedClients.has(change.previous)) {
+    change.previous.destroy()
+  }
+  invalidateMCPToolClientIndex()
+}
+
+function reconcileCustomPluginMCPClientForKey(mcp: string): void {
+  if (!mcp.startsWith('plugin:')) return
+
+  const registeredClient = registeredCustomPluginMCPs.get(mcp)
+  const initializedClient = MCPs[mcp]
+  if (!initializedClient || initializedClient === registeredClient) return
+
+  initializedClient.destroy()
+  delete MCPs[mcp]
+  invalidateMCPToolClientIndex()
 }
 
 async function getMCPToolClientIndex(): Promise<Map<string, MCPToolDispatchTarget>> {

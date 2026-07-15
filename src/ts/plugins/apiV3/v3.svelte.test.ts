@@ -45,6 +45,11 @@ const { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockServe
   return { makeStore, mockDbState, mockPluginV2, mockCustomProviderStore, mockServerCommands }
 })
 
+const mockPluginMCP = vi.hoisted(() => ({
+  registerMCPModule: vi.fn(),
+  unregisterMCPModule: vi.fn(),
+}))
+
 vi.mock('../plugins.svelte', () => ({
   allowedDbKeys: [],
   customProviderStore: mockCustomProviderStore,
@@ -206,10 +211,7 @@ vi.mock('src/ts/gui/colorscheme', () => ({
   updateTextThemeAndCSS: vi.fn(),
 }))
 
-vi.mock('src/ts/process/mcp/pluginmcp', () => ({
-  registerMCPModule: vi.fn(),
-  unregisterMCPModule: vi.fn(),
-}))
+vi.mock('src/ts/process/mcp/pluginmcp', () => mockPluginMCP)
 
 vi.mock('src/ts/translator/translator', () => ({
   getLLMCache: vi.fn(),
@@ -258,6 +260,7 @@ import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands
 import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
 import { patchServerBackedSettings } from 'src/ts/server/commands'
 import { updateColorScheme, updateTextThemeAndCSS } from 'src/ts/gui/colorscheme'
+import { registerMCPModule, unregisterMCPModule } from 'src/ts/process/mcp/pluginmcp'
 import {
   appendCurrentChatUserMessageForSend,
   prepareCompatibleChatUpdateScoped,
@@ -313,6 +316,8 @@ beforeEach(async () => {
   vi.mocked(patchServerBackedSettings).mockReset()
   vi.mocked(updateColorScheme).mockReset()
   vi.mocked(updateTextThemeAndCSS).mockReset()
+  vi.mocked(registerMCPModule).mockReset()
+  vi.mocked(unregisterMCPModule).mockReset()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
@@ -754,6 +759,51 @@ describe('V3 plugin lifecycle cleanup', () => {
     await __v3PluginLifecycleTestHooks.unloadInstance(newRuntime.instance)
 
     expect(additionalFloatingActionButtons).toHaveLength(0)
+  })
+
+  it('cleans up each plugin MCP with its registration identity across reload and unload', async () => {
+    const identifier = 'plugin:shared-tools'
+    const oldRegistration = { generation: 'old' }
+    const newRegistration = { generation: 'new' }
+    vi.mocked(registerMCPModule)
+      .mockResolvedValueOnce(oldRegistration as any)
+      .mockResolvedValueOnce(newRegistration as any)
+    const getToolList = vi.fn(async () => [])
+    const callTool = vi.fn(async () => [])
+
+    const oldRuntime = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-shared'))
+    await (oldRuntime.api.registerMCP as Function)(
+      {
+        identifier,
+        name: 'Old tools',
+        version: '1.0.0',
+        description: 'Old plugin generation.',
+      },
+      getToolList,
+      callTool,
+    )
+
+    __v3PluginLifecycleTestHooks.beginGeneration()
+    const newRuntime = __v3PluginLifecycleTestHooks.createTrackedApi(seedV3Plugin('plugin-shared'))
+    await (newRuntime.api.registerMCP as Function)(
+      {
+        identifier,
+        name: 'New tools',
+        version: '2.0.0',
+        description: 'Current plugin generation.',
+      },
+      getToolList,
+      callTool,
+    )
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(oldRuntime.instance)
+
+    expect(unregisterMCPModule).toHaveBeenCalledWith(identifier, oldRegistration)
+    expect(unregisterMCPModule).not.toHaveBeenCalledWith(identifier, newRegistration)
+
+    await __v3PluginLifecycleTestHooks.unloadInstance(newRuntime.instance)
+
+    expect(unregisterMCPModule).toHaveBeenCalledWith(identifier, newRegistration)
   })
 
   it('v4-L37: unload cleanup removes SafeElement document listeners exactly once', async () => {

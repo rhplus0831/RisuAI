@@ -3,6 +3,20 @@ import type { MCPTool, RPCToolCallContent } from './mcplib'
 
 export const registeredCustomPluginMCPs: Map<string, CustomPluginMCPClient> = new Map()
 
+export type CustomPluginMCPRegistryChange = {
+  identifier: string
+  previous?: CustomPluginMCPClient
+  current?: CustomPluginMCPClient
+}
+
+let customPluginMCPRegistryReconciler: ((change: CustomPluginMCPRegistryChange) => void) | null = null
+
+export function setCustomPluginMCPRegistryReconciler(
+  reconciler: ((change: CustomPluginMCPRegistryChange) => void) | null,
+): void {
+  customPluginMCPRegistryReconciler = reconciler
+}
+
 export class CustomPluginMCPClient extends MCPClientLike {
   #getToolList: () => Promise<MCPTool[]>
   #callTool: (toolName: string, content: any) => Promise<RPCToolCallContent[]>
@@ -49,9 +63,23 @@ export async function registerMCPModule(
     getToolList,
     callTool,
   })
+  const previous = registeredCustomPluginMCPs.get(arg.identifier)
   registeredCustomPluginMCPs.set(arg.identifier, client)
+  customPluginMCPRegistryReconciler?.({
+    identifier: arg.identifier,
+    previous,
+    current: client,
+  })
+  return client
 }
 
-export async function unregisterMCPModule(identifier: string) {
+export async function unregisterMCPModule(identifier: string, expectedClient?: CustomPluginMCPClient) {
+  const previous = registeredCustomPluginMCPs.get(identifier)
+  if (!previous || (expectedClient && previous !== expectedClient)) return
+
   registeredCustomPluginMCPs.delete(identifier)
+  customPluginMCPRegistryReconciler?.({
+    identifier,
+    previous,
+  })
 }

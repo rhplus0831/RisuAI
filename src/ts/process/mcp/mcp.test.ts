@@ -60,7 +60,7 @@ import {
   persistMCPRefreshToken,
 } from './mcp'
 import { MCPClient, type MCPTool } from './mcplib'
-import { registeredCustomPluginMCPs, registerMCPModule } from './pluginmcp'
+import { registeredCustomPluginMCPs, registerMCPModule, unregisterMCPModule } from './pluginmcp'
 import { requestChatData } from '../request/request'
 
 interface CapturedFetch {
@@ -520,6 +520,88 @@ describe('MCP module import logging', () => {
 })
 
 describe('MCP indexed tool dispatch', () => {
+  it('replaces an initialized plugin MCP and ignores delayed cleanup from the old registration', async () => {
+    const identifier = 'plugin:reload-current-registration'
+    const oldGetToolList = vi.fn(async () => [toolFixture('old_plugin_tool')])
+    const oldCallTool = vi.fn(async () => [{ type: 'text' as const, text: 'old registration' }])
+    const newGetToolList = vi.fn(async () => [toolFixture('new_plugin_tool')])
+    const newCallTool = vi.fn(async () => [{ type: 'text' as const, text: 'new registration' }])
+    const oldClient = await registerMCPModule(
+      {
+        identifier,
+        name: 'Old Plugin MCP',
+        version: '1.0.0',
+        description: 'Registration from the old plugin generation.',
+      },
+      oldGetToolList,
+      oldCallTool,
+    )
+    const oldDestroy = vi.spyOn(oldClient, 'destroy')
+    moduleMocks.mcps = [identifier]
+
+    await expect(callMCPTool('old_plugin_tool', {})).resolves.toEqual([{ type: 'text', text: 'old registration' }])
+    expect(MCPs[identifier]).toBe(oldClient)
+
+    const newClient = await registerMCPModule(
+      {
+        identifier,
+        name: 'New Plugin MCP',
+        version: '2.0.0',
+        description: 'Registration from the current plugin generation.',
+      },
+      newGetToolList,
+      newCallTool,
+    )
+    await unregisterMCPModule(identifier, oldClient)
+
+    expect(registeredCustomPluginMCPs.get(identifier)).toBe(newClient)
+    expect(MCPs[identifier]).toBeUndefined()
+    expect(oldDestroy).toHaveBeenCalledTimes(1)
+    await expect(callMCPTool('old_plugin_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'Tool old_plugin_tool not found on any MCP' },
+    ])
+    await expect(callMCPTool('new_plugin_tool', {})).resolves.toEqual([{ type: 'text', text: 'new registration' }])
+
+    expect(MCPs[identifier]).toBe(newClient)
+    expect(oldGetToolList).toHaveBeenCalledTimes(1)
+    expect(oldCallTool).toHaveBeenCalledTimes(1)
+    expect(newGetToolList).toHaveBeenCalledTimes(1)
+    expect(newCallTool).toHaveBeenCalledTimes(1)
+  })
+
+  it('removes initialized tools and client references when a plugin MCP unregisters', async () => {
+    const identifier = 'plugin:unload-registration'
+    const getToolList = vi.fn(async () => [toolFixture('unloaded_plugin_tool')])
+    const callTool = vi.fn(async () => [{ type: 'text' as const, text: 'loaded registration' }])
+    const client = await registerMCPModule(
+      {
+        identifier,
+        name: 'Unload Plugin MCP',
+        version: '1.0.0',
+        description: 'Registration removed during plugin unload.',
+      },
+      getToolList,
+      callTool,
+    )
+    const destroy = vi.spyOn(client, 'destroy')
+    moduleMocks.mcps = [identifier]
+
+    await expect(callMCPTool('unloaded_plugin_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'loaded registration' },
+    ])
+
+    await unregisterMCPModule(identifier)
+
+    expect(registeredCustomPluginMCPs.has(identifier)).toBe(false)
+    expect(MCPs[identifier]).toBeUndefined()
+    expect(destroy).toHaveBeenCalledTimes(1)
+    await expect(callMCPTool('unloaded_plugin_tool', {})).resolves.toEqual([
+      { type: 'text', text: 'Tool unloaded_plugin_tool not found on any MCP' },
+    ])
+    expect(getToolList).toHaveBeenCalledTimes(1)
+    expect(callTool).toHaveBeenCalledTimes(1)
+  })
+
   it('L55: dispatch builds the tool-name index once and reuses it for later calls', async () => {
     const firstIdentifier = 'plugin:l55-index-first'
     const secondIdentifier = 'plugin:l55-index-second'

@@ -954,6 +954,24 @@ const makeRisuaiAPIV3 = (
   instance: V3PluginInstance,
 ) => {
   const oldApis = getV2PluginAPIs()
+  const registerOwnedMCP = async (
+    arg: Parameters<typeof registerMCPModule>[0],
+    getToolList: Parameters<typeof registerMCPModule>[1],
+    callTool: Parameters<typeof registerMCPModule>[2],
+  ): Promise<void> => {
+    const client = await registerMCPModule(arg, getToolList, callTool)
+    try {
+      assertV3InstanceCurrent(instance)
+    } catch (error) {
+      await unregisterMCPModule(arg.identifier, client)
+      throw error
+    }
+
+    const cleanup = lifecycle.track(() => {
+      void unregisterMCPModule(arg.identifier, client)
+    })
+    addPluginUnloadCallback(plugin.name, cleanup, instance.generation)
+  }
   const api = {
     //Old APIs from v2.1
     risuFetch: (url, options) => {
@@ -1505,8 +1523,8 @@ const makeRisuaiAPIV3 = (
       }
       return { id }
     },
-    registerMCP: registerMCPModule,
-    unregisterMCP: unregisterMCPModule,
+    registerMCP: registerOwnedMCP,
+    unregisterMCP: (identifier: string) => unregisterMCPModule(identifier),
     unregisterUIPart: (id: string) => {
       const removeFromMenuStore = (menuStore: MenuDef[]) => {
         const index = menuStore.findIndex((item) => item.id === id)
