@@ -585,9 +585,9 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
     }
   > = arg.functions ?? new Map()
 
-  arg.callStack = (arg.callStack ?? 0) + 1
+  const callStack = (arg.callStack ?? 0) + 1
 
-  if (arg.callStack > 20) {
+  if (callStack > 20) {
     return 'ERROR: Call stack limit reached'
   }
 
@@ -603,7 +603,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
     runVar: arg.runVar ?? false,
     consistantChar: arg.consistantChar ?? false,
     cbsConditions: arg.cbsConditions ?? {},
-    callStack: arg.callStack,
+    callStack,
     callbackMemo: arg.callbackMemo,
     getNested: () => {
       return nested
@@ -765,7 +765,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
           }
         }
         if (dat.startsWith('call::')) {
-          if (arg.callStack && arg.callStack > 20) {
+          if (callStack > 20) {
             nested[0] += `ERROR: Call stack limit reached`
             break
           }
@@ -777,8 +777,7 @@ export function risuChatParser(da: string, arg: RisuChatParserArg = {}): string 
             for (let i = 0; i < argData.length; i++) {
               data = data.replaceAll(`{{arg::${i}}}`, argData[i])
             }
-            arg.functions = functions
-            nested[0] += risuChatParser(data, arg)
+            nested[0] += risuChatParser(data, { ...arg, functions, callStack })
             break
           }
         }

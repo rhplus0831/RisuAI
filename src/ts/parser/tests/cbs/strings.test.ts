@@ -98,6 +98,28 @@ test('L11: preserves raw matcher tag text passed to callbacks', () => {
   })
 })
 
+test('independent nested matcher expansions do not accumulate recursion depth', () => {
+  registerRisuChatParserMatcher({
+    name: 'sibling_depth_test',
+    alias: [],
+    description: 'Recursion-depth sibling regression hook.',
+    callback: (_raw, matcherArg) => risuChatParser('x', matcherArg),
+  })
+
+  expect(risuChatParser('{{sibling_depth_test}}'.repeat(25))).toBe('x'.repeat(25))
+})
+
+test('genuinely recursive matcher expansion still stops at the depth limit', () => {
+  registerRisuChatParserMatcher({
+    name: 'recursive_depth_test',
+    alias: [],
+    description: 'Recursion-depth limit regression hook.',
+    callback: (_raw, matcherArg) => risuChatParser('{{recursive_depth_test}}', matcherArg),
+  })
+
+  expect(risuChatParser('{{recursive_depth_test}}')).toBe('ERROR: Call stack limit reached')
+})
+
 test('startswith, endswith, contains', () => {
   expect(quickParse('startswith', 'Hello World', 'Hello')).toBe('1')
   expect(quickParse('endswith', 'Hello World', 'World')).toBe('1')
