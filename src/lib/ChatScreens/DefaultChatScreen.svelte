@@ -94,6 +94,8 @@
   } from 'src/ts/chatCommands'
   import { applyServerBackedSetting } from 'src/ts/server/settingsBridge.svelte'
   import {
+    hasChatMessageHydrationFailed,
+    hydrateActiveChat,
     hydrateActiveChatFully,
     hydrateActiveChatWindow,
     isChatMessageHydrationPending,
@@ -186,14 +188,21 @@
     )
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
+  let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
   let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
   // history does not flash in over the greeting-only stub.
   let activeChatMessagesLoading = $derived(
-    activeChatOpen &&
-      isChatMessageHydrationPending(currentCharacter?.chats[currentCharacter.chatPage]?.id, currentChat.length),
+    activeChatOpen && isChatMessageHydrationPending(currentChatId, currentChat.length),
   )
+  let activeChatMessagesFailed = $derived(
+    activeChatOpen && hasChatMessageHydrationFailed(currentChatId, currentChat.length),
+  )
+
+  async function retryActiveChatHydration() {
+    await hydrateActiveChat({ force: true })
+  }
 
   function scrollToBottom() {
     chatsInstance?.scrollToLatestMessage()
@@ -1226,6 +1235,23 @@
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
         </svg>
         <span class="text-sm">{language.loadingChatData}</span>
+      </div>
+    </div>
+  {/if}
+  {#if $selectedCharID >= 0 && activeChatMessagesFailed}
+    <div
+      class="absolute inset-0 z-40 flex items-center justify-center bg-bgcolor px-6"
+      role="alert"
+      data-testid="chat-hydration-error">
+      <div class="flex flex-col items-center gap-3 text-center text-textcolor2">
+        <span class="text-sm">{language.chatDataLoadFailed}</span>
+        <button
+          type="button"
+          class="flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm text-textcolor transition-colors hover:border-textcolor hover:bg-selected focus:border-textcolor focus:bg-selected"
+          onclick={retryActiveChatHydration}>
+          <RefreshCcwIcon size={16} />
+          <span>{language.retry}</span>
+        </button>
       </div>
     </div>
   {/if}

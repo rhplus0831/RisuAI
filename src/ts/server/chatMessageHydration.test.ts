@@ -37,6 +37,7 @@ import {
   hydrateChatMessages,
   applyServerChatMessagesResource,
   applyMessageTranslationLocalEffect,
+  hasChatMessageHydrationFailed,
   invalidateChatHydration,
   isChatMessageHydrationPending,
   resetChatHydration,
@@ -759,13 +760,45 @@ describe('isChatMessageHydrationPending', () => {
     expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
   })
 
-  it('clears after a failed fetch so it never spins forever', async () => {
+  it('surfaces a failed fetch and returns to loading while it retries', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       projectionState.fetchChat.mockResolvedValue({ status: 'error', error: 'boom' })
       await hydrateActiveChat()
       expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+      expect(hasChatMessageHydrationFailed('chat-1', 0)).toBe(true)
       expect(warn).toHaveBeenCalledWith('chat chat-1 hydration failed: boom')
+
+      const retry = deferred<ReturnType<typeof okResult>>()
+      projectionState.fetchChat.mockReturnValueOnce(retry.promise)
+      const retryPromise = hydrateActiveChat({ force: true })
+
+      expect(hasChatMessageHydrationFailed('chat-1', 0)).toBe(false)
+      expect(isChatMessageHydrationPending('chat-1', 0)).toBe(true)
+
+      retry.resolve(okResult('chat-1', []))
+      await retryPromise
+
+      expect(hasChatMessageHydrationFailed('chat-1', 0)).toBe(false)
+      expect(isChatMessageHydrationPending('chat-1', 0)).toBe(false)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not surface a failed response from before a hydration reset', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const response = deferred<{ status: 'error'; error: string }>()
+    try {
+      projectionState.fetchChat.mockReturnValueOnce(response.promise)
+      const hydration = hydrateActiveChat()
+      resetChatHydration()
+
+      response.resolve({ status: 'error', error: 'stale failure' })
+      await hydration
+
+      expect(hasChatMessageHydrationFailed('chat-1', 0)).toBe(false)
+      expect(isChatMessageHydrationPending('chat-1', 0)).toBe(true)
     } finally {
       warn.mockRestore()
     }

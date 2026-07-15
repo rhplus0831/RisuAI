@@ -1520,6 +1520,8 @@ export const languageEnglish = {
   automaticCachePoint: 'Automatic Cache Point',
   experimentalChatCompression: 'Experimental Chat Data Handling',
   loadingChatData: 'Loading Chat Data',
+  chatDataLoadFailed: 'Chat data could not be loaded.',
+  retry: 'Retry',
   chatGenerationStageStarting: 'Starting response',
   chatGenerationStagePreparingPrompt: 'Preparing prompt',
   chatGenerationStageCheckingMemory: 'Checking memory',

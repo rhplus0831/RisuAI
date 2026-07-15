@@ -26,8 +26,10 @@ const shellMocks = vi.hoisted(() => ({
   sendChat: vi.fn(async () => true),
   sleep: vi.fn(async () => undefined),
   guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
+  hydrateActiveChat: vi.fn(async () => undefined),
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
+  hydrationFailed: false,
   currentRouteSubscribers: new Set<(value: unknown) => void>(),
   currentRouteValue: {
     kind: 'character',
@@ -156,6 +158,8 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 }))
 vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(),
+  hasChatMessageHydrationFailed: () => shellMocks.hydrationFailed,
+  hydrateActiveChat: shellMocks.hydrateActiveChat,
   hydrateActiveChatFully: shellMocks.hydrateActiveChatFully,
   hydrateActiveChatWindow: shellMocks.hydrateActiveChatWindow,
   isChatMessageHydrationPending: () => false,
@@ -288,6 +292,8 @@ function greetingBubble(): HTMLElement | null {
 }
 
 beforeEach(() => {
+  shellMocks.hydrateActiveChat.mockClear()
+  shellMocks.hydrationFailed = false
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -337,5 +343,25 @@ describe('UIA-001 / BOOT-1: bootstrap shell greeting render (DOM oracle, Tier 1)
     // ...and the greeting bubble must be suppressed until hydration lands (no
     // complete-but-empty greeting painted for a shell).
     expect(greetingBubble(), 'greeting bubble must be absent for an un-hydrated shell').toBeNull()
+  })
+})
+
+describe('chat history hydration failure', () => {
+  it('replaces the empty transcript with an actionable retry state', async () => {
+    shellMocks.hydrationFailed = true
+    seedDatabase(makeHydratedCharacter())
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    const failure = target.querySelector<HTMLElement>('[data-testid="chat-hydration-error"]')
+    expect(failure?.textContent).toContain('chatDataLoadFailed')
+    expect(failure?.textContent).toContain('retry')
+
+    failure?.querySelector<HTMLButtonElement>('button')?.click()
+    await tick()
+
+    expect(shellMocks.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
   })
 })

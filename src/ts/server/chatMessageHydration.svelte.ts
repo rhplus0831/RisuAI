@@ -50,6 +50,10 @@ const hydratedChatIds = new SvelteSet<string>()
 // that will never gain messages does not spin forever. Reactive; cleared on
 // resync alongside `hydratedChatIds`.
 const attemptedChatIds = new SvelteSet<string>()
+// Failed empty stubs need a distinct terminal state from legitimately empty
+// hydrated chats. The chat screen uses this to offer an explicit retry instead
+// of silently revealing a greeting over missing history.
+const failedChatIds = new SvelteSet<string>()
 const inFlight = new Map<string, Promise<void>>()
 let chatHydrationGeneration = 0
 
@@ -204,6 +208,7 @@ export function invalidateChatHydration(chatId: string): void {
   if (!chatId) return
   hydratedChatIds.delete(chatId)
   attemptedChatIds.delete(chatId)
+  failedChatIds.delete(chatId)
   advanceChatProjectionEpoch(chatId)
   pendingChatHydrationFreshness.delete(chatId)
   for (const requestKey of inFlight.keys()) {
@@ -281,6 +286,12 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
   const currentRequest = inFlight.get(requestKey)
   if (currentRequest) return currentRequest
 
+  // A real replacement attempt immediately swaps the error state back to the
+  // loading state. Do this only after the in-flight dedupe check so a duplicate
+  // caller cannot erase a failure recorded by the shared request.
+  attemptedChatIds.delete(chatId)
+  failedChatIds.delete(chatId)
+
   const generation = chatHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
   const freshness = beginChatHydrationFreshness(chatId, {
@@ -292,17 +303,19 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
     try {
       const endRequest = beginHydrationRequest('chat')
       const result = await fetchServerChatMessages(chatId, request.range ?? {}).finally(endRequest)
+      if (generation !== chatHydrationGeneration) {
+        shouldMarkAttempted = false
+        recordHydrationStaleDrop('chat', 'generation-reset')
+        return
+      }
       if (result.status !== 'ok') {
+        failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, resultError(result, 'server projection unavailable'))
         return
       }
       if (result.chatId !== chatId) {
+        failedChatIds.add(chatId)
         hydrationWarning(`chat ${chatId}`, `response was for chat ${result.chatId}`)
-        return
-      }
-      if (generation !== chatHydrationGeneration) {
-        shouldMarkAttempted = false
-        recordHydrationStaleDrop('chat', 'generation-reset')
         return
       }
       if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
@@ -325,7 +338,11 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
           ? { start: result.messageStart, total: result.messageTotal }
           : undefined
       const applied = hydrateServerChatMessages(chatId, result.message, result.hypaV3Data, range)
-      if (!applied) return
+      if (!applied) {
+        failedChatIds.add(chatId)
+        hydrationWarning(`chat ${chatId}`, 'response could not be applied')
+        return
+      }
       markChatBodyResourceRevision(chatId, result.revision)
       if (wantsFullHydration || !range || isFullRange(range.start, range.total, result.message.length)) {
         hydratedChatIds.add(chatId)
@@ -337,6 +354,14 @@ async function hydrateChat(chatId: string, request: ChatHydrationRequest = {}): 
         seedRerollBufferFromAlternates(result.message, result.alternates)
       }
       refreshPendingFreshnessAfterHydration(chatId, freshness)
+    } catch (error) {
+      if (generation !== chatHydrationGeneration) {
+        shouldMarkAttempted = false
+        recordHydrationStaleDrop('chat', 'generation-reset')
+        return
+      }
+      failedChatIds.add(chatId)
+      hydrationWarning(`chat ${chatId}`, error instanceof Error ? error.message : String(error))
     } finally {
       // Failed requests settle the loading state, but stale responses do not:
       // after an optimistic edit rolls back, the still-stubbed chat must remain
@@ -506,6 +531,7 @@ export function applyServerChatMessagesResource(
     hydratedChatIds.add(chatId)
   }
   attemptedChatIds.add(chatId)
+  failedChatIds.delete(chatId)
   if (activeChatId() === chatId) {
     seedRerollBufferFromAlternates(message, alternates)
   }
@@ -571,6 +597,7 @@ export function acknowledgeCreatedChatTranscriptLocalEffect(chatId: string): boo
   advanceChatProjectionEpoch(chatId)
   hydratedChatIds.add(chatId)
   attemptedChatIds.add(chatId)
+  failedChatIds.delete(chatId)
   return true
 }
 
@@ -598,6 +625,14 @@ export function isChatMessageHydrationPending(chatId: string | undefined, messag
   if (hydratedChatIds.has(chatId)) return false
   if (attemptedChatIds.has(chatId)) return false
   return true
+}
+
+/** Reactive: did the latest hydration of this still-empty chat fail? */
+export function hasChatMessageHydrationFailed(chatId: string | undefined, messageCount: number): boolean {
+  if (!canUseServerResourceReads()) return false
+  if (!chatId || messageCount > 0) return false
+  if (hydratedChatIds.has(chatId)) return false
+  return failedChatIds.has(chatId)
 }
 
 // Character globalLore hydration (only when stubs are on).
@@ -778,6 +813,7 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
 export function resetChatHydration(): void {
   hydratedChatIds.clear()
   attemptedChatIds.clear()
+  failedChatIds.clear()
   chatHydrationGeneration += 1
   inFlight.clear()
   chatProjectionEpochs.clear()
