@@ -105,6 +105,7 @@ describe('AuthorNoteEditor debounce persistence', () => {
 
     const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="author-note-input"]')
     expect(textarea).toBeTruthy()
+    expect(textarea?.getAttribute('aria-label')).toBe('Author note')
     textarea!.value = 'draft before close'
     textarea!.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()

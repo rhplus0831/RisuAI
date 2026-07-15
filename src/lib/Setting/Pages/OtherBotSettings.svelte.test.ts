@@ -511,6 +511,9 @@ describe('OtherBotSettings Hypa preset import', () => {
       `${language.import}: ${language.presets}`,
     ])
     expect(buttons.every((button) => button?.type === 'button')).toBe(true)
+    expect(target.querySelector('select')?.getAttribute('aria-label')).toBe(
+      `${language.HypaMemory} V3 ${language.presets}`,
+    )
   })
 
   it('silently leaves the preset list unchanged when file selection is canceled', async () => {

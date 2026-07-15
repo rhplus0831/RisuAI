@@ -120,6 +120,7 @@
   <TextAreaInput
     margin="both"
     autocomplete="off"
+    ariaLabel={language.authorNote}
     bind:value={authorNoteDraft}
     highlight
     placeholder={getAuthorNoteDefaultText()} />
