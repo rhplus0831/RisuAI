@@ -55,6 +55,16 @@
       return null
     }
   }
+
+  export async function decodeImageBlob(image: Pick<HTMLImageElement, 'decode' | 'src'>, blob: Blob): Promise<void> {
+    const objectURL = URL.createObjectURL(blob)
+    try {
+      image.src = objectURL
+      await image.decode()
+    } finally {
+      URL.revokeObjectURL(objectURL)
+    }
+  }
 </script>
 
 <script lang="ts">
@@ -107,10 +117,9 @@
       return
     }
     const img = new Image()
-    inputImage = img
     //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
-    img.src = URL.createObjectURL(new Blob([file.data]))
-    await img.decode()
+    await decodeImageBlob(img, new Blob([file.data]))
+    inputImage = img
     aspectRatio = img.width / img.height
     canvas.width = img.width
     canvas.height = img.height

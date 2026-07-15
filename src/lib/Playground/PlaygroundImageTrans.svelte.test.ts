@@ -37,12 +37,37 @@ vi.mock('src/ts/alert', async (importActual) => {
 })
 
 import {
+  decodeImageBlob,
   imageSelectionRectFromPoints,
   normalizeImageSelectionRect,
   parseImageTranslationRenderOutput,
 } from './PlaygroundImageTrans.svelte'
 
 describe('PlaygroundImageTrans JSON rendering', () => {
+  it('releases temporary image URLs after decoding', async () => {
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:image-translation')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const image = { src: '', decode: vi.fn().mockResolvedValue(undefined) }
+
+    await decodeImageBlob(image, new Blob(['image']))
+
+    expect(image.src).toBe('blob:image-translation')
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:image-translation')
+    createObjectURL.mockRestore()
+    revokeObjectURL.mockRestore()
+  })
+
+  it('releases temporary image URLs when decoding fails', async () => {
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:invalid-image')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const image = { src: '', decode: vi.fn().mockRejectedValue(new Error('invalid image')) }
+
+    await expect(decodeImageBlob(image, new Blob(['invalid']))).rejects.toThrow('invalid image')
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:invalid-image')
+    createObjectURL.mockRestore()
+    revokeObjectURL.mockRestore()
+  })
+
   it('returns null instead of throwing on invalid edited JSON', () => {
     expect(parseImageTranslationRenderOutput('{"x_min":')).toBeNull()
     expect(
