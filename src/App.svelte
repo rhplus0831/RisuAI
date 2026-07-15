@@ -92,16 +92,29 @@
   })
 
   $effect(() => {
-    if (!$loadedStore || isApplyingRouteToStores() || hasPendingRouteApplication()) return
-    const character = getDatabase().characters?.[$selectedCharID]
+    if (!$loadedStore) return
+
+    // Read every state value that can drive the URL before checking the route
+    // application guard. Route application writes these stores while the guard
+    // is active; retaining their subscriptions lets the next user-owned write
+    // re-run this effect after the route settles.
+    const currentRouteKind = $currentRoute.kind
+    const settingsAreOpen = $settingsOpen
+    const settingsMenuIndex = $SettingsMenuIndex
+    const selectedCharacterIndex = $selectedCharID
+    const playgroundIndex = $PlaygroundStore
+    const chatIsOpen = routeChatIsOpen
+    const character = getDatabase().characters?.[selectedCharacterIndex]
+
+    if (isApplyingRouteToStores() || hasPendingRouteApplication()) return
     syncRouteFromState({
-      currentRouteKind: $currentRoute.kind,
-      settingsOpen: $settingsOpen,
-      settingsMenuIndex: $SettingsMenuIndex,
-      selectedCharID: $selectedCharID,
-      playgroundStore: $PlaygroundStore,
+      currentRouteKind,
+      settingsOpen: settingsAreOpen,
+      settingsMenuIndex,
+      selectedCharID: selectedCharacterIndex,
+      playgroundStore: playgroundIndex,
       characterId: character?.chaId,
-      chatId: routeChatIsOpen ? character?.chats?.[character.chatPage]?.id : undefined,
+      chatId: chatIsOpen ? character?.chats?.[character.chatPage]?.id : undefined,
     })
   })
 </script>

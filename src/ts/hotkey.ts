@@ -31,9 +31,10 @@ import {
   resolveActiveChatGenerationSettings,
   saveActiveChatGenerationSettingsSelection,
 } from './activeChatGenerationSettings'
+import { navigate } from './router'
 
 export function initHotkey() {
-  document.addEventListener('keydown', async (ev) => {
+  const handleHotkeyKeydown = async (ev: KeyboardEvent): Promise<void> => {
     if (
       !ev.ctrlKey &&
       !ev.altKey &&
@@ -92,11 +93,11 @@ export function initHotkey() {
           break
         }
         case 'settings': {
-          settingsOpen.set(!get(settingsOpen))
+          navigate(get(settingsOpen) ? '/' : '/settings')
           break
         }
         case 'home': {
-          selectedCharID.set(-1)
+          navigate('/')
           break
         }
         case 'presets': {
@@ -126,7 +127,7 @@ export function initHotkey() {
         }
         case 'previewRequest': {
           if (get(doingChat) && get(selectedCharID) !== -1) {
-            return false
+            return
           }
           alertWait('Loading...')
           ev.preventDefault()
@@ -250,7 +251,7 @@ export function initHotkey() {
         }
       }
       if (get(settingsOpen)) {
-        settingsOpen.set(false)
+        navigate('/')
       }
       ev.preventDefault()
     }
@@ -263,7 +264,9 @@ export function initHotkey() {
         })
       }
     }
-  })
+  }
+
+  document.addEventListener('keydown', handleHotkeyKeydown)
 
   let touchs = 0
   let touchStartTime = 0

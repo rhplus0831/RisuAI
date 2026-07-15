@@ -18,8 +18,10 @@ const appRouteDomMocks = vi.hoisted(() => {
   }
 
   const state = {
+    applyingRoute: false,
     applyRouteCalls: 0,
     exports: undefined as RouteMockExports | undefined,
+    pendingRouteApplication: false,
     readResource: () => {},
     resetSidebarTab: () => {},
   }
@@ -52,9 +54,9 @@ async function createRouteMock() {
         chatId ? `/character/${characterId}/${chatId}` : `/character/${characterId}`,
       consumeStateDrivenRouteUpdate: () => false,
       currentRoute: writable(characterRoute),
-      hasPendingRouteApplication: () => false,
+      hasPendingRouteApplication: () => appRouteDomMocks.state.pendingRouteApplication,
       installRouter: vi.fn(),
-      isApplyingRouteToStores: () => false,
+      isApplyingRouteToStores: () => appRouteDomMocks.state.applyingRoute,
       navigate: vi.fn(),
       parseRoute: vi.fn(() => characterRoute),
       syncRouteFromState: vi.fn(),
@@ -385,6 +387,8 @@ describe('App route/refreeze mounted DOM behavior', () => {
     document.body.appendChild(target)
     window.history.replaceState(null, '', routePath)
     appRouteDomMocks.state.applyRouteCalls = 0
+    appRouteDomMocks.state.applyingRoute = false
+    appRouteDomMocks.state.pendingRouteApplication = false
     appRouteDomMocks.state.readResource = () => {
       void getResourceDatabase().characters?.[0]?.chatPage
     }
@@ -442,6 +446,40 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(get(selectedCharID)).toBe(0)
     expect(window.location.pathname).toBe(routePath)
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
+  })
+
+  it('retains state-to-route subscriptions while a route application owns the stores', async () => {
+    const router = appRouteDomMocks.state.exports
+    if (!router) throw new Error('Router mock was not initialized')
+    const syncRouteFromState = vi.mocked(router.syncRouteFromState as (...args: any[]) => void)
+    syncRouteFromState.mockClear()
+
+    appRouteDomMocks.state.applyingRoute = true
+    appRouteDomMocks.state.pendingRouteApplication = true
+    router.currentRoute.set({
+      kind: 'settings',
+      path: '/settings/model',
+      section: 'model',
+      index: 17,
+    })
+    await tick()
+
+    expect(syncRouteFromState).not.toHaveBeenCalled()
+
+    appRouteDomMocks.state.applyingRoute = false
+    appRouteDomMocks.state.pendingRouteApplication = false
+    settingsOpen.set(true)
+    SettingsMenuIndex.set(17)
+    await tick()
+
+    expect(syncRouteFromState).toHaveBeenCalledTimes(1)
+    expect(syncRouteFromState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        currentRouteKind: 'settings',
+        settingsMenuIndex: 17,
+        settingsOpen: true,
+      }),
+    )
   })
 
   it('does not report a failed dropped preset import as successful', async () => {
