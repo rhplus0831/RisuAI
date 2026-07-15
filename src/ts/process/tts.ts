@@ -563,8 +563,11 @@ export function stopTTS() {
   }
 }
 
-export function getWebSpeechTTSVoices() {
-  return speechSynthesis.getVoices().map((v) => {
+export function getWebSpeechTTSVoices(synthesis?: Pick<SpeechSynthesis, 'getVoices'>) {
+  const availableSynthesis = synthesis ?? (typeof speechSynthesis === 'undefined' ? null : speechSynthesis)
+  if (!availableSynthesis) return []
+
+  return availableSynthesis.getVoices().map((v) => {
     return v.name
   })
 }

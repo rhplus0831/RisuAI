@@ -212,7 +212,9 @@ vi.mock('src/ts/process/tts', () => ({
   getFishSpeechModels: vi.fn(() => []),
   getNovelAIVoices: vi.fn(() => []),
   getVOICEVOXVoices: vi.fn(() => []),
-  getWebSpeechTTSVoices: vi.fn(() => []),
+  getWebSpeechTTSVoices: vi.fn((synthesis?: Pick<SpeechSynthesis, 'getVoices'>) =>
+    (synthesis?.getVoices() ?? []).map((voice) => voice.name),
+  ),
   oaiVoices: [],
 }))
 
@@ -651,6 +653,44 @@ describe('CharConfig character media callback freshness contracts', () => {
     await settleComponent()
 
     expect(getDatabase().characters[0].notificationImage).toBe('')
+  })
+})
+
+describe('CharConfig Web Speech voice catalog', () => {
+  it('renders and selects a voice that arrives after voiceschanged, then removes the listener', async () => {
+    let voices: SpeechSynthesisVoice[] = []
+    const synthesis = new EventTarget() as EventTarget & Pick<SpeechSynthesis, 'getVoices'>
+    Object.defineProperty(synthesis, 'getVoices', {
+      configurable: true,
+      value: vi.fn(() => voices),
+    })
+    const addEventListener = vi.spyOn(synthesis, 'addEventListener')
+    const removeEventListener = vi.spyOn(synthesis, 'removeEventListener')
+    vi.stubGlobal('speechSynthesis', synthesis)
+
+    await mountCharConfig(5, {
+      ttsMode: 'webspeech',
+      ttsSpeech: '',
+    })
+
+    expect(target.querySelector('option[value="Delayed Browser Voice"]')).toBeNull()
+    expect(addEventListener).toHaveBeenCalledWith('voiceschanged', expect.any(Function))
+
+    voices = [{ name: 'Delayed Browser Voice' } as SpeechSynthesisVoice]
+    synthesis.dispatchEvent(new Event('voiceschanged'))
+    await settleComponent()
+
+    const delayedVoice = target.querySelector<HTMLOptionElement>('option[value="Delayed Browser Voice"]')
+    expect(delayedVoice?.textContent).toBe('Delayed Browser Voice')
+
+    const voiceSelect = delayedVoice?.closest('select') as HTMLSelectElement
+    voiceSelect.value = 'Delayed Browser Voice'
+    expect(delayedVoice?.disabled).toBe(false)
+    expect(voiceSelect.value).toBe('Delayed Browser Voice')
+
+    unmount(component as MountedComponent)
+    component = undefined
+    expect(removeEventListener).toHaveBeenCalledWith('voiceschanged', expect.any(Function))
   })
 })
 

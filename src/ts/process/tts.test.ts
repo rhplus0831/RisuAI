@@ -238,6 +238,20 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('Web Speech voice catalog', () => {
+  it('returns an empty catalog without the browser API and supports an injected synthesis instance', async () => {
+    vi.stubGlobal('speechSynthesis', undefined)
+    const { getWebSpeechTTSVoices } = await importTTS()
+
+    expect(getWebSpeechTTSVoices()).toEqual([])
+    expect(
+      getWebSpeechTTSVoices({
+        getVoices: () => [{ name: 'Injected Voice' } as SpeechSynthesisVoice],
+      }),
+    ).toEqual(['Injected Voice'])
+  })
+})
+
 describe('TTS provider catalog request caching', () => {
   it('dedupes ElevenLabs catalogs by API key and retries failed requests', async () => {
     const pending = deferred<Response>()

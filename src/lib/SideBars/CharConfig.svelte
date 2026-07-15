@@ -9,7 +9,7 @@
     type customscript,
     type triggerscript,
   } from '../../ts/storage/database.svelte'
-  import { untrack } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen, SizeStore } from '../../ts/stores.svelte'
   import {
     PlusIcon,
@@ -117,6 +117,8 @@
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
+  let webSpeechSupported = $state(false)
+  let webSpeechVoices = $state<string[]>([])
   let iconButtonSize = $derived($SizeStore.w > 360 ? (24 as const) : (20 as const))
   const CHARACTER_ADDITIONAL_ASSET_EXTENSIONS = [
     'png',
@@ -202,6 +204,27 @@
   let suppressScriptDraftDispatch = false
   const scriptDirtyFieldsById = new Map<string, Set<string>>()
   const triggerDirtyFieldsById = new Map<string, Set<string>>()
+
+  onMount(() => {
+    const synthesis = typeof speechSynthesis === 'undefined' ? null : speechSynthesis
+    if (!synthesis) {
+      webSpeechSupported = false
+      webSpeechVoices = []
+      return
+    }
+
+    const refreshVoices = () => {
+      webSpeechVoices = getWebSpeechTTSVoices(synthesis)
+    }
+
+    webSpeechSupported = true
+    synthesis.addEventListener('voiceschanged', refreshVoices)
+    refreshVoices()
+
+    return () => {
+      synthesis.removeEventListener('voiceschanged', refreshVoices)
+    }
+  })
 
   $effect(() => {
     const { stopCharacter, stopChat, stopScripts } = untrack(() => ({
@@ -1576,13 +1599,13 @@
     </SelectInput>
 
     {#if characterDraft.value.ttsMode === 'webspeech'}
-      {#if !speechSynthesis}
+      {#if !webSpeechSupported}
         <span class="text-textcolor">Web Speech isn't supported in your browser or OS</span>
       {:else}
         <span class="text-textcolor">{language.Speech}</span>
         <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.ttsSpeech}>
           <OptionInput value="">Auto</OptionInput>
-          {#each getWebSpeechTTSVoices() as voice}
+          {#each webSpeechVoices as voice}
             <OptionInput value={voice}>{voice}</OptionInput>
           {/each}
         </SelectInput>
