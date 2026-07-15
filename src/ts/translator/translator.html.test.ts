@@ -386,4 +386,12 @@ describe('translateHTML streaming guards', () => {
     expect(translated).toContain('deeplx:deepl-0')
     expect(translated).toContain(`deepl-${count - 1}`)
   })
+
+  it('rejects instead of hanging when a queued DeepLX batch fails', async () => {
+    testState.db.translatorType = 'deeplX'
+    testState.globalFetch.mockRejectedValue(new Error('deeplx unavailable'))
+    const html = Array.from({ length: 9 }, (_value, index) => `<p>batch-${index}-${'x'.repeat(700)}</p>`).join('')
+
+    await expect(translateHTML(html, false, '', 0)).rejects.toThrow('deeplx unavailable')
+  })
 })

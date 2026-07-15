@@ -987,16 +987,32 @@ export async function translateHTML(
   const dom = new DOMParser().parseFromString(html, 'text/html')
 
   let promises: Promise<void>[] = []
+  const translationChunkFlushes: Promise<void>[] = []
   let deeplXFallbackSegmentsUsed = 0
   let translationChunks: {
     chunks: string[]
-    resolvers: ((text: string) => void)[]
+    deferreds: { reject: (reason?: unknown) => void; resolve: (text: string) => void }[]
   }[] = [
     {
       chunks: [],
-      resolvers: [],
+      deferreds: [],
     },
   ]
+
+  function rejectTranslationChunks(error: unknown) {
+    for (const chunk of translationChunks) {
+      for (const deferred of chunk.deferreds) {
+        deferred.reject(error)
+      }
+    }
+  }
+
+  function trackTranslationChunkFlush(flush: Promise<void>) {
+    translationChunkFlushes.push(flush)
+    void flush.catch(() => {
+      // Deferred node promises propagate the same failure through translateHTML.
+    })
+  }
 
   async function translateTranslationChunks(force: boolean = false, additionalChunkLength = 0) {
     if (translationChunks.length === 0 || !needSuperChunkedTranslate()) {
@@ -1012,33 +1028,38 @@ export async function translateHTML(
 
     translationChunks.push({
       chunks: [],
-      resolvers: [],
+      deferreds: [],
     })
 
     if (!text) {
       return
     }
 
-    const translated = await translate(text, reverse)
+    try {
+      const translated = await translate(text, reverse)
 
-    const split = translated.split('■')
+      const split = translated.split('■')
 
-    if (split.length !== currentChunk.chunks.length) {
-      //try translating one by one
-      const fallbackRemaining = Math.max(DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS - deeplXFallbackSegmentsUsed, 0)
-      const fallbackCount = Math.min(currentChunk.chunks.length, fallbackRemaining)
-      deeplXFallbackSegmentsUsed += fallbackCount
-      for (let i = 0; i < fallbackCount; i++) {
-        currentChunk.resolvers[i](await translate(currentChunk.chunks[i], reverse))
+      if (split.length !== currentChunk.chunks.length) {
+        //try translating one by one
+        const fallbackRemaining = Math.max(DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS - deeplXFallbackSegmentsUsed, 0)
+        const fallbackCount = Math.min(currentChunk.chunks.length, fallbackRemaining)
+        deeplXFallbackSegmentsUsed += fallbackCount
+        for (let i = 0; i < fallbackCount; i++) {
+          currentChunk.deferreds[i].resolve(await translate(currentChunk.chunks[i], reverse))
+        }
+        for (let i = fallbackCount; i < currentChunk.chunks.length; i++) {
+          currentChunk.deferreds[i].resolve(currentChunk.chunks[i])
+        }
+        return
       }
-      for (let i = fallbackCount; i < currentChunk.chunks.length; i++) {
-        currentChunk.resolvers[i](currentChunk.chunks[i])
-      }
-      return
-    }
 
-    for (let i = 0; i < split.length; i++) {
-      currentChunk.resolvers[i](split[i])
+      for (let i = 0; i < split.length; i++) {
+        currentChunk.deferreds[i].resolve(split[i])
+      }
+    } catch (error) {
+      rejectTranslationChunks(error)
+      throw error
     }
   }
 
@@ -1049,9 +1070,9 @@ export async function translateHTML(
   ) {
     if (node.textContent.trim().length !== 0) {
       if (needSuperChunkedTranslate()) {
-        const prm = new Promise<string>((resolve) => {
-          translateTranslationChunks(false, node.textContent.length)
-          translationChunks[translationChunks.length - 1].resolvers.push(resolve)
+        const prm = new Promise<string>((resolve, reject) => {
+          trackTranslationChunkFlush(translateTranslationChunks(false, node.textContent.length))
+          translationChunks[translationChunks.length - 1].deferreds.push({ resolve, reject })
           translationChunks[translationChunks.length - 1].chunks.push(node.textContent)
         })
 
@@ -1137,9 +1158,9 @@ export async function translateHTML(
   // Start translation from the body element
   await translateNode(dom.body)
 
-  await translateTranslationChunks(true, 0)
+  trackTranslationChunkFlush(translateTranslationChunks(true, 0))
 
-  await Promise.all(promises)
+  await Promise.all([...translationChunkFlushes, ...promises])
   // Serialize the DOM back to HTML
   const serializer = new XMLSerializer()
   let translatedHTML = serializer.serializeToString(dom)
