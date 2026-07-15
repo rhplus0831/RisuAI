@@ -10,7 +10,6 @@
     checkPluginUpdate,
     createBlankPlugin,
     importPlugin,
-    loadPlugins,
     type RisuPlugin,
     updatePlugin,
   } from 'src/ts/plugins/plugins.svelte'
@@ -135,7 +134,6 @@
         onclick={async (e) => {
           e.stopPropagation()
           if (togglePluginEnabled(plugin.name)) {
-            loadPlugins()
             e.preventDefault()
           }
         }}>
@@ -154,7 +152,6 @@
           if (v) {
             if (deletePlugin(plugin.name)) {
               expandedPluginNames = expandedPluginNames.filter((name) => name !== plugin.name)
-              loadPlugins()
             }
           }
         }}>

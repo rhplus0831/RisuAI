@@ -242,6 +242,7 @@ export async function importPlugin(
   } = {},
 ): Promise<boolean> {
   let operation: PluginImportOperation | null = argu.operation ?? null
+  let releasePluginRuntimeSync: (() => void) | null = null
   const beginImport = () => {
     operation ??= beginPluginImport(capturePluginImportTarget(currentPluginImportFreshness()))
   }
@@ -573,6 +574,12 @@ export async function importPlugin(
     }
 
     const previous = currentPluginStateSnapshot()
+    // Plugin imports and updates are projected before their command settles,
+    // but executing an unaccepted script would make a failed command observable
+    // outside the optimistic UI. Hold automatic runtime reconciliation until
+    // the accepted explicit reload below, or until rollback has restored the
+    // previous runtime signature.
+    releasePluginRuntimeSync = deferPluginRuntimeSync()
     let persistenceResult: ReturnType<typeof runCreatePluginCommand> | ReturnType<typeof runUpdatePluginCommand> = null
     if (applyTarget.kind === 'update') {
       // Re-read the live database inside the trusted write scope so the
@@ -617,6 +624,7 @@ export async function importPlugin(
     }
     return false
   } finally {
+    releasePluginRuntimeSync?.()
     if (operation) {
       clearPluginImport(operation)
     }
@@ -624,6 +632,77 @@ export async function importPlugin(
 }
 
 let pluginTranslator = false
+
+export interface PluginRuntimeSignalSource {
+  name: string
+  enabled?: boolean
+  version?: RisuPlugin['version']
+  script: string
+  allowedIPC?: string[]
+}
+
+/**
+ * Runtime-relevant plugin identity. Argument values and presentation metadata
+ * are intentionally excluded: V2/V3 getArg reads the live database, so typing
+ * in a plugin setting must not tear down and execute every plugin again.
+ */
+export function pluginRuntimeSignature(plugins: readonly PluginRuntimeSignalSource[] | null | undefined): string {
+  return JSON.stringify(
+    (plugins ?? []).map((plugin) => [
+      plugin.name,
+      plugin.enabled === true,
+      plugin.version ?? null,
+      plugin.script,
+      plugin.allowedIPC ?? [],
+    ]),
+  )
+}
+
+const pluginRuntimeSyncState = $state({
+  suppressionDepth: 0,
+  targetSignature: null as string | null,
+})
+let stopPluginRuntimeSyncEffect: (() => void) | null = null
+
+function deferPluginRuntimeSync(): () => void {
+  pluginRuntimeSyncState.suppressionDepth += 1
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    pluginRuntimeSyncState.suppressionDepth = Math.max(0, pluginRuntimeSyncState.suppressionDepth - 1)
+  }
+}
+
+/**
+ * Keep executing plugin instances aligned with the server-backed projection.
+ * The requested target (rather than only the last completed load) matters when
+ * a command rolls back while the optimistic runtime reload is still in flight:
+ * the rollback must queue one final load of the restored state.
+ */
+export function startPluginRuntimeSync(): void {
+  if (stopPluginRuntimeSyncEffect) return
+  pluginRuntimeSyncState.targetSignature ??= pluginRuntimeSignature(getDatabase().plugins)
+  stopPluginRuntimeSyncEffect = $effect.root(() => {
+    $effect(() => {
+      const signature = pluginRuntimeSignature(getDatabase().plugins)
+      const suppressionDepth = pluginRuntimeSyncState.suppressionDepth
+      const targetSignature = pluginRuntimeSyncState.targetSignature
+      if (suppressionDepth > 0 || targetSignature === signature) return
+      void loadPlugins().catch((error) => {
+        console.error('Failed to reconcile plugin runtime:', error)
+      })
+    })
+  })
+}
+
+/** Test/app-lifecycle cleanup for the root runtime synchronization effect. */
+export function stopPluginRuntimeSync(): void {
+  stopPluginRuntimeSyncEffect?.()
+  stopPluginRuntimeSyncEffect = null
+  pluginRuntimeSyncState.suppressionDepth = 0
+  pluginRuntimeSyncState.targetSignature = null
+}
 
 let pluginLoadQueue: Promise<void> | null = null
 let pluginLoadQueued = false
@@ -644,9 +723,17 @@ async function runQueuedPluginLoads() {
 }
 
 export function loadPlugins(): Promise<void> {
+  pluginRuntimeSyncState.targetSignature = pluginRuntimeSignature(getDatabase().plugins)
   pluginLoadQueued = true
   pluginLoadQueue ??= runQueuedPluginLoads().finally(() => {
     pluginLoadQueue = null
+    // A state projection can land after the queue's final loop condition but
+    // before this cleanup callback. Do not strand that last requested target.
+    if (pluginLoadQueued) {
+      void loadPlugins().catch((error) => {
+        console.error('Failed to process queued plugin runtime reload:', error)
+      })
+    }
   })
   return pluginLoadQueue
 }

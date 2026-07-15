@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushSync } from 'svelte'
 import { get } from 'svelte/store'
 
 const pluginImportMocks = vi.hoisted(() => ({
@@ -89,7 +90,10 @@ import {
   getV2PluginAPIs,
   importPlugin,
   loadV2Plugin,
+  pluginRuntimeSignature,
   pluginV2,
+  startPluginRuntimeSync,
+  stopPluginRuntimeSync,
   updatePlugin,
   type RisuPlugin,
 } from './plugins.svelte'
@@ -377,8 +381,94 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  stopPluginRuntimeSync()
   setServerCommandSuccessReconciler(null)
   setResourceWriteGuardEnabled(false)
+})
+
+describe('plugin runtime synchronization', () => {
+  it('ignores live argument edits but reloads external script and membership projections', async () => {
+    startPluginRuntimeSync()
+    flushSync()
+
+    withTrustedResourceWrite(() => {
+      const plugin = getDatabase().plugins[0]
+      getDatabase().plugins[0] = {
+        ...plugin,
+        displayName: 'Renamed presentation only',
+        realArg: { mode: 'slow' },
+      }
+    })
+    flushSync()
+    await Promise.resolve()
+
+    expect(loadV3Plugins).not.toHaveBeenCalled()
+    expect(pluginRuntimeSignature(getDatabase().plugins)).toBe(
+      pluginRuntimeSignature([
+        seedPlugin('plugin-a', {
+          displayName: 'Another presentation value',
+          realArg: { mode: 'different' },
+        }),
+      ]),
+    )
+
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins[0] = {
+        ...getDatabase().plugins[0],
+        script: 'Risuai.log("authoritative update")',
+      }
+    })
+    flushSync()
+
+    await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(loadV3Plugins).mock.calls[0][0]).toEqual([
+      expect.objectContaining({
+        name: 'plugin-a',
+        script: 'Risuai.log("authoritative update")',
+      }),
+    ])
+
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins.push(seedPlugin('plugin-external'))
+    })
+    flushSync()
+
+    await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(loadV3Plugins).mock.calls[1][0].map((plugin) => plugin.name)).toEqual([
+      'plugin-a',
+      'plugin-external',
+    ])
+  })
+
+  it('queues the restored runtime when enablement rolls back during an optimistic reload', async () => {
+    setDatabaseLite({
+      ...getDatabase(),
+      plugins: [seedPlugin('plugin-a', { enabled: false })],
+    })
+    const optimisticLoad = createDeferred<void>()
+    vi.mocked(loadV3Plugins).mockImplementationOnce(() => optimisticLoad.promise)
+    startPluginRuntimeSync()
+    flushSync()
+
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins[0] = { ...getDatabase().plugins[0], enabled: true }
+    })
+    flushSync()
+
+    await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(loadV3Plugins).mock.calls[0][0].map((plugin) => plugin.name)).toEqual(['plugin-a'])
+
+    // Simulate runServerCommand's failure rollback while plugin-a is still
+    // being started. The final queued pass must unload the rejected runtime.
+    withTrustedResourceWrite(() => {
+      getDatabase().plugins[0] = { ...getDatabase().plugins[0], enabled: false }
+    })
+    flushSync()
+    optimisticLoad.resolve(undefined)
+
+    await vi.waitFor(() => expect(loadV3Plugins).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(loadV3Plugins).mock.calls[1][0]).toEqual([])
+  })
 })
 
 describe('plugin import/update freshness', () => {
@@ -501,6 +591,8 @@ describe('plugin import/update freshness', () => {
 
   it('rolls back a fresh server-backed plugin import and skips runtime reload when create fails', async () => {
     const calls = stubCommandFetch({ failCommands: true })
+    startPluginRuntimeSync()
+    flushSync()
 
     await expect(importPlugin(pluginSource('plugin-created'))).resolves.toBe(false)
 
@@ -519,6 +611,8 @@ describe('plugin import/update freshness', () => {
 
   it('loads a fresh server-backed plugin import only after create acceptance', async () => {
     const { calls, commandResponses } = stubDeferredCommandFetch()
+    startPluginRuntimeSync()
+    flushSync()
     const importPromise = importPlugin(pluginSource('plugin-created'))
 
     await vi.waitFor(() => {

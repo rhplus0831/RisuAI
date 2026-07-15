@@ -135,7 +135,10 @@ vi.mock('./server/commands', async (importActual) => {
   }
 })
 
-vi.mock('./plugins/plugins.svelte', () => ({ loadPlugins: vi.fn(async () => undefined) }))
+vi.mock('./plugins/plugins.svelte', () => ({
+  loadPlugins: vi.fn(async () => undefined),
+  startPluginRuntimeSync: vi.fn(),
+}))
 vi.mock('./alert', () => ({
   alertError: vi.fn(),
   alertMd: vi.fn(),
@@ -162,9 +165,11 @@ vi.mock('./server/pushNotifications', () => ({ enableChatCompletionPushNotificat
 import {
   calculateServerResourceReconnectDelayMs,
   createGlobalErrorHandlers,
+  loadData,
   loadWebInitialDatabase,
   stopServerResourceEvents,
 } from './bootstrap'
+import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
 import { alertError } from './alert'
 import { updateHeightMode } from './gui/heightMode'
 import {
@@ -205,7 +210,7 @@ import {
 } from './server/resourceState.svelte'
 import { getServerResourceApplyEpoch } from './server/resourceWriteGuard.svelte'
 import { captureDestructiveRefreshEpoch, createDestructiveRefreshToken } from './server/staleStateGuards'
-import { selectedCharID } from './stores.svelte'
+import { loadedStore, selectedCharID } from './stores.svelte'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
 import { updateGuisize } from './gui/guisize'
@@ -276,6 +281,7 @@ beforeEach(() => {
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   seedResourceDatabase()
+  loadedStore.set(false)
   selectedCharID.set(-1)
   clearCachedServerCommandRevision()
   clearAppliedServerResourceRevision()
@@ -316,6 +322,16 @@ afterEach(() => {
 })
 
 describe('API-backed client bootstrap', () => {
+  it('starts plugin runtime synchronization after the initial plugin load', async () => {
+    await loadData()
+
+    expect(loadPlugins).toHaveBeenCalledOnce()
+    expect(startPluginRuntimeSync).toHaveBeenCalledOnce()
+    expect(vi.mocked(loadPlugins).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(startPluginRuntimeSync).mock.invocationCallOrder[0],
+    )
+  })
+
   it('reapplies display runtime effects after an authoritative settings projection', () => {
     expect(
       applySettingsGroupResource(

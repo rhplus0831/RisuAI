@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { getDatabase, setResourceWriteGuardEnabled, type Database } from './storage/database.svelte'
 import { botMakerMode, selectedCharID, loadedStore, LoadingStatusState } from './stores.svelte'
-import { loadPlugins } from './plugins/plugins.svelte'
+import { loadPlugins, startPluginRuntimeSync } from './plugins/plugins.svelte'
 import { alertError, alertMd, alertTOS, waitAlert } from './alert'
 import { updateAnimationSpeed } from './gui/animation'
 import { updateColorScheme, updateTextThemeAndCSS } from './gui/colorscheme'
@@ -167,6 +167,7 @@ export async function loadData() {
       try {
         await loadPlugins()
       } catch (error) {}
+      startPluginRuntimeSync()
       LoadingStatusState.text = 'Checking For Format Update...'
 
       LoadingStatusState.text = 'Updating States...'
