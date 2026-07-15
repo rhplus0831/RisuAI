@@ -199,6 +199,14 @@ async function updateSearch(value: string) {
   await tick()
 }
 
+async function updateModuleName(value: string) {
+  const input = target.querySelector<HTMLInputElement>('input[type="text"]')
+  expect(input, 'module name input').toBeTruthy()
+  input!.value = value
+  input!.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
 async function clickModuleSurfaceAction(actionKind: string) {
   moduleSurfaceAction(actionKind).click()
   await tick()
@@ -310,7 +318,24 @@ describe('ModuleSettings derived module rows', () => {
 
     readCounter.count = 0
     await clickModuleSurfaceAction('create')
+    await updateModuleName('New Module')
     await clickModuleSurfaceAction('submit-create')
     expect(readCounter.count).toBe(moduleRows().length)
+  })
+
+  it.each([
+    ['empty', ''],
+    ['whitespace-only', '  \t  '],
+  ])('rejects a %s module name during creation', async (_case, name) => {
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName(name)
+
+    await clickModuleSurfaceAction('submit-create')
+
+    expect(moduleCommandSpies.createGlobalModule).not.toHaveBeenCalled()
+    expect(alertSpies.alertError).toHaveBeenCalledOnce()
+    expect(alertSpies.alertError).toHaveBeenCalledWith(language.errors.emptyText)
+    expect(target.textContent).toContain(language.createModule)
   })
 })

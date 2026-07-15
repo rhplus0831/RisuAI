@@ -49,7 +49,7 @@
   import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints } from '@lucide/svelte'
   import { v4 } from 'uuid'
   import { tooltip } from 'src/ts/gui/tooltip'
-  import { alertConfirm } from 'src/ts/alert'
+  import { alertConfirm, alertError } from 'src/ts/alert'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import { onDestroy } from 'svelte'
   import { importMCPModule } from 'src/ts/process/mcp/mcp'
@@ -84,6 +84,16 @@
   function moduleIntegrationState(rmodule: RisuModule) {
     if (!rmodule.namespace) return 'none'
     return moduleIntegrationNamespaces.has(rmodule.namespace) ? 'integrated' : 'unmatched'
+  }
+
+  function createModuleFromDraft() {
+    if (tempModule.name.trim() === '') {
+      alertError(language.errors.emptyText)
+      return
+    }
+
+    createGlobalModule(cloneJsonValue(tempModule))
+    mode = 0
   }
 
   onDestroy(() => {
@@ -229,12 +239,7 @@
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.createModule}</h2>
   <ModuleMenu bind:currentModule={tempModule} />
   <div class="contents" data-risu-module-action="submit-create">
-    <Button
-      className="mt-6"
-      onclick={() => {
-        createGlobalModule(cloneJsonValue(tempModule))
-        mode = 0
-      }}>{language.createModule}</Button>
+    <Button className="mt-6" onclick={createModuleFromDraft}>{language.createModule}</Button>
   </div>
 {:else if mode === 2}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.editModule}</h2>
