@@ -125,8 +125,10 @@
 
       if (name.endsWith('.risup')) {
         const data = new Uint8Array(await file.arrayBuffer())
-        await importPreset({ name: file.name, data })
-        alertNormal(language.successImport)
+        const imported = await importPreset({ name: file.name, data })
+        if (imported) {
+          alertNormal(language.successImport)
+        }
       } else if (name.endsWith('.risum')) {
         const data = new Uint8Array(await file.arrayBuffer())
         await importRisuModuleData(data)

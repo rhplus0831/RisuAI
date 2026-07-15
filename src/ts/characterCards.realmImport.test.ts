@@ -34,6 +34,15 @@ const resourceRefreshState = vi.hoisted(() => ({
   refreshServerRealmImportResources: vi.fn(),
 }))
 
+const presetImportState = vi.hoisted(() => ({
+  importPreset: vi.fn(),
+}))
+
+const settingsState = vi.hoisted(() => ({
+  settingsMenuIndexSet: vi.fn(),
+  settingsOpenSet: vi.fn(),
+}))
+
 vi.mock('./alert', () => ({
   alertCardExport: vi.fn(),
   alertConfirm: alertState.alertConfirm,
@@ -52,7 +61,7 @@ vi.mock('./storage/database.svelte', () => ({
   appVer: 'test',
   defaultSdDataFunc: vi.fn(() => []),
   getDatabase: vi.fn(() => dbState.db),
-  importPreset: vi.fn(),
+  importPreset: presetImportState.importPreset,
   setDatabase: vi.fn(),
   setDatabaseLite: vi.fn(),
 }))
@@ -127,14 +136,14 @@ vi.mock('./media', () => ({
 }))
 
 vi.mock('./stores.svelte', () => {
-  const store = () => ({
-    set: vi.fn(),
+  const store = (set = vi.fn()) => ({
+    set,
     subscribe: vi.fn(() => () => {}),
   })
   return {
     selectedCharID: store(),
-    SettingsMenuIndex: store(),
-    settingsOpen: store(),
+    SettingsMenuIndex: store(settingsState.settingsMenuIndexSet),
+    settingsOpen: store(settingsState.settingsOpenSet),
   }
 })
 
@@ -177,7 +186,7 @@ vi.mock('./server/resourceRefresh', () => ({
   refreshServerRealmImportResources: resourceRefreshState.refreshServerRealmImportResources,
 }))
 
-import { downloadRisuHub } from './characterCards'
+import { characterURLImport, downloadRisuHub } from './characterCards'
 
 type Deferred<T> = {
   promise: Promise<T>
@@ -244,8 +253,10 @@ beforeEach(() => {
   alertState.alertConfirm.mockResolvedValue(true)
   alertState.alertTOS.mockResolvedValue(true)
   globalApiState.checkCharOrder.mockImplementation(() => undefined)
+  presetImportState.importPreset.mockResolvedValue(true)
   realmImportState.importRealmCharacterFromServer.mockResolvedValue(okRealmImport('char-imported'))
   resourceRefreshState.refreshServerRealmImportResources.mockResolvedValue({ status: 'ok', revision: 20 })
+  window.history.replaceState(null, '', '/')
 })
 
 afterEach(() => {
@@ -441,5 +452,50 @@ describe('Realm character import finish refresh', () => {
     const progressMessages = alertState.alertProgress.mock.calls.map(([message]) => message)
     expect(progressMessages).toContain('Refreshing imported character')
     expect(progressMessages).not.toContain('Realm import complete')
+  })
+})
+
+describe('preset URL imports', () => {
+  it('does not open preset settings when an inline preset import fails', async () => {
+    const encodedPreset = encodeURIComponent(Buffer.from([1, 2, 3]).toString('base64'))
+    window.history.replaceState(null, '', `/#import_preset=${encodedPreset}`)
+    presetImportState.importPreset.mockResolvedValueOnce(false)
+
+    await characterURLImport()
+
+    expect(presetImportState.importPreset).toHaveBeenCalledWith({
+      name: 'imported.risupreset',
+      data: Buffer.from([1, 2, 3]),
+    })
+    expect(settingsState.settingsMenuIndexSet).not.toHaveBeenCalled()
+    expect(settingsState.settingsOpenSet).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('does not report success or open settings when a downloaded preset import fails', async () => {
+    window.history.replaceState(null, '', '/#import=https://example.test/broken.risup')
+    presetImportState.importPreset.mockResolvedValueOnce(false)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(new Uint8Array([4, 5, 6]), {
+            status: 200,
+            headers: {
+              'content-disposition': 'attachment; filename="broken.risup"',
+            },
+          }),
+      ) as unknown as typeof fetch,
+    )
+
+    await characterURLImport()
+
+    expect(presetImportState.importPreset).toHaveBeenCalledWith({
+      name: 'broken.risup',
+      data: new Uint8Array([4, 5, 6]),
+    })
+    expect(settingsState.settingsMenuIndexSet).not.toHaveBeenCalled()
+    expect(settingsState.settingsOpenSet).not.toHaveBeenCalled()
+    expect(alertState.alertNormal).not.toHaveBeenCalled()
   })
 })

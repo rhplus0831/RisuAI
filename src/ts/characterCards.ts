@@ -427,12 +427,14 @@ export async function characterURLImport() {
   if (hash.startsWith('#import_preset=')) {
     const data = hash.replace('#import_preset=', '')
     const importData = Buffer.from(decodeURIComponent(data), 'base64')
-    await importPreset({
+    const imported = await importPreset({
       name: 'imported.risupreset',
       data: importData,
     })
-    SettingsMenuIndex.set(18)
-    settingsOpen.set(true)
+    if (imported) {
+      SettingsMenuIndex.set(18)
+      settingsOpen.set(true)
+    }
     return
   }
   async function importFile(name: string, data: Uint8Array) {
@@ -444,13 +446,15 @@ export async function characterURLImport() {
       return
     }
     if (name.endsWith('.risupreset') || name.endsWith('.risup')) {
-      await importPreset({
+      const imported = await importPreset({
         name: name,
         data: data,
       })
-      SettingsMenuIndex.set(18)
-      settingsOpen.set(true)
-      alertNormal(language.successImport)
+      if (imported) {
+        SettingsMenuIndex.set(18)
+        settingsOpen.set(true)
+        alertNormal(language.successImport)
+      }
       return
     }
     if (name.endsWith('risum')) {

@@ -443,4 +443,41 @@ describe('App route/refreeze mounted DOM behavior', () => {
     expect(window.location.pathname).toBe(routePath)
     expect(appRouteDomMocks.state.applyRouteCalls).toBe(1)
   })
+
+  it('does not report a failed dropped preset import as successful', async () => {
+    let resolveImport!: (imported: boolean) => void
+    const importResult = new Promise<boolean>((resolve) => {
+      resolveImport = resolve
+    })
+    appRouteDomMocks.importPreset.mockReturnValueOnce(importResult)
+    appRouteDomMocks.alertNormal.mockClear()
+
+    const droppedFile = {
+      name: 'broken.risup',
+      arrayBuffer: vi.fn(async () => new Uint8Array([1, 2, 3]).buffer),
+    }
+    const dropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(dropEvent, 'dataTransfer', {
+      value: {
+        files: [droppedFile],
+        types: [],
+      },
+    })
+
+    const main = target.querySelector('main')
+    expect(main).not.toBeNull()
+    main?.dispatchEvent(dropEvent)
+
+    await vi.waitFor(() => {
+      expect(appRouteDomMocks.importPreset).toHaveBeenCalledWith({
+        name: 'broken.risup',
+        data: new Uint8Array([1, 2, 3]),
+      })
+    })
+    resolveImport(false)
+    await importResult
+    await tick()
+
+    expect(appRouteDomMocks.alertNormal).not.toHaveBeenCalled()
+  })
 })
