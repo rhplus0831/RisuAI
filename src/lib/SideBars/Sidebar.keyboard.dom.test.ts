@@ -59,6 +59,7 @@ vi.mock('src/ts/util', async (importActual) => {
 })
 
 import Sidebar from './Sidebar.svelte'
+import { language } from 'src/lang'
 import { setDatabaseLite } from 'src/ts/storage/database.svelte'
 import { botMakerMode, DynamicGUI, PlaygroundStore, selectedCharID, settingsOpen } from 'src/ts/stores.svelte'
 
@@ -67,7 +68,7 @@ type MountedComponent = Parameters<typeof unmount>[0]
 let component: MountedComponent | undefined
 let target: HTMLElement
 
-function seedSidebarDatabase() {
+function seedSidebarDatabase(options: { enableDevTools?: boolean } = {}) {
   setDatabaseLite({
     characterOrder: ['char-a'],
     characters: [
@@ -82,6 +83,7 @@ function seedSidebarDatabase() {
     hamburgerButtonBottom: false,
     menuSideBar: false,
     roundIcons: false,
+    enableDevTools: options.enableDevTools ?? false,
   } as never)
 }
 
@@ -164,6 +166,22 @@ afterEach(() => {
 })
 
 describe('Sidebar character keyboard activation', () => {
+  it('names and exposes the state of the developer tools tab', async () => {
+    seedSidebarDatabase({ enableDevTools: true })
+    selectedCharID.set(0)
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const developerTools = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.enableDevTools}"]`)
+    expect(developerTools).toBeTruthy()
+    expect(developerTools!.getAttribute('aria-pressed')).toBe('false')
+
+    developerTools!.click()
+    await tick()
+
+    expect(developerTools!.getAttribute('aria-pressed')).toBe('true')
+  })
+
   it('does not expose an empty ghost button above the sidebar content', async () => {
     component = mount(Sidebar, { target })
     await tick()

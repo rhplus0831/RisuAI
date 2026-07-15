@@ -123,6 +123,8 @@
     bind:this={ele}>
     {#each getDatabase().personas as persona, i}
       <button
+        aria-label={persona.name || `${language.persona} ${i + 1}`}
+        aria-pressed={i === getDatabase().selectedPersona}
         data-risu-idx={i}
         onclick={() => {
           changeUserPersona(i)
@@ -175,6 +177,7 @@
 <div class="flex w-full items-starts rounded-md border-darkborderc border p-4 max-w-full flex-wrap">
   <div class="flex flex-col mt-4 mr-4">
     <button
+      aria-label={language.userIcon}
       onclick={() => {
         selectUserImg()
       }}>

@@ -734,6 +734,8 @@
           class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
         {#if getDatabase().enableDevTools}
           <button
+            aria-label={language.enableDevTools}
+            aria-pressed={devTool}
             onclick={() => {
               devTool = true
             }}
