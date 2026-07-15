@@ -49,4 +49,27 @@ describe('Risu-Kei backups', () => {
 
     expect(backupMocks.alertNormal).toHaveBeenCalledWith('Error: backup service failed')
   })
+
+  it('wraps Previous to the final non-empty page for exact page-size multiples', async () => {
+    const backups = Array.from({ length: 10 }, (_, index) => [`backup-${index}`, `id-${index}`])
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ activated: false, backups })),
+    )
+    backupMocks.alertSelect.mockImplementation(async (menu: string[]) => {
+      const call = backupMocks.alertSelect.mock.calls.length
+      return String(menu.indexOf(call === 1 ? 'Previous' : 'Cancel'))
+    })
+
+    await autoServerBackup()
+
+    expect(backupMocks.alertSelect).toHaveBeenCalledTimes(2)
+    expect(backupMocks.alertSelect.mock.calls[1][0].slice(0, 5)).toEqual([
+      'backup-5',
+      'backup-6',
+      'backup-7',
+      'backup-8',
+      'backup-9',
+    ])
+  })
 })

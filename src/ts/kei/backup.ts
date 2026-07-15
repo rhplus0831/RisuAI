@@ -43,7 +43,7 @@ export async function autoServerBackup() {
       } else if (selected === 'Previous') {
         pointer -= 5
         if (pointer < 0) {
-          pointer = Math.floor(backups.length / 5) * 5
+          pointer = Math.floor(Math.max(0, backups.length - 1) / 5) * 5
         }
       } else {
         const backup = backups.find((backup) => backup[0] === selected)
