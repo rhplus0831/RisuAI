@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearOpenRouterRequestCachesForTests,
+  getFreeOpenRouterModels,
   getOpenRouterModels,
   getOpenRouterProviders,
   type OpenRouterCatalogFetchContext,
@@ -149,6 +150,12 @@ describe('getOpenRouterModels', () => {
     expect(await getOpenRouterModels({ apiKey: 'retry-key' })).toEqual([])
     expect(await getOpenRouterModels({ apiKey: 'retry-key' })).toHaveLength(1)
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns an empty model id when the free-model catalog is empty', async () => {
+    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+
+    await expect(getFreeOpenRouterModels({ apiKey: 'empty-catalog-key' })).resolves.toBe('')
   })
 })
 

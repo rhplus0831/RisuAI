@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { language } from 'src/lang'
 
 vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
@@ -422,6 +423,36 @@ describe('requestOpenAI profile provider options', () => {
     expect(payload.headers.Authorization).toBe('Bearer sk-profile-openrouter-free')
     expect(payload.body.model).toBe('profile/free-large')
     expect(payload.body.model).not.toBe('flat/free-large')
+  })
+
+  it('fails safely when the risu/free catalog is empty', async () => {
+    const profile = resolveModelProfile({
+      database: db({
+        aiModel: 'openrouter',
+        openrouterKey: 'sk-empty-openrouter-free',
+        openrouterRequestModel: 'risu/free',
+      } as Partial<Database>),
+    })
+    setDatabase(
+      db({
+        aiModel: 'openrouter',
+        openrouterKey: 'sk-flat-openrouter',
+        openrouterRequestModel: 'risu/free',
+      } as Partial<Database>),
+    )
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await requestOpenAI(makeArg(profile))
+
+    expect(result).toEqual({ type: 'fail', result: language.errors.unknownModel })
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
   it('uses NanoGPT profile key, request model, provider header, and subscription endpoint over flat conflicts', async () => {

@@ -373,9 +373,16 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
   let openrouterRequestModel = hasResolvedProfile ? (requestModel ?? '') : db.openrouterRequestModel
 
   if (aiModel === 'openrouter' && openrouterRequestModel === 'risu/free') {
-    openrouterRequestModel = await (hasResolvedProfile
+    const freeOpenRouterModel = await (hasResolvedProfile
       ? getFreeOpenRouterModels({ apiKey: providerOptions?.apiKey })
       : getFreeOpenRouterModels())
+    if (!freeOpenRouterModel) {
+      return {
+        type: 'fail',
+        result: language.errors.unknownModel,
+      }
+    }
+    openrouterRequestModel = freeOpenRouterModel
   }
 
   if (arg.modelInfo.flags.includes(LLMFlags.DeveloperRole)) {

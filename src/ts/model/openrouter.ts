@@ -176,15 +176,10 @@ export function toModelGridItem(m: OpenRouterModelInfo): ModelGridItem {
   }
 }
 
-export async function getFreeOpenRouterModels(context?: OpenRouterCatalogFetchContext) {
+export async function getFreeOpenRouterModels(context?: OpenRouterCatalogFetchContext): Promise<string> {
   const models = await getOpenRouterModels(context)
-  return (
-    models
-      .filter((model: any) => {
-        return model.name.endsWith('Free')
-      })
-      .sort((a: any, b: any) => {
-        return b.context_length - a.context_length
-      })[0].id ?? ''
-  )
+  const freeModels = models
+    .filter((model) => model.name.endsWith('Free'))
+    .sort((a, b) => b.context_length - a.context_length)
+  return freeModels[0]?.id ?? ''
 }
