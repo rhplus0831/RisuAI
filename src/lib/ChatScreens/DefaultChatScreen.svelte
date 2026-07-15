@@ -142,6 +142,11 @@
     originalText: string
     fileInput: string[]
   }
+  type ScreenshotOperation = {
+    target: ActiveChatTarget
+    transcriptIdentity: string
+    previousLoadPages: number
+  }
 
   interface Props {
     openModuleList?: boolean
@@ -167,6 +172,7 @@
   let activeTranscriptWindowIdentity: string | null = $state(null)
   let activeBgmObserverIdentity: string | null = $state(null)
   let lastInputTranslationRollback: InputTranslationRollback | null = $state(null)
+  let activeScreenshotOperation: ScreenshotOperation | null = null
   let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props()
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
   let activeChatOpen = $derived.by(() => {
@@ -205,6 +211,42 @@
       chatPage,
       chatId: chat?.id,
     })
+  }
+
+  function beginScreenshotOperation(): ScreenshotOperation | null {
+    const target = captureActiveChatTarget()
+    const transcriptIdentity = getActiveTranscriptWindowIdentity()
+    if (!target || !transcriptIdentity || !isActiveChatTargetFresh(target)) return null
+
+    const operation = {
+      target,
+      transcriptIdentity,
+      previousLoadPages:
+        activeScreenshotOperation?.transcriptIdentity === transcriptIdentity
+          ? activeScreenshotOperation.previousLoadPages
+          : loadPages,
+    }
+    activeScreenshotOperation = operation
+    return operation
+  }
+
+  function isCurrentScreenshotOperation(operation: ScreenshotOperation): boolean {
+    return (
+      activeScreenshotOperation === operation &&
+      getActiveTranscriptWindowIdentity() === operation.transcriptIdentity &&
+      isActiveChatTargetFresh(operation.target)
+    )
+  }
+
+  function restoreScreenshotWindow(operation: ScreenshotOperation): void {
+    if (activeScreenshotOperation !== operation) return
+
+    if (getActiveTranscriptWindowIdentity() === operation.transcriptIdentity) {
+      loadPages = operation.previousLoadPages
+    } else if (loadPages === Infinity) {
+      loadPages = configuredChatLoadPages
+    }
+    activeScreenshotOperation = null
   }
 
   function markComposerDraftChanged(
@@ -1017,22 +1059,31 @@
   }
 
   async function screenShot() {
-    const screenshotIdentity = getActiveTranscriptWindowIdentity()
-    const previousLoadPages = loadPages
+    const operation = beginScreenshotOperation()
+    if (!operation) return
+
     let canvases: Array<HTMLCanvasElement | null> = []
     let mergedCanvas: HTMLCanvasElement | null = null
     try {
       await hydrateActiveChatFully()
+      if (!isCurrentScreenshotOperation(operation)) return
+
       loadPages = Infinity
       await tick()
+      if (!isCurrentScreenshotOperation(operation)) return
+
       const html2canvas = await import('html-to-image')
+      if (!isCurrentScreenshotOperation(operation)) return
+
       const chats = document.querySelectorAll('.default-chat-screen .risu-chat')
       alertWait('Taking screenShot...')
 
       for (const chat of chats) {
         const cnv = await html2canvas.toCanvas(chat as HTMLElement)
-        alertWait('Taking screenShot... ' + canvases.length + '/' + chats.length)
         canvases.push(cnv)
+        if (!isCurrentScreenshotOperation(operation)) return
+
+        alertWait('Taking screenShot... ' + canvases.length + '/' + chats.length)
       }
 
       canvases.reverse()
@@ -1070,12 +1121,18 @@
       }
 
       if (mergedCanvas) {
+        if (!isCurrentScreenshotOperation(operation)) return
+
         await downloadFile(`chat-${v4()}.png`, Buffer.from(mergedCanvas.toDataURL('png').split(',').at(-1), 'base64'))
+        if (!isCurrentScreenshotOperation(operation)) return
+
         mergedCanvas.remove()
         mergedCanvas = null
       }
       alertNormal(language.screenshotSaved)
     } catch (error) {
+      if (!isCurrentScreenshotOperation(operation)) return
+
       console.error(error)
       alertError('Error while taking screenshot')
     } finally {
@@ -1083,8 +1140,7 @@
         canvas?.remove()
       }
       mergedCanvas?.remove()
-      loadPages =
-        getActiveTranscriptWindowIdentity() === screenshotIdentity ? previousLoadPages : configuredChatLoadPages
+      restoreScreenshotWindow(operation)
     }
   }
 

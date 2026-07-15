@@ -253,7 +253,7 @@ let consoleErrorSpy: ReturnType<typeof vi.spyOn>
 function makeMessages(prefix: string, count: number) {
   return Array.from({ length: count }, (_, index) => ({
     chatId: `${prefix}-message-${index}`,
-    role: index % 2 === 0 ? 'user' : 'char',
+    role: index % 2 === 0 ? ('user' as const) : ('char' as const),
     data: `${prefix} message ${index}`,
   }))
 }
@@ -636,6 +636,80 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(messageRowIndexes()).not.toContain(0)
     expect(loadPageMocks.downloadFile).not.toHaveBeenCalled()
     expect(consoleErrorSpy).toHaveBeenCalled()
+  })
+
+  it('aborts a screenshot when the active chat changes during hydration', async () => {
+    seedDatabase([80, 70])
+    const hydration = createDeferred<void>()
+    loadPageMocks.hydrateActiveChatFully.mockReturnValueOnce(hydration.promise)
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
+
+    await clickScreenshotMenuItem()
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      const indexes = messageRowIndexes()
+      expect(indexes).toHaveLength(30)
+      expect(indexes).toContain(69)
+      expect(indexes).not.toContain(39)
+    })
+
+    hydration.resolve()
+    await settle()
+
+    expect(loadPageMocks.toCanvas).not.toHaveBeenCalled()
+    expect(loadPageMocks.downloadFile).not.toHaveBeenCalled()
+    expect(loadPageMocks.alertNormal).not.toHaveBeenCalled()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+    expect(messageRowIndexes()).toHaveLength(30)
+    expect(messageRowIndexes()).not.toContain(39)
+  })
+
+  it('aborts a screenshot when the active chat changes during row capture', async () => {
+    seedDatabase([80])
+    const character = getResourceDatabase().characters[0]
+    character.chats.push({
+      ...character.chats[0],
+      id: 'alternate-chat',
+      name: 'Alternate chat',
+      message: makeMessages('alternate-chat', 70),
+      bookmarks: [],
+      bookmarkNames: {},
+      localLore: [],
+    })
+    const rowCapture = createDeferred<HTMLCanvasElement>()
+    loadPageMocks.toCanvas.mockReturnValueOnce(rowCapture.promise)
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(30))
+
+    await clickScreenshotMenuItem()
+    await waitFor(() => expect(loadPageMocks.toCanvas).toHaveBeenCalledTimes(1))
+
+    character.chatPage = 1
+    loadPageMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-0/alternate-chat',
+      chaId: 'character-0',
+      chatId: 'alternate-chat',
+    })
+    await waitFor(() => {
+      const indexes = messageRowIndexes()
+      expect(indexes).toHaveLength(30)
+      expect(indexes).toContain(69)
+      expect(indexes).not.toContain(39)
+    })
+
+    rowCapture.resolve(createCanvas())
+    await settle()
+
+    expect(loadPageMocks.toCanvas).toHaveBeenCalledTimes(1)
+    expect(loadPageMocks.downloadFile).not.toHaveBeenCalled()
+    expect(loadPageMocks.alertNormal).not.toHaveBeenCalled()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+    expect(messageRowIndexes()).toHaveLength(30)
+    expect(messageRowIndexes()).not.toContain(39)
   })
 
   it('paints the resolved theme color behind transparent screenshot rows', async () => {
