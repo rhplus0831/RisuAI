@@ -8,13 +8,14 @@
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import { PlusIcon, TrashIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
-  import type { LLMFlags, LLMFormat, LLMTokenizer } from 'src/ts/model/types'
+  import { LLMFlags, type LLMFormat, type LLMTokenizer } from 'src/ts/model/types'
   import { v4 } from 'uuid'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
 
   type CustomModel = Database['customModels'][number]
 
   const customModelsDraft = createServerBackedSettingDraft<CustomModel[]>('customModels', [])
+  const customModelFlagOptions = Object.entries(LLMFlags).map(([name, flag]) => ({ name, flag }))
 
   let openedModels = $state(new Set<string>())
 
@@ -213,29 +214,9 @@
     stop=json::["</s>", "\\n\\n"]
     frequency_penalty={{none}}`} />
           <Accordion styled name={language.flags}>
-            {@render CustomFlagButton(index, 'hasImageInput', 0)}
-            {@render CustomFlagButton(index, 'hasImageOutput', 1)}
-            {@render CustomFlagButton(index, 'hasAudioInput', 2)}
-            {@render CustomFlagButton(index, 'hasAudioOutput', 3)}
-            {@render CustomFlagButton(index, 'hasPrefill', 4)}
-            {@render CustomFlagButton(index, 'hasCache', 5)}
-            {@render CustomFlagButton(index, 'hasFullSystemPrompt', 6)}
-            {@render CustomFlagButton(index, 'hasFirstSystemPrompt', 7)}
-            {@render CustomFlagButton(index, 'hasStreaming', 8)}
-            {@render CustomFlagButton(index, 'requiresAlternateRole', 9)}
-            {@render CustomFlagButton(index, 'mustStartWithUserInput', 10)}
-            {@render CustomFlagButton(index, 'hasVideoInput', 12)}
-            {@render CustomFlagButton(index, 'OAICompletionTokens', 13)}
-            {@render CustomFlagButton(index, 'DeveloperRole', 14)}
-            {@render CustomFlagButton(index, 'geminiThinking', 15)}
-            {@render CustomFlagButton(index, 'geminiBlockOff', 16)}
-            {@render CustomFlagButton(index, 'deepSeekPrefix', 17)}
-            {@render CustomFlagButton(index, 'deepSeekThinkingInput', 18)}
-            {@render CustomFlagButton(index, 'deepSeekThinkingOutput', 19)}
-            {@render CustomFlagButton(index, 'noCivilIntegrity', 20)}
-            {@render CustomFlagButton(index, 'claudeThinking', 21)}
-            {@render CustomFlagButton(index, 'claudeAdaptiveThinking', 22)}
-            {@render CustomFlagButton(index, 'deepSeekThinkingToggle', 24)}
+            {#each customModelFlagOptions as option (option.flag)}
+              {@render CustomFlagButton(index, option.name, option.flag)}
+            {/each}
           </Accordion>
         </div>
       {/if}
