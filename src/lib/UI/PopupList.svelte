@@ -25,6 +25,7 @@
 
   const close = () => {
     popupStore.children = null
+    popupStore.openId = 0
   }
 
   onMount(async () => {
