@@ -848,6 +848,21 @@ describe('persona ID read and command preparation', () => {
     getDatabase().userIcon = 'a.png'
     getDatabase().personaPrompt = 'Old prompt'
     getDatabase().userNote = 'New note'
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ revision: 1 }))
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        revision: 2,
+        event: {
+          type: 'persona.updated',
+          revision: 2,
+          resource: 'persona',
+          id: 'persona-a',
+        },
+        personaId: 'persona-a',
+        acknowledgedKeys: ['note'],
+        legacyProfileProjectionApplied: true,
+      }),
+    )
 
     saveUserPersona()
     await vi.waitFor(() => {
