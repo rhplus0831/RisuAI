@@ -327,6 +327,153 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
     expect(res.json()).toEqual({ type: 'success', result: 'server-owned pong' })
   })
 
+  it('proxies native Ollama Cloud tool rounds with the server model and stored credential', async () => {
+    writeDatabase({
+      aiModel: 'ollama-cloud',
+      ollamaApiKey: 'sk-server-ollama-cloud',
+      ollamaCloudModel: 'server-native-model',
+      ollamaRequestFormat: LLMFormat.Ollama,
+      ollamaThinkingMode: 'medium',
+    })
+    let captured:
+      | {
+          url: string
+          headers: Record<string, string>
+          body: Record<string, unknown>
+        }
+      | undefined
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      captured = {
+        url,
+        headers: init.headers as Record<string, string>,
+        body: JSON.parse(String(init.body)) as Record<string, unknown>,
+      }
+      return new Response(
+        `${JSON.stringify({ message: { role: 'assistant', content: 'cloud stream' }, done: true })}\n`,
+        {
+          status: 200,
+          headers: { 'content-type': 'application/x-ndjson' },
+        },
+      )
+    }) as unknown as typeof globalThis.fetch
+
+    const { assertion } = await setupAuthedClient(harness.app)
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=native&mode=model&staticModel=ollama-cloud',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        model: 'browser-controlled-model',
+        messages: [{ role: 'user', content: 'use a tool' }],
+        stream: true,
+        think: false,
+        tools: [{ type: 'function', function: { name: 'lookup', parameters: { type: 'object' } } }],
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('application/x-ndjson')
+    expect(res.body).toContain('cloud stream')
+    expect(captured).toBeDefined()
+    expect(captured?.url).toBe('https://ollama.com/api/chat')
+    expect(captured?.headers.authorization).toBe('Bearer sk-server-ollama-cloud')
+    expect(captured?.body).toMatchObject({
+      model: 'server-native-model',
+      stream: true,
+      think: 'medium',
+      messages: [{ role: 'user', content: 'use a tool' }],
+    })
+  })
+
+  it.each([
+    [LLMFormat.OpenAICompatible, 'openai-chat', 'https://ollama.com/v1/chat/completions'],
+    [LLMFormat.OpenAIResponseAPI, 'openai-responses', 'https://ollama.com/v1/responses'],
+    [LLMFormat.Anthropic, 'anthropic', 'https://ollama.com/v1/messages'],
+  ] as const)(
+    'proxies %s Ollama Cloud profile tool rounds only to the fixed endpoint',
+    async (format, protocol, url) => {
+      writeDatabase({
+        aiModel: 'echo_model',
+        modelProfiles: [
+          {
+            id: 'ollama-cloud-profile',
+            name: 'Ollama Cloud Profile',
+            providerId: 'ollama',
+            modelId: 'ollama-cloud',
+            providerOptions: {
+              apiKey: 'sk-server-profile-ollama',
+              requestModel: 'server-profile-model',
+              ollama: { requestFormat: format },
+            },
+          },
+        ],
+      })
+      const calls: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }> = []
+      globalThis.fetch = (async (upstreamUrl: string, init: RequestInit) => {
+        calls.push({
+          url: upstreamUrl,
+          headers: init.headers as Record<string, string>,
+          body: JSON.parse(String(init.body)) as Record<string, unknown>,
+        })
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof globalThis.fetch
+
+      const { assertion } = await setupAuthedClient(harness.app)
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: `/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=${protocol}&mode=model&profileId=ollama-cloud-profile`,
+        headers: { 'risu-auth': assertion },
+        payload: {
+          model: 'browser-controlled-model',
+          messages: [{ role: 'user', content: 'hello' }],
+          stream: false,
+        },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(calls).toHaveLength(1)
+      expect(calls[0]).toMatchObject({
+        url,
+        headers: { authorization: 'Bearer sk-server-profile-ollama' },
+        body: { model: 'server-profile-model', stream: false },
+      })
+    },
+  )
+
+  it('rejects stale protocols and caller-supplied target URLs before Ollama Cloud dispatch', async () => {
+    writeDatabase({
+      aiModel: 'ollama-cloud',
+      ollamaApiKey: 'sk-server-ollama-cloud',
+      ollamaCloudModel: 'server-native-model',
+      ollamaRequestFormat: LLMFormat.Ollama,
+    })
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch
+    const { assertion } = await setupAuthedClient(harness.app)
+
+    const mismatch = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=openai-chat&mode=model&staticModel=ollama-cloud',
+      headers: { 'risu-auth': assertion },
+      payload: { model: 'ignored', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    })
+    expect(mismatch.statusCode).toBe(400)
+    expect(mismatch.json().error).toContain('protocol no longer matches')
+
+    const arbitraryTarget = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/completion?operation=ollama-cloud-tool&protocol=native&mode=model&staticModel=ollama-cloud&url=https%3A%2F%2Fevil.example',
+      headers: { 'risu-auth': assertion },
+      payload: { model: 'ignored', messages: [{ role: 'user', content: 'hi' }], stream: false },
+    })
+    expect(arbitraryTarget.statusCode).toBe(400)
+    expect(arbitraryTarget.json()).toEqual({ error: 'invalid Ollama Cloud tool request identity' })
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
   it('server-intent completion preserves the uninitialized database response', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const res = await harness.app.inject({

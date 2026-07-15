@@ -38,6 +38,7 @@ import { loadServerIntentCompletionSettings } from '../repository.js'
 import { dispatchChatProvider } from '../prompt/chatDispatch.js'
 import { generationSubmitRateLimit } from '../routeRateLimits.js'
 import { attachAbort } from '../requestAbort.js'
+import { handleOllamaCloudToolProxy, isOllamaCloudToolOperation } from '../ollamaCloudToolProxy.js'
 
 const SUPPORTED_PROVIDERS = new Set([
   'echo',
@@ -1267,6 +1268,11 @@ export function registerGenerationRoutes(
 ): void {
   app.post('/api/v1/generate/completion', { config: { rateLimit: generationSubmitRateLimit } }, async (req, reply) => {
     if (!(await requireAuth(authState, req, reply))) return
+
+    if (isOllamaCloudToolOperation(req.query)) {
+      await handleOllamaCloudToolProxy(req, reply, db)
+      return
+    }
 
     const body = (req.body ?? {}) as CompletionRequestBody
     if (body.kind === SERVER_INTENT_KIND) {
