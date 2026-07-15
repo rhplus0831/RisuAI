@@ -294,6 +294,7 @@
             <td class="px-3 py-3">
               <SelectInput
                 size="sm"
+                ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.bindingModeColumn}`}
                 disabled={applying}
                 value={binding.mode}
                 onchange={(event) => setBindingMode(role, event.currentTarget.value as BindingMode)}>
@@ -307,6 +308,7 @@
                 <SelectInput
                   size="sm"
                   className="mt-2 w-full"
+                  ariaLabel={`${roleLabel(role)}: ${language.modelProfiles.effectiveProfileColumn}`}
                   disabled={applying}
                   value={binding.profileId}
                   onchange={(event) => setBindingProfile(role, event.currentTarget.value)}>

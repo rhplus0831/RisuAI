@@ -120,6 +120,27 @@ afterEach(() => {
 })
 
 describe('ModelProfileRoleList', () => {
+  it('gives each role binding and profile select a unique accessible name', async () => {
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    const modeSelects = Array.from(target.querySelectorAll<HTMLSelectElement>('select'))
+    const modeNames = modeSelects.map((select) => select.getAttribute('aria-label'))
+
+    expect(modeNames[0]).toBe(`${language.modelRoles.roles.chatMain}: ${language.modelProfiles.bindingModeColumn}`)
+    expect(modeNames.every(Boolean)).toBe(true)
+    expect(new Set(modeNames).size).toBe(modeNames.length)
+
+    setSelectValue(modeSelects[0], 'profile')
+    await tick()
+
+    const chatMainSelects = Array.from(target.querySelectorAll<HTMLSelectElement>('tbody tr:first-child select'))
+    expect(chatMainSelects.map((select) => select.getAttribute('aria-label'))).toEqual([
+      `${language.modelRoles.roles.chatMain}: ${language.modelProfiles.bindingModeColumn}`,
+      `${language.modelRoles.roles.chatMain}: ${language.modelProfiles.effectiveProfileColumn}`,
+    ])
+  })
+
   it('reports an unavailable command transport without treating it as success', async () => {
     commandSpies.canUseServerCommands.mockReturnValue(false)
     component = mount(ModelProfileRoleList, { target })
