@@ -45,8 +45,13 @@
 
   let openLoreList = $state(false)
   let supporterConfirmOpen = $state(false)
-  let splitSettingsLayout = $derived(window.innerWidth >= 700 && !$MobileGUI)
+  let viewportWidth = $state(window.innerWidth)
+  let splitSettingsLayout = $derived(viewportWidth >= 700 && !$MobileGUI)
   let mobileSettingsLayout = $derived(!splitSettingsLayout)
+
+  function updateViewportWidth(): void {
+    viewportWidth = window.innerWidth
+  }
 
   $effect(() => {
     if (splitSettingsLayout && $SettingsMenuIndex === -1) {
@@ -87,6 +92,8 @@
     navigate('/settings', { replace: true })
   }
 </script>
+
+<svelte:window onresize={updateViewportWidth} />
 
 <div
   class="h-full w-full flex justify-center rs-setting-cont"

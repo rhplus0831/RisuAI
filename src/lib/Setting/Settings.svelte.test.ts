@@ -96,6 +96,12 @@ async function applyNavigatedRoute() {
   await Promise.resolve()
 }
 
+async function resizeViewport(width: number) {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
+  window.dispatchEvent(new Event('resize'))
+  await tick()
+}
+
 describe('Settings supporter tab', () => {
   beforeEach(() => {
     navigate('/')
@@ -194,6 +200,24 @@ describe('Settings supporter tab', () => {
     expect(settingsButton(language.settingsNavPromptPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavAgentPresets)).toBeTruthy()
     expect(settingsButton(language.settingsNavLegacyBotPresets)).toBeUndefined()
+  })
+
+  it('updates a selected settings page layout across the responsive breakpoint', async () => {
+    SettingsMenuIndex.set(0)
+    await tick()
+
+    expect(settingsButton(language.settingsNavBackups)).toBeUndefined()
+    expect(target.querySelector('[data-risu-settings-mobile-back]')).toBeTruthy()
+
+    await resizeViewport(800)
+
+    expect(settingsButton(language.settingsNavBackups)).toBeTruthy()
+    expect(target.querySelector('[data-risu-settings-mobile-back]')).toBeNull()
+
+    await resizeViewport(500)
+
+    expect(settingsButton(language.settingsNavBackups)).toBeUndefined()
+    expect(target.querySelector('[data-risu-settings-mobile-back]')).toBeTruthy()
   })
 
   it('shows the legacy bot presets settings item only when legacy bot presets remain', async () => {
