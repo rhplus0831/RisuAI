@@ -317,17 +317,20 @@ export function restoreCharacterModuleState(snapshot: CharacterModuleStateSnapsh
 export function runModuleCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
-): void {
-  if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback })
+): Promise<ServerCommandResult<T>> {
+  if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
+  return runServerCommand({ command, rollback })
 }
 
-export function dispatchCreateModule(module: RisuModule, previous: GlobalModuleStateSnapshot): void {
-  if (!canUseServerCommands()) return
+export function dispatchCreateModule(
+  module: RisuModule,
+  previous: GlobalModuleStateSnapshot,
+): Promise<ServerCommandResult> {
+  if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
   const moduleSnapshot = toModuleSnapshot(module)
   const rollbackEntry = moduleCreateRollbackEntry(moduleSnapshot as RisuModule)
   const operation = issueGlobalModuleOperation([rollbackEntry])
-  runModuleCommand(
+  return runModuleCommand(
     async (baseRevision) => {
       const result = await createModuleCommand({ baseRevision, module: moduleSnapshot }, undefined, true)
       if (result.status === 'ok') {
@@ -343,14 +346,14 @@ export function dispatchUpdateModule(
   moduleId: string,
   patch: ModuleSnapshot,
   previous: GlobalModuleStateSnapshot,
-): void {
+): Promise<ServerCommandResult> | null {
   const commandPatch = changedModulePatch(moduleId, patch, previous, { complete: true })
-  if (Object.keys(commandPatch).length === 0) return
-  if (!canUseServerCommands()) return
+  if (Object.keys(commandPatch).length === 0) return null
+  if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
   applyModuleDeletionSentinelsOptimistically(moduleId, commandPatch)
   const rollbackEntries = moduleFieldRollbackEntries(moduleId, commandPatch, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
-  runModuleCommand(
+  return runModuleCommand(
     async (baseRevision) => {
       const result = await updateModuleCommand({ baseRevision, moduleId, patch: commandPatch }, undefined, true)
       if (operation && result.status === 'ok') {
@@ -456,19 +459,19 @@ export function setGlobalModuleEnabled(moduleId: string, enabled: boolean): void
   reloadGuiAfterDefinitionChange()
 }
 
-export function createGlobalModule(module: RisuModule): void {
+export async function createGlobalModule(module: RisuModule): Promise<ServerCommandResult | null> {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
     applyOptimisticCreatedGlobalModule(module)
-    dispatchCreateModule(module, previous)
-    return
+    return dispatchCreateModule(module, previous)
   }
 
   getDatabase().modules.push(module)
   reloadGuiAfterDefinitionChange()
+  return null
 }
 
-export function updateGlobalModule(moduleId: string, module: RisuModule): void {
+export async function updateGlobalModule(moduleId: string, module: RisuModule): Promise<ServerCommandResult | null> {
   if (canUseServerCommands()) {
     const previous = currentGlobalModuleStateSnapshot()
     const nextModule = cloneJsonValue(module)
@@ -481,8 +484,7 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
       }
     })
     if (applied) reloadGuiAfterDefinitionChange()
-    dispatchUpdateModule(moduleId, toModuleSnapshot(module), previous)
-    return
+    return dispatchUpdateModule(moduleId, toModuleSnapshot(module), previous)
   }
 
   const index = getDatabase().modules.findIndex((candidate) => candidate.id === moduleId)
@@ -490,6 +492,7 @@ export function updateGlobalModule(moduleId: string, module: RisuModule): void {
     getDatabase().modules[index] = module
     reloadGuiAfterDefinitionChange()
   }
+  return null
 }
 
 export function deleteGlobalModule(moduleId: string): void {

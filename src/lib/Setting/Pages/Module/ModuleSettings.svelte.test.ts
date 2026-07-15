@@ -16,10 +16,10 @@ const moduleProcessSpies = vi.hoisted(() => ({
 }))
 
 const moduleCommandSpies = vi.hoisted(() => ({
-  createGlobalModule: vi.fn(),
+  createGlobalModule: vi.fn(async (): Promise<any> => null),
   deleteGlobalModule: vi.fn(),
   setGlobalModuleEnabled: vi.fn(),
-  updateGlobalModule: vi.fn(),
+  updateGlobalModule: vi.fn(async (): Promise<any> => null),
 }))
 
 const alertSpies = vi.hoisted(() => ({
@@ -71,6 +71,16 @@ type MountedComponent = Parameters<typeof unmount>[0]
 
 interface NameReadCounter {
   count: number
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
 }
 
 interface ModuleFixtureOptions {
@@ -337,5 +347,108 @@ describe('ModuleSettings derived module rows', () => {
     expect(alertSpies.alertError).toHaveBeenCalledOnce()
     expect(alertSpies.alertError).toHaveBeenCalledWith(language.errors.emptyText)
     expect(target.textContent).toContain(language.createModule)
+  })
+
+  it('keeps and unlocks a create draft when the server rejects the save', async () => {
+    const save = createDeferred<any>()
+    moduleCommandSpies.createGlobalModule.mockReturnValueOnce(save.promise)
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Unsaved module')
+
+    moduleSurfaceAction('submit-create').click()
+    await tick()
+
+    const fieldset = target.querySelector<HTMLFieldSetElement>('fieldset')
+    const nameInput = target.querySelector<HTMLInputElement>('input[type="text"]')
+    expect(fieldset?.disabled).toBe(true)
+    expect(nameInput?.closest<HTMLFieldSetElement>('fieldset')?.disabled).toBe(true)
+    expect(moduleSurfaceAction('submit-create').disabled).toBe(true)
+    expect(target.textContent).toContain(language.moduleSave.saving)
+
+    save.resolve({ status: 'error', error: 'disk full' })
+    await save.promise
+    await tick()
+
+    expect(target.textContent).toContain(language.createModule)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Unsaved module')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('disk full')
+    expect(target.querySelector<HTMLFieldSetElement>('fieldset')?.disabled).toBe(false)
+    expect(moduleSurfaceAction('submit-create').disabled).toBe(false)
+  })
+
+  it('keeps an edit draft open when the server reports a revision conflict', async () => {
+    const save = createDeferred<any>()
+    moduleCommandSpies.updateGlobalModule.mockReturnValueOnce(save.promise)
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Draft rename')
+
+    moduleSurfaceAction('submit-edit').click()
+    await tick()
+    expect(target.textContent).toContain(language.editModule)
+    expect(moduleSurfaceAction('submit-edit').disabled).toBe(true)
+
+    save.resolve({ status: 'conflict', currentRevision: 42 })
+    await save.promise
+    await tick()
+
+    expect(target.textContent).toContain(language.editModule)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Draft rename')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain(language.moduleSave.commandConflict)
+    expect(moduleSurfaceAction('submit-edit').disabled).toBe(false)
+  })
+
+  it('keeps an edit draft when its source module disappeared before save', async () => {
+    mountSettings()
+    moduleAction('alpha-id', 'edit').click()
+    await tick()
+    await updateModuleName('Recovered draft')
+    getDatabase().modules = getDatabase().modules.filter((candidate) => candidate.id !== 'alpha-id')
+
+    await clickModuleSurfaceAction('submit-edit')
+
+    expect(moduleCommandSpies.updateGlobalModule).not.toHaveBeenCalled()
+    expect(target.textContent).toContain(language.editModule)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Recovered draft')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain(language.moduleSave.editTargetMissing)
+  })
+
+  it('keeps a create draft when module commands are unavailable', async () => {
+    moduleCommandSpies.createGlobalModule.mockResolvedValueOnce({ status: 'unavailable' })
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Offline draft')
+
+    await clickModuleSurfaceAction('submit-create')
+
+    expect(target.textContent).toContain(language.createModule)
+    expect(target.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('Offline draft')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain(language.moduleSave.commandUnavailable)
+  })
+
+  it('closes the editor only after a module save succeeds', async () => {
+    const save = createDeferred<any>()
+    moduleCommandSpies.createGlobalModule.mockReturnValueOnce(save.promise)
+    mountSettings()
+    await clickModuleSurfaceAction('create')
+    await updateModuleName('Saved module')
+
+    moduleSurfaceAction('submit-create').click()
+    await tick()
+    expect(target.textContent).toContain(language.createModule)
+
+    save.resolve({
+      status: 'ok',
+      revision: 11,
+      event: { type: 'module.created', revision: 11, resource: 'module' },
+    })
+    await save.promise
+    await tick()
+
+    expect(target.textContent).toContain(language.modules)
+    expect(target.textContent).not.toContain(language.moduleSave.saving)
+    expect(target.querySelector('[data-risu-module-action="submit-create"]')).toBeNull()
   })
 })

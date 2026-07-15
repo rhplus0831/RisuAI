@@ -1209,6 +1209,13 @@ export const languageEnglish = {
   moduleContent: 'Module Content',
   confirmRemoveModuleFeature: 'Do you really want to remove this feature? This action cannot be undone.',
   editModule: 'Edit Module',
+  moduleSave: {
+    saving: 'Saving...',
+    commandConflict: 'The server has newer module data. Your draft was kept. Review it and try again.',
+    commandUnavailable: 'Module saving is unavailable. Your draft was kept.',
+    editTargetMissing: 'The module you were editing no longer exists. Your draft was kept.',
+    commandError: (error: string) => `Module save failed: ${error}`,
+  },
   importModule: 'Import Module',
   download: 'Download',
   edit: 'Edit',

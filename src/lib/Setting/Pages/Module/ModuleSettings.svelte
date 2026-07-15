@@ -60,6 +60,7 @@
     updateGlobalModule,
   } from 'src/ts/moduleCommands'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import type { ServerCommandResult } from 'src/ts/server/commands'
 
   function cloneJsonValue<T>(value: T): T {
     return JSON.parse(JSON.stringify(value)) as T
@@ -71,7 +72,8 @@
     id: v4(),
   })
   let mode = $state(0)
-  let editModuleIndex = $state(-1)
+  let mutationPending = $state(false)
+  let mutationError = $state('')
   let moduleSearch = $state('')
   let normalizedModuleSearch = $derived(normalizeModuleSearch(moduleSearch))
   let sortedModuleRows = $derived(sortModuleSettingsRows(getResourceDatabase().modules ?? [], normalizedModuleSearch))
@@ -86,14 +88,64 @@
     return moduleIntegrationNamespaces.has(rmodule.namespace) ? 'integrated' : 'unmatched'
   }
 
-  function createModuleFromDraft() {
+  function moduleMutationError(result: ServerCommandResult): string {
+    if (result.status === 'conflict') return language.moduleSave.commandConflict
+    if (result.status === 'unavailable') return language.moduleSave.commandUnavailable
+    if (result.status === 'error') return language.moduleSave.commandError(result.error)
+    return ''
+  }
+
+  function thrownMutationError(error: unknown): string {
+    return language.moduleSave.commandError(error instanceof Error ? error.message : String(error))
+  }
+
+  async function createModuleFromDraft() {
+    if (mutationPending) return
     if (tempModule.name.trim() === '') {
       alertError(language.errors.emptyText)
       return
     }
 
-    createGlobalModule(cloneJsonValue(tempModule))
-    mode = 0
+    const draft = cloneJsonValue(tempModule)
+    mutationPending = true
+    mutationError = ''
+    try {
+      const result = await createGlobalModule(draft)
+      if (result === null || result.status === 'ok') {
+        mode = 0
+        return
+      }
+      mutationError = moduleMutationError(result)
+    } catch (error) {
+      mutationError = thrownMutationError(error)
+    } finally {
+      mutationPending = false
+    }
+  }
+
+  async function updateModuleFromDraft() {
+    if (mutationPending) return
+
+    const draft = cloneJsonValue(tempModule)
+    mutationError = ''
+    if (!getResourceDatabase().modules.some((candidate) => candidate.id === draft.id)) {
+      mutationError = language.moduleSave.editTargetMissing
+      return
+    }
+
+    mutationPending = true
+    try {
+      const result = await updateGlobalModule(draft.id, draft)
+      if (result === null || result.status === 'ok') {
+        mode = 0
+        return
+      }
+      mutationError = moduleMutationError(result)
+    } catch (error) {
+      mutationError = thrownMutationError(error)
+    } finally {
+      mutationPending = false
+    }
   }
 
   onDestroy(() => {
@@ -161,7 +213,7 @@
                 onclick={async (e) => {
                   e.stopPropagation()
                   tempModule = cloneJsonValue(rmodule)
-                  editModuleIndex = moduleRow.index
+                  mutationError = ''
                   mode = 2
                 }}>
                 <SquarePen size={18} />
@@ -214,6 +266,7 @@
           description: '',
           id: v4(),
         }
+        mutationError = ''
         mode = 1
       }}>
       <PlusIcon />
@@ -237,21 +290,34 @@
   </div>
 {:else if mode === 1}
   <h2 class="mb-2 text-2xl font-bold mt-2">{language.createModule}</h2>
-  <ModuleMenu bind:currentModule={tempModule} />
-  <div class="contents" data-risu-module-action="submit-create">
-    <Button className="mt-6" onclick={createModuleFromDraft}>{language.createModule}</Button>
-  </div>
-{:else if mode === 2}
-  <h2 class="mb-2 text-2xl font-bold mt-2">{language.editModule}</h2>
-  <ModuleMenu bind:currentModule={tempModule} />
-  {#if tempModule.name !== ''}
-    <div class="contents" data-risu-module-action="submit-edit">
-      <Button
-        className="mt-6"
-        onclick={() => {
-          updateGlobalModule(tempModule.id, cloneJsonValue(tempModule))
-          mode = 0
-        }}>{language.editModule}</Button>
+  {#if mutationError}
+    <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+      {mutationError}
     </div>
   {/if}
+  <fieldset class="contents" disabled={mutationPending} aria-busy={mutationPending}>
+    <ModuleMenu bind:currentModule={tempModule} />
+    <div class="contents" data-risu-module-action="submit-create">
+      <Button className="mt-6" disabled={mutationPending} onclick={createModuleFromDraft}>
+        {mutationPending ? language.moduleSave.saving : language.createModule}
+      </Button>
+    </div>
+  </fieldset>
+{:else if mode === 2}
+  <h2 class="mb-2 text-2xl font-bold mt-2">{language.editModule}</h2>
+  {#if mutationError}
+    <div class="mb-3 rounded-md border border-draculared p-3 text-sm text-draculared" role="alert">
+      {mutationError}
+    </div>
+  {/if}
+  <fieldset class="contents" disabled={mutationPending} aria-busy={mutationPending}>
+    <ModuleMenu bind:currentModule={tempModule} />
+    {#if tempModule.name !== ''}
+      <div class="contents" data-risu-module-action="submit-edit">
+        <Button className="mt-6" disabled={mutationPending} onclick={updateModuleFromDraft}>
+          {mutationPending ? language.moduleSave.saving : language.editModule}
+        </Button>
+      </div>
+    {/if}
+  </fieldset>
 {/if}

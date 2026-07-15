@@ -508,7 +508,7 @@ describe('module command projection helpers', () => {
       getDatabase().modules[0].backgroundEmbedding = 'direct'
     }).toThrow()
 
-    updateGlobalModule('mod-a', {
+    const resultPromise = updateGlobalModule('mod-a', {
       id: 'mod-a',
       name: 'Module A',
       description: '',
@@ -521,6 +521,7 @@ describe('module command projection helpers', () => {
     expect(getDatabase().modules[0].backgroundEmbedding).toBe('new background')
 
     await waitForCallCount(calls, 2)
+    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'forced failure' })
 
     expect(calls[1]).toEqual({
       url: '/api/v1/commands/modules/mod-a',
@@ -613,12 +614,12 @@ describe('module command projection helpers', () => {
     const calls = stubFailingCommandFetch()
     setResourceWriteGuardEnabled(true)
 
-    createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
+    const resultPromise = createGlobalModule({ id: 'mod-c', name: 'Module C', description: '' })
 
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b', 'mod-c'])
 
     await waitForCallCount(calls, 2)
-    await flushCommandEffects()
+    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'forced failure' })
 
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
   })
