@@ -58,6 +58,11 @@ import {
   type PromptPreset,
 } from './database.svelte'
 import { flushRegisteredPendingBridgePatches } from '../server/pendingBridgeFlushRegistry'
+import { markPromptTemplateProjectionApplied, resetPromptTemplateHydration } from '../server/promptTemplateHydration'
+import {
+  queuePromptItemProjectionUpdate,
+  resetPromptTemplateSelectionDirtyState,
+} from '../server/promptTemplateBridge.svelte'
 import { MODEL_ROLES } from '../model/modelRoles'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/types'
 import { changeLanguage, language as activeLanguage } from '../../lang'
@@ -1936,6 +1941,115 @@ describe('preset command rollback (L21)', () => {
     ])
     expect(calls[0].body.patch).toEqual({ name: 'Alpha before select' })
     expect(calls[1].body.patch).toEqual({ name: 'Prompt before model select' })
+  })
+
+  it('flushes a pending prompt row edit before switching owners and preserves the edited owner', async () => {
+    resetPromptTemplateHydration()
+    resetPromptTemplateSelectionDirtyState()
+    try {
+      const promptA = makePreset('prompt-a', 'Prompt A') as unknown as PromptPreset
+      const promptB = makePreset('prompt-b', 'Prompt B') as unknown as PromptPreset
+      const previousItem = clonePlain(promptA.promptTemplate[0])
+      let draftItems = clonePlain(promptA.promptTemplate)
+      ;(draftItems[0] as { text?: string }).text = 'Prompt A edited before switch'
+      seedPresetDatabase({
+        promptPresets: [promptA, promptB],
+        promptPresetsId: 0,
+        promptTemplate: clonePlain(promptA.promptTemplate),
+      })
+      withTrustedResourceWrite(() => {
+        getDatabase().promptPresets[0].promptTemplate = clonePlain(draftItems)
+      })
+      markPromptTemplateProjectionApplied('prompt-a', 100)
+      setCachedServerCommandRevision(100)
+
+      const calls: CapturedFetch[] = []
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+          const url = String(input)
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+          calls.push({ url, method: init.method ?? 'GET', body })
+          if (url === '/api/v1/commands/prompt-items/prompt-a-prompt') {
+            return jsonResponse({
+              revision: 101,
+              event: {
+                type: 'prompt.item.updated',
+                revision: 101,
+                resource: 'promptItem',
+                id: 'prompt-a-prompt',
+                parentId: 'prompt-a',
+              },
+              itemId: 'prompt-a-prompt',
+            })
+          }
+          if (url === '/api/v1/commands/prompt-presets/select') {
+            return jsonResponse({
+              revision: 102,
+              event: {
+                type: 'promptPreset.selected',
+                revision: 102,
+                resource: 'preset',
+                id: 'prompt-b',
+              },
+              promptPresetId: 'prompt-b',
+            })
+          }
+          return jsonResponse({ error: `unexpected ${url}` }, 404)
+        }) as unknown as typeof fetch,
+      )
+
+      let reconciledEffects: ReadonlyMap<number, ServerCommandLocalEffect> | null = null
+      setServerCommandSuccessReconciler((_event, _events, localEffects) => {
+        reconciledEffects = new Map(localEffects)
+      })
+
+      queuePromptItemProjectionUpdate(
+        {
+          getItems: () => draftItems,
+          setItems: (items) => {
+            draftItems = items
+          },
+        },
+        'prompt-a-prompt',
+        previousItem,
+        60_000,
+        'prompt-a',
+      )
+      selectPromptPreset(1)
+
+      await waitForState(() => expect(calls).toHaveLength(2))
+      expect(calls.map((call) => call.url)).toEqual([
+        '/api/v1/commands/prompt-items/prompt-a-prompt',
+        '/api/v1/commands/prompt-presets/select',
+      ])
+      expect(calls[0].body).toMatchObject({
+        baseRevision: 100,
+        promptPresetId: 'prompt-a',
+        patch: { text: 'Prompt A edited before switch' },
+      })
+      expect(calls[1].body).toMatchObject({ baseRevision: 101, promptPresetId: 'prompt-b' })
+      await waitForState(() => expect(reconciledEffects).not.toBeNull())
+      expect(reconciledEffects?.get(101)).toMatchObject({
+        kind: 'promptItemMutation',
+        operation: 'update',
+        promptPresetId: 'prompt-a',
+        itemId: 'prompt-a-prompt',
+        ownerState: {
+          enabled: true,
+          items: [expect.objectContaining({ id: 'prompt-a-prompt', text: 'Prompt A edited before switch' })],
+        },
+      })
+      expect(getDatabase().promptPresetsId).toBe(1)
+      expect(getDatabase().promptPresets[0].promptTemplate[0]).toMatchObject({
+        id: 'prompt-a-prompt',
+        text: 'Prompt A edited before switch',
+      })
+      expect(getDatabase().promptTemplate).toEqual(promptB.promptTemplate)
+    } finally {
+      resetPromptTemplateSelectionDirtyState()
+      resetPromptTemplateHydration()
+    }
   })
 
   it('flushes pending split-preset patches through the central registry with keepalive', async () => {

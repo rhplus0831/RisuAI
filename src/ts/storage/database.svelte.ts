@@ -98,6 +98,7 @@ import {
   markPromptTemplateOwnerAcknowledgementTainted,
   peekPromptTemplateOwnerRevision,
 } from '../server/promptTemplateHydration'
+import { flushPendingPromptTemplatePatches } from '../server/promptTemplateBridge.svelte'
 import {
   applyAttemptedFieldRollback,
   applyAttemptedKeyedListRollback,
@@ -4635,6 +4636,11 @@ export function selectPromptPreset(id: number) {
     const previousSettings = snapshotSetPresetSettings(db)
     const promptPresetId = db.promptPresets[id]?.id
     if (!promptPresetId) return
+    // Flush row edits while their owner is still selected. Once the selection
+    // changes, the prompt-template bridge deliberately rejects old-owner timer
+    // callbacks, which would otherwise turn a quick preset switch into silent
+    // data loss.
+    flushPendingPromptTemplatePatches()
     flushPendingSplitPresetPatches()
     db.promptPresetsId = id
     applyPromptPresetFieldsToDatabase(db, db.promptPresets[id])
