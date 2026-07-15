@@ -39,6 +39,7 @@ export const languageEnglish = {
   },
   errors: {
     toomuchtoken: 'Error: The minimum required token is greater than the Max Context Size.',
+    settingsSaveFailed: 'Settings could not be saved. Please try again.',
     promptTemplateUnavailable: 'Prompt template is still loading. Please try again after server sync finishes.',
     unknownModel: 'Error: Unknown model selected',
     httpError: 'Error: error in request:',
