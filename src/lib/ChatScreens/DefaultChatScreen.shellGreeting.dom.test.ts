@@ -458,6 +458,17 @@ describe('generation control ownership', () => {
     expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeNull()
     expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(true)
 
+    getResourceDatabase().characters[0].chatPage = 0
+    shellMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-0/chat-0',
+      chaId: 'character-0',
+      chatId: 'chat-0',
+    })
+    await tick()
+
+    expect(target.querySelector('[data-testid="default-chat-cancel-button"]')).toBeTruthy()
+
     stream.resolve(undefined)
     await settleStream
     await tick()

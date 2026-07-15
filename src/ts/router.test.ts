@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
 
 const routerMocks = vi.hoisted(() => ({
@@ -24,6 +24,7 @@ vi.mock('./playground', () => ({
 vi.mock('./process/index.svelte', async () => {
   const { writable } = await import('svelte/store')
   return {
+    activeGenerationTarget: writable(null),
     doingChat: writable(false),
   }
 })
@@ -71,6 +72,12 @@ beforeEach(() => {
   routerMocks.findCharacterIndexbyId.mockReset()
   routerMocks.findCharacterIndexbyId.mockReturnValue(-1)
   routerMocks.openPlaygroundChat.mockReset()
+})
+
+afterEach(async () => {
+  const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
+  activeGenerationTarget.set(null)
+  doingChat.set(false)
 })
 
 describe('router initial application', () => {
@@ -181,10 +188,113 @@ describe('router initial application', () => {
 })
 
 describe('router character route freshness', () => {
+  it('reopens exactly the active generation owner after leaving the chat', async () => {
+    const router = await importRouterAt('/settings/model')
+    const stores = await import('./stores.svelte')
+    const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { selectedCharID } = stores
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-a', name: 'Chat A', message: [] },
+            { id: 'chat-owner', name: 'Generating chat', message: [] },
+          ],
+        },
+        {
+          chaId: 'char-b',
+          chatPage: 0,
+          chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+        },
+      ],
+    } as any)
+    selectedCharID.set(-1)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    routerMocks.changeChar.mockImplementation(async (index: number) => {
+      selectedCharID.set(index)
+    })
+    activeGenerationTarget.set({
+      selectedCharID: 0,
+      chatPage: 1,
+      characterId: 'char-a',
+      chatId: 'chat-owner',
+    })
+    doingChat.set(true)
+
+    router.navigate('/character/char-a/chat-a')
+    router.navigate('/character/char-b/chat-b')
+    expect(window.location.pathname).toBe('/settings/model')
+
+    router.navigate('/character/char-a/chat-owner')
+    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChar).toHaveBeenCalledWith(0, {
+      isFresh: expect.any(Function),
+      allowDuringGeneration: expect.any(Function),
+    })
+    expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-owner')
+    expect(get(selectedCharID)).toBe(0)
+  })
+
+  it('canonicalizes history navigation to another chat back to the active generation owner', async () => {
+    const router = await importRouterAt('/character/char-a/chat-other')
+    const stores = await import('./stores.svelte')
+    const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-owner', name: 'Generating chat', message: [] },
+            { id: 'chat-other', name: 'Other chat', message: [] },
+          ],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(-1)
+    routerMocks.findCharacterIndexbyId.mockReturnValue(0)
+    routerMocks.changeChar.mockImplementation(async (index: number) => {
+      stores.selectedCharID.set(index)
+    })
+    activeGenerationTarget.set({
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'char-a',
+      chatId: 'chat-owner',
+    })
+    doingChat.set(true)
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'character',
+      chaId: 'char-a',
+      chatId: 'chat-owner',
+    })
+    expect(routerMocks.changeChar).toHaveBeenCalledWith(0, {
+      isFresh: expect.any(Function),
+      allowDuringGeneration: expect.any(Function),
+    })
+    expect(routerMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(get(stores.selectedCharID)).toBe(0)
+  })
+
   it('keeps the selected character route when in-app navigation is attempted during generation', async () => {
     const router = await importRouterAt('/')
     const stores = await import('./stores.svelte')
-    const { doingChat } = await import('./process/index.svelte')
+    const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
     const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
     const { selectedCharID } = stores
     replaceResourceDatabase({
@@ -208,6 +318,12 @@ describe('router character route freshness', () => {
       settingsMenuIndex: 1,
       selectedCharID: 0,
       playgroundStore: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+    })
+    activeGenerationTarget.set({
+      selectedCharID: 0,
+      chatPage: 0,
       characterId: 'char-a',
       chatId: 'chat-a',
     })

@@ -2,7 +2,7 @@ import { get, writable } from 'svelte/store'
 import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
-import { doingChat } from './process/index.svelte'
+import { activeGenerationTarget, doingChat } from './process/index.svelte'
 import { findCharacterIndexbyId } from './util'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import {
@@ -203,6 +203,15 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
   const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
   applyingRoute = true
   try {
+    if (blocksActiveCharacterGeneration(route)) {
+      const owner = restoreActiveGenerationOwnerRoute()
+      if (owner) {
+        closeRouteBlockingViews()
+        await openCharacterRoute(owner.characterId, owner.chatId, isFreshRouteApplication)
+      }
+      return
+    }
+
     closeRouteBlockingViews()
     switch (route.kind) {
       case 'home': {
@@ -374,6 +383,8 @@ async function openCharacterRoute(
   chatId: string | undefined,
   isFreshRouteApplication: () => boolean,
 ): Promise<void> {
+  const isFreshCharacterRoute = () =>
+    isFreshRouteApplication() && (!get(doingChat) || activeGenerationOwnerMatches(characterId, chatId))
   const index = findCharacterIndexbyId(characterId)
   if (index < 0) {
     selectedCharID.set(-1)
@@ -387,10 +398,16 @@ async function openCharacterRoute(
   OpenRealmStore.set(false)
 
   if (get(selectedCharID) !== index) {
-    await changeChar(index, { isFresh: isFreshRouteApplication })
+    const reopeningActiveGeneration = get(doingChat)
+    await changeChar(index, {
+      isFresh: isFreshCharacterRoute,
+      ...(reopeningActiveGeneration
+        ? { allowDuringGeneration: () => activeGenerationOwnerMatches(characterId, chatId) }
+        : {}),
+    })
   }
 
-  if (!isFreshRouteApplication()) return
+  if (!isFreshCharacterRoute()) return
   const liveIndex = findCharacterIndexbyId(characterId)
   if (liveIndex < 0) {
     restoreSelectedCharacterRoute()
@@ -406,15 +423,49 @@ async function openCharacterRoute(
   const character = getDatabase().characters?.[liveIndex]
   const chatIndex = character?.chats?.findIndex((chat) => chat.id === chatId) ?? -1
   if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
-  if (!isFreshRouteApplication()) return
+  if (!isFreshCharacterRoute()) return
   changeChatTo(chatId)
+}
+
+function resolvedActiveGenerationOwner(): { characterId: string; chatId: string | undefined } | null {
+  const target = get(activeGenerationTarget)
+  if (!target) return null
+
+  const targetCharacter =
+    (target.characterId
+      ? getDatabase().characters?.find((character) => character?.chaId === target.characterId)
+      : getDatabase().characters?.[target.selectedCharID]) ?? null
+  const characterId = target.characterId ?? targetCharacter?.chaId
+  if (!characterId) return null
+
+  return {
+    characterId,
+    chatId: target.chatId ?? targetCharacter?.chats?.[target.chatPage]?.id,
+  }
+}
+
+function activeGenerationOwnerMatches(characterId: string, chatId: string | undefined): boolean {
+  const owner = resolvedActiveGenerationOwner()
+  return !!owner && owner.characterId === characterId && owner.chatId === chatId
 }
 
 function blocksActiveCharacterGeneration(nextRoute: AppRoute): boolean {
   if (nextRoute.kind !== 'character' || !get(doingChat)) return false
+  return !activeGenerationOwnerMatches(nextRoute.chaId, nextRoute.chatId)
+}
 
-  const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
-  return !!selectedCharacter?.chaId && selectedCharacter.chaId !== nextRoute.chaId
+function restoreActiveGenerationOwnerRoute(): { characterId: string; chatId: string | undefined } | null {
+  const owner = resolvedActiveGenerationOwner()
+  if (!owner) {
+    restoreSelectedCharacterRoute()
+    return null
+  }
+
+  commitPath(characterRoutePath(owner.characterId, owner.chatId), {
+    replace: true,
+    stateDriven: true,
+  })
+  return owner
 }
 
 function restoreSelectedCharacterRoute(): void {

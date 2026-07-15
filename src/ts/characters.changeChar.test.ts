@@ -38,6 +38,7 @@ import { getResourceDatabase, replaceResourceDatabase } from './server/resourceS
 import { selectedCharID } from './stores.svelte'
 import { isServerCharacterShell, type character, type Database } from './storage/database.svelte'
 import { addCharacter, changeChar } from './characters'
+import { activeGenerationTarget, doingChat } from './process/index.svelte'
 
 const testDatabaseState = {
   get db(): Database {
@@ -162,6 +163,8 @@ beforeEach(() => {
   stopSelectedCharacterShellHydration()
   setResourceWriteGuardEnabled(false)
   selectedCharID.set(-1)
+  activeGenerationTarget.set(null)
+  doingChat.set(false)
   testDatabaseState.db = {
     currentChar: -1,
     characters: [characterShell('char-a', 'Shell A'), fullCharacter('char-b', 'Character B')],
@@ -172,10 +175,35 @@ beforeEach(() => {
 afterEach(() => {
   stopSelectedCharacterShellHydration()
   setResourceWriteGuardEnabled(false)
+  activeGenerationTarget.set(null)
+  doingChat.set(false)
   vi.unstubAllGlobals()
 })
 
 describe('changeChar shell selection freshness', () => {
+  it('reopens exactly the active generation owner while blocking other character selections', async () => {
+    testDatabaseState.db = {
+      currentChar: -1,
+      characters: [fullCharacter('char-a', 'Character A'), fullCharacter('char-b', 'Character B')],
+      characterOrder: ['char-a', 'char-b'],
+    } as any
+    stubChangeCharFetch(Promise.resolve(jsonResponse({})))
+    activeGenerationTarget.set({
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'char-a',
+      chatId: 'char-a-chat',
+    })
+    doingChat.set(true)
+
+    await changeChar(1)
+    expect(get(selectedCharID)).toBe(-1)
+
+    await changeChar(0)
+
+    expect(get(selectedCharID)).toBe(0)
+  })
+
   it('preserves a newer character selection when an older shell hydration resolves later', async () => {
     const characterRow = deferred<Response>()
     const calls = stubChangeCharFetch(characterRow.promise)
