@@ -10,7 +10,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import TextAreaInput from './TextAreaInput.svelte'
-import { popUpEditorStore } from 'src/ts/stores.svelte'
+import { disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte'
 import { textAreaSize } from 'src/ts/gui/guisize'
 import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
@@ -23,6 +23,44 @@ function textarea(): HTMLTextAreaElement {
   const element = target.querySelector('textarea')
   if (!element) throw new Error('textarea not found')
   return element
+}
+
+function highlightedEditor(): HTMLDivElement {
+  const element = target.querySelector<HTMLDivElement>('[contenteditable="true"]')
+  if (!element) throw new Error('highlighted editor not found')
+  return element
+}
+
+function autocompleteSuggestion(label: string): HTMLButtonElement | null {
+  return Array.from(target.querySelectorAll('button')).find((button) => button.textContent?.trim() === label) ?? null
+}
+
+async function openAutocomplete(): Promise<HTMLDivElement> {
+  vi.spyOn(Range.prototype, 'getBoundingClientRect').mockReturnValue(DOMRect.fromRect({ x: 10, y: 10 }))
+  component = mount(TextAreaInput, {
+    target,
+    props: {
+      value: '{{cha',
+      highlight: true,
+      popupEditor: false,
+    },
+  })
+  await tick()
+
+  const editor = highlightedEditor()
+  editor.focus()
+  const textNode = editor.firstChild
+  if (!textNode) throw new Error('highlighted editor text node not found')
+  const selection = window.getSelection()
+  if (!selection) throw new Error('document selection unavailable')
+  const range = document.createRange()
+  range.setStart(textNode, textNode.textContent?.length ?? 0)
+  range.collapse(true)
+  selection.removeAllRanges()
+  selection.addRange(range)
+  editor.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+  return editor
 }
 
 function seedDatabase(overrides: Record<string, unknown> = {}) {
@@ -42,6 +80,7 @@ beforeEach(() => {
   popUpEditorStore.value = ''
   popUpEditorStore.language = 'markdown'
   textAreaSize.set(0)
+  disableHighlight.set(false)
 })
 
 afterEach(() => {
@@ -54,7 +93,9 @@ afterEach(() => {
   popUpEditorStore.open = false
   popUpEditorStore.value = ''
   textAreaSize.set(0)
+  disableHighlight.set(true)
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe('TextAreaInput popup editor finalization', () => {
@@ -187,5 +228,34 @@ describe('TextAreaInput popup editor finalization', () => {
 
     expect(onInput).toHaveBeenCalledOnce()
     expect(onchange).toHaveBeenCalledOnce()
+  })
+})
+
+describe('TextAreaInput autocomplete selection', () => {
+  it('applies a clicked suggestion after focus moves out of the editor', async () => {
+    const editor = await openAutocomplete()
+    const suggestion = autocompleteSuggestion('char')
+    expect(suggestion).toBeTruthy()
+
+    suggestion!.focus()
+    await tick()
+
+    expect(document.activeElement).toBe(suggestion)
+    expect(autocompleteSuggestion('char')).toBe(suggestion)
+    autocompleteSuggestion('char')!.click()
+    await tick()
+
+    expect(editor.textContent).toBe('{{char}}')
+  })
+
+  it('continues to apply the selected suggestion with Enter', async () => {
+    const editor = await openAutocomplete()
+
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    editor.dispatchEvent(event)
+    await tick()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(editor.textContent).toBe('{{char}}')
   })
 })

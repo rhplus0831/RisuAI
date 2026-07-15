@@ -353,7 +353,8 @@
   class:mt-4={margin === 'top'}
   class:mt-2={margin === 'both'}
   bind:this={highlightDom}
-  onfocusout={() => {
+  onfocusout={(event) => {
+    if (event.relatedTarget instanceof Node && autoCompleteDom?.contains(event.relatedTarget)) return
     hideAutoComplete()
   }}>
   {#if !highlight || $disableHighlight}
