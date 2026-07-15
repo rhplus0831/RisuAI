@@ -33,6 +33,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import PlaygroundParser from './PlaygroundParser.svelte'
 import PlaygroundTokenizer from './PlaygroundTokenizer.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -96,5 +97,26 @@ describe('playground async output freshness', () => {
     older.resolve(new Uint32Array([1]))
     await tick()
     expect(output.value).toBe('[2]')
+  })
+})
+
+describe('playground async control names', () => {
+  it('names the parser and tokenizer inputs and outputs', () => {
+    component = mount(PlaygroundParser, { target })
+
+    expect(Array.from(target.querySelectorAll('textarea'), (input) => input.getAttribute('aria-label'))).toEqual([
+      language.input,
+      language.playground.outputHtml,
+    ])
+
+    unmount(component)
+    component = undefined
+    component = mount(PlaygroundTokenizer, { target })
+
+    expect(target.querySelector('select')?.getAttribute('aria-label')).toBe(language.tokenizer)
+    expect(Array.from(target.querySelectorAll('textarea'), (input) => input.getAttribute('aria-label'))).toEqual([
+      language.input,
+      language.playground.result,
+    ])
   })
 })

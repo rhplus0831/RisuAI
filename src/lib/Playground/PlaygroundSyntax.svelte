@@ -21,8 +21,8 @@
 
 <span class="text-textcolor text-lg">Input</span>
 
-<TextAreaInput highlight {onInput} bind:value={input} optimaizedInput={false} />
+<TextAreaInput highlight {onInput} bind:value={input} optimaizedInput={false} ariaLabel={language.input} />
 
 <span class="text-textcolor text-lg">Result</span>
 
-<TextAreaInput value={output} />
+<TextAreaInput value={output} ariaLabel={language.playground.result} />

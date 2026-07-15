@@ -1,5 +1,6 @@
 <script lang="ts">
   import { defaultCBSRegisterArg, registerCBS } from 'src/ts/cbs'
+  import { language } from 'src/lang'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import { parseMarkdownSafe } from 'src/ts/parser/parser.svelte'
 
@@ -37,7 +38,12 @@
 <h2 class="text-4xl text-textcolor my-6 font-black relative">CBS Docs Beta</h2>
 <div class="max-w-4xl w-full p-6">
   <div class="mb-8 w-full">
-    <TextInput placeholder="Search documentation..." className="w-full" fullwidth bind:value={searchTerm} />
+    <TextInput
+      placeholder={language.playground.docsSearch}
+      ariaLabel={language.playground.docsSearch}
+      className="w-full"
+      fullwidth
+      bind:value={searchTerm} />
   </div>
 
   <div class="grid gap-6">

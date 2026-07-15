@@ -791,6 +791,7 @@ export const languageEnglish = {
   },
   playground: {
     playground: 'Playground',
+    docsSearch: 'Search documentation',
     translationFailureTitle: 'Translation errors',
     translationRunFailed: (error: string) => `Translation failed: ${error}`,
     translationChunkFailed: (index: number, total: number, error: string) =>
@@ -806,6 +807,10 @@ export const languageEnglish = {
     inlayDeleteConfirm: 'Are you sure you want to delete {name}?',
     inlayDeleteMultipleConfirm: 'Are you sure you want to delete the selected {count} assets?',
     inlayTotalAssets: 'Total {count} assets',
+    jinjaData: 'Jinja data (JSON)',
+    jinjaTemplate: 'Jinja template',
+    outputHtml: 'Output HTML',
+    result: 'Result',
   },
   confirm: 'Confirm',
   goback: 'Go Back',

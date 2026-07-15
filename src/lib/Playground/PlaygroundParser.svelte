@@ -1,5 +1,6 @@
 <script lang="ts">
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
+  import { language } from 'src/lang'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
   let input = $state('')
   let output = $state('')
@@ -24,8 +25,8 @@
 
 <span class="text-textcolor text-lg">Input</span>
 
-<TextAreaInput {onInput} bind:value={input} optimaizedInput={false} />
+<TextAreaInput {onInput} bind:value={input} optimaizedInput={false} ariaLabel={language.input} />
 
 <span class="text-textcolor text-lg">Output HTML</span>
 
-<TextAreaInput value={output} />
+<TextAreaInput value={output} ariaLabel={language.playground.outputHtml} />

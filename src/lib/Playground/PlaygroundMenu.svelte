@@ -146,8 +146,11 @@
     {/if}
     <div class="w-full max-w-4xl flex flex-col p-2">
       <div class="flex items-center mt-4">
-        <button class="mr-2 text-textcolor2 hover:text-green-500" onclick={() => navigate('/playground')}>
-          <ArrowLeft />
+        <button
+          class="mr-2 text-textcolor2 hover:text-green-500"
+          aria-label={language.goback}
+          onclick={() => navigate('/playground')}>
+          <ArrowLeft aria-hidden="true" />
         </button>
       </div>
 

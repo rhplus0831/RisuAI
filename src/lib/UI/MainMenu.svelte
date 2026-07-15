@@ -64,8 +64,11 @@
       </div>
     {:else}
       <div class="flex items-center mt-4">
-        <button class="mr-2 text-textcolor2 hover:text-green-500" onclick={() => ($OpenRealmStore = false)}>
-          <ArrowLeft />
+        <button
+          class="mr-2 text-textcolor2 hover:text-green-500"
+          aria-label={language.goback}
+          onclick={() => ($OpenRealmStore = false)}>
+          <ArrowLeft aria-hidden="true" />
         </button>
       </div>
       <Hub />

@@ -42,7 +42,7 @@
 
 <span class="text-textcolor text-lg">Tokenizer</span>
 
-<SelectInput bind:value={selectedTokenizer} onchange={onTokenizerChange}>
+<SelectInput bind:value={selectedTokenizer} onchange={onTokenizerChange} ariaLabel={language.tokenizer}>
   {#each tokenizerList as [value, label]}
     <option {value} class="bg-bgcolor">{label}</option>
   {/each}
@@ -50,11 +50,11 @@
 
 <span class="text-textcolor text-lg">Input</span>
 
-<TextAreaInput {onInput} bind:value={input} optimaizedInput={false} />
+<TextAreaInput {onInput} bind:value={input} optimaizedInput={false} ariaLabel={language.input} />
 
 <span class="text-textcolor text-lg">Result</span>
 
-<TextAreaInput value={output} />
+<TextAreaInput value={output} ariaLabel={language.playground.result} />
 
 <span class="text-textcolor2 text-lg">{outputLength} {language.tokens}</span>
 <span class="text-textcolor2 text-lg">{time} ms</span>
