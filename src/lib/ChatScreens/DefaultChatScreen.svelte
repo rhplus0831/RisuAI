@@ -454,7 +454,9 @@
 
       applyChatFileResultsForCurrentComposer(collectedResults, operation)
     } catch (error) {
-      console.error(error)
+      if (isCurrentComposerFileOperation(operation)) {
+        alertError(error)
+      }
     } finally {
       composerFileOperationGuard.clear(operation.token)
     }

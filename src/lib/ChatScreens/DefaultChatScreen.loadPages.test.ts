@@ -1472,4 +1472,53 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).not.toContain('pasted-stale.txt')
     expect(target.textContent).not.toContain('Missing file')
   })
+
+  it('reports a pasted image upload failure while the composer is still current', async () => {
+    seedDatabase([1])
+    const uploadError = new Error('pasted image upload failed')
+    loadPageMocks.postChatFile.mockRejectedValueOnce(uploadError)
+    const imageBytes = new Uint8Array([7, 8, 9])
+    class MockFileReader {
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null
+      onerror: (() => void) | null = null
+      error: Error | null = null
+
+      readAsArrayBuffer() {
+        queueMicrotask(() => {
+          this.onload?.({
+            target: { result: imageBytes.buffer },
+          } as ProgressEvent<FileReader>)
+        })
+      }
+    }
+    vi.stubGlobal('FileReader', MockFileReader as unknown as typeof FileReader)
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Keep this draft'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const pastedFile = new File([imageBytes], 'broken.png', { type: 'image/png' })
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true }) as ClipboardEvent
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: {
+        items: [
+          {
+            kind: 'file',
+            type: 'image/png',
+            getAsFile: () => pastedFile,
+          },
+        ],
+      },
+    })
+    textarea.dispatchEvent(pasteEvent)
+
+    await waitFor(() => expect(loadPageMocks.alertError).toHaveBeenCalledWith(uploadError))
+    expect(pasteEvent.defaultPrevented).toBe(true)
+    expect(textarea.value).toBe('Keep this draft')
+  })
 })
