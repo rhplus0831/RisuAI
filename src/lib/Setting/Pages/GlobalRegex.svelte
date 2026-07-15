@@ -4,7 +4,7 @@
   import Help from 'src/lib/Others/Help.svelte'
 
   import { getDatabase } from 'src/ts/storage/database.svelte'
-  import { exportRegex, importRegex } from 'src/ts/process/scripts'
+  import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
   import RegexList from 'src/lib/SideBars/Scripts/RegexList.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import {
@@ -54,6 +54,8 @@
     aria-label={`${language.import}: ${language.globalRegexScript}`}
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={async () => {
-      globalScriptDraft.value = ensureClientScriptDefinitionIds(await importRegex(globalScriptDraft.value))
+      const importedRows = await importRegexRows()
+      if (!importedRows || importedRows.length === 0) return
+      globalScriptDraft.value = ensureClientScriptDefinitionIds([...globalScriptDraft.value, ...importedRows])
     }}><HardDriveUploadIcon /></button>
 </div>
