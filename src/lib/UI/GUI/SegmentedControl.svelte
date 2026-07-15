@@ -42,6 +42,8 @@
   // Re-calculate indicator when activeIndex changes or on mount
   $effect(() => {
     void activeIndex
+    void options
+    void size
     tick().then(() => {
       updateIndicator()
       if (!mounted) {
@@ -50,6 +52,32 @@
         })
       }
     })
+  })
+
+  // Labels, fonts, and responsive layout can change button geometry without
+  // changing the selected index. Observe the actual elements so the indicator
+  // remains aligned after those visual-only changes.
+  $effect(() => {
+    const container = containerRef
+    const currentOptions = options
+    if (!container || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(() => updateIndicator())
+    let cancelled = false
+    tick().then(() => {
+      if (cancelled) return
+      observer.observe(container)
+      for (const button of container.querySelectorAll<HTMLElement>('[data-segment-btn]')) {
+        observer.observe(button)
+      }
+    })
+    // Keep this effect subscribed when keyed option rows are added or removed.
+    void currentOptions
+
+    return () => {
+      cancelled = true
+      observer.disconnect()
+    }
   })
 
   function handleSelect(opt: SegmentOption) {
