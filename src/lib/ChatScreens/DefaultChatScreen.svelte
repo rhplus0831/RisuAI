@@ -32,7 +32,7 @@
     additionalFloatingActionButtons,
     easyPanelStore,
   } from '../../ts/stores.svelte'
-  import { tick } from 'svelte'
+  import { tick, untrack } from 'svelte'
   import Chat from './Chat.svelte'
   import {
     getDatabase,
@@ -129,6 +129,11 @@
   type ComposerOperationKind = 'send' | 'continue'
   type ComposerDraftField = 'message' | 'translation' | 'files'
   type ComposerTextField = 'message' | 'translation'
+  type ComposerDraft = {
+    messageInput: string
+    messageInputTranslate: string
+    fileInput: string[]
+  }
   type ComposerOperation = {
     token: ReturnType<typeof composerOperationGuard.issue>
     kind: ComposerOperationKind
@@ -157,6 +162,8 @@
     transcriptIdentity: string
     previousLoadPages: number
   }
+
+  const composerDrafts = new Map<string, ComposerDraft>()
 
   interface Props {
     openModuleList?: boolean
@@ -370,6 +377,33 @@
     if (changedFields.includes('translation')) {
       messageInputTranslateMutationVersion += 1
     }
+
+    const identity = getActiveTranscriptWindowIdentity()
+    if (identity) {
+      storeComposerDraft(identity)
+    }
+  }
+
+  function storeComposerDraft(identity: string): void {
+    if (messageInput === '' && messageInputTranslate === '' && fileInput.length === 0) {
+      composerDrafts.delete(identity)
+      return
+    }
+
+    composerDrafts.set(identity, {
+      messageInput,
+      messageInputTranslate,
+      fileInput: [...fileInput],
+    })
+  }
+
+  function restoreComposerDraft(identity: string | null): void {
+    const draft = identity ? composerDrafts.get(identity) : undefined
+    messageInput = draft?.messageInput ?? ''
+    messageInputTranslate = draft?.messageInputTranslate ?? ''
+    fileInput = [...(draft?.fileInput ?? [])]
+    markComposerDraftChanged()
+    void tick().then(updateInputSizeAll)
   }
 
   function beginComposerFileOperation(): ComposerFileOperation | null {
@@ -597,8 +631,12 @@
     }
 
     const previousIdentity = activeTranscriptWindowIdentity
+    if (previousIdentity !== null) {
+      untrack(() => storeComposerDraft(previousIdentity))
+    }
     activeTranscriptWindowIdentity = nextIdentity
     loadPages = configuredChatLoadPages
+    untrack(() => restoreComposerDraft(nextIdentity))
 
     if (previousIdentity !== null) {
       resetTranscriptWindowForChatSwitch()

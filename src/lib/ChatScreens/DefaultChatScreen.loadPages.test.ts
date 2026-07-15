@@ -1616,9 +1616,45 @@ describe('DefaultChatScreen transcript window state', () => {
     ])
     await settle()
 
-    expect(secondTextarea.value).toBe('First chat draft')
+    expect(secondTextarea.value).toBe('')
     expect(secondTextarea.value).not.toContain('other-chat.txt')
     expect(target.textContent).not.toContain('Missing file')
+  })
+
+  it('keeps composer drafts scoped to their chat', async () => {
+    seedDatabase([1, 1])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const firstTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    firstTextarea.value = 'First chat draft'
+    firstTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe('')
+    })
+    const secondTextarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    secondTextarea.value = 'Second chat draft'
+    secondTextarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    switchToCharacterChat(0)
+    await waitFor(() => {
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
+        'First chat draft',
+      )
+    })
+
+    switchToCharacterChat(1)
+    await waitFor(() => {
+      expect(target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')?.value).toBe(
+        'Second chat draft',
+      )
+    })
   })
 
   it('ignores a delayed pasted image result after composer text changes', async () => {
