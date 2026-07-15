@@ -101,6 +101,7 @@
   let aspectRatio = 1
   let fontFamily = $state('Arial')
   let modeEpoch = 0
+  let imageEpoch = 0
 
   async function selectFile(): Promise<boolean> {
     const file = await selectSingleFile(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif'])
@@ -119,6 +120,7 @@
     //@ts-expect-error Uint8Array buffer type (ArrayBufferLike) is incompatible with BlobPart's ArrayBuffer
     await decodeImageBlob(img, new Blob([file.data]))
     inputImage = img
+    imageEpoch += 1
     aspectRatio = img.width / img.height
     canvas.width = img.width
     canvas.height = img.height
@@ -145,11 +147,13 @@
     const runModeEpoch = modeEpoch
     const runPrompt = prompt
     const runLanguage = selLang
-    const isCurrentMode = () => mode === runMode && modeEpoch === runModeEpoch
+    let runImageEpoch = imageEpoch
+    const isCurrentRun = () => mode === runMode && modeEpoch === runModeEpoch && imageEpoch === runImageEpoch
     loading = true
     try {
       if (runMode === 'auto') {
-        if (!(await selectFile()) || !isCurrentMode()) return
+        if (!(await selectFile()) || mode !== runMode || modeEpoch !== runModeEpoch) return
+        runImageEpoch = imageEpoch
       }
 
       let data: string = ''
@@ -276,7 +280,7 @@
         'translate',
       )
 
-      if (!isCurrentMode()) return
+      if (!isCurrentRun()) return
 
       if (d.type === 'streaming' || d.type === 'multiline') {
         return alertError('This model is not supported in the playground')

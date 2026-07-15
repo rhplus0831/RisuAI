@@ -93,7 +93,7 @@ async function setMode(mode: 'auto' | 'manual'): Promise<void> {
   await tick()
 }
 
-function installImageBrowserMocks(): void {
+function installImageBrowserMocks() {
   class LoadedImage extends EventTarget {
     src = ''
     width = 80
@@ -118,6 +118,7 @@ function installImageBrowserMocks(): void {
   vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(canvasContext as any)
   vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/png;base64,aW1hZ2U=')
+  return canvasContext
 }
 
 async function waitForTranslationIdle(): Promise<void> {
@@ -220,6 +221,38 @@ describe('PlaygroundImageTrans request ownership', () => {
       type: 'success',
       result:
         '[{"x_min":0,"y_min":0,"x_max":1,"y_max":1,"bg_hex_color":"#fff","text_hex_color":"#000","content":"hello","translation":"translated"}]',
+    })
+
+    await waitForTranslationIdle()
+    expect(target.querySelectorAll('textarea')).toHaveLength(1)
+    expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('drops a response after the selected image changes', async () => {
+    const canvasContext = installImageBrowserMocks()
+    imageMocks.selectSingleFile
+      .mockResolvedValueOnce({ name: 'image-a.png', data: new Uint8Array([1, 2, 3]) })
+      .mockResolvedValueOnce({ name: 'image-b.png', data: new Uint8Array([4, 5, 6]) })
+    const response = deferred<{ type: 'success'; result: string }>()
+    imageMocks.requestChatData.mockReturnValue(response.promise)
+    component = mount(PlaygroundImageTrans, { target })
+    await setMode('manual')
+
+    const imageButton = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === language.image,
+    )
+    if (!(imageButton instanceof HTMLButtonElement)) throw new Error('Image selection button not found')
+    imageButton.click()
+    await vi.waitFor(() => expect(canvasContext.clearRect).toHaveBeenCalledTimes(1))
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+    imageButton.click()
+    await vi.waitFor(() => expect(canvasContext.clearRect).toHaveBeenCalledTimes(2))
+
+    response.resolve({
+      type: 'success',
+      result: '{"bg_hex_color":"#fff","text_hex_color":"#000","content":"image A","translation":"translated A"}',
     })
 
     await waitForTranslationIdle()
