@@ -50,7 +50,6 @@ function focusInitialElement(node: HTMLElement): void {
 export function modalFocusTrap(node: HTMLElement) {
   const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
   const modalRoot = node.closest<HTMLElement>('[data-modal-root]') ?? node
-  const parent = modalRoot.parentElement
   const backgroundStates = new Map<HTMLElement, BackgroundState>()
   let active = false
   let destroyed = false
@@ -66,10 +65,16 @@ export function modalFocusTrap(node: HTMLElement) {
     element.setAttribute('aria-hidden', 'true')
   }
 
-  function inertBackgroundChildren(): void {
-    if (!parent) return
-    for (const child of parent.children) {
-      if (child instanceof HTMLElement) makeBackgroundInert(child)
+  function inertBackgroundBranches(observeParents: boolean): void {
+    let activeBranch: HTMLElement = modalRoot
+    while (activeBranch.parentElement) {
+      const parent = activeBranch.parentElement
+      for (const child of parent.children) {
+        if (child instanceof HTMLElement && child !== activeBranch) makeBackgroundInert(child)
+      }
+      if (observeParents) observer.observe(parent, { childList: true })
+      if (parent === document.body) break
+      activeBranch = parent
     }
   }
 
@@ -100,19 +105,16 @@ export function modalFocusTrap(node: HTMLElement) {
     focusInitialElement(node)
   }
 
-  const observer = parent
-    ? new MutationObserver(() => {
-        if (active && modalTrapStack.at(-1) === controller) inertBackgroundChildren()
-      })
-    : null
+  const observer = new MutationObserver(() => {
+    if (active && modalTrapStack.at(-1) === controller) inertBackgroundBranches(true)
+  })
 
   function activate(): void {
     if (destroyed || active) return
     active = true
-    inertBackgroundChildren()
+    inertBackgroundBranches(true)
     document.addEventListener('keydown', handleKeydown, true)
     document.addEventListener('focusin', handleFocusin, true)
-    if (parent) observer?.observe(parent, { childList: true })
     queueMicrotask(() => {
       if (active && modalTrapStack.at(-1) === controller) focusInitialElement(node)
     })
@@ -121,7 +123,7 @@ export function modalFocusTrap(node: HTMLElement) {
   function deactivate(): void {
     if (!active) return
     active = false
-    observer?.disconnect()
+    observer.disconnect()
     document.removeEventListener('keydown', handleKeydown, true)
     document.removeEventListener('focusin', handleFocusin, true)
 

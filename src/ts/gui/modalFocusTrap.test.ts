@@ -7,6 +7,7 @@ const mountedRoots: HTMLElement[] = []
 async function settle(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
 function createModalFixture() {
@@ -147,5 +148,96 @@ describe('modalFocusTrap', () => {
     expect(document.activeElement).toBe(first)
 
     lowerAction.destroy()
+  })
+
+  it('inerts every ancestor sibling branch around a modal nested in Settings', async () => {
+    const app = document.createElement('div')
+    const appSidebar = document.createElement('aside')
+    const settings = document.createElement('section')
+    const settingsNavigation = document.createElement('nav')
+    const settingsContent = document.createElement('main')
+    const pageContent = document.createElement('div')
+    const pageToolbar = document.createElement('div')
+    const overlay = document.createElement('div')
+    const modal = document.createElement('div')
+    const modalButton = document.createElement('button')
+
+    overlay.dataset.modalRoot = ''
+    modal.tabIndex = -1
+    modal.append(modalButton)
+    overlay.append(modal)
+    pageContent.append(pageToolbar, overlay)
+    settingsContent.append(pageContent)
+    settings.append(settingsNavigation, settingsContent)
+    app.append(appSidebar, settings)
+    document.body.append(app)
+    mountedRoots.push(app)
+
+    const action = modalFocusTrap(modal)
+    await settle()
+
+    expect(pageToolbar.inert).toBe(true)
+    expect(settingsNavigation.inert).toBe(true)
+    expect(appSidebar.inert).toBe(true)
+    expect(overlay.inert).toBe(false)
+
+    action.destroy()
+    await settle()
+
+    expect(pageToolbar.inert).toBe(false)
+    expect(settingsNavigation.inert).toBe(false)
+    expect(appSidebar.inert).toBe(false)
+  })
+
+  it('keeps the app background inert for a top modal nested inside the lower dialog', async () => {
+    const { background, first, modal } = createModalFixture()
+    const lowerAction = modalFocusTrap(modal)
+    await settle()
+
+    const topOverlay = document.createElement('div')
+    const topModal = document.createElement('div')
+    const topButton = document.createElement('button')
+    topOverlay.dataset.modalRoot = ''
+    topModal.tabIndex = -1
+    topModal.append(topButton)
+    topOverlay.append(topModal)
+    modal.append(topOverlay)
+
+    const topAction = modalFocusTrap(topModal)
+    await settle()
+
+    expect(background.inert).toBe(true)
+    expect(first.inert).toBe(true)
+    expect(topOverlay.inert).toBe(false)
+    expect(document.activeElement).toBe(topButton)
+
+    topAction.destroy()
+    topOverlay.remove()
+    await settle()
+
+    expect(background.inert).toBe(true)
+    expect(first.inert).toBe(false)
+    expect(document.activeElement).toBe(first)
+
+    lowerAction.destroy()
+  })
+
+  it('inerts siblings dynamically inserted at an observed ancestor', async () => {
+    const { modal, root } = createModalFixture()
+    const action = modalFocusTrap(modal)
+    await settle()
+
+    const dynamicBackground = document.createElement('aside')
+    root.append(dynamicBackground)
+    await settle()
+
+    expect(dynamicBackground.inert).toBe(true)
+    expect(dynamicBackground.getAttribute('aria-hidden')).toBe('true')
+
+    action.destroy()
+    await settle()
+
+    expect(dynamicBackground.inert).toBe(false)
+    expect(dynamicBackground.hasAttribute('aria-hidden')).toBe(false)
   })
 })
