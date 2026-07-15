@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import { v4 } from 'uuid'
   import Sortable from 'sortablejs/modular/sortable.core.esm.js'
   import {
@@ -75,7 +75,8 @@
   let listEle: HTMLDivElement = $state()
   let sorted = $state(0)
   let opened = 0
-  let previousChatRouteOpen = $state(false)
+  let sortableStructureSignature = ''
+  let sortableReconcileGeneration = 0
 
   // Preserve source order and each chat's original array index within folder buckets.
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats))
@@ -537,21 +538,28 @@
     })
   }
 
-  onMount(createStb)
-
   $effect(() => {
-    if (previousChatRouteOpen === chatRouteOpen) return
-    previousChatRouteOpen = chatRouteOpen
+    const signature = chatRouteOpen
+      ? 'chat-open'
+      : `chat-list:${(chara.chatFolders ?? []).map((folder) => folder.id).join('\u0000')}`
+    if (signature === sortableStructureSignature) return
+    sortableStructureSignature = signature
+    const generation = ++sortableReconcileGeneration
 
     if (chatRouteOpen) {
       destroyStb()
       return
     }
 
-    setTimeout(createStb, 0)
+    void tick().then(() => {
+      if (generation !== sortableReconcileGeneration || chatRouteOpen) return
+      destroyStb()
+      createStb()
+    })
   })
 
   onDestroy(() => {
+    sortableReconcileGeneration += 1
     destroyStb()
   })
 </script>

@@ -501,6 +501,12 @@ function sortableForElement(element: Element): { options: { onEnd: (event: { to:
   return sortable as unknown as { options: { onEnd: (event: { to: HTMLElement }) => Promise<void> } }
 }
 
+function activeSortablesForElement(element: Element): Array<{ destroy: ReturnType<typeof vi.fn> }> {
+  return sidebarMocks.SortableMock.instances.filter(
+    (instance) => instance.element === element && instance.destroy.mock.calls.length === 0,
+  )
+}
+
 async function setTextInputValue(input: HTMLInputElement, value: string): Promise<void> {
   input.value = value
   input.dispatchEvent(new Event('input', { bubbles: true }))
@@ -1198,9 +1204,10 @@ describe('SideChatList DOM contract harness', () => {
 
     component = mount(SideChatListHarness, { target })
     await tick()
+    const initialSortables = [...sidebarMocks.SortableMock.instances]
 
     createFolderButton().click()
-    await tick()
+    await flushCommandWork()
 
     const createdFolder = selectedCharacter().chatFolders[0]
     expect(command.settled).toBe(false)
@@ -1215,6 +1222,8 @@ describe('SideChatList DOM contract harness', () => {
         folded: false,
       },
     })
+    expect(initialSortables.every((sortable) => sortable.destroy.mock.calls.length === 1)).toBe(true)
+    expect(activeSortablesForElement(folderPanelById(createdFolder.id))).toHaveLength(1)
 
     command.resolve({ revision: 12, status: 'ok' })
     await flushCommandWork()
@@ -1230,9 +1239,12 @@ describe('SideChatList DOM contract harness', () => {
     await tick()
 
     createFolderButton().click()
-    await tick()
+    await flushCommandWork()
 
     const createdFolderId = selectedCharacter().chatFolders[0].id
+    const createdFolderPanel = folderPanelById(createdFolderId)
+    const [createdFolderSortable] = activeSortablesForElement(createdFolderPanel)
+    expect(createdFolderSortable).toBeTruthy()
     expect(folderElementById(createdFolderId).textContent).toContain('New Folder 2')
     expect(selectedCharacter().chatFolders.map((folder) => folder.name)).toEqual(['New Folder 2', 'Pinned Folder'])
 
@@ -1242,6 +1254,11 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectedCharacter().chatFolders.map((folder) => folder.name)).toEqual(['Pinned Folder'])
     expect(sidebarRoot().querySelector(`[data-risu-chat-folder-id="${createdFolderId}"]`)).toBeNull()
     expect(target.textContent).not.toContain('New Folder 2')
+    expect(createdFolderSortable.destroy).toHaveBeenCalledOnce()
+    // Svelte may recycle the panel element for the remaining keyed position;
+    // its old Sortable is still destroyed and exactly one fresh listener wins.
+    expect(createdFolderPanel.dataset.risuChatFolderPanelId).toBe('folder-a')
+    expect(activeSortablesForElement(createdFolderPanel)).toHaveLength(1)
   })
 
   it('removes a confirmed root sidebar chat before the delete command resolves', async () => {
