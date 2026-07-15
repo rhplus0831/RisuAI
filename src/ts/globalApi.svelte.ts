@@ -1411,13 +1411,19 @@ export function textifyReadableStream(stream: ReadableStream<Uint8Array>) {
  * If the document is currently in fullscreen mode, it exits fullscreen.
  * If the document is not in fullscreen mode, it requests fullscreen with navigation UI hidden.
  */
-export function toggleFullscreen() {
-  const fullscreenElement = document.fullscreenElement
-  fullscreenElement
-    ? document.exitFullscreen()
-    : document.documentElement.requestFullscreen({
+export function toggleFullscreen(enabled = document.fullscreenElement === null) {
+  if (enabled) {
+    if (document.fullscreenElement === null) {
+      return document.documentElement.requestFullscreen({
         navigationUI: 'hide',
       })
+    }
+    return
+  }
+
+  if (document.fullscreenElement !== null) {
+    return document.exitFullscreen()
+  }
 }
 
 /**

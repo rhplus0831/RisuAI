@@ -275,7 +275,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'check',
     labelKey: 'fullscreen',
     bindKey: 'fullScreen',
-    onChange: () => toggleFullscreen(),
+    onChange: (enabled) => toggleFullscreen(Boolean(enabled)),
     keywords: ['fullscreen'],
   },
   {
