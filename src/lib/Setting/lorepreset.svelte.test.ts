@@ -62,6 +62,12 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   return { promise, resolve }
 }
 
+async function settle(): Promise<void> {
+  await tick()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 function lorebook(id: string, name: string): LorebookFixture {
   return { id, name, data: [] }
 }
@@ -183,5 +189,46 @@ describe('global lorebook modal targeting', () => {
 
     expect(deleteButton('First')).toBeTruthy()
     expect(deleteButton('Second')).toBeTruthy()
+  })
+})
+
+describe('global lorebook modal containment', () => {
+  it('traps initial focus, contains Escape, and restores the opener', async () => {
+    projectLorebooks([lorebook('g1', 'First')])
+    const opener = document.createElement('button')
+    opener.textContent = 'Open lorebooks'
+    target.appendChild(opener)
+    opener.focus()
+    const close = vi.fn()
+    const documentKeydown = vi.fn()
+    document.addEventListener('keydown', documentKeydown)
+
+    component = mount(Lorepreset, { target, props: { close } })
+    await settle()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const closeButton = target.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    expect(dialog).not.toBeNull()
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('risu-global-lorebook-dialog-title')
+    expect(opener.inert).toBe(true)
+    expect(opener.getAttribute('aria-hidden')).toBe('true')
+    expect(document.activeElement).toBe(closeButton)
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    closeButton?.dispatchEvent(escape)
+    document.removeEventListener('keydown', documentKeydown)
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+    expect(documentKeydown).not.toHaveBeenCalled()
+
+    unmount(component)
+    component = undefined
+    await settle()
+
+    expect(opener.inert).toBe(false)
+    expect(opener.hasAttribute('aria-hidden')).toBe(false)
+    expect(document.activeElement).toBe(opener)
   })
 })

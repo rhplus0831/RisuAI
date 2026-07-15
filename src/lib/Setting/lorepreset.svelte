@@ -5,6 +5,7 @@
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import { SquarePenIcon, PlusIcon, TrashIcon, XIcon } from '@lucide/svelte'
   import TextInput from '../UI/GUI/TextInput.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     createGlobalLorebook,
     deleteGlobalLorebook,
@@ -31,6 +32,14 @@
     return matches.length === 1 ? lorebookId : lorebook
   }
 
+  /** @param {KeyboardEvent} event */
+  function handleDialogKeydown(event) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  }
+
   $effect(() => {
     // This modal only edits the global lorebook list, so scope change detection
     // to it instead of scanning every character/chat/module per keystroke.
@@ -39,12 +48,20 @@
   })
 </script>
 
-<div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
-  <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto">
+<div data-modal-root class="fixed inset-0 z-40 bg-black/50 flex justify-center items-center">
+  <div
+    use:modalFocusTrap
+    class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-global-lorebook-dialog-title"
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor mb-4">
-      <h2 class="mt-0 mb-0">{language.loreBook}</h2>
+      <h2 id="risu-global-lorebook-dialog-title" class="mt-0 mb-0">{language.loreBook}</h2>
       <div class="grow flex justify-end">
         <button
+          data-modal-initial-focus
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           aria-label={language.close}
           onclick={close}>
