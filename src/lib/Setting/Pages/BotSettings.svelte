@@ -1519,6 +1519,7 @@
         <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
           <div class="p-2">
             <button
+              aria-label={`${language.add}: ${language.customStopWords}`}
               class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
               onclick={() => {
                 const localStopStrings = activeLocalStopStringsDraft.value ?? []
@@ -1533,6 +1534,7 @@
               </div>
               <div>
                 <button
+                  aria-label={`${language.remove}: ${language.customStopWords} ${i + 1}`}
                   class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                   onclick={() => {
                     const localStopStrings = activeLocalStopStringsDraft.value ?? []
@@ -1699,6 +1701,7 @@
               <th class="font-medium">{language.value}</th>
               <th>
                 <button
+                  aria-label={`${language.add}: Bias`}
                   class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
                   onclick={() => {
                     biasDraft.value = [...biasDraft.value, ['', 0]]
@@ -1720,6 +1723,7 @@
                 </td>
                 <td>
                   <button
+                    aria-label={`${language.remove}: Bias ${i + 1}`}
                     class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                     onclick={() => {
                       biasDraft.value = biasDraft.value.filter((_, index) => index !== i)
@@ -1731,13 +1735,16 @@
         </table>
         <div class="text-textcolor2 mt-2 flex items-center gap-2">
           <button
+            aria-label={`${language.export}: Bias`}
             class="font-medium cursor-pointer hover:text-textcolor gap-2"
             onclick={() => {
               const data = JSON.stringify(biasDraft.value, null, 2)
               downloadFile('bias.json', data)
             }}><DownloadIcon /></button>
-          <button class="font-medium cursor-pointer hover:text-textcolor" onclick={importBiasJson}
-            ><HardDriveUploadIcon /></button>
+          <button
+            aria-label={`${language.import}: Bias`}
+            class="font-medium cursor-pointer hover:text-textcolor"
+            onclick={importBiasJson}><HardDriveUploadIcon /></button>
         </div>
       </Accordion>
     {/if}
@@ -1751,6 +1758,7 @@
               <th class="font-medium">{language.value}</th>
               <th>
                 <button
+                  aria-label={`${language.add}: ${language.additionalParams}`}
                   class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center"
                   onclick={() => {
                     activeAdditionalParamsDraft.value = [...activeAdditionalParamsDraft.value, ['', '']]
@@ -1772,6 +1780,7 @@
                 </td>
                 <td>
                   <button
+                    aria-label={`${language.remove}: ${language.additionalParams} ${i + 1}`}
                     class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                     onclick={() => {
                       activeAdditionalParamsDraft.value = activeAdditionalParamsDraft.value.filter(
@@ -1885,6 +1894,7 @@
           </div>
         </div>
         <button
+          aria-label={`${language.import}: ${language.icon}`}
           class="mt-2 text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
           onclick={uploadSelectedPromptPresetIcon}>
           <UploadIcon />
