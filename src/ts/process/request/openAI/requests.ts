@@ -174,6 +174,13 @@ function getLocalNetworkRequestOptions(
   }
 }
 
+function serverOwnedOllamaHeaders(
+  arg: RequestDataArgumentExtended,
+  headers: Record<string, string>,
+): Record<string, string> {
+  return arg.serverOwnedOllamaAuth ? { ...headers, 'risu-auth': arg.serverOwnedOllamaAuth } : headers
+}
+
 export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
   let formatedChat: OpenAIChatExtra[] = []
   const formated = arg.formated
@@ -755,8 +762,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     body.stream = false
   }
 
-  const localNetworkOptions = getLocalNetworkRequestOptions(replacerURL, db, false)
-  const streamingLocalNetworkOptions = getLocalNetworkRequestOptions(replacerURL, db, true)
+  const localNetworkOptions = arg.serverOwnedOllamaAuth ? {} : getLocalNetworkRequestOptions(replacerURL, db, false)
+  const streamingLocalNetworkOptions = arg.serverOwnedOllamaAuth
+    ? {}
+    : getLocalNetworkRequestOptions(replacerURL, db, true)
 
   if (arg.useStreaming) {
     body.stream = true
@@ -773,12 +782,13 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
     const da = await fetchNative(replacerURL, {
       body: JSON.stringify(body),
       method: 'POST',
-      headers: headers,
+      headers: serverOwnedOllamaHeaders(arg, headers),
       signal: arg.abortSignal,
       chatId: arg.chatId,
       interceptor: 'openai_streaming',
       networkRoute: streamingLocalNetworkOptions.networkRoute,
       requestTimeoutMs: streamingLocalNetworkOptions.requestTimeoutMs,
+      sensitive: !!arg.serverOwnedOllamaAuth,
     })
 
     if (da.status !== 200) {
@@ -837,12 +847,14 @@ export async function requestHTTPOpenAI(
   const db = getDatabase()
   const res = await globalFetch(replacerURL, {
     body: body,
-    headers: headers,
+    headers: serverOwnedOllamaHeaders(arg, headers),
     abortSignal: arg.abortSignal,
     chatId: arg.chatId,
     interceptor: 'openai_basic',
     networkRoute: networkOptions.networkRoute,
     requestTimeoutMs: networkOptions.requestTimeoutMs,
+    plainFetchForce: !!arg.serverOwnedOllamaAuth,
+    sensitive: !!arg.serverOwnedOllamaAuth,
   })
 
   function processTextResponse(dat: any): string {
@@ -1357,40 +1369,130 @@ export async function requestOpenAIResponseAPI(arg: RequestDataArgumentExtended)
   if (modelTools.includes('search')) {
     body.tools.push('web_search_preview')
   }
+  if (arg.tools?.length) {
+    body.tools.push(
+      ...arg.tools.map((tool) => ({
+        type: 'function',
+        name: tool.name,
+        description: tool.description,
+        parameters: simplifySchema(tool.inputSchema),
+      })),
+    )
+  }
 
-  const localNetworkOptions = getLocalNetworkRequestOptions(requestURL, db, false)
+  const localNetworkOptions = arg.serverOwnedOllamaAuth ? {} : getLocalNetworkRequestOptions(requestURL, db, false)
+  let prefix = ''
 
-  const response = await globalFetch(requestURL, {
-    body: body,
-    headers: headers,
-    chatId: arg.chatId,
-    abortSignal: arg.abortSignal,
-    interceptor: 'openai_response_api',
-    networkRoute: localNetworkOptions.networkRoute,
-    requestTimeoutMs: localNetworkOptions.requestTimeoutMs,
-  })
+  for (let round = 0; round < 8; round++) {
+    const response = await globalFetch(requestURL, {
+      body: body,
+      headers: serverOwnedOllamaHeaders(arg, headers),
+      chatId: arg.chatId,
+      abortSignal: arg.abortSignal,
+      interceptor: 'openai_response_api',
+      networkRoute: localNetworkOptions.networkRoute,
+      requestTimeoutMs: localNetworkOptions.requestTimeoutMs,
+      plainFetchForce: !!arg.serverOwnedOllamaAuth,
+      sensitive: !!arg.serverOwnedOllamaAuth,
+    })
 
-  if (!response.ok) {
-    return {
-      type: 'fail',
-      result: language.errors.httpError + `${JSON.stringify(response.data)}`,
+    if (!response.ok) {
+      return {
+        type: 'fail',
+        result: language.errors.httpError + `${JSON.stringify(response.data)}`,
+      }
     }
-  }
 
-  let result: string = (
-    response.data.output?.find((m: ResponseOutputItem) => m.type === 'message') as ResponseOutputItem
-  )?.content?.find((m) => m.type === 'output_text')?.text
+    const output = Array.isArray(response.data?.output) ? response.data.output : []
+    const result = output
+      .filter((item: unknown) => !!item && typeof item === 'object' && (item as { type?: unknown }).type === 'message')
+      .flatMap((item: { content?: unknown }) => (Array.isArray(item.content) ? item.content : []))
+      .filter(
+        (item: unknown): item is { type: 'output_text'; text: string } =>
+          !!item &&
+          typeof item === 'object' &&
+          (item as { type?: unknown }).type === 'output_text' &&
+          typeof (item as { text?: unknown }).text === 'string',
+      )
+      .map((item: { text: string }) => item.text)
+      .join('')
+    const functionCalls = output.filter(
+      (
+        item: unknown,
+      ): item is {
+        type: 'function_call'
+        call_id?: string
+        id?: string
+        name: string
+        arguments: string | Record<string, unknown>
+      } =>
+        !!item &&
+        typeof item === 'object' &&
+        (item as { type?: unknown }).type === 'function_call' &&
+        typeof (item as { name?: unknown }).name === 'string',
+    )
 
-  if (!result) {
-    return {
-      type: 'fail',
-      result: JSON.stringify(response.data),
+    if (functionCalls.length === 0) {
+      const finalResult = [prefix, result].filter(Boolean).join('\n\n')
+      if (!finalResult) {
+        return {
+          type: 'fail',
+          result: JSON.stringify(response.data),
+        }
+      }
+      return { type: 'success', result: finalResult }
     }
+
+    if (!db.simplifiedToolUse && result) prefix = [prefix, result].filter(Boolean).join('\n\n')
+    body.input.push(...output)
+    const callCodes: string[] = []
+    for (const functionCall of functionCalls) {
+      const callId = functionCall.call_id || functionCall.id
+      if (!callId) continue
+      const tool = arg.tools?.find((candidate) => candidate.name === functionCall.name)
+      let parsedArguments: Record<string, unknown> = {}
+      try {
+        parsedArguments =
+          typeof functionCall.arguments === 'string'
+            ? (JSON.parse(functionCall.arguments || '{}') as Record<string, unknown>)
+            : (functionCall.arguments ?? {})
+      } catch {
+        parsedArguments = {}
+      }
+
+      let outputText: string
+      if (!tool) {
+        outputText = `No tool found with name: ${functionCall.name}`
+      } else {
+        try {
+          const toolResponse = await callTool(tool.name, parsedArguments)
+          const textParts = toolResponse.filter((item) => item.type === 'text')
+          outputText = textParts.map((item) => item.text).join('\n') || 'Tool call failed with no text response'
+          if (arg.rememberToolUsage) {
+            callCodes.push(
+              await encodeToolCall({
+                call: {
+                  id: callId,
+                  name: functionCall.name,
+                  arg:
+                    typeof functionCall.arguments === 'string'
+                      ? functionCall.arguments
+                      : JSON.stringify(functionCall.arguments ?? {}),
+                },
+                response: toolResponse,
+              }),
+            )
+          }
+        } catch (error) {
+          outputText = `Tool call failed with error: ${error}`
+        }
+      }
+      body.input.push({ type: 'function_call_output', call_id: callId, output: outputText })
+    }
+    if (callCodes.length) prefix = [prefix, callCodes.join('\n\n')].filter(Boolean).join('\n\n')
   }
-  return {
-    type: 'success',
-    result: result,
-  }
+
+  return { type: 'fail', result: 'OpenAI Responses tool call limit reached', noRetry: true }
 }
 
 function getTranStream(arg: RequestDataArgumentExtended): TransformStream<Uint8Array, StreamResponseChunk> {
@@ -1689,12 +1791,13 @@ function wrapToolStream(
               resRec = await fetchNative(replacerURL, {
                 body: JSON.stringify(body),
                 method: 'POST',
-                headers: headers,
+                headers: serverOwnedOllamaHeaders(arg, headers),
                 signal: arg.abortSignal,
                 chatId: arg.chatId,
                 interceptor: 'openai_tool',
                 networkRoute: networkOptions.networkRoute,
                 requestTimeoutMs: networkOptions.requestTimeoutMs,
+                sensitive: !!arg.serverOwnedOllamaAuth,
               })
 
               if (resRec.status == 200 && resRec.headers.get('Content-Type').includes('text/event-stream')) {

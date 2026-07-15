@@ -5,6 +5,7 @@ const fetchMock = vi.hoisted(() => vi.fn())
 const resolveServerCompletionRouteMock = vi.hoisted(() => vi.fn())
 const callToolMock = vi.hoisted(() => vi.fn())
 const encodeToolCallMock = vi.hoisted(() => vi.fn())
+const getNodeServerProxyAuthMock = vi.hoisted(() => vi.fn())
 
 vi.mock('src/ts/globalApi.svelte', async (importActual) => {
   const actual = await importActual<typeof import('../../../globalApi.svelte')>()
@@ -35,6 +36,10 @@ vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
 })
+
+vi.mock('../../../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: getNodeServerProxyAuthMock,
+}))
 
 import { LLMFormat } from '../../../model/types'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
@@ -113,6 +118,13 @@ function ollamaOk(body: unknown): Response {
   })
 }
 
+function anthropicStream(events: unknown[]): Response {
+  return new Response(events.map((event) => `data: ${JSON.stringify(event)}\r\n\r\n`).join(''), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  })
+}
+
 function switchActiveDbDuringRoute(overrides: Partial<Database>): void {
   resolveServerCompletionRouteMock.mockImplementation(() => {
     setDatabase(db(overrides))
@@ -137,6 +149,8 @@ beforeEach(() => {
   fetchMock.mockReset()
   callToolMock.mockReset()
   encodeToolCallMock.mockReset()
+  getNodeServerProxyAuthMock.mockReset()
+  getNodeServerProxyAuthMock.mockResolvedValue('browser-auth-token')
   encodeToolCallMock.mockImplementation(async ({ call }: { call: { name: string } }) => {
     return `<tool_call>encoded-${call.name}</tool_call>\n\n`
   })
@@ -334,5 +348,325 @@ describe('requestOllama profile provider options through requestChatDataMain', (
       },
       { role: 'tool', tool_name: 'get_temperature', content: '22 C' },
     ])
+  })
+
+  it('keeps native Ollama Cloud tool credentials in the server-owned proxy', async () => {
+    setDatabase(
+      db({
+        aiModel: 'ollama-cloud',
+        subModel: 'ollama-cloud',
+        ollamaApiKey: 'sk-browser-must-not-send',
+        ollamaRequestFormat: LLMFormat.Ollama,
+        ollamaCloudModel: 'cloud-tool-model',
+        ollamaThinkingMode: 'off',
+      }),
+    )
+    callToolMock.mockResolvedValue([{ type: 'text', text: '22 C' }])
+    fetchMock
+      .mockResolvedValueOnce(
+        ollamaOk({
+          message: {
+            role: 'assistant',
+            content: '',
+            tool_calls: [{ function: { name: 'get_temperature', arguments: { city: 'Seoul' } } }],
+          },
+          done: true,
+        }),
+      )
+      .mockResolvedValueOnce(
+        ollamaOk({
+          message: { role: 'assistant', content: 'It is 22 C in Seoul.' },
+          done: true,
+        }),
+      )
+
+    const result = await requestChatDataMain(
+      {
+        ...makeRequest(),
+        previewBody: false,
+        tools: [
+          {
+            name: 'get_temperature',
+            description: 'Get the current temperature for a city',
+            inputSchema: { type: 'object', properties: { city: { type: 'string' } } },
+          },
+        ],
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'It is 22 C in Seoul.', model: 'ollama-cloud' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    for (const [url, init] of fetchMock.mock.calls) {
+      const parsedUrl = new URL(String(url))
+      expect(parsedUrl.pathname).toBe('/api/v1/generate/completion')
+      expect(parsedUrl.searchParams.get('operation')).toBe('ollama-cloud-tool')
+      expect(parsedUrl.searchParams.get('protocol')).toBe('native')
+      expect(parsedUrl.searchParams.get('staticModel')).toBe('ollama-cloud')
+      expect(new Headers(init.headers).get('risu-auth')).toBe('browser-auth-token')
+      expect(JSON.stringify(init)).not.toContain('sk-browser-must-not-send')
+      expect(new Headers(init.headers).get('authorization')).toBeNull()
+    }
+  })
+
+  it('keeps OpenAI-compatible Ollama Cloud tool rounds behind the server-owned proxy', async () => {
+    setDatabase(
+      db({
+        aiModel: 'ollama-cloud',
+        subModel: 'ollama-cloud',
+        ollamaApiKey: 'sk-openai-browser-must-not-send',
+        ollamaRequestFormat: LLMFormat.OpenAICompatible,
+        ollamaCloudModel: 'cloud-openai-model',
+      }),
+    )
+    callToolMock.mockResolvedValue([{ type: 'text', text: 'tool result' }])
+    fetchMock
+      .mockResolvedValueOnce({
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call-1',
+                    type: 'function',
+                    function: { name: 'lookup', arguments: '{"query":"weather"}' },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({ choices: [{ message: { role: 'assistant', content: 'OpenAI proxy result' } }] }),
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+
+    const result = await requestChatDataMain(
+      {
+        ...makeRequest(),
+        previewBody: false,
+        tools: [{ name: 'lookup', description: 'Lookup data', inputSchema: { type: 'object' } }],
+      },
+      'model',
+    )
+
+    expect(result).toMatchObject({ type: 'success', result: expect.stringContaining('OpenAI proxy result') })
+    expect(callToolMock).toHaveBeenCalledWith('lookup', { query: 'weather' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    for (const [url, options] of fetchMock.mock.calls) {
+      const parsedUrl = new URL(String(url))
+      expect(parsedUrl.pathname).toBe('/api/v1/generate/completion')
+      expect(parsedUrl.searchParams.get('protocol')).toBe('openai-chat')
+      expect(new Headers(options.headers).get('risu-auth')).toBe('browser-auth-token')
+      expect(JSON.stringify(options)).not.toContain('sk-openai-browser-must-not-send')
+    }
+  })
+
+  it('keeps Ollama Cloud Responses requests behind the server-owned proxy', async () => {
+    setDatabase(
+      db({
+        aiModel: 'ollama-cloud',
+        subModel: 'ollama-cloud',
+        ollamaApiKey: 'sk-responses-browser-must-not-send',
+        ollamaRequestFormat: LLMFormat.OpenAIResponseAPI,
+        ollamaCloudModel: 'cloud-responses-model',
+      }),
+    )
+    callToolMock.mockResolvedValue([{ type: 'text', text: 'responses tool result' }])
+    fetchMock
+      .mockResolvedValueOnce({
+        json: async () => ({
+          output: [
+            {
+              type: 'function_call',
+              call_id: 'responses-call-1',
+              name: 'lookup',
+              arguments: '{"query":"weather"}',
+            },
+          ],
+        }),
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({
+          output: [{ type: 'message', content: [{ type: 'output_text', text: 'Responses proxy result' }] }],
+        }),
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+
+    const result = await requestChatDataMain(
+      {
+        ...makeRequest(),
+        previewBody: false,
+        tools: [{ name: 'lookup', description: 'Lookup data', inputSchema: { type: 'object' } }],
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'Responses proxy result' })
+    expect(callToolMock).toHaveBeenCalledWith('lookup', { query: 'weather' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    for (const [url, options] of fetchMock.mock.calls) {
+      const parsedUrl = new URL(String(url))
+      expect(parsedUrl.searchParams.get('protocol')).toBe('openai-responses')
+      expect(new Headers(options.headers).get('risu-auth')).toBe('browser-auth-token')
+      expect(JSON.stringify(options)).not.toContain('sk-responses-browser-must-not-send')
+    }
+    const secondBody = JSON.parse(String(fetchMock.mock.calls[1][1].body))
+    expect(secondBody.input).toContainEqual({
+      type: 'function_call_output',
+      call_id: 'responses-call-1',
+      output: 'responses tool result',
+    })
+  })
+
+  it('keeps Anthropic-format Ollama Cloud tool rounds behind the server-owned proxy', async () => {
+    setDatabase(
+      db({
+        aiModel: 'ollama-cloud',
+        subModel: 'ollama-cloud',
+        ollamaApiKey: 'sk-anthropic-browser-must-not-send',
+        ollamaRequestFormat: LLMFormat.Anthropic,
+        ollamaCloudModel: 'cloud-anthropic-model',
+      }),
+    )
+    callToolMock.mockResolvedValue([{ type: 'text', text: 'anthropic tool result' }])
+    fetchMock
+      .mockResolvedValueOnce({
+        json: async () => ({
+          content: [{ type: 'tool_use', id: 'anthropic-call-1', name: 'lookup', input: { query: 'weather' } }],
+        }),
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({ content: [{ type: 'text', text: 'Anthropic proxy result' }] }),
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+      })
+
+    const result = await requestChatDataMain(
+      {
+        ...makeRequest(),
+        previewBody: false,
+        tools: [{ name: 'lookup', description: 'Lookup data', inputSchema: { type: 'object' } }],
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'Anthropic proxy result' })
+    expect(callToolMock).toHaveBeenCalledWith('lookup', { query: 'weather' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    for (const [url, options] of fetchMock.mock.calls) {
+      const parsedUrl = new URL(String(url))
+      expect(parsedUrl.searchParams.get('protocol')).toBe('anthropic')
+      expect(new Headers(options.headers).get('risu-auth')).toBe('browser-auth-token')
+      expect(JSON.stringify(options)).not.toContain('sk-anthropic-browser-must-not-send')
+    }
+  })
+
+  it('preserves streaming across Anthropic-format Ollama Cloud tool rounds', async () => {
+    setDatabase(
+      db({
+        aiModel: 'ollama-cloud',
+        subModel: 'ollama-cloud',
+        ollamaApiKey: 'sk-stream-browser-must-not-send',
+        ollamaRequestFormat: LLMFormat.Anthropic,
+        ollamaCloudModel: 'cloud-anthropic-stream-model',
+        useStreaming: true,
+        simplifiedToolUse: true,
+      }),
+    )
+    callToolMock.mockResolvedValue([{ type: 'text', text: 'stream tool result' }])
+    fetchMock
+      .mockResolvedValueOnce(
+        anthropicStream([
+          {
+            type: 'content_block_start',
+            index: 0,
+            content_block: { type: 'thinking', thinking: 'plan ', signature: '' },
+          },
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'thinking_delta', thinking: 'carefully' },
+          },
+          {
+            type: 'content_block_delta',
+            index: 0,
+            delta: { type: 'signature_delta', signature: 'sig-1' },
+          },
+          {
+            type: 'content_block_start',
+            index: 1,
+            content_block: { type: 'tool_use', id: 'stream-call-1', name: 'lookup', input: {} },
+          },
+          { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"q":"x"}' } },
+          { type: 'message_stop' },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        anthropicStream([
+          { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+          { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Streaming proxy result' } },
+          { type: 'message_stop' },
+        ]),
+      )
+
+    const result = await requestChatDataMain(
+      {
+        ...makeRequest(),
+        previewBody: false,
+        useStreaming: true,
+        tools: [{ name: 'lookup', description: 'Lookup data', inputSchema: { type: 'object' } }],
+      },
+      'model',
+    )
+
+    expect(result.type).toBe('streaming')
+    if (result.type !== 'streaming') throw new Error('expected streaming response')
+    const reader = result.result.getReader()
+    let last = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      last = value?.['0'] ?? last
+    }
+    expect(last).toBe('Streaming proxy result')
+    expect(callToolMock).toHaveBeenCalledWith('lookup', { q: 'x' })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    const continuationWireBody = fetchMock.mock.calls[1][1].body
+    const continuationBody = JSON.parse(
+      continuationWireBody instanceof Uint8Array
+        ? new TextDecoder().decode(continuationWireBody)
+        : String(continuationWireBody),
+    )
+    expect(continuationBody.messages.at(-2)).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: 'plan carefully', signature: 'sig-1' },
+        { type: 'tool_use', id: 'stream-call-1', name: 'lookup', input: { q: 'x' } },
+      ],
+    })
+    for (const [url, options] of fetchMock.mock.calls) {
+      expect(new URL(String(url)).searchParams.get('protocol')).toBe('anthropic')
+      expect(new Headers(options.headers).get('risu-auth')).toBe('browser-auth-token')
+      expect(JSON.stringify(options)).not.toContain('sk-stream-browser-must-not-send')
+    }
   })
 })

@@ -12,6 +12,7 @@ import { LLMFlags, LLMFormat, type LLMModel } from '../../model/modellist'
 import { risuChatParser, risuEscape, risuUnescape } from '../../parser/parser.svelte'
 import { pluginProcess, pluginV2 } from '../../plugins/plugins.svelte'
 import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from '../../storage/database.svelte'
+import { getNodeServerProxyAuth } from '../../storage/fastifyStorage'
 import { tokenizeNum } from '../../tokenizer'
 import { simplifySchema, sleep } from '../../util'
 import type { OpenAIChat } from '../index.svelte'
@@ -73,6 +74,7 @@ export interface RequestDataArgumentExtended extends requestDataArgument {
   key?: string
   additionalOutput?: string
   saveSignatures?: boolean
+  serverOwnedOllamaAuth?: string
 }
 
 export type requestDataResponse =
@@ -138,6 +140,8 @@ type OllamaMessage = {
   tool_name?: string
 }
 
+type OllamaCloudToolProtocol = 'native' | 'openai-chat' | 'openai-responses' | 'anthropic'
+
 interface RequestFallbackAttempt {
   staticModel: string
   fallbackProfileId?: string
@@ -156,6 +160,58 @@ function getOllamaThinkMode(mode: string): OllamaThinkMode | undefined {
       return mode
     default:
       return undefined
+  }
+}
+
+function getOllamaCloudToolProtocol(format: LLMFormat): OllamaCloudToolProtocol | null {
+  switch (format) {
+    case LLMFormat.Ollama:
+      return 'native'
+    case LLMFormat.OpenAICompatible:
+      return 'openai-chat'
+    case LLMFormat.OpenAIResponseAPI:
+      return 'openai-responses'
+    case LLMFormat.Anthropic:
+      return 'anthropic'
+    default:
+      return null
+  }
+}
+
+function ollamaCloudToolProxyUrl(arg: RequestDataArgumentExtended, protocol: OllamaCloudToolProtocol): string {
+  const origin = typeof location === 'undefined' ? 'http://localhost' : location.origin
+  const url = new URL('/api/v1/generate/completion', origin)
+  url.searchParams.set('operation', 'ollama-cloud-tool')
+  url.searchParams.set('protocol', protocol)
+  url.searchParams.set('mode', arg.mode ?? 'model')
+  if (arg.resolvedProfile?.source.kind === 'durable-profile') {
+    url.searchParams.set('profileId', arg.resolvedProfile.profileId)
+  } else {
+    url.searchParams.set('staticModel', arg.staticModel?.trim() || arg.resolvedProfile?.modelId || 'ollama-cloud')
+  }
+  return url.toString()
+}
+
+function useServerOwnedOllamaProfile(arg: RequestDataArgumentExtended, endpoint: string, auth: string): void {
+  arg.customURL = endpoint
+  arg.key = ''
+  arg.serverOwnedOllamaAuth = auth
+  if (!arg.resolvedProfile) return
+  arg.resolvedProfile = {
+    ...arg.resolvedProfile,
+    providerOptions: {
+      ...arg.resolvedProfile.providerOptions,
+      apiKey: '',
+      baseUrl: undefined,
+      endpoint,
+      extraHeaders: undefined,
+      ollama: arg.resolvedProfile.providerOptions.ollama
+        ? {
+            ...arg.resolvedProfile.providerOptions.ollama,
+            apiKey: '',
+          }
+        : undefined,
+    },
   }
 }
 
@@ -374,19 +430,6 @@ async function appendOllamaToolResults(
   return callCodes
 }
 
-function normalizeFetchHeaders(headers?: HeadersInit): { [key: string]: string } {
-  if (!headers) {
-    return {}
-  }
-  if (headers instanceof Headers) {
-    return Object.fromEntries(headers.entries())
-  }
-  if (Array.isArray(headers)) {
-    return Object.fromEntries(headers)
-  }
-  return headers as { [key: string]: string }
-}
-
 function appendOperationPath(baseUrl: string, suffix: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
   if (!trimmed || trimmed.endsWith(suffix)) {
@@ -441,21 +484,32 @@ function toWebSocketUrl(url: string): string {
   return url
 }
 
-async function ollamaCloudFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  const url = input instanceof Request ? input.url : input.toString()
-  const method = (init.method ?? (input instanceof Request ? input.method : 'GET')) as 'POST' | 'GET' | 'PUT' | 'DELETE'
-  const headers = normalizeFetchHeaders(init.headers ?? (input instanceof Request ? input.headers : undefined))
-  const body = init.body ?? (input instanceof Request ? await input.arrayBuffer() : undefined)
+function createOllamaCloudFetch(endpoint: string, auth: string) {
+  return async (input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> => {
+    const method = (init.method ?? (input instanceof Request ? input.method : 'GET')) as
+      | 'POST'
+      | 'GET'
+      | 'PUT'
+      | 'DELETE'
+    const body = init.body ?? (input instanceof Request ? await input.arrayBuffer() : undefined)
+    if (method !== 'POST' || body === undefined) {
+      throw new Error('Ollama Cloud tool proxy only accepts POST requests with a body')
+    }
 
-  const response = await fetchNative(url, {
-    body: body as string | Uint8Array | ArrayBuffer | undefined,
-    headers,
-    method,
-    signal: init.signal as AbortSignal,
-    interceptor: 'ollama_sdk',
-  })
+    const response = await fetchNative(endpoint, {
+      body: body as string | Uint8Array | ArrayBuffer | undefined,
+      headers: {
+        'content-type': 'application/json',
+        'risu-auth': auth,
+      },
+      method: 'POST',
+      signal: init.signal as AbortSignal,
+      interceptor: 'ollama_sdk',
+      sensitive: true,
+    })
 
-  return normalizeOllamaStreamResponse(response)
+    return normalizeOllamaStreamResponse(response)
+  }
 }
 
 function normalizeOllamaStreamResponse(response: Response): Response {
@@ -1637,24 +1691,43 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
   const localBaseUrl = hasResolvedProfile ? (ollamaOptions?.url ?? providerOptions?.baseUrl)?.trim() : db.ollamaURL
   const ollamaApiKey = hasResolvedProfile ? (ollamaOptions?.apiKey ?? providerOptions?.apiKey ?? '') : db.ollamaApiKey
   const ollamaModelSource = ollamaOptions?.modelSource ?? db.ollamaModelSource
+  const cloudToolProtocol = isCloud && arg.tools?.length ? getOllamaCloudToolProtocol(requestFormat) : null
+  if (isCloud && arg.tools?.length && !cloudToolProtocol) {
+    return {
+      type: 'fail',
+      result: 'The selected Ollama Cloud request format does not support MCP tools.',
+      noRetry: true,
+    }
+  }
+  const cloudToolAuth = cloudToolProtocol ? await getNodeServerProxyAuth() : ''
+  const cloudToolEndpoint = cloudToolProtocol ? ollamaCloudToolProxyUrl(arg, cloudToolProtocol) : ''
+  if (cloudToolProtocol) {
+    useServerOwnedOllamaProfile(arg, cloudToolEndpoint, cloudToolAuth)
+  }
 
   if (isCloud && requestFormat === LLMFormat.OpenAICompatible) {
-    arg.customURL = 'https://ollama.com/v1/chat/completions'
-    arg.key = ollamaApiKey
+    if (!cloudToolProtocol) {
+      arg.customURL = 'https://ollama.com/v1/chat/completions'
+      arg.key = ollamaApiKey
+    }
     arg.modelInfo.internalID = ollamaModel
     return requestOpenAI(arg)
   }
 
   if (isCloud && requestFormat === LLMFormat.OpenAIResponseAPI) {
-    arg.customURL = 'https://ollama.com/v1/responses'
-    arg.key = ollamaApiKey
+    if (!cloudToolProtocol) {
+      arg.customURL = 'https://ollama.com/v1/responses'
+      arg.key = ollamaApiKey
+    }
     arg.modelInfo.internalID = ollamaModel
     return requestOpenAIResponseAPI(arg)
   }
 
   if (isCloud && requestFormat === LLMFormat.Anthropic) {
-    arg.customURL = 'https://ollama.com/v1/messages'
-    arg.key = ollamaApiKey
+    if (!cloudToolProtocol) {
+      arg.customURL = 'https://ollama.com/v1/messages'
+      arg.key = ollamaApiKey
+    }
     arg.modelInfo = {
       ...arg.modelInfo,
       internalID: ollamaModel,
@@ -1699,8 +1772,8 @@ async function requestOllama(arg: RequestDataArgumentExtended): Promise<requestD
 
   const ollama = new Ollama({
     host: isCloud ? 'https://ollama.com' : localBaseUrl,
-    headers: isCloud && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : undefined,
-    fetch: isCloud ? ollamaCloudFetch : undefined,
+    headers: isCloud && !cloudToolProtocol && ollamaApiKey ? { Authorization: 'Bearer ' + ollamaApiKey } : undefined,
+    fetch: isCloud && cloudToolProtocol ? createOllamaCloudFetch(cloudToolEndpoint, cloudToolAuth) : undefined,
   })
 
   if (!arg.useStreaming) {

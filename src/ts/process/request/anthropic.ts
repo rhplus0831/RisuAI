@@ -70,6 +70,7 @@ interface Claude3ExtendedChat {
 
 const ANTHROPIC_MESSAGES_URL = 'https://api.anthropic.com/v1/messages'
 const ANTHROPIC_MESSAGES_SUFFIX = '/messages'
+const ANTHROPIC_TOOL_LOOP_LIMIT = 8
 
 function appendAnthropicMessagesPath(baseUrl: string): string {
   const trimmed = baseUrl.replace(/\/+$/, '')
@@ -96,6 +97,13 @@ function appendAnthropicMessagesPath(baseUrl: string): string {
   } catch {
     return `${trimmed}${ANTHROPIC_MESSAGES_SUFFIX}`
   }
+}
+
+function serverOwnedOllamaHeaders(
+  arg: RequestDataArgumentExtended,
+  headers: Record<string, string>,
+): Record<string, string> {
+  return arg.serverOwnedOllamaAuth ? { ...headers, 'risu-auth': arg.serverOwnedOllamaAuth } : headers
 }
 
 export async function requestClaude(arg: RequestDataArgumentExtended): Promise<requestDataResponse> {
@@ -873,14 +881,18 @@ async function requestClaudeHTTP(
   body: any,
   arg: RequestDataArgumentExtended,
 ): Promise<requestDataResponse> {
+  if (arg.useStreaming && arg.tools?.length && arg.serverOwnedOllamaAuth) {
+    return requestClaudeToolStream(replacerURL, headers, body, arg)
+  }
   if (arg.useStreaming) {
     const res = await fetchNative(replacerURL, {
       body: JSON.stringify(body),
-      headers: headers,
+      headers: serverOwnedOllamaHeaders(arg, headers),
       method: 'POST',
       chatId: arg.chatId,
       signal: arg.abortSignal,
       interceptor: 'anthropic_streaming',
+      sensitive: !!arg.serverOwnedOllamaAuth,
     })
 
     if (res.status !== 200) {
@@ -967,11 +979,12 @@ async function requestClaudeHTTP(
                   reader.cancel()
                   const res = await fetchNative(replacerURL, {
                     body: JSON.stringify(body),
-                    headers: headers,
+                    headers: serverOwnedOllamaHeaders(arg, headers),
                     method: 'POST',
                     chatId: arg.chatId,
                     signal: arg.abortSignal,
                     interceptor: 'anthropic_streaming_retry',
+                    sensitive: !!arg.serverOwnedOllamaAuth,
                   })
 
                   if (res.status !== 200) {
@@ -1020,10 +1033,12 @@ async function requestClaudeHTTP(
   const db = getDatabase()
   const res = await globalFetch(replacerURL, {
     body: body,
-    headers: headers,
+    headers: serverOwnedOllamaHeaders(arg, headers),
     method: 'POST',
     chatId: arg.chatId,
     interceptor: 'anthropic_http',
+    plainFetchForce: !!arg.serverOwnedOllamaAuth,
+    sensitive: !!arg.serverOwnedOllamaAuth,
   })
 
   if (!res.ok) {
@@ -1174,4 +1189,204 @@ async function requestClaudeHTTP(
     type: 'success',
     result: arg.additionalOutput + resText,
   }
+}
+
+interface StreamingClaudeToolUse {
+  id: string
+  name: string
+  partialJson: string
+}
+
+async function requestClaudeToolStream(
+  replacerURL: string,
+  headers: Record<string, string>,
+  body: any,
+  arg: RequestDataArgumentExtended,
+): Promise<requestDataResponse> {
+  const stream = new ReadableStream<StreamResponseChunk>({
+    async start(controller) {
+      let prefix = ''
+
+      try {
+        for (let round = 0; round < ANTHROPIC_TOOL_LOOP_LIMIT; round++) {
+          const response = await fetchNative(replacerURL, {
+            body: JSON.stringify(body),
+            headers: serverOwnedOllamaHeaders(arg, headers),
+            method: 'POST',
+            chatId: arg.chatId,
+            signal: arg.abortSignal,
+            interceptor: round === 0 ? 'anthropic_streaming' : 'anthropic_tool',
+            sensitive: !!arg.serverOwnedOllamaAuth,
+          })
+          if (response.status !== 200 || !response.body) {
+            const message = response.body ? await textifyReadableStream(response.body) : `HTTP ${response.status}`
+            controller.error(new Error(message))
+            return
+          }
+
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let pending = ''
+          let text = ''
+          let thinking = ''
+          const tools = new Map<number, StreamingClaudeToolUse>()
+          const contentBlocks = new Map<number, Record<string, any>>()
+
+          const visible = (): string => {
+            const current = thinking ? `<Thoughts>\n${thinking}\n</Thoughts>\n\n${text}` : text
+            return [prefix, current].filter(Boolean).join('\n\n')
+          }
+          const processEvent = (raw: string): void => {
+            let event: any
+            try {
+              event = JSON.parse(raw)
+            } catch {
+              return
+            }
+            if (event?.type === 'error') {
+              throw new Error(event?.error?.message || 'Anthropic stream failed')
+            }
+            const index = typeof event?.index === 'number' ? event.index : 0
+            if (event?.type === 'content_block_start') {
+              const block = event.content_block
+              if (block && typeof block === 'object') contentBlocks.set(index, { ...block })
+              if (block?.type === 'text' && typeof block.text === 'string') text += block.text
+              if (block?.type === 'thinking' && typeof block.thinking === 'string') thinking += block.thinking
+              if (block?.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') {
+                tools.set(index, {
+                  id: block.id,
+                  name: block.name,
+                  partialJson:
+                    block.input && typeof block.input === 'object' && Object.keys(block.input).length > 0
+                      ? JSON.stringify(block.input)
+                      : '',
+                })
+              }
+            }
+            if (event?.type === 'content_block_delta') {
+              const delta = event.delta
+              const block = contentBlocks.get(index)
+              if ((delta?.type === 'text' || delta?.type === 'text_delta') && typeof delta.text === 'string') {
+                text += delta.text
+                if (block) block.text = `${typeof block.text === 'string' ? block.text : ''}${delta.text}`
+              }
+              if (
+                (delta?.type === 'thinking' || delta?.type === 'thinking_delta') &&
+                typeof delta.thinking === 'string'
+              ) {
+                thinking += delta.thinking
+                if (block) {
+                  block.thinking = `${typeof block.thinking === 'string' ? block.thinking : ''}${delta.thinking}`
+                }
+              }
+              if (delta?.type === 'redacted_thinking') {
+                thinking += '\n{{redacted_thinking}}\n'
+                if (block && typeof delta.data === 'string') block.data = delta.data
+              }
+              if (delta?.type === 'signature_delta' && typeof delta.signature === 'string' && block) {
+                block.signature = `${typeof block.signature === 'string' ? block.signature : ''}${delta.signature}`
+              }
+              if (delta?.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+                const tool = tools.get(index)
+                if (tool) tool.partialJson += delta.partial_json
+              }
+            }
+          }
+
+          while (true) {
+            const { done, value } = await reader.read()
+            pending += done ? decoder.decode() : decoder.decode(value, { stream: true })
+            const lines = pending.split('\n')
+            pending = lines.pop() ?? ''
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue
+              const data = line.slice('data:'.length).trim()
+              if (data && data !== '[DONE]') processEvent(data)
+            }
+            controller.enqueue({ '0': visible() })
+            if (done) break
+          }
+          if (pending.startsWith('data:')) {
+            const data = pending.slice('data:'.length).trim()
+            if (data && data !== '[DONE]') processEvent(data)
+          }
+
+          if (tools.size === 0) {
+            controller.enqueue({ '0': visible() })
+            controller.close()
+            return
+          }
+
+          const assistantContent = [...contentBlocks.entries()]
+            .sort(([left], [right]) => left - right)
+            .map(([, block]) => block)
+          const toolResultContent: Claude3ToolResponseBlock[] = []
+          const callCodes: string[] = []
+
+          for (const toolUse of tools.values()) {
+            let input: Record<string, unknown> = {}
+            try {
+              const parsed = JSON.parse(toolUse.partialJson || '{}') as unknown
+              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                input = parsed as Record<string, unknown>
+              }
+            } catch {
+              input = {}
+            }
+            const streamedBlock = assistantContent.find((block) => block.type === 'tool_use' && block.id === toolUse.id)
+            if (streamedBlock) streamedBlock.input = input
+            else assistantContent.push({ type: 'tool_use', id: toolUse.id, name: toolUse.name, input })
+
+            const tool = arg.tools?.find((candidate) => candidate.name === toolUse.name)
+            let toolResponse: Awaited<ReturnType<typeof callTool>>
+            try {
+              toolResponse = tool
+                ? await callTool(tool.name, input)
+                : [{ type: 'text', text: `No tool found with name: ${toolUse.name}` }]
+            } catch (error) {
+              toolResponse = [{ type: 'text', text: `Tool call failed with error: ${error}` }]
+            }
+            toolResultContent.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: toolResponse.map((item) =>
+                item.type === 'image'
+                  ? {
+                      type: 'image',
+                      source: { type: 'base64', media_type: item.mimeType, data: item.data },
+                    }
+                  : {
+                      type: 'text',
+                      text: item.type === 'text' ? item.text : `Unsupported tool response: ${item.type}`,
+                    },
+              ),
+            })
+            if (arg.rememberToolUsage) {
+              callCodes.push(
+                await encodeToolCall({
+                  call: { id: toolUse.id, name: toolUse.name, arg: input },
+                  response: toolResponse,
+                }),
+              )
+            }
+          }
+
+          body.messages.push({ role: 'assistant', content: assistantContent })
+          body.messages.push({ role: 'user', content: toolResultContent })
+          if (!getDatabase().simplifiedToolUse && (text || thinking)) {
+            const current = thinking ? `<Thoughts>\n${thinking}\n</Thoughts>\n\n${text}` : text
+            prefix = [prefix, current].filter(Boolean).join('\n\n')
+          }
+          if (callCodes.length) prefix = [prefix, callCodes.join('\n\n')].filter(Boolean).join('\n\n')
+          controller.enqueue({ '0': prefix })
+        }
+
+        controller.error(new Error('Anthropic tool call limit reached'))
+      } catch (error) {
+        controller.error(error)
+      }
+    },
+  })
+
+  return { type: 'streaming', result: stream }
 }

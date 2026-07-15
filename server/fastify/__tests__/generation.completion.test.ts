@@ -404,6 +404,15 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
               apiKey: 'sk-server-profile-ollama',
               requestModel: 'server-profile-model',
               ollama: { requestFormat: format },
+              extraHeaders: {
+                'X-Ollama-Trace': 'profile-trace',
+                Authorization: 'Bearer browser-controlled',
+              },
+              additionalParams: [
+                ['metadata.audit', 'true'],
+                ['header::X-Ollama-Param', 'profile-param'],
+                ['header::Authorization', 'Bearer parameter-controlled'],
+              ],
             },
           },
         ],
@@ -429,7 +438,7 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
         payload: {
           model: 'browser-controlled-model',
           messages: [{ role: 'user', content: 'hello' }],
-          stream: false,
+          ...(protocol === 'openai-responses' ? {} : { stream: false }),
         },
       })
 
@@ -437,8 +446,16 @@ describe('Phase 6-1 POST /api/v1/generate/completion', () => {
       expect(calls).toHaveLength(1)
       expect(calls[0]).toMatchObject({
         url,
-        headers: { authorization: 'Bearer sk-server-profile-ollama' },
-        body: { model: 'server-profile-model', stream: false },
+        headers: {
+          authorization: 'Bearer sk-server-profile-ollama',
+          'X-Ollama-Trace': 'profile-trace',
+          'X-Ollama-Param': 'profile-param',
+        },
+        body: {
+          model: 'server-profile-model',
+          metadata: { audit: true },
+          ...(protocol === 'openai-responses' ? {} : { stream: false }),
+        },
       })
     },
   )

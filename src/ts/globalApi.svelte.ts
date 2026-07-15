@@ -473,6 +473,7 @@ export interface GlobalFetchArgs {
   interceptor?: string
   requestTimeoutMs?: number
   networkRoute?: 'auto' | 'local_network'
+  sensitive?: boolean
 }
 
 /**
@@ -591,6 +592,7 @@ export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promi
  * @param {GlobalFetchArgs} arg - The arguments for the fetch request.
  */
 function addFetchLogInGlobalFetch(response: any, success: boolean, url: string, arg: GlobalFetchArgs, status?: number) {
+  if (arg.sensitive) return
   try {
     fetchLog.unshift({
       body: JSON.stringify(arg.body, null, 2),

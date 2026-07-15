@@ -12,6 +12,7 @@ import {
   type ResolvedModelProfile,
 } from '../../../src/ts/model/modelProfileResolver.js'
 import { filterResponseHeaders } from './proxy.js'
+import { applyAdditionalParameters } from './generation/additionalParams.js'
 import { MASKED_PROVIDER_SECRET } from './providerSecrets.js'
 import { attachAbort } from './requestAbort.js'
 import { loadServerIntentCompletionSettings } from './repository.js'
@@ -47,7 +48,9 @@ interface OllamaCloudToolQuery {
 }
 
 interface ResolvedOllamaCloudToolTarget {
+  additionalParams: Array<[string, string]>
   apiKey: string
+  extraHeaders: Record<string, string>
   model: string
   protocol: OllamaCloudToolProtocol
   thinkingMode?: boolean | 'low' | 'medium' | 'high'
@@ -70,7 +73,7 @@ export async function handleOllamaCloudToolProxy(
   let target: ResolvedOllamaCloudToolTarget
   try {
     query = parseQuery(req.query)
-    payload = parsePayload(req.body)
+    payload = parsePayload(req.body, query.protocol)
     const settings = loadServerIntentCompletionSettings(db)
     if (settings === null) throw new Error('database is not initialized')
     target = resolveTarget(settings as unknown as Database, query)
@@ -80,17 +83,16 @@ export async function handleOllamaCloudToolProxy(
     return
   }
 
-  const upstreamPayload = {
+  const upstreamPayload: JsonRecord = {
     ...payload,
-    model: target.model,
-    ...(target.protocol === 'native'
-      ? target.thinkingMode === undefined
-        ? { think: undefined }
-        : { think: target.thinkingMode }
-      : {}),
   }
-  if (target.protocol === 'native' && target.thinkingMode === undefined) {
-    delete upstreamPayload.think
+  const configuredHeaders = { ...target.extraHeaders }
+  applyAdditionalParameters(upstreamPayload, configuredHeaders, target.additionalParams)
+  const upstreamHeaders = safeExtraHeaders(configuredHeaders)
+  upstreamPayload.model = target.model
+  if (target.protocol === 'native') {
+    if (target.thinkingMode === undefined) delete upstreamPayload.think
+    else upstreamPayload.think = target.thinkingMode
   }
 
   const { signal, refresh, cleanup } = attachAbort(req)
@@ -99,6 +101,7 @@ export async function handleOllamaCloudToolProxy(
       method: 'POST',
       redirect: 'error',
       headers: {
+        ...upstreamHeaders,
         accept: 'application/json, text/event-stream',
         authorization: `Bearer ${target.apiKey}`,
         'content-type': 'application/json',
@@ -164,15 +167,23 @@ function parseQuery(value: unknown): OllamaCloudToolQuery {
   }
 }
 
-function parsePayload(value: unknown): JsonRecord {
+function parsePayload(value: unknown, protocol: OllamaCloudToolProtocol): JsonRecord {
   if (!isRecord(value)) throw new Error('Ollama Cloud tool payload must be a JSON object')
-  if (typeof value.stream !== 'boolean') throw new Error('Ollama Cloud tool payload stream must be a boolean')
+  if (value.stream !== undefined && typeof value.stream !== 'boolean') {
+    throw new Error('Ollama Cloud tool payload stream must be a boolean')
+  }
+  if (value.stream === undefined && protocol !== 'openai-responses') {
+    throw new Error('Ollama Cloud tool payload stream must be a boolean')
+  }
   return value
 }
 
 function resolveTarget(database: Database, query: OllamaCloudToolQuery): ResolvedOllamaCloudToolTarget {
   const profile = selectedProfile(database, query)
   assertModelProfileGenerationReady(profile)
+  const durableProviderOptions = query.profileId
+    ? database.modelProfiles?.find((candidate) => candidate.id === query.profileId)?.providerOptions
+    : undefined
   const ollama = profile.providerOptions.ollama
   const cloud = ollama?.cloud ?? profile.modelId === 'ollama-cloud'
   const ollamaProvider = profile.status.providerId === 'ollama' || profile.modelId === 'ollama-cloud'
@@ -194,7 +205,9 @@ function resolveTarget(database: Database, query: OllamaCloudToolQuery): Resolve
   }
 
   return {
+    additionalParams: durableProviderOptions?.additionalParams ?? profile.providerOptions.additionalParams ?? [],
     apiKey,
+    extraHeaders: durableProviderOptions?.extraHeaders ?? profile.providerOptions.extraHeaders ?? {},
     model,
     protocol,
     url: urlForProtocol(protocol),
@@ -202,6 +215,26 @@ function resolveTarget(database: Database, query: OllamaCloudToolQuery): Resolve
       ? { thinkingMode: parseThinkingMode(ollama?.thinkingMode ?? database.ollamaThinkingMode) }
       : {}),
   }
+}
+
+function safeExtraHeaders(value: Record<string, string>): Record<string, string> {
+  const forbidden = new Set([
+    'accept',
+    'authorization',
+    'connection',
+    'content-length',
+    'content-type',
+    'cookie',
+    'host',
+    'risu-auth',
+    'transfer-encoding',
+  ])
+  return Object.fromEntries(
+    Object.entries(value).filter(
+      ([key, headerValue]) =>
+        !forbidden.has(key.toLowerCase()) && typeof headerValue === 'string' && headerValue.length > 0,
+    ),
+  )
 }
 
 function selectedProfile(database: Database, query: OllamaCloudToolQuery): ResolvedModelProfile {
