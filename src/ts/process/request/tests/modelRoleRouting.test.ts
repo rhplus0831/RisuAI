@@ -18,6 +18,7 @@ vi.mock('../../../model/modelProfileResolver', async (importActual) => {
 })
 
 import { resolveModelProfile } from '../../../model/modelProfileResolver'
+import { language } from '../../../../lang'
 import { setDatabase, type Database } from '../../../storage/database.svelte'
 import { requestChatData, requestChatDataMain } from '../request'
 import { applyParameters } from '../shared'
@@ -345,6 +346,71 @@ describe('requestChatDataMain model-role routing', () => {
       role: 'memory',
       staticModel: '',
     })
+  })
+
+  it('stops retrying responses that contain a banned character set at the configured limit', async () => {
+    seedDb({
+      banCharacterset: ['Han'],
+      requestRetrys: 2,
+    })
+    const fetchSpy = vi.fn(async () => {
+      return new Response(JSON.stringify({ type: 'success', result: '禁止' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })
+    })
+    vi.stubGlobal('fetch', fetchSpy)
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'fail', result: language.errors.bannedCharacterSet('Han') })
+    expect(fetchSpy).toHaveBeenCalledTimes(3)
+  })
+
+  it('moves to the next fallback after banned responses exhaust their retries', async () => {
+    seedDb({
+      fallbackModels: {
+        model: ['fallback-model'],
+        memory: [],
+        emotion: [],
+        translate: [],
+        otherAx: [],
+        scriptMain: [],
+        scriptAux: [],
+      } as Database['fallbackModels'],
+      banCharacterset: ['Han'],
+      requestRetrys: 1,
+    })
+    const attemptedModels: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const payload = JSON.parse(init.body as string)
+        attemptedModels.push(payload.staticModel)
+        const result = payload.staticModel === 'fallback-model' ? '禁止' : 'allowed response'
+        return new Response(JSON.stringify({ type: 'success', result }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        })
+      }),
+    )
+
+    const result = await requestChatData(
+      {
+        formated: [{ role: 'user', content: 'hi' }],
+        bias: {},
+      },
+      'model',
+    )
+
+    expect(result).toEqual({ type: 'success', result: 'allowed response' })
+    expect(attemptedModels).toEqual(['fallback-model', 'fallback-model', ''])
   })
 
   it('does not read a fallback bucket for the legacy submodel mode', async () => {

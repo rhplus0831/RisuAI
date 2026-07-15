@@ -666,20 +666,17 @@ export async function requestChatData(
       }
 
       if (da.type === 'success' && db.banCharacterset?.length > 0) {
-        let failed = false
-        for (const set of db.banCharacterset) {
-          console.log(set)
+        const bannedCharacterSet = db.banCharacterset.find((set) => {
           const checkRegex = new RegExp(`\\p{Script=${set}}`, 'gu')
+          return checkRegex.test(da.result)
+        })
 
-          if (checkRegex.test(da.result)) {
-            trys += 1
-            failed = true
-            break
+        if (bannedCharacterSet !== undefined) {
+          da = {
+            type: 'fail',
+            result: language.errors.bannedCharacterSet(bannedCharacterSet),
+            ...(da.model === undefined ? {} : { model: da.model }),
           }
-        }
-
-        if (failed) {
-          continue
         }
       }
 

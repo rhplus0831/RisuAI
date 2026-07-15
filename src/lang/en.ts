@@ -46,6 +46,8 @@ export const languageEnglish = {
     onlyOneChat: 'There must be least one chat',
     noUserIcon: 'You must set your icon first.',
     emptyText: 'Text is empty.',
+    bannedCharacterSet: (script: string) =>
+      `The response contained characters from the blocked Unicode script "${script}".`,
     wrongPassword: 'Wrong Password',
     vertexAuthError: 'Vertex AI authentication details are missing.',
     networkFetch: 'This happens when the network is unstable or the server is down.',
