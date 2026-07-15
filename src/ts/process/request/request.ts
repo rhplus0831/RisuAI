@@ -666,16 +666,18 @@ export async function requestChatData(
       }
 
       if (da.type === 'success' && db.banCharacterset?.length > 0) {
+        const responseText = da.result
+        const responseModel = da.model
         const bannedCharacterSet = db.banCharacterset.find((set) => {
           const checkRegex = new RegExp(`\\p{Script=${set}}`, 'gu')
-          return checkRegex.test(da.result)
+          return checkRegex.test(responseText)
         })
 
         if (bannedCharacterSet !== undefined) {
           da = {
             type: 'fail',
             result: language.errors.bannedCharacterSet(bannedCharacterSet),
-            ...(da.model === undefined ? {} : { model: da.model }),
+            ...(responseModel === undefined ? {} : { model: responseModel }),
           }
         }
       }
