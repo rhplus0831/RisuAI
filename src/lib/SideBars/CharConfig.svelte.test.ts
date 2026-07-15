@@ -411,6 +411,25 @@ afterEach(() => {
 })
 
 describe('CharConfig character media callback freshness contracts', () => {
+  it('updates compact navigation icon sizing when the viewport crosses 360px', async () => {
+    await mountCharConfig(0)
+    MobileGUI.set(false)
+    await settleComponent()
+
+    const navigationUserIcon = () => target.querySelector<SVGElement>('svg.lucide-user')
+    expect(navigationUserIcon()?.getAttribute('width')).toBe('24')
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 350 })
+    window.dispatchEvent(new Event('resize'))
+    await settleComponent()
+    expect(navigationUserIcon()?.getAttribute('width')).toBe('20')
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 })
+    window.dispatchEvent(new Event('resize'))
+    await settleComponent()
+    expect(navigationUserIcon()?.getAttribute('width')).toBe('24')
+  })
+
   it('routes VITS and GPT-SoVITS media buttons through guarded helper functions', () => {
     const source = charConfigSource()
 

@@ -10,7 +10,7 @@
     type triggerscript,
   } from '../../ts/storage/database.svelte'
   import { untrack } from 'svelte'
-  import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from '../../ts/stores.svelte'
+  import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen, SizeStore } from '../../ts/stores.svelte'
   import {
     PlusIcon,
     SmileIcon,
@@ -115,7 +115,7 @@
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
-  let iconButtonSize = window.innerWidth > 360 ? (24 as const) : (20 as const)
+  let iconButtonSize = $derived($SizeStore.w > 360 ? (24 as const) : (20 as const))
   const CHARACTER_ADDITIONAL_ASSET_EXTENSIONS = [
     'png',
     'webp',
