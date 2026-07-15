@@ -1182,6 +1182,7 @@ export const languageEnglish = {
   historyend: 'End of History',
   always: 'Always',
   noEffect: 'No Effect',
+  effect: 'Effect',
   invaildTriggerEffect: "This effect doesn't works for this trigger type.",
   operator: 'Operator',
   TriggerSetToVar: 'Set to Variable',
@@ -1335,6 +1336,7 @@ export const languageEnglish = {
   persistentStorageDesc:
     'Your browser supports persistent storage. This is recommended for better performance and user experience.',
   enable: 'Enable',
+  disable: 'Disable',
   postFile: 'Post File',
   requestInfoInsideChat: 'Show Request Info Inside Chat',
   inputTokens: 'Input Tokens',

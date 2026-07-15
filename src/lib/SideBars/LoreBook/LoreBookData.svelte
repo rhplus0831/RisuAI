@@ -268,6 +268,13 @@
       }
     }
   }
+
+  function lorebookDisplayName(book: loreBook): string {
+    if (book.mode === 'child') return getParentLoreName(book) || `#${idx + 1}`
+    if (book.comment?.length) return book.comment
+    if (book.mode !== 'folder' && book.key?.length) return book.key
+    return `#${idx + 1}`
+  }
 </script>
 
 <div
@@ -287,6 +294,7 @@
     {#if draft.mode !== 'child'}
       <button
         class="endflex valuer border-darkborderc flex items-center"
+        aria-expanded={open}
         onclick={() => {
           if (!open) {
             open = true
@@ -313,6 +321,8 @@
       </button>
       <button
         class="mr-1"
+        aria-label={`${draft.alwaysActive ? language.disable : language.enable}: ${language.alwaysActive} (${lorebookDisplayName(draft)})`}
+        aria-pressed={draft.alwaysActive}
         class:text-textcolor2={!draft.alwaysActive}
         class:text-textcolor={draft.alwaysActive}
         onclick={async () => {
@@ -333,6 +343,7 @@
       </button>
       <button
         class="valuer"
+        aria-label={`${language.remove}: ${lorebookDisplayName(draft)}`}
         onclick={async () => {
           const target = captureDeletionTarget()
           let shouldRemove = true
@@ -366,6 +377,7 @@
       </button>
       <button
         class="valuer"
+        aria-label={`${language.remove}: ${lorebookDisplayName(draft)}`}
         onclick={async () => {
           const target = captureDeletionTarget()
           const d = await alertConfirm(language.removeConfirm + getParentLoreName(target.snapshot))
@@ -400,6 +412,7 @@
         <div class="mt-2 flex gap-1">
           <button
             class="text-textcolor2 hover:text-textcolor"
+            aria-label={`${language.add}: ${language.loreBook} (${lorebookDisplayName(draft)})`}
             onclick={() => {
               updateCollection([
                 ...(externalLoreBooks ?? []),

@@ -5,6 +5,7 @@
   import { sleep, sortableOptions } from 'src/ts/util'
   import { onDestroy, onMount } from 'svelte'
   import TriggerData from './TriggerV1Data.svelte'
+  import { language } from 'src/lang'
 
   interface Props {
     value?: triggerscript[]
@@ -88,6 +89,7 @@
   </div>
   <button
     class="font-medium cursor-pointer hover:text-textcolor mb-2 text-textcolor2"
+    aria-label={`${language.add}: ${language.trigger}`}
     onclick={() => {
       value.push({
         comment: '',

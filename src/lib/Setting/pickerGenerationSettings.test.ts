@@ -78,6 +78,7 @@ import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/
 import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
 import { selectedCharID, type GenerationSettingsPickerMode } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -304,6 +305,7 @@ function pickerRow(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElemen
 function expectPickerRowSelection(kind: 'model' | 'prompt' | 'persona', id: string, selected: boolean): void {
   const row = pickerRow(kind, id)
   expect(row.dataset.risuSelected).toBe(selected ? 'true' : 'false')
+  expect(row.getAttribute('aria-pressed')).toBe(selected ? 'true' : 'false')
   expect(row.getAttribute('aria-current')).toBe(selected ? 'true' : null)
 }
 
@@ -462,6 +464,23 @@ describe('generation settings picker mode', () => {
 
     expect(event.defaultPrevented).toBe(false)
     expect(close).not.toHaveBeenCalled()
+  })
+
+  it('names preset icon actions by target and exposes edit mode state', async () => {
+    mountPresetPicker('global')
+
+    const presetRow = pickerRow('prompt', 'preset-a')
+    expect(presetRow.querySelector(`[aria-label="${language.export}: Preset A"]`)).toBeTruthy()
+    expect(presetRow.querySelector(`[aria-label="${language.remove}: Preset A"]`)).toBeTruthy()
+    expect(target.querySelector(`[aria-label="${language.add}: ${language.promptPresets}"]`)).toBeTruthy()
+    expect(target.querySelector(`[aria-label="${language.import}: ${language.promptPresets}"]`)).toBeTruthy()
+
+    const edit = elementBySelector<HTMLButtonElement>('[data-risu-preset-edit]', 'prompt preset edit button')
+    expect(edit.getAttribute('aria-label')).toBe(`${language.edit}: ${language.promptPresets}`)
+    expect(edit.getAttribute('aria-pressed')).toBe('false')
+    edit.click()
+    await tick()
+    expect(edit.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('saves preset rows to the active chat without calling global preset selection', async () => {

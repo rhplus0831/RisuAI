@@ -22,6 +22,7 @@ vi.mock('src/lib/Others/Help.svelte', async () => {
 
 import TriggerV2ListHarness from './TriggerV2List.testHarness.svelte'
 import type { triggerscript } from 'src/ts/process/triggers'
+import { language } from 'src/lang'
 
 type MountedComponent = Parameters<typeof unmount>[0] & {
   setEffectField: (triggerIndex: number, effectIndex: number, field: string, nextValue: string) => void
@@ -109,5 +110,60 @@ describe('TriggerV2List effect display', () => {
 
     expect(document.querySelector('[data-trigger-v2-field-xss]')).toBeNull()
     expect((globalThis as XssTestGlobal).triggerV2Xss).toBeUndefined()
+  })
+
+  it('names icon actions and exposes trigger, effect, and category selection', async () => {
+    const value: triggerscript[] = [
+      { comment: 'Header', type: 'manual', conditions: [], effect: [] },
+      {
+        comment: 'Alpha',
+        type: 'manual',
+        conditions: [],
+        effect: [{ type: 'v2Comment', value: 'Alpha effect', indent: 0 }],
+      },
+      { comment: 'Beta', type: 'manual', conditions: [], effect: [] },
+    ]
+    component = mount(TriggerV2ListHarness, {
+      target,
+      props: { initialValue: value },
+    }) as MountedComponent
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('button')?.click()
+    await settle()
+
+    const buttonByText = (text: string) =>
+      Array.from(document.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === text,
+      )
+    const alpha = buttonByText('Alpha')
+    const beta = buttonByText('Beta')
+    expect(alpha?.getAttribute('aria-pressed')).toBe('true')
+    expect(beta?.getAttribute('aria-pressed')).toBe('false')
+    beta?.click()
+    await settle()
+    expect(alpha?.getAttribute('aria-pressed')).toBe('false')
+    expect(beta?.getAttribute('aria-pressed')).toBe('true')
+
+    alpha?.click()
+    await settle()
+    const effect = document.querySelector<HTMLElement>('[data-risu-trigger-effect-display="true"]')?.closest('button')
+    expect(effect?.getAttribute('aria-pressed')).toBe('false')
+    effect?.click()
+    await settle()
+    expect(effect?.getAttribute('aria-pressed')).toBe('true')
+
+    expect(document.querySelector(`[aria-label="${language.add}: ${language.trigger}"]`)).toBeTruthy()
+    expect(document.querySelector(`[aria-label="${language.export}: ${language.trigger}"]`)).toBeTruthy()
+    expect(document.querySelector(`[aria-label="${language.import}: ${language.trigger}"]`)).toBeTruthy()
+
+    const addEffect = document.querySelector<HTMLButtonElement>(`[aria-label="${language.add}: ${language.effect}"]`)
+    expect(addEffect).toBeTruthy()
+    addEffect?.click()
+    addEffect?.click()
+    await settle()
+
+    expect(document.querySelector(`[aria-label="${language.goback}"]`)).toBeTruthy()
+    expect(buttonByText(language.triggerCategories.Control)?.getAttribute('aria-pressed')).toBe('true')
   })
 })

@@ -26,6 +26,7 @@
     setChatScriptstateValue,
   } from 'src/ts/chatCommands'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
+  import { language } from 'src/lang'
 
   let previewMode = $state('chat')
   let previewJoin = $state('yes')
@@ -191,6 +192,7 @@
   <div class="flex justify-end">
     <button
       class="text-textcolor2 hover:text-textcolor"
+      aria-label={`${language.remove}: Autopilot`}
       onclick={() => {
         autopilot.pop()
         autopilot = autopilot
@@ -200,6 +202,7 @@
 
     <button
       class="text-textcolor2 hover:text-textcolor"
+      aria-label={`${language.add}: Autopilot`}
       onclick={() => {
         autopilot.push('')
         autopilot = autopilot
@@ -209,6 +212,7 @@
 
     <button
       class="text-textcolor2 hover:text-textcolor"
+      aria-label={`${language.import}: Autopilot`}
       onclick={async () => {
         const selected = await selectSingleFile(['txt', 'csv', 'json'])
         if (!selected) {

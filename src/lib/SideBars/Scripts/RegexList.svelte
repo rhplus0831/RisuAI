@@ -6,6 +6,7 @@
   import { onDestroy, onMount } from 'svelte'
   import { DownloadIcon, HardDriveUploadIcon, PlusIcon } from '@lucide/svelte'
   import { exportRegex, importRegexRows } from 'src/ts/process/scripts'
+  import { language } from 'src/lang'
   interface Props {
     value?: customscript[]
     buttons?: boolean
@@ -87,6 +88,7 @@
   <div class="flex gap-2 mt-2">
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
+      aria-label={`${language.add}: ${language.regexScript}`}
       onclick={() => {
         value.push({
           comment: '',
@@ -99,11 +101,13 @@
     </button>
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
+      aria-label={`${language.export}: ${language.regexScript}`}
       onclick={() => {
         exportRegex(value)
       }}><DownloadIcon /></button>
     <button
       class="rounded-md text-textcolor2 hover:text-textcolor focus-within:text-textcolor"
+      aria-label={`${language.import}: ${language.regexScript}`}
       onclick={async () => {
         const importedRows = await importRegexRows()
         if (!importedRows || importedRows.length === 0) return

@@ -19,10 +19,18 @@ const editorActions = vi.hoisted(() => ({
 vi.mock('src/lang', () => ({
   language: {
     Chat: 'Chat',
+    add: 'Add',
+    alwaysActive: 'Always Active',
     character: 'Character',
+    disable: 'Disable',
+    enable: 'Enable',
+    export: 'Export',
+    folderName: 'Folder',
     globalLoreInfo: 'Character lorebook',
+    import: 'Import',
     loadingLorebookData: 'Loading Lorebook Data',
     localLoreInfo: 'Chat lorebook',
+    loreBook: 'Lorebook',
     lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
     retry: 'Retry',
     settings: 'Settings',
@@ -32,10 +40,18 @@ vi.mock('src/lang', () => ({
 vi.mock('../../../lang', () => ({
   language: {
     Chat: 'Chat',
+    add: 'Add',
+    alwaysActive: 'Always Active',
     character: 'Character',
+    disable: 'Disable',
+    enable: 'Enable',
+    export: 'Export',
+    folderName: 'Folder',
     globalLoreInfo: 'Character lorebook',
+    import: 'Import',
     loadingLorebookData: 'Loading Lorebook Data',
     localLoreInfo: 'Chat lorebook',
+    loreBook: 'Lorebook',
     lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
     retry: 'Retry',
     settings: 'Settings',
@@ -136,5 +152,55 @@ describe('character lorebook hydration UI', () => {
     await tick()
     expect(hydration.retry).toHaveBeenCalledWith({ force: true })
     expect(target.querySelectorAll('button')).toHaveLength(4)
+  })
+})
+
+describe('lorebook editor action accessibility', () => {
+  it('names the mutation toolbar and exposes the selected submenu', async () => {
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button'))
+    const characterTab = buttons.find((button) => button.textContent?.trim() === 'Character')
+    const chatTab = buttons.find((button) => button.textContent?.trim() === 'Chat')
+    const settingsTab = buttons.find((button) => button.textContent?.trim() === 'Settings')
+    expect(characterTab?.getAttribute('aria-pressed')).toBe('true')
+    expect(chatTab?.getAttribute('aria-pressed')).toBe('false')
+    expect(settingsTab?.getAttribute('aria-pressed')).toBe('false')
+
+    expect(target.querySelector('[aria-label="Add: Lorebook"]')).toBeTruthy()
+    expect(target.querySelector('[aria-label="Export: Lorebook"]')).toBeTruthy()
+    expect(target.querySelector('[aria-label="Add: Folder"]')).toBeTruthy()
+    expect(target.querySelector('[aria-label="Import: Lorebook"]')).toBeTruthy()
+
+    chatTab?.click()
+    await tick()
+    expect(characterTab?.getAttribute('aria-pressed')).toBe('false')
+    expect(chatTab?.getAttribute('aria-pressed')).toBe('true')
+  })
+
+  it('exposes bulk always-active state for character and chat lorebooks', async () => {
+    setDatabaseLite({
+      bulkEnabling: true,
+      characters: [
+        {
+          chaId: 'character-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', localLore: [{ alwaysActive: false }], message: [] }],
+          globalLore: [{ alwaysActive: true }],
+          lorePlus: false,
+        },
+      ],
+    } as any)
+    component = mount(LoreBookSetting, { target })
+    await tick()
+
+    const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button'))
+    const characterToggle = buttons.find((button) => button.textContent?.trim() === 'CHAR')
+    const chatToggle = buttons.find((button) => button.textContent?.trim() === 'CHAT')
+    expect(characterToggle?.getAttribute('aria-label')).toBe('Disable: Always Active (Character)')
+    expect(characterToggle?.getAttribute('aria-pressed')).toBe('true')
+    expect(chatToggle?.getAttribute('aria-label')).toBe('Enable: Always Active (Chat)')
+    expect(chatToggle?.getAttribute('aria-pressed')).toBe('false')
   })
 })

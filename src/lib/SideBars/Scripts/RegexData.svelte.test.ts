@@ -8,7 +8,11 @@ const regexDataMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/lang', () => ({
-  language: { removeConfirm: 'Remove ' },
+  language: {
+    hotkeyDesc: { popupEditor: 'Popup Editor' },
+    remove: 'Remove',
+    removeConfirm: 'Remove ',
+  },
 }))
 
 vi.mock('src/ts/alert', () => ({
@@ -66,5 +70,48 @@ describe('RegexData deletion', () => {
     expect(regexDataMocks.alertConfirm).toHaveBeenCalledWith('Remove Closed script')
     expect(onClose).not.toHaveBeenCalled()
     expect(onRemove).toHaveBeenCalledWith('script-closed')
+  })
+})
+
+describe('RegexData action accessibility', () => {
+  it('names row deletion and exposes expansion and flag selection state', async () => {
+    const value = {
+      id: 'script-a',
+      comment: 'Normalize names',
+      in: '',
+      out: '',
+      type: 'editinput',
+      ableFlag: true,
+      flag: 'g',
+    } as customscript
+
+    component = mount(RegexData, {
+      target,
+      props: { value, idx: 2 },
+    })
+
+    const expand = target.querySelector<HTMLButtonElement>('button.endflex')
+    const remove = target.querySelector<HTMLButtonElement>('[data-risu-regex-action="delete"]')
+    expect(expand?.getAttribute('aria-expanded')).toBe('false')
+    expect(remove?.getAttribute('aria-label')).toBe('Remove: Normalize names')
+
+    expand?.click()
+    await tick()
+    expect(expand?.getAttribute('aria-expanded')).toBe('true')
+
+    const flagsAccordion = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'FLAGS',
+    )
+    flagsAccordion?.click()
+    await tick()
+
+    const globalFlag = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes('Global (g)'),
+    )
+    const caseFlag = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes('Case Insensitive (i)'),
+    )
+    expect(globalFlag?.getAttribute('aria-pressed')).toBe('true')
+    expect(caseFlag?.getAttribute('aria-pressed')).toBe('false')
   })
 })

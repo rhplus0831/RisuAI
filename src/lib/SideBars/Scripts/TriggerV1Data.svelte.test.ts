@@ -7,7 +7,13 @@ const triggerDataMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/lang', () => ({
-  language: { removeConfirm: 'Remove ' },
+  language: {
+    add: 'Add',
+    condition: 'Condition',
+    effect: 'Effect',
+    remove: 'Remove',
+    removeConfirm: 'Remove ',
+  },
 }))
 
 vi.mock('src/ts/alert', () => ({
@@ -65,5 +71,35 @@ describe('TriggerV1Data deletion', () => {
     expect(triggerDataMocks.alertConfirm).toHaveBeenCalledWith('Remove Closed trigger')
     expect(onClose).not.toHaveBeenCalled()
     expect(onRemove).toHaveBeenCalledWith('trigger-closed')
+  })
+})
+
+describe('TriggerV1Data action accessibility', () => {
+  it('names repeated actions and exposes row expansion state', async () => {
+    const value = {
+      id: 'trigger-a',
+      comment: 'Greeting trigger',
+      type: 'start',
+      conditions: [{ type: 'value', value: '', operator: 'true', var: '' }],
+      effect: [{ type: 'stop' }],
+    } as triggerscript
+
+    component = mount(TriggerV1Data, {
+      target,
+      props: { value, idx: 3 },
+    })
+
+    const expand = target.querySelector<HTMLButtonElement>('button.endflex')
+    const remove = target.querySelector<HTMLButtonElement>('[data-risu-trigger-v1-action="delete"]')
+    expect(expand?.getAttribute('aria-expanded')).toBe('false')
+    expect(remove?.getAttribute('aria-label')).toBe('Remove: Greeting trigger')
+
+    expand?.click()
+    await tick()
+    expect(expand?.getAttribute('aria-expanded')).toBe('true')
+    expect(target.querySelector('[aria-label="Add: Condition"]')).toBeTruthy()
+    expect(target.querySelector('[aria-label="Remove: Condition 1"]')).toBeTruthy()
+    expect(target.querySelector('[aria-label="Add: Effect"]')).toBeTruthy()
+    expect(target.querySelector('[aria-label="Remove: Effect 1"]')).toBeTruthy()
   })
 })

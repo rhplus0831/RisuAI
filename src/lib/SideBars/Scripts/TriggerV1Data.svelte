@@ -37,6 +37,7 @@
   <div class="flex items-center transition-colors w-full">
     <button
       class="endflex valuer border-borderc"
+      aria-expanded={open}
       onclick={() => {
         open = !open
         if (open) {
@@ -49,6 +50,7 @@
     </button>
     <button
       class="valuer"
+      aria-label={`${language.remove}: ${value.comment || `#${idx + 1}`}`}
       onclick={async () => {
         const targetId = value.id?.trim() || v4()
         if (!value.id?.trim()) value.id = targetId
@@ -79,7 +81,7 @@
       <span class="text-textcolor mt-4"
         >Conditions
         <button
-          aria-labelledby="Add Conditions"
+          aria-label={`${language.add}: ${language.condition}`}
           class="float-right text-textcolor2 hover:text-green-500"
           onclick={() => {
             value.conditions.push({
@@ -102,7 +104,7 @@
           <span class="text-textcolor2 text-sm"
             >{language.type}
             <button
-              aria-labelledby="Add Conditions"
+              aria-label={`${language.remove}: ${language.condition} ${i + 1}`}
               class="float-right text-textcolor2 hover:text-green-500"
               onclick={() => {
                 value.conditions.splice(i, 1)
@@ -184,7 +186,7 @@
       <span class="text-textcolor mt-4"
         >Effects
         <button
-          aria-labelledby="Add Effects"
+          aria-label={`${language.add}: ${language.effect}`}
           class="float-right text-textcolor2 hover:text-green-500"
           onclick={() => {
             if (value.type === 'start') {
@@ -216,7 +218,7 @@
           <span class="text-textcolor2 text-sm"
             >{language.type}
             <button
-              aria-labelledby="Add Conditions"
+              aria-label={`${language.remove}: ${language.effect} ${i + 1}`}
               class="float-right text-textcolor2 hover:text-green-500"
               onclick={() => {
                 value.effect.splice(i, 1)

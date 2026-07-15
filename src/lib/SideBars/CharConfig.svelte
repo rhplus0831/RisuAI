@@ -1180,6 +1180,7 @@
 
   <div class="flex w-full rounded-md border border-selected mb-4">
     <button
+      aria-pressed={viewSubMenu === 0}
       onclick={() => {
         viewSubMenu = 0
       }}
@@ -1188,6 +1189,7 @@
       <span>{language.charIcon}</span>
     </button>
     <button
+      aria-pressed={viewSubMenu === 1}
       onclick={() => {
         viewSubMenu = 1
       }}
@@ -1196,6 +1198,7 @@
       <span>{language.viewScreen}</span>
     </button>
     <button
+      aria-pressed={viewSubMenu === 2}
       onclick={() => {
         viewSubMenu = 2
       }}
@@ -1209,6 +1212,7 @@
     <div class="p-2 border-darkborderc border rounded-md flex flex-wrap gap-2">
       {#if characterDraft.value.image !== '' && characterDraft.value.image}
         <button
+          aria-label={`${iconRemoveMode ? language.remove : language.select}: ${language.charIcon}`}
           onclick={() => {
             if (
               currentRealCharacterDraftTarget() &&
@@ -1237,6 +1241,7 @@
       {#if characterDraft.value.ccAssets}
         {#each characterDraft.value.ccAssets as assets, i}
           <button
+            aria-label={`${iconRemoveMode ? language.remove : language.select}: ${language.charIcon} ${i + 2}`}
             onclick={async () => {
               if (!iconRemoveMode) {
                 rotateCharacterImageFromDraft(i)
@@ -1263,6 +1268,7 @@
         {/each}
       {/if}
       <button
+        aria-label={`${language.add}: ${language.charIcon}`}
         onclick={async () => {
           await selectCharacterAvatarFromEditor()
         }}>
@@ -1276,6 +1282,8 @@
     <div class="flex w-full items-end justify-end mt-2">
       <button
         class={iconRemoveMode ? 'text-red-500' : 'text-textcolor2 hover:text-textcolor'}
+        aria-label={`${language.remove}: ${language.charIcon}`}
+        aria-pressed={iconRemoveMode}
         onclick={() => {
           iconRemoveMode = !iconRemoveMode
         }}>
@@ -1295,6 +1303,7 @@
         {#if characterDraft.value.notificationImage}
           <button
             class="text-textcolor2 hover:text-red-500"
+            aria-label={`${language.remove}: ${language.notificationImage}`}
             onclick={() => {
               clearNotificationImage()
             }}>
@@ -1305,6 +1314,7 @@
       <div class="flex flex-wrap gap-2">
         {#if characterDraft.value.notificationImage}
           <button
+            aria-label={`${language.edit}: ${language.notificationImage}`}
             onclick={async () => {
               await uploadNotificationImageFromEditor()
             }}>
@@ -1320,6 +1330,7 @@
           </button>
         {/if}
         <button
+          aria-label={`${language.add}: ${language.notificationImage}`}
           onclick={async () => {
             await uploadNotificationImageFromEditor()
           }}>
@@ -1372,6 +1383,7 @@
                   <td>
                     <button
                       class="font-medium cursor-pointer hover:text-green-500"
+                      aria-label={`${language.remove}: ${language.emotionImage} ${i + 1}`}
                       onclick={() => {
                         removeCharacterEmotionFromDraft(i)
                       }}><TrashIcon /></button>
@@ -1387,6 +1399,7 @@
         {#if !$addingEmotion}
           <button
             class="cursor-pointer hover:text-green-500"
+            aria-label={`${language.add}: ${language.emotionImage}`}
             onclick={() => {
               void addCharacterEmotionsFromEditor()
             }}>
@@ -1457,6 +1470,7 @@
             <th class="font-medium cursor-pointer w-10">
               <button
                 class="hover:text-green-500"
+                aria-label={`${language.add}: ${language.additionalAssets}`}
                 onclick={async () => {
                   await uploadCharacterAdditionalAssetsFromEditor()
                 }}>
@@ -1494,6 +1508,7 @@
                 <th class="font-medium cursor-pointer w-10">
                   <button
                     class="hover:text-blue-500"
+                    aria-label={`${language.remove}: ${assets[0] || `${language.additionalAssets} ${i + 1}`}`}
                     onclick={() => {
                       if (currentRealCharacterDraftTarget()) {
                         setCurrentChatGreetingIndex(-1, {
@@ -1512,6 +1527,8 @@
                     <button
                       class="hover:text-blue-500"
                       class:text-textcolor2={characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
+                      aria-label={`${language.image}: ${assets[0] || `${language.additionalAssets} ${i + 1}`}`}
+                      aria-pressed={!characterDraft.value.prebuiltAssetExclude?.includes?.(assets[1])}
                       onclick={() => {
                         togglePrebuiltAssetExclude(assets[1])
                       }}>
@@ -1550,6 +1567,7 @@
     <div class="text-textcolor2 mt-2 flex gap-2">
       <button
         class="font-medium cursor-pointer hover:text-green-500"
+        aria-label={`${language.add}: ${language.regexScript}`}
         onclick={() => {
           const target = currentRealCharacterDraftTarget()
           if (target && scriptDraftCharacterId === target.character.chaId) {
@@ -1566,11 +1584,13 @@
         }}><PlusIcon /></button>
       <button
         class="font-medium cursor-pointer hover:text-green-500"
+        aria-label={`${language.export}: ${language.regexScript}`}
         onclick={() => {
           exportRegex(characterScriptsDraft)
         }}><DownloadIcon /></button>
       <button
         class="font-medium cursor-pointer hover:text-green-500"
+        aria-label={`${language.import}: ${language.regexScript}`}
         onclick={async () => {
           characterScriptsDraft = await importRegex(characterScriptsDraft)
         }}><HardDriveUploadIcon /></button>
@@ -1914,6 +1934,7 @@
           <th>
             <button
               class="font-medium cursor-pointer hover:text-green-500"
+              aria-label={`${language.add}: Bias`}
               onclick={() => {
                 if (currentRealCharacterDraftTarget()) {
                   characterDraft.value.bias.push(['', 0])
@@ -1938,6 +1959,7 @@
             <td>
               <button
                 class="font-medium flex justify-center items-center w-full h-full cursor-pointer hover:text-green-500"
+                aria-label={`${language.remove}: Bias ${i + 1}`}
                 onclick={() => {
                   if (currentRealCharacterDraftTarget()) {
                     characterDraft.value.bias.splice(i, 1)
@@ -2018,6 +2040,7 @@
           <th class="font-medium cursor-pointer w-8">
             <button
               class="hover:text-green-500"
+              aria-label={`${language.add}: ${language.altGreet}`}
               onclick={() => {
                 if (currentRealCharacterDraftTarget()) {
                   let alternateGreetings = characterDraft.value.alternateGreetings
@@ -2046,17 +2069,23 @@
             </td>
             <th class="font-medium cursor-pointer w-8">
               <div class="flex flex-col items-center">
-                <button class="hover:text-blue-500 p-1" onclick={() => moveAlternateGreetingUp(i)} disabled={i === 0}>
+                <button
+                  class="hover:text-blue-500 p-1"
+                  aria-label={`${language.moveUp}: ${language.altGreet} ${i + 1}`}
+                  onclick={() => moveAlternateGreetingUp(i)}
+                  disabled={i === 0}>
                   <ArrowUp size={16} />
                 </button>
                 <button
                   class="hover:text-blue-500 p-1"
+                  aria-label={`${language.moveDown}: ${language.altGreet} ${i + 1}`}
                   onclick={() => moveAlternateGreetingDown(i)}
                   disabled={i === characterDraft.value.alternateGreetings.length - 1}>
                   <ArrowDown size={16} />
                 </button>
                 <button
                   class="hover:text-red-500 p-1"
+                  aria-label={`${language.remove}: ${language.altGreet} ${i + 1}`}
                   onclick={() => {
                     const target = currentRealCharacterDraftTarget()
                     if (target) {

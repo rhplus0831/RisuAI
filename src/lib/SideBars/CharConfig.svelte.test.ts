@@ -374,6 +374,12 @@ function buttonByText(text: string): HTMLButtonElement {
   return button as HTMLButtonElement
 }
 
+function buttonByAccessibleName(name: string): HTMLButtonElement {
+  const button = buttons().find((candidate) => candidate.getAttribute('aria-label') === name)
+  expect(button, `button named ${name}`).toBeTruthy()
+  return button as HTMLButtonElement
+}
+
 function selectedFile(name: string, data = new Uint8Array([1, 2, 3])): MockSelectedFile {
   return { name, data }
 }
@@ -485,6 +491,63 @@ describe('CharConfig desktop section navigation', () => {
     await settleComponent()
     expect(target.querySelector('[data-char-config-section="profile"]')?.getAttribute('aria-pressed')).toBe('false')
     expect(target.querySelector('[data-char-config-section="scripts"]')?.getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+describe('CharConfig editor action accessibility', () => {
+  it('names media actions and exposes display and removal toggle state', async () => {
+    await mountCharConfig(1, {
+      image: 'primary-avatar',
+      ccAssets: [{ type: 'icon', name: 'alternate', uri: 'alternate-avatar', ext: 'png' }],
+      notificationImage: 'notification-image',
+      additionalAssets: [['portrait', 'asset-1', 'png']],
+    })
+
+    const iconTab = buttonByText(language.charIcon)
+    const viewTab = buttonByText(language.viewScreen)
+    const assetsTab = buttonByText(language.additionalAssets)
+    expect(iconTab.getAttribute('aria-pressed')).toBe('true')
+    expect(viewTab.getAttribute('aria-pressed')).toBe('false')
+    expect(assetsTab.getAttribute('aria-pressed')).toBe('false')
+
+    expect(buttonByAccessibleName(`${language.select}: ${language.charIcon}`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.select}: ${language.charIcon} 2`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.add}: ${language.charIcon}`)).toBe(avatarAddButton())
+    expect(buttonByAccessibleName(`${language.remove}: ${language.notificationImage}`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.edit}: ${language.notificationImage}`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.add}: ${language.notificationImage}`)).toBeTruthy()
+
+    const removeMode = buttonByAccessibleName(`${language.remove}: ${language.charIcon}`)
+    expect(removeMode.getAttribute('aria-pressed')).toBe('false')
+    removeMode.click()
+    await settleComponent()
+    expect(removeMode.getAttribute('aria-pressed')).toBe('true')
+    expect(buttonByAccessibleName(`${language.remove}: ${language.charIcon}`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.remove}: ${language.charIcon} 2`)).toBeTruthy()
+
+    assetsTab.click()
+    await settleComponent()
+    expect(iconTab.getAttribute('aria-pressed')).toBe('false')
+    expect(assetsTab.getAttribute('aria-pressed')).toBe('true')
+    expect(buttonByAccessibleName(`${language.add}: ${language.additionalAssets}`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.remove}: portrait`)).toBeTruthy()
+  })
+
+  it('identifies repeated bias and alternate greeting actions by row', async () => {
+    await mountCharConfig(2, {
+      bias: [['token', 1]],
+      alternateGreetings: ['First alternate', 'Second alternate'],
+    })
+
+    expect(buttonByAccessibleName(`${language.add}: Bias`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.remove}: Bias 1`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.add}: ${language.altGreet}`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.moveUp}: ${language.altGreet} 1`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.moveDown}: ${language.altGreet} 1`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.remove}: ${language.altGreet} 1`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.moveUp}: ${language.altGreet} 2`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.moveDown}: ${language.altGreet} 2`)).toBeTruthy()
+    expect(buttonByAccessibleName(`${language.remove}: ${language.altGreet} 2`)).toBeTruthy()
   })
 })
 

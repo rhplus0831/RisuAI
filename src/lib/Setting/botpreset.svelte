@@ -295,6 +295,7 @@
             </div>
             <button
               class="text-textcolor2 hover:text-green-500 cursor-pointer"
+              aria-label={`${language.extractModelAndPrompt}: ${preset.name ?? `#${i + 1}`}`}
               title={language.extractModelAndPrompt}
               onclick={() => extractLegacy(i, 'all')}>
               <WandSparklesIcon size={18} />
@@ -359,6 +360,7 @@
           data-risu-row-id={nonEmptyId(preset?.id) ?? ''}
           data-risu-row-index={i}
           data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
+          aria-pressed={isPresetSelected(preset, i)}
           aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
           draggable={!editMode ? 'true' : 'false'}
           ondragstart={(e) => {
@@ -394,6 +396,7 @@
             {#if kind === 'prompt'}
               <button
                 class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
+                aria-label={`${language.export}: ${preset.name ?? `#${i + 1}`}`}
                 onclick={async (e) => {
                   e.stopPropagation()
                   await downloadPreset(i, 'risupreset')
@@ -403,6 +406,7 @@
             {/if}
             <button
               class="text-textcolor2 hover:text-green-500 cursor-pointer"
+              aria-label={`${language.remove}: ${preset.name ?? `#${i + 1}`}`}
               onclick={(e) => {
                 e.stopPropagation()
                 removeModernPreset(i, preset)
@@ -434,12 +438,16 @@
       </div>
 
       <div class="flex mt-2 items-center">
-        <button class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1" onclick={createNewPreset}>
+        <button
+          class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
+          aria-label={`${language.add}: ${title}`}
+          onclick={createNewPreset}>
           <PlusIcon />
         </button>
         {#if kind === 'prompt'}
           <button
             class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+            aria-label={`${language.import}: ${title}`}
             onclick={() => {
               importPreset()
             }}>
@@ -448,7 +456,10 @@
         {/if}
         <button
           class="text-textcolor2 hover:text-green-500 cursor-pointer"
+          class:text-textcolor={editMode}
           data-risu-preset-edit
+          aria-label={`${language.edit}: ${title}`}
+          aria-pressed={editMode}
           onclick={toggleEditMode}>
           <PencilIcon size={18} />
         </button>

@@ -110,6 +110,7 @@
         data-risu-row-id={nonEmptyId(persona.id) ?? ''}
         data-risu-row-index={i}
         data-risu-selected={isPersonaSelected(i) ? 'true' : 'false'}
+        aria-pressed={isPersonaSelected(i)}
         aria-current={isPersonaSelected(i) ? 'true' : undefined}>
         <span class="overflow-x-auto whitespace-nowrap w-full text-left">
           <span class="font-medium">{getPersonaDisplayName(persona)}</span>

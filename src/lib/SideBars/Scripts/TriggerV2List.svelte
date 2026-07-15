@@ -2545,6 +2545,7 @@
 
                   <button
                     class="p-2 text-start trigger-item select-none"
+                    aria-pressed={isTriggerSelected(i) || selectedIndex === i}
                     class:hover:cursor-grab={!isMobileScreen}
                     class:active:cursor-grabbing={!isMobileScreen}
                     class:text-textcolor2={!isTriggerSelected(i) && selectedIndex !== i}
@@ -2651,6 +2652,7 @@
             <div class="flex gap-2">
               <button
                 class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor focus:bg-bgcolor"
+                aria-label={`${language.add}: ${language.trigger}`}
                 onclick={() => {
                   value.push({
                     comment: '',
@@ -2664,6 +2666,7 @@
               </button>
               <button
                 class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor focus:bg-bgcolor"
+                aria-label={`${language.export}: ${language.trigger}`}
                 onclick={() => {
                   const triggersToExport = value.slice(1)
                   const jsonData = JSON.stringify(triggersToExport, null, 2)
@@ -2684,6 +2687,7 @@
               </button>
               <button
                 class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor focus:bg-bgcolor"
+                aria-label={`${language.import}: ${language.trigger}`}
                 onclick={() => {
                   importTriggers()
                 }}>
@@ -2869,6 +2873,7 @@
                   }}>
                   <button
                     class="flex-1 p-2 text-start text-purple-500 relative break-all whitespace-normal overflow-hidden"
+                    aria-pressed={selectedEffectIndex === i}
                     bind:this={effectElements[i]}
                     onclick={() => {
                       if (selectedEffectIndex === i && lastClickTime + 500 > Date.now()) {
@@ -3003,6 +3008,7 @@
 
               <button
                 class="p-2 w-full text-start hover:bg-selected"
+                aria-label={`${language.add}: ${language.effect}`}
                 onclick={() => {
                   if (lastClickTime + 500 > Date.now()) {
                     selectedEffectIndex = -1
@@ -3025,6 +3031,7 @@
               <div class="p-4 border-b border-darkborderc flex items-center min-h-16">
                 <button
                   class="border-t-darkborderc text-start text-textcolor2 hover:text-textcolor"
+                  aria-label={language.goback}
                   onclick={() => {
                     if (selectedIndex > 0) {
                       selectedTriggerIndex = selectedIndex
@@ -3042,6 +3049,7 @@
                 {#each getAvailableCategories() as category}
                   <button
                     class="w-full p-3 text-left hover:bg-selected hover:text-textcolor transition-colors"
+                    aria-pressed={selectedCategory === category}
                     class:bg-selected={selectedCategory === category}
                     class:text-textcolor={selectedCategory === category}
                     class:text-textcolor2={selectedCategory !== category}
@@ -3116,6 +3124,7 @@
             <div class="flex items-center gap-2 mb-4">
               <button
                 class="p-2 border-t-darkborderc text-start text-textcolor2 hover:text-textcolor"
+                aria-label={language.goback}
                 onclick={() => {
                   if (menuMode === 3 && selectedIndex > 0) {
                     selectedTriggerIndex = selectedIndex
