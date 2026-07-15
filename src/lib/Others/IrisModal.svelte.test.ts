@@ -107,4 +107,21 @@ describe('IrisModal model availability', () => {
 
     expect(target.textContent).not.toContain("doesn't support me responding")
   })
+
+  it('removes parenthesized and mustache metadata from new dialogue', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+    ;(
+      component as unknown as {
+        pushDialogue: (line: { speaker: string; text: string }) => void
+      }
+    ).pushDialogue({ speaker: 'You', text: '(private direction) Hello {{hidden state}}' })
+    await settle()
+
+    const savedDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as Array<{
+      speaker: string
+      text: string
+    }>
+    expect(savedDialogue.at(-1)).toEqual({ speaker: 'You', text: 'Hello' })
+  })
 })
