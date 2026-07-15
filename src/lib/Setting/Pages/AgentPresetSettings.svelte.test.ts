@@ -27,8 +27,15 @@ const agentPresetSpies = vi.hoisted(() => ({
   deleteAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
   reorderAgentPresetSteps: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
 }))
+const hydrationSpies = vi.hoisted(() => ({
+  ensureAllChatsHydrated: vi.fn(async () => undefined),
+}))
 
 vi.mock('src/ts/agentPresets', () => agentPresetSpies)
+vi.mock('src/ts/server/chatMessageHydration.svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('src/ts/server/chatMessageHydration.svelte')>()),
+  ...hydrationSpies,
+}))
 vi.mock('src/ts/process/modules', () => ({
   applyModule: vi.fn(),
   exportModule: vi.fn(),
@@ -45,7 +52,7 @@ vi.mock('src/ts/process/modules', () => ({
 import AgentPresetSettings from './AgentPresetSettings.svelte'
 import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
 import { language } from 'src/lang'
-import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
+import { getDatabase, setDatabaseLite, type Message } from 'src/ts/storage/database.svelte'
 import type { AgentPresetRecord, AgentPresetStepRecord } from 'src/ts/agentPresetRecords'
 import type { AgentPresetSnapshot } from 'src/ts/server/commands'
 
@@ -81,6 +88,36 @@ function preset(overrides: Partial<AgentPresetRecord> = {}): AgentPresetRecord {
     version: 1,
     steps: [],
     ...overrides,
+  }
+}
+
+function diagnosticMessage(
+  presetId: string,
+  overrides: Record<string, unknown> = {},
+  messageOverrides: Partial<Message> = {},
+): Message {
+  return {
+    role: 'char',
+    data: 'Assistant response',
+    time: 1_700_000_000_000,
+    generationInfo: {
+      generationId: `generation-${presetId}`,
+      model: 'main-model',
+      agentPreset: {
+        status: 'ready',
+        presetId,
+        presetName: 'Research Agent',
+        presetVersion: 2,
+        maxConcurrency: 2,
+        beforeMainStepCount: 1,
+        afterMainStepCount: 2,
+        promptOutputKeys: ['context'],
+        steps: [],
+        finalTextModified: false,
+        ...overrides,
+      },
+    },
+    ...messageOverrides,
   }
 }
 
@@ -208,6 +245,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   Object.values(agentPresetSpies).forEach((spy) => spy.mockClear())
+  hydrationSpies.ensureAllChatsHydrated.mockReset().mockResolvedValue(undefined)
   vi.stubGlobal(
     'confirm',
     vi.fn(() => true),
@@ -808,5 +846,158 @@ describe('AgentPresetSettings', () => {
     await flushAsyncWork()
 
     expect(agentPresetSpies.reorderAgentPresetSteps).toHaveBeenCalledWith('ap_a', ['aps_b', 'aps_after', 'aps_a'])
+  })
+
+  it('loads and renders matching hidden Agent Preset diagnostics on demand', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    hydrationSpies.ensureAllChatsHydrated.mockImplementationOnce(async () => {
+      getDatabase().characters[0].name = 'Aster'
+      getDatabase().characters[0].chats[0].name = 'Investigation'
+      getDatabase().characters[0].chats[0].message = [
+        diagnosticMessage('ap_other', {
+          steps: [{ status: 'success', outputPreview: 'Unrelated hidden result' }],
+        }),
+        diagnosticMessage('ap_a', {
+          finalTextModified: true,
+          mainOutputPreview: 'Original main draft',
+          mainOutputChars: 19,
+          failure: {
+            phase: 'afterMain',
+            stepId: 'aps_failure',
+            stepName: 'Required Review',
+            message: 'Review stopped the run.',
+            failureKind: 'provider_error',
+            failurePolicyOutcome: 'required_failure',
+          },
+          steps: [
+            {
+              status: 'success',
+              stepId: 'aps_success',
+              stepName: 'Gather Context',
+              phase: 'beforeMain',
+              outputKey: 'context',
+              destination: 'promptOutput',
+              outputFormat: 'text',
+              failurePolicy: 'required',
+              inputChars: 120,
+              outputChars: 20,
+              durationMs: 15,
+              provider: 'openai',
+              profileName: 'Agent Profile',
+              modelId: 'agent-model',
+              parseStatus: 'not_applicable',
+              preparedInputSections: [
+                {
+                  scope: 'currentUserMessage',
+                  sourceLabel: 'Current user message',
+                  charCount: 120,
+                  truncated: false,
+                },
+              ],
+              preparedInputDiagnostics: [
+                { scope: 'memoryContext', reason: 'empty', message: 'No saved memory was available.' },
+              ],
+              outputPreview: '<script>hidden context</script>',
+              outputTruncated: false,
+            },
+            {
+              status: 'failed',
+              stepId: 'aps_failure',
+              stepName: 'Required Review',
+              phase: 'afterMain',
+              outputKey: 'review',
+              destination: 'intermediate',
+              outputFormat: 'jsonObject',
+              failurePolicy: 'required',
+              inputChars: 220,
+              outputChars: 0,
+              durationMs: 1_500,
+              preparedInputSections: [],
+              preparedInputDiagnostics: [],
+              failureKind: 'provider_error',
+              failurePolicyOutcome: 'required_failure',
+              error: 'Provider rejected the request.',
+            },
+            {
+              status: 'skipped',
+              stepId: 'aps_skipped',
+              stepName: 'Final Rewrite',
+              phase: 'afterMain',
+              outputKey: 'final',
+              destination: 'finalOutput',
+              outputFormat: 'text',
+              failurePolicy: 'required',
+              inputChars: 0,
+              outputChars: 0,
+              durationMs: 0,
+              preparedInputSections: [],
+              preparedInputDiagnostics: [],
+              reason: 'dependency_skipped',
+              error: 'Required Review did not complete.',
+            },
+          ],
+        }),
+      ]
+    })
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-agent-preset-diagnostics-panel]')).toBeNull()
+    expect(hydrationSpies.ensureAllChatsHydrated).not.toHaveBeenCalled()
+
+    const openDiagnosticsButton = button('[data-risu-agent-preset-open-diagnostics]')
+    expect(openDiagnosticsButton.getAttribute('aria-expanded')).toBe('false')
+    expect(openDiagnosticsButton.getAttribute('aria-controls')).toBe('agent-preset-diagnostics-panel')
+    openDiagnosticsButton.click()
+    await flushAsyncWork()
+
+    expect(hydrationSpies.ensureAllChatsHydrated).toHaveBeenCalledWith({ strict: true })
+    expect(target.querySelector('[data-risu-agent-preset-diagnostics-panel]')).toBeTruthy()
+    expect(openDiagnosticsButton.getAttribute('aria-expanded')).toBe('true')
+    expect(target.querySelectorAll('[data-risu-agent-preset-diagnostic-run]')).toHaveLength(1)
+    expect(target.textContent).toContain('Aster · Investigation')
+    expect(target.textContent).toContain('Gather Context')
+    expect(target.textContent).toContain(language.agentPresets.diagnosticStepStatuses.success)
+    expect(target.textContent).toContain(language.agentPresets.diagnosticStepStatuses.failed)
+    expect(target.textContent).toContain(language.agentPresets.diagnosticStepStatuses.skipped)
+    expect(target.textContent).toContain('<script>hidden context</script>')
+    expect(target.querySelector('script')).toBeNull()
+    expect(target.textContent).toContain('Provider rejected the request.')
+    expect(target.textContent).toContain('Required Review did not complete.')
+    expect(target.textContent).toContain('No saved memory was available.')
+    expect(target.textContent).toContain('Original main draft')
+    expect(target.textContent).toContain('Review stopped the run.')
+    expect(target.textContent).not.toContain('Unrelated hidden result')
+  })
+
+  it('keeps diagnostics closed for new presets and surfaces history hydration errors', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent' })])
+    mountPage()
+    await tick()
+
+    button('[data-risu-agent-preset-create]').click()
+    await tick()
+
+    const createDiagnosticsButton = button('[data-risu-agent-preset-open-diagnostics]')
+    expect(createDiagnosticsButton.disabled).toBe(true)
+    createDiagnosticsButton.click()
+    await flushAsyncWork()
+    expect(hydrationSpies.ensureAllChatsHydrated).not.toHaveBeenCalled()
+
+    button('[data-risu-agent-preset-cancel]').click()
+    await tick()
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    hydrationSpies.ensureAllChatsHydrated.mockRejectedValueOnce(new Error('Bulk history unavailable'))
+
+    button('[data-risu-agent-preset-open-diagnostics]').click()
+    await flushAsyncWork()
+
+    expect(target.textContent).toContain(language.agentPresets.diagnosticsLoadError)
+    expect(target.textContent).toContain('Bulk history unavailable')
+    expect(target.textContent).toContain(language.agentPresets.diagnosticsPending)
   })
 })

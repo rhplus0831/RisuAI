@@ -5,6 +5,8 @@
     className?: string
     size?: 'sm' | 'md' | 'lg'
     disabled?: boolean
+    ariaExpanded?: boolean
+    ariaControls?: string
     children?: import('svelte').Snippet
     onclick?: (
       event: MouseEvent & {
@@ -19,6 +21,8 @@
     className = '',
     size = 'md',
     disabled = false,
+    ariaExpanded = undefined,
+    ariaControls = undefined,
     children,
     onclick,
   }: Props = $props()
@@ -27,6 +31,8 @@
 <button
   {onclick}
   {disabled}
+  aria-expanded={ariaExpanded}
+  aria-controls={ariaControls}
   class="{styled === 'primary'
     ? (selected ? 'bg-bg-selected' : 'bg-darkbutton') + ' hover:bg-selected focus:ring-selected border-darkborderc'
     : styled === 'outlined'

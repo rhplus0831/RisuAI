@@ -38,6 +38,7 @@
   } from 'src/ts/agentPresetRecords'
   import type { AgentPresetSnapshot, AgentPresetStepSnapshot, ServerCommandResult } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import AgentPresetDiagnosticsPanel from './AgentPresetDiagnosticsPanel.svelte'
   import { sparseAgentPresetStepPatch } from './agentPresetStepPatch'
 
   interface Props {
@@ -1006,19 +1007,15 @@
         {/if}
       </section>
 
-      <section class="rounded-md border border-darkborderc p-3">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h4 class="text-base font-semibold">{language.agentPresets.diagnostics}</h4>
-            <p class="text-sm text-textcolor2">{language.agentPresets.diagnosticsPending}</p>
-          </div>
-          <Button size="sm" styled="outlined" disabled>{language.agentPresets.openDiagnostics}</Button>
-        </div>
-      </section>
+      <AgentPresetDiagnosticsPanel presetId={mode === 'edit' ? initialPresetId : ''} />
     </div>
 
     <div class="flex justify-end gap-2 border-t border-darkborderc p-4">
-      <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>{language.agentPresets.cancel}</Button>
+      <span data-risu-agent-preset-cancel>
+        <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>
+          {language.agentPresets.cancel}
+        </Button>
+      </span>
       {#if !stepEditorMode}
         <span data-risu-agent-preset-save>
           <Button size="sm" disabled={!canSave} onclick={savePreset}>

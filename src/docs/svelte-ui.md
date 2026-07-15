@@ -280,7 +280,12 @@ chain an eligible earlier output through `{{agent::outputKey}}`; missing,
 same-level, disabled, or future references appear as `Incomplete` and block
 generation. During chat generation, `AgentPresetProgress.svelte` consumes
 chat-scoped `agent_preset_progress` snapshots and shows the current phase,
-active helper steps, and completed/total count above the transcript. The removed
+active helper steps, and completed/total count above the transcript. The preset
+editor's Diagnostics panel lazily hydrates chat transcripts only when opened,
+filters `Message.generationInfo.agentPreset` by the preset's stable ID, and
+renders a bounded newest-first run history with hidden output previews,
+failures, timing/model details, and prepared-input notes. Imported metadata is
+normalized at the frontend boundary before it reaches the panel. The removed
 Context Agent page and `/settings/context-agent` route are not compatibility aliases.
 
 The settings shell currently separates model and prompt work: settings index
