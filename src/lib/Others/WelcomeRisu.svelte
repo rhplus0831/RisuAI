@@ -111,12 +111,24 @@
     step = 1
   }
 
+  function resolveBrowserLanguage(browserLanguage: string): string | null {
+    const parts = browserLanguage.replace('_', '-').split('-')
+    const base = parts[0]?.toLowerCase()
+    if (base === 'zh') {
+      const subtags = parts.slice(1).map((part) => part.toLowerCase())
+      return subtags.some((part) => ['hant', 'tw', 'hk', 'mo'].includes(part)) ? 'zh-Hant' : 'cn'
+    }
+
+    if (base && ['cn', 'de', 'en', 'es', 'ko', 'vi'].includes(base)) {
+      return base
+    }
+    return null
+  }
+
   {
-    const browserLang = navigator.language
-    const browserLangShort = browserLang.split('-')[0]
-    const usableLangs = ['de', 'en', 'ko', 'cn', 'vi', 'zh-Hant']
-    if (usableLangs.includes(browserLangShort)) {
-      selectLanguage(browserLangShort)
+    const browserLanguage = resolveBrowserLanguage(navigator.language)
+    if (browserLanguage) {
+      selectLanguage(browserLanguage)
     }
   }
   let start = $state(false)

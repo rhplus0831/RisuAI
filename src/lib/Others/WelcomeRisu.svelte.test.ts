@@ -189,6 +189,25 @@ afterEach(() => {
 })
 
 describe('WelcomeRisu onboarding setup timer', () => {
+  it.each([
+    ['zh-CN', 'cn'],
+    ['zh-Hans-SG', 'cn'],
+    ['zh-TW', 'zh-Hant'],
+    ['zh-Hant-HK', 'zh-Hant'],
+    ['es-MX', 'es'],
+  ])('maps browser locale %s to supported language %s', async (browserLocale, expectedLanguage) => {
+    Object.defineProperty(navigator, 'language', {
+      configurable: true,
+      value: browserLocale,
+    })
+
+    component = mount(WelcomeRisu, { target })
+    await tick()
+
+    expect(welcomeMocks.changeLanguage).toHaveBeenCalledWith(expectedLanguage)
+    expect(welcomeMocks.applyServerBackedSetting).toHaveBeenCalledWith('language', expectedLanguage)
+  })
+
   it('applies final setup once after the delay with the captured choices', async () => {
     await completeOpenAiSetup()
 
