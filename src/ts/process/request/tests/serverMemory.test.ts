@@ -356,6 +356,56 @@ describe('server memory API adapter', () => {
     expect(result).toEqual({ status: 'error', error: 'Network error: socket closed' })
   })
 
+  it('rejects malformed successful envelopes before UI consumers receive them', async () => {
+    const memoryFetch = makeMemoryFetch((url, init) => {
+      if (url.includes('/chunks/')) return {}
+      if (url.includes('/summaries/') && init.method === 'PATCH') return { summary: baseSummary }
+      if (url.includes('/summaries/') && init.method === 'DELETE') return {}
+      if (url.includes('/summaries/')) return { summaries: [null] }
+      if (url.endsWith('/jobs')) return { jobs: [{}] }
+      if (url.includes('/jobs/')) return { job: null }
+      return {}
+    })
+    vi.stubGlobal('fetch', memoryFetch.fetch)
+
+    await expect(listServerMemoryChunks('chat-1')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+    await expect(listServerMemorySummaries('chat-1')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+    await expect(patchServerMemorySummary('summary-1', { text: 'edited' })).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+    await expect(deleteServerMemorySummary('summary-1')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+    await expect(listServerMemoryJobs()).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+    await expect(cancelServerMemoryJob('job-1')).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+  })
+
+  it('rejects a non-JSON HTTP success', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not json', { status: 200 })),
+    )
+
+    await expect(listServerMemoryJobs()).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid server response',
+    })
+  })
+
   it('applies Fastify Hypa V3 progress payloads to the browser store', () => {
     const applied = applyServerHypaV3Progress({
       open: true,

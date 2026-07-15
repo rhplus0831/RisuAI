@@ -110,10 +110,78 @@ function errorMessageFromBody(body: unknown, fallback: string): string {
   return fallback
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0
+}
+
+function isServerMemoryChunk(value: unknown): value is ServerMemoryChunk {
+  if (!isRecord(value)) return false
+  return (
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.chatId) &&
+    (value.messageId === null || typeof value.messageId === 'string') &&
+    isNonNegativeInteger(value.rangeStartSeq) &&
+    isNonNegativeInteger(value.rangeEndSeq) &&
+    typeof value.text === 'string' &&
+    ['pending', 'summarized', 'failed'].includes(value.status as string) &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string'
+  )
+}
+
+function isServerMemorySummary(value: unknown): value is ServerMemorySummary {
+  if (!isRecord(value)) return false
+  return (
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.chatId) &&
+    isNonEmptyString(value.chunkId) &&
+    typeof value.model === 'string' &&
+    typeof value.text === 'string' &&
+    typeof value.tokens === 'number' &&
+    Number.isFinite(value.tokens) &&
+    typeof value.createdAt === 'string'
+  )
+}
+
+function isServerMemoryJob(value: unknown): value is ServerMemoryJob {
+  if (!isRecord(value)) return false
+  return (
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.chatId) &&
+    ['chunk', 'embed', 'summarize'].includes(value.kind as string) &&
+    ['pending', 'running', 'completed', 'failed', 'cancelled'].includes(value.status as string) &&
+    isNonNegativeInteger(value.attemptCount) &&
+    isNonNegativeInteger(value.maxAttempts)
+  )
+}
+
+function decodeArrayEnvelope<T>(body: unknown, key: string, isItem: (value: unknown) => value is T): T[] | null {
+  if (!isRecord(body) || !Array.isArray(body[key]) || !body[key].every(isItem)) return null
+  return body[key]
+}
+
+function decodeSummaryId(body: unknown): { summaryId: string } | null {
+  if (!isRecord(body) || !isNonEmptyString(body.summaryId)) return null
+  return { summaryId: body.summaryId }
+}
+
+function decodeJob(body: unknown): { job: ServerMemoryJob } | null {
+  if (!isRecord(body) || !isServerMemoryJob(body.job)) return null
+  return { job: body.job }
+}
+
 async function requestMemoryJson<T>(
   path: string,
   init: RequestInit = {},
-  options: { activeWriter?: boolean } = {},
+  options: { activeWriter?: boolean; decode: (body: unknown) => T | null },
 ): Promise<ServerMemoryResult<T>> {
   if (!canUseServerMemoryApi()) return { status: 'unavailable' }
 
@@ -153,16 +221,25 @@ async function requestMemoryJson<T>(
     }
   }
 
-  return { status: 'ok', ...(etag ? { etag } : {}), ...(body as T) }
+  const decoded = options.decode(body)
+  if (decoded === null) return { status: 'error', error: 'Invalid server response' }
+  return { status: 'ok', ...(etag ? { etag } : {}), ...decoded }
 }
 
 export async function listServerMemoryChunks(
   chatId: string,
   signal?: AbortSignal | null,
 ): Promise<ServerMemoryResult<{ chunks: ServerMemoryChunk[] }>> {
-  return requestMemoryJson<{ chunks: ServerMemoryChunk[] }>(`${MEMORY_ENDPOINT}/chunks/${encodeURIComponent(chatId)}`, {
-    signal: signal ?? undefined,
-  })
+  return requestMemoryJson<{ chunks: ServerMemoryChunk[] }>(
+    `${MEMORY_ENDPOINT}/chunks/${encodeURIComponent(chatId)}`,
+    { signal: signal ?? undefined },
+    {
+      decode: (body) => {
+        const chunks = decodeArrayEnvelope(body, 'chunks', isServerMemoryChunk)
+        return chunks ? { chunks } : null
+      },
+    },
+  )
 }
 
 export async function listServerMemorySummaries(
@@ -173,6 +250,12 @@ export async function listServerMemorySummaries(
   return requestMemoryJson<{ summaries: ServerMemorySummary[] }>(
     appendQuery(`${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(chatId)}`, { model }),
     { signal: signal ?? undefined },
+    {
+      decode: (body) => {
+        const summaries = decodeArrayEnvelope(body, 'summaries', isServerMemorySummary)
+        return summaries ? { summaries } : null
+      },
+    },
   )
 }
 
@@ -189,7 +272,7 @@ export async function patchServerMemorySummary(
       body: JSON.stringify(patch),
       signal: signal ?? undefined,
     },
-    { activeWriter: true },
+    { activeWriter: true, decode: decodeSummaryId },
   )
 }
 
@@ -200,7 +283,7 @@ export async function deleteServerMemorySummary(
   return requestMemoryJson<{ summaryId: string }>(
     `${MEMORY_ENDPOINT}/summaries/${encodeURIComponent(summaryId)}`,
     { method: 'DELETE', headers: { prefer: 'return=minimal' }, signal: signal ?? undefined },
-    { activeWriter: true },
+    { activeWriter: true, decode: decodeSummaryId },
   )
 }
 
@@ -218,6 +301,12 @@ export async function listServerMemoryJobs(
       signal: signal ?? undefined,
       headers: input.etag ? { 'If-None-Match': input.etag } : undefined,
     },
+    {
+      decode: (body) => {
+        const jobs = decodeArrayEnvelope(body, 'jobs', isServerMemoryJob)
+        return jobs ? { jobs } : null
+      },
+    },
   )
 }
 
@@ -228,6 +317,6 @@ export async function cancelServerMemoryJob(
   return requestMemoryJson<{ job: ServerMemoryJob }>(
     `${MEMORY_ENDPOINT}/jobs/${encodeURIComponent(jobId)}`,
     { method: 'DELETE', signal: signal ?? undefined },
-    { activeWriter: true },
+    { activeWriter: true, decode: decodeJob },
   )
 }
