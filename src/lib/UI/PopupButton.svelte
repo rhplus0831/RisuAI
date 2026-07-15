@@ -22,16 +22,17 @@
   aria-controls="risu-popup-menu"
   aria-expanded={popupStore.openId === buttonId && Boolean(popupStore.children)}
   onclick={async (e: MouseEvent) => {
-    const trigger = e.currentTarget as HTMLButtonElement
-    const keyboardClick = e.detail === 0
-    const rect = trigger.getBoundingClientRect()
-    await sleep(0)
     if (popupStore.openId === buttonId) {
       popupStore.children = null
       popupStore.openId = 0
       popupStore.trigger = null
       return
     }
+
+    const trigger = e.currentTarget as HTMLButtonElement
+    const keyboardClick = e.detail === 0
+    const rect = trigger.getBoundingClientRect()
+    await sleep(0)
     popupStore.mouseX = keyboardClick ? rect.left : e.clientX
     popupStore.mouseY = keyboardClick ? rect.bottom : e.clientY
     popupStore.children = children

@@ -68,6 +68,23 @@ describe('PopupList outside dismissal', () => {
     expect(target.querySelector('[data-testid="popup-content"]')).not.toBeNull()
   })
 
+  it('closes an open menu when its trigger is clicked again', async () => {
+    component = mount(PopupListTestHost, { target })
+    await settle()
+    const trigger = target.querySelector<HTMLButtonElement>('button')!
+
+    trigger.click()
+    await settle()
+    expect(target.querySelector('[data-testid="popup-content"]')).not.toBeNull()
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    trigger.click()
+    await settle()
+    expect(target.querySelector('[data-testid="popup-content"]')).toBeNull()
+    expect(popupStore.openId).toBe(0)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
   it('anchors keyboard activation to the trigger and moves focus into the menu', async () => {
     component = mount(PopupListTestHost, { target })
     await settle()
