@@ -53,6 +53,11 @@
     type CharacterFolderImageUploadOperation,
   } from 'src/ts/server/characterFolderImageUpload'
   import { createSidebarCharacterListMemo, type SidebarCharacterListItem } from './sidebarCharList'
+  import {
+    createSidebarCharacterDragController,
+    isSidebarCharacterDrag,
+    SIDEBAR_CHARACTER_DRAG_TYPE,
+  } from './sidebarDrag'
   import { characterRoutePath, navigate } from 'src/ts/router'
   let sideBarMode = $state(0)
   let editMode = $state(false)
@@ -164,7 +169,7 @@
   )
   let IconRounded = $derived(getDatabase().roundIcons)
   let openFolders: string[] = $state([])
-  let currentDrag: DragData = $state(null)
+  const sidebarCharacterDrag = createSidebarCharacterDragController()
   interface Props {
     openGrid?: any
     hidden?: boolean
@@ -233,9 +238,10 @@
   }
   type DragData = CharacterOrderDragPosition
   const avatarDragStart = (ind: DragData, e: DragEv) => {
+    if (!sidebarCharacterDrag.begin(ind, getDatabase().characterOrder)) return
+
     e.dataTransfer.setData('text/plain', '')
-    e.dataTransfer.setData('application/x-risu-internal', 'true')
-    currentDrag = ind
+    e.dataTransfer.setData(SIDEBAR_CHARACTER_DRAG_TYPE, 'true')
     const avatar = e.currentTarget.querySelector('.avatar')
     if (avatar) {
       e.dataTransfer.setDragImage(avatar, 10, 10)
@@ -243,23 +249,48 @@
   }
 
   const avatarDragOver = (e: DragEv) => {
+    if (!isSidebarCharacterDrag(e.dataTransfer.types)) return
+
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
   }
 
   const avatarDrop = (ind: DragData, e: DragEv) => {
+    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
+    if (!drag) return
+
     e.preventDefault()
     try {
-      if (currentDrag) {
-        createFolder(currentDrag, ind)
-      }
+      createFolder(drag, ind)
     } catch (error) {}
+  }
+
+  const dropZoneDragOver = (e: DragEv) => {
+    if (!isSidebarCharacterDrag(e.dataTransfer.types)) return
+
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    e.currentTarget.classList.add('bg-green-500')
+  }
+
+  const consumeDropZoneDrag = (e: DragEv) => {
+    e.currentTarget.classList.remove('bg-green-500')
+    const drag = sidebarCharacterDrag.consume(e.dataTransfer.types, getDatabase().characterOrder)
+    if (!drag) return null
+
+    e.preventDefault()
+    return drag
   }
 
   const preventAll = (e: Event) => {
     e.preventDefault()
     e.stopPropagation()
     return false
+  }
+
+  const preventCharacterDrag = (e: DragEv) => {
+    if (!isSidebarCharacterDrag(e.dataTransfer.types)) return
+    return preventAll(e)
   }
 </script>
 
@@ -352,23 +383,17 @@
       <div
         class="h-4 min-h-4 w-14"
         role="listitem"
-        ondragover={(e) => {
-          e.preventDefault()
-          e.dataTransfer.dropEffect = 'move'
-          e.currentTarget.classList.add('bg-green-500')
-        }}
+        ondragover={dropZoneDragOver}
         ondragleave={(e) => {
           e.currentTarget.classList.remove('bg-green-500')
         }}
         ondrop={(e) => {
-          e.preventDefault()
-          e.currentTarget.classList.remove('bg-green-500')
-          const da = currentDrag
+          const da = consumeDropZoneDrag(e)
           if (da) {
             inserter(da, { index: 0 })
           }
         }}
-        ondragenter={preventAll}>
+        ondragenter={preventCharacterDrag}>
       </div>
       {#each charImages as char, ind}
         <div
@@ -378,11 +403,12 @@
           ondragstart={(e) => {
             avatarDragStart({ index: ind }, e)
           }}
+          ondragend={sidebarCharacterDrag.clear}
           ondragover={avatarDragOver}
           ondrop={(e) => {
             avatarDrop({ index: ind }, e)
           }}
-          ondragenter={preventAll}>
+          ondragenter={preventCharacterDrag}>
           <SidebarIndicator isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1} />
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div
@@ -500,23 +526,17 @@
               <div
                 class="h-4 min-h-4 w-14 relative z-10"
                 role="listitem"
-                ondragover={(e) => {
-                  e.preventDefault()
-                  e.dataTransfer.dropEffect = 'move'
-                  e.currentTarget.classList.add('bg-green-500')
-                }}
+                ondragover={dropZoneDragOver}
                 ondragleave={(e) => {
                   e.currentTarget.classList.remove('bg-green-500')
                 }}
                 ondrop={(e) => {
-                  e.preventDefault()
-                  e.currentTarget.classList.remove('bg-green-500')
-                  const da = currentDrag
+                  const da = consumeDropZoneDrag(e)
                   if (da && char.type === 'folder') {
                     inserter(da, { index: 0, folder: char.id })
                   }
                 }}
-                ondragenter={preventAll}>
+                ondragenter={preventCharacterDrag}>
               </div>
               {#each char.folder as char2, ind}
                 <div
@@ -528,13 +548,14 @@
                       avatarDragStart({ index: ind, folder: char.id }, e)
                     }
                   }}
+                  ondragend={sidebarCharacterDrag.clear}
                   ondragover={avatarDragOver}
                   ondrop={(e) => {
                     if (char.type === 'folder') {
                       avatarDrop({ index: ind, folder: char.id }, e)
                     }
                   }}
-                  ondragenter={preventAll}>
+                  ondragenter={preventCharacterDrag}>
                   <SidebarIndicator isActive={$selectedCharID === char2.index && sideBarMode !== 1} />
                   <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                   <div
@@ -563,23 +584,17 @@
                 <div
                   class="h-4 min-h-4 w-14 relative z-20"
                   role="listitem"
-                  ondragover={(e) => {
-                    e.preventDefault()
-                    e.dataTransfer.dropEffect = 'move'
-                    e.currentTarget.classList.add('bg-green-500')
-                  }}
+                  ondragover={dropZoneDragOver}
                   ondragleave={(e) => {
                     e.currentTarget.classList.remove('bg-green-500')
                   }}
                   ondrop={(e) => {
-                    e.preventDefault()
-                    e.currentTarget.classList.remove('bg-green-500')
-                    const da = currentDrag
+                    const da = consumeDropZoneDrag(e)
                     if (da && char.type === 'folder') {
                       inserter(da, { index: ind + 1, folder: char.id })
                     }
                   }}
-                  ondragenter={preventAll}>
+                  ondragenter={preventCharacterDrag}>
                 </div>
               {/each}
             </div>
@@ -588,23 +603,17 @@
         <div
           class="h-4 min-h-4 w-14"
           role="listitem"
-          ondragover={(e) => {
-            e.preventDefault()
-            e.dataTransfer.dropEffect = 'move'
-            e.currentTarget.classList.add('bg-green-500')
-          }}
+          ondragover={dropZoneDragOver}
           ondragleave={(e) => {
             e.currentTarget.classList.remove('bg-green-500')
           }}
           ondrop={(e) => {
-            e.preventDefault()
-            e.currentTarget.classList.remove('bg-green-500')
-            const da = currentDrag
+            const da = consumeDropZoneDrag(e)
             if (da) {
               inserter(da, { index: ind + 1 })
             }
           }}
-          ondragenter={preventAll}>
+          ondragenter={preventCharacterDrag}>
         </div>
       {/each}
       <div class="flex flex-col items-center gap-2 px-2">
