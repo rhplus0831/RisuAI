@@ -1,4 +1,4 @@
-import { mount, unmount } from 'svelte'
+import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const runMocks = vi.hoisted(() => ({
@@ -91,5 +91,55 @@ describe('playground run-state recovery', () => {
 
     await vi.waitFor(() => expect(runMocks.alertError).toHaveBeenCalledWith(expect.any(Error)))
     expect(target.querySelector('.loadmove')).toBeNull()
+  })
+
+  it('keeps an embedding run bound to its submitted inputs and discards a stale completion', async () => {
+    let finishAddingText: (() => void) | undefined
+    runMocks.addText.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishAddingText = resolve
+        }),
+    )
+    runMocks.similaritySearchScored.mockResolvedValue([['stale result', 0.75]])
+    component = mount(PlaygroundEmbedding, { target })
+
+    const addButton = Array.from(target.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent?.trim() === '+',
+    )
+    expect(addButton).toBeTruthy()
+    addButton!.click()
+    await tick()
+
+    const [queryInput, dataInput] = Array.from(target.querySelectorAll('input'))
+    queryInput.value = 'submitted query'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    dataInput.value = 'submitted data'
+    dataInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const runButton = Array.from(target.querySelectorAll('button')).at(-1)
+    expect(runButton).toBeTruthy()
+    runButton!.click()
+
+    await vi.waitFor(() => expect(runMocks.addText).toHaveBeenCalledWith(['submitted data']))
+    expect(target.querySelector('select')).toHaveProperty('disabled', true)
+    expect(queryInput.disabled).toBe(true)
+    expect(dataInput.disabled).toBe(true)
+    expect(addButton!.disabled).toBe(true)
+    expect(runButton!.disabled).toBe(true)
+
+    queryInput.value = 'new query'
+    queryInput.dispatchEvent(new Event('input', { bubbles: true }))
+    dataInput.value = 'new data'
+    dataInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(runMocks.addText.mock.calls[0][0]).toEqual(['submitted data'])
+
+    finishAddingText!()
+    await vi.waitFor(() => expect(runMocks.similaritySearchScored).toHaveBeenCalledWith('submitted query'))
+    await vi.waitFor(() => expect(target.querySelector('.loadmove')).toBeNull())
+    expect(target.textContent).not.toContain('stale result')
+    expect(target.textContent).toContain('No result')
   })
 })

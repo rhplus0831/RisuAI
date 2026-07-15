@@ -10,10 +10,10 @@
 
   let query = $state('')
   let model = $state('MiniLM')
-  let customEmbeddingUrl = $state('')
   let data: string[] = $state([])
   let dataresult: [string, number][] = $state([])
   let running = $state(false)
+  let displayedInputSignature: string | undefined = $state()
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
   const hypaCustomSettingsDraft = createServerBackedSettingDraft<Record<string, any>>('hypaCustomSettings', {
     url: '',
@@ -21,14 +21,47 @@
     model: '',
   })
 
+  const readString = (value: unknown): string => (typeof value === 'string' ? value : '')
+
+  const captureRunInput = () => {
+    const input = {
+      model,
+      customEmbeddingUrl: readString(hypaCustomSettingsDraft.value.url),
+      openAiKey: readString(hypaV3KeyDraft.value),
+      customKey: readString(hypaCustomSettingsDraft.value.key),
+      customModel: readString(hypaCustomSettingsDraft.value.model),
+      query,
+      data: [...data],
+    }
+
+    return {
+      ...input,
+      signature: JSON.stringify(input),
+    }
+  }
+
+  $effect(() => {
+    const currentInputSignature = captureRunInput().signature
+    if (displayedInputSignature && displayedInputSignature !== currentInputSignature) {
+      displayedInputSignature = undefined
+      dataresult = []
+    }
+  })
+
   const run = async () => {
     if (running) return
+    const input = captureRunInput()
     running = true
+    displayedInputSignature = undefined
+    dataresult = []
     try {
-      const processer = new HypaProcesser(model as any, customEmbeddingUrl)
-      await processer.addText(data)
+      const processer = new HypaProcesser(input.model as any, input.customEmbeddingUrl)
+      await processer.addText(input.data)
       console.log(processer.vectors)
-      dataresult = await processer.similaritySearchScored(query)
+      const result = await processer.similaritySearchScored(input.query)
+      if (captureRunInput().signature !== input.signature) return
+      displayedInputSignature = input.signature
+      dataresult = result
     } catch (error) {
       alertError(error)
     } finally {
@@ -40,7 +73,7 @@
 <h2 class="text-4xl text-textcolor my-6 font-black relative">{language.embedding}</h2>
 
 <span class="text-textcolor text-lg">Model</span>
-<SelectInput bind:value={model} className="mb-4">
+<SelectInput bind:value={model} className="mb-4" disabled={running}>
   {#if 'gpu' in navigator}
     <OptionInput value="MiniLMGPU">MiniLM L6 v2 (GPU)</OptionInput>
     <OptionInput value="nomicGPU">Nomic Embed Text v1.5 (GPU)</OptionInput>
@@ -63,29 +96,30 @@
 
 {#if model === 'openai3small' || model === 'openai3large' || model === 'ada'}
   <span class="text-textcolor text-lg">OpenAI API Key</span>
-  <TextInput hideText size="sm" marginBottom bind:value={hypaV3KeyDraft.value} />
+  <TextInput hideText size="sm" marginBottom bind:value={hypaV3KeyDraft.value} disabled={running} />
 {/if}
 
 {#if model === 'custom'}
   <span class="text-textcolor text-lg">URL</span>
-  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} />
+  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.url} disabled={running} />
   <span class="text-textcolor text-lg">Key/Password</span>
-  <TextInput hideText size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} />
+  <TextInput hideText size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.key} disabled={running} />
   <span class="text-textcolor text-lg">Request Model</span>
-  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} />
+  <TextInput size="sm" marginBottom bind:value={hypaCustomSettingsDraft.value.model} disabled={running} />
 {/if}
 
 <div class="mb-4"></div>
 
 <span class="text-textcolor text-lg">Query</span>
-<TextInput bind:value={query} size="lg" fullwidth />
+<TextInput bind:value={query} size="lg" fullwidth disabled={running} />
 
 <span class="text-textcolor text-lg mt-6">Data</span>
 {#each data as item, i}
-  <TextInput bind:value={data[i]} size="lg" fullwidth marginBottom />
+  <TextInput bind:value={data[i]} size="lg" fullwidth marginBottom disabled={running} />
 {/each}
 <Button
   styled="outlined"
+  disabled={running}
   onclick={() => {
     data.push('')
     data = data
@@ -105,6 +139,7 @@
 <Button
   className="mt-6 flex justify-center"
   size="lg"
+  disabled={running}
   onclick={() => {
     run()
   }}>
