@@ -698,7 +698,7 @@
       const translatedComposerBeforeSend = composerOperation.messageInputTranslate
       const filesBeforeSend = [...composerOperation.fileInput]
 
-      if (composerBeforeSend.startsWith('/')) {
+      if (!continueResponse && composerBeforeSend.startsWith('/')) {
         const commandProcessed = await processMultiCommand(composerBeforeSend)
         if (commandProcessed !== false) {
           if (clearMessageInputForCurrentOperation(composerOperation)) {
@@ -763,7 +763,9 @@
       if (!isActiveChatTargetFresh(activeTarget)) {
         return
       }
-      clearComposerForCurrentOperation(composerOperation)
+      if (!continueResponse) {
+        clearComposerForCurrentOperation(composerOperation)
+      }
       await sleep(10)
       if (!isActiveChatTargetFresh(activeTarget)) {
         return
@@ -841,7 +843,9 @@
       return
     }
     let previousLength = currentChatRecord.message.length
-    clearMessageInputForCurrentOperation(composerOperation)
+    if (!continued) {
+      clearMessageInputForCurrentOperation(composerOperation)
+    }
     const abortController = createActiveGenerationAbortController()
     try {
       clearInputTranslationRollbackForGenerationStart()

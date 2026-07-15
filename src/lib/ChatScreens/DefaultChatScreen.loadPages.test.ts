@@ -1130,6 +1130,53 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(textarea.value).toBe('Newer draft typed during continue')
   })
 
+  it('preserves the existing draft, translation, and files when continuing a response', async () => {
+    seedDatabase([2])
+    getResourceDatabase().useAutoTranslateInput = true
+    loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+      expect(target.querySelector('#messageInputTranslate')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    const translation = target.querySelector<HTMLTextAreaElement>('#messageInputTranslate')!
+    translation.value = 'Translated unsent draft'
+    translation.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    textarea.value = '/draft that must not execute'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    await clickPostFileMenuItem()
+    await waitFor(() => expect(target.textContent).toContain('Missing file'))
+    const sourceBeforeContinue = textarea.value
+    const translationBeforeContinue = translation.value
+    expect(sourceBeforeContinue).not.toBe('')
+    expect(translationBeforeContinue).not.toBe('')
+    loadPageMocks.processMultiCommand.mockClear()
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockClear()
+
+    const continueMenuItem = findClickableByText('continueResponse')
+    expect(continueMenuItem).toBeTruthy()
+    continueMenuItem!.click()
+    await waitFor(() => expect(loadPageMocks.sendChat).toHaveBeenCalledTimes(1))
+
+    expect(textarea.value).toBe(sourceBeforeContinue)
+    expect(translation.value).toBe(translationBeforeContinue)
+    expect(target.textContent).toContain('Missing file')
+    expect(loadPageMocks.processMultiCommand).not.toHaveBeenCalled()
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).toHaveBeenCalledWith(
+      -1,
+      expect.objectContaining({
+        continue: true,
+        expectedTarget: expectedActiveTarget(0),
+      }),
+    )
+  })
+
   it('does not call reroll navigation when the active chat changes during reroll hydration', async () => {
     seedDatabase([2, 2])
     getResourceDatabase().sideMenuRerollButton = true
