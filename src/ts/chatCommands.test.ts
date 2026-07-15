@@ -3911,6 +3911,25 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     })
   })
 
+  it('keeps an accepted scoped message update optimistically applied under the resource guard', async () => {
+    const calls = stubMessagePersistenceFetch()
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+    setResourceWriteGuardEnabled(true)
+
+    dispatchUpdateMessageScoped('m-1', { role: 'user', data: 'after', disabled: true }, previous)
+
+    expect(getDatabase().characters[0].chats[0].message).toEqual([
+      { role: 'user', data: 'after', disabled: true, chatId: 'm-1' },
+    ])
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message).toEqual([
+        { role: 'user', data: 'after', disabled: true, chatId: 'm-1' },
+      ])
+    })
+  })
+
   it('failed empty char append command rolls back the appended message by id', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'POST',
@@ -3939,10 +3958,10 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
 
-    getDatabase().characters[0].chats[0].message[0].data = 'attempted'
     getDatabase().characters[0].chats[0].name = 'newer metadata'
 
     dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('attempted')
     await waitForCallCount(calls, 2)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([{ role: 'char', data: 'before', chatId: 'm-1' }])
@@ -3959,12 +3978,24 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
     const previous = currentChatScopedSnapshot()
 
-    getDatabase().characters[0].chats[0].message[0].data = 'attempted'
-
     dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('attempted')
     await waitForCallCount(calls, 2)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual([{ role: 'char', data: 'newer edit', chatId: 'm-1' }])
+  })
+
+  it('scoped message update does not overwrite a field that diverged after its snapshot', async () => {
+    const calls = stubMessagePersistenceFetch()
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+    getDatabase().characters[0].chats[0].message[0].data = 'newer edit'
+
+    dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
+
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('newer edit')
+    await waitForCallCount(calls, 2)
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('newer edit')
   })
 
   it('failed scoped delete restores the prior message list only when live messages equal the attempted deletion', async () => {

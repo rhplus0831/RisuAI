@@ -3179,6 +3179,49 @@ function restoreScopedMessagePatchAttempt(
   })
 }
 
+function applyScopedMessagePatchAttempt(
+  previous: ChatScopedSnapshot,
+  messageId: string,
+  attemptedPatch: MessageSnapshot,
+): void {
+  if (!previous.chat) return
+  withTrustedResourceWrite(() => {
+    const liveChat = locateChatScopedSnapshot(previous)
+    const liveMessages = liveChat?.message
+    if (!liveMessages) return
+
+    const liveMessageIndex = findMessageIndexById(liveMessages, messageId)
+    if (liveMessageIndex < 0) return
+
+    const previousMessages = previous.chat?.message ?? []
+    const previousMessageById = previousMessages.find((message) => message.chatId === messageId)
+    const previousMessageAtLiveIndex = previousMessages[liveMessageIndex]
+    const previousMessage =
+      previousMessageById ?? (previousMessageAtLiveIndex?.chatId ? undefined : previousMessageAtLiveIndex)
+    if (!previousMessage) return
+
+    const liveMessage = liveMessages[liveMessageIndex] as unknown as Record<string, unknown>
+    const previousRecord = previousMessage as unknown as Record<string, unknown>
+    const attemptedRecord = attemptedPatch as Record<string, unknown>
+    for (const key of MESSAGE_PATCH_ALLOWED_KEYS) {
+      if (!Object.prototype.propertyIsEnumerable.call(attemptedRecord, key)) continue
+
+      const attemptedValue = attemptedRecord[key]
+      if (snapshotJson(liveMessage[key]) === snapshotJson(attemptedValue)) continue
+
+      const previousHasKey = Object.prototype.propertyIsEnumerable.call(previousRecord, key)
+      const liveHasKey = Object.prototype.propertyIsEnumerable.call(liveMessage, key)
+      if (previousHasKey) {
+        if (snapshotJson(liveMessage[key]) !== snapshotJson(previousRecord[key])) continue
+      } else if (liveHasKey) {
+        continue
+      }
+
+      liveMessage[key] = cloneJsonValue(attemptedValue)
+    }
+  })
+}
+
 function restoreScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
   if (!previous.chat || !attemptedMessages) return
   const previousMessages = cloneJsonValue(previous.chat.message ?? [])
@@ -3276,6 +3319,7 @@ export function dispatchUpdateMessageScoped(
   previous: ChatScopedSnapshot,
 ): void {
   const commandPatch = sanitizeMessagePatch(patch)
+  applyScopedMessagePatchAttempt(previous, messageId, commandPatch)
   dispatchSanitizedUpdateMessageWith(messageId, commandPatch, () =>
     restoreScopedMessagePatchAttempt(previous, messageId, commandPatch),
   )
