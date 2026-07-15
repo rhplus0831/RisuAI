@@ -702,16 +702,6 @@
       sideBarStore.set(false)
     }
   }}>
-  <button
-    class="flex w-full justify-end text-textcolor"
-    onclick={async () => {
-      if ($sideBarClosing) {
-        return
-      }
-      $sideBarClosing = true
-    }}>
-    <!-- Close icon intentionally omitted. -->
-  </button>
   {#if sideBarMode === 0}
     {#if $selectedCharID < 0 || $settingsOpen}
       <div>

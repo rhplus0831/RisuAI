@@ -164,6 +164,15 @@ afterEach(() => {
 })
 
 describe('Sidebar character keyboard activation', () => {
+  it('does not expose an empty ghost button above the sidebar content', async () => {
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const sidebarPanel = target.querySelector<HTMLElement>('.setting-area')
+    expect(sidebarPanel).toBeTruthy()
+    expect(sidebarPanel!.querySelector(':scope > button')).toBeNull()
+  })
+
   it('exposes one avatar tab stop and activates it with Space', async () => {
     component = mount(Sidebar, { target })
     await tick()
