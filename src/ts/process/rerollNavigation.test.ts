@@ -186,6 +186,25 @@ describe('reroll swipe navigation (post-seed, durable for free)', () => {
     expect(sendChatMain).not.toHaveBeenCalled()
   })
 
+  it('marks a prefetched tail swap as caller-owned optimistic state', async () => {
+    setupChat([
+      { role: 'user', data: 'hi', chatId: 'u1' },
+      { role: 'char', data: 'active', chatId: 'g1', generationInfo: { generationId: 'generation-1' } },
+    ])
+    prerollSpies.Prereroll.mockReturnValueOnce('prefetched')
+
+    await reroll({ sendChatMain: vi.fn(), closeMenu: vi.fn() })
+
+    const tail = testDatabaseState.db.characters[0].chats[0].message.at(-1) as unknown as Msg
+    expect(tail.data).toBe('prefetched')
+    expect(commandSpies.dispatchUpdateMessageScoped).toHaveBeenCalledWith(
+      'g1',
+      { data: 'prefetched' },
+      expect.objectContaining({ snapshot: true }),
+      { optimisticPatchAlreadyApplied: true },
+    )
+  })
+
   it('rerolling past the newest candidate generates a new one (regenerate)', async () => {
     seedThreeCandidates() // active = g3 at id 2 (the end)
     const sendChatMain = vi.fn(async () => {})

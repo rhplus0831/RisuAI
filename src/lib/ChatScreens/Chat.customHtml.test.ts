@@ -102,6 +102,7 @@ const customHtmlMocks = vi.hoisted(() => {
     runTrigger: vi.fn<(...args: any[]) => Promise<any>>(async () => undefined),
     sayTTS: vi.fn(),
     setLLMCache: vi.fn(async () => undefined),
+    rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
   }
 })
@@ -238,6 +239,7 @@ vi.mock('src/ts/server/commands', () => ({
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  rollbackServerBackedChatRowMetadata: customHtmlMocks.rollbackServerBackedChatRowMetadata,
   syncServerBackedChatMetadataBaselines: customHtmlMocks.syncServerBackedChatMetadataBaselines,
 }))
 
@@ -770,6 +772,7 @@ describe('message action target freshness', () => {
         },
       }),
       expect.anything(),
+      customHtmlMocks.rollbackServerBackedChatRowMetadata,
     )
   })
 

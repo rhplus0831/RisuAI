@@ -245,7 +245,7 @@ function applyInjectMutation(data: string, mode: ScriptMode, chatID: number) {
     })
 
     if (updated) {
-      dispatchUpdateMessageScoped(messageId, { data }, previous)
+      dispatchUpdateMessageScoped(messageId, { data }, previous, { optimisticPatchAlreadyApplied: true })
     }
     return
   }

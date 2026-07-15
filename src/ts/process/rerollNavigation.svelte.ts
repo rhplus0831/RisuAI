@@ -141,7 +141,7 @@ function applyTailDataSwap(data: string, operation: RerollOperation): boolean {
     message.data = data
     return id
   })
-  dispatchUpdateMessageScoped(messageId, { data }, previous)
+  dispatchUpdateMessageScoped(messageId, { data }, previous, { optimisticPatchAlreadyApplied: true })
   return true
 }
 

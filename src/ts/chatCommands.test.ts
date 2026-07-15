@@ -73,7 +73,9 @@ import {
   dispatchTruncateMessagesScoped,
   dispatchUpdateChat,
   dispatchUpdateChatFolder,
+  dispatchUpdateChatFolderRow,
   dispatchUpdateChatNoteScoped,
+  dispatchUpdateChatRow,
   dispatchUpdateChatScoped,
   dispatchUpdateMessageScoped,
   isActiveChatTargetFresh,
@@ -319,6 +321,54 @@ function stubControlledChatGenerationSettingsFetch(): {
     }) as unknown as typeof fetch,
   )
   return { calls, firstResponse, secondResponse }
+}
+
+function stubControlledMessagePatchFetch(): {
+  calls: CapturedFetch[]
+  firstResponse: Deferred<Response>
+  secondResponse: Deferred<Response>
+} {
+  const calls: CapturedFetch[] = []
+  const firstResponse = createDeferred<Response>()
+  const secondResponse = createDeferred<Response>()
+  let messagePatchCallCount = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (requestInput: RequestInfo | URL, init: RequestInit = {}) => {
+      const headers = init.headers as Record<string, string> | undefined
+      const url = String(requestInput)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        authHeader: headers?.['risu-auth'] ?? null,
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH') {
+        messagePatchCallCount += 1
+        if (messagePatchCallCount === 1) return firstResponse.promise
+        if (messagePatchCallCount === 2) return secondResponse.promise
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return { calls, firstResponse, secondResponse }
+}
+
+function successfulMessagePatchResponse(revision: number): Response {
+  return jsonResponse({
+    revision,
+    event: {
+      type: 'message.updated',
+      revision,
+      resource: 'message',
+      id: 'm-1',
+      parentId: 'chat-a',
+    },
+    chatId: 'chat-a',
+    messageId: 'm-1',
+  })
 }
 
 function successfulChatGenerationSettingsResponse(
@@ -3019,6 +3069,171 @@ describe('H2 chat-selection snapshot', () => {
 })
 
 describe('Phase 5 chat metadata dispatch rollback', () => {
+  it('restores the original folder name when overlapping broad folder updates both fail', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    const firstPrevious = currentChatStateSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders[0].name = 'First folder rename'
+    })
+    dispatchUpdateChatFolder('folder-a', { name: 'First folder rename' }, firstPrevious)
+
+    const secondPrevious = currentChatStateSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders[0].name = 'Second folder rename'
+    })
+    dispatchUpdateChatFolder('folder-a', { name: 'Second folder rename' }, secondPrevious)
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chatFolders[0].name).toBe('Folder')
+    })
+  })
+
+  it('restores the original folder color when overlapping row folder updates both fail', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chat-folders/folder-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders[0].color = 'blue'
+    })
+    dispatchUpdateChatFolderRow(
+      'folder-a',
+      { color: 'blue' },
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: {},
+      },
+    )
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders[0].color = 'red'
+    })
+    dispatchUpdateChatFolderRow(
+      'folder-a',
+      { color: 'red' },
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        folderId: 'folder-a',
+        metadata: { color: 'blue' },
+      },
+    )
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chatFolders[0].color).toBeUndefined()
+    })
+  })
+
+  it('restores the original chat name when overlapping broad updates both fail', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    const firstPrevious = currentChatStateSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].name = 'First rename'
+    })
+    dispatchUpdateChat('chat-a', { name: 'First rename' }, firstPrevious)
+
+    const secondPrevious = currentChatStateSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].name = 'Second rename'
+    })
+    dispatchUpdateChat('chat-a', { name: 'Second rename' }, secondPrevious)
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].name).toBe('Chat A')
+    })
+  })
+
+  it('restores the original suggestions when overlapping row updates both fail', async () => {
+    getDatabase().characters[0].chats[0].suggestMessages = ['Old suggestion']
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].suggestMessages = []
+    })
+    dispatchUpdateChatRow(
+      'chat-a',
+      { suggestMessages: [] },
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        metadata: { suggestMessages: ['Old suggestion'] },
+      },
+    )
+
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].suggestMessages = ['New suggestion']
+    })
+    dispatchUpdateChatRow(
+      'chat-a',
+      { suggestMessages: ['New suggestion'] },
+      {
+        selectedCharID: 0,
+        characterId: 'char-a',
+        chatId: 'chat-a',
+        metadata: { suggestMessages: [] },
+      },
+    )
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].suggestMessages).toEqual(['Old suggestion'])
+    })
+  })
+
+  it('restores the original bookmark state when overlapping scoped updates both fail', async () => {
+    getDatabase().characters[0].chats[0].bookmarks = []
+    getDatabase().characters[0].chats[0].bookmarkNames = {}
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/chats/chat-a' && init.method === 'PATCH',
+    })
+    setResourceWriteGuardEnabled(true)
+
+    const firstPrevious = currentChatScopedSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].bookmarks = ['msg-one']
+      getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-one': 'One' }
+    })
+    dispatchUpdateChatScoped('chat-a', { bookmarks: ['msg-one'], bookmarkNames: { 'msg-one': 'One' } }, firstPrevious)
+
+    const secondPrevious = currentChatScopedSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].bookmarks = ['msg-one', 'msg-two']
+      getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-one': 'One', 'msg-two': 'Two' }
+    })
+    dispatchUpdateChatScoped(
+      'chat-a',
+      {
+        bookmarks: ['msg-one', 'msg-two'],
+        bookmarkNames: { 'msg-one': 'One', 'msg-two': 'Two' },
+      },
+      secondPrevious,
+    )
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].bookmarks).toEqual([])
+      expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({})
+    })
+  })
+
   it('failed scoped metadata updates roll back only attempted fields that have not changed again', async () => {
     getDatabase().characters[0].chats[0].bookmarks = ['msg-old']
     getDatabase().characters[0].chats[0].bookmarkNames = { 'msg-old': 'Old bookmark' }
@@ -3892,6 +4107,181 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     getDatabase().characters[0].chats[0].message = jsonClone(messages)
   }
 
+  it('restores the original message field when overlapping scoped updates both fail', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
+    })
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    setResourceWriteGuardEnabled(true)
+
+    const firstPrevious = currentChatScopedSnapshot()
+    dispatchUpdateMessageScoped('m-1', { data: 'first edit' }, firstPrevious)
+    const secondPrevious = currentChatScopedSnapshot()
+    dispatchUpdateMessageScoped('m-1', { data: 'second edit' }, secondPrevious)
+
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('second edit')
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message[0].data).toBe('before')
+    })
+  })
+
+  it('keeps a duplicate stale-snapshot patch when the first request succeeds and the second fails', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    setResourceWriteGuardEnabled(true)
+
+    const stalePrevious = currentChatScopedSnapshot()
+    dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
+    dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
+
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('same')
+    await waitForCallCount(calls, 2)
+    firstResponse.resolve(successfulMessagePatchResponse(11))
+    await waitForCallCount(calls, 3)
+    secondResponse.resolve(jsonResponse({ error: 'second patch failed' }, 500))
+
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message[0].data).toBe('same')
+    })
+    expect(calls.slice(1).map((call) => call.body)).toEqual([
+      expect.objectContaining({ patch: { data: 'same' } }),
+      expect.objectContaining({ patch: { data: 'same' } }),
+    ])
+  })
+
+  it('repaints a duplicate stale-snapshot patch when the first request fails and the second succeeds', async () => {
+    const { calls, firstResponse, secondResponse } = stubControlledMessagePatchFetch()
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    setResourceWriteGuardEnabled(true)
+
+    const stalePrevious = currentChatScopedSnapshot()
+    dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
+    dispatchUpdateMessageScoped('m-1', { data: 'same' }, stalePrevious)
+
+    await waitForCallCount(calls, 2)
+    firstResponse.resolve(jsonResponse({ error: 'first patch failed' }, 500))
+    await waitForCallCount(calls, 3)
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('same')
+    secondResponse.resolve(successfulMessagePatchResponse(11))
+
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message[0].data).toBe('same')
+    })
+  })
+
+  it('rolls back a caller-owned pre-applied scoped message patch', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url === '/api/v1/commands/messages/m-1' && init.method === 'PATCH',
+    })
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+    setResourceWriteGuardEnabled(true)
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].message[0].data = 'pre-applied'
+    })
+
+    dispatchUpdateMessageScoped('m-1', { data: 'pre-applied' }, previous, {
+      optimisticPatchAlreadyApplied: true,
+    })
+
+    await waitForCallCount(calls, 2)
+    expect(getDatabase().characters[0].chats[0].message[0].data).toBe('before')
+  })
+
+  it('restores the original transcript when overlapping scoped deletes both fail', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) => url.startsWith('/api/v1/commands/messages/') && init.method === 'DELETE',
+    })
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+      { role: 'user', data: 'three', chatId: 'm-3' },
+    ]
+    seedActiveMessages(previousMessages)
+    setResourceWriteGuardEnabled(true)
+
+    const firstPrevious = currentChatScopedSnapshot()
+    dispatchDeleteMessageScoped('m-1', firstPrevious)
+    const secondPrevious = currentChatScopedSnapshot()
+    dispatchDeleteMessageScoped('m-2', secondPrevious)
+
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[2]])
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+    })
+  })
+
+  it('restores a patched message when a later scoped delete also fails', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) =>
+        url === '/api/v1/commands/messages/m-1' && (init.method === 'PATCH' || init.method === 'DELETE'),
+    })
+    const previousMessages: Message[] = [{ role: 'char', data: 'before', chatId: 'm-1' }]
+    seedActiveMessages(previousMessages)
+    setResourceWriteGuardEnabled(true)
+
+    dispatchUpdateMessageScoped('m-1', { data: 'after' }, currentChatScopedSnapshot())
+    dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
+
+    expect(getDatabase().characters[0].chats[0].message).toEqual([])
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+    })
+  })
+
+  it('restores a deleted message when a later scoped patch also fails', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) =>
+        url.startsWith('/api/v1/commands/messages/') && (init.method === 'PATCH' || init.method === 'DELETE'),
+    })
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+    ]
+    seedActiveMessages(previousMessages)
+    setResourceWriteGuardEnabled(true)
+
+    dispatchDeleteMessageScoped('m-1', currentChatScopedSnapshot())
+    dispatchUpdateMessageScoped('m-2', { data: 'changed' }, currentChatScopedSnapshot())
+
+    expect(getDatabase().characters[0].chats[0].message).toEqual([{ role: 'char', data: 'changed', chatId: 'm-2' }])
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
+    })
+  })
+
+  it('preserves a newer unpatched field when a safe patch and later delete both fail', async () => {
+    const calls = stubFailingCommandFetch({
+      matches: (url, init) =>
+        url.startsWith('/api/v1/commands/messages/') && (init.method === 'PATCH' || init.method === 'DELETE'),
+    })
+    const initialMessages: Message[] = [
+      { role: 'user', data: 'before', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+    ]
+    seedActiveMessages(initialMessages)
+    setResourceWriteGuardEnabled(true)
+
+    const stalePatchSnapshot = currentChatScopedSnapshot()
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats[0].message[0].data = 'newer'
+    })
+    dispatchUpdateMessageScoped('m-1', { disabled: true }, stalePatchSnapshot)
+    dispatchDeleteMessageScoped('m-2', currentChatScopedSnapshot())
+
+    await waitForCallCount(calls, 3)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message).toEqual([
+        { role: 'user', data: 'newer', chatId: 'm-1' },
+        initialMessages[1],
+      ])
+    })
+  })
+
   it('keeps an accepted scoped delete optimistically applied under the resource guard', async () => {
     const calls = stubMessagePersistenceFetch()
     const previousMessages: Message[] = [
@@ -3994,8 +4384,34 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     dispatchUpdateMessageScoped('m-1', { data: 'attempted' }, previous)
 
     expect(getDatabase().characters[0].chats[0].message[0].data).toBe('newer edit')
-    await waitForCallCount(calls, 2)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(calls).toEqual([])
     expect(getDatabase().characters[0].chats[0].message[0].data).toBe('newer edit')
+  })
+
+  it('scoped message update sends only fields that are still safe to apply', async () => {
+    const calls = stubMessagePersistenceFetch()
+    seedActiveMessages([{ role: 'char', data: 'before', chatId: 'm-1' }])
+    const previous = currentChatScopedSnapshot()
+    getDatabase().characters[0].chats[0].message[0].data = 'newer edit'
+
+    dispatchUpdateMessageScoped('m-1', { data: 'attempted', disabled: true }, previous)
+
+    expect(getDatabase().characters[0].chats[0].message[0]).toEqual({
+      role: 'char',
+      data: 'newer edit',
+      disabled: true,
+      chatId: 'm-1',
+    })
+    await waitForCallCount(calls, 2)
+    expect(calls[1]).toMatchObject({
+      url: '/api/v1/commands/messages/m-1',
+      method: 'PATCH',
+      body: {
+        patch: { disabled: true },
+      },
+    })
   })
 
   it('failed scoped delete restores the prior message list only when live messages equal the attempted deletion', async () => {

@@ -14,7 +14,20 @@ const recorded = vi.hoisted(() => ({
     patch: Record<string, unknown>
     keepalive?: boolean
   }>,
+  folderRollbacks: [] as Array<() => void>,
   folderResult: null as Promise<{ status: 'ok' }> | null,
+  folderAttempts: [] as Array<{
+    sequence: number
+    folderId: string
+    rollback: {
+      selectedCharID: number
+      characterId?: string
+      folderId: string
+      metadata: Record<string, unknown>
+      attempted?: Record<string, unknown>
+    }
+  }>,
+  nextFolderAttemptSequence: 0,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const chatCommandState = vi.hoisted(() => ({
@@ -75,15 +88,61 @@ vi.mock('../chatCommands', () => {
     dispatchUpdateChatFolderRow: (
       folderId: string,
       patch: Record<string, unknown>,
-      _rollback: unknown,
+      rollback: {
+        selectedCharID: number
+        characterId?: string
+        folderId: string
+        metadata: Record<string, unknown>
+      },
       options?: { keepalive?: boolean },
+      rollbackFolderMetadata?: (snapshot: typeof rollback) => void,
     ) => {
       recorded.folderUpdates.push({
         folderId,
         patch: cloneJsonValue(patch),
         ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
       })
-      return recorded.folderResult ?? Promise.resolve({ status: 'ok' as const })
+      const attemptedRollback = {
+        ...rollback,
+        metadata: cloneJsonValue(rollback.metadata),
+        attempted: cloneJsonValue(patch),
+      }
+      const attempt = {
+        sequence: ++recorded.nextFolderAttemptSequence,
+        folderId,
+        rollback: attemptedRollback,
+      }
+      recorded.folderAttempts.push(attempt)
+      const clearAttempt = () => {
+        recorded.folderAttempts = recorded.folderAttempts.filter((candidate) => candidate.sequence !== attempt.sequence)
+      }
+      recorded.folderRollbacks.push(() => {
+        rollbackFolderMetadata?.(attemptedRollback)
+
+        const rebasedKeys = new Set<string>()
+        for (const later of recorded.folderAttempts) {
+          if (later.sequence <= attempt.sequence || !later.rollback.attempted) continue
+          for (const key of ['name', 'color', 'folded']) {
+            if (rebasedKeys.has(key)) continue
+            if (!Object.prototype.hasOwnProperty.call(attemptedRollback.attempted, key)) continue
+            if (!Object.prototype.hasOwnProperty.call(later.rollback.attempted, key)) continue
+            const laterPrevious = Object.prototype.hasOwnProperty.call(later.rollback.metadata, key)
+              ? later.rollback.metadata[key]
+              : undefined
+            if (JSON.stringify(laterPrevious) !== JSON.stringify(attemptedRollback.attempted[key])) continue
+            if (Object.prototype.hasOwnProperty.call(attemptedRollback.metadata, key)) {
+              later.rollback.metadata[key] = cloneJsonValue(attemptedRollback.metadata[key])
+            } else {
+              delete later.rollback.metadata[key]
+            }
+            rebasedKeys.add(key)
+          }
+        }
+        clearAttempt()
+      })
+      const result = recorded.folderResult ?? Promise.resolve({ status: 'ok' as const })
+      void result.then(clearAttempt, clearAttempt)
+      return result
     },
     restoreChatState: (snapshot: { characters: unknown[]; selectedCharID: number }) => {
       const db = chatCommandState.getDb?.()
@@ -132,6 +191,41 @@ vi.mock('../chatCommands', () => {
         }
       }
     },
+    restoreChatFolderRowMetadata: (snapshot: {
+      selectedCharID: number
+      characterId?: string
+      folderId: string
+      metadata: Record<string, unknown>
+      attempted?: Record<string, unknown>
+    }) => {
+      const db = chatCommandState.getDb?.()
+      if (!db) return
+      const characters = db.characters as
+        | Array<{
+            chaId?: string
+            chatFolders?: Array<Record<string, unknown> & { id?: string }>
+          }>
+        | undefined
+      const character =
+        characters?.find((candidate) => candidate.chaId === snapshot.characterId) ??
+        characters?.[snapshot.selectedCharID]
+      const folder = character?.chatFolders?.find((candidate) => candidate.id === snapshot.folderId)
+      if (!folder) return
+      for (const key of ['name', 'color', 'folded']) {
+        if (
+          snapshot.attempted &&
+          Object.prototype.hasOwnProperty.call(snapshot.attempted, key) &&
+          JSON.stringify(folder[key]) !== JSON.stringify(snapshot.attempted[key])
+        ) {
+          continue
+        }
+        if (key in snapshot.metadata) {
+          folder[key] = cloneJsonValue(snapshot.metadata[key])
+        } else {
+          delete folder[key]
+        }
+      }
+    },
   }
 })
 
@@ -142,6 +236,7 @@ import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import {
   currentChatMetadataBaselines,
   flushPendingServerBackedChatPatches,
+  rollbackServerBackedChatFolderRowMetadata,
   rollbackServerBackedChatMetadata,
   syncServerBackedChatMetadataBaselines,
   watchServerBackedChatMetadata,
@@ -193,7 +288,10 @@ beforeEach(() => {
   recorded.chatRollbacks.length = 0
   recorded.chatResult = null
   recorded.folderUpdates.length = 0
+  recorded.folderRollbacks.length = 0
   recorded.folderResult = null
+  recorded.folderAttempts.length = 0
+  recorded.nextFolderAttemptSequence = 0
 })
 
 afterEach(() => {
@@ -350,6 +448,107 @@ describe('watchServerBackedChatMetadata baselines', () => {
       { chatId: 'chat-1', patch: { name: 'Conflict' } },
       { chatId: 'chat-1', patch: { name: 'User Edit After Rollback' } },
     ])
+    stop()
+  })
+
+  it('folder row rollback suppresses a reverse watcher patch after a direct failure', async () => {
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].chatFolders[0].folded = true
+    syncServerBackedChatMetadataBaselines()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.folderUpdates).toEqual([])
+
+    rollbackServerBackedChatFolderRowMetadata({
+      selectedCharID: 0,
+      characterId: 'char-1',
+      folderId: 'folder-1',
+      metadata: { name: 'Folder', color: '#fff', folded: false },
+      attempted: { folded: true },
+    })
+    await Promise.resolve()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(getDatabase().characters[0].chatFolders[0].folded).toBe(false)
+    expect(recorded.folderUpdates).toEqual([])
+    stop()
+  })
+
+  it('restores the original folder value when two watcher-driven deferred patches fail oldest-first', async () => {
+    setupChat()
+    recorded.folderResult = new Promise(() => {})
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].chatFolders[0].name = 'First rename'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    getDatabase().characters[0].chatFolders[0].name = 'Second rename'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.folderUpdates).toEqual([
+      { folderId: 'folder-1', patch: { name: 'First rename' } },
+      { folderId: 'folder-1', patch: { name: 'Second rename' } },
+    ])
+
+    recorded.folderRollbacks[0]?.()
+    await Promise.resolve()
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('Second rename')
+
+    recorded.folderRollbacks[1]?.()
+    await Promise.resolve()
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('Folder')
+    expect(recorded.folderUpdates).toHaveLength(2)
+    stop()
+  })
+
+  it('does not reassert a failed in-flight chat patch after a resource apply', async () => {
+    setupChat('Initial')
+    recorded.chatResult = new Promise(() => {})
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].chats[0].name = 'Failed optimistic name'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.chatUpdates).toHaveLength(1)
+    recorded.chatRollbacks[0]?.()
+    resourceGuardState.epoch += 1
+    getDatabase().characters[0].chats[0].name = 'Authoritative name'
+    flushSync()
+
+    expect(getDatabase().characters[0].chats[0].name).toBe('Authoritative name')
+    stop()
+  })
+
+  it('does not reassert a failed in-flight folder patch after a resource apply', async () => {
+    setupChat()
+    recorded.folderResult = new Promise(() => {})
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].chatFolders[0].name = 'Failed optimistic folder'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.folderUpdates).toHaveLength(1)
+    recorded.folderRollbacks[0]?.()
+    resourceGuardState.epoch += 1
+    getDatabase().characters[0].chatFolders[0].name = 'Authoritative folder'
+    flushSync()
+
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('Authoritative folder')
     stop()
   })
 

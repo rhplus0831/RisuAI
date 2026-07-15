@@ -26,6 +26,7 @@ const suggestionMocks = vi.hoisted(() => {
     translate: vi.fn(),
     alertConfirm: vi.fn(async () => false),
     dispatchUpdateChatRow: vi.fn(),
+    rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
     withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
@@ -56,6 +57,7 @@ vi.mock('src/ts/chatCommands', () => ({
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  rollbackServerBackedChatRowMetadata: suggestionMocks.rollbackServerBackedChatRowMetadata,
   syncServerBackedChatMetadataBaselines: suggestionMocks.syncServerBackedChatMetadataBaselines,
 }))
 
@@ -356,6 +358,8 @@ describe('Suggestion component persistence', () => {
           chatId: 'chat-a',
           metadata: { suggestMessages: ['Take the lead'] },
         },
+        {},
+        suggestionMocks.rollbackServerBackedChatRowMetadata,
       )
 
       getResourceDatabase().characters[0].chatPage = 1
@@ -363,6 +367,77 @@ describe('Suggestion component persistence', () => {
       getResourceDatabase().characters[0].chatPage = 0
       await settle()
       expect(target.textContent).not.toContain('Take the lead')
+    } finally {
+      if (component) unmount(component)
+      target.remove()
+    }
+  })
+
+  it('replaces stale suggestions after generation starts outside the suggestion buttons', async () => {
+    seedSuggestionDatabaseWithTwoChats()
+    suggestionMocks.requestChatData.mockResolvedValue({ type: 'success', result: '- Follow the new path' })
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | undefined
+
+    try {
+      component = mount(Suggestion, {
+        target,
+        props: {
+          send: vi.fn(),
+          messageInput: vi.fn(),
+        },
+      })
+
+      await waitFor(() => {
+        expect(target.textContent).toContain('Take the lead')
+      })
+
+      suggestionMocks.doingChat.set(true)
+      await settle()
+
+      expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
+      expect(target.textContent).not.toContain('Take the lead')
+
+      suggestionMocks.doingChat.set(false)
+      await waitFor(() => {
+        expect(target.textContent).toContain('Follow the new path')
+        expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual(['Follow the new path'])
+      })
+
+      getResourceDatabase().characters[0].chatPage = 1
+      await settle()
+      getResourceDatabase().characters[0].chatPage = 0
+      await settle()
+
+      expect(target.textContent).toContain('Follow the new path')
+      expect(target.textContent).not.toContain('Take the lead')
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenNthCalledWith(
+        1,
+        'chat-a',
+        { suggestMessages: [] },
+        {
+          selectedCharID: 0,
+          characterId: 'character-a',
+          chatId: 'chat-a',
+          metadata: { suggestMessages: ['Take the lead'] },
+        },
+        {},
+        suggestionMocks.rollbackServerBackedChatRowMetadata,
+      )
+      expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenNthCalledWith(
+        2,
+        'chat-a',
+        { suggestMessages: ['Follow the new path'] },
+        {
+          selectedCharID: 0,
+          characterId: 'character-a',
+          chatId: 'chat-a',
+          metadata: { suggestMessages: [] },
+        },
+        {},
+        suggestionMocks.rollbackServerBackedChatRowMetadata,
+      )
     } finally {
       if (component) unmount(component)
       target.remove()

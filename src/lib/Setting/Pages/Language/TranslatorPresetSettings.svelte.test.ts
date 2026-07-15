@@ -21,6 +21,7 @@ const commandSpies = vi.hoisted(() => {
     deferNextSelect: false,
     deferNextUpdate: false,
     nextBaseRevision: 100,
+    skipNextRollback: false,
     runInputs: [] as Array<{ rollback?: () => void }>,
     createInputs: [] as Array<{ baseRevision: number; preset: Record<string, unknown>; select?: boolean }>,
     deleteInputs: [] as Array<{ baseRevision: number; presetId: string; selectPresetId?: string }>,
@@ -53,7 +54,8 @@ const commandSpies = vi.hoisted(() => {
       spies.runInputs.push({ rollback: input.rollback })
       const result = (await input.command(spies.nextBaseRevision++)) as { status?: string }
       if (result.status !== 'ok') {
-        input.rollback?.()
+        if (spies.skipNextRollback) spies.skipNextRollback = false
+        else input.rollback?.()
       }
       return result
     },
@@ -218,6 +220,7 @@ import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { alertConfirm, alertInput } from 'src/ts/alert'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
+  applyCollectionsResource,
   applySettingsGroupResource,
   isCollectionAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
@@ -233,6 +236,7 @@ type MountedComponent = Parameters<typeof unmount>[0]
 
 let target: HTMLElement
 let component: MountedComponent | undefined
+let nextProjectionRevision = 1_000
 
 function seedTranslatorPresets(): void {
   setDatabaseLite({
@@ -258,6 +262,10 @@ function maxResponseInput(): HTMLInputElement {
   const input = target.querySelector<HTMLInputElement>('input[type="number"]')
   expect(input).toBeTruthy()
   return input!
+}
+
+function currentSelectedPresetId(): string | undefined {
+  return getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id
 }
 
 async function editPrompt(value: string): Promise<void> {
@@ -345,15 +353,42 @@ async function applyTranslatorPresetProjection(input: {
   presets: Array<{ id: string; name: string; prompt: string; maxResponse: number }>
   selectedIndex?: number
 }): Promise<void> {
+  const revision = nextProjectionRevision++
+  const selectedIndex = input.selectedIndex ?? getDatabase().translatorPresetId
+  const selectedPreset = input.presets[selectedIndex]
   withServerResourceApply(() => {
-    const selectedIndex = input.selectedIndex ?? getDatabase().translatorPresetId
-    getDatabase().translatorPresets = input.presets.map((preset) => ({ ...preset }))
-    getDatabase().translatorPresetId = selectedIndex
-    getDatabase().translatorPrompt = getDatabase().translatorPresets[selectedIndex]?.prompt ?? ''
-    getDatabase().translatorMaxResponse = getDatabase().translatorPresets[selectedIndex]?.maxResponse ?? 0
+    applyCollectionsResource(
+      {
+        revision,
+        collections: { translatorPresets: input.presets.map((preset) => ({ ...preset })) },
+      },
+      'translatorPresets',
+    )
+    applySettingsGroupResource(
+      {
+        revision,
+        group: 'language',
+        settings: {
+          translatorPresetId: selectedIndex,
+          translatorPrompt: selectedPreset?.prompt ?? '',
+          translatorMaxResponse: selectedPreset?.maxResponse ?? 0,
+        },
+      },
+      ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
+    )
   })
   await tick()
   await flushMicrotasks()
+  await tick()
+}
+
+async function appendPresetC(): Promise<void> {
+  withTrustedResourceWrite(() => {
+    getDatabase().translatorPresets = [
+      ...getDatabase().translatorPresets,
+      { id: 'preset-c', name: 'Preset C', prompt: 'old prompt C', maxResponse: 300 },
+    ]
+  })
   await tick()
 }
 
@@ -406,6 +441,8 @@ beforeEach(() => {
   commandSpies.deferNextSelect = false
   commandSpies.deferNextUpdate = false
   commandSpies.nextBaseRevision = 100
+  commandSpies.skipNextRollback = false
+  nextProjectionRevision = 1_000
   commandSpies.runInputs.length = 0
   commandSpies.createInputs.length = 0
   commandSpies.deleteInputs.length = 0
@@ -538,6 +575,57 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     ])
   })
 
+  it('flushes multiple snapshotted preset edits once even when a later debounce expires during the first request', async () => {
+    commandSpies.deferNextUpdate = true
+    await editPrompt('flushed prompt A')
+    await switchProjectedPreset(1)
+    await editPrompt('flushed prompt B')
+
+    toolbarButton(0).click()
+    await tick()
+    await flushMicrotasks()
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'flushed prompt A' },
+      },
+    ])
+
+    commandSpies.deferNextUpdate = true
+    await vi.advanceTimersByTimeAsync(250)
+    expect(commandSpies.updateInputs).toHaveLength(1)
+
+    const firstResult = commandSpies.deferredUpdateResults.shift()
+    expect(firstResult).toBeTruthy()
+    firstResult!.resolve({ status: 'ok' })
+    for (let attempt = 0; attempt < 5 && commandSpies.deferredUpdateResults.length === 0; attempt++) {
+      await flushMicrotasks()
+    }
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'flushed prompt A' },
+      },
+      {
+        baseRevision: 101,
+        presetId: 'preset-b',
+        patch: { prompt: 'flushed prompt B' },
+      },
+    ])
+
+    const secondResult = commandSpies.deferredUpdateResults.shift()
+    expect(secondResult).toBeTruthy()
+    secondResult!.resolve({ status: 'ok' })
+    await flushMicrotasks()
+    await tick()
+
+    expect(commandSpies.updateInputs).toHaveLength(2)
+  })
+
   it('rolls back a failed debounced edit when the preset has not changed again', async () => {
     commandSpies.failNextUpdate = true
 
@@ -597,6 +685,68 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.updateInputs).toHaveLength(1)
     expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
     expect(getDatabase().translatorPrompt).toBe('old prompt A')
+  })
+
+  it('returns to the last confirmed field value when two sequential update batches are rejected', async () => {
+    commandSpies.deferNextUpdate = true
+    await editPrompt('first rejected prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+
+    await editPrompt('second rejected prompt A')
+    commandSpies.deferNextUpdate = true
+    await vi.advanceTimersByTimeAsync(250)
+
+    await failDeferredCommand(commandSpies.deferredUpdateResults, 'forced first update failure')
+    for (let attempt = 0; attempt < 5 && commandSpies.deferredUpdateResults.length === 0; attempt++) {
+      await flushMicrotasks()
+    }
+    await failDeferredCommand(commandSpies.deferredUpdateResults, 'forced second update failure')
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('old prompt A')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+  })
+
+  it('rolls a rejected later update back to an earlier accepted batch', async () => {
+    commandSpies.deferNextUpdate = true
+    await editPrompt('accepted prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+
+    await editPrompt('rejected later prompt A')
+    commandSpies.deferNextUpdate = true
+    await vi.advanceTimersByTimeAsync(250)
+
+    const firstResult = commandSpies.deferredUpdateResults.shift()
+    expect(firstResult).toBeTruthy()
+    firstResult!.resolve({ status: 'ok' })
+    for (let attempt = 0; attempt < 5 && commandSpies.deferredUpdateResults.length === 0; attempt++) {
+      await flushMicrotasks()
+    }
+    await failDeferredCommand(commandSpies.deferredUpdateResults, 'forced later update failure')
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('accepted prompt A')
+    expect(getDatabase().translatorPrompt).toBe('accepted prompt A')
+  })
+
+  it('cleans up a rejected field edit when a destructive refresh suppressed transport rollback', async () => {
+    commandSpies.deferNextUpdate = true
+    await editPrompt('reasserted prompt A')
+    await vi.advanceTimersByTimeAsync(250)
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'refreshed prompt A', maxResponse: 111 },
+        { id: 'preset-b', name: 'Server B', prompt: 'refreshed prompt B', maxResponse: 222 },
+      ],
+      selectedIndex: 0,
+    })
+    expect(getDatabase().translatorPresets[0].prompt).toBe('reasserted prompt A')
+
+    commandSpies.skipNextRollback = true
+    await failDeferredCommand(commandSpies.deferredUpdateResults, 'forced update failure after refresh')
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('refreshed prompt A')
+    expect(getDatabase().translatorPrompt).toBe('refreshed prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(111)
   })
 
   it('preserves newer translator state when a deferred create command fails', async () => {
@@ -679,6 +829,77 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(maxResponseInput().value).toBe('100')
   })
 
+  it('removes a rejected optimistic create even when its draft was edited before the response', async () => {
+    commandSpies.deferNextCreate = true
+
+    await clickCreatePreset()
+    const createdPresetId = commandSpies.createInputs[0].preset.id
+    await editPrompt('draft for the pending preset')
+
+    await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+
+    await vi.advanceTimersByTimeAsync(250)
+    expect(commandSpies.updateInputs.some((input) => input.presetId === createdPresetId)).toBe(false)
+  })
+
+  it('keeps a later optimistic create visible through the first create projection', async () => {
+    commandSpies.deferNextCreate = true
+    await clickCreatePreset()
+    const firstPreset = { ...getDatabase().translatorPresets.at(-1)! }
+
+    commandSpies.deferNextCreate = true
+    await clickCreatePreset()
+    const secondPreset = { ...getDatabase().translatorPresets.at(-1)! }
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Preset A', prompt: 'old prompt A', maxResponse: 100 },
+        { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
+        firstPreset as { id: string; name: string; prompt: string; maxResponse: number },
+      ],
+      selectedIndex: 2,
+    })
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual([
+      'preset-a',
+      'preset-b',
+      firstPreset.id,
+      secondPreset.id,
+    ])
+    expect(currentSelectedPresetId()).toBe(secondPreset.id)
+
+    const [firstResult, secondResult] = commandSpies.deferredCreateResults.splice(0)
+    firstResult.resolve({ status: 'ok' })
+    secondResult.resolve({ status: 'ok' })
+    await flushMicrotasks()
+  })
+
+  it('removes a rejected create reasserted after a destructive refresh suppressed transport rollback', async () => {
+    commandSpies.deferNextCreate = true
+    await clickCreatePreset()
+    const createdPresetId = getDatabase().translatorPresets.at(-1)?.id
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'server prompt A', maxResponse: 111 },
+        { id: 'preset-b', name: 'Server B', prompt: 'server prompt B', maxResponse: 222 },
+      ],
+      selectedIndex: 0,
+    })
+    expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(true)
+
+    commandSpies.skipNextRollback = true
+    await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure after refresh')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(currentSelectedPresetId()).toBe('preset-a')
+    expect(getDatabase().translatorPrompt).toBe('server prompt A')
+  })
+
   it('paints a selection while a pending preset edit is still being persisted', async () => {
     commandSpies.deferNextUpdate = true
     await editPrompt('pending prompt A')
@@ -713,7 +934,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(commandSpies.selectInputs).toEqual([{ baseRevision: 101, presetId: 'preset-b' }])
   })
 
-  it('preserves newer translator selection and field edits when a deferred select command fails', async () => {
+  it('preserves newer row edits while rolling back a failed selection', async () => {
     commandSpies.deferNextSelect = true
 
     await selectTranslatorPreset(1)
@@ -746,14 +967,14 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
 
-    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresetId).toBe(0)
     expect(getDatabase().translatorPresets[1]).toMatchObject({
       name: 'Preset B Edited',
       prompt: 'newer prompt B',
       maxResponse: 222,
     })
-    expect(getDatabase().translatorPrompt).toBe('newer prompt B')
-    expect(getDatabase().translatorMaxResponse).toBe(222)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
   })
 
   it('rolls back a rejected optimistic selection while it remains current', async () => {
@@ -776,6 +997,78 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(presetSelect?.value).toBe('0')
     expect(promptTextarea().value).toBe('old prompt A')
     expect(maxResponseInput().value).toBe('100')
+  })
+
+  it('rolls back selection and row edits independently when both commands fail', async () => {
+    commandSpies.deferNextSelect = true
+    await selectTranslatorPreset(1)
+    await editPrompt('rejected prompt B')
+
+    await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
+    commandSpies.failNextUpdate = true
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(currentSelectedPresetId()).toBe('preset-a')
+    expect(getDatabase().translatorPresets[1].prompt).toBe('old prompt B')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
+  })
+
+  it('returns to the confirmed selection when two rapid selections are both rejected', async () => {
+    commandSpies.deferNextSelect = true
+    await selectTranslatorPreset(1)
+    commandSpies.deferNextSelect = true
+    await selectTranslatorPreset(0)
+
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(commandSpies.deferredSelectResults).toHaveLength(2)
+
+    await failDeferredCommand(commandSpies.deferredSelectResults, 'forced first select failure')
+    await failDeferredCommand(commandSpies.deferredSelectResults, 'forced second select failure')
+
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
+  })
+
+  it('returns to the confirmed selection after a rejected delete followed by a rejected selection', async () => {
+    await appendPresetC()
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+    commandSpies.deferNextSelect = true
+    await selectTranslatorPreset(1)
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+    await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+    expect(currentSelectedPresetId()).toBe('preset-a')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+  })
+
+  it('renames the preset named by the open dialog even if selection changes while awaiting input', async () => {
+    let resolveName: (value: string | null) => void = () => {}
+    vi.mocked(alertInput).mockReturnValueOnce(
+      new Promise<string | null>((resolve) => {
+        resolveName = resolve
+      }),
+    )
+
+    toolbarButton(1).click()
+    await tick()
+    await selectTranslatorPreset(1)
+    resolveName('Renamed A')
+    await flushMicrotasks()
+    await tick()
+
+    expect(getDatabase().translatorPresets[0].name).toBe('Renamed A')
+    expect(getDatabase().translatorPresets[1].name).toBe('Preset B')
+
+    await vi.advanceTimersByTimeAsync(250)
+    expect(commandSpies.updateInputs.at(-1)).toMatchObject({
+      presetId: 'preset-a',
+      patch: { name: 'Renamed A' },
+    })
   })
 
   it('does not roll back a selection after a newer language projection', async () => {
@@ -876,7 +1169,7 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(maxResponseInput().value).toBe('100')
   })
 
-  it('restores a failed deletion without replacing a newer fallback edit or selection', async () => {
+  it('restores a failed deletion without replacing a newer fallback edit', async () => {
     commandSpies.deferNextDelete = true
 
     await clickDeletePreset()
@@ -894,9 +1187,189 @@ describe('TranslatorPresetSettings server-backed edits', () => {
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
     expect(getDatabase().translatorPresets[1].name).toBe('Preset B Edited')
-    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
+  })
+
+  it('restores a failed deletion selection even when a fallback row edit also fails', async () => {
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+    await editPrompt('rejected prompt B')
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+    commandSpies.failNextUpdate = true
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(currentSelectedPresetId()).toBe('preset-a')
+    expect(getDatabase().translatorPresets[1].prompt).toBe('old prompt B')
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+  })
+
+  it('restores authoritative projected row values when a pending deletion fails', async () => {
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+
+    expect(
+      withServerResourceApply(() =>
+        applyCollectionsResource(
+          {
+            revision: 101,
+            collections: {
+              translatorPresets: [
+                {
+                  id: 'preset-a',
+                  name: 'Server Preset A',
+                  prompt: 'server prompt A',
+                  maxResponse: 111,
+                },
+                { id: 'preset-b', name: 'Preset B', prompt: 'old prompt B', maxResponse: 200 },
+              ],
+            },
+          },
+          'translatorPresets',
+        ),
+      ),
+    ).toBe(true)
+    await tick()
+    await flushMicrotasks()
+    await tick()
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().translatorPresets[0]).toMatchObject({
+      name: 'Server Preset A',
+      prompt: 'server prompt A',
+      maxResponse: 111,
+    })
+    expect(currentSelectedPresetId()).toBe('preset-a')
+    expect(getDatabase().translatorPrompt).toBe('server prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(111)
+  })
+
+  it('decodes an authoritative selected index against the unfiltered collection during a pending delete', async () => {
+    await appendPresetC()
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+
+    expect(
+      withServerResourceApply(() =>
+        applySettingsGroupResource(
+          {
+            revision: 101,
+            group: 'language',
+            settings: {
+              translatorPresetId: 1,
+              translatorPrompt: 'old prompt B',
+              translatorMaxResponse: 200,
+            },
+          },
+          ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
+        ),
+      ),
+    ).toBe(true)
+    await tick()
+    await flushMicrotasks()
+    await tick()
+
+    expect(currentSelectedPresetId()).toBe('preset-b')
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+    expect(currentSelectedPresetId()).toBe('preset-b')
     expect(getDatabase().translatorPrompt).toBe('old prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(200)
+  })
+
+  it('does not resurrect a pending create when both its create and delete commands fail', async () => {
+    commandSpies.deferNextCreate = true
+    await clickCreatePreset()
+    const createdPresetId = getDatabase().translatorPresets.at(-1)?.id
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+
+    await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(false)
+    expect(currentSelectedPresetId()).toBe('preset-a')
+  })
+
+  it('preserves an authoritative created row when its pending create and delete both fail', async () => {
+    commandSpies.deferNextCreate = true
+    await clickCreatePreset()
+    const createdPresetId = getDatabase().translatorPresets.at(-1)?.id
+    expect(createdPresetId).toBeTruthy()
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Server A', prompt: 'server prompt A', maxResponse: 111 },
+        { id: 'preset-b', name: 'Server B', prompt: 'server prompt B', maxResponse: 222 },
+        {
+          id: createdPresetId!,
+          name: 'Authoritative C',
+          prompt: 'authoritative prompt C',
+          maxResponse: 333,
+        },
+      ],
+      selectedIndex: 2,
+    })
+    expect(getDatabase().translatorPresets.some((preset) => preset.id === createdPresetId)).toBe(false)
+
+    await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.at(-1)).toMatchObject({
+      id: createdPresetId,
+      name: 'Authoritative C',
+      prompt: 'authoritative prompt C',
+      maxResponse: 333,
+    })
+    expect(currentSelectedPresetId()).toBe(createdPresetId)
+    expect(getDatabase().translatorPrompt).toBe('authoritative prompt C')
+  })
+
+  it('restores a created preset when create succeeds but its pending delete fails', async () => {
+    commandSpies.deferNextCreate = true
+    await clickCreatePreset()
+    const createdPresetId = getDatabase().translatorPresets.at(-1)?.id
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+
+    const createResult = commandSpies.deferredCreateResults.shift()
+    expect(createResult).toBeTruthy()
+    createResult!.resolve({ status: 'ok' })
+    await flushMicrotasks()
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual([
+      'preset-a',
+      'preset-b',
+      createdPresetId,
+    ])
+    expect(currentSelectedPresetId()).toBe(createdPresetId)
+  })
+
+  it('restores rapid failed deletions in their original order', async () => {
+    await appendPresetC()
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+    commandSpies.deferNextDelete = true
+    await clickDeletePreset()
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced first delete failure')
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced second delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
+    expect(currentSelectedPresetId()).toBe('preset-a')
   })
 
   it('flushes a pending preset edit when the component is destroyed', async () => {
@@ -934,6 +1407,23 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       prompt: 'dirty prompt A',
       maxResponse: 100,
     })
+    expect(getDatabase().translatorPrompt).toBe('dirty prompt A')
+  })
+
+  it('does not settle a dirty prompt when an unrelated resource apply completes', async () => {
+    await editPrompt('dirty prompt A')
+
+    withServerResourceApply(() => undefined)
+    await tick()
+    await applyTranslatorPresetProjection({
+      presets: [
+        { id: 'preset-a', name: 'Projected A', prompt: 'stale prompt A', maxResponse: 100 },
+        { id: 'preset-b', name: 'Projected B', prompt: 'projected prompt B', maxResponse: 220 },
+      ],
+      selectedIndex: 0,
+    })
+
+    expect(getDatabase().translatorPresets[0].prompt).toBe('dirty prompt A')
     expect(getDatabase().translatorPrompt).toBe('dirty prompt A')
   })
 

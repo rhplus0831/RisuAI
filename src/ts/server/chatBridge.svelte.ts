@@ -5,6 +5,7 @@ import {
   cloneJsonValue,
   dispatchUpdateChatFolderRow,
   dispatchUpdateChatRow,
+  restoreChatFolderRowMetadata,
   restoreChatRowMetadata,
   restoreChatState,
   type ChatFolderRowMetadataSnapshot,
@@ -265,7 +266,10 @@ function runPendingChatPatch(chatId: string, options: ServerCommandTransportOpti
     commandPatch.patch,
     commandPatch.rollback,
     options,
-    rollbackServerBackedChatRowMetadata,
+    (snapshot) => {
+      clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence)
+      rollbackServerBackedChatRowMetadata(snapshot)
+    },
   )
   if (!result) {
     clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence)
@@ -283,7 +287,16 @@ function runPendingFolderPatch(folderId: string, options: ServerCommandTransport
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingFolderPatches.delete(folderId)
   const inFlight = registerInFlightFolderPatch(commandPatch)
-  const result = dispatchUpdateChatFolderRow(commandPatch.folderId, commandPatch.patch, commandPatch.rollback, options)
+  const result = dispatchUpdateChatFolderRow(
+    commandPatch.folderId,
+    commandPatch.patch,
+    commandPatch.rollback,
+    options,
+    (snapshot) => {
+      clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence)
+      rollbackServerBackedChatFolderRowMetadata(snapshot)
+    },
+  )
   if (!result) {
     clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence)
     return
@@ -567,6 +580,18 @@ export function rollbackServerBackedChatRowMetadata(snapshot: ChatRowMetadataSna
   suppressRollbackDispatch = true
   try {
     restoreChatRowMetadata(snapshot)
+    resetActiveChatMetadataBaselines?.()
+  } finally {
+    queueMicrotask(() => {
+      suppressRollbackDispatch = false
+    })
+  }
+}
+
+export function rollbackServerBackedChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
+  suppressRollbackDispatch = true
+  try {
+    restoreChatFolderRowMetadata(snapshot)
     resetActiveChatMetadataBaselines?.()
   } finally {
     queueMicrotask(() => {

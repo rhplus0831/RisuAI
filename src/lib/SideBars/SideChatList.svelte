@@ -51,7 +51,12 @@
     dispatchUpdateChatFolder,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import {
+    rollbackServerBackedChatFolderRowMetadata,
+    rollbackServerBackedChatRowMetadata,
+    syncServerBackedChatMetadataBaselines,
+    watchServerBackedChatMetadata,
+  } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { groupChatsByFolderId } from './chatFolderGrouping'
   import { characterRoutePath, currentRoute, navigate } from 'src/ts/router'
@@ -228,7 +233,7 @@
     const previous = currentChatStateSnapshot()
     if (previousBinding) {
       if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = ''))) return
-      dispatchUpdateChat(chatId, { bindedPersona: '' }, previous)
+      dispatchUpdateChat(chatId, { bindedPersona: '' }, previous, false, rollbackServerBackedChatRowMetadata)
       alertNormal(language.personaUnbindedSuccess)
       return
     }
@@ -247,7 +252,7 @@
       })
     }
     if (!applyDirectOptimisticChatMetadata(chatId, (candidate) => (candidate.bindedPersona = bindedPersona))) return
-    dispatchUpdateChat(chatId, { bindedPersona }, previous)
+    dispatchUpdateChat(chatId, { bindedPersona }, previous, false, rollbackServerBackedChatRowMetadata)
     alertNormal(language.personaBindedSuccess)
   }
 
@@ -566,7 +571,7 @@
                     const folded = !folder.folded
                     if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded)))
                       return
-                    dispatchUpdateChatFolder(folder.id, { folded }, previous)
+                    dispatchUpdateChatFolder(folder.id, { folded }, previous, rollbackServerBackedChatFolderRowMetadata)
                     reloadGuiDisplay()
                   }
                 }}
@@ -609,7 +614,12 @@
                           if (!color) break
                           if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color)))
                             break
-                          dispatchUpdateChatFolder(folder.id, { color }, previous)
+                          dispatchUpdateChatFolder(
+                            folder.id,
+                            { color },
+                            previous,
+                            rollbackServerBackedChatFolderRowMetadata,
+                          )
                           break
                       }
                     }}>

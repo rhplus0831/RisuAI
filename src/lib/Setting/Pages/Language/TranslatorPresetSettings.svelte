@@ -22,16 +22,11 @@
     captureCollectionProjectionEpoch,
     captureSettingsGroupProjectionEpoch,
     hasCollectionProjectionEpochChanged,
-    hasSettingsGroupProjectionEpochChanged,
     markCollectionAcknowledgementTainted,
     markSettingsGroupAcknowledgementTainted,
   } from 'src/ts/server/resourceState.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import {
-    applyAttemptedFieldRollback,
-    applyAttemptedKeyedListRollback,
-    mergeProjectionIntoDirtyDraft,
-  } from 'src/ts/server/staleStateGuards'
+  import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
   import {
     createTranslatorPreset,
     decodeTranslatorPresetFile,
@@ -68,39 +63,42 @@
   }
 
   interface TranslatorPresetCreateAttempt {
+    operationId: number
     attemptedPreset: TranslatorPreset & { id: string }
-    previousSelectedPresetId: string | null
-    attemptedTranslatorPrompt: string
-    attemptedTranslatorMaxResponse: number
+    draftPreset: TranslatorPreset & { id: string }
     collectionProjectionEpoch: number
-    languageSettingsProjectionEpoch: number
   }
 
   interface TranslatorPresetSelectionAttempt {
+    operationId: number
     attemptedPresetId: string
-    previousSelectedPresetId: string | null
-    attemptedTranslatorPrompt: string
-    attemptedTranslatorMaxResponse: number
-    collectionProjectionEpoch: number
-    languageSettingsProjectionEpoch: number
   }
 
   interface TranslatorPresetDeleteAttempt {
+    operationId: number
     deletedPreset: TranslatorPreset & { id: string }
     previousIndex: number
-    previousSelectedPresetId: string
+    previousSiblingPresetId: string | null
+    nextSiblingPresetId: string | null
     attemptedSelectedPreset: TranslatorPreset & { id: string }
-    attemptedTranslatorPrompt: string
-    attemptedTranslatorMaxResponse: number
     collectionProjectionEpoch: number
-    languageSettingsProjectionEpoch: number
   }
+
+  type PendingTranslatorPresetStructuralMutation =
+    | { kind: 'create'; attempt: TranslatorPresetCreateAttempt }
+    | { kind: 'select'; attempt: TranslatorPresetSelectionAttempt }
+    | { kind: 'delete'; attempt: TranslatorPresetDeleteAttempt }
 
   const translatorPresetUpdateDelayMs = 250
   const translatorPresetDirtyFieldNames: readonly TranslatorPresetDirtyField[] = ['name', 'prompt', 'maxResponse']
   const pendingTranslatorPresetUpdates = new Map<string, PendingTranslatorPresetUpdate>()
   const translatorPresetDirtyFieldsById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
+  const translatorPresetRollbackBaselinesById = new Map<string, Map<TranslatorPresetDirtyField, unknown>>()
   const unsettledTranslatorPresetFieldsById = new Map<string, Map<TranslatorPresetDirtyField, number>>()
+  const pendingTranslatorPresetStructuralMutations: PendingTranslatorPresetStructuralMutation[] = []
+  const translatorPresetCreateOutcomesById = new Map<string, 'pending' | 'succeeded' | 'failed'>()
+  let nextTranslatorPresetStructuralOperationId = 1
+  let confirmedTranslatorPresetSelectionId: string | null | undefined
 
   function translatorPresetRecord(preset: TranslatorPreset): Record<string, unknown> {
     return preset as unknown as Record<string, unknown>
@@ -111,6 +109,9 @@
   }
   let translatorPresetUpdateDispatchChain: Promise<ServerCommandResult> = Promise.resolve({ status: 'unavailable' })
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let previousTranslatorPresetCollectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
+  let previousLanguageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
+  let confirmedTranslatorPresetCollection: TranslatorPreset[] | undefined
 
   function cloneJsonValue<T>(value: T): T {
     if (value === undefined) return value
@@ -140,6 +141,156 @@
 
   function currentTranslatorPresetById(presetId: string): TranslatorPreset | null {
     return getDatabase().translatorPresets?.find((preset) => preset.id === presetId) ?? null
+  }
+
+  function currentSelectedTranslatorPresetId(): string | null {
+    return getDatabase().translatorPresets?.[getDatabase().translatorPresetId]?.id ?? null
+  }
+
+  function projectedSelectedTranslatorPresetId(): string | null {
+    const selectedIndex = getDatabase().translatorPresetId
+    if (Number.isInteger(selectedIndex) && selectedIndex >= 0) {
+      const projectedPresetId = confirmedTranslatorPresetCollection?.[selectedIndex]?.id
+      if (projectedPresetId) return projectedPresetId
+    }
+    return currentSelectedTranslatorPresetId()
+  }
+
+  function confirmedSelectedTranslatorPresetId(): string | null {
+    if (confirmedTranslatorPresetSelectionId === undefined) {
+      confirmedTranslatorPresetSelectionId = currentSelectedTranslatorPresetId()
+      confirmedTranslatorPresetCollection = cloneJsonValue(getDatabase().translatorPresets ?? [])
+    }
+    return confirmedTranslatorPresetSelectionId
+  }
+
+  function absorbUnreconciledTranslatorPresetProjectionEpochs(): void {
+    const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
+    if (collectionProjectionEpoch !== previousTranslatorPresetCollectionProjectionEpoch) {
+      previousTranslatorPresetCollectionProjectionEpoch = collectionProjectionEpoch
+      confirmedTranslatorPresetCollection = cloneJsonValue(getDatabase().translatorPresets ?? [])
+    }
+
+    const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
+    if (languageSettingsProjectionEpoch !== previousLanguageSettingsProjectionEpoch) {
+      previousLanguageSettingsProjectionEpoch = languageSettingsProjectionEpoch
+      confirmedTranslatorPresetSelectionId = projectedSelectedTranslatorPresetId()
+    }
+  }
+
+  function settleConfirmedTranslatorPresetCreate(attempt: TranslatorPresetCreateAttempt): void {
+    const presets = cloneJsonValue(confirmedTranslatorPresetCollection ?? getDatabase().translatorPresets ?? [])
+    if (!presets.some((preset) => preset.id === attempt.attemptedPreset.id)) {
+      presets.push(cloneJsonValue(attempt.attemptedPreset))
+    }
+    confirmedTranslatorPresetCollection = presets
+    confirmedTranslatorPresetSelectionId = attempt.attemptedPreset.id
+  }
+
+  function settleConfirmedTranslatorPresetDelete(attempt: TranslatorPresetDeleteAttempt): void {
+    confirmedTranslatorPresetCollection = cloneJsonValue(
+      (confirmedTranslatorPresetCollection ?? getDatabase().translatorPresets ?? []).filter(
+        (preset) => preset.id !== attempt.deletedPreset.id,
+      ),
+    )
+    confirmedTranslatorPresetSelectionId = attempt.attemptedSelectedPreset.id
+  }
+
+  function registerPendingTranslatorPresetStructuralMutation(
+    mutation: PendingTranslatorPresetStructuralMutation,
+  ): void {
+    pendingTranslatorPresetStructuralMutations.push(mutation)
+  }
+
+  function removePendingTranslatorPresetStructuralMutation(operationId: number): void {
+    const index = pendingTranslatorPresetStructuralMutations.findIndex(
+      (mutation) => mutation.attempt.operationId === operationId,
+    )
+    if (index !== -1) pendingTranslatorPresetStructuralMutations.splice(index, 1)
+  }
+
+  function hasPendingTranslatorPresetStructuralMutation(operationId: number): boolean {
+    return pendingTranslatorPresetStructuralMutations.some((mutation) => mutation.attempt.operationId === operationId)
+  }
+
+  function hasPendingTranslatorPresetCreate(presetId: string): boolean {
+    return pendingTranslatorPresetStructuralMutations.some(
+      (mutation) => mutation.kind === 'create' && mutation.attempt.attemptedPreset.id === presetId,
+    )
+  }
+
+  function updatePendingTranslatorPresetCreateDraft(presetId: string, patch: TranslatorPresetSnapshot): void {
+    for (const mutation of pendingTranslatorPresetStructuralMutations) {
+      if (mutation.kind !== 'create' || mutation.attempt.attemptedPreset.id !== presetId) continue
+      mutation.attempt.draftPreset = {
+        ...mutation.attempt.draftPreset,
+        ...cloneJsonValue(patch),
+        id: presetId,
+      }
+    }
+  }
+
+  function cancelPendingTranslatorPresetUpdates(presetId: string): void {
+    const pending = pendingTranslatorPresetUpdates.get(presetId)
+    if (pending?.timer) clearTimeout(pending.timer)
+    pendingTranslatorPresetUpdates.delete(presetId)
+    translatorPresetDirtyFieldsById.delete(presetId)
+    translatorPresetRollbackBaselinesById.delete(presetId)
+  }
+
+  function translatorPresetRollbackInsertionIndex(
+    presets: readonly TranslatorPreset[],
+    attempt: TranslatorPresetDeleteAttempt,
+  ): number {
+    if (attempt.nextSiblingPresetId) {
+      const nextIndex = presets.findIndex((preset) => preset.id === attempt.nextSiblingPresetId)
+      if (nextIndex !== -1) return nextIndex
+    }
+    if (attempt.previousSiblingPresetId) {
+      const previousIndex = presets.findIndex((preset) => preset.id === attempt.previousSiblingPresetId)
+      if (previousIndex !== -1) return previousIndex + 1
+    }
+    return Math.min(Math.max(attempt.previousIndex, 0), presets.length)
+  }
+
+  function reassertPendingTranslatorPresetStructuralMutations(): void {
+    if (pendingTranslatorPresetStructuralMutations.length === 0) return
+
+    withTrustedResourceWrite(() => {
+      const presets = cloneJsonValue(getDatabase().translatorPresets ?? [])
+      let selectedPresetId = currentSelectedTranslatorPresetId()
+
+      for (const mutation of pendingTranslatorPresetStructuralMutations) {
+        if (mutation.kind === 'create') {
+          const presetId = mutation.attempt.attemptedPreset.id
+          if (!presets.some((preset) => preset.id === presetId)) {
+            presets.push(cloneJsonValue(mutation.attempt.draftPreset))
+          }
+          selectedPresetId = presetId
+          continue
+        }
+
+        if (mutation.kind === 'select') {
+          if (presets.some((preset) => preset.id === mutation.attempt.attemptedPresetId)) {
+            selectedPresetId = mutation.attempt.attemptedPresetId
+          }
+          continue
+        }
+
+        const deletedIndex = presets.findIndex((preset) => preset.id === mutation.attempt.deletedPreset.id)
+        if (deletedIndex !== -1) presets.splice(deletedIndex, 1)
+        if (presets.some((preset) => preset.id === mutation.attempt.attemptedSelectedPreset.id)) {
+          selectedPresetId = mutation.attempt.attemptedSelectedPreset.id
+        } else if (selectedPresetId === mutation.attempt.deletedPreset.id) {
+          selectedPresetId = presets[0]?.id ?? null
+        }
+      }
+
+      getDatabase().translatorPresets = presets
+      const selectedIndex = selectedPresetId ? presets.findIndex((preset) => preset.id === selectedPresetId) : -1
+      getDatabase().translatorPresetId = selectedIndex === -1 ? 0 : selectedIndex
+      syncCurrentTranslatorPreset()
+    })
   }
 
   function isTranslatorPresetDirtyField(key: string): key is TranslatorPresetDirtyField {
@@ -203,16 +354,19 @@
   ): void {
     const dirtyFields = translatorPresetDirtyFieldsById.get(presetId)
     if (!dirtyFields) return
+    const rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
 
     for (const field of fields) {
       if (snapshotJson(dirtyFields.get(field)) === snapshotJson(values[field])) {
         dirtyFields.delete(field)
+        rollbackBaselines?.delete(field)
       }
     }
 
     if (dirtyFields.size === 0) {
       translatorPresetDirtyFieldsById.delete(presetId)
     }
+    if (rollbackBaselines?.size === 0) translatorPresetRollbackBaselinesById.delete(presetId)
   }
 
   function translatorPresetDirtyRollbackFields(
@@ -229,6 +383,29 @@
     )
   }
 
+  function advanceTranslatorPresetRollbackBaselines(
+    presetId: string,
+    attempted: TranslatorPresetSnapshot,
+    fields: readonly TranslatorPresetDirtyField[],
+  ): void {
+    const dirtyFields = translatorPresetDirtyFieldsById.get(presetId)
+    let rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
+
+    for (const field of fields) {
+      if (!dirtyFields?.has(field)) {
+        rollbackBaselines?.delete(field)
+        continue
+      }
+      if (!rollbackBaselines) {
+        rollbackBaselines = new Map()
+        translatorPresetRollbackBaselinesById.set(presetId, rollbackBaselines)
+      }
+      rollbackBaselines.set(field, cloneJsonValue(attempted[field]))
+    }
+
+    if (rollbackBaselines?.size === 0) translatorPresetRollbackBaselinesById.delete(presetId)
+  }
+
   function projectionMatchesTranslatorPresetDirtyValue(
     preset: TranslatorPreset,
     presetIndex: number,
@@ -243,15 +420,26 @@
   }
 
   function clearTranslatorPresetDirtyFieldsMatchingProjection(
+    presetId: string,
     preset: TranslatorPreset,
     presetIndex: number,
     dirtyFields: Map<TranslatorPresetDirtyField, unknown>,
   ): void {
+    let rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
     for (const [field, value] of Array.from(dirtyFields.entries())) {
       if (projectionMatchesTranslatorPresetDirtyValue(preset, presetIndex, field, value)) {
         dirtyFields.delete(field)
+        rollbackBaselines?.delete(field)
+        continue
       }
+
+      if (!rollbackBaselines) {
+        rollbackBaselines = new Map()
+        translatorPresetRollbackBaselinesById.set(presetId, rollbackBaselines)
+      }
+      rollbackBaselines.set(field, cloneJsonValue(preset[field]))
     }
+    if (rollbackBaselines?.size === 0) translatorPresetRollbackBaselinesById.delete(presetId)
   }
 
   function reassertDirtyTranslatorPresetFields(
@@ -265,6 +453,7 @@
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) {
         translatorPresetDirtyFieldsById.delete(presetId)
+        translatorPresetRollbackBaselinesById.delete(presetId)
         return
       }
 
@@ -289,23 +478,31 @@
     })
   }
 
-  function reconcileTranslatorPresetProjectionEpoch(): void {
+  function reconcileTranslatorPresetProjectionEpoch(authoritativePresetIds: ReadonlySet<string>): void {
     if (translatorPresetDirtyFieldsById.size === 0) return
 
     const presets = getDatabase().translatorPresets ?? []
     for (const [presetId, dirtyFields] of Array.from(translatorPresetDirtyFieldsById.entries())) {
+      if (!authoritativePresetIds.has(presetId) && hasPendingTranslatorPresetCreate(presetId)) continue
       const presetIndex = presets.findIndex((preset) => preset.id === presetId)
       if (presetIndex === -1) {
         translatorPresetDirtyFieldsById.delete(presetId)
+        translatorPresetRollbackBaselinesById.delete(presetId)
         continue
       }
 
-      clearTranslatorPresetDirtyFieldsMatchingProjection(presets[presetIndex], presetIndex, dirtyFields)
+      clearTranslatorPresetDirtyFieldsMatchingProjection(presetId, presets[presetIndex], presetIndex, dirtyFields)
       if (dirtyFields.size === 0) {
         translatorPresetDirtyFieldsById.delete(presetId)
         continue
       }
 
+      reassertDirtyTranslatorPresetFields(presetId, dirtyFields)
+    }
+  }
+
+  function reassertAllDirtyTranslatorPresetFields(): void {
+    for (const [presetId, dirtyFields] of translatorPresetDirtyFieldsById) {
       reassertDirtyTranslatorPresetFields(presetId, dirtyFields)
     }
   }
@@ -322,6 +519,11 @@
 
     const rollbackFields = translatorPresetDirtyRollbackFields(presetId, attempted, patch)
     if (rollbackFields.length === 0) return
+    const rollbackPrevious = { ...previous } as Record<string, unknown>
+    const rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
+    for (const field of rollbackFields) {
+      if (rollbackBaselines?.has(field)) rollbackPrevious[field] = cloneJsonValue(rollbackBaselines.get(field))
+    }
 
     withTrustedResourceWrite(() => {
       const presetIndex = getDatabase().translatorPresets.findIndex((preset) => preset.id === presetId)
@@ -331,7 +533,7 @@
       const nextPreset = cloneJsonValue(nextPresets[presetIndex]) as unknown as Record<string, unknown>
       const rolledBackFields = applyAttemptedFieldRollback({
         target: nextPreset,
-        previous,
+        previous: rollbackPrevious,
         attempted,
         keys: rollbackFields,
       }) as TranslatorPresetDirtyField[]
@@ -373,6 +575,7 @@
       const nextPresets = [...presets]
       nextPresets[presetIndex] = nextPreset
       getDatabase().translatorPresets = nextPresets
+      updatePendingTranslatorPresetCreateDraft(presetId, patch)
 
       if (getDatabase().translatorPresetId === presetIndex) {
         syncCurrentTranslatorPreset()
@@ -433,9 +636,9 @@
   function runTranslatorPresetCommand<T extends Record<string, unknown>>(
     command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
     rollback?: () => void,
-  ): void {
-    if (!canUseServerCommands()) return
-    void runServerCommand({ command, rollback })
+  ): Promise<ServerCommandResult<T>> {
+    if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
+    return runServerCommand({ command, rollback })
   }
 
   function applyOptimisticTranslatorPresetCreate(preset: TranslatorPreset): TranslatorPresetCreateAttempt | null {
@@ -443,14 +646,13 @@
     const presetId = attemptedPreset.id
     if (!presetId || presetId.trim().length === 0) return null
     const attemptedPresetWithId = attemptedPreset as TranslatorPreset & { id: string }
+    confirmedSelectedTranslatorPresetId()
 
     const attempt: TranslatorPresetCreateAttempt = {
+      operationId: nextTranslatorPresetStructuralOperationId++,
       attemptedPreset: attemptedPresetWithId,
-      previousSelectedPresetId: selectedTranslatorPresetId(),
-      attemptedTranslatorPrompt: attemptedPresetWithId.prompt,
-      attemptedTranslatorMaxResponse: attemptedPresetWithId.maxResponse,
+      draftPreset: cloneJsonValue(attemptedPresetWithId),
       collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
-      languageSettingsProjectionEpoch: captureSettingsGroupProjectionEpoch('language'),
     }
     let applied = false
 
@@ -465,60 +667,39 @@
       applied = true
     })
 
+    if (applied) {
+      translatorPresetCreateOutcomesById.set(presetId, 'pending')
+      registerPendingTranslatorPresetStructuralMutation({ kind: 'create', attempt })
+    }
     return applied ? attempt : null
   }
 
   function rollbackOptimisticTranslatorPresetCreate(attempt: TranslatorPresetCreateAttempt): void {
+    absorbUnreconciledTranslatorPresetProjectionEpochs()
+    removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+    translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'failed')
+    cancelPendingTranslatorPresetUpdates(attempt.attemptedPreset.id)
     markCollectionAcknowledgementTainted('translatorPresets')
     markSettingsGroupAcknowledgementTainted('language')
-
-    if (hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch)) return
-
-    const languageProjectionChanged = hasSettingsGroupProjectionEpochChanged(
-      'language',
-      attempt.languageSettingsProjectionEpoch,
-    )
 
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const selectedPresetId = presets[getDatabase().translatorPresetId]?.id ?? null
       const selectedAttemptedPreset = selectedPresetId === attempt.attemptedPreset.id
-      const selectedProjectionMatchesAttempt =
-        getDatabase().translatorPrompt === attempt.attemptedTranslatorPrompt &&
-        getDatabase().translatorMaxResponse === attempt.attemptedTranslatorMaxResponse
-      const previousSelectedPresetIndex = attempt.previousSelectedPresetId
-        ? presets.findIndex((preset) => preset.id === attempt.previousSelectedPresetId)
-        : -1
-
-      if (
-        selectedAttemptedPreset &&
-        (languageProjectionChanged || !selectedProjectionMatchesAttempt || previousSelectedPresetIndex === -1)
-      ) {
-        return
-      }
-
-      const nextPresets = [...presets]
-      const rolledBack = applyAttemptedKeyedListRollback<TranslatorPreset, string>({
-        list: nextPresets,
-        entries: [
-          {
-            key: attempt.attemptedPreset.id,
-            previous: null,
-            attempted: attempt.attemptedPreset,
-          },
-        ],
-        getKey: (translatorPreset) => translatorPreset?.id,
-      })
-      if (rolledBack.length === 0) return
-
+      const preserveAuthoritativePreset =
+        hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch) &&
+        (confirmedTranslatorPresetCollection?.some((preset) => preset.id === attempt.attemptedPreset.id) ?? false)
+      const nextPresets = preserveAuthoritativePreset
+        ? [...presets]
+        : presets.filter((preset) => preset.id !== attempt.attemptedPreset.id)
       getDatabase().translatorPresets = nextPresets
 
       if (selectedAttemptedPreset) {
-        const restoreSelectedPresetIndex = nextPresets.findIndex(
-          (translatorPreset) => translatorPreset.id === attempt.previousSelectedPresetId,
-        )
-        if (restoreSelectedPresetIndex === -1) return
-        getDatabase().translatorPresetId = restoreSelectedPresetIndex
+        const confirmedPresetId = confirmedSelectedTranslatorPresetId()
+        const confirmedIndex = confirmedPresetId
+          ? nextPresets.findIndex((translatorPreset) => translatorPreset.id === confirmedPresetId)
+          : -1
+        getDatabase().translatorPresetId = confirmedIndex === -1 ? 0 : confirmedIndex
         syncCurrentTranslatorPreset()
         return
       }
@@ -532,10 +713,14 @@
         }
       }
     })
+    reassertPendingTranslatorPresetStructuralMutations()
   }
 
-  function dispatchCreateTranslatorPreset(preset: TranslatorPreset, rollback?: () => void): void {
-    runTranslatorPresetCommand(
+  function dispatchCreateTranslatorPreset(
+    preset: TranslatorPreset,
+    rollback?: () => void,
+  ): Promise<ServerCommandResult> {
+    return runTranslatorPresetCommand(
       (baseRevision) =>
         createTranslatorPresetCommand({
           baseRevision,
@@ -549,22 +734,31 @@
   function createTranslatorPresetOptimistically(preset: TranslatorPreset): void {
     const attempt = applyOptimisticTranslatorPresetCreate(preset)
     if (!attempt) return
-    dispatchCreateTranslatorPreset(preset, () => rollbackOptimisticTranslatorPresetCreate(attempt))
+    void dispatchCreateTranslatorPreset(preset, () => rollbackOptimisticTranslatorPresetCreate(attempt)).then(
+      (result) => {
+        if (result.status !== 'ok') {
+          if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+            rollbackOptimisticTranslatorPresetCreate(attempt)
+          }
+          return
+        }
+        removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+        translatorPresetCreateOutcomesById.set(attempt.attemptedPreset.id, 'succeeded')
+        settleConfirmedTranslatorPresetCreate(attempt)
+      },
+    )
   }
 
   function applyOptimisticTranslatorPresetSelection(presetId: string): TranslatorPresetSelectionAttempt | null {
     const presets = getDatabase().translatorPresets ?? []
     const presetIndex = presets.findIndex((preset) => preset.id === presetId)
     if (presetIndex === -1) return null
+    confirmedSelectedTranslatorPresetId()
 
     const attemptedPreset = presets[presetIndex]
     const attempt: TranslatorPresetSelectionAttempt = {
+      operationId: nextTranslatorPresetStructuralOperationId++,
       attemptedPresetId: presetId,
-      previousSelectedPresetId: presets[getDatabase().translatorPresetId]?.id ?? null,
-      attemptedTranslatorPrompt: attemptedPreset.prompt,
-      attemptedTranslatorMaxResponse: attemptedPreset.maxResponse,
-      collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
-      languageSettingsProjectionEpoch: captureSettingsGroupProjectionEpoch('language'),
     }
     let applied = false
 
@@ -577,43 +771,35 @@
       applied = true
     })
 
+    if (applied) registerPendingTranslatorPresetStructuralMutation({ kind: 'select', attempt })
     return applied ? attempt : null
   }
 
   function rollbackOptimisticTranslatorPresetSelection(attempt: TranslatorPresetSelectionAttempt): void {
+    absorbUnreconciledTranslatorPresetProjectionEpochs()
+    removePendingTranslatorPresetStructuralMutation(attempt.operationId)
     markSettingsGroupAcknowledgementTainted('language')
-
-    if (
-      hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch) ||
-      hasSettingsGroupProjectionEpochChanged('language', attempt.languageSettingsProjectionEpoch)
-    ) {
-      return
-    }
 
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const selectedPresetId = presets[getDatabase().translatorPresetId]?.id ?? null
       if (selectedPresetId !== attempt.attemptedPresetId) return
-      if (
-        snapshotJson(getDatabase().translatorPrompt) !== snapshotJson(attempt.attemptedTranslatorPrompt) ||
-        snapshotJson(getDatabase().translatorMaxResponse) !== snapshotJson(attempt.attemptedTranslatorMaxResponse)
-      ) {
-        return
-      }
 
-      if (attempt.previousSelectedPresetId === attempt.attemptedPresetId) return
-      const previousSelectedPresetIndex = attempt.previousSelectedPresetId
-        ? presets.findIndex((preset) => preset.id === attempt.previousSelectedPresetId)
+      const confirmedPresetId = confirmedSelectedTranslatorPresetId()
+      if (confirmedPresetId === attempt.attemptedPresetId) return
+      const confirmedSelectedPresetIndex = confirmedPresetId
+        ? presets.findIndex((preset) => preset.id === confirmedPresetId)
         : -1
-      if (previousSelectedPresetIndex === -1) return
+      if (confirmedSelectedPresetIndex === -1) return
 
-      getDatabase().translatorPresetId = previousSelectedPresetIndex
+      getDatabase().translatorPresetId = confirmedSelectedPresetIndex
       syncCurrentTranslatorPreset()
     })
+    reassertPendingTranslatorPresetStructuralMutations()
   }
 
-  function dispatchSelectTranslatorPreset(presetId: string, rollback?: () => void): void {
-    runTranslatorPresetCommand(
+  function dispatchSelectTranslatorPreset(presetId: string, rollback?: () => void): Promise<ServerCommandResult> {
+    return runTranslatorPresetCommand(
       (baseRevision) =>
         selectTranslatorPresetCommand({
           baseRevision,
@@ -624,21 +810,30 @@
   }
 
   function dispatchOptimisticTranslatorPresetSelection(attempt: TranslatorPresetSelectionAttempt): void {
-    dispatchSelectTranslatorPreset(attempt.attemptedPresetId, () =>
+    void dispatchSelectTranslatorPreset(attempt.attemptedPresetId, () =>
       rollbackOptimisticTranslatorPresetSelection(attempt),
-    )
+    ).then((result) => {
+      if (result.status !== 'ok') {
+        if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          rollbackOptimisticTranslatorPresetSelection(attempt)
+        }
+        return
+      }
+      removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+      confirmedTranslatorPresetSelectionId = attempt.attemptedPresetId
+    })
   }
 
   function applyOptimisticTranslatorPresetDelete(presetId: string): TranslatorPresetDeleteAttempt | null {
     const collectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
-    const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
+    confirmedSelectedTranslatorPresetId()
     let attempt: TranslatorPresetDeleteAttempt | null = null
 
     withTrustedResourceWrite(() => {
       const presets = getDatabase().translatorPresets ?? []
       const previousIndex = presets.findIndex((preset) => preset.id === presetId)
-      const previousSelectedPresetId = presets[getDatabase().translatorPresetId]?.id
-      if (previousIndex === -1 || presets.length <= 1 || previousSelectedPresetId !== presetId) return
+      const selectedPresetId = presets[getDatabase().translatorPresetId]?.id
+      if (previousIndex === -1 || presets.length <= 1 || selectedPresetId !== presetId) return
 
       const deletedPreset = cloneJsonValue(presets[previousIndex])
       if (!deletedPreset.id) return
@@ -651,28 +846,38 @@
       getDatabase().translatorPresetId = 0
       syncCurrentTranslatorPreset()
       attempt = {
+        operationId: nextTranslatorPresetStructuralOperationId++,
         deletedPreset: deletedPreset as TranslatorPreset & { id: string },
         previousIndex,
-        previousSelectedPresetId,
+        previousSiblingPresetId: presets[previousIndex - 1]?.id ?? null,
+        nextSiblingPresetId: presets[previousIndex + 1]?.id ?? null,
         attemptedSelectedPreset: cloneJsonValue(attemptedSelectedPreset) as TranslatorPreset & { id: string },
-        attemptedTranslatorPrompt: getDatabase().translatorPrompt,
-        attemptedTranslatorMaxResponse: getDatabase().translatorMaxResponse,
         collectionProjectionEpoch,
-        languageSettingsProjectionEpoch,
       }
     })
 
+    if (attempt) registerPendingTranslatorPresetStructuralMutation({ kind: 'delete', attempt })
     return attempt
   }
 
   function rollbackOptimisticTranslatorPresetDelete(attempt: TranslatorPresetDeleteAttempt): void {
+    absorbUnreconciledTranslatorPresetProjectionEpochs()
+    removePendingTranslatorPresetStructuralMutation(attempt.operationId)
     markCollectionAcknowledgementTainted('translatorPresets')
     markSettingsGroupAcknowledgementTainted('language')
 
     if (
-      hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch) ||
-      hasSettingsGroupProjectionEpochChanged('language', attempt.languageSettingsProjectionEpoch)
+      translatorPresetCreateOutcomesById.get(attempt.deletedPreset.id) === 'failed' &&
+      !confirmedTranslatorPresetCollection?.some((preset) => preset.id === attempt.deletedPreset.id)
     ) {
+      reassertPendingTranslatorPresetStructuralMutations()
+      return
+    }
+    if (
+      hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch) &&
+      !confirmedTranslatorPresetCollection?.some((preset) => preset.id === attempt.deletedPreset.id)
+    ) {
+      reassertPendingTranslatorPresetStructuralMutations()
       return
     }
 
@@ -680,35 +885,30 @@
       const presets = getDatabase().translatorPresets ?? []
       const selectedPreset = presets[getDatabase().translatorPresetId]
       const selectedPresetId = selectedPreset?.id ?? null
-      const selectedProjectionMatchesAttempt =
-        selectedPresetId === attempt.attemptedSelectedPreset.id &&
-        snapshotJson(selectedPreset) === snapshotJson(attempt.attemptedSelectedPreset) &&
-        snapshotJson(getDatabase().translatorPrompt) === snapshotJson(attempt.attemptedTranslatorPrompt) &&
-        snapshotJson(getDatabase().translatorMaxResponse) === snapshotJson(attempt.attemptedTranslatorMaxResponse)
-      if (!selectedProjectionMatchesAttempt && !selectedPresetId) return
+      const selectedProjectionMatchesAttempt = selectedPresetId === attempt.attemptedSelectedPreset.id
 
       const nextPresets = [...presets]
-      const rolledBack = applyAttemptedKeyedListRollback<TranslatorPreset, string>({
-        list: nextPresets,
-        entries: [
-          {
-            key: attempt.deletedPreset.id,
-            previous: attempt.deletedPreset,
-            attempted: null,
-            previousIndex: attempt.previousIndex,
-          },
-        ],
-        getKey: (preset) => preset?.id,
-      })
-      if (rolledBack.length === 0) return
+      const authoritativePreset = hasCollectionProjectionEpochChanged(
+        'translatorPresets',
+        attempt.collectionProjectionEpoch,
+      )
+        ? confirmedTranslatorPresetCollection?.find((preset) => preset.id === attempt.deletedPreset.id)
+        : undefined
+      if (!nextPresets.some((preset) => preset.id === attempt.deletedPreset.id)) {
+        nextPresets.splice(
+          translatorPresetRollbackInsertionIndex(nextPresets, attempt),
+          0,
+          cloneJsonValue(authoritativePreset ?? attempt.deletedPreset),
+        )
+      }
 
       getDatabase().translatorPresets = nextPresets
       if (selectedProjectionMatchesAttempt) {
-        const previousSelectedPresetIndex = nextPresets.findIndex(
-          (preset) => preset.id === attempt.previousSelectedPresetId,
-        )
-        if (previousSelectedPresetIndex === -1) return
-        getDatabase().translatorPresetId = previousSelectedPresetIndex
+        const confirmedPresetId = confirmedSelectedTranslatorPresetId()
+        const confirmedSelectedPresetIndex = confirmedPresetId
+          ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
+          : -1
+        getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
         syncCurrentTranslatorPreset()
         return
       }
@@ -716,16 +916,25 @@
       const preservedSelectedPresetIndex = nextPresets.findIndex((preset) => preset.id === selectedPresetId)
       if (preservedSelectedPresetIndex !== -1) {
         getDatabase().translatorPresetId = preservedSelectedPresetIndex
+        return
       }
+
+      const confirmedPresetId = confirmedSelectedTranslatorPresetId()
+      const confirmedSelectedPresetIndex = confirmedPresetId
+        ? nextPresets.findIndex((preset) => preset.id === confirmedPresetId)
+        : -1
+      getDatabase().translatorPresetId = confirmedSelectedPresetIndex === -1 ? 0 : confirmedSelectedPresetIndex
+      syncCurrentTranslatorPreset()
     })
+    reassertPendingTranslatorPresetStructuralMutations()
   }
 
   function dispatchDeleteTranslatorPreset(
     presetId: string,
     selectPresetId: string | undefined,
     rollback?: () => void,
-  ): void {
-    runTranslatorPresetCommand(
+  ): Promise<ServerCommandResult> {
+    return runTranslatorPresetCommand(
       (baseRevision) =>
         deleteTranslatorPresetCommand({
           baseRevision,
@@ -739,9 +948,18 @@
   function deleteTranslatorPresetOptimistically(presetId: string): void {
     const attempt = applyOptimisticTranslatorPresetDelete(presetId)
     if (!attempt) return
-    dispatchDeleteTranslatorPreset(presetId, attempt.attemptedSelectedPreset.id, () =>
+    void dispatchDeleteTranslatorPreset(presetId, attempt.attemptedSelectedPreset.id, () =>
       rollbackOptimisticTranslatorPresetDelete(attempt),
-    )
+    ).then((result) => {
+      if (result.status !== 'ok') {
+        if (hasPendingTranslatorPresetStructuralMutation(attempt.operationId)) {
+          rollbackOptimisticTranslatorPresetDelete(attempt)
+        }
+        return
+      }
+      removePendingTranslatorPresetStructuralMutation(attempt.operationId)
+      settleConfirmedTranslatorPresetDelete(attempt)
+    })
   }
 
   function dispatchPendingTranslatorPresetUpdate(pending: PendingTranslatorPresetUpdate): Promise<ServerCommandResult> {
@@ -759,6 +977,13 @@
     const optimisticAcknowledgement = translatorPresetPatchOptimisticAcknowledgement(pending)
     markTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
 
+    let rollbackRan = false
+    const rollback = () => {
+      rollbackRan = true
+      markCollectionAcknowledgementTainted('translatorPresets')
+      markSettingsGroupAcknowledgementTainted('language')
+      restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted, commandPatch)
+    }
     const dispatch = () =>
       runServerCommand({
         command: (baseRevision) =>
@@ -768,23 +993,30 @@
             patch: commandPatch,
             optimisticAcknowledgement,
           }),
-        rollback: () => {
-          markCollectionAcknowledgementTainted('translatorPresets')
-          markSettingsGroupAcknowledgementTainted('language')
-          restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted, commandPatch)
-        },
+        rollback,
       })
+    const dispatchAndSettle = async () => {
+      const result = await dispatch()
+      if (result.status === 'ok') {
+        advanceTranslatorPresetRollbackBaselines(commandPresetId, commandAttempted, commandFields)
+      } else if (!rollbackRan) {
+        rollback()
+      }
+      return result
+    }
 
-    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain.then(dispatch, dispatch).finally(() => {
-      clearTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
-    })
+    translatorPresetUpdateDispatchChain = translatorPresetUpdateDispatchChain
+      .then(dispatchAndSettle, dispatchAndSettle)
+      .finally(() => {
+        clearTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
+      })
     return translatorPresetUpdateDispatchChain
   }
 
   async function flushPendingTranslatorPresetUpdates(): Promise<void> {
     if (!canUseServerCommands()) return
     for (const pending of Array.from(pendingTranslatorPresetUpdates.values())) {
-      await dispatchPendingTranslatorPresetUpdate(pending)
+      void dispatchPendingTranslatorPresetUpdate(pending)
     }
     await translatorPresetUpdateDispatchChain
   }
@@ -810,8 +1042,16 @@
     const pendingPatch = pending.patch as Record<string, unknown>
     const pendingPrevious = pending.previous as Record<string, unknown>
     const pendingAttempted = pending.attempted as Record<string, unknown>
+    let rollbackBaselines = translatorPresetRollbackBaselinesById.get(presetId)
 
     for (const field of translatorPresetPatchDirtyFields(patch)) {
+      if (!rollbackBaselines) {
+        rollbackBaselines = new Map()
+        translatorPresetRollbackBaselinesById.set(presetId, rollbackBaselines)
+      }
+      if (!rollbackBaselines.has(field)) {
+        rollbackBaselines.set(field, cloneJsonValue(previousPreset?.[field]))
+      }
       if (!(field in pendingPrevious)) {
         pendingPrevious[field] = cloneJsonValue(previousPreset?.[field])
       }
@@ -849,7 +1089,30 @@
     if (resourceApplyEpoch === previousResourceApplyEpoch) return
 
     previousResourceApplyEpoch = resourceApplyEpoch
-    untrack(() => reconcileTranslatorPresetProjectionEpoch())
+    const translatorPresetCollectionProjectionEpoch = captureCollectionProjectionEpoch('translatorPresets')
+    const collectionProjectionChanged =
+      translatorPresetCollectionProjectionEpoch !== previousTranslatorPresetCollectionProjectionEpoch
+    previousTranslatorPresetCollectionProjectionEpoch = translatorPresetCollectionProjectionEpoch
+    const languageSettingsProjectionEpoch = captureSettingsGroupProjectionEpoch('language')
+    const languageProjectionChanged = languageSettingsProjectionEpoch !== previousLanguageSettingsProjectionEpoch
+    previousLanguageSettingsProjectionEpoch = languageSettingsProjectionEpoch
+    untrack(() => {
+      if (!collectionProjectionChanged && !languageProjectionChanged) return
+      const authoritativePresetIds = collectionProjectionChanged
+        ? new Set((getDatabase().translatorPresets ?? []).flatMap((preset) => (preset.id ? [preset.id] : [])))
+        : null
+      if (collectionProjectionChanged) {
+        confirmedTranslatorPresetCollection = cloneJsonValue(getDatabase().translatorPresets ?? [])
+      }
+      if (languageProjectionChanged) {
+        confirmedTranslatorPresetSelectionId = projectedSelectedTranslatorPresetId()
+      } else if (pendingTranslatorPresetStructuralMutations.length === 0) {
+        confirmedTranslatorPresetSelectionId = currentSelectedTranslatorPresetId()
+      }
+      reassertPendingTranslatorPresetStructuralMutations()
+      if (authoritativePresetIds) reconcileTranslatorPresetProjectionEpoch(authoritativePresetIds)
+      else reassertAllDirtyTranslatorPresetFields()
+    })
   })
 
   onDestroy(() => {
@@ -917,21 +1180,26 @@
 
       const id = getDatabase().translatorPresetId
       const preset = presets[id]
+      const presetId = preset?.id
+      if (!presetId) return
       const newName = await alertInput(`Enter new name for ${preset.name}`, [], preset.name)
 
       if (!newName || newName.trim().length === 0) return
 
+      const targetPreset = currentTranslatorPresetById(presetId)
+      if (!targetPreset) return
       const previous = currentTranslatorPresetStateSnapshot()
-      const presetId = selectedTranslatorPresetId()
       if (!canUseServerCommands()) {
-        preset.name = newName
-        getDatabase().translatorPresets = presets
-        syncCurrentTranslatorPreset()
-      } else if (presetId) {
+        targetPreset.name = newName
+        getDatabase().translatorPresets = [...getDatabase().translatorPresets]
+        if (getDatabase().translatorPresets[getDatabase().translatorPresetId]?.id === presetId) {
+          syncCurrentTranslatorPreset()
+        }
+      } else {
         markTranslatorPresetDirtyFields(presetId, { name: newName })
         applyTranslatorPresetPatchToDatabase(presetId, { name: newName })
       }
-      if (presetId) queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
+      queueTranslatorPresetUpdate(presetId, { name: newName }, previous)
     }}>
     <PencilIcon size={24} />
   </button>

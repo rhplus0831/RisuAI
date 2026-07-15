@@ -14,7 +14,10 @@
     dispatchUpdateChatScoped,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
+  import {
+    rollbackServerBackedChatRowMetadata,
+    syncServerBackedChatMetadataBaselines,
+  } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -121,20 +124,28 @@
         if (!chat.id) return
         const previous = currentChatScopedSnapshot()
         if (previous.chatId !== chat.id || !previous.chat) return
+        if (!(previous.chat.bookmarks ?? []).includes(chatId)) return
         const nextBookmarkNames = {
           ...(previous.chat.bookmarkNames ?? {}),
           [chatId]: newName,
         }
         if (!applyOptimisticBookmarkMetadata(chat.id, { bookmarkNames: nextBookmarkNames })) return
-        dispatchUpdateChatScoped(chat.id, { bookmarkNames: nextBookmarkNames }, previous)
+        dispatchUpdateChatScoped(
+          chat.id,
+          { bookmarkNames: nextBookmarkNames },
+          previous,
+          rollbackServerBackedChatRowMetadata,
+        )
         return
       }
 
+      const liveChat = chat.id ? chara.chats.find((candidate) => candidate.id === chat.id) : chara.chats[chara.chatPage]
+      if (!liveChat || !(liveChat.bookmarks ?? []).includes(chatId)) return
       const nextBookmarkNames = {
-        ...(chat.bookmarkNames ?? {}),
+        ...(liveChat.bookmarkNames ?? {}),
         [chatId]: newName,
       }
-      chat.bookmarkNames = nextBookmarkNames
+      liveChat.bookmarkNames = nextBookmarkNames
     }
   }
 
@@ -152,7 +163,12 @@
         delete nextBookmarkNames[chatId]
         if (!applyOptimisticBookmarkMetadata(chat.id, { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames }))
           return
-        dispatchUpdateChatScoped(chat.id, { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames }, previous)
+        dispatchUpdateChatScoped(
+          chat.id,
+          { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
+          previous,
+          rollbackServerBackedChatRowMetadata,
+        )
         return
       }
 
@@ -215,7 +231,7 @@
     {:else}
       <div class="flex flex-col gap-2">
         {#each bookmarkedMessages as msg (msg.chatId)}
-          <div class="border border-darkborderc rounded-lg">
+          <div data-risu-bookmark-id={msg.chatId} class="border border-darkborderc rounded-lg">
             <div
               class="flex items-center p-3 cursor-pointer hover:bg-selected transition-colors"
               onclick={() => toggleExpand(msg.chatId)}
@@ -235,6 +251,7 @@
                   <ArrowRightIcon size={20} />
                 </button>
                 <button
+                  data-risu-bookmark-action="rename"
                   class="text-textcolor2 hover:text-green-500"
                   onclick={(e) => {
                     e.stopPropagation()
@@ -243,6 +260,7 @@
                   <PencilIcon size={16} />
                 </button>
                 <button
+                  data-risu-bookmark-action="remove"
                   class="text-textcolor2 hover:text-red-500"
                   onclick={(e) => {
                     e.stopPropagation()

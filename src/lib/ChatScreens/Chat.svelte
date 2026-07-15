@@ -101,7 +101,10 @@
     updateMessageCommand,
   } from 'src/ts/server/commands'
   import { activeMessageTranslations } from 'src/ts/server/messageTranslationJobs'
-  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
+  import {
+    rollbackServerBackedChatRowMetadata,
+    syncServerBackedChatMetadataBaselines,
+  } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     captureChatButtonTriggerFreshness,
@@ -1146,6 +1149,7 @@
           bookmarkNames,
         },
         previous,
+        rollbackServerBackedChatRowMetadata,
       )
     }
   }

@@ -19,12 +19,18 @@
     dispatchUpdateChat,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import {
+    rollbackServerBackedChatRowMetadata,
+    syncServerBackedChatMetadataBaselines,
+    watchServerBackedChatMetadata,
+  } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
 
   let editMode = $state(false)
   let chatNameDrafts = $state({})
+  let chatNameBaselines = $state({})
+  let chatNameDraftOwner = $state(undefined)
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
 
@@ -34,13 +40,26 @@
   })
 
   $effect(() => {
+    const previousDrafts = untrack(() => chatNameDrafts)
+    const previousBaselines = untrack(() => chatNameBaselines)
+    const previousOwner = untrack(() => chatNameDraftOwner)
+    const character = getDatabase().characters[$selectedCharID]
+    const owner = character?.chaId ?? `index:${$selectedCharID}`
     const drafts = {}
-    for (const chat of getDatabase().characters[$selectedCharID]?.chats ?? []) {
+    const baselines = {}
+    for (const chat of character?.chats ?? []) {
       if (chat.id) {
-        drafts[chat.id] = chat.name ?? ''
+        const baseline = chat.name ?? ''
+        const hasPreviousBaseline =
+          previousOwner === owner && Object.prototype.hasOwnProperty.call(previousBaselines, chat.id)
+        const draftIsDirty = hasPreviousBaseline && previousDrafts[chat.id] !== previousBaselines[chat.id]
+        drafts[chat.id] = draftIsDirty ? previousDrafts[chat.id] : baseline
+        baselines[chat.id] = baseline
       }
     }
     chatNameDrafts = drafts
+    chatNameBaselines = baselines
+    chatNameDraftOwner = owner
   })
 
   function updateChatName(chat, name) {
@@ -65,7 +84,7 @@
     })
     if (!applied) return
     syncServerBackedChatMetadataBaselines()
-    dispatchUpdateChat(chat.id, { name }, previous)
+    dispatchUpdateChat(chat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata)
   }
 
   function openChatRoute(index) {

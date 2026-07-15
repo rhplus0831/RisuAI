@@ -44,7 +44,7 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function stubCommandFetch(): CapturedFetch[] {
+function stubCommandFetch(options: { failMessagePatch?: boolean } = {}): CapturedFetch[] {
   const calls: CapturedFetch[] = []
   vi.stubGlobal(
     'fetch',
@@ -57,6 +57,7 @@ function stubCommandFetch(): CapturedFetch[] {
       })
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
       if (url === '/api/v1/commands/messages/m-0') {
+        if (options.failMessagePatch) return jsonResponse({ error: 'message patch failed' }, 500)
         return jsonResponse({
           revision: 11,
           event: { type: 'message.updated', revision: 11, resource: 'message', id: 'm-0', parentId: 'chat-1' },
@@ -231,6 +232,30 @@ describe('editdisplay render path logging (L38)', () => {
         baseRevision: 10,
         patch: { data: 'keep REMOVE after' },
       },
+    })
+  })
+
+  it('rolls back a failed server-mode @@inject projection update', async () => {
+    const calls = stubCommandFetch({ failMessagePatch: true })
+    const char = seedDb()
+    char.customscript = [
+      {
+        comment: 'inject-process-command',
+        type: 'editprocess',
+        in: 'REMOVE',
+        out: '@@inject',
+        flag: 'g',
+        ableFlag: true,
+      },
+    ] as any
+    setResourceWriteGuardEnabled(true)
+
+    const result = await processScriptFull(char, 'keep REMOVE after', 'editprocess', 0)
+
+    expect(result.data).toBe('keep  after')
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(testDatabaseState.db.characters[0].chats[0].message[0].data).toBe('rendered body')
     })
   })
 

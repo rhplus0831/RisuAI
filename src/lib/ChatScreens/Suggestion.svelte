@@ -77,7 +77,10 @@
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
   import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
-  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
+  import {
+    rollbackServerBackedChatRowMetadata,
+    syncServerBackedChatMetadataBaselines,
+  } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
 
@@ -203,7 +206,13 @@
         suggestMessages: copySuggestionMessages(target.suggestMessages),
       },
     }
-    dispatchUpdateChatRow(target.chatId, { suggestMessages: copySuggestionMessages(suggestions) }, rollback)
+    dispatchUpdateChatRow(
+      target.chatId,
+      { suggestMessages: copySuggestionMessages(suggestions) },
+      rollback,
+      {},
+      rollbackServerBackedChatRowMetadata,
+    )
   }
 
   function clearFreshSuggestions(target: SuggestionTargetSnapshot | undefined) {
@@ -241,7 +250,10 @@
     if (v) {
       progress = false
       abortController?.abort()
-      setVisibleSuggestions([])
+      const target = captureSuggestionTarget() ?? activeSuggestionTarget(suggestMessages)
+      if (!target || target.suggestMessages.length === 0 || !clearFreshSuggestions(target)) {
+        setVisibleSuggestions([])
+      }
     }
     if (!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress) {
       const requestSelectedCharId = $selectedCharID

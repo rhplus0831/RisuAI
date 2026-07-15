@@ -191,6 +191,8 @@ const sidebarMocks = vi.hoisted(() => {
     setServerCommandsEnabled: (enabled: boolean) => {
       serverCommandsEnabled = enabled
     },
+    rollbackServerBackedChatFolderRowMetadata: vi.fn(),
+    rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
     setCurrentRoute,
     truncateMessagesCommand: unusedCommand,
@@ -291,6 +293,8 @@ vi.mock('src/ts/router', () => ({
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  rollbackServerBackedChatFolderRowMetadata: sidebarMocks.rollbackServerBackedChatFolderRowMetadata,
+  rollbackServerBackedChatRowMetadata: sidebarMocks.rollbackServerBackedChatRowMetadata,
   syncServerBackedChatMetadataBaselines: sidebarMocks.syncServerBackedChatMetadataBaselines,
   watchServerBackedChatMetadata: sidebarMocks.watchServerBackedChatMetadata,
 }))
@@ -329,7 +333,7 @@ vi.mock('./Toggles.svelte', async () => {
 
 import SideChatListHarness from './SideChatList.testHarness.svelte'
 import { selectedCharID } from 'src/ts/stores.svelte'
-import { setResourceWriteGuardEnabled } from 'src/ts/server/resourceWriteGuard.svelte'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
 import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
@@ -876,10 +880,50 @@ describe('SideChatList DOM contract harness', () => {
     folderHeader(folderElementById('folder-a')).click()
     await tick()
 
-    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith('folder-a', { folded: true }, expect.any(Object))
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
+      'folder-a',
+      { folded: true },
+      expect.any(Object),
+      sidebarMocks.rollbackServerBackedChatFolderRowMetadata,
+    )
     expect(selectedCharacter().chatFolders[0].folded).toBe(true)
     expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('true')
     expect(folderPanelById('folder-a').hidden).toBe(true)
+  })
+
+  it('routes a failed direct folder toggle through the bridge-safe rollback callback', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    sidebarMocks.rollbackServerBackedChatFolderRowMetadata.mockImplementationOnce((snapshot) => {
+      withTrustedResourceWrite(() => {
+        const folder = selectedCharacter().chatFolders[0]
+        if (folder.folded === snapshot.attempted?.folded) {
+          folder.folded = snapshot.metadata.folded ?? false
+        }
+      })
+      sidebarMocks.syncServerBackedChatMetadataBaselines()
+    })
+    sidebarMocks.dispatchUpdateChatFolder.mockImplementationOnce((folderId, patch, _previous, rollback) => {
+      rollback({
+        selectedCharID: 0,
+        characterId: 'char-a',
+        folderId,
+        metadata: { folded: false },
+        attempted: patch,
+      })
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    folderHeader(folderElementById('folder-a')).click()
+    await tick()
+
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledTimes(1)
+    expect(sidebarMocks.rollbackServerBackedChatFolderRowMetadata).toHaveBeenCalledTimes(1)
+    expect(selectedCharacter().chatFolders[0].folded).toBe(false)
+    expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('false')
   })
 
   it('paints a selected folder color before dispatch', async () => {
@@ -897,7 +941,12 @@ describe('SideChatList DOM contract harness', () => {
     rowActionButton(folderElementById('folder-a'), 'folder-options').click()
     await flushCommandWork()
 
-    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith('folder-a', { color: 'red' }, expect.any(Object))
+    expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
+      'folder-a',
+      { color: 'red' },
+      expect.any(Object),
+      sidebarMocks.rollbackServerBackedChatFolderRowMetadata,
+    )
     expect(selectedCharacter().chatFolders[0].color).toBe('red')
     expect(folderHeader(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
   })
@@ -923,6 +972,8 @@ describe('SideChatList DOM contract harness', () => {
       'chat-foldered',
       { bindedPersona: '' },
       expect.any(Object),
+      false,
+      sidebarMocks.rollbackServerBackedChatRowMetadata,
     )
     expect(selectedCharacter().chats[1].bindedPersona).toBe('')
     expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona unbound')
@@ -949,6 +1000,8 @@ describe('SideChatList DOM contract harness', () => {
       'chat-root-a',
       { bindedPersona: 'persona-selected' },
       expect.any(Object),
+      false,
+      sidebarMocks.rollbackServerBackedChatRowMetadata,
     )
     expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
     expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona bound')

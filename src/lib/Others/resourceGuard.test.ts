@@ -51,6 +51,11 @@ interface CapturedFetch {
   body: any
 }
 
+interface DeferredResponse {
+  promise: Promise<Response>
+  resolve: (response: Response) => void
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -85,6 +90,44 @@ function stubCommandFetch(): CapturedFetch[] {
   return calls
 }
 
+function deferredResponse(): DeferredResponse {
+  let resolve!: (response: Response) => void
+  return {
+    promise: new Promise<Response>((resolvePromise) => {
+      resolve = resolvePromise
+    }),
+    resolve,
+  }
+}
+
+function stubControlledFailingBookmarkCommands(): {
+  calls: CapturedFetch[]
+  responses: [DeferredResponse, DeferredResponse]
+} {
+  const calls: CapturedFetch[] = []
+  const responses: [DeferredResponse, DeferredResponse] = [deferredResponse(), deferredResponse()]
+  let commandIndex = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body: typeof init.body === 'string' ? JSON.parse(init.body) : null,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 7 })
+      if (url === '/api/v1/commands/chats/chat-1') {
+        const response = responses[commandIndex]
+        commandIndex += 1
+        return response.promise
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return { calls, responses }
+}
+
 async function waitForCommand(
   calls: CapturedFetch[],
   predicate: (call: CapturedFetch) => boolean,
@@ -95,6 +138,22 @@ async function waitForCommand(
     await new Promise((resolve) => setTimeout(resolve, 0))
   }
   throw new Error(`command not dispatched; saw: ${JSON.stringify(calls)}`)
+}
+
+async function waitForCommandCount(calls: CapturedFetch[], count: number): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (calls.filter((call) => call.url === '/api/v1/commands/chats/chat-1').length >= count) return
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`expected ${count} chat commands; saw: ${JSON.stringify(calls)}`)
+}
+
+function bookmarkAction(target: HTMLElement, bookmarkId: string, action: 'rename' | 'remove'): HTMLButtonElement {
+  const button = target.querySelector<HTMLButtonElement>(
+    `[data-risu-bookmark-id="${bookmarkId}"] [data-risu-bookmark-action="${action}"]`,
+  )
+  expect(button, `${action} action for ${bookmarkId}`).not.toBeNull()
+  return button!
 }
 
 function seedDatabase(): void {
@@ -230,8 +289,7 @@ describe('server resource guarded UI paths', () => {
     component = mount(BookmarkList, { target })
     await tick()
 
-    const buttons = target.querySelectorAll('button')
-    buttons[3].click()
+    bookmarkAction(target, 'msg-1', 'rename').click()
 
     const command = await waitForCommand(
       calls,
@@ -252,8 +310,7 @@ describe('server resource guarded UI paths', () => {
     component = mount(BookmarkList, { target })
     await tick()
 
-    const buttons = target.querySelectorAll('button')
-    buttons[4].click()
+    bookmarkAction(target, 'msg-1', 'remove').click()
 
     const command = await waitForCommand(
       calls,
@@ -266,5 +323,72 @@ describe('server resource guarded UI paths', () => {
     await tick()
     expect(target.textContent).toContain('No Bookmarks')
     expect(target.textContent).not.toContain('Old name')
+  })
+
+  it('does not resurrect a bookmark name when the bookmark disappears while its rename prompt is open', async () => {
+    const calls = stubCommandFetch()
+    let resolveName!: (name: string) => void
+    vi.mocked(alertInput).mockReturnValueOnce(
+      new Promise<string>((resolve) => {
+        resolveName = resolve
+      }),
+    )
+    bookmarkListOpen.set(true)
+    setResourceWriteGuardEnabled(true)
+
+    component = mount(BookmarkList, { target })
+    await tick()
+
+    bookmarkAction(target, 'msg-1', 'rename').click()
+    bookmarkAction(target, 'msg-1', 'remove').click()
+    await tick()
+    resolveName('Stale rename')
+
+    await waitForCommandCount(calls, 1)
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+    await tick()
+
+    const commands = calls.filter((call) => call.url === '/api/v1/commands/chats/chat-1')
+    expect(commands).toHaveLength(1)
+    expect(commands[0].body.patch).toEqual({ bookmarks: [], bookmarkNames: {} })
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({})
+    expect(target.textContent).toContain('No Bookmarks')
+    expect(target.textContent).not.toContain('Stale rename')
+  })
+
+  it('restores both bookmarks when overlapping optimistic removals fail', async () => {
+    const { calls, responses } = stubControlledFailingBookmarkCommands()
+    const chat = getDatabase().characters[0].chats[0]
+    chat.message.push({ chatId: 'msg-2', role: 'char', data: 'Second bookmarked line' })
+    chat.bookmarks = ['msg-1', 'msg-2']
+    chat.bookmarkNames = { 'msg-1': 'Old name', 'msg-2': 'Second name' }
+    bookmarkListOpen.set(true)
+    setResourceWriteGuardEnabled(true)
+
+    component = mount(BookmarkList, { target })
+    await tick()
+
+    bookmarkAction(target, 'msg-1', 'remove').click()
+    await tick()
+    bookmarkAction(target, 'msg-2', 'remove').click()
+    await tick()
+
+    expect(chat.bookmarks).toEqual([])
+    expect(target.textContent).toContain('No Bookmarks')
+    await waitForCommandCount(calls, 1)
+
+    responses[0].resolve(jsonResponse({ error: 'first failed' }, 500))
+    await waitForCommandCount(calls, 2)
+    responses[1].resolve(jsonResponse({ error: 'second failed' }, 500))
+
+    await vi.waitFor(() => {
+      expect(chat.bookmarks).toEqual(['msg-1', 'msg-2'])
+      expect(chat.bookmarkNames).toEqual({ 'msg-1': 'Old name', 'msg-2': 'Second name' })
+    })
+    await tick()
+    expect(target.textContent).toContain('Old name')
+    expect(target.textContent).toContain('Second name')
   })
 })

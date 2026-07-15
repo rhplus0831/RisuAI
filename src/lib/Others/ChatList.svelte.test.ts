@@ -136,6 +136,7 @@ const chatListMocks = vi.hoisted(() => {
     }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
+    rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
     watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
     withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
@@ -195,6 +196,7 @@ vi.mock('src/ts/router', () => ({
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  rollbackServerBackedChatRowMetadata: chatListMocks.rollbackServerBackedChatRowMetadata,
   syncServerBackedChatMetadataBaselines: chatListMocks.syncServerBackedChatMetadataBaselines,
   watchServerBackedChatMetadata: chatListMocks.watchServerBackedChatMetadata,
 }))
@@ -423,6 +425,7 @@ describe('ChatList DOM contract harness', () => {
     const [chatId, patch, previous] = chatListMocks.dispatchUpdateChat.mock.calls[0]
     expect(chatId).toBe('chat-b')
     expect(patch).toEqual({ name: 'Renamed Modal Chat B' })
+    expect(chatListMocks.dispatchUpdateChat.mock.calls[0][4]).toBe(chatListMocks.rollbackServerBackedChatRowMetadata)
     expect(previous).toMatchObject({
       selectedCharID: 0,
       characters: [
@@ -434,6 +437,34 @@ describe('ChatList DOM contract harness', () => {
     })
     expect(selectedCharacter().chats[1].name).toBe('Renamed Modal Chat B')
     expect(input!.value).toBe('Renamed Modal Chat B')
+  })
+
+  it('preserves an unsaved row draft when another chat rename repaints metadata', async () => {
+    seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
+
+    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    await tick()
+
+    editButton().click()
+    await tick()
+
+    const pendingInput = rowByChatId('chat-c').querySelector<HTMLInputElement>('input')
+    const committedInput = rowByChatId('chat-b').querySelector<HTMLInputElement>('input')
+    expect(pendingInput, 'chat-c name input').toBeTruthy()
+    expect(committedInput, 'chat-b name input').toBeTruthy()
+
+    pendingInput!.value = 'Unsaved Modal Chat C'
+    pendingInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    committedInput!.value = 'Renamed Modal Chat B'
+    committedInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    committedInput!.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    expect(selectedCharacter().chats[1].name).toBe('Renamed Modal Chat B')
+    expect(rowByChatId('chat-c').querySelector<HTMLInputElement>('input')?.value).toBe('Unsaved Modal Chat C')
   })
 
   it('navigates when selecting a modal row and reflects the route-applied selection', async () => {

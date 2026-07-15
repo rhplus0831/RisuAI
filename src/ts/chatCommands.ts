@@ -273,6 +273,39 @@ export interface ChatScopedSnapshot {
   chat: Chat | undefined
 }
 
+interface PendingChatMetadataAttempt {
+  sequence: number
+  chatId: string
+  rollback: ChatRowMetadataSnapshot
+}
+
+interface PendingChatFolderMetadataAttempt {
+  sequence: number
+  folderId: string
+  rollback: ChatFolderRowMetadataSnapshot
+}
+
+interface PendingScopedTranscriptAttempt {
+  sequence: number
+  chatKey: string
+  previous: ChatScopedSnapshot
+  attemptedMessages: Message[]
+  reapply: (previousMessages: readonly Message[]) => Message[] | null
+  rollback: (attempt: PendingScopedTranscriptAttempt) => void
+}
+
+interface AppliedScopedMessagePatchAttempt {
+  commandPatch: MessageSnapshot
+  dispatcherAppliedKeys: Set<string>
+}
+
+const pendingChatMetadataAttempts = new Map<string, PendingChatMetadataAttempt[]>()
+let nextChatMetadataAttemptSequence = 0
+const pendingChatFolderMetadataAttempts = new Map<string, PendingChatFolderMetadataAttempt[]>()
+let nextChatFolderMetadataAttemptSequence = 0
+const pendingScopedTranscriptAttempts = new Map<string, PendingScopedTranscriptAttempt[]>()
+let nextScopedTranscriptAttemptSequence = 0
+
 export interface ChatGenerationSettingsSnapshot {
   characterId: string | undefined
   chatId: string
@@ -587,7 +620,7 @@ export interface ChatRowMetadataSnapshot {
   attempted?: ChatSnapshot
 }
 
-type ChatRowMetadataRollback = (snapshot: ChatRowMetadataSnapshot) => void
+export type ChatRowMetadataRollback = (snapshot: ChatRowMetadataSnapshot) => void
 
 export function restoreChatRowMetadata(snapshot: ChatRowMetadataSnapshot): void {
   withTrustedResourceWrite(() => {
@@ -624,6 +657,8 @@ export interface ChatFolderRowMetadataSnapshot {
   metadata: ChatFolderSnapshot
   attempted?: ChatFolderSnapshot
 }
+
+export type ChatFolderRowMetadataRollback = (snapshot: ChatFolderRowMetadataSnapshot) => void
 
 export function restoreChatFolderRowMetadata(snapshot: ChatFolderRowMetadataSnapshot): void {
   withTrustedResourceWrite(() => {
@@ -1690,11 +1725,27 @@ export function dispatchUpdateChat(
   patch: ChatSnapshot,
   previous: ChatStateSnapshot,
   select = false,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
 ): void {
   const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0 && !select) return
   const rollback = chatMetadataRollbackFromPatch(chatId, commandPatch, previous)
-  runChatCommand(
+  if (!rollback) {
+    runChatCommand(
+      (baseRevision) =>
+        updateChatCommand({
+          baseRevision,
+          chatId,
+          patch: commandPatch,
+          select,
+        }),
+      () => {},
+    )
+    return
+  }
+
+  const pendingAttempt = registerChatMetadataAttempt(chatId, rollback)
+  const result = runChatCommandAsync(
     (baseRevision) =>
       updateChatCommand({
         baseRevision,
@@ -1702,10 +1753,9 @@ export function dispatchUpdateChat(
         patch: commandPatch,
         select,
       }),
-    () => {
-      if (rollback) restoreChatRowMetadata(rollback)
-    },
+    () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata),
   )
+  trackChatMetadataAttemptResult(pendingAttempt, result)
 }
 
 // Scalar-rollback variant of `dispatchUpdateChat` for chat selection: the
@@ -1742,7 +1792,8 @@ export function dispatchUpdateChatRow(
     ...rollback,
     attempted: commandPatch,
   }
-  return runChatCommandAsync(
+  const pendingAttempt = registerChatMetadataAttempt(chatId, rollbackSnapshot)
+  const result = runChatCommandAsync(
     (baseRevision) =>
       updateChatCommand(
         {
@@ -1754,19 +1805,41 @@ export function dispatchUpdateChatRow(
         options.signal,
         options.keepalive,
       ),
-    () => rollbackRowMetadata(rollbackSnapshot),
+    () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata),
     options,
   )
+  trackChatMetadataAttemptResult(pendingAttempt, result)
+  return result
 }
 
 // Chat-scoped-rollback variant of `dispatchUpdateChat` for paths that mutate the
 // active chat row alongside its message history (e.g. bookmark toggles): a failed
 // command restores that one chat row, not the whole characters array.
-export function dispatchUpdateChatScoped(chatId: string, patch: ChatSnapshot, previous: ChatScopedSnapshot): void {
+export function dispatchUpdateChatScoped(
+  chatId: string,
+  patch: ChatSnapshot,
+  previous: ChatScopedSnapshot,
+  rollbackRowMetadata: ChatRowMetadataRollback = restoreChatRowMetadata,
+): void {
   const commandPatch = sanitizeFrozenChatPatch(patch)
   if (Object.keys(commandPatch).length === 0) return
   const rollback = chatScopedMetadataRollbackFromPatch(chatId, commandPatch, previous)
-  runChatCommand(
+  if (!rollback) {
+    runChatCommand(
+      (baseRevision) =>
+        updateChatCommand({
+          baseRevision,
+          chatId,
+          patch: commandPatch,
+          select: false,
+        }),
+      () => {},
+    )
+    return
+  }
+
+  const pendingAttempt = registerChatMetadataAttempt(chatId, rollback)
+  const result = runChatCommandAsync(
     (baseRevision) =>
       updateChatCommand({
         baseRevision,
@@ -1774,10 +1847,79 @@ export function dispatchUpdateChatScoped(chatId: string, patch: ChatSnapshot, pr
         patch: commandPatch,
         select: false,
       }),
-    () => {
-      if (rollback) restoreChatRowMetadata(rollback)
-    },
+    () => rollbackChatMetadataAttempt(pendingAttempt, rollbackRowMetadata),
   )
+  trackChatMetadataAttemptResult(pendingAttempt, result)
+}
+
+function registerChatMetadataAttempt(chatId: string, rollback: ChatRowMetadataSnapshot): PendingChatMetadataAttempt {
+  const attempt = {
+    sequence: ++nextChatMetadataAttemptSequence,
+    chatId,
+    rollback,
+  }
+  const pending = pendingChatMetadataAttempts.get(chatId) ?? []
+  pending.push(attempt)
+  pendingChatMetadataAttempts.set(chatId, pending)
+  return attempt
+}
+
+function rollbackChatMetadataAttempt(
+  attempt: PendingChatMetadataAttempt,
+  rollbackRowMetadata: ChatRowMetadataRollback,
+): void {
+  rollbackRowMetadata(attempt.rollback)
+
+  const failedAttempted = attempt.rollback.attempted
+  if (failedAttempted) {
+    const rebasedKeys = new Set<string>()
+    for (const later of pendingChatMetadataAttempts.get(attempt.chatId) ?? []) {
+      if (later.sequence <= attempt.sequence || !later.rollback.attempted) continue
+      for (const key of CHAT_PATCH_ALLOWED_KEYS) {
+        if (rebasedKeys.has(key)) continue
+        if (!Object.prototype.hasOwnProperty.call(failedAttempted, key)) continue
+        if (!Object.prototype.hasOwnProperty.call(later.rollback.attempted, key)) continue
+        const laterPrevious = Object.prototype.hasOwnProperty.call(later.rollback.metadata, key)
+          ? later.rollback.metadata[key]
+          : undefined
+        if (snapshotJson(laterPrevious) !== snapshotJson(failedAttempted[key])) continue
+
+        if (Object.prototype.hasOwnProperty.call(attempt.rollback.metadata, key)) {
+          later.rollback.metadata[key] = cloneJsonValue(attempt.rollback.metadata[key])
+        } else {
+          delete later.rollback.metadata[key]
+        }
+        rebasedKeys.add(key)
+      }
+    }
+  }
+
+  clearChatMetadataAttempt(attempt)
+}
+
+function trackChatMetadataAttemptResult(
+  attempt: PendingChatMetadataAttempt,
+  result: Promise<ServerCommandResult> | null,
+): void {
+  if (!result) {
+    clearChatMetadataAttempt(attempt)
+    return
+  }
+  void result.then(
+    () => clearChatMetadataAttempt(attempt),
+    () => clearChatMetadataAttempt(attempt),
+  )
+}
+
+function clearChatMetadataAttempt(attempt: PendingChatMetadataAttempt): void {
+  const pending = pendingChatMetadataAttempts.get(attempt.chatId)
+  if (!pending) return
+  const next = pending.filter((candidate) => candidate.sequence !== attempt.sequence)
+  if (next.length === 0) {
+    pendingChatMetadataAttempts.delete(attempt.chatId)
+  } else {
+    pendingChatMetadataAttempts.set(attempt.chatId, next)
+  }
 }
 
 export function setCurrentChatGreetingIndex(
@@ -2853,20 +2995,34 @@ export function dispatchUpdateChatFolder(
   folderId: string,
   patch: ChatFolderSnapshot,
   previous: ChatStateSnapshot,
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback = restoreChatFolderRowMetadata,
 ): void {
   const rollback = chatFolderMetadataRollbackFromPatch(folderId, patch, previous)
   const attemptedPatch = cloneJsonValue(patch)
-  runChatCommand(
+  if (!rollback) {
+    runChatCommand(
+      (baseRevision) =>
+        updateChatFolderCommand({
+          baseRevision,
+          folderId,
+          patch: attemptedPatch,
+        }),
+      () => {},
+    )
+    return
+  }
+
+  const pendingAttempt = registerChatFolderMetadataAttempt(folderId, rollback)
+  const result = runChatCommandAsync(
     (baseRevision) =>
       updateChatFolderCommand({
         baseRevision,
         folderId,
         patch: attemptedPatch,
       }),
-    () => {
-      if (rollback) restoreChatFolderRowMetadata(rollback)
-    },
+    () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata),
   )
+  trackChatFolderMetadataAttemptResult(pendingAttempt, result)
 }
 
 // Narrow-rollback variant of `dispatchUpdateChatFolder` for the chat-metadata
@@ -2877,6 +3033,7 @@ export function dispatchUpdateChatFolderRow(
   patch: ChatFolderSnapshot,
   rollback: ChatFolderRowMetadataSnapshot,
   options: ServerCommandTransportOptions = {},
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback = restoreChatFolderRowMetadata,
 ): Promise<ServerCommandResult> | null {
   const attemptedPatch = cloneJsonValue(patch)
   const attemptedRollback =
@@ -2886,7 +3043,8 @@ export function dispatchUpdateChatFolderRow(
           attempted: { ...(rollback.attempted ?? {}), ...attemptedPatch },
         }
       : rollback
-  return runChatCommandAsync(
+  const pendingAttempt = registerChatFolderMetadataAttempt(folderId, attemptedRollback)
+  const result = runChatCommandAsync(
     (baseRevision) =>
       updateChatFolderCommand(
         {
@@ -2897,9 +3055,84 @@ export function dispatchUpdateChatFolderRow(
         options.signal,
         options.keepalive,
       ),
-    () => restoreChatFolderRowMetadata(attemptedRollback),
+    () => rollbackChatFolderMetadataAttempt(pendingAttempt, rollbackFolderMetadata),
     options,
   )
+  trackChatFolderMetadataAttemptResult(pendingAttempt, result)
+  return result
+}
+
+function registerChatFolderMetadataAttempt(
+  folderId: string,
+  rollback: ChatFolderRowMetadataSnapshot,
+): PendingChatFolderMetadataAttempt {
+  const attempt = {
+    sequence: ++nextChatFolderMetadataAttemptSequence,
+    folderId,
+    rollback,
+  }
+  const pending = pendingChatFolderMetadataAttempts.get(folderId) ?? []
+  pending.push(attempt)
+  pendingChatFolderMetadataAttempts.set(folderId, pending)
+  return attempt
+}
+
+function rollbackChatFolderMetadataAttempt(
+  attempt: PendingChatFolderMetadataAttempt,
+  rollbackFolderMetadata: ChatFolderRowMetadataRollback,
+): void {
+  rollbackFolderMetadata(attempt.rollback)
+
+  const failedAttempted = attempt.rollback.attempted
+  if (failedAttempted) {
+    const rebasedKeys = new Set<string>()
+    for (const later of pendingChatFolderMetadataAttempts.get(attempt.folderId) ?? []) {
+      if (later.sequence <= attempt.sequence || !later.rollback.attempted) continue
+      for (const key of CHAT_FOLDER_PATCH_ALLOWED_KEYS) {
+        if (rebasedKeys.has(key)) continue
+        if (!Object.prototype.hasOwnProperty.call(failedAttempted, key)) continue
+        if (!Object.prototype.hasOwnProperty.call(later.rollback.attempted, key)) continue
+        const laterPrevious = Object.prototype.hasOwnProperty.call(later.rollback.metadata, key)
+          ? later.rollback.metadata[key]
+          : undefined
+        if (snapshotJson(laterPrevious) !== snapshotJson(failedAttempted[key])) continue
+
+        if (Object.prototype.hasOwnProperty.call(attempt.rollback.metadata, key)) {
+          later.rollback.metadata[key] = cloneJsonValue(attempt.rollback.metadata[key])
+        } else {
+          delete later.rollback.metadata[key]
+        }
+        rebasedKeys.add(key)
+      }
+    }
+  }
+
+  clearChatFolderMetadataAttempt(attempt)
+}
+
+function trackChatFolderMetadataAttemptResult(
+  attempt: PendingChatFolderMetadataAttempt,
+  result: Promise<ServerCommandResult> | null,
+): void {
+  if (!result) {
+    clearChatFolderMetadataAttempt(attempt)
+    return
+  }
+  void result.then(
+    () => clearChatFolderMetadataAttempt(attempt),
+    () => clearChatFolderMetadataAttempt(attempt),
+  )
+}
+
+function clearChatFolderMetadataAttempt(attempt: PendingChatFolderMetadataAttempt): void {
+  const pending = pendingChatFolderMetadataAttempts.get(attempt.folderId)
+  if (!pending) return
+  const next = pending.filter((candidate) => candidate.sequence !== attempt.sequence)
+  if (next.length === 0) {
+    pendingChatFolderMetadataAttempts.delete(attempt.folderId)
+  } else {
+    pendingChatFolderMetadataAttempts.set(attempt.folderId, next)
+  }
 }
 
 export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSnapshot): void {
@@ -3183,8 +3416,10 @@ function applyScopedMessagePatchAttempt(
   previous: ChatScopedSnapshot,
   messageId: string,
   attemptedPatch: MessageSnapshot,
-): void {
-  if (!previous.chat) return
+): AppliedScopedMessagePatchAttempt {
+  const commandPatch: MessageSnapshot = {}
+  const dispatcherAppliedKeys = new Set<string>()
+  if (!previous.chat) return { commandPatch, dispatcherAppliedKeys }
   withTrustedResourceWrite(() => {
     const liveChat = locateChatScopedSnapshot(previous)
     const liveMessages = liveChat?.message
@@ -3207,7 +3442,10 @@ function applyScopedMessagePatchAttempt(
       if (!Object.prototype.propertyIsEnumerable.call(attemptedRecord, key)) continue
 
       const attemptedValue = attemptedRecord[key]
-      if (snapshotJson(liveMessage[key]) === snapshotJson(attemptedValue)) continue
+      if (snapshotJson(liveMessage[key]) === snapshotJson(attemptedValue)) {
+        commandPatch[key] = cloneJsonValue(attemptedValue)
+        continue
+      }
 
       const previousHasKey = Object.prototype.propertyIsEnumerable.call(previousRecord, key)
       const liveHasKey = Object.prototype.propertyIsEnumerable.call(liveMessage, key)
@@ -3218,8 +3456,11 @@ function applyScopedMessagePatchAttempt(
       }
 
       liveMessage[key] = cloneJsonValue(attemptedValue)
+      commandPatch[key] = cloneJsonValue(attemptedValue)
+      dispatcherAppliedKeys.add(key)
     }
   })
+  return { commandPatch, dispatcherAppliedKeys }
 }
 
 function restoreScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
@@ -3252,8 +3493,108 @@ function applyScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMe
   })
 }
 
+function registerScopedTranscriptAttempt(
+  previous: ChatScopedSnapshot,
+  attemptedMessages: Message[] | null,
+  reapply: (previousMessages: readonly Message[]) => Message[] | null,
+  rollback: (attempt: PendingScopedTranscriptAttempt) => void,
+): PendingScopedTranscriptAttempt | null {
+  if (!previous.chat || !attemptedMessages) return null
+  const chatKey = previous.chatId ?? `${previous.characterId ?? previous.selectedCharID}:active`
+  const attempt = {
+    sequence: ++nextScopedTranscriptAttemptSequence,
+    chatKey,
+    previous,
+    attemptedMessages,
+    reapply,
+    rollback,
+  }
+  const pending = pendingScopedTranscriptAttempts.get(chatKey) ?? []
+  pending.push(attempt)
+  pendingScopedTranscriptAttempts.set(chatKey, pending)
+  return attempt
+}
+
+function rollbackScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
+  const liveChatBeforeRollback = locateChatScopedSnapshot(attempt.previous)
+  const liveMessagesBeforeRollback = liveChatBeforeRollback
+    ? cloneJsonValue(liveChatBeforeRollback.message ?? [])
+    : null
+  attempt.rollback(attempt)
+
+  const liveChatAfterRollback = locateChatScopedSnapshot(attempt.previous)
+  const liveMessagesAfterRollback = liveChatAfterRollback ? cloneJsonValue(liveChatAfterRollback.message ?? []) : null
+  let visibleProjectionFollowsRebase =
+    liveMessagesBeforeRollback !== null &&
+    liveMessagesAfterRollback !== null &&
+    snapshotJson(attempt.attemptedMessages) !== snapshotJson(attempt.previous.chat?.message ?? []) &&
+    snapshotJson(liveMessagesBeforeRollback) === snapshotJson(attempt.attemptedMessages) &&
+    snapshotJson(liveMessagesAfterRollback) === snapshotJson(attempt.previous.chat?.message ?? [])
+
+  let previousBeforeFailedAttempt = cloneJsonValue(attempt.previous.chat?.message ?? [])
+  let oldAttemptedMessages = attempt.attemptedMessages
+  for (const later of pendingScopedTranscriptAttempts.get(attempt.chatKey) ?? []) {
+    if (later.sequence <= attempt.sequence || !later.previous.chat) continue
+    if (snapshotJson(later.previous.chat.message ?? []) !== snapshotJson(oldAttemptedMessages)) break
+
+    const rebasedAttemptedMessages = later.reapply(previousBeforeFailedAttempt)
+    if (!rebasedAttemptedMessages) break
+    const oldLaterAttemptedMessages = later.attemptedMessages
+    let rebasedVisibleProjection = false
+    withTrustedResourceWrite(() => {
+      const liveChat = locateChatScopedSnapshot(later.previous)
+      if (!liveChat) return
+      const liveMessages = liveChat.message ?? []
+      const stillShowsLaterAttempt = snapshotJson(liveMessages) === snapshotJson(oldLaterAttemptedMessages)
+      const showsRestoredPredecessor =
+        visibleProjectionFollowsRebase && snapshotJson(liveMessages) === snapshotJson(previousBeforeFailedAttempt)
+      if (stillShowsLaterAttempt || showsRestoredPredecessor) {
+        liveChat.message = cloneJsonValue(rebasedAttemptedMessages)
+        rebasedVisibleProjection = true
+      }
+    })
+    visibleProjectionFollowsRebase = rebasedVisibleProjection
+    later.previous.chat.message = cloneJsonValue(previousBeforeFailedAttempt)
+    later.attemptedMessages = cloneJsonValue(rebasedAttemptedMessages)
+    previousBeforeFailedAttempt = rebasedAttemptedMessages
+    oldAttemptedMessages = oldLaterAttemptedMessages
+  }
+
+  clearScopedTranscriptAttempt(attempt)
+}
+
+function trackScopedTranscriptAttemptResult(
+  attempt: PendingScopedTranscriptAttempt | null,
+  result: Promise<ServerCommandResult | null> | null,
+): void {
+  if (!attempt) return
+  if (!result) {
+    clearScopedTranscriptAttempt(attempt)
+    return
+  }
+  void result.then(
+    () => clearScopedTranscriptAttempt(attempt),
+    () => clearScopedTranscriptAttempt(attempt),
+  )
+}
+
+function clearScopedTranscriptAttempt(attempt: PendingScopedTranscriptAttempt): void {
+  const pending = pendingScopedTranscriptAttempts.get(attempt.chatKey)
+  if (!pending) return
+  const next = pending.filter((candidate) => candidate.sequence !== attempt.sequence)
+  if (next.length === 0) {
+    pendingScopedTranscriptAttempts.delete(attempt.chatKey)
+  } else {
+    pendingScopedTranscriptAttempts.set(attempt.chatKey, next)
+  }
+}
+
 function attemptedMessagesAfterDelete(previous: ChatScopedSnapshot, messageId: string): Message[] | null {
-  const messages = cloneJsonValue(previous.chat?.message ?? [])
+  return messagesAfterDelete(previous.chat?.message ?? [], messageId)
+}
+
+function messagesAfterDelete(previousMessages: readonly Message[], messageId: string): Message[] | null {
+  const messages = cloneJsonValue([...previousMessages])
   const index = findMessageIndexById(messages, messageId)
   if (index < 0) return null
   messages.splice(index, 1)
@@ -3261,7 +3602,11 @@ function attemptedMessagesAfterDelete(previous: ChatScopedSnapshot, messageId: s
 }
 
 function attemptedMessagesAfterTruncate(previous: ChatScopedSnapshot, afterMessageId: string | null): Message[] | null {
-  const messages = cloneJsonValue(previous.chat?.message ?? [])
+  return messagesAfterTruncate(previous.chat?.message ?? [], afterMessageId)
+}
+
+function messagesAfterTruncate(previousMessages: readonly Message[], afterMessageId: string | null): Message[] | null {
+  const messages = cloneJsonValue([...previousMessages])
   if (afterMessageId === null) return []
   const index = findMessageIndexById(messages, afterMessageId)
   if (index < 0) return null
@@ -3273,11 +3618,19 @@ function attemptedMessagesAfterReplaceTail(
   afterMessageId: string | null,
   messages: Message[],
 ): Message[] | null {
-  const previousMessages = cloneJsonValue(previous.chat?.message ?? [])
-  if (afterMessageId === null) return cloneJsonValue(messages)
+  return messagesAfterReplaceTail(previous.chat?.message ?? [], afterMessageId, messages)
+}
+
+function messagesAfterReplaceTail(
+  previousMessagesInput: readonly Message[],
+  afterMessageId: string | null,
+  messages: readonly Message[],
+): Message[] | null {
+  const previousMessages = cloneJsonValue([...previousMessagesInput])
+  if (afterMessageId === null) return cloneJsonValue([...messages])
   const index = findMessageIndexById(previousMessages, afterMessageId)
   if (index < 0) return null
-  return previousMessages.slice(0, index + 1).concat(cloneJsonValue(messages))
+  return previousMessages.slice(0, index + 1).concat(cloneJsonValue([...messages]))
 }
 
 function findMessageIndexById(messages: readonly Message[], messageId: string): number {
@@ -3292,9 +3645,9 @@ function dispatchSanitizedUpdateMessageWith(
   messageId: string,
   commandPatch: MessageSnapshot,
   rollback: () => void,
-): void {
-  if (Object.keys(commandPatch).length === 0) return
-  runMessageCommand(
+): Promise<ServerCommandResult> | null {
+  if (Object.keys(commandPatch).length === 0) return null
+  return runChatCommandAsync(
     (baseRevision) =>
       updateMessageCommand({
         baseRevision,
@@ -3313,20 +3666,93 @@ export function dispatchUpdateMessage(messageId: string, patch: MessageSnapshot,
   dispatchUpdateMessageWith(messageId, patch, () => restoreChatState(previous))
 }
 
+export interface DispatchUpdateMessageScopedOptions {
+  /** The caller already painted the supplied patch and owns rolling it back if persistence fails. */
+  optimisticPatchAlreadyApplied?: boolean
+}
+
 export function dispatchUpdateMessageScoped(
   messageId: string,
   patch: MessageSnapshot,
   previous: ChatScopedSnapshot,
+  options: DispatchUpdateMessageScopedOptions = {},
 ): void {
-  const commandPatch = sanitizeMessagePatch(patch)
-  applyScopedMessagePatchAttempt(previous, messageId, commandPatch)
-  dispatchSanitizedUpdateMessageWith(messageId, commandPatch, () =>
-    restoreScopedMessagePatchAttempt(previous, messageId, commandPatch),
+  const { commandPatch, dispatcherAppliedKeys } = applyScopedMessagePatchAttempt(
+    previous,
+    messageId,
+    sanitizeMessagePatch(patch),
   )
+  if (Object.keys(commandPatch).length === 0) return
+
+  const attemptedMessages = cloneJsonValue(locateChatScopedSnapshot(previous)?.message ?? [])
+  const rollbackKeys = options.optimisticPatchAlreadyApplied
+    ? new Set(Object.keys(commandPatch))
+    : dispatcherAppliedKeys
+  const ledgerPrevious = scopedMessagePatchBaseline(previous, messageId, attemptedMessages, rollbackKeys)
+  const pendingAttempt = registerScopedTranscriptAttempt(
+    ledgerPrevious,
+    attemptedMessages,
+    (previousMessages) => messagesAfterPatch(previousMessages, messageId, commandPatch),
+    (attempt) => restoreScopedMessagePatchAttempt(attempt.previous, messageId, commandPatch),
+  )
+  const result = dispatchSanitizedUpdateMessageWith(messageId, commandPatch, () =>
+    pendingAttempt ? rollbackScopedTranscriptAttempt(pendingAttempt) : undefined,
+  )
+  trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
 
-function dispatchDeleteMessageWith(messageId: string, rollback: () => void): void {
-  runMessageCommand(
+function scopedMessagePatchBaseline(
+  previous: ChatScopedSnapshot,
+  messageId: string,
+  attemptedMessages: readonly Message[],
+  rollbackKeys: ReadonlySet<string>,
+): ChatScopedSnapshot {
+  if (!previous.chat) return previous
+  const baselineMessages = cloneJsonValue([...attemptedMessages])
+  const baselineIndex = findMessageIndexById(baselineMessages, messageId)
+  if (baselineIndex < 0) return previous
+
+  const previousMessages = previous.chat.message ?? []
+  const previousById = previousMessages.find((message) => message.chatId === messageId)
+  const previousAtIndex = previousMessages[baselineIndex]
+  const previousMessage = previousById ?? (previousAtIndex?.chatId ? undefined : previousAtIndex)
+  if (!previousMessage) return previous
+
+  const baselineMessage = baselineMessages[baselineIndex] as unknown as Record<string, unknown>
+  const previousRecord = previousMessage as unknown as Record<string, unknown>
+  for (const key of rollbackKeys) {
+    if (Object.prototype.hasOwnProperty.call(previousRecord, key)) {
+      baselineMessage[key] = cloneJsonValue(previousRecord[key])
+    } else {
+      delete baselineMessage[key]
+    }
+  }
+  return {
+    ...previous,
+    chat: {
+      ...previous.chat,
+      message: baselineMessages,
+    },
+  }
+}
+
+function messagesAfterPatch(
+  previousMessages: readonly Message[],
+  messageId: string,
+  patch: MessageSnapshot,
+): Message[] | null {
+  const messages = cloneJsonValue([...previousMessages])
+  const index = findMessageIndexById(messages, messageId)
+  if (index < 0) return null
+  const target = messages[index] as unknown as Record<string, unknown>
+  for (const [key, value] of Object.entries(patch)) {
+    target[key] = cloneJsonValue(value)
+  }
+  return messages
+}
+
+function dispatchDeleteMessageWith(messageId: string, rollback: () => void): Promise<ServerCommandResult> | null {
+  return runChatCommandAsync(
     (baseRevision) =>
       deleteMessageCommand({
         baseRevision,
@@ -3342,8 +3768,17 @@ export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnap
 
 export function dispatchDeleteMessageScoped(messageId: string, previous: ChatScopedSnapshot): void {
   const attemptedMessages = attemptedMessagesAfterDelete(previous, messageId)
+  const pendingAttempt = registerScopedTranscriptAttempt(
+    previous,
+    attemptedMessages,
+    (previousMessages) => messagesAfterDelete(previousMessages, messageId),
+    (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
+  )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  dispatchDeleteMessageWith(messageId, () => restoreScopedMessageListAttempt(previous, attemptedMessages))
+  const result = dispatchDeleteMessageWith(messageId, () => {
+    if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
+  })
+  trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
 
 interface TruncateMessagesOptions {
@@ -3385,13 +3820,23 @@ export function dispatchTruncateMessagesScoped(
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
   const attemptedMessages = attemptedMessagesAfterTruncate(previous, afterMessageId)
+  const pendingAttempt = registerScopedTranscriptAttempt(
+    previous,
+    attemptedMessages,
+    (previousMessages) => messagesAfterTruncate(previousMessages, afterMessageId),
+    (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
+  )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  return dispatchTruncateMessagesWith(
+  const result = dispatchTruncateMessagesWith(
     chatId,
     afterMessageId,
-    () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+    () => {
+      if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
+    },
     options,
   )
+  trackScopedTranscriptAttemptResult(pendingAttempt, result)
+  return result
 }
 
 function dispatchReplaceTailMessagesWith(
@@ -3430,8 +3875,15 @@ export function dispatchReplaceTailMessagesScoped(
 ): void {
   if (!prepareReplaceTailMessages(messages)) return
   const attemptedMessages = attemptedMessagesAfterReplaceTail(previous, afterMessageId, messages)
+  const replacementMessages = cloneJsonValue(messages)
+  const pendingAttempt = registerScopedTranscriptAttempt(
+    previous,
+    attemptedMessages,
+    (previousMessages) => messagesAfterReplaceTail(previousMessages, afterMessageId, replacementMessages),
+    (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
+  )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  runMessageCommand(
+  const result = runChatCommandAsync(
     (baseRevision) =>
       replaceTailMessagesCommand({
         baseRevision,
@@ -3439,8 +3891,11 @@ export function dispatchReplaceTailMessagesScoped(
         afterMessageId,
         messages: messages.map(toMessageSnapshot),
       }),
-    () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+    () => {
+      if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
+    },
   )
+  trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
 
 function dispatchReplaceMessagesWith(chatId: string, messages: Message[], rollback: () => void): void {
@@ -3467,16 +3922,25 @@ export function dispatchReplaceMessages(chatId: string, messages: Message[], pre
 export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[], previous: ChatScopedSnapshot): void {
   if (!prepareReplaceMessages(messages)) return
   const attemptedMessages = cloneJsonValue(messages)
+  const pendingAttempt = registerScopedTranscriptAttempt(
+    previous,
+    attemptedMessages,
+    () => cloneJsonValue(attemptedMessages),
+    (attempt) => restoreScopedMessageListAttempt(attempt.previous, attempt.attemptedMessages),
+  )
   applyScopedMessageListAttempt(previous, attemptedMessages)
-  runMessageCommand(
+  const result = runChatCommandAsync(
     (baseRevision) =>
       replaceMessagesCommand({
         baseRevision,
         chatId,
         messages: messages.map(toMessageSnapshot),
       }),
-    () => restoreScopedMessageListAttempt(previous, attemptedMessages),
+    () => {
+      if (pendingAttempt) rollbackScopedTranscriptAttempt(pendingAttempt)
+    },
   )
+  trackScopedTranscriptAttemptResult(pendingAttempt, result)
 }
 
 function prepareReplaceTailMessages(messages: Message[]): boolean {
