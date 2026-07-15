@@ -8,9 +8,10 @@ const testState = vi.hoisted(() => ({
   globalFetch: vi.fn(),
   loadAsset: vi.fn(),
   runTranslator: vi.fn(),
+  requestProviderOperation: vi.fn(),
+  requestTtsSynthesis: vi.fn(),
   translateVox: vi.fn(),
   runVITS: vi.fn(),
-  sleep: vi.fn(async () => {}),
 }))
 
 vi.mock('../alert', () => ({
@@ -27,13 +28,37 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => testState.db,
 }))
 
+vi.mock('../server/providerOperations', () => ({
+  providerOperationCredential: (apiKey: string) =>
+    apiKey === '__RISU_SECRET_MASKED__'
+      ? { source: 'stored' }
+      : apiKey
+        ? { source: 'provided', apiKey }
+        : { source: 'none' },
+  requestProviderOperation: testState.requestProviderOperation,
+}))
+
+vi.mock('../server/tts', () => ({
+  TtsSynthesisRequestError: class extends Error {
+    status: number
+
+    constructor(status: number) {
+      super('tts_synthesis_failed')
+      this.status = status
+    }
+  },
+  requestTtsSynthesis: testState.requestTtsSynthesis,
+  ttsGlobalCredential: (apiKey: string) =>
+    apiKey === '__RISU_SECRET_MASKED__'
+      ? { source: 'stored' }
+      : apiKey
+        ? { source: 'provided', apiKey }
+        : { source: 'none' },
+}))
+
 vi.mock('../translator/translator', () => ({
   runTranslator: testState.runTranslator,
   translateVox: testState.translateVox,
-}))
-
-vi.mock('../util', () => ({
-  sleep: testState.sleep,
 }))
 
 vi.mock('./transformers', () => ({
@@ -114,28 +139,11 @@ class StubAudioContext {
   }
 }
 
-function audioResponse(bytes = new Uint8Array([1, 2, 3]), contentType = 'audio/wav') {
+function ttsAudio(bytes = new Uint8Array([1, 2, 3]), contentType = 'audio/wav') {
   return {
-    status: 200,
-    headers: {
-      get: vi.fn((name: string) => (name.toLowerCase() === 'content-type' ? contentType : null)),
-    },
-    arrayBuffer: vi.fn(async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)),
-    json: vi.fn(),
-    text: vi.fn(async () => ''),
-  } as unknown as Response
-}
-
-function hf503Response(estimatedTime = 0.001) {
-  return {
-    status: 503,
-    headers: {
-      get: vi.fn((name: string) => (name.toLowerCase() === 'content-type' ? 'application/json' : null)),
-    },
-    arrayBuffer: vi.fn(),
-    json: vi.fn(async () => ({ estimated_time: estimatedTime })),
-    text: vi.fn(async () => ''),
-  } as unknown as Response
+    audio: bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    contentType,
+  }
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -224,7 +232,8 @@ beforeEach(() => {
   testState.runTranslator.mockResolvedValue('translated text')
   testState.translateVox.mockResolvedValue('translated vox')
   testState.globalFetch.mockReset()
-  testState.sleep.mockResolvedValue(undefined)
+  testState.requestProviderOperation.mockReset()
+  testState.requestTtsSynthesis.mockReset()
   vi.stubGlobal('AudioContext', StubAudioContext)
   vi.stubGlobal('speechSynthesis', {
     cancel: vi.fn(),
@@ -254,40 +263,38 @@ describe('Web Speech voice catalog', () => {
 
 describe('TTS provider catalog request caching', () => {
   it('dedupes ElevenLabs catalogs by API key and retries failed requests', async () => {
-    const pending = deferred<Response>()
-    const fetchMock = vi
-      .fn()
+    const pending = deferred<unknown>()
+    testState.requestProviderOperation
       .mockImplementationOnce(() => pending.promise)
-      .mockResolvedValueOnce(jsonResponse({ voices: [{ voice_id: 'voice-b', name: 'Voice B' }] }))
-      .mockResolvedValueOnce(jsonResponse({ error: 'temporary' }, 503))
-      .mockResolvedValueOnce(jsonResponse({ voices: [{ voice_id: 'voice-c', name: 'Voice C' }] }))
-    vi.stubGlobal('fetch', fetchMock)
+      .mockResolvedValueOnce({ voices: [{ voice_id: 'voice-b', name: 'Voice B' }] })
+      .mockRejectedValueOnce(new Error('temporary catalog failure'))
+      .mockResolvedValueOnce({ voices: [{ voice_id: 'voice-c', name: 'Voice C' }] })
     const { getElevenTTSVoices } = await importTTS()
 
     const first = getElevenTTSVoices()
     const concurrent = getElevenTTSVoices()
     await Promise.resolve()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    pending.resolve(jsonResponse({ voices: [{ voice_id: 'voice-a', name: 'Voice A' }] }))
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(1)
+    pending.resolve({ voices: [{ voice_id: 'voice-a', name: 'Voice A' }] })
 
     await expect(Promise.all([first, concurrent])).resolves.toEqual([
       [{ voice_id: 'voice-a', name: 'Voice A' }],
       [{ voice_id: 'voice-a', name: 'Voice A' }],
     ])
     await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-a', name: 'Voice A' }])
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(1)
 
     testState.db.elevenLabKey = 'eleven-key-b'
     await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-b', name: 'Voice B' }])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.elevenlabs.io/v1/voices', {
-      headers: { 'xi-api-key': 'eleven-key-b' },
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(2)
+    expect(testState.requestProviderOperation).toHaveBeenNthCalledWith(2, 'elevenlabs.voices', {
+      credential: { source: 'provided', apiKey: 'eleven-key-b' },
     })
 
     testState.db.elevenLabKey = 'eleven-key-retry'
-    await expect(getElevenTTSVoices()).rejects.toThrow('ElevenLabs catalog request failed (503)')
+    await expect(getElevenTTSVoices()).rejects.toThrow('temporary catalog failure')
     await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-c', name: 'Voice C' }])
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(4)
   })
 
   it('dedupes VOICEVOX catalogs by normalized URL and retries malformed responses', async () => {
@@ -336,48 +343,59 @@ describe('TTS provider catalog request caching', () => {
 
   it('dedupes Fish Speech catalogs by API key and retries failed requests', async () => {
     testState.db.fishSpeechKey = 'fish-key-a'
-    const pending = deferred<Response>()
-    const fetchMock = vi
-      .fn()
+    const pending = deferred<unknown>()
+    testState.requestProviderOperation
       .mockImplementationOnce(() => pending.promise)
-      .mockResolvedValueOnce(jsonResponse({ items: [{ _id: 'fish-b', title: 'Fish B', description: 'Second' }] }))
-      .mockResolvedValueOnce(jsonResponse({ error: 'temporary' }, 502))
-      .mockResolvedValueOnce(jsonResponse({ items: [{ _id: 'fish-c', title: 'Fish C', description: 'Retry' }] }))
-    vi.stubGlobal('fetch', fetchMock)
+      .mockResolvedValueOnce({ items: [{ _id: 'fish-b', title: 'Fish B', description: 'Second' }] })
+      .mockRejectedValueOnce(new Error('temporary catalog failure'))
+      .mockResolvedValueOnce({ items: [{ _id: 'fish-c', title: 'Fish C', description: 'Retry' }] })
     const { getFishSpeechModels } = await importTTS()
 
     const first = getFishSpeechModels()
     const concurrent = getFishSpeechModels()
     await Promise.resolve()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    pending.resolve(jsonResponse({ items: [{ _id: 'fish-a', title: 'Fish A', description: 'First' }] }))
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(1)
+    pending.resolve({ items: [{ _id: 'fish-a', title: 'Fish A', description: 'First' }] })
 
     const expectedFirst = [{ _id: 'fish-a', title: 'Fish A', description: 'First' }]
     await expect(Promise.all([first, concurrent])).resolves.toEqual([expectedFirst, expectedFirst])
     await expect(getFishSpeechModels()).resolves.toEqual(expectedFirst)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(1)
 
     testState.db.fishSpeechKey = 'fish-key-b'
     await expect(getFishSpeechModels()).resolves.toEqual([{ _id: 'fish-b', title: 'Fish B', description: 'Second' }])
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://api.fish.audio/model?self=true', {
-      headers: { Authorization: 'Bearer fish-key-b' },
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(2)
+    expect(testState.requestProviderOperation).toHaveBeenNthCalledWith(2, 'fish.models', {
+      credential: { source: 'provided', apiKey: 'fish-key-b' },
     })
 
     testState.db.fishSpeechKey = 'fish-key-retry'
-    await expect(getFishSpeechModels()).rejects.toThrow('Fish Speech catalog request failed (502)')
+    await expect(getFishSpeechModels()).rejects.toThrow('temporary catalog failure')
     await expect(getFishSpeechModels()).resolves.toEqual([{ _id: 'fish-c', title: 'Fish C', description: 'Retry' }])
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(4)
+  })
+
+  it('does not retain masked-secret catalogs across stored credential updates', async () => {
+    testState.db.elevenLabKey = '__RISU_SECRET_MASKED__'
+    testState.requestProviderOperation
+      .mockResolvedValueOnce({ voices: [{ voice_id: 'voice-a', name: 'Voice A' }] })
+      .mockResolvedValueOnce({ voices: [{ voice_id: 'voice-b', name: 'Voice B' }] })
+    const { getElevenTTSVoices } = await importTTS()
+
+    await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-a', name: 'Voice A' }])
+    await expect(getElevenTTSVoices()).resolves.toEqual([{ voice_id: 'voice-b', name: 'Voice B' }])
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(2)
+    expect(testState.requestProviderOperation).toHaveBeenNthCalledWith(1, 'elevenlabs.voices', {
+      credential: { source: 'stored' },
+    })
   })
 })
 
 describe('sayTTS AudioContext lifecycle', () => {
   it('M18: repeated network TTS playbacks reuse one AudioContext and release ended sources', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(audioResponse(new Uint8Array([1, 2, 3]), 'audio/mpeg'))
-      .mockResolvedValueOnce(audioResponse(new Uint8Array([4, 5, 6]), 'audio/mpeg'))
-    vi.stubGlobal('fetch', fetchMock)
+    testState.requestTtsSynthesis
+      .mockResolvedValueOnce(ttsAudio(new Uint8Array([1, 2, 3]), 'audio/mpeg'))
+      .mockResolvedValueOnce(ttsAudio(new Uint8Array([4, 5, 6]), 'audio/mpeg'))
     const { sayTTS } = await importTTS()
 
     await sayTTS(makeCharacter(), 'hello')
@@ -434,19 +452,13 @@ describe('sayTTS AudioContext lifecycle', () => {
   it('L50/I16: GPT-SoVITS and FishSpeech do not console-log request or response bodies', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     testState.db.fishSpeechKey = 'fish-key'
-    testState.globalFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        data: {
-          buffer: new Uint8Array([3, 2, 1]).buffer,
-        },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        data: {
-          buffer: new Uint8Array([6, 5, 4]).buffer,
-        },
-      })
+    testState.globalFetch.mockResolvedValueOnce({
+      ok: true,
+      data: {
+        buffer: new Uint8Array([3, 2, 1]).buffer,
+      },
+    })
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio(new Uint8Array([6, 5, 4]), 'audio/mpeg'))
     const { sayTTS } = await importTTS()
 
     try {
@@ -457,13 +469,13 @@ describe('sayTTS AudioContext lifecycle', () => {
       logSpy.mockRestore()
     }
 
-    expect(testState.globalFetch).toHaveBeenCalledTimes(2)
+    expect(testState.globalFetch).toHaveBeenCalledTimes(1)
+    expect(testState.requestTtsSynthesis).toHaveBeenCalledTimes(1)
     expect(StubAudioContext.instances).toHaveLength(1)
   })
 
   it('M18: stopTTS stops the active source and clears stale playback refs', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(audioResponse(new Uint8Array([1, 2, 3])))
-    vi.stubGlobal('fetch', fetchMock)
+    testState.requestTtsSynthesis.mockResolvedValue(ttsAudio(new Uint8Array([1, 2, 3])))
     const { sayTTS, stopTTS } = await importTTS()
 
     await sayTTS(makeCharacter(), 'hello')
@@ -476,18 +488,181 @@ describe('sayTTS AudioContext lifecycle', () => {
     expect(source.disconnect).toHaveBeenCalledTimes(1)
     expect(speechSynthesis.cancel).toHaveBeenCalledTimes(2)
   })
+
+  it('routes every reachable masked credential through a server-owned operation', async () => {
+    testState.db = {
+      elevenLabKey: '__RISU_SECRET_MASKED__',
+      fishSpeechKey: '__RISU_SECRET_MASKED__',
+      huggingfaceKey: '__RISU_SECRET_MASKED__',
+      NAIApiKey: '__RISU_SECRET_MASKED__',
+      openAIKey: '__RISU_SECRET_MASKED__',
+    }
+    testState.requestTtsSynthesis.mockResolvedValue(ttsAudio())
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(makeCharacter(), 'eleven')
+    await sayTTS(makeFishSpeechCharacter(), 'fish')
+    await sayTTS(
+      makeCharacter({ ttsMode: 'huggingface', hfTTS: { model: 'owner/model', language: 'en' } }),
+      'huggingface',
+    )
+    await sayTTS(
+      makeCharacter({ ttsMode: 'novelai', naittsConfig: { customvoice: false, voice: 'Aini', version: 'v2' } }),
+      'novelai',
+    )
+    await sayTTS(
+      makeCharacter({
+        ttsMode: 'openai',
+        oaiTTSConfig: {
+          enabled: true,
+          baseURL: 'https://masked-client-value.example/v1',
+          apiKey: '__RISU_SECRET_MASKED__',
+          model: 'client-model',
+          voice: 'client-voice',
+          format: 'wav',
+        },
+      }),
+      'openai',
+    )
+
+    expect(testState.requestTtsSynthesis.mock.calls.map(([request]) => request)).toEqual([
+      {
+        operation: 'elevenlabs.synthesize',
+        credential: { source: 'stored' },
+        input: { text: 'eleven', voiceId: 'voice-a' },
+      },
+      {
+        operation: 'fish.synthesize',
+        credential: { source: 'stored' },
+        input: { text: 'fish', referenceId: 'fish-voice', chunkLength: 200, normalize: true },
+      },
+      {
+        operation: 'huggingface.synthesize',
+        credential: { source: 'stored' },
+        input: { text: 'huggingface', model: 'owner/model' },
+      },
+      {
+        operation: 'novelai.synthesize',
+        credential: { source: 'stored' },
+        input: { text: 'novelai', seed: 'Aini', version: 'v2' },
+      },
+      {
+        operation: 'openai.synthesize',
+        credential: { source: 'stored-character', characterId: 'char-tts' },
+        input: { text: 'openai' },
+      },
+    ])
+    expect(JSON.stringify(testState.requestTtsSynthesis.mock.calls)).not.toContain('__RISU_SECRET_MASKED__')
+  })
+
+  it('preserves a caller-owned OpenAI-compatible draft without exposing stored fallback keys', async () => {
+    testState.db.openAIKey = '__RISU_SECRET_MASKED__'
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio(new Uint8Array([1]), 'audio/opus'))
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(
+      makeCharacter({
+        ttsMode: 'openai',
+        oaiTTSConfig: {
+          enabled: true,
+          baseURL: 'http://127.0.0.1:8080/v1',
+          apiKey: 'draft-character-key',
+          model: 'draft-model',
+          voice: 'draft-voice',
+          format: 'opus',
+        },
+      }),
+      'hello',
+    )
+
+    expect(testState.requestTtsSynthesis.mock.calls[0][0]).toEqual({
+      operation: 'openai.synthesize',
+      credential: { source: 'provided', apiKey: 'draft-character-key' },
+      input: {
+        text: 'hello',
+        config: {
+          baseUrl: 'http://127.0.0.1:8080/v1',
+          model: 'draft-model',
+          voice: 'draft-voice',
+          format: 'opus',
+        },
+      },
+    })
+  })
+
+  it('wraps OpenAI raw PCM output in a browser-decodable WAV container', async () => {
+    testState.db.openAIKey = 'draft-global-key'
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio(new Uint8Array([0, 0, 1, 0]), 'audio/pcm'))
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(
+      makeCharacter({
+        ttsMode: 'openai',
+        oaiTTSConfig: {
+          enabled: true,
+          baseURL: 'https://api.openai.com/v1',
+          model: 'tts-1',
+          voice: 'alloy',
+          format: 'pcm',
+        },
+      }),
+      'hello',
+    )
+
+    const decoded = new Uint8Array(StubAudioContext.instances[0].decoded[0])
+    expect(new TextDecoder().decode(decoded.subarray(0, 4))).toBe('RIFF')
+    expect(new TextDecoder().decode(decoded.subarray(8, 12))).toBe('WAVE')
+    expect(new DataView(decoded.buffer).getUint32(24, true)).toBe(24_000)
+    expect(decoded.subarray(44)).toEqual(new Uint8Array([0, 0, 1, 0]))
+  })
+
+  it('aborts an in-flight server request when playback is stopped without surfacing an error', async () => {
+    let requestSignal: AbortSignal | undefined
+    testState.requestTtsSynthesis.mockImplementationOnce(
+      async (_request: unknown, options: { signal?: AbortSignal }) =>
+        await new Promise((_resolve, reject) => {
+          requestSignal = options.signal
+          options.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), {
+            once: true,
+          })
+        }),
+    )
+    const { sayTTS, stopTTS } = await importTTS()
+
+    const pending = sayTTS(makeCharacter(), 'hello')
+    await vi.waitFor(() => expect(requestSignal).toBeDefined())
+    stopTTS()
+    await pending
+
+    expect(requestSignal?.aborted).toBe(true)
+    expect(testState.alertError).not.toHaveBeenCalled()
+    expect(StubAudioContext.instances).toHaveLength(0)
+  })
+
+  it('does not play a superseded response even when its transport ignores cancellation', async () => {
+    const firstResponse = deferred<ReturnType<typeof ttsAudio>>()
+    testState.requestTtsSynthesis
+      .mockImplementationOnce(() => firstResponse.promise)
+      .mockResolvedValueOnce(ttsAudio(new Uint8Array([2]), 'audio/mpeg'))
+    const { sayTTS } = await importTTS()
+
+    const first = sayTTS(makeCharacter(), 'first')
+    await vi.waitFor(() => expect(testState.requestTtsSynthesis).toHaveBeenCalledTimes(1))
+    await sayTTS(makeCharacter(), 'second')
+    firstResponse.resolve(ttsAudio(new Uint8Array([1]), 'audio/mpeg'))
+    await first
+
+    expect(StubAudioContext.instances).toHaveLength(1)
+    expect(StubAudioContext.instances[0].sources).toHaveLength(1)
+    expect(StubAudioContext.instances[0].decoded).toEqual([new Uint8Array([2]).buffer])
+    expect(testState.alertError).not.toHaveBeenCalled()
+  })
 })
 
-describe('sayTTS HuggingFace retry bounds', () => {
-  it('L48: caps HuggingFace 503 retries and reports failure', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(hf503Response())
-      .mockResolvedValueOnce(hf503Response())
-      .mockResolvedValueOnce(hf503Response())
-      .mockResolvedValueOnce(hf503Response())
-      .mockResolvedValueOnce(hf503Response())
-    vi.stubGlobal('fetch', fetchMock)
+describe('sayTTS HuggingFace server operation', () => {
+  it('reports a sanitized server operation failure once', async () => {
+    const { TtsSynthesisRequestError } = await import('../server/tts')
+    testState.requestTtsSynthesis.mockRejectedValueOnce(new TtsSynthesisRequestError(502, undefined))
     const { sayTTS } = await importTTS()
 
     await sayTTS(
@@ -501,21 +676,13 @@ describe('sayTTS HuggingFace retry bounds', () => {
       'hello',
     )
 
-    expect(fetchMock).toHaveBeenCalledTimes(5)
-    expect(testState.sleep).toHaveBeenCalledTimes(4)
-    expect(testState.alertError).toHaveBeenCalledWith(
-      'HTTP: HuggingFace TTS model did not become ready after 5 attempts',
-    )
+    expect(testState.requestTtsSynthesis).toHaveBeenCalledTimes(1)
+    expect(testState.alertError).toHaveBeenCalledWith('HTTP: 502')
     expect(StubAudioContext.instances).toHaveLength(0)
   })
 
-  it('L48: translates non-English HuggingFace TTS text once across retries', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(hf503Response())
-      .mockResolvedValueOnce(hf503Response())
-      .mockResolvedValueOnce(audioResponse(new Uint8Array([7, 8, 9]), 'audio/wav'))
-    vi.stubGlobal('fetch', fetchMock)
+  it('translates non-English input once before the fixed server operation', async () => {
+    testState.requestTtsSynthesis.mockResolvedValueOnce(ttsAudio(new Uint8Array([7, 8, 9]), 'audio/wav'))
     const { sayTTS } = await importTTS()
 
     await sayTTS(
@@ -531,13 +698,14 @@ describe('sayTTS HuggingFace retry bounds', () => {
 
     expect(testState.runTranslator).toHaveBeenCalledTimes(1)
     expect(testState.runTranslator).toHaveBeenCalledWith('original text', false, 'en', 'ko')
-    expect(testState.sleep).toHaveBeenCalledTimes(2)
-    expect(fetchMock).toHaveBeenCalledTimes(3)
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(JSON.parse(String((init as RequestInit).body))).toEqual({
-        inputs: 'translated text',
-      })
-    }
+    expect(testState.requestTtsSynthesis).toHaveBeenCalledWith(
+      {
+        operation: 'huggingface.synthesize',
+        credential: { source: 'provided', apiKey: 'hf-key' },
+        input: { text: 'translated text', model: 'hf/model' },
+      },
+      { signal: expect.any(AbortSignal) },
+    )
     expect(StubAudioContext.instances).toHaveLength(1)
   })
 })

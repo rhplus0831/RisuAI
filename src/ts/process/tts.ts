@@ -4,8 +4,11 @@ import { runTranslator, translateVox } from '../translator/translator'
 import { globalFetch, loadAsset } from '../globalApi.svelte'
 import { createKeyedRequestCache } from '../model/keyedRequestCache'
 import { language } from 'src/lang'
-import { sleep } from '../util'
 import { runVITS } from './transformers'
+import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
+import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
+import { requestTtsSynthesis, ttsGlobalCredential, TtsSynthesisRequestError } from '../server/tts'
+import type { OpenAiTtsFormat, TtsSynthesisRequest } from '../server/ttsProtocol'
 import {
   getTTSPreprocessors,
   getTTSPostprocessors,
@@ -16,8 +19,6 @@ import {
   type AfterTTSResult,
 } from './ttsHooks'
 
-const HF_TTS_MAX_ATTEMPTS = 5
-const HF_TTS_MAX_TOTAL_RETRY_WAIT_MS = 120_000
 const TTS_CATALOG_CACHE_TTL_MS = 30_000
 
 export type ElevenTTSVoice = {
@@ -49,6 +50,8 @@ const fishSpeechModelCatalogRequests = createKeyedRequestCache<FishSpeechModel[]
 let audioContext: AudioContext | null = null
 let sourceNode: AudioBufferSourceNode | null = null
 let sourceNodeCleanup: (() => void) | null = null
+let activeTtsRequest: AbortController | null = null
+let activeTtsRun = 0
 
 type DisconnectableAudioNode = Pick<AudioNode, 'disconnect'>
 
@@ -99,15 +102,62 @@ function startSource(source: AudioBufferSourceNode, nodes: DisconnectableAudioNo
   }
 }
 
-function huggingFaceRetryDelayMs(json: unknown): number | null {
-  if (!json || typeof json !== 'object') return null
-  const estimatedTime = Number((json as { estimated_time?: unknown }).estimated_time)
-  if (!Number.isFinite(estimatedTime) || estimatedTime <= 0) return null
-  return Math.ceil(estimatedTime * 1000)
+function beginTtsRun(): number {
+  activeTtsRequest?.abort()
+  activeTtsRequest = null
+  activeTtsRun += 1
+  return activeTtsRun
 }
 
-function isJsonResponse(response: Response): boolean {
-  return response.headers.get('content-type')?.toLowerCase().includes('application/json') ?? false
+function isCurrentTtsRun(run: number): boolean {
+  return run === activeTtsRun
+}
+
+function isAbortError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+}
+
+function pcm16LeToWav(pcm: ArrayBuffer, sampleRate = 24_000): ArrayBuffer {
+  if (pcm.byteLength === 0 || pcm.byteLength % 2 !== 0) {
+    throw new Error(language.errors.httpError)
+  }
+  const wav = new ArrayBuffer(44 + pcm.byteLength)
+  const view = new DataView(wav)
+  const writeAscii = (offset: number, value: string): void => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index))
+    }
+  }
+  writeAscii(0, 'RIFF')
+  view.setUint32(4, 36 + pcm.byteLength, true)
+  writeAscii(8, 'WAVE')
+  writeAscii(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, 1, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, sampleRate * 2, true)
+  view.setUint16(32, 2, true)
+  view.setUint16(34, 16, true)
+  writeAscii(36, 'data')
+  view.setUint32(40, pcm.byteLength, true)
+  new Uint8Array(wav, 44).set(new Uint8Array(pcm))
+  return wav
+}
+
+async function requestCredentialedTtsAudio(
+  request: TtsSynthesisRequest,
+  run: number,
+): Promise<{ audio: ArrayBuffer; contentType: string }> {
+  if (!isCurrentTtsRun(run)) throw new DOMException('Superseded TTS request', 'AbortError')
+  const controller = new AbortController()
+  activeTtsRequest?.abort()
+  activeTtsRequest = controller
+  try {
+    return await requestTtsSynthesis(request, { signal: controller.signal })
+  } finally {
+    if (activeTtsRequest === controller) activeTtsRequest = null
+  }
 }
 
 /**
@@ -162,12 +212,14 @@ async function playAudio(
   audio: ArrayBuffer,
   mimeType: string,
   ctx: { ttsMode: string; characterId: string },
+  run: number,
 ): Promise<void> {
   const processed = await runPostprocessorPipeline(audio, mimeType, ctx)
-  if (processed.skip) return
+  if (processed.skip || !isCurrentTtsRun(run)) return
 
   const audioContext = await getNetworkAudioContext()
   const decoded = await audioContext.decodeAudioData(processed.audio)
+  if (!isCurrentTtsRun(run)) return
   const source = audioContext.createBufferSource()
   source.buffer = decoded
   source.connect(audioContext.destination)
@@ -175,6 +227,7 @@ async function playAudio(
 }
 
 export async function sayTTS(character: character, text: string) {
+  const ttsRun = beginTtsRun()
   try {
     if (!character) {
       const v = getCurrentCharacter()
@@ -209,6 +262,7 @@ export async function sayTTS(character: character, text: string) {
       return
     }
     text = beforeResult.ctx.text
+    if (!text || !isCurrentTtsRun(ttsRun)) return
 
     switch (character.ttsMode) {
       case 'webspeech': {
@@ -227,27 +281,26 @@ export async function sayTTS(character: character, text: string) {
         break
       }
       case 'elevenlab': {
-        const da = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${character.ttsSpeech}`, {
-          body: JSON.stringify({
-            text: text,
-            model_id: 'eleven_multilingual_v2',
-          }),
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'xi-api-key': db.elevenLabKey || undefined,
+        const response = await requestCredentialedTtsAudio(
+          {
+            operation: 'elevenlabs.synthesize',
+            credential: ttsGlobalCredential(db.elevenLabKey),
+            input: {
+              text,
+              voiceId: character.ttsSpeech,
+            },
           },
-        })
-        if (da.status >= 200 && da.status < 300) {
-          const buffer = await da.arrayBuffer()
-          const mimeType = da.headers.get('content-type') || 'audio/mpeg'
-          await playAudio(buffer, mimeType, {
+          ttsRun,
+        )
+        await playAudio(
+          response.audio,
+          response.contentType,
+          {
             ttsMode: character.ttsMode ?? '',
             characterId: character.chaId,
-          })
-        } else {
-          alertError(await da.text())
-        }
+          },
+          ttsRun,
+        )
         break
       }
       case 'VOICEVOX': {
@@ -276,137 +329,116 @@ export async function sayTTS(character: character, text: string) {
             body: JSON.stringify(bodyData),
           })
           if (getVoice.status == 200 && getVoice.headers.get('content-type') === 'audio/wav') {
-            await playAudio(await getVoice.arrayBuffer(), 'audio/wav', {
-              ttsMode: character.ttsMode ?? '',
-              characterId: character.chaId,
-            })
+            await playAudio(
+              await getVoice.arrayBuffer(),
+              'audio/wav',
+              {
+                ttsMode: character.ttsMode ?? '',
+                characterId: character.chaId,
+              },
+              ttsRun,
+            )
           }
         }
         break
       }
       case 'openai': {
         const cfg = character.oaiTTSConfig?.enabled ? character.oaiTTSConfig : null
-        const baseURL = (cfg?.baseURL?.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '')
-        const apiKey = (cfg?.apiKey || db.openAIKey || '').trim()
-        const model = cfg?.model || 'tts-1'
-        const voice = cfg?.voice || character.oaiVoice || 'alloy'
-        const format = cfg?.format || 'mp3'
-
-        const res = await globalFetch(`${baseURL}/audio/speech`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: 'Bearer ' + apiKey } : {}),
-          },
-          body: {
-            model,
-            input: text,
-            voice,
-            response_format: format,
-          },
-          rawResponse: true,
-        })
-        const dat = res.data
-
-        if (res.ok) {
-          try {
-            const audio = Buffer.from(dat).buffer
-            await playAudio(audio, 'audio/mpeg', {
-              ttsMode: character.ttsMode ?? '',
-              characterId: character.chaId,
-            })
-          } catch (error) {
-            alertError(language.errors.httpError + `${error}`)
-          }
-        } else {
-          if (dat.error && dat.error.message) {
-            alertError(language.errors.httpError + `${dat.error.message}`)
-          } else {
-            alertError(language.errors.httpError + `${Buffer.from(res.data).toString()}`)
-          }
+        const characterKey = typeof cfg?.apiKey === 'string' ? cfg.apiKey.trim() : ''
+        const globalKey = typeof db.openAIKey === 'string' ? db.openAIKey.trim() : ''
+        const usesStoredCredential =
+          characterKey === MASKED_PROVIDER_SECRET || (!characterKey && globalKey === MASKED_PROVIDER_SECRET)
+        const providedKey =
+          characterKey && characterKey !== MASKED_PROVIDER_SECRET
+            ? characterKey
+            : globalKey !== MASKED_PROVIDER_SECRET
+              ? globalKey
+              : ''
+        const config = {
+          baseUrl: cfg?.baseURL?.trim() || 'https://api.openai.com/v1',
+          model: cfg?.model?.trim() || 'tts-1',
+          voice: cfg?.voice?.trim() || character.oaiVoice?.trim() || 'alloy',
+          format: (cfg?.format || 'mp3') as OpenAiTtsFormat,
         }
+        const response = await requestCredentialedTtsAudio(
+          {
+            operation: 'openai.synthesize',
+            credential: usesStoredCredential
+              ? { source: 'stored-character', characterId: character.chaId }
+              : providedKey
+                ? { source: 'provided', apiKey: providedKey }
+                : { source: 'none' },
+            input: {
+              text,
+              ...(usesStoredCredential ? {} : { config }),
+            },
+          },
+          ttsRun,
+        )
+        const isRawPcm =
+          config.format === 'pcm' &&
+          (response.contentType === 'audio/pcm' || response.contentType === 'application/octet-stream')
+        const playableAudio = isRawPcm ? pcm16LeToWav(response.audio) : response.audio
+        await playAudio(
+          playableAudio,
+          isRawPcm ? 'audio/wav' : response.contentType,
+          {
+            ttsMode: character.ttsMode ?? '',
+            characterId: character.chaId,
+          },
+          ttsRun,
+        )
         break
       }
       case 'novelai': {
-        if (text === '') {
-          break
-        }
-        const encodedText = encodeURIComponent(text)
-        const encodedSeed = encodeURIComponent(character.naittsConfig.voice)
-
-        const url = `https://api.novelai.net/ai/generate-voice?text=${encodedText}&voice=-1&seed=${encodedSeed}&opus=false&version=${character.naittsConfig.version}`
-
-        const response = await globalFetch(url, {
-          method: 'GET',
-          headers: {
-            Authorization: 'Bearer ' + db.NAIApiKey,
+        const response = await requestCredentialedTtsAudio(
+          {
+            operation: 'novelai.synthesize',
+            credential: ttsGlobalCredential(db.NAIApiKey),
+            input: {
+              text,
+              seed: character.naittsConfig.voice,
+              version: character.naittsConfig.version === 'v1' ? 'v1' : 'v2',
+            },
           },
-          rawResponse: true,
-        })
-
-        if (response.ok) {
-          await playAudio(response.data.buffer, 'audio/wav', {
+          ttsRun,
+        )
+        await playAudio(
+          response.audio,
+          response.contentType,
+          {
             ttsMode: character.ttsMode ?? '',
             characterId: character.chaId,
-          })
-        } else {
-          alertError('Error fetching or decoding audio data')
-        }
+          },
+          ttsRun,
+        )
         break
       }
       case 'huggingface': {
         const inputText =
           character.hfTTS.language === 'en' ? text : await runTranslator(text, false, 'en', character.hfTTS.language)
-
-        let totalRetryWaitMs = 0
-        for (let attempt = 1; attempt <= HF_TTS_MAX_ATTEMPTS; attempt++) {
-          const response = await fetch(`https://api-inference.huggingface.co/models/${character.hfTTS.model}`, {
-            method: 'POST',
-            headers: {
-              Authorization: 'Bearer ' + db.huggingfaceKey,
-              'Content-Type': 'application/json',
+        if (!isCurrentTtsRun(ttsRun)) return
+        const response = await requestCredentialedTtsAudio(
+          {
+            operation: 'huggingface.synthesize',
+            credential: ttsGlobalCredential(db.huggingfaceKey),
+            input: {
+              text: inputText,
+              model: character.hfTTS.model,
             },
-            body: JSON.stringify({
-              inputs: inputText,
-            }),
-          })
-
-          if (response.status === 503 && isJsonResponse(response)) {
-            const json = await response.json()
-            const retryDelayMs = huggingFaceRetryDelayMs(json)
-            const canRetry =
-              retryDelayMs !== null &&
-              attempt < HF_TTS_MAX_ATTEMPTS &&
-              totalRetryWaitMs + retryDelayMs <= HF_TTS_MAX_TOTAL_RETRY_WAIT_MS
-            if (canRetry) {
-              totalRetryWaitMs += retryDelayMs
-              await sleep(retryDelayMs)
-              continue
-            }
-            alertError(
-              language.errors.httpError + `HuggingFace TTS model did not become ready after ${attempt} attempts`,
-            )
-            return
-          } else if (response.status >= 400) {
-            alertError(language.errors.httpError + `${await response.text()}`)
-            return
-          } else if (response.status === 200) {
-            const buffer = await response.arrayBuffer()
-            const mimeType = response.headers.get('content-type') || 'audio/wav'
-            await playAudio(buffer, mimeType, {
-              ttsMode: character.ttsMode ?? '',
-              characterId: character.chaId,
-            })
-          } else {
-            alertError('Error fetching or decoding audio data')
-          }
-          return
-        }
-        alertError(
-          language.errors.httpError +
-            `HuggingFace TTS model did not become ready after ${HF_TTS_MAX_ATTEMPTS} attempts`,
+          },
+          ttsRun,
         )
-        return
+        await playAudio(
+          response.audio,
+          response.contentType,
+          {
+            ttsMode: character.ttsMode ?? '',
+            characterId: character.chaId,
+          },
+          ttsRun,
+        )
+        break
       }
       case 'vits': {
         await runVITS(text, character.vits)
@@ -479,9 +511,10 @@ export async function sayTTS(character: character, text: string) {
             // pipeline first to honor plugin hooks consistently, then
             // build the gain-enabled graph with the final bytes.
             const processed = await runPostprocessorPipeline(response.data.buffer, mimeType, hookCtx)
-            if (!processed.skip) {
+            if (!processed.skip && isCurrentTtsRun(ttsRun)) {
               const audioContext = await getNetworkAudioContext()
               const decoded = await audioContext.decodeAudioData(processed.audio)
+              if (!isCurrentTtsRun(ttsRun)) return
               const source = audioContext.createBufferSource()
               source.buffer = decoded
               const gainNode = audioContext.createGain()
@@ -491,7 +524,7 @@ export async function sayTTS(character: character, text: string) {
               startSource(source, [source, gainNode])
             }
           } else {
-            await playAudio(response.data.buffer, mimeType, hookCtx)
+            await playAudio(response.data.buffer, mimeType, hookCtx, ttsRun)
           }
         } else {
           const textBuffer: Uint8Array = response.data.buffer
@@ -505,39 +538,39 @@ export async function sayTTS(character: character, text: string) {
           throw new Error('FishSpeech Model is not selected')
         }
 
-        const body = {
-          text: text,
-          reference_id: character.fishSpeechConfig.model._id,
-          chunk_length: character.fishSpeechConfig.chunk_length,
-          normalize: character.fishSpeechConfig.normalize,
-          format: 'mp3',
-          mp3_bitrate: 192,
-        }
-
-        const response = await globalFetch(`https://api.fish.audio/v1/tts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${db.fishSpeechKey}`,
+        const response = await requestCredentialedTtsAudio(
+          {
+            operation: 'fish.synthesize',
+            credential: ttsGlobalCredential(db.fishSpeechKey),
+            input: {
+              text,
+              referenceId: character.fishSpeechConfig.model._id,
+              chunkLength: Number.isInteger(character.fishSpeechConfig.chunk_length)
+                ? character.fishSpeechConfig.chunk_length
+                : 200,
+              normalize: character.fishSpeechConfig.normalize === true,
+            },
           },
-          body: body,
-          rawResponse: true,
-        })
-
-        if (response.ok) {
-          await playAudio(response.data.buffer, 'audio/mpeg', {
+          ttsRun,
+        )
+        await playAudio(
+          response.audio,
+          response.contentType,
+          {
             ttsMode: character.ttsMode ?? '',
             characterId: character.chaId,
-          })
-        } else {
-          const textBuffer: Uint8Array = response.data.buffer
-          const text = Buffer.from(textBuffer).toString('utf-8')
-          throw new Error(text)
-        }
+          },
+          ttsRun,
+        )
         break
       }
     }
   } catch (error) {
+    if (!isCurrentTtsRun(ttsRun) || isAbortError(error)) return
+    if (error instanceof TtsSynthesisRequestError) {
+      alertError(`${language.errors.httpError}${error.status}`)
+      return
+    }
     alertError(`TTS Error: ${error}`)
   }
 }
@@ -545,6 +578,9 @@ export async function sayTTS(character: character, text: string) {
 export const oaiVoices = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer']
 
 export function stopTTS() {
+  activeTtsRun += 1
+  activeTtsRequest?.abort()
+  activeTtsRequest = null
   const activeSource = sourceNode
   const cleanup = sourceNodeCleanup
   if (activeSource) {
@@ -558,7 +594,7 @@ export function stopTTS() {
       }
     }
   }
-  if (speechSynthesis && SpeechSynthesisUtterance) {
+  if (typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined') {
     speechSynthesis.cancel()
   }
 }
@@ -585,24 +621,25 @@ function requireCatalogResponse(response: Response, provider: string): void {
 export async function getElevenTTSVoices(): Promise<ElevenTTSVoice[]> {
   const db = getDatabase()
   const apiKey = typeof db.elevenLabKey === 'string' ? db.elevenLabKey : ''
+  const credential = providerOperationCredential(apiKey)
 
-  return elevenVoiceCatalogRequests.request(apiKey, async () => {
-    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
-      headers: apiKey ? { 'xi-api-key': apiKey } : {},
-    })
-    requireCatalogResponse(response, 'ElevenLabs')
-    const body: unknown = await response.json()
-    if (!isCatalogRecord(body) || !Array.isArray(body.voices)) {
-      throw new Error('ElevenLabs voice catalog response was malformed')
-    }
-
-    return body.voices.map((voice): ElevenTTSVoice => {
-      if (!isCatalogRecord(voice) || typeof voice.voice_id !== 'string' || typeof voice.name !== 'string') {
+  return elevenVoiceCatalogRequests.request(
+    JSON.stringify(credential),
+    async () => {
+      const body = await requestProviderOperation<unknown>('elevenlabs.voices', { credential })
+      if (!isCatalogRecord(body) || !Array.isArray(body.voices)) {
         throw new Error('ElevenLabs voice catalog response was malformed')
       }
-      return { voice_id: voice.voice_id, name: voice.name }
-    })
-  })
+
+      return body.voices.map((voice): ElevenTTSVoice => {
+        if (!isCatalogRecord(voice) || typeof voice.voice_id !== 'string' || typeof voice.name !== 'string') {
+          throw new Error('ElevenLabs voice catalog response was malformed')
+        }
+        return { voice_id: voice.voice_id, name: voice.name }
+      })
+    },
+    { refresh: apiKey === MASKED_PROVIDER_SECRET },
+  )
 }
 
 export async function getVOICEVOXVoices(): Promise<VoicevoxSpeaker[]> {
@@ -642,41 +679,40 @@ export async function getVOICEVOXVoices(): Promise<VoicevoxSpeaker[]> {
 export async function getFishSpeechModels(): Promise<FishSpeechModel[]> {
   const db = getDatabase()
   const apiKey = typeof db.fishSpeechKey === 'string' ? db.fishSpeechKey : ''
+  const credential = providerOperationCredential(apiKey)
 
-  return fishSpeechModelCatalogRequests.request(apiKey, async () => {
-    const response = await fetch('https://api.fish.audio/model?self=true', {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-    })
-    requireCatalogResponse(response, 'Fish Speech')
-    const body: unknown = await response.json()
-    if (!isCatalogRecord(body) || !Array.isArray(body.items)) {
-      throw new Error('Fish Speech model catalog response was malformed')
-    }
-
-    return body.items.map((item): FishSpeechModel => {
-      if (!isCatalogRecord(item)) {
+  return fishSpeechModelCatalogRequests.request(
+    JSON.stringify(credential),
+    async () => {
+      const body = await requestProviderOperation<unknown>('fish.models', { credential })
+      if (!isCatalogRecord(body) || !Array.isArray(body.items)) {
         throw new Error('Fish Speech model catalog response was malformed')
       }
-      const id = item._id
-      const title = item.title
-      const description = item.description
-      if (
-        typeof id !== 'string' ||
-        id.length === 0 ||
-        (title !== undefined && typeof title !== 'string') ||
-        (description !== undefined && typeof description !== 'string')
-      ) {
-        throw new Error('Fish Speech model catalog response was malformed')
-      }
-      return {
-        _id: id,
-        title: typeof title === 'string' ? title : '',
-        description: typeof description === 'string' ? description : '',
-      }
-    })
-  })
+
+      return body.items.map((item): FishSpeechModel => {
+        if (!isCatalogRecord(item)) {
+          throw new Error('Fish Speech model catalog response was malformed')
+        }
+        const id = item._id
+        const title = item.title
+        const description = item.description
+        if (
+          typeof id !== 'string' ||
+          id.length === 0 ||
+          (title !== undefined && typeof title !== 'string') ||
+          (description !== undefined && typeof description !== 'string')
+        ) {
+          throw new Error('Fish Speech model catalog response was malformed')
+        }
+        return {
+          _id: id,
+          title: typeof title === 'string' ? title : '',
+          description: typeof description === 'string' ? description : '',
+        }
+      })
+    },
+    { refresh: apiKey === MASKED_PROVIDER_SECRET },
+  )
 }
 
 export function getNovelAIVoices() {

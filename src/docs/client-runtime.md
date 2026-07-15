@@ -35,6 +35,13 @@ requests with stored secrets. Fastify owns the fixed upstream URL, method, and
 headers; masked global/profile secrets remain server-side, while an intentional
 draft key is scoped to that one fixed operation.
 
+`src/ts/server/tts.ts` posts fixed synthesis operation ids to the authenticated
+binary TTS endpoint. Persisted global secrets stay server-side. Masked advanced
+OpenAI-compatible character settings use a stable character id so Fastify loads
+the raw key and its configured endpoint together; caller-owned draft keys keep
+their existing one-shot behavior. `src/ts/process/tts.ts` cancels superseded or
+stopped requests and ignores late audio before playback.
+
 ## Startup Sequence
 
 `src/main.ts` installs the router, mounts `App.svelte`, optionally installs the
