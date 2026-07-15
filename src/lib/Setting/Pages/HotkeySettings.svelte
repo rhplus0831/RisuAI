@@ -9,6 +9,19 @@
     const next = getDatabase().hotkeys.map((hotkey, i) => (i === index ? { ...hotkey, ...patch } : { ...hotkey }))
     applyServerBackedSetting('hotkeys', next)
   }
+
+  function recordHotkey(event: KeyboardEvent & { currentTarget: HTMLInputElement }, index: number): void {
+    if (event.key === 'Tab') return
+
+    event.preventDefault()
+    event.stopPropagation()
+    if (event.key === 'Escape') {
+      event.currentTarget.blur()
+      return
+    }
+
+    patchHotkey(index, { key: event.key })
+  }
 </script>
 
 {#if window.innerWidth < 768}
@@ -61,8 +74,7 @@
               value={hotkey.key === ' ' ? 'SPACE' : hotkey.key?.toLocaleUpperCase()}
               class="bg-bgcolor border-none w-16"
               onkeydown={(e) => {
-                e.preventDefault()
-                patchHotkey(index, { key: e.key })
+                recordHotkey(e, index)
               }} />
           </td>
         </tr>
