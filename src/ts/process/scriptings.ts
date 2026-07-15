@@ -733,7 +733,7 @@ export async function runScripted(
         }
         const selectedChar = get(selectedCharID)
         const char = getCharacterByIndex(selectedChar, { snapshot: true })
-        if (typeof data !== 'string') {
+        if (typeof desc !== 'string') {
           throw 'Invalid data type'
         }
         char.desc = desc

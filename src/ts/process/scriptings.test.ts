@@ -335,6 +335,18 @@ function stubLuaEditTriggerCommandFetch(): CapturedCommandFetch[] {
           chatId: 'chat-a',
         })
       }
+      if (url === '/api/v1/commands/characters/char-a' && init.method === 'PATCH') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'character.updated',
+            revision: 11,
+            resource: 'characterRow',
+            id: 'char-a',
+          },
+          characterId: 'char-a',
+        })
+      }
       return jsonResponse({ error: `unexpected ${url}` }, 404)
     }) as unknown as typeof fetch,
   )
@@ -763,6 +775,66 @@ describe('Fastify Lua edit-trigger chat mutation', () => {
       },
     })
     expect(console.error).not.toHaveBeenCalled()
+  })
+})
+
+describe('client scripting description host API', () => {
+  beforeEach(() => {
+    clearAppliedServerResourceRevision()
+    clearCachedServerCommandRevision()
+    setServerCommandSuccessReconciler(null)
+  })
+
+  afterEach(() => {
+    setResourceWriteGuardEnabled(false)
+    selectedCharID.set(-1)
+    clearAppliedServerResourceRevision()
+    clearCachedServerCommandRevision()
+    setServerCommandSuccessReconciler(null)
+  })
+
+  it('accepts a string description when the outer scripting data is not a string', async () => {
+    const calls = stubLuaEditTriggerCommandFetch()
+    const char = seedLuaEditTriggerDatabase()
+    luaMock.setDispatchArgs('setDescription', ['Updated description'])
+
+    await expect(
+      runScripted('-- set a valid description', {
+        char,
+        chat: char.chats[0],
+        mode: 'setDescription',
+        data: [],
+      }),
+    ).resolves.toBeDefined()
+
+    expect(getResourceDatabase().characters[0].desc).toBe('Updated description')
+    await waitForCommandFetches(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/characters/char-a',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { desc: 'Updated description' },
+      },
+    })
+  })
+
+  it('rejects a non-string description even when the outer scripting data is a string', async () => {
+    const calls = stubLuaEditTriggerCommandFetch()
+    const char = seedLuaEditTriggerDatabase()
+    luaMock.setDispatchArgs('setDescription', [42])
+
+    await expect(
+      runScripted('-- reject an invalid description', {
+        char,
+        chat: char.chats[0],
+        mode: 'setDescription',
+        data: 'outer data is valid',
+      }),
+    ).rejects.toBe('Invalid data type')
+
+    expect(getResourceDatabase().characters[0].desc).toBe('')
+    expect(calls).toHaveLength(0)
   })
 })
 
