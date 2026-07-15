@@ -101,6 +101,10 @@ function isImageGenerationAborted(signal?: AbortSignal): boolean {
   return signal?.aborted === true
 }
 
+function isImageGenerationAbortError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+}
+
 function mediaAbortError(): Error {
   if (typeof DOMException !== 'undefined') {
     return new DOMException('Image generation aborted', 'AbortError')
@@ -319,6 +323,9 @@ export async function generateAIImage(
 
       return returnSdData
     } catch (error) {
+      if (isImageGenerationAborted(options.signal) || isImageGenerationAbortError(error)) {
+        return false
+      }
       alertError(error)
       return false
     }
@@ -724,6 +731,9 @@ export async function generateAIImage(
 
       return returnSdData
     } catch (error) {
+      if (isImageGenerationAborted(options.signal) || isImageGenerationAbortError(error)) {
+        return false
+      }
       alertError(error)
       return false
     }

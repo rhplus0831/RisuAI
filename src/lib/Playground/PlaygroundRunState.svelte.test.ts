@@ -117,6 +117,7 @@ describe('playground run-state recovery', () => {
         expect.anything(),
         'submitted negative prompt',
         'inlay',
+        { signal: expect.any(AbortSignal) },
       ),
     )
 
@@ -127,6 +128,37 @@ describe('playground run-state recovery', () => {
 
     await vi.waitFor(() => expect(target.querySelector('.loadmove')).toBeNull())
     expect(target.querySelector('img')).toBeNull()
+  })
+
+  it('aborts image generation on unmount without reporting a cancellation error', async () => {
+    let generationSignal: AbortSignal | undefined
+    runMocks.generateAIImage.mockImplementation(
+      (_prompt, _character, _negativePrompt, _returnType, options) =>
+        new Promise((_resolve, reject) => {
+          generationSignal = options.signal
+          generationSignal.addEventListener(
+            'abort',
+            () => reject(new DOMException('Image generation cancelled', 'AbortError')),
+            { once: true },
+          )
+        }),
+    )
+    component = mount(PlaygroundImageGen, { target })
+
+    const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Generate'),
+    )
+    button?.click()
+    await vi.waitFor(() => expect(runMocks.generateAIImage).toHaveBeenCalledOnce())
+    expect(generationSignal?.aborted).toBe(false)
+
+    const mounted = component
+    component = undefined
+    unmount(mounted)
+
+    expect(generationSignal?.aborted).toBe(true)
+    await Promise.resolve()
+    expect(runMocks.alertError).not.toHaveBeenCalled()
   })
 
   it('restores the embedding run button after an embedding failure', async () => {

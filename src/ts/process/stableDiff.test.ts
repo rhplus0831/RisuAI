@@ -377,6 +377,35 @@ describe('stableDiff image-generation hygiene', () => {
     expect(state.alertError).not.toHaveBeenCalled()
   })
 
+  it('suppresses caller cancellation errors from browser image providers', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'webui',
+      webUiUrl: 'https://webui.example.test',
+      sdConfig: {},
+    }
+    let forwardedSignal!: AbortSignal
+    state.globalFetch.mockImplementation(
+      async (_url: string, options: { abortSignal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          forwardedSignal = options.abortSignal
+          forwardedSignal.addEventListener(
+            'abort',
+            () => reject(new DOMException('Image generation cancelled', 'AbortError')),
+            { once: true },
+          )
+        }),
+    )
+    const controller = new AbortController()
+
+    const pending = generateAIImage('prompt', char, '', 'inlay', { signal: controller.signal })
+    controller.abort()
+
+    expect(forwardedSignal.aborted).toBe(true)
+    await expect(pending).resolves.toBe(false)
+    expect(state.alertError).not.toHaveBeenCalled()
+  })
+
   it('keeps the legacy Kei account token behind the same stored-secret operation', async () => {
     const char = makeCharacter()
     state.db = {

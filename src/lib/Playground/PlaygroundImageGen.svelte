@@ -5,31 +5,60 @@
   import { generateAIImage } from 'src/ts/process/stableDiff'
   import { createBlankChar } from 'src/ts/characters'
   import { alertError } from 'src/ts/alert'
+  import { onDestroy } from 'svelte'
   let prompt = $state('')
   let negPrompt = $state('')
   let img = $state('')
   let generatedPrompt = $state('')
   let generatedNegPrompt = $state('')
   let generating = $state(false)
+  let destroyed = false
+  let activeGeneration: AbortController | null = null
+
+  function isAbortError(error: unknown): boolean {
+    return !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+  }
+
+  onDestroy(() => {
+    destroyed = true
+    activeGeneration?.abort()
+    activeGeneration = null
+  })
+
   const run = async () => {
-    console.log('running')
     if (generating) {
       return
     }
+    const controller = new AbortController()
+    activeGeneration = controller
     generating = true
     const submittedPrompt = prompt
     const submittedNegPrompt = negPrompt
     try {
-      const gen = await generateAIImage(submittedPrompt, createBlankChar(), submittedNegPrompt, 'inlay')
-      if (gen && prompt === submittedPrompt && negPrompt === submittedNegPrompt) {
+      const gen = await generateAIImage(submittedPrompt, createBlankChar(), submittedNegPrompt, 'inlay', {
+        signal: controller.signal,
+      })
+      if (
+        gen &&
+        !destroyed &&
+        activeGeneration === controller &&
+        !controller.signal.aborted &&
+        prompt === submittedPrompt &&
+        negPrompt === submittedNegPrompt
+      ) {
         img = gen
         generatedPrompt = submittedPrompt
         generatedNegPrompt = submittedNegPrompt
       }
     } catch (error) {
-      alertError(error)
+      if (!controller.signal.aborted && !isAbortError(error)) {
+        alertError(error)
+      }
     } finally {
-      generating = false
+      if (activeGeneration === controller) {
+        activeGeneration = null
+        if (!destroyed) generating = false
+      }
     }
   }
 </script>
