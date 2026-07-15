@@ -24,3 +24,11 @@ export async function decodeAudioFileWithTemporaryContext(file: Blob): Promise<A
     })
   }
 }
+
+export function stereoAudioChannels(
+  audioBuffer: Pick<AudioBuffer, 'getChannelData' | 'numberOfChannels'>,
+): [left: Float32Array, right: Float32Array] {
+  const left = audioBuffer.getChannelData(0)
+  const right = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : left
+  return [left, right]
+}

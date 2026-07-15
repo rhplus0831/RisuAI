@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { decodeAudioFileWithTemporaryContext, probeVideoDuration } from './subtitleMedia'
+import { decodeAudioFileWithTemporaryContext, probeVideoDuration, stereoAudioChannels } from './subtitleMedia'
 
 class StubAudioContext {
   static instances: StubAudioContext[] = []
@@ -30,6 +30,14 @@ afterEach(() => {
 })
 
 describe('Playground subtitle media cleanup', () => {
+  it('duplicates mono input for stereo MP3 encoding instead of reading a missing channel', () => {
+    const mono = new Float32Array([0.25, -0.25])
+    const getChannelData = vi.fn(() => mono)
+
+    expect(stereoAudioChannels({ numberOfChannels: 1, getChannelData } as any)).toEqual([mono, mono])
+    expect(getChannelData).toHaveBeenCalledOnce()
+  })
+
   it('L55: probeVideoDuration revokes the probe object URL after metadata probing', async () => {
     const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:subtitle-probe')
     const revokeUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})

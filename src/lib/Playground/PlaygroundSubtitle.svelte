@@ -14,7 +14,7 @@
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import sendSound from '../../etc/send.mp3'
-  import { decodeAudioFileWithTemporaryContext, probeVideoDuration } from './subtitleMedia'
+  import { decodeAudioFileWithTemporaryContext, probeVideoDuration, stereoAudioChannels } from './subtitleMedia'
 
   let LLMModePrompt =
     "Transcribe and create a caption and timestamp of it, according to the user's audio or video input. inside a markdown code block. (prefix ```webvtt / postfix ```)\n\nFormat\n```\n[TIME] CONTENT\n```\n\nExample\n```\n[00:00] Hildy!\n[00:01] How are you?\n[00:03] Tell me, is the lord of the universe in?\n[00:07] Somebody must've stolen the crown jewels\n```\n\nStep 2. Generate another subtitle, this time, as a translation to {{slot}}, with same format with Step 1., using step 1 as ref.\n\n The translation must be in natural {{slot}}.\n\n Now, start (Hint: media length is {{slot::time}})"
@@ -159,7 +159,7 @@
       outputText = 'Converting video to audio...\n\n'
       const audioBuffer = await decodeAudioFileWithTemporaryContext(file)
 
-      const [left, right] = [audioBuffer.getChannelData(0), audioBuffer.getChannelData(1)]
+      const [left, right] = stereoAudioChannels(audioBuffer)
 
       const leftInt16 = new Int16Array(left.length)
       const rightInt16 = new Int16Array(right.length)
@@ -170,7 +170,7 @@
       }
 
       const lamejs = await import('@breezystack/lamejs')
-      const mp3encoder = new lamejs.Mp3Encoder(2, 44100, 128)
+      const mp3encoder = new lamejs.Mp3Encoder(2, audioBuffer.sampleRate, 128)
       const enc = new AppendableBuffer()
 
       for (let pointer = 0; pointer < leftInt16.length; pointer += 1152) {
