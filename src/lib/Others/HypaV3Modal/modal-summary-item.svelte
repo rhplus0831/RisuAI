@@ -81,9 +81,15 @@
   let translation = $state<string | null>(null)
   let isRerolling = $state(false)
   let rerolled = $state<string | null>(null)
+  let rerollReady = $state(false)
   let isTranslatingRerolled = $state(false)
   let rerolledTranslation = $state<string | null>(null)
+  let componentActive = true
   let deletionOwnerActive = true
+  let translationRun = 0
+  let rerollRun = 0
+  let rerolledTranslationRun = 0
+  let expandedTranslationRun = 0
 
   interface SummaryDeletionTarget {
     owner: SerializableHypaV3Data
@@ -91,8 +97,54 @@
   }
 
   onDestroy(() => {
+    componentActive = false
     deletionOwnerActive = false
+    translationRun += 1
+    rerollRun += 1
+    rerolledTranslationRun += 1
+    expandedTranslationRun += 1
   })
+
+  function ownsSummary(candidate: SerializableSummary): boolean {
+    return componentActive && summary === candidate && hypaV3Data.summaries.includes(candidate)
+  }
+
+  function isCurrentTranslation(run: number, owner: SerializableSummary, source: string): boolean {
+    return run === translationRun && ownsSummary(owner) && owner.text === source
+  }
+
+  function cancelTranslation(): void {
+    translationRun += 1
+    isTranslating = false
+    translation = null
+  }
+
+  function isCurrentReroll(run: number, owner: SerializableSummary): boolean {
+    return run === rerollRun && ownsSummary(owner)
+  }
+
+  function cancelRerolledTranslation(): void {
+    rerolledTranslationRun += 1
+    isTranslatingRerolled = false
+    rerolledTranslation = null
+  }
+
+  function isCurrentRerolledTranslation(run: number, owner: SerializableSummary, source: string): boolean {
+    return run === rerolledTranslationRun && ownsSummary(owner) && rerolled === source && rerollReady
+  }
+
+  function isCurrentExpandedTranslation(
+    run: number,
+    owner: SerializableSummary,
+    ownerState: NonNullable<ExpandedMessageState>,
+  ): boolean {
+    return (
+      run === expandedTranslationRun &&
+      ownsSummary(owner) &&
+      expandedMessageState === ownerState &&
+      ownerState.summaryIndex === summaryIndex
+    )
+  }
 
   function captureSummaryDeletionTarget(): SummaryDeletionTarget | null {
     if (!summary || !hypaV3Data.summaries.includes(summary)) return null
@@ -127,11 +179,17 @@
       return
     }
 
+    const owner = summary
+    const source = owner.text
+    const run = ++translationRun
+
     isTranslating = true
-    translation = 'Loading...'
+    translation = `${language.loading}...`
 
     // Focus on translation element after it's rendered
     await tick()
+
+    if (!isCurrentTranslation(run, owner, source)) return
 
     if (summaryItemState.translationRef) {
       summaryItemState.translationRef.focus()
@@ -142,10 +200,16 @@
     }
 
     // Translate
-    const result = await translate(summary.text, regenerate)
+    const result = await translate(source, regenerate)
 
+    if (!isCurrentTranslation(run, owner, source)) return
     translation = result
     isTranslating = false
+  }
+
+  function handleSummaryInput(): void {
+    cancelTranslation()
+    onSummaryInput?.(summaryIndex)
   }
 
   async function translate(text: string, regenerate: boolean): Promise<string> {
@@ -180,13 +244,18 @@
     if (isRerolling) return
     if (isOrphan()) return
 
+    const owner = summary
+    const run = ++rerollRun
+    cancelRerolledTranslation()
     isRerolling = true
-    rerolled = 'Loading...'
+    rerollReady = false
+    rerolled = `${language.loading}...`
 
     try {
       const toSummarize: OpenAIChat[] = await Promise.all(
-        summary.chatMemos.map(async (chatMemo) => {
+        owner.chatMemos.map(async (chatMemo) => {
           const message = await getMessageFromChatMemo(chatMemo)
+          if (!message) throw new Error('Connected message not found')
 
           return {
             role: (message.role === 'char' ? 'assistant' : message.role) as OpenAIChat['role'],
@@ -195,13 +264,18 @@
         }),
       )
 
+      if (!isCurrentReroll(run, owner)) return
       const summarizeResult = await summarize(toSummarize)
 
+      if (!isCurrentReroll(run, owner)) return
       rerolled = summarizeResult
+      rerollReady = true
     } catch (error) {
+      if (!isCurrentReroll(run, owner)) return
       rerolled = 'Reroll failed'
+      rerollReady = false
     } finally {
-      isRerolling = false
+      if (isCurrentReroll(run, owner)) isRerolling = false
     }
   }
 
@@ -268,13 +342,19 @@
       return
     }
 
-    if (!rerolled) return
+    if (!rerolled || !rerollReady || isRerolling) return
+
+    const owner = summary
+    const source = rerolled
+    const run = ++rerolledTranslationRun
 
     isTranslatingRerolled = true
-    rerolledTranslation = 'Loading...'
+    rerolledTranslation = `${language.loading}...`
 
     // Focus on rerolled translation element after it's rendered
     await tick()
+
+    if (!isCurrentRerolledTranslation(run, owner, source)) return
 
     if (summaryItemState.rerolledTranslationRef) {
       summaryItemState.rerolledTranslationRef.focus()
@@ -285,46 +365,80 @@
     }
 
     // Translate
-    const result = await translate(rerolled, regenerate)
+    const result = await translate(source, regenerate)
 
+    if (!isCurrentRerolledTranslation(run, owner, source)) return
     rerolledTranslation = result
     isTranslatingRerolled = false
   }
 
   function cancelRerolled(): void {
+    rerollRun += 1
+    isRerolling = false
+    rerollReady = false
     rerolled = null
-    rerolledTranslation = null
+    cancelRerolledTranslation()
   }
 
   function applyRerolled(): void {
-    summary.text = rerolled
+    if (!rerollReady || isRerolling || !rerolled) return
+
+    const owner = summary
+    const appliedSummary = rerolled
+    cancelRerolled()
+    cancelTranslation()
+    if (!ownsSummary(owner)) return
+
+    owner.text = appliedSummary
     void onSummaryChanged?.(summaryIndex, 'text')
-    translation = null
-    rerolled = null
-    rerolledTranslation = null
   }
 
   async function toggleTranslateExpandedMessage(regenerate: boolean): Promise<void> {
-    if (!expandedMessageState || expandedMessageState.isTranslating) return
+    if (
+      !expandedMessageState ||
+      expandedMessageState.summaryIndex !== summaryIndex ||
+      expandedMessageState.isTranslating
+    ) {
+      return
+    }
 
     if (expandedMessageState.translation) {
       expandedMessageState.translation = null
       return
     }
 
-    const message = await getMessageFromChatMemo(expandedMessageState.selectedChatMemo)
+    const owner = summary
+    const ownerState = expandedMessageState
+    const run = ++expandedTranslationRun
+    ownerState.isTranslating = true
+    ownerState.translation = `${language.loading}...`
 
-    if (!message) return
+    let message: Message | null
+    try {
+      message = await getMessageFromChatMemo(ownerState.selectedChatMemo)
+    } catch (error) {
+      if (isCurrentExpandedTranslation(run, owner, ownerState)) {
+        ownerState.translation = `Translation failed: ${error}`
+        ownerState.isTranslating = false
+      }
+      return
+    }
 
-    expandedMessageState.isTranslating = true
-    expandedMessageState.translation = 'Loading...'
+    if (!isCurrentExpandedTranslation(run, owner, ownerState)) return
+    if (!message) {
+      ownerState.translation = null
+      ownerState.isTranslating = false
+      return
+    }
 
     // Focus on translation element after it's rendered
     await tick()
 
-    if (expandedMessageState.translationRef) {
-      expandedMessageState.translationRef.focus()
-      expandedMessageState.translationRef.scrollIntoView({
+    if (!isCurrentExpandedTranslation(run, owner, ownerState)) return
+
+    if (ownerState.translationRef) {
+      ownerState.translationRef.focus()
+      ownerState.translationRef.scrollIntoView({
         behavior: 'smooth',
         block: 'nearest',
       })
@@ -333,8 +447,9 @@
     // Translate
     const result = await translate(message.data, regenerate)
 
-    expandedMessageState.translation = result
-    expandedMessageState.isTranslating = false
+    if (!isCurrentExpandedTranslation(run, owner, ownerState)) return
+    ownerState.translation = result
+    ownerState.isTranslating = false
   }
 
   function isMessageExpanded(chatMemo: string | null): boolean {
@@ -344,6 +459,7 @@
   }
 
   function toggleExpandMessage(chatMemo: string | null): void {
+    expandedTranslationRun += 1
     expandedMessageState = isMessageExpanded(chatMemo)
       ? null
       : {
@@ -468,6 +584,7 @@
       <!-- Translate Button -->
       <button
         class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+        data-summary-action="translate"
         use:handleDualAction={{
           onMainAction: () => toggleTranslate(false),
           onAlternativeAction: () => toggleTranslate(true),
@@ -489,6 +606,7 @@
         <!-- Reroll Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+          data-summary-action="reroll"
           disabled={isOrphan()}
           onclick={async () => await toggleReroll()}>
           <RefreshCw class="w-4 h-4" />
@@ -518,7 +636,7 @@
       bind:this={summaryItemState.originalRef}
       bind:value={summary.text}
       readonly={readOnly}
-      oninput={() => onSummaryInput?.(summaryIndex)}
+      oninput={handleSummaryInput}
       onchange={() => void onSummaryChanged?.(summaryIndex, 'text')}
       onfocus={() => {
         if (searchState && !searchState.isNavigating) {
@@ -553,6 +671,8 @@
           <!-- Translate Rerolled Button -->
           <button
             class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+            data-summary-action="translate-rerolled"
+            disabled={isRerolling || !rerollReady}
             use:handleDualAction={{
               onMainAction: () => toggleTranslateRerolled(false),
               onAlternativeAction: () => toggleTranslateRerolled(true),
@@ -561,12 +681,19 @@
           </button>
 
           <!-- Cancel Button -->
-          <button class="p-2 transition-colors text-zinc-400 hover:text-zinc-200" onclick={cancelRerolled}>
+          <button
+            class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+            data-summary-action="cancel-rerolled"
+            onclick={cancelRerolled}>
             <XIcon class="w-4 h-4" />
           </button>
 
           <!-- Apply Button -->
-          <button class="p-2 transition-colors text-zinc-400 hover:text-rose-300" onclick={applyRerolled}>
+          <button
+            class="p-2 transition-colors text-zinc-400 hover:text-rose-300"
+            data-summary-action="apply-rerolled"
+            disabled={isRerolling || !rerollReady || !rerolled}
+            onclick={applyRerolled}>
             <CheckIcon class="w-4 h-4" />
           </button>
         </div>
@@ -577,7 +704,9 @@
     <div class="mt-2 sm:mt-4">
       <textarea
         class="w-full p-2 transition-colors border rounded-sm sm:p-4 min-h-40 sm:min-h-56 resize-vertical border-zinc-700 focus:outline-hidden focus:ring-2 focus:ring-zinc-500 text-zinc-200 bg-zinc-900"
-        bind:value={rerolled}>
+        bind:value={rerolled}
+        readonly={isRerolling || !rerollReady}
+        oninput={cancelRerolledTranslation}>
       </textarea>
     </div>
 
@@ -617,6 +746,8 @@
         <!-- Translate Message Button -->
         <button
           class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
+          data-summary-action="translate-message"
+          disabled={!expandedMessageState || expandedMessageState.summaryIndex !== summaryIndex}
           use:handleDualAction={{
             onMainAction: () => toggleTranslateExpandedMessage(false),
             onAlternativeAction: () => toggleTranslateExpandedMessage(true),
@@ -638,6 +769,7 @@
             )
               ? 'ring-2 ring-zinc-500'
               : ''}"
+            data-chat-memo={chatMemo ?? 'first-message'}
             bind:this={summaryItemState.chatMemoRefs[memoIndex]}
             onclick={() => toggleExpandMessage(chatMemo)}>
             {chatMemo == null ? language.hypaV3Modal.connectedFirstMessageLabel : chatMemo}
