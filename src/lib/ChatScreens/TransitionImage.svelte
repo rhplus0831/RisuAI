@@ -13,12 +13,11 @@
   let { src = [], classType }: Props = $props()
 
   async function processSrc(src: string[] | Promise<string[]>) {
-    const resultSrc = await src
+    const resultSrc = [...(await src)]
 
     let styl = styleType
-    if (resultSrc.length > 1) {
-      styl = resultSrc[0]
-      resultSrc.splice(0, 1)
+    if (resultSrc[0] === 'normal' || resultSrc[0] === 'emp') {
+      styl = resultSrc.shift()!
     }
     if (JSON.stringify(resultSrc) !== JSON.stringify(currentSrc) || styl !== styleType) {
       handleTransitionEnd()
