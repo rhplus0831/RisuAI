@@ -11,6 +11,8 @@ export const PROVIDER_OPERATIONS = [
   'google.models',
   'google.count-tokens',
   'anthropic.models',
+  'deepl.translate',
+  'deeplx.translate',
 ] as const
 
 export type ProviderOperation = (typeof PROVIDER_OPERATIONS)[number]
@@ -24,7 +26,10 @@ export type ProviderOperationCredential =
 export interface ProviderOperationRequest {
   operation: ProviderOperation
   credential: ProviderOperationCredential
-  input?: { modelId: string } | { modelId: string; text: string }
+  input?:
+    | { modelId: string }
+    | { modelId: string; text: string }
+    | { text: string; sourceLanguage: string; targetLanguage: string }
 }
 
 export interface ProviderOperationSuccess {

@@ -47,6 +47,14 @@ const testState = vi.hoisted(() => {
     doingChat: makeStore(false),
     selectedCharID: makeStore(0),
     globalFetch: vi.fn(),
+    requestProviderOperation: vi.fn(),
+    providerOperationCredential: vi.fn((secret: string) =>
+      secret === '__RISU_SECRET_MASKED__'
+        ? { source: 'stored' }
+        : secret
+          ? { source: 'provided', apiKey: secret }
+          : { source: 'none' },
+    ),
     alertError: vi.fn(),
     requestChatData: vi.fn(async () => {
       throw new Error('requestChatData should not run in cached translator tests')
@@ -76,6 +84,11 @@ vi.mock('../process/index.svelte', () => ({
 
 vi.mock('../globalApi.svelte', () => ({
   globalFetch: testState.globalFetch,
+}))
+
+vi.mock('../server/providerOperations', () => ({
+  requestProviderOperation: testState.requestProviderOperation,
+  providerOperationCredential: testState.providerOperationCredential,
 }))
 
 vi.mock('../alert', () => ({
@@ -371,25 +384,29 @@ describe('translateHTML streaming guards', () => {
 
   it('v4-L27: caps deeplX delimiter-mismatch one-by-one fallback fanout', async () => {
     testState.db.translatorType = 'deeplX'
-    testState.globalFetch.mockImplementation(async (_url: string, options: { body: { text: string } }) => ({
-      ok: true,
-      data: {
-        data: options.body.text.includes('■') ? 'bulk mismatch' : `deeplx:${options.body.text}`,
-      },
-    }))
+    testState.db.deeplXOptions.token = '__RISU_SECRET_MASKED__'
+    testState.requestProviderOperation.mockImplementation(
+      async (_operation: string, options: { input: { text: string } }) => ({
+        data: options.input.text.includes('■') ? 'bulk mismatch' : `deeplx:${options.input.text}`,
+      }),
+    )
     const count = DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS + 2
     const html = Array.from({ length: count }, (_value, index) => `<p>deepl-${index}-${'x'.repeat(700)}</p>`).join('')
 
     const translated = await translateHTML(html, false, '', 0)
 
-    expect(testState.globalFetch).toHaveBeenCalledTimes(2 + DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS)
+    expect(testState.requestProviderOperation).toHaveBeenCalledTimes(2 + DEEPLX_DELIMITER_FALLBACK_MAX_SEGMENTS)
+    expect(testState.requestProviderOperation).toHaveBeenCalledWith(
+      'deeplx.translate',
+      expect.objectContaining({ credential: { source: 'stored' } }),
+    )
     expect(translated).toContain('deeplx:deepl-0')
     expect(translated).toContain(`deepl-${count - 1}`)
   })
 
   it('rejects instead of hanging when a queued DeepLX batch fails', async () => {
     testState.db.translatorType = 'deeplX'
-    testState.globalFetch.mockRejectedValue(new Error('deeplx unavailable'))
+    testState.requestProviderOperation.mockRejectedValue(new Error('deeplx unavailable'))
     const html = Array.from({ length: 9 }, (_value, index) => `<p>batch-${index}-${'x'.repeat(700)}</p>`).join('')
 
     await expect(translateHTML(html, false, '', 0)).rejects.toThrow('deeplx unavailable')

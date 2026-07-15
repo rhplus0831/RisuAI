@@ -21,6 +21,8 @@ const storedSettings = {
   wavespeedImage: { key: 'stored-wavespeed-key' },
   google: { accessToken: 'stored-google-key' },
   claudeAPIKey: 'stored-anthropic-key',
+  deeplOptions: { key: 'stored-deepl-key', freeApi: true },
+  deeplXOptions: { token: 'stored-deeplx-token', url: 'http://127.0.0.1:1188/base/' },
   modelProfiles: [
     {
       id: 'openrouter-profile',
@@ -130,6 +132,20 @@ describe('provider operation allowlist', () => {
       method: 'GET',
       header: ['x-api-key', 'stored-anthropic-key'],
     },
+    {
+      operation: 'deepl.translate' as const,
+      input: { text: 'hello', sourceLanguage: 'en', targetLanguage: 'ko' },
+      url: 'https://api-free.deepl.com/v2/translate',
+      method: 'POST',
+      header: ['authorization', 'DeepL-Auth-Key stored-deepl-key'],
+    },
+    {
+      operation: 'deeplx.translate' as const,
+      input: { text: 'hello', sourceLanguage: 'en', targetLanguage: 'ko' },
+      url: 'http://127.0.0.1:1188/base/translate',
+      method: 'POST',
+      header: ['authorization', 'Bearer stored-deeplx-token'],
+    },
   ])('maps $operation to its fixed upstream request', ({ operation, input, url, method, header: expected }) => {
     const upstream = resolveProviderUpstreamRequest(request(operation, input), storedSettings)
 
@@ -144,6 +160,16 @@ describe('provider operation allowlist', () => {
     if (operation === 'google.count-tokens') {
       expect(JSON.parse(String(upstream.init.body))).toEqual({
         contents: [{ parts: [{ text: 'hello world' }] }],
+      })
+    }
+    if (operation === 'deepl.translate') {
+      expect(JSON.parse(String(upstream.init.body))).toEqual({ text: ['hello'], target_lang: 'KO' })
+    }
+    if (operation === 'deeplx.translate') {
+      expect(JSON.parse(String(upstream.init.body))).toEqual({
+        text: 'hello',
+        source_lang: 'EN',
+        target_lang: 'KO',
       })
     }
   })
@@ -225,6 +251,43 @@ describe('provider operation allowlist', () => {
         input: { modelId: 'gemini-2.5-pro', text: 'x'.repeat(512 * 1024 + 1) },
       }),
     ).toThrow(expect.objectContaining({ code: 'invalid_provider_operation_request' }))
+  })
+
+  it('keeps DeepLX targets server-owned and strictly validates translation inputs', () => {
+    const withoutToken = resolveProviderUpstreamRequest(
+      {
+        operation: 'deeplx.translate',
+        credential: { source: 'none' },
+        input: { text: 'hello', sourceLanguage: 'en', targetLanguage: 'ko' },
+      },
+      storedSettings,
+    )
+    expect(withoutToken.url).toBe('http://127.0.0.1:1188/base/translate')
+    expect(header(withoutToken.init, 'authorization')).toBeNull()
+
+    expect(() =>
+      parseProviderOperationRequest({
+        operation: 'deeplx.translate',
+        credential: { source: 'stored' },
+        input: {
+          text: 'hello',
+          sourceLanguage: 'en',
+          targetLanguage: 'ko',
+          url: 'https://attacker.example',
+        },
+      }),
+    ).toThrow(expect.objectContaining({ code: 'invalid_provider_operation_request' }))
+
+    expect(() =>
+      resolveProviderUpstreamRequest(
+        {
+          operation: 'deeplx.translate',
+          credential: { source: 'none' },
+          input: { text: 'hello', sourceLanguage: 'en', targetLanguage: 'ko' },
+        },
+        { deeplXOptions: { url: 'file:///etc/passwd' } },
+      ),
+    ).toThrow(expect.objectContaining({ code: 'provider_credential_unavailable' }))
   })
 
   it('requires account credentials before issuing an upstream request', () => {

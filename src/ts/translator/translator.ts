@@ -16,6 +16,7 @@ import { processScriptFull } from '../process/scripts'
 import { resolveModelProfile } from '../model/modelProfileResolver'
 import localforage from 'localforage'
 import sendSound from '../../etc/send.mp3'
+import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 
 export const TRANSLATE_CACHE_MAX_ENTRIES = 256
 export const TRANSLATE_HTML_OUTPUT_MEMO_MAX_ENTRIES = 64
@@ -778,23 +779,20 @@ async function translateMain(text: string, arg: { from: string; to: string; host
     return translateLLM(text, { to: tr, from: arg.from, translatorNote: arg.translatorNote })
   }
   if (db.translatorType === 'deepl') {
-    const body = {
-      text: [text],
-      target_lang: arg.to.toLocaleUpperCase(),
+    try {
+      const result = await requestProviderOperation<{ translations?: Array<{ text?: unknown }> }>('deepl.translate', {
+        credential: providerOperationCredential(db.deeplOptions.key),
+        input: { text, sourceLanguage: arg.from, targetLanguage: arg.to },
+      })
+      const translated = result.translations?.[0]?.text
+      if (typeof translated !== 'string') throw new Error('DeepL translation response was malformed')
+      return translated
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Provider operation failed (')) {
+        return 'ERR::DeepL API Error'
+      }
+      throw error
     }
-    let url = db.deeplOptions.freeApi ? 'https://api-free.deepl.com/v2/translate' : 'https://api.deepl.com/v2/translate'
-    const f = await globalFetch(url, {
-      headers: {
-        Authorization: 'DeepL-Auth-Key ' + db.deeplOptions.key,
-        'Content-Type': 'application/json',
-      },
-      body: body,
-    })
-
-    if (!f.ok) {
-      return 'ERR::DeepL API Error' + (await f.data)
-    }
-    return f.data.translations[0].text
   }
   if (db.translatorType === 'deeplX') {
     if (!db.noWaitForTranslate) {
@@ -805,41 +803,19 @@ async function translateMain(text: string, arg: { from: string; to: string; host
       }
     }
 
-    let url = db.deeplXOptions.url ?? 'http://localhost:1188'
-
-    if (url.endsWith('/')) {
-      url = url.slice(0, -1)
+    try {
+      const result = await requestProviderOperation<{ data?: unknown }>('deeplx.translate', {
+        credential: providerOperationCredential(db.deeplXOptions.token),
+        input: { text, sourceLanguage: arg.from, targetLanguage: arg.to },
+      })
+      if (typeof result.data !== 'string') throw new Error('DeepLX translation response was malformed')
+      return result.data
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Provider operation failed (')) {
+        return 'ERR::DeepLX API Error'
+      }
+      throw error
     }
-
-    if (!url.endsWith('/translate')) {
-      url += '/translate'
-    }
-
-    let headers = { 'Content-Type': 'application/json' }
-
-    const body = {
-      text: text,
-      target_lang: arg.to.toLocaleUpperCase(),
-      source_lang: arg.from.toLocaleUpperCase(),
-    }
-
-    if (db.deeplXOptions.token.trim() !== '') {
-      headers['Authorization'] = 'Bearer ' + db.deeplXOptions.token
-    }
-
-    //Since the DeepLX API is non-CORS restricted, we can use the plain fetch function
-    const f = await globalFetch(url, {
-      method: 'POST',
-      headers: headers,
-      body: body,
-      plainFetchForce: true,
-    })
-
-    if (!f.ok) {
-      return 'ERR::DeepLX API Error' + (await f.data)
-    }
-
-    return f.data.data
   }
   if (db.translatorType == 'bergamot') {
     if (!bergamotTranslate) {

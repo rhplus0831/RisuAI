@@ -13,15 +13,20 @@ export const PROVIDER_OPERATION_MAX_API_KEY_LENGTH = 16 * 1024
 export const PROVIDER_OPERATION_MAX_PROFILE_ID_LENGTH = 256
 export const PROVIDER_OPERATION_MAX_MODEL_ID_LENGTH = 512
 export const PROVIDER_OPERATION_MAX_TEXT_LENGTH = 512 * 1024
+export const PROVIDER_OPERATION_MAX_LANGUAGE_LENGTH = 64
 
 type JsonRecord = Record<string, unknown>
-type ProviderKind = 'nanogpt' | 'openrouter' | 'ollama' | 'wavespeed' | 'google' | 'anthropic'
+type ProviderKind = 'nanogpt' | 'openrouter' | 'ollama' | 'wavespeed' | 'google' | 'anthropic' | 'deepl' | 'deeplx'
 
 interface ProviderOperationSpec {
   provider: ProviderKind
   credentialRequired: boolean
   storedCredential(settings: JsonRecord): string | undefined
-  buildRequest(apiKey: string | undefined, input: ProviderOperationRequest['input']): ProviderUpstreamRequest
+  buildRequest(
+    apiKey: string | undefined,
+    input: ProviderOperationRequest['input'],
+    settings: JsonRecord,
+  ): ProviderUpstreamRequest
 }
 
 export interface ProviderUpstreamRequest {
@@ -184,6 +189,42 @@ const OPERATION_SPECS: Record<ProviderOperation, ProviderOperationSpec> = {
       }),
     }),
   },
+  'deepl.translate': {
+    provider: 'deepl',
+    credentialRequired: true,
+    storedCredential: (settings) => readNestedString(settings, 'deeplOptions', 'key'),
+    buildRequest: (apiKey, input, settings) => ({
+      url: readNestedBoolean(settings, 'deeplOptions', 'freeApi')
+        ? 'https://api-free.deepl.com/v2/translate'
+        : 'https://api.deepl.com/v2/translate',
+      init: {
+        ...fixedJsonRequest('POST', { Authorization: `DeepL-Auth-Key ${requiredApiKey(apiKey)}` }),
+        body: JSON.stringify({
+          text: [requiredTranslationInput(input).text],
+          target_lang: requiredTranslationInput(input).targetLanguage.toUpperCase(),
+        }),
+      },
+    }),
+  },
+  'deeplx.translate': {
+    provider: 'deeplx',
+    credentialRequired: false,
+    storedCredential: (settings) => readNestedString(settings, 'deeplXOptions', 'token'),
+    buildRequest: (apiKey, input, settings) => {
+      const translation = requiredTranslationInput(input)
+      return {
+        url: resolveDeepLXEndpoint(settings),
+        init: {
+          ...fixedJsonRequest('POST', apiKey ? bearerHeader(apiKey) : undefined),
+          body: JSON.stringify({
+            text: translation.text,
+            target_lang: translation.targetLanguage.toUpperCase(),
+            source_lang: translation.sourceLanguage.toUpperCase(),
+          }),
+        },
+      }
+    },
+  },
 }
 
 export function parseProviderOperationRequest(body: unknown): ProviderOperationRequest {
@@ -211,7 +252,7 @@ export function resolveProviderUpstreamRequest(
   if (spec.credentialRequired && !apiKey) {
     throw credentialUnavailable()
   }
-  return spec.buildRequest(apiKey, request.input)
+  return spec.buildRequest(apiKey, request.input, settings)
 }
 
 export async function executeProviderOperation(
@@ -277,7 +318,7 @@ function requiredApiKey(apiKey: string | undefined): string {
 }
 
 function requiredModelId(input: ProviderOperationRequest['input']): string {
-  if (!input?.modelId) throw invalidRequest()
+  if (!input || !('modelId' in input) || !input.modelId) throw invalidRequest()
   return input.modelId
 }
 
@@ -289,6 +330,17 @@ function requiredText(input: ProviderOperationRequest['input']): string {
 function requiredGoogleModelId(input: ProviderOperationRequest['input']): string {
   const modelId = requiredModelId(input)
   return modelId.startsWith('models/') ? modelId.slice('models/'.length) : modelId
+}
+
+function requiredTranslationInput(input: ProviderOperationRequest['input']): {
+  text: string
+  sourceLanguage: string
+  targetLanguage: string
+} {
+  if (!input || !('sourceLanguage' in input) || !('targetLanguage' in input) || !('text' in input)) {
+    throw invalidRequest()
+  }
+  return input
 }
 
 function parseCredential(value: unknown): ProviderOperationCredential {
@@ -332,6 +384,16 @@ function parseOperationInput(
     return {
       modelId: readBoundedNonBlankString(record.modelId, PROVIDER_OPERATION_MAX_MODEL_ID_LENGTH),
       text: readBoundedString(record.text, PROVIDER_OPERATION_MAX_TEXT_LENGTH),
+    }
+  }
+
+  if (operation === 'deepl.translate' || operation === 'deeplx.translate') {
+    const record = readExactRecord(value, ['text', 'sourceLanguage', 'targetLanguage'])
+    if (Object.keys(record).length !== 3) throw invalidRequest()
+    return {
+      text: readBoundedString(record.text, PROVIDER_OPERATION_MAX_TEXT_LENGTH),
+      sourceLanguage: readBoundedNonBlankString(record.sourceLanguage, PROVIDER_OPERATION_MAX_LANGUAGE_LENGTH),
+      targetLanguage: readBoundedNonBlankString(record.targetLanguage, PROVIDER_OPERATION_MAX_LANGUAGE_LENGTH),
     }
   }
 
@@ -393,6 +455,33 @@ function readString(value: unknown): string | undefined {
 function readNestedString(record: JsonRecord, parentKey: string, childKey: string): string | undefined {
   const parent = record[parentKey]
   return isRecord(parent) ? readString(parent[childKey]) : undefined
+}
+
+function readNestedBoolean(record: JsonRecord, parentKey: string, childKey: string): boolean {
+  const parent = record[parentKey]
+  return isRecord(parent) && parent[childKey] === true
+}
+
+function resolveDeepLXEndpoint(settings: JsonRecord): string {
+  const rawUrl = readNestedString(settings, 'deeplXOptions', 'url') ?? 'http://localhost:1188'
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw credentialUnavailable()
+  }
+  if (
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.search.length > 0 ||
+    url.hash.length > 0
+  ) {
+    throw credentialUnavailable()
+  }
+  url.pathname = url.pathname.replace(/\/+$/, '')
+  if (!url.pathname.endsWith('/translate')) url.pathname += '/translate'
+  return url.toString()
 }
 
 function isRecord(value: unknown): value is JsonRecord {

@@ -47,6 +47,8 @@ const testState = vi.hoisted(() => {
     doingChat: makeStore(false),
     selectedCharID: makeStore(0),
     globalFetch: vi.fn(),
+    requestProviderOperation: vi.fn(),
+    providerOperationCredential: vi.fn(),
     alertError: vi.fn(),
     requestChatData: vi.fn(),
     processScriptFull: vi.fn(async (_char: unknown, text: string) => ({ data: text })),
@@ -75,6 +77,11 @@ vi.mock('../process/index.svelte', () => ({
 
 vi.mock('../globalApi.svelte', () => ({
   globalFetch: testState.globalFetch,
+}))
+
+vi.mock('../server/providerOperations', () => ({
+  requestProviderOperation: testState.requestProviderOperation,
+  providerOperationCredential: testState.providerOperationCredential,
 }))
 
 vi.mock('../alert', () => ({
