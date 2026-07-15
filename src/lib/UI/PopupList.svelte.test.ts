@@ -7,6 +7,7 @@ vi.mock('src/ts/stores.svelte', async () => {
 })
 
 import PopupListTestHost from './PopupList.testHost.svelte'
+import PopupList from './PopupList.svelte'
 import { popupStore } from 'src/ts/stores.svelte'
 
 let component: Parameters<typeof unmount>[0] | undefined
@@ -37,6 +38,17 @@ afterEach(() => {
 })
 
 describe('PopupList outside dismissal', () => {
+  it('does not attach its deferred document listener after an immediate unmount', async () => {
+    const addListener = vi.spyOn(document, 'addEventListener')
+    const popup = mount(PopupList, { target })
+    addListener.mockClear()
+
+    unmount(popup)
+    await settle()
+
+    expect(addListener.mock.calls.filter(([eventName]) => eventName === 'click')).toHaveLength(0)
+  })
+
   it('reopens from the same trigger with one click after an outside click', async () => {
     component = mount(PopupListTestHost, { target })
     await settle()

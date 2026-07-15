@@ -1,7 +1,6 @@
 <script lang="ts">
   import { popupStore, SizeStore } from 'src/ts/stores.svelte'
-  import { sleep } from 'src/ts/util'
-  import { onDestroy, onMount, tick } from 'svelte'
+  import { onMount, tick } from 'svelte'
   import { language } from 'src/lang'
 
   let menuElement: HTMLDivElement | undefined = $state()
@@ -80,13 +79,23 @@
     }
   }
 
-  onMount(async () => {
-    await sleep(0)
-    document.addEventListener('click', handleDocumentClick)
-  })
+  onMount(() => {
+    let mounted = true
+    let attached = false
 
-  onDestroy(() => {
-    document.removeEventListener('click', handleDocumentClick)
+    // Defer until the click that opened the popup has finished bubbling. Keep
+    // the deferral cancellable so a popup that closes in the same turn cannot
+    // leave a document listener behind after it has unmounted.
+    queueMicrotask(() => {
+      if (!mounted) return
+      document.addEventListener('click', handleDocumentClick)
+      attached = true
+    })
+
+    return () => {
+      mounted = false
+      if (attached) document.removeEventListener('click', handleDocumentClick)
+    }
   })
 
   function handleDocumentClick(event: MouseEvent): void {
