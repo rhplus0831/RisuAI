@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { language } from 'src/lang'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
   import {
     changeColorSchemeType,
@@ -56,10 +57,16 @@
     {/each}
 
     <div class="grow flex justify-end">
-      <button class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer" onclick={() => exportColorScheme()}>
+      <button
+        aria-label={`${language.export}: ${language.colorScheme}`}
+        class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+        onclick={() => exportColorScheme()}>
         <DownloadIcon size={18} />
       </button>
-      <button class="text-textcolor2 hover:text-green-500 cursor-pointer" onclick={() => importColorScheme()}>
+      <button
+        aria-label={`${language.import}: ${language.colorScheme}`}
+        class="text-textcolor2 hover:text-green-500 cursor-pointer"
+        onclick={() => importColorScheme()}>
         <HardDriveUploadIcon size={18} />
       </button>
     </div>

@@ -110,6 +110,7 @@
 {#if withImportExport}
   <div class="flex">
     <button
+      aria-label={`${language.export}: ${language.parameters}`}
       class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
       onclick={() => {
         const json = JSON.stringify(value, null, 2)
@@ -118,6 +119,7 @@
       <FileDownIcon />
     </button>
     <button
+      aria-label={`${language.import}: ${language.parameters}`}
       class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded ml-2"
       onclick={importParametersJson}>
       <FileUpIcon />

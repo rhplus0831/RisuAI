@@ -1,5 +1,6 @@
 <script lang="ts">
   import { XIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
   import { ensureBotPresetHydratedById, getDatabase, type PromptDiffPrefs } from '../../ts/storage/database.svelte'
   import { canUseServerCommands, patchServerBackedSettings } from 'src/ts/server/commands'
   import type {
@@ -1640,6 +1641,7 @@
       </div>
 
       <button
+        aria-label={language.close}
         class="text-textcolor2 hover:text-green-500"
         onclick={(e) => {
           handleClose()

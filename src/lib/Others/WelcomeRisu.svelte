@@ -445,6 +445,7 @@
               }}
               style:height={'44px'}></textarea>
             <button
+              aria-label={language.setup.send}
               onclick={send}
               class="flex justify-center border-y border-r rounded-r-md border-darkborderc items-center text-textcolor p-2 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors">
               <Send />

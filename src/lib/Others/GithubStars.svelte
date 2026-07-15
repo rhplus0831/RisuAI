@@ -1,5 +1,6 @@
 <script lang="ts">
   import { HouseIcon, MailIcon, MaximizeIcon, WalletIcon } from '@lucide/svelte'
+  import { language } from 'src/lang'
   import { openURL, toggleFullscreen } from 'src/ts/globalApi.svelte'
 </script>
 
@@ -16,6 +17,7 @@
     data-show-count="true"
     aria-label="Star kwaroran/risuAI on GitHub">Star</a>
   <button
+    aria-label={language.home}
     class="text-textcolor"
     onclick={() => {
       openURL('https://risuai.net/')
@@ -23,6 +25,7 @@
     <HouseIcon size={24} />
   </button>
   <button
+    aria-label="Patreon"
     class="text-textcolor"
     onclick={() => {
       openURL('https://www.patreon.com/RisuAI')
@@ -30,6 +33,7 @@
     <WalletIcon size={24} />
   </button>
   <button
+    aria-label="risuai@proton.me"
     class="text-textcolor"
     onclick={() => {
       openURL('mailto:risuai@proton.me')
@@ -37,6 +41,7 @@
     <MailIcon size={24} />
   </button>
   <button
+    aria-label={language.fullscreen}
     class="text-textcolor"
     onclick={() => {
       toggleFullscreen()

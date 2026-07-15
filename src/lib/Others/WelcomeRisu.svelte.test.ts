@@ -48,6 +48,7 @@ vi.mock('src/lang', () => ({
       setupMessageOption2: 'Set up later',
       setupOpenAI: 'Enter OpenAI key',
       setupOpenRouter: 'Enter OpenRouter key',
+      send: 'Send',
       welcome: 'Welcome',
       welcome2: 'Welcome back {username}',
     },
@@ -189,6 +190,11 @@ afterEach(() => {
 })
 
 describe('WelcomeRisu onboarding setup timer', () => {
+  it('names the icon-only send action', async () => {
+    await mountWelcome()
+    expect(sendButton().getAttribute('aria-label')).toBe('Send')
+  })
+
   it.each([
     ['zh-CN', 'cn'],
     ['zh-Hans-SG', 'cn'],
