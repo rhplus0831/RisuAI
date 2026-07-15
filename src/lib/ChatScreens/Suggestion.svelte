@@ -77,6 +77,8 @@
   import { ParseMarkdown } from 'src/ts/parser/parser.svelte'
   import { defaultAutoSuggestPrompt } from '../../ts/storage/defaultPrompts.js'
   import { dispatchUpdateChatRow, type ChatRowMetadataSnapshot } from 'src/ts/chatCommands'
+  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
+  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
 
   interface Props {
@@ -180,6 +182,19 @@
 
   function persistSuggestions(target: SuggestionTargetSnapshot, suggestions: string[]) {
     if (!target.chatId) return
+    let applied = false
+    withTrustedResourceWrite(() => {
+      const character = target.characterId
+        ? getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
+        : getDatabase().characters?.[target.selectedCharID]
+      const chat = character?.chats?.find((candidate) => candidate.id === target.chatId)
+      if (!chat || !suggestionMessagesMatch(chat.suggestMessages, target.suggestMessages)) return
+      chat.suggestMessages = copySuggestionMessages(suggestions)
+      applied = true
+    })
+    if (!applied) return
+    syncServerBackedChatMetadataBaselines()
+
     const rollback: ChatRowMetadataSnapshot = {
       selectedCharID: target.selectedCharID,
       characterId: target.characterId,

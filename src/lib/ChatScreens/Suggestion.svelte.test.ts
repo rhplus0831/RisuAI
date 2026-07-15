@@ -26,6 +26,8 @@ const suggestionMocks = vi.hoisted(() => {
     translate: vi.fn(),
     alertConfirm: vi.fn(async () => false),
     dispatchUpdateChatRow: vi.fn(),
+    syncServerBackedChatMetadataBaselines: vi.fn(),
+    withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
 })
 
@@ -51,6 +53,14 @@ vi.mock('src/ts/parser/parser.svelte', () => ({
 
 vi.mock('src/ts/chatCommands', () => ({
   dispatchUpdateChatRow: suggestionMocks.dispatchUpdateChatRow,
+}))
+
+vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  syncServerBackedChatMetadataBaselines: suggestionMocks.syncServerBackedChatMetadataBaselines,
+}))
+
+vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
+  withTrustedResourceWrite: suggestionMocks.withTrustedResourceWrite,
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -304,7 +314,7 @@ describe('Suggestion component persistence', () => {
   })
 
   it('persists suggestion clearing when a suggestion is sent', async () => {
-    seedSuggestionDatabase()
+    seedSuggestionDatabaseWithTwoChats()
     const target = document.createElement('div')
     document.body.appendChild(target)
     let component: MountedComponent | undefined
@@ -333,6 +343,10 @@ describe('Suggestion component persistence', () => {
 
       expect(messageInput).toHaveBeenCalledWith('Take the lead')
       expect(send).toHaveBeenCalledTimes(1)
+      expect(getResourceDatabase().characters[0].chats[0].suggestMessages).toEqual([])
+      expect(target.textContent).not.toContain('Take the lead')
+      expect(suggestionMocks.withTrustedResourceWrite).toHaveBeenCalledOnce()
+      expect(suggestionMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
       expect(suggestionMocks.dispatchUpdateChatRow).toHaveBeenCalledWith(
         'chat-a',
         { suggestMessages: [] },
@@ -343,6 +357,12 @@ describe('Suggestion component persistence', () => {
           metadata: { suggestMessages: ['Take the lead'] },
         },
       )
+
+      getResourceDatabase().characters[0].chatPage = 1
+      await settle()
+      getResourceDatabase().characters[0].chatPage = 0
+      await settle()
+      expect(target.textContent).not.toContain('Take the lead')
     } finally {
       if (component) unmount(component)
       target.remove()
