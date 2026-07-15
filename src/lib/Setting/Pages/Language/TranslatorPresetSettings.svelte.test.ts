@@ -608,7 +608,24 @@ describe('TranslatorPresetSettings server-backed edits', () => {
       baseRevision: 100,
       select: true,
     })
-    expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
+    expect(commandSpies.runInputs.at(-1)?.rollback).toEqual(expect.any(Function))
+    expect(getDatabase().translatorPresets).toHaveLength(3)
+    expect(getDatabase().translatorPresets[2]).toMatchObject({
+      id: commandSpies.createInputs[0].preset.id,
+      name: 'New Preset',
+      prompt: '',
+      maxResponse: 1000,
+    })
+    expect(getDatabase().translatorPresetId).toBe(2)
+    expect(getDatabase().translatorPrompt).toBe('')
+    expect(getDatabase().translatorMaxResponse).toBe(1000)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.options).toHaveLength(3)
+    expect(presetSelect?.value).toBe('2')
+    expect(presetSelect?.options.item(2)?.textContent).toBe('New Preset')
+    expect(promptTextarea().value).toBe('')
+    expect(maxResponseInput().value).toBe('1000')
 
     withTrustedResourceWrite(() => {
       getDatabase().translatorPresets = [
@@ -631,6 +648,34 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(getDatabase().translatorPresetId).toBe(2)
     expect(getDatabase().translatorPrompt).toBe('new prompt C')
     expect(getDatabase().translatorMaxResponse).toBe(300)
+  })
+
+  it('rolls back a rejected optimistic create while it remains current', async () => {
+    commandSpies.deferNextCreate = true
+
+    await clickCreatePreset()
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual([
+      'preset-a',
+      'preset-b',
+      commandSpies.createInputs[0].preset.id,
+    ])
+    expect(getDatabase().translatorPresetId).toBe(2)
+
+    await failDeferredCommand(commandSpies.deferredCreateResults, 'forced create failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
+    expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.options).toHaveLength(2)
+    expect(presetSelect?.value).toBe('0')
+    expect(promptTextarea().value).toBe('old prompt A')
+    expect(maxResponseInput().value).toBe('100')
   })
 
   it('preserves newer translator selection and field edits when a deferred select command fails', async () => {

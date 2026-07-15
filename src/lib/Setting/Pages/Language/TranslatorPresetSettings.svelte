@@ -21,11 +21,17 @@
   import {
     captureCollectionProjectionEpoch,
     captureSettingsGroupProjectionEpoch,
+    hasCollectionProjectionEpochChanged,
+    hasSettingsGroupProjectionEpochChanged,
     markCollectionAcknowledgementTainted,
     markSettingsGroupAcknowledgementTainted,
   } from 'src/ts/server/resourceState.svelte'
   import { getServerResourceApplyEpoch, withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
-  import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from 'src/ts/server/staleStateGuards'
+  import {
+    applyAttemptedFieldRollback,
+    applyAttemptedKeyedListRollback,
+    mergeProjectionIntoDirtyDraft,
+  } from 'src/ts/server/staleStateGuards'
   import {
     createTranslatorPreset,
     decodeTranslatorPresetFile,
@@ -59,6 +65,15 @@
     collectionProjectionEpoch: number
     languageSettingsProjectionEpoch: number
     selectedPresetId: string | null
+  }
+
+  interface TranslatorPresetCreateAttempt {
+    attemptedPreset: TranslatorPreset & { id: string }
+    previousSelectedPresetId: string | null
+    attemptedTranslatorPrompt: string
+    attemptedTranslatorMaxResponse: number
+    collectionProjectionEpoch: number
+    languageSettingsProjectionEpoch: number
   }
 
   const translatorPresetUpdateDelayMs = 250
@@ -403,14 +418,118 @@
     void runServerCommand({ command, rollback })
   }
 
-  function dispatchCreateTranslatorPreset(preset: TranslatorPreset): void {
-    runTranslatorPresetCommand((baseRevision) =>
-      createTranslatorPresetCommand({
-        baseRevision,
-        preset: cloneJsonValue(preset) as TranslatorPresetSnapshot,
-        select: true,
-      }),
+  function applyOptimisticTranslatorPresetCreate(preset: TranslatorPreset): TranslatorPresetCreateAttempt | null {
+    const attemptedPreset = cloneJsonValue(preset)
+    const presetId = attemptedPreset.id
+    if (!presetId || presetId.trim().length === 0) return null
+    const attemptedPresetWithId = attemptedPreset as TranslatorPreset & { id: string }
+
+    const attempt: TranslatorPresetCreateAttempt = {
+      attemptedPreset: attemptedPresetWithId,
+      previousSelectedPresetId: selectedTranslatorPresetId(),
+      attemptedTranslatorPrompt: attemptedPresetWithId.prompt,
+      attemptedTranslatorMaxResponse: attemptedPresetWithId.maxResponse,
+      collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
+      languageSettingsProjectionEpoch: captureSettingsGroupProjectionEpoch('language'),
+    }
+    let applied = false
+
+    withTrustedResourceWrite(() => {
+      const presets = getDatabase().translatorPresets ?? []
+      if (presets.some((existingPreset) => existingPreset.id === presetId)) return
+
+      const nextPresets = [...presets, cloneJsonValue(attemptedPresetWithId)]
+      getDatabase().translatorPresets = nextPresets
+      getDatabase().translatorPresetId = nextPresets.length - 1
+      syncCurrentTranslatorPreset()
+      applied = true
+    })
+
+    return applied ? attempt : null
+  }
+
+  function rollbackOptimisticTranslatorPresetCreate(attempt: TranslatorPresetCreateAttempt): void {
+    markCollectionAcknowledgementTainted('translatorPresets')
+    markSettingsGroupAcknowledgementTainted('language')
+
+    if (hasCollectionProjectionEpochChanged('translatorPresets', attempt.collectionProjectionEpoch)) return
+
+    const languageProjectionChanged = hasSettingsGroupProjectionEpochChanged(
+      'language',
+      attempt.languageSettingsProjectionEpoch,
     )
+
+    withTrustedResourceWrite(() => {
+      const presets = getDatabase().translatorPresets ?? []
+      const selectedPresetId = presets[getDatabase().translatorPresetId]?.id ?? null
+      const selectedAttemptedPreset = selectedPresetId === attempt.attemptedPreset.id
+      const selectedProjectionMatchesAttempt =
+        getDatabase().translatorPrompt === attempt.attemptedTranslatorPrompt &&
+        getDatabase().translatorMaxResponse === attempt.attemptedTranslatorMaxResponse
+      const previousSelectedPresetIndex = attempt.previousSelectedPresetId
+        ? presets.findIndex((preset) => preset.id === attempt.previousSelectedPresetId)
+        : -1
+
+      if (
+        selectedAttemptedPreset &&
+        (languageProjectionChanged || !selectedProjectionMatchesAttempt || previousSelectedPresetIndex === -1)
+      ) {
+        return
+      }
+
+      const nextPresets = [...presets]
+      const rolledBack = applyAttemptedKeyedListRollback<TranslatorPreset, string>({
+        list: nextPresets,
+        entries: [
+          {
+            key: attempt.attemptedPreset.id,
+            previous: null,
+            attempted: attempt.attemptedPreset,
+          },
+        ],
+        getKey: (translatorPreset) => translatorPreset?.id,
+      })
+      if (rolledBack.length === 0) return
+
+      getDatabase().translatorPresets = nextPresets
+
+      if (selectedAttemptedPreset) {
+        const restoreSelectedPresetIndex = nextPresets.findIndex(
+          (translatorPreset) => translatorPreset.id === attempt.previousSelectedPresetId,
+        )
+        if (restoreSelectedPresetIndex === -1) return
+        getDatabase().translatorPresetId = restoreSelectedPresetIndex
+        syncCurrentTranslatorPreset()
+        return
+      }
+
+      if (selectedPresetId) {
+        const preservedSelectedPresetIndex = nextPresets.findIndex(
+          (translatorPreset) => translatorPreset.id === selectedPresetId,
+        )
+        if (preservedSelectedPresetIndex !== -1) {
+          getDatabase().translatorPresetId = preservedSelectedPresetIndex
+        }
+      }
+    })
+  }
+
+  function dispatchCreateTranslatorPreset(preset: TranslatorPreset, rollback?: () => void): void {
+    runTranslatorPresetCommand(
+      (baseRevision) =>
+        createTranslatorPresetCommand({
+          baseRevision,
+          preset: cloneJsonValue(preset) as TranslatorPresetSnapshot,
+          select: true,
+        }),
+      rollback,
+    )
+  }
+
+  function createTranslatorPresetOptimistically(preset: TranslatorPreset): void {
+    const attempt = applyOptimisticTranslatorPresetCreate(preset)
+    if (!attempt) return
+    dispatchCreateTranslatorPreset(preset, () => rollbackOptimisticTranslatorPresetCreate(attempt))
   }
 
   function dispatchSelectTranslatorPreset(presetId: string): void {
@@ -585,7 +704,7 @@
         normalizeTranslatorPresets()
         dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId])
       } else {
-        dispatchCreateTranslatorPreset(newPreset)
+        createTranslatorPresetOptimistically(newPreset)
       }
     }}>
     <PlusIcon size={24} />
@@ -705,7 +824,7 @@
           normalizeTranslatorPresets()
           dispatchCreateTranslatorPreset(getDatabase().translatorPresets[getDatabase().translatorPresetId])
         } else {
-          dispatchCreateTranslatorPreset(newPreset)
+          createTranslatorPresetOptimistically(newPreset)
         }
 
         alertNormal(language.successImport)
