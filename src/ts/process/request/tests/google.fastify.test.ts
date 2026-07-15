@@ -74,6 +74,28 @@ function okGeminiResponse(text: string): Response {
   })
 }
 
+function utf8BoundarySplitResponse(body: string, splitCharacters: string[]): Response {
+  const encoder = new TextEncoder()
+  const bytes = encoder.encode(body)
+  const splitOffsets = splitCharacters.map((character) => {
+    const characterIndex = body.indexOf(character)
+    if (characterIndex === -1) throw new Error(`Missing split character: ${character}`)
+    return encoder.encode(body.slice(0, characterIndex)).byteLength + 1
+  })
+  const chunks = splitOffsets.map((offset, index) => bytes.slice(index === 0 ? 0 : splitOffsets[index - 1], offset))
+  chunks.push(bytes.slice(splitOffsets.at(-1) ?? 0))
+
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk)
+        controller.close()
+      },
+    }),
+    { status: 200 },
+  )
+}
+
 function collectFetchCalls(): CapturedFetchCall[] {
   return [...globalFetchMock.mock.calls, ...fetchNativeMock.mock.calls].map(([url, init]) => ({
     url: String(url),
@@ -302,5 +324,35 @@ describe('requestGoogleCloudVertex in Fastify mode', () => {
     expect(assertion).toBeTruthy()
     const jwtPayload = decodeJwtPayload(assertion!.split('.')[1])
     expect(jwtPayload.iss).toBe('svc@profile-project.iam.gserviceaccount.com')
+  })
+
+  it('preserves multibyte text split across Gemini SSE byte chunks', async () => {
+    const expected = '한字😀'
+    const sse = `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: expected }] } }] })}\n\n`
+    const streamResponse = () => utf8BoundarySplitResponse(sse, ['한', '字', '😀'])
+    fetchNativeMock.mockImplementation(streamResponse)
+    globalFetchMock.mockImplementation(streamResponse)
+
+    const result = await requestGoogleCloudVertex({
+      ...makeVertexArg(),
+      aiModel: 'gemini-1.5-pro',
+      key: 'studio-key',
+      useStreaming: true,
+      modelInfo: geminiModelInfo({
+        provider: LLMProvider.GoogleCloud,
+        format: LLMFormat.GoogleCloud,
+      }) as RequestDataArgumentExtended['modelInfo'],
+    })
+
+    expect(result.type).toBe('streaming')
+    if (result.type !== 'streaming') throw new Error('Expected a streaming response')
+
+    const streamedChunks: string[] = []
+    for await (const chunk of result.result) streamedChunks.push(chunk['0'] ?? '')
+    const streamed = streamedChunks.at(-1) ?? ''
+
+    expect(streamedChunks).toContain(expected)
+    expect(streamed).toBe(expected)
+    expect(streamed).not.toContain('\uFFFD')
   })
 })

@@ -950,10 +950,11 @@ async function requestClaudeHTTP(
               break
             }
             const { done, value } = await reader.read()
-            if (done) {
+            const decoded = done ? decoder.decode() : decoder.decode(value, { stream: true })
+            if (done && !decoded) {
               break
             }
-            parserData += decoder.decode(value)
+            parserData += decoded
             let parts = parserData.split('\n')
             for (; i < parts.length - 1; i++) {
               prevText = text
@@ -992,6 +993,9 @@ async function requestClaudeHTTP(
             controller.enqueue({
               '0': text,
             })
+            if (done) {
+              break
+            }
           } catch (error) {
             await sleep(1)
           }

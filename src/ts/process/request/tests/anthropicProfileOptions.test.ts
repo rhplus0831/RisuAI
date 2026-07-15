@@ -1,5 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const fetchNativeMock = vi.hoisted(() => vi.fn())
+const globalFetchMock = vi.hoisted(() => vi.fn())
+
+vi.mock('src/ts/globalApi.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('../../../globalApi.svelte')>()
+  return {
+    ...actual,
+    fetchNative: fetchNativeMock,
+    globalFetch: globalFetchMock,
+  }
+})
+
 vi.mock('../../modules', async (importActual) => {
   const actual = await importActual<typeof import('../../modules')>()
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
@@ -93,12 +105,38 @@ async function preview(arg: RequestDataArgumentExtended): Promise<PreviewPayload
   return JSON.parse(result.result) as PreviewPayload
 }
 
+function utf8BoundarySplitResponse(body: string, splitCharacters: string[]): Response {
+  const encoder = new TextEncoder()
+  const bytes = encoder.encode(body)
+  const splitOffsets = splitCharacters.map((character) => {
+    const characterIndex = body.indexOf(character)
+    if (characterIndex === -1) throw new Error(`Missing split character: ${character}`)
+    return encoder.encode(body.slice(0, characterIndex)).byteLength + 1
+  })
+  const chunks = splitOffsets.map((offset, index) => bytes.slice(index === 0 ? 0 : splitOffsets[index - 1], offset))
+  chunks.push(bytes.slice(splitOffsets.at(-1) ?? 0))
+
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(chunk)
+        controller.close()
+      },
+    }),
+    { status: 200 },
+  )
+}
+
 beforeEach(() => {
+  fetchNativeMock.mockReset()
+  globalFetchMock.mockReset()
+  vi.stubGlobal('fetch', globalFetchMock)
   vi.spyOn(console, 'log').mockImplementation(() => {})
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('requestClaude profile provider options', () => {
@@ -257,5 +295,51 @@ describe('requestClaude profile provider options', () => {
     expect(payload.headers['X-Legacy-Param']).toBe('legacy-header')
     expect(payload.body.model).toBe('legacy-arg-claude-model')
     expect(payload.body.legacy_param).toBe('from-legacy')
+  })
+
+  it('preserves multibyte text split across Anthropic SSE byte chunks', async () => {
+    const expected = '한字😀'
+    const sse = `data: ${JSON.stringify({
+      type: 'content_block_delta',
+      delta: { type: 'text_delta', text: expected },
+    })}\n\n`
+    const streamResponse = () => utf8BoundarySplitResponse(sse, ['한', '字', '😀'])
+    fetchNativeMock.mockImplementation(streamResponse)
+    globalFetchMock.mockImplementation(streamResponse)
+    setDatabase(
+      db({
+        aiModel: 'reverse_proxy',
+        customAPIFormat: LLMFormat.Anthropic,
+        forceReplaceUrl: 'https://stream.proxy.example/v1/messages',
+        proxyKey: 'stream-key',
+        useStreaming: true,
+      } as Partial<Database>),
+    )
+
+    const result = await requestClaude({
+      formated: [{ role: 'user', content: 'hello' }],
+      bias: {},
+      biasString: [],
+      aiModel: 'reverse_proxy',
+      maxTokens: 64,
+      useStreaming: true,
+      mode: 'model',
+      customURL: getDatabase().forceReplaceUrl,
+      key: 'stream-key',
+      modelInfo: modelInfo({
+        id: 'reverse_proxy',
+        internalID: 'claude-stream-model',
+        provider: LLMProvider.AsIs,
+      }),
+    } as RequestDataArgumentExtended)
+
+    expect(result.type).toBe('streaming')
+    if (result.type !== 'streaming') throw new Error('Expected a streaming response')
+
+    let streamed = ''
+    for await (const chunk of result.result) streamed = chunk['0'] ?? streamed
+
+    expect(streamed).toBe(expected)
+    expect(streamed).not.toContain('\uFFFD')
   })
 })
