@@ -108,8 +108,28 @@ function startSource(source: AudioBufferSourceNode, nodes: DisconnectableAudioNo
   }
 }
 
+function stopActiveSource(): void {
+  const activeSource = sourceNode
+  const cleanup = sourceNodeCleanup
+  if (!activeSource) return
+  try {
+    activeSource.stop()
+  } finally {
+    cleanup?.()
+    if (sourceNode === activeSource) {
+      sourceNode = null
+      sourceNodeCleanup = null
+    }
+  }
+}
+
 function beginTtsRun(): TtsRun {
-  activeTtsRequest?.abort()
+  const previousRun = activeTtsRequest
+  previousRun?.abort()
+  if (previousRun) {
+    stopActiveSource()
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel()
+  }
   const controller = new AbortController()
   activeTtsRequest = controller
   return {
@@ -628,19 +648,7 @@ export function stopTTS() {
   activeTtsRun += 1
   activeTtsRequest?.abort()
   activeTtsRequest = null
-  const activeSource = sourceNode
-  const cleanup = sourceNodeCleanup
-  if (activeSource) {
-    try {
-      activeSource.stop()
-    } finally {
-      cleanup?.()
-      if (sourceNode === activeSource) {
-        sourceNode = null
-        sourceNodeCleanup = null
-      }
-    }
-  }
+  stopActiveSource()
   if (typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined') {
     speechSynthesis.cancel()
   }

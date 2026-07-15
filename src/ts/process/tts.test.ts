@@ -422,6 +422,23 @@ describe('sayTTS AudioContext lifecycle', () => {
     expect(context.sources[1].start).toHaveBeenCalledTimes(1)
   })
 
+  it('stops active playback before starting a superseding TTS run', async () => {
+    testState.requestTtsSynthesis
+      .mockResolvedValueOnce(ttsAudio(new Uint8Array([1]), 'audio/mpeg'))
+      .mockResolvedValueOnce(ttsAudio(new Uint8Array([2]), 'audio/mpeg'))
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(makeCharacter(), 'first')
+    const context = StubAudioContext.instances[0]
+    const firstSource = context.sources[0]
+
+    await sayTTS(makeCharacter(), 'second')
+
+    expect(firstSource.stop).toHaveBeenCalledTimes(1)
+    expect(firstSource.disconnect).toHaveBeenCalledTimes(1)
+    expect(context.sources[1].start).toHaveBeenCalledTimes(1)
+  })
+
   it('M18: gptsovits gain path reuses one AudioContext and releases its gain graph', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {})
     testState.globalFetch
