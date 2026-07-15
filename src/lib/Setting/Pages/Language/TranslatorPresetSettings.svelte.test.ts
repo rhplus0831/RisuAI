@@ -218,6 +218,7 @@ import TranslatorPresetSettings from './TranslatorPresetSettings.svelte'
 import { alertConfirm, alertInput } from 'src/ts/alert'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 import {
+  applySettingsGroupResource,
   isCollectionAcknowledgementTainted,
   isSettingsGroupAcknowledgementTainted,
   resetServerResourceState,
@@ -678,13 +679,55 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     expect(maxResponseInput().value).toBe('100')
   })
 
+  it('paints a selection while a pending preset edit is still being persisted', async () => {
+    commandSpies.deferNextUpdate = true
+    await editPrompt('pending prompt A')
+
+    await selectTranslatorPreset(1)
+
+    expect(commandSpies.updateInputs).toEqual([
+      {
+        baseRevision: 100,
+        presetId: 'preset-a',
+        patch: { prompt: 'pending prompt A' },
+      },
+    ])
+    expect(commandSpies.selectInputs).toHaveLength(0)
+    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPrompt).toBe('old prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(200)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.value).toBe('1')
+    expect(promptTextarea().value).toBe('old prompt B')
+    expect(maxResponseInput().value).toBe('200')
+
+    const deferredUpdate = commandSpies.deferredUpdateResults.shift()
+    expect(deferredUpdate).toBeTruthy()
+    deferredUpdate!.resolve({ status: 'ok' })
+    for (let attempt = 0; attempt < 5 && commandSpies.selectInputs.length === 0; attempt++) {
+      await flushMicrotasks()
+    }
+    await tick()
+
+    expect(commandSpies.selectInputs).toEqual([{ baseRevision: 101, presetId: 'preset-b' }])
+  })
+
   it('preserves newer translator selection and field edits when a deferred select command fails', async () => {
     commandSpies.deferNextSelect = true
 
     await selectTranslatorPreset(1)
 
     expect(commandSpies.selectInputs).toEqual([{ baseRevision: 100, presetId: 'preset-b' }])
-    expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
+    expect(commandSpies.runInputs.at(-1)?.rollback).toEqual(expect.any(Function))
+    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPrompt).toBe('old prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(200)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.value).toBe('1')
+    expect(promptTextarea().value).toBe('old prompt B')
+    expect(maxResponseInput().value).toBe('200')
 
     withTrustedResourceWrite(() => {
       getDatabase().translatorPresets = [
@@ -711,6 +754,55 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     })
     expect(getDatabase().translatorPrompt).toBe('newer prompt B')
     expect(getDatabase().translatorMaxResponse).toBe(222)
+  })
+
+  it('rolls back a rejected optimistic selection while it remains current', async () => {
+    commandSpies.deferNextSelect = true
+
+    await selectTranslatorPreset(1)
+
+    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPrompt).toBe('old prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(200)
+
+    await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
+
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
+    expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.value).toBe('0')
+    expect(promptTextarea().value).toBe('old prompt A')
+    expect(maxResponseInput().value).toBe('100')
+  })
+
+  it('does not roll back a selection after a newer language projection', async () => {
+    commandSpies.deferNextSelect = true
+
+    await selectTranslatorPreset(1)
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 101,
+          group: 'language',
+          settings: {
+            translatorPresetId: 1,
+            translatorPrompt: 'old prompt B',
+            translatorMaxResponse: 200,
+          },
+        },
+        ['translatorPresetId', 'translatorPrompt', 'translatorMaxResponse'],
+      ),
+    ).toBe(true)
+
+    await failDeferredCommand(commandSpies.deferredSelectResults, 'forced select failure')
+
+    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPrompt).toBe('old prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(200)
   })
 
   it('preserves newer row edits and appended rows when a deferred delete command fails', async () => {
