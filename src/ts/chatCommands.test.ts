@@ -705,6 +705,21 @@ describe('chat command projection helpers', () => {
     expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-a', 'chat-b'])
   })
 
+  it('keeps the active chat selected when an earlier inactive chat is deleted', () => {
+    getDatabase().characters[0].chats.push({ id: 'chat-c', name: 'Chat C', message: [] } as Chat)
+    getDatabase().characters[0].chatPage = 1
+    const previous = currentChatStateSnapshot()
+    setResourceWriteGuardEnabled(true)
+
+    expect(applyOptimisticDeletedChat('char-a', 'chat-a', previous)).toEqual({
+      applied: true,
+      selectedChatId: 'chat-b',
+    })
+
+    expect(getDatabase().characters[0].chats.map((candidate) => candidate.id)).toEqual(['chat-b', 'chat-c'])
+    expect(getDatabase().characters[0].chatPage).toBe(0)
+  })
+
   it('routes SideChatList chat and folder flows through commands under the resource guard', async () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)

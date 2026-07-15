@@ -210,9 +210,15 @@ export function applyOptimisticDeletedChat(
     if (!character || !chats || chats.length <= 1) return
     const chatIndex = chats.findIndex((candidate) => candidate.id === chatId)
     if (chatIndex < 0) return
+    const previouslySelectedChatId = chats[character.chatPage]?.id
 
     chats.splice(chatIndex, 1)
-    normalizeChatPage(character)
+    const preservedSelectionIndex =
+      previouslySelectedChatId && previouslySelectedChatId !== chatId
+        ? chats.findIndex((candidate) => candidate.id === previouslySelectedChatId)
+        : -1
+    if (preservedSelectionIndex >= 0) character.chatPage = preservedSelectionIndex
+    else normalizeChatPage(character)
     result.applied = true
     result.selectedChatId = chats[character.chatPage]?.id
   })
