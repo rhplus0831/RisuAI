@@ -218,9 +218,17 @@
       alertError(language.errors.onlyOneChat)
       return
     }
+    const targetKind = kind
+    const presetId = nonEmptyId(preset?.id)
     if (!(await alertConfirm(`${language.removeConfirm}${preset.name ?? ''}`))) return
-    if (kind === 'prompt') deletePromptPreset(index, 0)
-    else deleteModelPreset(index, 0)
+
+    const currentPresets = targetKind === 'prompt' ? getDatabase().promptPresets : getDatabase().modelPresets
+    if (currentPresets.length <= 1) return
+    const liveIndex = presetId ? currentPresets.findIndex((candidate) => candidate?.id === presetId) : index
+    if (liveIndex < 0 || (!presetId && currentPresets[liveIndex] !== preset)) return
+
+    if (targetKind === 'prompt') deletePromptPreset(liveIndex, 0)
+    else deleteModelPreset(liveIndex, 0)
   }
 
   function extractLegacy(index: number, mode: 'all' | 'model' | 'prompt') {

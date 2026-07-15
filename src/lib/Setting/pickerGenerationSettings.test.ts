@@ -31,6 +31,10 @@ const moduleSpies = vi.hoisted(() => ({
   refreshModules: vi.fn(),
 }))
 
+const alertSpies = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
+}))
+
 vi.mock('../../ts/storage/database.svelte', async (importActual) => {
   const actual = await importActual<typeof import('../../ts/storage/database.svelte')>()
   return {
@@ -60,6 +64,14 @@ vi.mock('src/ts/storage/fastifyStorage', () => ({
 
 vi.mock('src/ts/process/modules', () => moduleSpies)
 
+vi.mock('../../ts/alert', async (importActual) => {
+  const actual = await importActual<typeof import('../../ts/alert')>()
+  return {
+    ...actual,
+    alertConfirm: alertSpies.alertConfirm,
+  }
+})
+
 import Botpreset from './botpreset.svelte'
 import ListedPersona from './listedPersona.svelte'
 import { clearCachedServerCommandRevision, type ServerCommandResult } from 'src/ts/server/commands'
@@ -77,11 +89,20 @@ interface CapturedFetch {
 }
 
 interface StubCommandFetchOptions {
+  promptDeleteResponse?: Promise<Response>
   promptSelectConflictOnce?: boolean
 }
 
 let target: HTMLElement
 let component: MountedComponent | undefined
+
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -107,6 +128,9 @@ function stubCommandFetch(options: StubCommandFetchOptions = {}): CapturedFetch[
       })
 
       if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 200 })
+      if (init.method === 'DELETE' && url.endsWith('/prompt-presets/preset-b') && options.promptDeleteResponse) {
+        return options.promptDeleteResponse
+      }
       if (url.endsWith('/prompt-presets/select')) {
         promptSelectAttempts += 1
         if (options.promptSelectConflictOnce && promptSelectAttempts === 1) {
@@ -303,6 +327,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   vi.clearAllMocks()
+  alertSpies.alertConfirm.mockReset()
   clearCachedServerCommandRevision()
   setResourceWriteGuardEnabled(false)
   seedDb()
@@ -502,6 +527,40 @@ describe('generation settings picker mode', () => {
       'preset-c',
     ])
     expect(getDatabase().promptPresetsId).toBe(2)
+  })
+
+  it('deletes the confirmed preset by stable id after the list reorders', async () => {
+    const confirmation = createDeferred<boolean>()
+    const deleteResponse = createDeferred<Response>()
+    alertSpies.alertConfirm.mockReturnValue(confirmation.promise)
+    stubCommandFetch({ promptDeleteResponse: deleteResponse.promise })
+    mountPresetPicker('global')
+
+    const deleteButton = pickerRow('prompt', 'preset-b')
+      .querySelector<SVGElement>('svg.lucide-trash')
+      ?.closest('button')
+    expect(deleteButton).toBeTruthy()
+    deleteButton!.click()
+    await tick()
+    expect(alertSpies.alertConfirm).toHaveBeenCalledOnce()
+
+    const [presetA, presetB] = getDatabase().promptPresets
+    getDatabase().promptPresets = [presetB, presetA]
+    getDatabase().promptPresetsId = 1
+    await tick()
+
+    confirmation.resolve(true)
+    await tick()
+    await Promise.resolve()
+
+    expect(getDatabase().promptPresets.map((preset) => preset.id)).toEqual(['preset-a'])
+    expect(target.querySelector('[data-risu-row-id="preset-b"]')).toBeNull()
+    expect(pickerRow('prompt', 'preset-a')).toBeTruthy()
+
+    deleteResponse.resolve(jsonResponse({ error: 'test cleanup' }, 500))
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
   })
 
   it('saves persona rows to the active chat without calling global persona selection', async () => {
