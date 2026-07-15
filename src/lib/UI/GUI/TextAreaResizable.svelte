@@ -20,6 +20,7 @@
     popupEditor?: boolean
     popupLanguage?: string
     stableHeight?: boolean
+    ariaLabel?: string
   }
 
   let {
@@ -29,6 +30,7 @@
     popupEditor = false,
     popupLanguage = 'markdown',
     stableHeight = false,
+    ariaLabel = language.messageInput,
   }: Props = $props()
 
   function resize() {
@@ -85,6 +87,7 @@
 
 <div class="relative w-full">
   <textarea
+    aria-label={ariaLabel}
     bind:this={textarea}
     oninput={handleInput}
     onkeydown={(e) => {

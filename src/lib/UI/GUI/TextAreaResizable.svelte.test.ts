@@ -10,6 +10,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import TextAreaResizable from './TextAreaResizable.svelte'
+import { language } from 'src/lang'
 import { popUpEditorStore } from 'src/ts/stores.svelte'
 import { replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 
@@ -51,6 +52,11 @@ afterEach(() => {
 })
 
 describe('TextAreaResizable popup editor', () => {
+  it('provides a localized input name by default', () => {
+    component = mount(TextAreaResizable, { target, props: { value: '' } })
+    expect(textarea().getAttribute('aria-label')).toBe(language.messageInput)
+  })
+
   it('opens and commits through the popup editor when enabled', async () => {
     const onchange = vi.fn()
     component = mount(TextAreaResizable, {
@@ -91,5 +97,13 @@ describe('TextAreaResizable popup editor', () => {
     expect(input.style.height).toBe('16rem')
     expect(input.style.minHeight).toBe('12rem')
     expect(input.style.maxHeight).toBe('60vh')
+  })
+
+  it('uses a more specific caller label when provided', () => {
+    component = mount(TextAreaResizable, {
+      target,
+      props: { value: '', ariaLabel: 'Translated message' },
+    })
+    expect(textarea().getAttribute('aria-label')).toBe('Translated message')
   })
 })

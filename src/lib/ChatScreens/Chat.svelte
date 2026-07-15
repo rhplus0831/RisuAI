@@ -1481,6 +1481,7 @@
   {#if editTranslationMode}
     <AutoresizeArea
       bind:value={editTranslationText}
+      ariaLabel={language.editTranslation}
       popupEditor
       stableHeight={useStableTranslationEditor}
       handleLongPress={() => {
@@ -1489,6 +1490,7 @@
   {:else if editMode}
     <AutoresizeArea
       bind:value={message}
+      ariaLabel={language.messageInput}
       popupEditor
       stableHeight={useStableMessageEditor}
       handleLongPress={() => {
