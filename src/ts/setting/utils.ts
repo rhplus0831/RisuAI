@@ -38,6 +38,11 @@ import {
   type PromptPresetModelOverrideMirrorTarget,
 } from '../promptPresetModelOverrides.svelte'
 import { promptPresetModelOverrideFieldForDatabaseKey } from '../presetSplit'
+import {
+  serverSettingDraftOwnerKey,
+  splitPresetSettingDraftOwnerKey,
+  type SplitPresetDraftProjection,
+} from '../server/settingsDraftAcknowledgement'
 
 /**
  * Sentinel value representing an uninitialized local state in wrapper components.
@@ -51,6 +56,9 @@ export const DEFERRED_SETTING_INPUT_DELAY_MS = 250
 export interface DeferredSettingWriteResult {
   ownerKey: string
   queued: boolean
+  rootKey: string | null
+  path: string[]
+  splitPresetProjection: SplitPresetDraftProjection
 }
 
 interface DeferredServerSettingTarget {
@@ -162,7 +170,13 @@ export function setDeferredSettingValue(
   writeLocalSettingValue(item, newValue, ctx)
 
   if (!target) {
-    return { ownerKey: localSettingOwnerKey(item), queued: false }
+    return {
+      ownerKey: localSettingOwnerKey(item),
+      queued: false,
+      rootKey: settingRootKey(item),
+      path: deferredSettingPath(item),
+      splitPresetProjection: 'selectedSettings',
+    }
   }
 
   return {
@@ -177,6 +191,9 @@ export function setDeferredSettingValue(
       optimisticProjectionEpochs,
       options.delayMs ?? DEFERRED_SETTING_INPUT_DELAY_MS,
     ),
+    rootKey: target.rootKey,
+    path: deferredSettingPath(item),
+    splitPresetProjection: target.kind === 'promptOverride' ? 'presetRow' : 'selectedSettings',
   }
 }
 
@@ -220,7 +237,7 @@ function resolveDeferredSettingTarget(item: SettingItem, ctx: SettingContext): D
     if (target) {
       return {
         kind: 'promptOverride',
-        ownerKey: `promptPreset:${target.presetId}:${target.presetField}`,
+        ownerKey: splitPresetSettingDraftOwnerKey('prompt', target.presetId, target.presetField),
         rootKey,
         target,
       }
@@ -232,7 +249,7 @@ function resolveDeferredSettingTarget(item: SettingItem, ctx: SettingContext): D
   if (presetTarget) {
     return {
       kind: 'preset',
-      ownerKey: `${presetTarget.kind}Preset:${presetTarget.presetId}:${presetTarget.presetKey}`,
+      ownerKey: splitPresetSettingDraftOwnerKey(presetTarget.kind, presetTarget.presetId, presetTarget.presetKey),
       rootKey,
       target: presetTarget,
     }
@@ -243,7 +260,7 @@ function resolveDeferredSettingTarget(item: SettingItem, ctx: SettingContext): D
 
 function resolveDeferredServerSettingTarget(rootKey: string): DeferredServerSettingTarget | null {
   if (!canUseServerCommands() || !settingsGroupForKey(rootKey)) return null
-  return { kind: 'server', ownerKey: `settings:${rootKey}`, rootKey }
+  return { kind: 'server', ownerKey: serverSettingDraftOwnerKey(rootKey), rootKey }
 }
 
 function currentDeferredSettingTargetValue(target: DeferredSettingTarget): unknown {

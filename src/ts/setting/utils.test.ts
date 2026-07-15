@@ -32,6 +32,7 @@ import {
   replaceResourceDatabase,
 } from '../server/resourceState.svelte'
 import { setResourceWriteGuardEnabled, withServerResourceApply } from '../server/resourceWriteGuard.svelte'
+import { notifyServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
 import { createDestructiveRefreshToken } from '../server/staleStateGuards'
 import { accessibilitySettingsItems } from './accessibilitySettingsData'
 import { advancedSettingsItems } from './advancedSettingsData'
@@ -401,6 +402,54 @@ describe('server-backed data-driven settings', () => {
     const patches = calls.filter((call) => call.url === '/api/v1/commands/settings/display')
     expect(patches).toHaveLength(1)
     expect(patches[0].body).toMatchObject({ patch: { guiHTML: 'local final' } })
+    unmount(component)
+  })
+
+  it('shows a canonical settings receipt in the input that produced the accepted attempt', () => {
+    replaceResourceDatabase({
+      deeplOptions: { key: 'server initial', freeApi: false },
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item: SettingItem = {
+      id: 'language.deepl.key',
+      type: 'text',
+      bindPath: 'deeplOptions.key',
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+    const target = document.createElement('div')
+    const component = mount(SettingInputDraftHarness, { target, props: { ctx, item, kind: 'text' } })
+    flushSync()
+    const input = target.querySelector<HTMLInputElement>('[data-setting-input-draft]')!
+
+    input.value = 'attempted key'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    flushSync()
+
+    withServerResourceApply(() => {
+      getResourceDatabase().deeplOptions = { key: 'canonical key', freeApi: false }
+    })
+    notifyServerCommandLocalEffectApplied(
+      {
+        type: 'settings.updated',
+        revision: 5,
+        resource: 'settings',
+        id: 'language',
+      },
+      {
+        kind: 'settingsPatch',
+        group: 'language',
+        attemptedPatch: { deeplOptions: { key: 'attempted key', freeApi: false } },
+        settings: { deeplOptions: { key: 'canonical key', freeApi: false } },
+        settingsProjectionEpoch: 0,
+      },
+    )
+    flushSync()
+
+    expect(input.value).toBe('canonical key')
+    expect(getResourceDatabase().deeplOptions).toEqual({ key: 'canonical key', freeApi: false })
     unmount(component)
   })
 

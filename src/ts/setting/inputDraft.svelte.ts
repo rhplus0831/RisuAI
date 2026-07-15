@@ -1,5 +1,10 @@
 import { untrack } from 'svelte'
 import { getServerResourceApplyEpoch } from '../server/resourceWriteGuard.svelte'
+import { subscribeServerCommandLocalEffectApplied } from '../server/commandLocalEffectEvents'
+import {
+  appliedLocalEffectAcknowledgesSettingDraft,
+  type SplitPresetDraftProjection,
+} from '../server/settingsDraftAcknowledgement'
 import type { SettingContext, SettingItem } from './types'
 import {
   UNINITIALIZED,
@@ -37,6 +42,10 @@ export function createSettingInputDraft<T>(
   let previousOwnerKey = untrack(() => getSettingWriteOwnerKey(getItem(), getContext()))
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
   let dirtyResourceEpoch: number | null = null
+  let dirtyOwnerKey: string | null = null
+  let dirtyRootKey: string | null = null
+  let dirtyPath: string[] = []
+  let dirtySplitPresetProjection: SplitPresetDraftProjection = 'selectedSettings'
 
   $effect(() => {
     const item = getItem()
@@ -50,14 +59,13 @@ export function createSettingInputDraft<T>(
     const draftSnapshot = snapshotJson(draft.value)
 
     if (ownerChanged) {
-      dirty = false
-      dirtyResourceEpoch = null
+      clearDirty()
       if (serverSnapshot !== draftSnapshot) replaceDraftValue(serverValue)
     } else if (serverSnapshot === draftSnapshot) {
       // A projection carrying the draft is authoritative confirmation. A
       // non-projection match is the optimistic local/preset mirror catching up.
-      if (resourceApplyChanged && dirty) dirty = false
-      dirtyResourceEpoch = null
+      if (resourceApplyChanged && dirty) clearDirty()
+      else dirtyResourceEpoch = null
     } else if (resourceApplyChanged && dirty) {
       dirtyResourceEpoch = resourceApplyEpoch
       untrack(() => reassertSettingValue(item, draft.value, context))
@@ -66,8 +74,7 @@ export function createSettingInputDraft<T>(
       // DB fallback does not change that getter, so keep the control draft until
       // the preset mirror or a newer projection settles it.
     } else if (serverSnapshot !== previousServerSnapshot) {
-      dirty = false
-      dirtyResourceEpoch = null
+      clearDirty()
       replaceDraftValue(serverValue)
     }
 
@@ -75,6 +82,28 @@ export function createSettingInputDraft<T>(
     previousResourceApplyEpoch = resourceApplyEpoch
     previousServerSnapshot = serverSnapshot
   })
+
+  $effect(() =>
+    subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+      if (!dirty || !dirtyRootKey) return
+      const currentOwnerKey = getSettingWriteOwnerKey(getItem(), getContext())
+      if (
+        !appliedLocalEffectAcknowledgesSettingDraft({
+          localEffect,
+          dirtyOwnerKey,
+          currentOwnerKey,
+          rootKey: dirtyRootKey,
+          path: dirtyPath,
+          attemptedValue: draft.value,
+          currentValue: getSettingValue(getItem(), getContext()),
+          splitPresetProjection: dirtySplitPresetProjection,
+        })
+      ) {
+        return
+      }
+      clearDirty()
+    }),
+  )
 
   $effect(() => {
     const value = draft.value
@@ -97,6 +126,10 @@ export function createSettingInputDraft<T>(
       if (snapshotJson(getSettingValue(item, context)) === snapshot) return
       const result = setDeferredSettingValue(item, cloneJsonValue(value), context, options)
       dirty = result.queued
+      dirtyOwnerKey = result.queued ? result.ownerKey : null
+      dirtyRootKey = result.queued ? result.rootKey : null
+      dirtyPath = result.queued ? result.path : []
+      dirtySplitPresetProjection = result.splitPresetProjection
       previousOwnerKey = result.ownerKey
       previousServerSnapshot = snapshotJson(getSettingValue(item, context))
     })
@@ -112,6 +145,15 @@ export function createSettingInputDraft<T>(
     queueMicrotask(() => {
       suppressDraftDispatch = false
     })
+  }
+
+  function clearDirty(): void {
+    dirty = false
+    dirtyResourceEpoch = null
+    dirtyOwnerKey = null
+    dirtyRootKey = null
+    dirtyPath = []
+    dirtySplitPresetProjection = 'selectedSettings'
   }
 }
 

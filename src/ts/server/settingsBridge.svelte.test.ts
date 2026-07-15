@@ -163,6 +163,7 @@ import {
 } from './resourceState.svelte'
 import type { Database } from '../storage/database.svelte'
 import '../stores.svelte'
+import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
 import {
   applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
@@ -362,6 +363,20 @@ describe('settingsBridge coalescing', () => {
 
     expect(source).toContain('applyOnboardingServerBackedSettings')
     expect(source).not.toContain('withTrustedResourceWrite')
+  })
+
+  it('settles BotSettings prompt drafts through owner-aware applied receipts', () => {
+    const source = readFileSync('src/lib/Setting/Pages/BotSettings.svelte', 'utf8')
+    const promptDraftStart = source.indexOf('function createPromptFieldDraft')
+    const promptOwnerStart = source.indexOf('function promptFieldOwnerSignature', promptDraftStart)
+    const promptDraftSource = source.slice(promptDraftStart, promptOwnerStart)
+
+    expect(promptDraftStart).toBeGreaterThanOrEqual(0)
+    expect(promptOwnerStart).toBeGreaterThan(promptDraftStart)
+    expect(promptDraftSource).toContain('subscribeServerCommandLocalEffectApplied')
+    expect(promptDraftSource).toContain('appliedLocalEffectAcknowledgesSettingDraft')
+    expect(promptDraftSource).toContain("splitPresetProjection: 'presetRow'")
+    expect(promptDraftSource).toContain('currentPromptFieldValue(key, fallback)')
   })
 
   it('skips immediate patches whose values already match the projection', async () => {
@@ -969,6 +984,70 @@ describe('settingsBridge coalescing', () => {
     await applyProjectionSetting('globalscript', [{ id: 'script-a', in: 'stale server', out: '', type: 'editinput' }])
 
     expect(draft.value).toEqual([{ id: 'script-a', in: 'local dirty', out: '', type: 'editinput' }])
+    stop()
+  })
+
+  it('adopts a canonical value from the applied local effect for its own setting attempt', async () => {
+    setupSettings({ textTheme: 'server initial' })
+    const { draft, stop } = await createSettingDraft('textTheme', '')
+
+    draft.value = 'attempted theme'
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    resourceGuardState.epoch += 1
+    testDatabaseState.db.textTheme = 'canonical theme'
+    notifyServerCommandLocalEffectApplied(
+      {
+        type: 'settings.updated',
+        revision: 2,
+        resource: 'settings',
+        id: 'display',
+      },
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { textTheme: 'attempted theme' },
+        settings: { textTheme: 'canonical theme' },
+        settingsProjectionEpoch: 0,
+      },
+    )
+    await flushAndSettle()
+
+    expect(draft.value).toBe('canonical theme')
+    expect(testDatabaseState.db.textTheme).toBe('canonical theme')
+    stop()
+  })
+
+  it('preserves a dirty draft when an older receipt skipped its canonical field', async () => {
+    setupSettings({ textTheme: 'server initial' })
+    const { draft, stop } = await createSettingDraft('textTheme', '')
+
+    draft.value = 'attempted theme'
+    await flushAndSettle()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    resourceGuardState.epoch += 1
+    testDatabaseState.db.textTheme = 'newer resource value'
+    notifyServerCommandLocalEffectApplied(
+      {
+        type: 'settings.updated',
+        revision: 2,
+        resource: 'settings',
+        id: 'display',
+      },
+      {
+        kind: 'settingsPatch',
+        group: 'display',
+        attemptedPatch: { textTheme: 'attempted theme' },
+        settings: { textTheme: 'canonical theme' },
+        settingsProjectionEpoch: 0,
+      },
+    )
+    await flushAndSettle()
+
+    expect(draft.value).toBe('attempted theme')
+    expect(testDatabaseState.db.textTheme).toBe('attempted theme')
     stop()
   })
 

@@ -1,6 +1,10 @@
 import { untrack } from 'svelte'
 import { prebuiltPresets } from '../process/templates/templates'
-import { mirrorTopLevelPresetField } from '../presetFieldMirror'
+import {
+  mirrorTopLevelPresetField,
+  resolveTopLevelPresetFieldMirrorTarget,
+  type TopLevelPresetFieldMirrorTarget,
+} from '../presetFieldMirror'
 import { getDatabase, setPreset } from '../storage/database.svelte'
 import {
   canUseServerCommands,
@@ -28,6 +32,12 @@ import {
   withTrustedResourceWrite,
 } from './resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './staleStateGuards'
+import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
+import {
+  appliedLocalEffectAcknowledgesSettingDraft,
+  serverSettingDraftOwnerKey,
+  splitPresetSettingDraftOwnerKey,
+} from './settingsDraftAcknowledgement'
 
 interface PendingSettingsPatch {
   patch: SettingsPatch
@@ -110,35 +120,74 @@ export function createServerBackedSettingDraft<T>(
   let suppressDraftDispatch = false
   let previousServerSnapshot = snapshotJson(initialValue)
   let previousResourceApplyEpoch = getServerResourceApplyEpoch()
+  let previousOwnerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
   let dirty = false
+  let dirtyOwnerKey: string | null = null
 
   $effect(() => {
     const resourceApplyEpoch = getServerResourceApplyEpoch()
     const resourceApplyChanged = resourceApplyEpoch !== previousResourceApplyEpoch
+    const ownerKey = currentServerBackedSettingDraftOwnerKey(key, options.dispatch)
+    const ownerChanged = ownerKey !== previousOwnerKey
     const serverValue = currentSettingValue(key, fallback)
     const serverSnapshot = snapshotJson(serverValue)
     const draftSnapshot = snapshotJson(draft.value)
 
-    if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+    if (ownerChanged) {
       dirty = false
-    }
-
-    if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
-      suppressDraftDispatch = true
-      if (resourceApplyChanged && dirty) {
-        reassertDirtySettingDraftValue(key, draft.value)
-      } else {
-        dirty = false
+      dirtyOwnerKey = null
+      if (serverSnapshot !== draftSnapshot) {
+        suppressDraftDispatch = true
         draft.value = cloneDraftValue(serverValue)
+        queueMicrotask(() => {
+          suppressDraftDispatch = false
+        })
       }
-      queueMicrotask(() => {
-        suppressDraftDispatch = false
-      })
+    } else {
+      if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
+        dirty = false
+        dirtyOwnerKey = null
+      }
+
+      if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
+        suppressDraftDispatch = true
+        if (resourceApplyChanged && dirty) {
+          reassertDirtySettingDraftValue(key, draft.value)
+        } else {
+          dirty = false
+          dirtyOwnerKey = null
+          draft.value = cloneDraftValue(serverValue)
+        }
+        queueMicrotask(() => {
+          suppressDraftDispatch = false
+        })
+      }
     }
 
+    previousOwnerKey = ownerKey
     previousResourceApplyEpoch = resourceApplyEpoch
     previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
   })
+
+  $effect(() =>
+    subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+      if (
+        !dirty ||
+        !appliedLocalEffectAcknowledgesSettingDraft({
+          localEffect,
+          dirtyOwnerKey,
+          currentOwnerKey: currentServerBackedSettingDraftOwnerKey(key, options.dispatch),
+          rootKey: key,
+          attemptedValue: draft.value,
+          currentValue: currentSettingValue(key, fallback),
+        })
+      ) {
+        return
+      }
+      dirty = false
+      dirtyOwnerKey = null
+    }),
+  )
 
   let previousDraftDispatchSnapshot = snapshotJson(initialValue)
   $effect(() => {
@@ -158,9 +207,13 @@ export function createServerBackedSettingDraft<T>(
     previousDraftDispatchSnapshot = snapshot
 
     untrack(() => {
-      if (!settingsGroupForKey(key)) return
+      if (!settingsGroupForKey(key)) {
+        dirtyOwnerKey = `local:${key}`
+        return
+      }
       const attempted = cloneDraftValue(draft.value)
       const previous = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[key])
+      const presetTarget = resolveTopLevelPresetFieldMirrorTarget(key)
       withTrustedResourceWrite(() => {
         // Re-read the resource database inside the callback: the trusted write opens a
         // copy-on-write working proxy, so an alias captured earlier still points
@@ -169,6 +222,12 @@ export function createServerBackedSettingDraft<T>(
         target[key] = attempted
       })
       const mirroredToPreset = mirrorTopLevelPresetField(key, attempted)
+      dirtyOwnerKey =
+        mirroredToPreset && presetTarget
+          ? splitPresetDraftOwnerKey(presetTarget)
+          : options.dispatch === false
+            ? `local:${key}`
+            : serverSettingDraftOwnerKey(key)
       if (!mirroredToPreset && options.dispatch !== false) {
         queueSettingsPatch({ [key]: attempted }, { [key]: previous }, delayMs)
       }
@@ -177,6 +236,17 @@ export function createServerBackedSettingDraft<T>(
   })
 
   return draft
+}
+
+function splitPresetDraftOwnerKey(target: TopLevelPresetFieldMirrorTarget): string {
+  return splitPresetSettingDraftOwnerKey(target.kind, target.presetId, target.presetKey)
+}
+
+function currentServerBackedSettingDraftOwnerKey(key: string, dispatch: boolean | undefined): string {
+  const presetTarget = resolveTopLevelPresetFieldMirrorTarget(key)
+  if (presetTarget) return splitPresetDraftOwnerKey(presetTarget)
+  if (dispatch === false || !settingsGroupForKey(key)) return `local:${key}`
+  return serverSettingDraftOwnerKey(key)
 }
 
 function reassertDirtySettingDraftValue<T>(key: string, value: T): void {

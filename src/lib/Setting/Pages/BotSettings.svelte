@@ -57,6 +57,12 @@
     runServerCommand,
     type SettingsPatch,
   } from 'src/ts/server/commands'
+  import { subscribeServerCommandLocalEffectApplied } from 'src/ts/server/commandLocalEffectEvents'
+  import {
+    appliedLocalEffectAcknowledgesSettingDraft,
+    serverSettingDraftOwnerKey,
+    splitPresetSettingDraftOwnerKey,
+  } from 'src/ts/server/settingsDraftAcknowledgement'
   import {
     currentPluginWatchSuppressionVersion,
     currentPluginStateSnapshot,
@@ -456,6 +462,7 @@
     let previousResourceApplyEpoch = getServerResourceApplyEpoch()
     let previousOwnerSignature = promptFieldOwnerSignature()
     let dirty = false
+    let dirtyOwnerKey: string | null = null
 
     $effect(() => {
       const resourceApplyEpoch = getServerResourceApplyEpoch()
@@ -466,7 +473,7 @@
       const draftSnapshot = snapshotJson(draft.value)
 
       if (ownerSignature !== previousOwnerSignature) {
-        dirty = false
+        clearDirty()
         suppressDraftDispatch = true
         previousDraftDispatchSnapshot = serverSnapshot
         draft.value = cloneJsonValue(serverValue)
@@ -475,7 +482,7 @@
         })
       } else {
         if (resourceApplyChanged && dirty && serverSnapshot === draftSnapshot) {
-          dirty = false
+          clearDirty()
         }
 
         if (serverSnapshot !== previousServerSnapshot && serverSnapshot !== draftSnapshot) {
@@ -483,7 +490,7 @@
           if (resourceApplyChanged && dirty) {
             reassertDirtyPromptFieldDraftValue(key, draft.value)
           } else {
-            dirty = false
+            clearDirty()
             previousDraftDispatchSnapshot = serverSnapshot
             draft.value = cloneJsonValue(serverValue)
           }
@@ -497,6 +504,26 @@
       previousOwnerSignature = ownerSignature
       previousServerSnapshot = dirty ? snapshotJson(draft.value) : serverSnapshot
     })
+
+    $effect(() =>
+      subscribeServerCommandLocalEffectApplied((_event, localEffect) => {
+        if (
+          !dirty ||
+          !appliedLocalEffectAcknowledgesSettingDraft({
+            localEffect,
+            dirtyOwnerKey,
+            currentOwnerKey: currentPromptFieldDraftOwnerKey(key),
+            rootKey: key,
+            attemptedValue: draft.value,
+            currentValue: currentPromptFieldValue(key, fallback),
+            splitPresetProjection: 'presetRow',
+          })
+        ) {
+          return
+        }
+        clearDirty()
+      }),
+    )
 
     $effect(() => {
       const snapshot = snapshotJson(draft.value)
@@ -522,6 +549,11 @@
           target[key] = attempted
         })
         const mirroredToPreset = writeSelectedPromptPresetField(key, attempted)
+        dirtyOwnerKey = mirroredToPreset
+          ? currentPromptFieldDraftOwnerKey(key)
+          : PROMPT_SETTINGS_COMMAND_KEYS.has(key)
+            ? serverSettingDraftOwnerKey(key)
+            : `local:${key}`
         if (!mirroredToPreset && PROMPT_SETTINGS_COMMAND_KEYS.has(key)) {
           queuePromptFieldPatch({ [key]: attempted }, { [key]: previous })
         }
@@ -530,6 +562,11 @@
     })
 
     return draft
+
+    function clearDirty(): void {
+      dirty = false
+      dirtyOwnerKey = null
+    }
   }
 
   function promptFieldOwnerSignature(): string {
@@ -539,6 +576,15 @@
         ? getDatabase().promptPresets?.[selectedIndex]?.id
         : undefined
     return selectedId ? `preset:${selectedId}` : 'root'
+  }
+
+  function currentPromptFieldDraftOwnerKey(key: string): string {
+    const selectedIndex = getDatabase().promptPresetsId
+    const selectedId =
+      Number.isInteger(selectedIndex) && selectedIndex >= 0
+        ? getDatabase().promptPresets?.[selectedIndex]?.id
+        : undefined
+    return selectedId ? splitPresetSettingDraftOwnerKey('prompt', selectedId, key) : serverSettingDraftOwnerKey(key)
   }
 
   function reassertDirtyPromptFieldDraftValue<T>(key: string, value: T): void {
