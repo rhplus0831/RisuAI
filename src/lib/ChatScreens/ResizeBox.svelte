@@ -5,7 +5,10 @@
   import { getEmotion } from '../../ts/util'
 
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { language } from 'src/lang'
   import { clampResizeBoxSize, readResizePointer } from './ResizeBoxPointer'
+
+  const KEYBOARD_RESIZE_STEP = 16
 
   let box = $state()
   let isResizing = false
@@ -46,6 +49,24 @@
     })
   }
 
+  function handleKeyDown(event) {
+    let widthDelta = 0
+    let heightDelta = 0
+    const step = KEYBOARD_RESIZE_STEP * (event.shiftKey ? 4 : 1)
+
+    if (event.key === 'ArrowLeft') widthDelta = step
+    else if (event.key === 'ArrowRight') widthDelta = -step
+    else if (event.key === 'ArrowDown') heightDelta = step
+    else if (event.key === 'ArrowUp') heightDelta = -step
+    else return
+
+    event.preventDefault()
+    ViewBoxsize.update(({ width, height }) => ({
+      width: clampResizeBoxSize(width + widthDelta, window.innerWidth),
+      height: clampResizeBoxSize(height + heightDelta, window.innerHeight),
+    }))
+  }
+
   onMount(() => {
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleEnd)
@@ -63,15 +84,16 @@
 
 <div class="box bg-darkbg/70" bind:this={box} style="width: {$ViewBoxsize.width}px; height: {$ViewBoxsize.height}px;">
   <TransitionImage classType="risu" src={getEmotion(getDatabase(), $CharEmotion, 'plain')} />
-  <div
-    role="button"
-    tabindex="0"
+  <button
+    type="button"
+    aria-label={language.resizeCharacterImage}
     class="resize-handle"
     onmousedown={handleStart}
     onmouseup={handleEnd}
     ontouchstart={handleStart}
-    ontouchend={handleEnd}>
-  </div>
+    ontouchend={handleEnd}
+    onkeydown={handleKeyDown}>
+  </button>
 </div>
 
 <style>
@@ -93,6 +115,8 @@
     border-top: 1px solid var(--risu-theme-borderc);
     border-right: 1px solid var(--risu-theme-borderc);
     cursor: sw-resize;
+    padding: 0;
+    background: transparent;
     bottom: 0;
     left: 0;
     z-index: 10;

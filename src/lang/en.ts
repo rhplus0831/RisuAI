@@ -1484,6 +1484,7 @@ export const languageEnglish = {
   readMessageAloud: 'Read message aloud',
   switchMessageRole: 'Switch message role',
   close: 'Close',
+  resizeCharacterImage: 'Resize character image',
   openCharacter: (name: string) => `Open ${name}`,
   restoreCharacter: (name: string) => `Restore ${name}`,
   deleteCharacterPermanently: (name: string) => `Delete ${name} permanently`,
