@@ -489,6 +489,16 @@ afterEach(async () => {
 })
 
 describe('TranslatorPresetSettings server-backed edits', () => {
+  it('names the preset selector and editable fields from their visible settings', () => {
+    expect(target.querySelector('select')?.getAttribute('aria-label')).toBe('Preset')
+    expect(target.querySelector('input[type="number"]')?.getAttribute('aria-label')).toBe(
+      language.translationResponseSize,
+    )
+    expect(target.querySelector('textarea, [role="textbox"]')?.getAttribute('aria-label')).toBe(
+      language.translatorPrompt,
+    )
+  })
+
   it('names every preset toolbar action for its target', () => {
     const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).slice(0, 5)
 
