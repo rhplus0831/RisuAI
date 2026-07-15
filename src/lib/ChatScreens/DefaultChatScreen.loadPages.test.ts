@@ -7,7 +7,8 @@ const loadPageMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
   alertError: vi.fn(),
   alertNormal: vi.fn(),
-  alertWait: vi.fn(),
+  beginAlertWait: vi.fn(() => Symbol('screenshot-wait')),
+  clearAlertWait: vi.fn(() => true),
   appendCurrentChatEmptyCharMessage: vi.fn(),
   appendCurrentChatUserMessageForSend: vi.fn(
     async (): Promise<AppendCurrentChatUserMessageResult> => ({ status: 'ok', messageId: 'message-a' }),
@@ -41,6 +42,7 @@ const loadPageMocks = vi.hoisted(() => ({
     loadPageMocks.currentRouteSubscribers.forEach((run) => run(value))
   },
   toCanvas: vi.fn(),
+  updateAlertWait: vi.fn(() => true),
 }))
 
 vi.mock('./Chat.svelte', async () => {
@@ -113,7 +115,9 @@ vi.mock('src/ts/process/scripts', () => ({
 vi.mock('../../ts/alert', () => ({
   alertError: loadPageMocks.alertError,
   alertNormal: loadPageMocks.alertNormal,
-  alertWait: loadPageMocks.alertWait,
+  beginAlertWait: loadPageMocks.beginAlertWait,
+  clearAlertWait: loadPageMocks.clearAlertWait,
+  updateAlertWait: loadPageMocks.updateAlertWait,
 }))
 
 vi.mock('src/ts/process/index.svelte', async () => {
@@ -689,6 +693,7 @@ describe('DefaultChatScreen transcript window state', () => {
 
     await clickScreenshotMenuItem()
     await waitFor(() => expect(loadPageMocks.toCanvas).toHaveBeenCalledTimes(1))
+    const waitHandle = loadPageMocks.beginAlertWait.mock.results[0]?.value
 
     character.chatPage = 1
     loadPageMocks.setCurrentRoute({
@@ -711,6 +716,7 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.downloadFile).not.toHaveBeenCalled()
     expect(loadPageMocks.alertNormal).not.toHaveBeenCalled()
     expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+    expect(loadPageMocks.clearAlertWait).toHaveBeenCalledWith(waitHandle)
     expect(messageRowIndexes()).toHaveLength(30)
     expect(messageRowIndexes()).not.toContain(39)
   })

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const alertTestState = vi.hoisted(() => ({
+  alertStoreValue: { type: 'none', msg: '' } as Record<string, unknown>,
   alertStoreSet: vi.fn(),
   getDatabase: vi.fn(() => ({ usePlainFetch: false })),
 }))
@@ -10,7 +11,14 @@ vi.mock('./stores.svelte', () => ({
     subscribe: vi.fn(),
   },
   alertStore: {
-    set: alertTestState.alertStoreSet,
+    set: (value: Record<string, unknown>) => {
+      alertTestState.alertStoreValue = value
+      alertTestState.alertStoreSet(value)
+    },
+    subscribe: (run: (value: Record<string, unknown>) => void) => {
+      run(alertTestState.alertStoreValue)
+      return () => undefined
+    },
   },
   selIdState: {
     selId: -1,
@@ -44,10 +52,21 @@ vi.mock('src/lang', () => ({
   },
 }))
 
-import { alertError, alertProgress, alertTOS, cardExportCancelMessage, parseCardExportResult } from './alert'
+import {
+  alertError,
+  alertNormal,
+  alertProgress,
+  alertTOS,
+  beginAlertWait,
+  cardExportCancelMessage,
+  clearAlertWait,
+  parseCardExportResult,
+  updateAlertWait,
+} from './alert'
 
 beforeEach(() => {
   vi.unstubAllEnvs()
+  alertTestState.alertStoreValue = { type: 'none', msg: '' }
   alertTestState.alertStoreSet.mockClear()
   alertTestState.getDatabase.mockClear()
   alertTestState.getDatabase.mockReturnValue({ usePlainFetch: false })
@@ -138,6 +157,31 @@ describe('alertProgress', () => {
         progress: null,
       }),
     )
+  })
+})
+
+describe('owned wait alerts', () => {
+  it('updates and clears the wait opened by its handle', () => {
+    const handle = beginAlertWait('Starting')
+
+    expect(updateAlertWait(handle, 'Still working')).toBe(true)
+    expect(alertTestState.alertStoreValue).toEqual({
+      type: 'wait',
+      msg: 'Still working',
+      waitOwner: handle,
+    })
+
+    expect(clearAlertWait(handle)).toBe(true)
+    expect(alertTestState.alertStoreValue).toEqual({ type: 'none', msg: '' })
+  })
+
+  it('does not update or clear an alert that replaced its wait', () => {
+    const handle = beginAlertWait('Starting')
+    alertNormal('Newer result')
+
+    expect(updateAlertWait(handle, 'Stale progress')).toBe(false)
+    expect(clearAlertWait(handle)).toBe(false)
+    expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Newer result' })
   })
 })
 

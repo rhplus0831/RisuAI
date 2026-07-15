@@ -55,7 +55,14 @@
   import { getUserDisplayName, getUserIcon, getUserIconProtrait, sleep } from '../../ts/util'
   import { language } from '../../lang'
   import { isExpTranslator, runInputTranslator, translate } from '../../ts/translator/translator'
-  import { alertError, alertNormal, alertWait } from '../../ts/alert'
+  import {
+    alertError,
+    alertNormal,
+    beginAlertWait,
+    clearAlertWait,
+    updateAlertWait,
+    type AlertWaitHandle,
+  } from '../../ts/alert'
   import sendSound from '../../etc/send.mp3'
   import CreatorQuote from './CreatorQuote.svelte'
   import { stopTTS } from 'src/ts/process/tts'
@@ -1089,6 +1096,7 @@
 
     let canvases: Array<HTMLCanvasElement | null> = []
     let mergedCanvas: HTMLCanvasElement | null = null
+    let waitHandle: AlertWaitHandle | null = null
     try {
       await hydrateActiveChatFully()
       if (!isCurrentScreenshotOperation(operation)) return
@@ -1101,19 +1109,19 @@
       if (!isCurrentScreenshotOperation(operation)) return
 
       const chats = document.querySelectorAll('.default-chat-screen .risu-chat')
-      alertWait('Taking screenShot...')
+      waitHandle = beginAlertWait('Taking screenShot...')
 
       for (const chat of chats) {
         const cnv = await html2canvas.toCanvas(chat as HTMLElement)
         canvases.push(cnv)
         if (!isCurrentScreenshotOperation(operation)) return
 
-        alertWait('Taking screenShot... ' + canvases.length + '/' + chats.length)
+        updateAlertWait(waitHandle, 'Taking screenShot... ' + canvases.length + '/' + chats.length)
       }
 
       canvases.reverse()
 
-      alertWait('Merging images...')
+      updateAlertWait(waitHandle, 'Merging images...')
 
       mergedCanvas = document.createElement('canvas')
       mergedCanvas.width = 0
@@ -1165,6 +1173,7 @@
         canvas?.remove()
       }
       mergedCanvas?.remove()
+      if (waitHandle) clearAlertWait(waitHandle)
       restoreScreenshotWindow(operation)
     }
   }

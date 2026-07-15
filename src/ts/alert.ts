@@ -35,7 +35,10 @@ export interface alertData {
   stackTrace?: string
   defaultValue?: string
   progress?: number | null
+  waitOwner?: AlertWaitHandle
 }
+
+export type AlertWaitHandle = symbol
 
 type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
@@ -190,6 +193,39 @@ export function alertWait(msg: string) {
     type: 'wait',
     msg: msg,
   })
+}
+
+export function beginAlertWait(msg: string): AlertWaitHandle {
+  const waitOwner = Symbol('alert-wait')
+  alertStoreImported.set({
+    type: 'wait',
+    msg,
+    waitOwner,
+  })
+  return waitOwner
+}
+
+export function updateAlertWait(waitOwner: AlertWaitHandle, msg: string): boolean {
+  const current = get(alertStoreImported)
+  if (current.type !== 'wait' || current.waitOwner !== waitOwner) return false
+
+  alertStoreImported.set({
+    type: 'wait',
+    msg,
+    waitOwner,
+  })
+  return true
+}
+
+export function clearAlertWait(waitOwner: AlertWaitHandle): boolean {
+  const current = get(alertStoreImported)
+  if (current.type !== 'wait' || current.waitOwner !== waitOwner) return false
+
+  alertStoreImported.set({
+    type: 'none',
+    msg: '',
+  })
+  return true
 }
 
 function normalizeProgress(progress: number) {
