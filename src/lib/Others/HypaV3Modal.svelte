@@ -1046,7 +1046,10 @@
                         searchState.currentResultIndex = -1
                       }
                     }}
-                    onkeydown={(e) => onSearch(e)} />
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter') e.preventDefault()
+                      onSearch(e)
+                    }} />
                 </form>
 
                 {#if searchState.results.length > 0}

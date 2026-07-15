@@ -253,6 +253,36 @@ describe('Hypa V3 async ownership', () => {
     expect(nextButton?.tabIndex).toBe(0)
   })
 
+  it('advances only once when Enter submits a search', async () => {
+    seedDatabase(true)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const searchButton = buttonForIcon(target, 'lucide-search')
+    expect(searchButton).not.toBeNull()
+    searchButton!.click()
+    await settle()
+
+    const searchInput = target.querySelector<HTMLInputElement>(
+      `input[placeholder="${language.hypaV3Modal.searchPlaceholder}"]`,
+    )
+    const searchForm = searchInput?.closest('form')
+    expect(searchInput).not.toBeNull()
+    expect(searchForm).not.toBeNull()
+
+    searchInput!.value = 'summary'
+    searchInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+    searchInput!.dispatchEvent(enter)
+    if (!enter.defaultPrevented) {
+      searchForm!.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }))
+    }
+    await settle()
+
+    expect(target.textContent).toContain('1/2')
+    expect(target.textContent).not.toContain('2/2')
+  })
+
   it('does not delete the summary that replaces a removed target during confirmation', async () => {
     seedDatabase(true)
     const pendingConfirmation = deferred<boolean>()
