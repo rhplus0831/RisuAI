@@ -182,6 +182,13 @@ function selectJsonlFile(lines: unknown[]): void {
   }
 }
 
+function selectRawJsonlFile(contents: string): void {
+  selectedFileState.file = {
+    name: 'chat.jsonl',
+    data: Buffer.from(contents),
+  }
+}
+
 function jsonlFile(lines: unknown[]): { name: string; data: Uint8Array } {
   return {
     name: 'chat.jsonl',
@@ -555,6 +562,59 @@ describe('chat import projection helpers', () => {
     const [createCall] = await waitForCreateChatCalls(calls)
     expect(createCall.url).toBe('/api/v1/commands/characters/char-a/chats')
     expect(createCall.body).toMatchObject({ select: true })
+  })
+
+  it.each([
+    {
+      label: 'a trailing LF',
+      contents: [
+        JSON.stringify({ user_name: 'User', character_name: 'Character' }),
+        JSON.stringify({ name: 'User', is_user: true, mes: 'hello' }),
+        JSON.stringify({ name: 'Character', is_user: false, mes: 'hi' }),
+        '',
+      ].join('\n'),
+    },
+    {
+      label: 'blank lines',
+      contents: [
+        JSON.stringify({ user_name: 'User', character_name: 'Character' }),
+        '',
+        '   ',
+        JSON.stringify({ name: 'User', is_user: true, mes: 'hello' }),
+        '',
+        JSON.stringify({ name: 'Character', is_user: false, mes: 'hi' }),
+      ].join('\n'),
+    },
+    {
+      label: 'CRLF line endings',
+      contents: [
+        JSON.stringify({ user_name: 'User', character_name: 'Character' }),
+        JSON.stringify({ name: 'User', is_user: true, mes: 'hello' }),
+        JSON.stringify({ name: 'Character', is_user: false, mes: 'hi' }),
+        '',
+      ].join('\r\n'),
+    },
+    {
+      label: 'a UTF-8 BOM',
+      contents: `\uFEFF${[
+        JSON.stringify({ user_name: 'User', character_name: 'Character' }),
+        JSON.stringify({ name: 'User', is_user: true, mes: 'hello' }),
+        JSON.stringify({ name: 'Character', is_user: false, mes: 'hi' }),
+      ].join('\n')}`,
+    },
+  ])('imports JSONL with $label', async ({ contents }) => {
+    const calls = stubCommandFetch()
+    selectRawJsonlFile(contents)
+
+    await importChat()
+
+    expect(testDatabaseState.db.characters[0].chats[0].message).toEqual([
+      expect.objectContaining({ role: 'user', data: 'hello', chatId: expect.any(String) }),
+      expect.objectContaining({ role: 'char', data: 'hi', chatId: expect.any(String) }),
+    ])
+    expect(createChatCalls(calls)).toHaveLength(1)
+    expect(alertNormal).toHaveBeenCalledWith(expect.any(String))
+    expect(alertError).not.toHaveBeenCalled()
   })
 
   it('lets the newer same-character chat import win when an older picker resolves later', async () => {

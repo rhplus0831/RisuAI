@@ -783,7 +783,12 @@ export async function importChat() {
     const characterId = target.characterId
 
     if (dat.name.endsWith('jsonl')) {
-      const lines = Buffer.from(dat.data).toString('utf-8').split('\n')
+      const lines = Buffer.from(dat.data)
+        .toString('utf-8')
+        .replace(/^\uFEFF/, '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
       let newChat: Chat = {
         message: [],
         note: '',
