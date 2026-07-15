@@ -11,16 +11,16 @@
 
 <div class="flex items-center justify-center rounded-md flex-wrap gap-2">
   <button
+    type="button"
+    aria-label={`${language.supporterThanks}: Patreon`}
     class="h-12 w-44"
     onclick={() => {
       openURL('https://www.patreon.com/RisuAI')
     }}>
-    <img
-      src="https://c5.patreon.com/external/logo/become_a_patron_button.png"
-      alt="patreon button"
-      class="w-full h-full" />
+    <img src="https://c5.patreon.com/external/logo/become_a_patron_button.png" alt="" class="w-full h-full" />
   </button>
   <button
+    type="button"
     class="h-12 w-44 bg-slate-700 font-bold text-sm"
     onclick={() => {
       openURL('https://sv.risuai.xyz/patreon')
