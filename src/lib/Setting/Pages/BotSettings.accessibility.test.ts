@@ -19,3 +19,33 @@ describe('BotSettings icon action names', () => {
     expect(source).toContain(label)
   })
 })
+
+describe('BotSettings direct slider names', () => {
+  it('keeps every direct slider named for its parameter in each mutually exclusive model section', () => {
+    const sliderTags = source.match(/<SliderInput\b[\s\S]*?\/>/g) ?? []
+
+    expect(sliderTags).toHaveLength(27)
+    expect(sliderTags.every((tag) => tag.includes('ariaLabel={'))).toBe(true)
+
+    const sections = [
+      source.slice(
+        source.indexOf("{#if getDatabase().aiModel === 'textgen_webui'"),
+        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelAI}'),
+      ),
+      source.slice(
+        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelAI}'),
+        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelList}'),
+      ),
+      source.slice(
+        source.indexOf('{:else if modelInfo.format === LLMFormat.NovelList}'),
+        source.indexOf('      <!-- Standard parameters come from SettingRenderer. -->'),
+      ),
+    ]
+
+    expect(sections.map((section) => section.match(/<SliderInput\b[\s\S]*?\/>/g)?.length)).toEqual([7, 13, 7])
+    for (const section of sections) {
+      const labels = Array.from(section.matchAll(/ariaLabel=\{([^}]+)\}/g), (match) => match[1])
+      expect(new Set(labels).size).toBe(labels.length)
+    }
+  })
+})

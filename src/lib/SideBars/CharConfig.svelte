@@ -1714,8 +1714,8 @@
         >To use VOICEVOX, you need to run a colab and put the localtunnel URL in "Settings → Other Bots".
         https://colab.research.google.com/drive/1tyeXJSklNfjW-aZJAib1JfgOMFarAwze</span>
     {:else if characterDraft.value.ttsMode === 'novelai'}
-      <span class="text-textcolor">Custom Voice Seed</span>
-      <Check bind:check={characterDraft.value.naittsConfig.customvoice} />
+      <span class="text-textcolor">{language.ttsCustomVoiceSeed}</span>
+      <Check bind:check={characterDraft.value.naittsConfig.customvoice} name={language.ttsCustomVoiceSeed} hiddenName />
       {#if !characterDraft.value.naittsConfig.customvoice}
         <span class="text-textcolor">Voice</span>
         <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.naittsConfig.voice}>
@@ -1755,8 +1755,8 @@
           placeholder={characterDraft.value.oaiVoice || 'alloy'} />
       {/if}
 
-      <span class="text-textcolor">Advanced (OpenAI-compatible endpoint)</span>
-      <Check bind:check={characterDraft.value.oaiTTSConfig.enabled} />
+      <span class="text-textcolor">{language.ttsAdvancedEndpoint}</span>
+      <Check bind:check={characterDraft.value.oaiTTSConfig.enabled} name={language.ttsAdvancedEndpoint} hiddenName />
 
       {#if characterDraft.value.oaiTTSConfig?.enabled}
         <span class="text-textcolor">Base URL</span>
@@ -1799,21 +1799,33 @@
       {/if}
       <Button onclick={registerVitsModelFromEditor}>{language.selectModel}</Button>
     {:else if characterDraft.value.ttsMode === 'gptsovits'}
-      <span class="text-textcolor">Volume</span>
-      <SliderInput min={0.0} max={1.0} step={0.01} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.volume} />
+      <span class="text-textcolor">{language.ttsVolume}</span>
+      <SliderInput
+        min={0.0}
+        max={1.0}
+        step={0.01}
+        fixed={2}
+        bind:value={characterDraft.value.gptSoVitsConfig.volume}
+        ariaLabel={language.ttsVolume} />
       <span class="text-textcolor">URL</span>
       <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.url} />
 
-      <span class="text-textcolor">Use Auto Path</span>
-      <Check bind:check={characterDraft.value.gptSoVitsConfig.use_auto_path} />
+      <span class="text-textcolor">{language.ttsUseAutoPath}</span>
+      <Check
+        bind:check={characterDraft.value.gptSoVitsConfig.use_auto_path}
+        name={language.ttsUseAutoPath}
+        hiddenName />
 
       {#if !characterDraft.value.gptSoVitsConfig.use_auto_path}
         <span class="text-textcolor">Reference Audio Path (e.g. C:/Users/user/Downloads/GPT-SoVITS-v2-240821)</span>
         <TextInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.ref_audio_path} />
       {/if}
 
-      <span class="text-textcolor">Use Long Audio</span>
-      <Check bind:check={characterDraft.value.gptSoVitsConfig.use_long_audio} />
+      <span class="text-textcolor">{language.ttsUseLongAudio}</span>
+      <Check
+        bind:check={characterDraft.value.gptSoVitsConfig.use_long_audio}
+        name={language.ttsUseLongAudio}
+        hiddenName />
 
       <span class="text-textcolor">Reference Audio Data (3~10s audio file)</span>
       <Button onclick={uploadGptSoVitsReferenceAudioFromEditor} className="h-10">
@@ -1839,8 +1851,11 @@
       </SelectInput>
 
       {#if !characterDraft.value.gptSoVitsConfig.use_long_audio}
-        <span class="text-textcolor">Use Reference Audio Script</span>
-        <Check bind:check={characterDraft.value.gptSoVitsConfig.use_prompt} />
+        <span class="text-textcolor">{language.ttsUseReferenceAudioScript}</span>
+        <Check
+          bind:check={characterDraft.value.gptSoVitsConfig.use_prompt}
+          name={language.ttsUseReferenceAudioScript}
+          hiddenName />
       {/if}
 
       {#if characterDraft.value.gptSoVitsConfig.use_prompt && !characterDraft.value.gptSoVitsConfig.use_long_audio}
@@ -1862,22 +1877,40 @@
         <OptionInput value="all_yue">Cantonese</OptionInput>
         <OptionInput value="all_ko">Korean</OptionInput>
       </SelectInput>
-      <span class="text-textcolor">Top P</span>
-      <SliderInput min={0.0} max={1.0} step={0.05} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.top_p} />
-
-      <span class="text-textcolor">Temperature</span>
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.topP}</span>
       <SliderInput
         min={0.0}
         max={1.0}
         step={0.05}
         fixed={2}
-        bind:value={characterDraft.value.gptSoVitsConfig.temperature} />
+        bind:value={characterDraft.value.gptSoVitsConfig.top_p}
+        ariaLabel={language.modelProfiles.runtimeFields.topP} />
 
-      <span class="text-textcolor">Speed</span>
-      <SliderInput min={0.6} max={1.65} step={0.05} fixed={2} bind:value={characterDraft.value.gptSoVitsConfig.speed} />
+      <span class="text-textcolor">{language.temperature}</span>
+      <SliderInput
+        min={0.0}
+        max={1.0}
+        step={0.05}
+        fixed={2}
+        bind:value={characterDraft.value.gptSoVitsConfig.temperature}
+        ariaLabel={language.temperature} />
 
-      <span class="text-textcolor">Top K</span>
-      <SliderInput min={1} max={100} step={1} bind:value={characterDraft.value.gptSoVitsConfig.top_k} />
+      <span class="text-textcolor">{language.ttsSpeed}</span>
+      <SliderInput
+        min={0.6}
+        max={1.65}
+        step={0.05}
+        fixed={2}
+        bind:value={characterDraft.value.gptSoVitsConfig.speed}
+        ariaLabel={language.ttsSpeed} />
+
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.topK}</span>
+      <SliderInput
+        min={1}
+        max={100}
+        step={1}
+        bind:value={characterDraft.value.gptSoVitsConfig.top_k}
+        ariaLabel={language.modelProfiles.runtimeFields.topK} />
 
       <span class="text-textcolor">Text Split Method</span>
       <SelectInput className="mb-4 mt-2" bind:value={characterDraft.value.gptSoVitsConfig.text_split_method}>
@@ -1911,8 +1944,12 @@
       <span class="text-textcolor">Chunk Length</span>
       <NumberInput className="mb-4 mt-2" bind:value={characterDraft.value.fishSpeechConfig.chunk_length} />
 
-      <span class="mt-2 text-textcolor">Normalize</span>
-      <Check className="mb-4 mt-2" bind:check={characterDraft.value.fishSpeechConfig.normalize} />
+      <span class="mt-2 text-textcolor">{language.ttsNormalize}</span>
+      <Check
+        className="mb-4 mt-2"
+        bind:check={characterDraft.value.fishSpeechConfig.normalize}
+        name={language.ttsNormalize}
+        hiddenName />
     {/if}
     {#if characterDraft.value.ttsMode}
       <div class="flex items-center mt-2">

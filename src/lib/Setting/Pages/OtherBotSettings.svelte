@@ -842,7 +842,8 @@
             max={1}
             step={0.1}
             fixed={2}
-            bind:value={NAIImgConfigDraft.value.reference_strength_multiple[0]} />
+            bind:value={NAIImgConfigDraft.value.reference_strength_multiple[0]}
+            ariaLabel="Reference Strength Multiple" />
         {/if}
       {/if}
 
@@ -945,9 +946,21 @@
         <span class="text-textcolor2 text-xs block">Leave blank to use the character's default image.</span>
 
         <span class="text-textcolor mt-2">Strength</span>
-        <SliderInput min={0} max={0.99} step={0.01} fixed={2} bind:value={NAIImgConfigDraft.value.strength} />
+        <SliderInput
+          min={0}
+          max={0.99}
+          step={0.01}
+          fixed={2}
+          bind:value={NAIImgConfigDraft.value.strength}
+          ariaLabel="Strength" />
         <span class="text-textcolor mt-2">Noise</span>
-        <SliderInput min={0} max={0.99} step={0.01} fixed={2} bind:value={NAIImgConfigDraft.value.noise} />
+        <SliderInput
+          min={0}
+          max={0.99}
+          step={0.01}
+          fixed={2}
+          bind:value={NAIImgConfigDraft.value.noise}
+          ariaLabel="Noise" />
       {/if}
     {/if}
 
@@ -1061,7 +1074,13 @@
         <TextInput size="sm" marginBottom bind:value={falLoraDraft.value} />
 
         <span class="text-textcolor mt-4">Lora Weight</span>
-        <SliderInput fixed={2} min={0} max={2} step={0.01} bind:value={falLoraScaleDraft.value} />
+        <SliderInput
+          fixed={2}
+          min={0}
+          max={2}
+          step={0.01}
+          bind:value={falLoraScaleDraft.value}
+          ariaLabel="Lora Weight" />
       {/if}
     {/if}
 
@@ -1179,13 +1198,22 @@
       <span class="text-textcolor mt-4">LoRAs</span>
       {#if wavespeedModels.find((m) => m.model_id === wavespeedImageDraft.value.model)?.supportsLoras}
         {#each wavespeedLoras as lora, index}
+          {@const loraScaleLabel = language.loraScaleLabel(index + 1)}
           <TextInput
             size="sm"
             marginBottom
             marginTop
             placeholder={`LoRA ${index + 1} URL (optional)`}
             bind:value={lora.path} />
-          <SliderInput marginBottom min={0} max={4} step={0.1} fixed={1} bind:value={lora.scale} />
+          <span class="text-textcolor">{loraScaleLabel}</span>
+          <SliderInput
+            marginBottom
+            min={0}
+            max={4}
+            step={0.1}
+            fixed={1}
+            bind:value={lora.scale}
+            ariaLabel={loraScaleLabel} />
         {/each}
         <span class="text-textcolor2 text-xs mb-2 block">
           Only .safetensors files are supported. Use owner/model-name (Hugging Face) or direct URL (Civitai).
@@ -1486,7 +1514,14 @@
         <span class="text-textcolor"
           >{language.hypaV3Settings.memoryTokensRatioLabel}
           <Help key="hypaV3MemoryTokensRatio" /></span>
-        <SliderInput marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.memoryTokensRatio} />
+        <SliderInput
+          marginBottom
+          min={0}
+          max={1}
+          step={0.01}
+          fixed={2}
+          bind:value={settings.memoryTokensRatio}
+          ariaLabel={language.hypaV3Settings.memoryTokensRatioLabel} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.extraSummarizationRatioLabel}
           <Help key="hypaV3ExtraSummarizationRatio" /></span>
@@ -1496,7 +1531,8 @@
           max={1 - settings.memoryTokensRatio}
           step={0.01}
           fixed={2}
-          bind:value={settings.extraSummarizationRatio} />
+          bind:value={settings.extraSummarizationRatio}
+          ariaLabel={language.hypaV3Settings.extraSummarizationRatioLabel} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.maxChatsPerSummaryLabel}
           <Help key="hypaV3MaxChatsPerSummary" /></span>
@@ -1511,11 +1547,25 @@
         <span class="text-textcolor"
           >{language.hypaV3Settings.recentMemoryRatioLabel}
           <Help key="hypaV3RecentMemoryRatio" /></span>
-        <SliderInput marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.recentMemoryRatio} />
+        <SliderInput
+          marginBottom
+          min={0}
+          max={1}
+          step={0.01}
+          fixed={2}
+          bind:value={settings.recentMemoryRatio}
+          ariaLabel={language.hypaV3Settings.recentMemoryRatioLabel} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.similarMemoryRatioLabel}
           <Help key="hypaV3SimilarMemoryRatio" /></span>
-        <SliderInput marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.similarMemoryRatio} />
+        <SliderInput
+          marginBottom
+          min={0}
+          max={1}
+          step={0.01}
+          fixed={2}
+          bind:value={settings.similarMemoryRatio}
+          ariaLabel={language.hypaV3Settings.similarMemoryRatioLabel} />
         <span class="text-textcolor"
           >{language.hypaV3Settings.randomMemoryRatioLabel}
           <Help key="hypaV3RandomMemoryRatio" /></span>

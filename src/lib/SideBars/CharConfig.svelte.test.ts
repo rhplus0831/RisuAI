@@ -809,6 +809,47 @@ describe('CharConfig remote TTS catalogs', () => {
   })
 })
 
+describe('CharConfig TTS control accessible names', () => {
+  it.each([
+    { mode: 'novelai', name: language.ttsCustomVoiceSeed },
+    { mode: 'openai', name: language.ttsAdvancedEndpoint },
+    { mode: 'fishspeech', name: language.ttsNormalize },
+  ])('names the $mode option checkbox from its visible setting', async ({ mode, name }) => {
+    await mountCharConfig(5, { ttsMode: mode })
+
+    const checkbox = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(
+      (input) => input.getAttribute('aria-label') === name,
+    )
+
+    expect(checkbox, `checkbox named ${name}`).toBeTruthy()
+    expect(target.textContent).toContain(name)
+  })
+
+  it('names every GPT-SoVITS range and option checkbox from its visible setting', async () => {
+    await mountCharConfig(5, { ttsMode: 'gptsovits' })
+
+    const sliderNames = Array.from(target.querySelectorAll<HTMLElement>('[role="slider"]'), (slider) =>
+      slider.getAttribute('aria-label'),
+    )
+    const expectedSliderNames = [
+      language.ttsVolume,
+      language.modelProfiles.runtimeFields.topP,
+      language.temperature,
+      language.ttsSpeed,
+      language.modelProfiles.runtimeFields.topK,
+    ]
+    expect(sliderNames).toEqual(expectedSliderNames)
+
+    const checkboxNames = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'), (checkbox) =>
+      checkbox.getAttribute('aria-label'),
+    )
+    for (const name of [language.ttsUseAutoPath, language.ttsUseLongAudio, language.ttsUseReferenceAudioScript]) {
+      expect(checkboxNames).toContain(name)
+      expect(target.textContent).toContain(name)
+    }
+  })
+})
+
 describe('CharConfig draft-backed avatar and emotion controls', () => {
   it('renders an alternate avatar rotation immediately and emits one debounced character patch', async () => {
     serverCommandState.enabled = true

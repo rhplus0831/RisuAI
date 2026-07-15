@@ -87,25 +87,96 @@
 
 {#if hasTemperature}
   <span class="text-textcolor">{language.temperature} <Help key="tempature" /></span>
-  <SliderInput min={0} max={200} marginBottom bind:value={value.temperature} multiple={0.01} fixed={2} disableable />
+  <SliderInput
+    min={0}
+    max={200}
+    marginBottom
+    bind:value={value.temperature}
+    multiple={0.01}
+    fixed={2}
+    disableable
+    ariaLabel={language.temperature} />
 {/if}
-<span class="text-textcolor">Top K</span>
-<SliderInput min={0} max={100} marginBottom step={1} bind:value={value.top_k} disableable />
-<span class="text-textcolor">{'Repetition Penalty'}</span>
-<SliderInput min={0} max={2} marginBottom step={0.01} fixed={2} bind:value={value.repetition_penalty} disableable />
-<span class="text-textcolor">Min P</span>
-<SliderInput min={0} max={1} marginBottom step={0.01} fixed={2} bind:value={value.min_p} disableable />
-<span class="text-textcolor">Top A</span>
-<SliderInput min={0} max={1} marginBottom step={0.01} fixed={2} bind:value={value.top_a} disableable />
-<span class="text-textcolor">Top P</span>
-<SliderInput min={0} max={1} marginBottom step={0.01} fixed={2} bind:value={value.top_p} disableable />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.topK}</span>
+<SliderInput
+  min={0}
+  max={100}
+  marginBottom
+  step={1}
+  bind:value={value.top_k}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.topK} />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenalty}</span>
+<SliderInput
+  min={0}
+  max={2}
+  marginBottom
+  step={0.01}
+  fixed={2}
+  bind:value={value.repetition_penalty}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.repetitionPenalty} />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.minP}</span>
+<SliderInput
+  min={0}
+  max={1}
+  marginBottom
+  step={0.01}
+  fixed={2}
+  bind:value={value.min_p}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.minP} />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.topA}</span>
+<SliderInput
+  min={0}
+  max={1}
+  marginBottom
+  step={0.01}
+  fixed={2}
+  bind:value={value.top_a}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.topA} />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.topP}</span>
+<SliderInput
+  min={0}
+  max={1}
+  marginBottom
+  step={0.01}
+  fixed={2}
+  bind:value={value.top_p}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.topP} />
 <span class="text-textcolor">{language.frequencyPenalty}</span>
-<SliderInput min={0} max={200} marginBottom step={0.01} fixed={2} bind:value={value.frequency_penalty} disableable />
-<span class="text-textcolor">{language.presensePenalty}</span>
-<SliderInput min={0} max={200} marginBottom step={0.01} fixed={2} bind:value={value.presence_penalty} disableable />
+<SliderInput
+  min={0}
+  max={200}
+  marginBottom
+  step={0.01}
+  fixed={2}
+  bind:value={value.frequency_penalty}
+  disableable
+  ariaLabel={language.frequencyPenalty} />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.presencePenalty}</span>
+<SliderInput
+  min={0}
+  max={200}
+  marginBottom
+  step={0.01}
+  fixed={2}
+  bind:value={value.presence_penalty}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.presencePenalty} />
 <ClaudeThinkingSeparateParams bind:value {paramKey} />
-<span class="text-textcolor">{'Verbosity'}</span>
-<SliderInput min={0} max={2} marginBottom step={1} fixed={0} bind:value={value.verbosity} disableable />
+<span class="text-textcolor">{language.modelProfiles.runtimeFields.verbosity}</span>
+<SliderInput
+  min={0}
+  max={2}
+  marginBottom
+  step={1}
+  fixed={0}
+  bind:value={value.verbosity}
+  disableable
+  ariaLabel={language.modelProfiles.runtimeFields.verbosity} />
 
 {#if withImportExport}
   <div class="flex">

@@ -15,7 +15,8 @@
     disableable?: boolean
     customText?: string | undefined
     onchange?: Function
-    ariaLabel?: string
+    ariaLabel: string
+    enableAriaLabel?: string
   }
 
   let {
@@ -30,6 +31,7 @@
     customText = undefined,
     onchange,
     ariaLabel,
+    enableAriaLabel,
   }: Props = $props()
 
   let isDisabledValue = $derived(value === -1000 || value === undefined)
@@ -42,7 +44,6 @@
   function changeValue(event: PointerEvent) {
     const rect = slider.getBoundingClientRect()
     const x = event.clientX - rect.left
-    console.log(x, rect.width)
     let newValue = (x / rect.width) * (max - min) + min
     newValue = Math.round(newValue / step) * step
     value = Math.min(Math.max(newValue, min), max)
@@ -82,7 +83,7 @@
       <CheckInput
         check={value !== -1000 && value !== undefined}
         margin={false}
-        name={ariaLabel ? `${language.enable}: ${ariaLabel}` : ''}
+        name={enableAriaLabel ?? `${language.enable}: ${ariaLabel}`}
         hiddenName={true}
         onChange={(c) => {
           onchange?.()

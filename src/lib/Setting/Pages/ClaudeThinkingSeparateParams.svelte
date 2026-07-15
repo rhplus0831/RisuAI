@@ -52,7 +52,15 @@
 </SelectInput>
 {#if value.thinking_type === 'budget'}
   <span class="text-textcolor">{language.thinkingTokens}</span>
-  <SliderInput min={0} max={64000} marginBottom step={200} fixed={0} bind:value={value.thinking_tokens} disableable />
+  <SliderInput
+    min={0}
+    max={64000}
+    marginBottom
+    step={200}
+    fixed={0}
+    bind:value={value.thinking_tokens}
+    disableable
+    ariaLabel={language.thinkingTokens} />
 {/if}
 {#if value.thinking_type === 'adaptive'}
   <span class="text-textcolor">{language.adaptiveThinkingEffort ?? 'Adaptive Thinking Effort'}</span>

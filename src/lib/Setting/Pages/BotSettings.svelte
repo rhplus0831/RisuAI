@@ -1465,32 +1465,67 @@
       {subModelInfo}
       presetMirrorTarget={promptParameterOverrideMode ? 'promptModelOverrides' : 'auto'} />
     {#if getDatabase().aiModel === 'textgen_webui' || getDatabase().aiModel === 'mancer' || getDatabase().aiModel.startsWith('local_') || getDatabase().aiModel.startsWith('hf:::')}
-      <span class="text-textcolor">Repetition Penalty</span>
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenalty}</span>
       <SliderInput
         min={1}
         max={1.5}
         step={0.01}
         fixed={2}
         marginBottom
-        bind:value={activeOobaDraft.value.repetition_penalty} />
-      <span class="text-textcolor">Length Penalty</span>
+        bind:value={activeOobaDraft.value.repetition_penalty}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenalty} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.lengthPenalty}</span>
       <SliderInput
         min={-5}
         max={5}
         step={0.05}
         marginBottom
         fixed={2}
-        bind:value={activeOobaDraft.value.length_penalty} />
+        bind:value={activeOobaDraft.value.length_penalty}
+        ariaLabel={language.modelProfiles.runtimeFields.lengthPenalty} />
       <span class="text-textcolor">Top K</span>
-      <SliderInput min={0} max={100} step={1} marginBottom bind:value={activeOobaDraft.value.top_k} />
+      <SliderInput
+        min={0}
+        max={100}
+        step={1}
+        marginBottom
+        bind:value={activeOobaDraft.value.top_k}
+        ariaLabel={language.modelProfiles.runtimeFields.topK} />
       <span class="text-textcolor">Top P</span>
-      <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeOobaDraft.value.top_p} />
-      <span class="text-textcolor">Typical P</span>
-      <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeOobaDraft.value.typical_p} />
+      <SliderInput
+        min={0}
+        max={1}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeOobaDraft.value.top_p}
+        ariaLabel={language.modelProfiles.runtimeFields.topP} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.typicalP}</span>
+      <SliderInput
+        min={0}
+        max={1}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeOobaDraft.value.typical_p}
+        ariaLabel={language.modelProfiles.runtimeFields.typicalP} />
       <span class="text-textcolor">Top A</span>
-      <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeOobaDraft.value.top_a} />
-      <span class="text-textcolor">No Repeat n-gram Size</span>
-      <SliderInput min={0} max={20} step={1} marginBottom bind:value={activeOobaDraft.value.no_repeat_ngram_size} />
+      <SliderInput
+        min={0}
+        max={1}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeOobaDraft.value.top_a}
+        ariaLabel={language.modelProfiles.runtimeFields.topA} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.noRepeatNgramSize}</span>
+      <SliderInput
+        min={0}
+        max={20}
+        step={1}
+        marginBottom
+        bind:value={activeOobaDraft.value.no_repeat_ngram_size}
+        ariaLabel={language.modelProfiles.runtimeFields.noRepeatNgramSize} />
       <div class="flex items-center mt-4">
         <Check bind:check={activeOobaDraft.value.do_sample} name={'Do Sample'} />
       </div>
@@ -1558,124 +1593,185 @@
         <TextInput bind:value={activeNAIsettingsDraft.value.seperator} placeholder={'\\n'} />
       </div>
       <span class="text-textcolor">Top P</span>
-      <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeNAIsettingsDraft.value.topP} />
+      <SliderInput
+        min={0}
+        max={1}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeNAIsettingsDraft.value.topP}
+        ariaLabel={language.modelProfiles.runtimeFields.topP} />
       <span class="text-textcolor">Top K</span>
-      <SliderInput min={0} max={100} step={1} marginBottom bind:value={activeNAIsettingsDraft.value.topK} />
+      <SliderInput
+        min={0}
+        max={100}
+        step={1}
+        marginBottom
+        bind:value={activeNAIsettingsDraft.value.topK}
+        ariaLabel={language.modelProfiles.runtimeFields.topK} />
       <span class="text-textcolor">Top A</span>
-      <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeNAIsettingsDraft.value.topA} />
-      <span class="text-textcolor">Tailfree Sampling</span>
+      <SliderInput
+        min={0}
+        max={1}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeNAIsettingsDraft.value.topA}
+        ariaLabel={language.modelProfiles.runtimeFields.topA} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.tailFreeSampling}</span>
       <SliderInput
         min={0}
         max={1}
         step={0.001}
         marginBottom
         fixed={3}
-        bind:value={activeNAIsettingsDraft.value.tailFreeSampling} />
-      <span class="text-textcolor">Typical P</span>
+        bind:value={activeNAIsettingsDraft.value.tailFreeSampling}
+        ariaLabel={language.modelProfiles.runtimeFields.tailFreeSampling} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.typicalP}</span>
       <SliderInput
         min={0}
         max={1}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.typicalp} />
-      <span class="text-textcolor">Repetition Penalty</span>
+        bind:value={activeNAIsettingsDraft.value.typicalp}
+        ariaLabel={language.modelProfiles.runtimeFields.typicalP} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenalty}</span>
       <SliderInput
         min={0}
         max={3}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.repetitionPenalty} />
-      <span class="text-textcolor">Repetition Penalty Range</span>
+        bind:value={activeNAIsettingsDraft.value.repetitionPenalty}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenalty} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenaltyRange}</span>
       <SliderInput
         min={0}
         max={8192}
         step={1}
         marginBottom
         fixed={0}
-        bind:value={activeNAIsettingsDraft.value.repetitionPenaltyRange} />
-      <span class="text-textcolor">Repetition Penalty Slope</span>
+        bind:value={activeNAIsettingsDraft.value.repetitionPenaltyRange}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenaltyRange} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenaltySlope}</span>
       <SliderInput
         min={0}
         max={10}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.repetitionPenaltySlope} />
-      <span class="text-textcolor">Frequency Penalty</span>
+        bind:value={activeNAIsettingsDraft.value.repetitionPenaltySlope}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenaltySlope} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.frequencyPenalty}</span>
       <SliderInput
         min={-2}
         max={2}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.frequencyPenalty} />
-      <span class="text-textcolor">Presence Penalty</span>
+        bind:value={activeNAIsettingsDraft.value.frequencyPenalty}
+        ariaLabel={language.modelProfiles.runtimeFields.frequencyPenalty} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.presencePenalty}</span>
       <SliderInput
         min={-2}
         max={2}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.presencePenalty} />
-      <span class="text-textcolor">Mirostat LR</span>
+        bind:value={activeNAIsettingsDraft.value.presencePenalty}
+        ariaLabel={language.modelProfiles.runtimeFields.presencePenalty} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.mirostatLearningRate}</span>
       <SliderInput
         min={0}
         max={1}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.mirostat_lr} />
-      <span class="text-textcolor">Mirostat Tau</span>
+        bind:value={activeNAIsettingsDraft.value.mirostat_lr}
+        ariaLabel={language.modelProfiles.runtimeFields.mirostatLearningRate} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.mirostatTau}</span>
       <SliderInput
         min={0}
         max={6}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.mirostat_tau} />
-      <span class="text-textcolor">Cfg Scale</span>
+        bind:value={activeNAIsettingsDraft.value.mirostat_tau}
+        ariaLabel={language.modelProfiles.runtimeFields.mirostatTau} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.cfgScale}</span>
       <SliderInput
         min={1}
         max={3}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeNAIsettingsDraft.value.cfg_scale} />
+        bind:value={activeNAIsettingsDraft.value.cfg_scale}
+        ariaLabel={language.modelProfiles.runtimeFields.cfgScale} />
     {:else if modelInfo.format === LLMFormat.NovelList}
       <span class="text-textcolor">Top P</span>
-      <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.top_p} />
-      <span class="text-textcolor">Reputation Penalty</span>
-      <SliderInput min={0} max={2} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.rep_pen} />
-      <span class="text-textcolor">Reputation Penalty Range</span>
+      <SliderInput
+        min={0}
+        max={2}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeAinconfigDraft.value.top_p}
+        ariaLabel={language.modelProfiles.runtimeFields.topP} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenalty}</span>
+      <SliderInput
+        min={0}
+        max={2}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeAinconfigDraft.value.rep_pen}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenalty} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenaltyRange}</span>
       <SliderInput
         min={0}
         max={2048}
         step={1}
         marginBottom
         fixed={2}
-        bind:value={activeAinconfigDraft.value.rep_pen_range} />
-      <span class="text-textcolor">Reputation Penalty Slope</span>
+        bind:value={activeAinconfigDraft.value.rep_pen_range}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenaltyRange} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.repetitionPenaltySlope}</span>
       <SliderInput
         min={0}
         max={10}
         step={0.1}
         marginBottom
         fixed={2}
-        bind:value={activeAinconfigDraft.value.rep_pen_slope} />
+        bind:value={activeAinconfigDraft.value.rep_pen_slope}
+        ariaLabel={language.modelProfiles.runtimeFields.repetitionPenaltySlope} />
       <span class="text-textcolor">Top K</span>
-      <SliderInput min={1} max={500} step={1} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.top_k} />
+      <SliderInput
+        min={1}
+        max={500}
+        step={1}
+        marginBottom
+        fixed={2}
+        bind:value={activeAinconfigDraft.value.top_k}
+        ariaLabel={language.modelProfiles.runtimeFields.topK} />
       <span class="text-textcolor">Top A</span>
-      <SliderInput min={0} max={1} step={0.01} marginBottom fixed={2} bind:value={activeAinconfigDraft.value.top_a} />
-      <span class="text-textcolor">Typical P</span>
       <SliderInput
         min={0}
         max={1}
         step={0.01}
         marginBottom
         fixed={2}
-        bind:value={activeAinconfigDraft.value.typical_p} />
+        bind:value={activeAinconfigDraft.value.top_a}
+        ariaLabel={language.modelProfiles.runtimeFields.topA} />
+      <span class="text-textcolor">{language.modelProfiles.runtimeFields.typicalP}</span>
+      <SliderInput
+        min={0}
+        max={1}
+        step={0.01}
+        marginBottom
+        fixed={2}
+        bind:value={activeAinconfigDraft.value.typical_p}
+        ariaLabel={language.modelProfiles.runtimeFields.typicalP} />
     {:else}
       <!-- Standard parameters come from SettingRenderer. -->
     {/if}

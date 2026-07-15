@@ -283,6 +283,11 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
       'https://example.com/second-lora.safetensors',
       '',
     ])
+    expect(
+      Array.from(target.querySelectorAll<HTMLElement>('[role="slider"]'), (slider) =>
+        slider.getAttribute('aria-label'),
+      ),
+    ).toEqual([language.loraScaleLabel(1), language.loraScaleLabel(2), language.loraScaleLabel(3)])
     expect(otherBotMocks.loraWrites).toEqual([])
 
     loraInputs[0].value = 'owner/updated-lora'
@@ -584,6 +589,16 @@ describe('OtherBotSettings Hypa memory ratio', () => {
       target.querySelector<HTMLInputElement>(`input[aria-label="${language.hypaV3Settings.maxMemoryTokensRatioLabel}"]`)
 
     await vi.waitFor(() => expect(ratioInput()?.valueAsNumber).toBe(0.5))
+    expect(
+      Array.from(target.querySelectorAll<HTMLElement>('[role="slider"]'), (slider) =>
+        slider.getAttribute('aria-label'),
+      ),
+    ).toEqual([
+      language.hypaV3Settings.memoryTokensRatioLabel,
+      language.hypaV3Settings.extraSummarizationRatioLabel,
+      language.hypaV3Settings.recentMemoryRatioLabel,
+      language.hypaV3Settings.similarMemoryRatioLabel,
+    ])
 
     setDatabaseLite(database(2000))
 
