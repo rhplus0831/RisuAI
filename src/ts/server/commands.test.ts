@@ -72,6 +72,7 @@ import {
   peekAppliedServerResourceRevision,
   peekCachedServerCommandRevision,
   importPresetCommand,
+  initializeServerDatabase,
   mutateCharacterScriptsCommand,
   mutateGlobalScriptsCommand,
   mutateCharacterTriggersCommand,
@@ -271,6 +272,86 @@ describe('server command API adapter', () => {
         },
       },
     ])
+  })
+
+  it('rejects malformed 2xx command receipts and rolls back the optimistic command', async () => {
+    const validEvent = { type: 'settings.updated', revision: 2, resource: 'settings' }
+    const cases: Array<{ label: string; response: () => Response }> = [
+      {
+        label: 'empty response body',
+        response: () => new Response(null, { status: 200 }),
+      },
+      {
+        label: 'missing event',
+        response: () => jsonResponse({ revision: 2 }),
+      },
+      {
+        label: 'malformed event',
+        response: () => jsonResponse({ revision: 2, event: { ...validEvent, resource: null } }),
+      },
+      {
+        label: 'response/event revision mismatch',
+        response: () => jsonResponse({ revision: 3, event: validEvent }),
+      },
+    ]
+
+    for (const testCase of cases) {
+      setCachedServerCommandRevision(1)
+      const rollback = vi.fn()
+      const reconciler = vi.fn()
+      setServerCommandSuccessReconciler(reconciler)
+      vi.stubGlobal('fetch', vi.fn(async () => testCase.response()) as unknown as typeof fetch)
+
+      const result = await runServerCommand({
+        command: (baseRevision) =>
+          patchRuntimeSettings({
+            baseRevision,
+            patch: { streamGeminiThoughts: true },
+          }),
+        rollback,
+      })
+
+      expect(result, testCase.label).toEqual({ status: 'error', error: 'Invalid command response' })
+      expect(rollback, testCase.label).toHaveBeenCalledTimes(1)
+      expect(reconciler, testCase.label).not.toHaveBeenCalled()
+      expect(peekCachedServerCommandRevision(), testCase.label).toBe(1)
+    }
+  })
+
+  it('allows only the intentional eventless already-initialized receipt', async () => {
+    const responses = [
+      { revision: 7, initialized: false },
+      { revision: 8, initialized: false, event: null },
+      { revision: 8, initialized: true },
+      {
+        revision: 8,
+        initialized: true,
+        event: { type: 'state.initialized', revision: 8, resource: 'state' },
+      },
+    ]
+    const commandFetch = makeCommandFetch(() => responses.shift())
+    vi.stubGlobal('fetch', commandFetch.fetch)
+
+    await expect(initializeServerDatabase()).resolves.toEqual({
+      status: 'ok',
+      revision: 7,
+      initialized: false,
+    })
+    await expect(initializeServerDatabase()).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid command response',
+    })
+    await expect(initializeServerDatabase()).resolves.toEqual({
+      status: 'error',
+      error: 'Invalid command response',
+    })
+    await expect(initializeServerDatabase()).resolves.toEqual({
+      status: 'ok',
+      revision: 8,
+      initialized: true,
+      event: { type: 'state.initialized', revision: 8, resource: 'state' },
+    })
+    expect(peekCachedServerCommandRevision()).toBe(8)
   })
 
   it('patches grouped scalar settings with the auth header and baseRevision', async () => {
@@ -2816,11 +2897,6 @@ describe('server command API adapter', () => {
         body: { revision: 2, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
       },
       {
-        label: 'response/event revision mismatch',
-        epoch: 4,
-        body: { revision: 3, event: exactEvent, acknowledgedKeys: ['mainPrompt'], settings: {} },
-      },
-      {
         label: 'wrong event type',
         epoch: 4,
         body: {
@@ -3098,7 +3174,6 @@ describe('server command API adapter', () => {
         attemptedFields: Record<string, unknown>
       }
     }> = [
-      { body: { ...exactBody, revision: 3 } },
       { body: { ...exactBody, event: { ...exactEvent, resource: 'preset' } } },
       { body: { ...exactBody, presetId: 'preset-b' } },
       { body: { ...exactBody, acknowledgedKeys: ['name', 'extra'] } },
@@ -3172,7 +3247,6 @@ describe('server command API adapter', () => {
   it('keeps malformed split-preset receipts on authoritative reconciliation', async () => {
     const exactEvent = { type: 'modelPreset.updated', revision: 2, resource: 'modelPreset', id: 'model-a' }
     const cases = [
-      { ...exactEvent, responseRevision: 3 },
       { ...exactEvent, resource: 'promptPreset', responseRevision: 2 },
       { ...exactEvent, id: 'model-b', responseRevision: 2 },
     ]
@@ -3220,7 +3294,7 @@ describe('server command API adapter', () => {
       })
     }
 
-    expect(observedSizes).toEqual([0, 0, 0])
+    expect(observedSizes).toEqual([0, 0])
   })
 
   it('emits exact prompt-item optimistic acknowledgements without serializing their snapshots or epochs', async () => {
@@ -4222,16 +4296,6 @@ describe('server command API adapter', () => {
       },
     }
     const cases = [
-      {
-        body: {
-          revision: 4,
-          event: exactEvent,
-          presetId: 'translator-b',
-          acknowledgedKeys: ['prompt'],
-          selectedPresetId: 'translator-a',
-        },
-        acknowledgement: exactAcknowledgement,
-      },
       {
         body: {
           revision: 3,
@@ -6277,10 +6341,6 @@ describe('server command API adapter', () => {
         ...validBody,
         characterId: 'char-b',
         event: { ...validBody.event, parentId: 'char-b' },
-      },
-      {
-        ...validBody,
-        event: undefined,
       },
       {
         ...validBody,

@@ -1973,6 +1973,9 @@ export async function initializeServerDatabase(
     method: 'POST',
     body: {},
     signal,
+    // The idempotent already-initialized branch performs no mutation and is the
+    // only command route that intentionally returns a revision without an event.
+    allowEventlessSuccess: (body) => body.initialized === false && !Object.prototype.hasOwnProperty.call(body, 'event'),
   })
 }
 
@@ -4943,6 +4946,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     reconcileImmediately?: boolean
     readLocalEffect?: (body: unknown, event: CommandEvent) => ServerCommandLocalEffect | undefined
     deferOwnEventUntilResponse?: (event: CommandEvent) => boolean
+    allowEventlessSuccess?: (body: Record<string, unknown>) => boolean
   },
 ): Promise<ServerCommandResult<T>> {
   const destructiveRefreshEpoch = activeQueuedCommandDestructiveRefreshEpoch ?? captureDestructiveRefreshEpoch()
@@ -4999,25 +5003,24 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       }
     }
 
-    if (body && typeof body === 'object') {
-      const revision = (body as { revision?: unknown }).revision
-      if (Number.isInteger(revision) && (revision as number) >= 0) {
-        setCachedServerCommandRevision(revision as number)
+    const receipt = readCommandSuccessReceipt(body, init.allowEventlessSuccess)
+    if (!receipt) {
+      return { status: 'error', error: 'Invalid command response' }
+    }
+
+    setCachedServerCommandRevision(receipt.revision)
+    if (receipt.event) {
+      const parsedLocalEffect = init.readLocalEffect?.(body, receipt.event)
+      let localEffect: ServerCommandLocalEffect | undefined
+      if (parsedLocalEffect) {
+        localEffect = { ...parsedLocalEffect }
+        Object.defineProperty(localEffect, 'destructiveRefreshEpoch', {
+          value: parsedLocalEffect.destructiveRefreshEpoch ?? destructiveRefreshEpoch,
+          enumerable: false,
+        })
       }
-      const event = readCommandEvent(body)
-      if (event) {
-        const parsedLocalEffect = init.readLocalEffect?.(body, event)
-        let localEffect: ServerCommandLocalEffect | undefined
-        if (parsedLocalEffect) {
-          localEffect = { ...parsedLocalEffect }
-          Object.defineProperty(localEffect, 'destructiveRefreshEpoch', {
-            value: parsedLocalEffect.destructiveRefreshEpoch ?? destructiveRefreshEpoch,
-            enumerable: false,
-          })
-        }
-        await notifyServerCommandSuccessReconciler(event, init.reconcileImmediately, localEffect)
-        confirmedEvent = event
-      }
+      await notifyServerCommandSuccessReconciler(receipt.event, init.reconcileImmediately, localEffect)
+      confirmedEvent = receipt.event
     }
 
     return { status: 'ok', ...(body as { revision: number; event: CommandEvent } & T) }
@@ -7707,9 +7710,9 @@ function isJsonValueEqual(left: unknown, right: unknown): boolean {
 }
 
 function readCommandEvent(body: unknown): CommandEvent | null {
-  if (!body || typeof body !== 'object') return null
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null
   const event = (body as { event?: unknown }).event
-  if (!event || typeof event !== 'object') return null
+  if (!event || typeof event !== 'object' || Array.isArray(event)) return null
   const record = event as Record<string, unknown>
   if (typeof record.type !== 'string') return null
   if (!Number.isInteger(record.revision) || (record.revision as number) < 0) return null
@@ -7728,6 +7731,25 @@ function readCommandEvent(body: unknown): CommandEvent | null {
     }
   }
   return parsed
+}
+
+function readCommandSuccessReceipt(
+  body: unknown,
+  allowEventlessSuccess?: (body: Record<string, unknown>) => boolean,
+): { revision: number; event: CommandEvent | null } | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+  const record = body as Record<string, unknown>
+  const revision = record.revision
+  if (!Number.isInteger(revision) || (revision as number) < 0) return null
+
+  const event = readCommandEvent(record)
+  if (event) {
+    if (event.revision !== revision) return null
+  } else if (!allowEventlessSuccess?.(record)) {
+    return null
+  }
+
+  return { revision: revision as number, event }
 }
 
 function readCurrentRevision(body: unknown): number | null {
