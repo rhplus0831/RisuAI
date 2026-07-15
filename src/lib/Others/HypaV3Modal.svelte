@@ -610,11 +610,26 @@
 
   async function handleResetData() {
     if (serverBackedMemoryMode) return
-    if (
-      await alertConfirmTwice(language.hypaV3Modal.resetConfirmMessage, language.hypaV3Modal.resetConfirmSecondMessage)
-    ) {
-      currentChat.hypaV3Data = { summaries: [] }
+    const resetOwner = {
+      character: currentCharacter,
+      characterId: currentCharacter.chaId,
+      chat: currentChat,
+      chatId: currentChat.id,
     }
+    const confirmed = await alertConfirmTwice(
+      language.hypaV3Modal.resetConfirmMessage,
+      language.hypaV3Modal.resetConfirmSecondMessage,
+    )
+    if (!confirmed) return
+    if (
+      currentCharacter !== resetOwner.character ||
+      currentCharacter.chaId !== resetOwner.characterId ||
+      currentChat !== resetOwner.chat ||
+      currentChat.id !== resetOwner.chatId
+    ) {
+      return
+    }
+    resetOwner.chat.hypaV3Data = { summaries: [] }
   }
 
   function handleToggleBulkEditMode() {
