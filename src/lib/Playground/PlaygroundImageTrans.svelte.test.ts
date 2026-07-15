@@ -260,6 +260,59 @@ describe('PlaygroundImageTrans request ownership', () => {
     expect(imageMocks.alertError).not.toHaveBeenCalled()
   })
 
+  it('drops a response after the destination language changes', async () => {
+    installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    const response = deferred<{ type: 'success'; result: string }>()
+    imageMocks.requestChatData.mockReturnValue(response.promise)
+    component = mount(PlaygroundImageTrans, { target })
+
+    translationButton().click()
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+
+    const destinationLanguage = target.querySelector<HTMLInputElement>('input[type="text"]')
+    if (!destinationLanguage) throw new Error('Destination language input not found')
+    destinationLanguage.value = 'ko'
+    destinationLanguage.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    response.resolve({
+      type: 'success',
+      result:
+        '[{"x_min":0,"y_min":0,"x_max":1,"y_max":1,"bg_hex_color":"#fff","text_hex_color":"#000","content":"hello","translation":"translated"}]',
+    })
+
+    await waitForTranslationIdle()
+    expect(target.querySelectorAll('textarea')).toHaveLength(1)
+    expect(imageMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('preserves a custom prompt after a successful translation', async () => {
+    installImageBrowserMocks()
+    imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })
+    imageMocks.requestChatData.mockResolvedValue({
+      type: 'success',
+      result:
+        '[{"x_min":0,"y_min":0,"x_max":1,"y_max":1,"bg_hex_color":"#fff","text_hex_color":"#000","content":"hello","translation":"translated"}]',
+    })
+    component = mount(PlaygroundImageTrans, { target })
+    await tick()
+
+    const promptInput = target.querySelector<HTMLTextAreaElement>('textarea')
+    if (!promptInput) throw new Error('Prompt input not found')
+    promptInput.value = 'Translate this image using my custom instructions.'
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    translationButton().click()
+
+    await vi.waitFor(() => expect(imageMocks.requestChatData).toHaveBeenCalledOnce())
+    await waitForTranslationIdle()
+    expect(target.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe(
+      'Translate this image using my custom instructions.',
+    )
+  })
+
   it('stops after reporting a failed model response', async () => {
     installImageBrowserMocks()
     imageMocks.selectSingleFile.mockResolvedValue({ name: 'image.png', data: new Uint8Array([1, 2, 3]) })

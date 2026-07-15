@@ -148,7 +148,12 @@
     const runPrompt = prompt
     const runLanguage = selLang
     let runImageEpoch = imageEpoch
-    const isCurrentRun = () => mode === runMode && modeEpoch === runModeEpoch && imageEpoch === runImageEpoch
+    const isCurrentRun = () =>
+      mode === runMode &&
+      modeEpoch === runModeEpoch &&
+      imageEpoch === runImageEpoch &&
+      prompt === runPrompt &&
+      selLang === runLanguage
     loading = true
     try {
       if (runMode === 'auto') {
@@ -431,6 +436,9 @@
     } else {
       prompt = manualPrompt
     }
+  })
+
+  $effect(() => {
     render()
   })
 
