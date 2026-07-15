@@ -5053,158 +5053,178 @@ export async function importPreset(
     f = await selectSingleFile(['json', 'preset', 'risupreset', 'risup'])
   }
   if (!f) {
-    return
+    return false
   }
-  let pre: any
-  let importedSource: unknown
-  if (f.name.endsWith('.risupreset') || f.name.endsWith('.risup')) {
-    let data = f.data
-    if (f.name.endsWith('.risup')) {
-      data = await decodeRPack(data)
-    }
-    const decoded = await decodeMsgpack(fflate.decompressSync(data))
-    if ((decoded.presetVersion === 0 || decoded.presetVersion === 2) && decoded.type === 'preset') {
+  try {
+    let pre: any
+    let importedSource: unknown
+    const fileName = f.name.toLowerCase()
+    if (fileName.endsWith('.risupreset') || fileName.endsWith('.risup')) {
+      let data = f.data
+      if (fileName.endsWith('.risup')) {
+        data = await decodeRPack(data)
+      }
+      const decoded = await decodeMsgpack(fflate.decompressSync(data))
+      if (
+        !decoded ||
+        typeof decoded !== 'object' ||
+        Array.isArray(decoded) ||
+        !((decoded.presetVersion === 0 || decoded.presetVersion === 2) && decoded.type === 'preset')
+      ) {
+        throw new Error('Invalid preset envelope')
+      }
       importedSource = decodeMsgpack(Buffer.from(await decryptBuffer(decoded.preset ?? decoded.pres, 'risupreset')))
+      if (!importedSource || typeof importedSource !== 'object' || Array.isArray(importedSource)) {
+        throw new Error('Invalid preset payload')
+      }
       pre = {
         ...presetTemplate,
         ...(importedSource as Record<string, unknown>),
       }
-    }
-  } else {
-    importedSource = JSON.parse(Buffer.from(f.data).toString('utf-8'))
-    pre = { ...presetTemplate, ...(importedSource as Record<string, unknown>) }
-  }
-  let db = getDatabase()
-  if (pre.presetVersion && pre.presetVersion >= 3) {
-    //NAI preset
-    const pr = safeStructuredClone(prebuiltPresets.NAI)
-    pr.temperature = pre.parameters.temperature * 100
-    pr.maxResponse = pre.parameters.max_length
-    pr.NAISettings.topK = pre.parameters.top_k
-    pr.NAISettings.topP = pre.parameters.top_p
-    pr.NAISettings.topA = pre.parameters.top_a
-    pr.NAISettings.typicalp = pre.parameters.typical_p
-    pr.NAISettings.tailFreeSampling = pre.parameters.tail_free_sampling
-    pr.NAISettings.repetitionPenalty = pre.parameters.repetition_penalty
-    pr.NAISettings.repetitionPenaltyRange = pre.parameters.repetition_penalty_range
-    pr.NAISettings.repetitionPenaltySlope = pre.parameters.repetition_penalty_slope
-    pr.NAISettings.frequencyPenalty = pre.parameters.repetition_penalty_frequency
-    pr.NAISettings.repostitionPenaltyPresence = pre.parameters.repetition_penalty_presence
-    pr.PresensePenalty = pre.parameters.repetition_penalty_presence * 100
-    pr.NAISettings.cfg_scale = pre.parameters.cfg_scale
-    pr.NAISettings.mirostat_lr = pre.parameters.mirostat_lr
-    pr.NAISettings.mirostat_tau = pre.parameters.mirostat_tau
-    pr.name = pre.name ?? 'Imported'
-    addImportedPromptPreset(pr)
-    return
-  }
-
-  if (Array.isArray(pre?.prompt_order?.[0]?.order) && Array.isArray(pre?.prompts)) {
-    //ST preset
-    const pr = safeStructuredClone(presetTemplate)
-    pr.promptTemplate = []
-
-    function findPrompt(identifier: number) {
-      return pre.prompts.find((p: any) => p.identifier === identifier)
-    }
-    pr.temperature = (pre.temperature ?? 0.8) * 100
-    pr.frequencyPenalty = (pre.frequency_penalty ?? 0.7) * 100
-    pr.PresensePenalty = pre.presence_penalty * 0.7 * 100
-    pr.top_p = pre.top_p ?? 1
-
-    for (const prompt of pre.prompt_order[0].order) {
-      if (!prompt?.enabled) {
-        continue
+    } else {
+      importedSource = JSON.parse(Buffer.from(f.data).toString('utf-8'))
+      if (!importedSource || typeof importedSource !== 'object' || Array.isArray(importedSource)) {
+        throw new Error('Invalid preset payload')
       }
-      const p = findPrompt(prompt?.identifier ?? '')
-      if (p) {
-        switch (p.identifier) {
-          case 'main': {
-            pr.promptTemplate.push({
-              type: 'plain',
-              type2: 'main',
-              text: p.content ?? '',
-              role: p.role ?? 'system',
-            })
-            break
-          }
-          case 'jailbreak':
-          case 'nsfw': {
-            pr.promptTemplate.push({
-              type: 'jailbreak',
-              type2: 'normal',
-              text: p.content ?? '',
-              role: p.role ?? 'system',
-            })
-            break
-          }
-          case 'dialogueExamples':
-          case 'charPersonality':
-          case 'scenario': {
-            break //ignore
-          }
-          case 'chatHistory': {
-            pr.promptTemplate.push({
-              type: 'chat',
-              rangeEnd: 'end',
-              rangeStart: 0,
-            })
-            break
-          }
-          case 'worldInfoBefore': {
-            pr.promptTemplate.push({
-              type: 'lorebook',
-            })
-            break
-          }
-          case 'worldInfoAfter': {
-            break
-          }
-          case 'charDescription': {
-            pr.promptTemplate.push({
-              type: 'description',
-            })
-            break
-          }
-          case 'personaDescription': {
-            pr.promptTemplate.push({
-              type: 'persona',
-            })
-            break
-          }
-          default: {
-            pr.promptTemplate.push({
-              type: 'plain',
-              type2: 'normal',
-              text: p.content ?? '',
-              role: p.role ?? 'system',
-            })
+      pre = { ...presetTemplate, ...(importedSource as Record<string, unknown>) }
+    }
+
+    const db = getDatabase()
+    if (pre.presetVersion && pre.presetVersion >= 3) {
+      //NAI preset
+      const pr = safeStructuredClone(prebuiltPresets.NAI)
+      pr.temperature = pre.parameters.temperature * 100
+      pr.maxResponse = pre.parameters.max_length
+      pr.NAISettings.topK = pre.parameters.top_k
+      pr.NAISettings.topP = pre.parameters.top_p
+      pr.NAISettings.topA = pre.parameters.top_a
+      pr.NAISettings.typicalp = pre.parameters.typical_p
+      pr.NAISettings.tailFreeSampling = pre.parameters.tail_free_sampling
+      pr.NAISettings.repetitionPenalty = pre.parameters.repetition_penalty
+      pr.NAISettings.repetitionPenaltyRange = pre.parameters.repetition_penalty_range
+      pr.NAISettings.repetitionPenaltySlope = pre.parameters.repetition_penalty_slope
+      pr.NAISettings.frequencyPenalty = pre.parameters.repetition_penalty_frequency
+      pr.NAISettings.repostitionPenaltyPresence = pre.parameters.repetition_penalty_presence
+      pr.PresensePenalty = pre.parameters.repetition_penalty_presence * 100
+      pr.NAISettings.cfg_scale = pre.parameters.cfg_scale
+      pr.NAISettings.mirostat_lr = pre.parameters.mirostat_lr
+      pr.NAISettings.mirostat_tau = pre.parameters.mirostat_tau
+      pr.name = pre.name ?? 'Imported'
+      addImportedPromptPreset(pr)
+      return true
+    }
+
+    if (Array.isArray(pre?.prompt_order?.[0]?.order) && Array.isArray(pre?.prompts)) {
+      //ST preset
+      const pr = safeStructuredClone(presetTemplate)
+      pr.promptTemplate = []
+
+      function findPrompt(identifier: number) {
+        return pre.prompts.find((p: any) => p.identifier === identifier)
+      }
+      pr.temperature = (pre.temperature ?? 0.8) * 100
+      pr.frequencyPenalty = (pre.frequency_penalty ?? 0.7) * 100
+      pr.PresensePenalty = pre.presence_penalty * 0.7 * 100
+      pr.top_p = pre.top_p ?? 1
+
+      for (const prompt of pre.prompt_order[0].order) {
+        if (!prompt?.enabled) {
+          continue
+        }
+        const p = findPrompt(prompt?.identifier ?? '')
+        if (p) {
+          switch (p.identifier) {
+            case 'main': {
+              pr.promptTemplate.push({
+                type: 'plain',
+                type2: 'main',
+                text: p.content ?? '',
+                role: p.role ?? 'system',
+              })
+              break
+            }
+            case 'jailbreak':
+            case 'nsfw': {
+              pr.promptTemplate.push({
+                type: 'jailbreak',
+                type2: 'normal',
+                text: p.content ?? '',
+                role: p.role ?? 'system',
+              })
+              break
+            }
+            case 'dialogueExamples':
+            case 'charPersonality':
+            case 'scenario': {
+              break //ignore
+            }
+            case 'chatHistory': {
+              pr.promptTemplate.push({
+                type: 'chat',
+                rangeEnd: 'end',
+                rangeStart: 0,
+              })
+              break
+            }
+            case 'worldInfoBefore': {
+              pr.promptTemplate.push({
+                type: 'lorebook',
+              })
+              break
+            }
+            case 'worldInfoAfter': {
+              break
+            }
+            case 'charDescription': {
+              pr.promptTemplate.push({
+                type: 'description',
+              })
+              break
+            }
+            case 'personaDescription': {
+              pr.promptTemplate.push({
+                type: 'persona',
+              })
+              break
+            }
+            default: {
+              pr.promptTemplate.push({
+                type: 'plain',
+                type2: 'normal',
+                text: p.content ?? '',
+                role: p.role ?? 'system',
+              })
+            }
           }
         }
       }
+      if (pre?.assistant_prefill) {
+        pr.promptTemplate.push({
+          type: 'postEverything',
+        })
+        pr.promptTemplate.push({
+          type: 'plain',
+          type2: 'main',
+          text: `{{#if {{prefill_supported}}}}${pre?.assistant_prefill}{{/if}}`,
+          role: 'bot',
+        })
+      }
+      pr.name = 'Imported ST Preset'
+      addImportedPromptPreset(pr)
+      return true
     }
-    if (pre?.assistant_prefill) {
-      pr.promptTemplate.push({
-        type: 'postEverything',
-      })
-      pr.promptTemplate.push({
-        type: 'plain',
-        type2: 'main',
-        text: `{{#if {{prefill_supported}}}}${pre?.assistant_prefill}{{/if}}`,
-        role: 'bot',
-      })
+    pre.name ??= 'Imported'
+    if (!Array.isArray(db.botPresets)) {
+      db.botPresets = []
     }
-    pr.name = 'Imported ST Preset'
-    addImportedPromptPreset(pr)
-    return
-  }
-  pre.name ??= 'Imported'
-  if (!Array.isArray(db.botPresets)) {
-    db.botPresets = []
-  }
-  if (hasModelPresetOnlyFields(importedSource)) {
-    addImportedLegacyPreset(pre)
-  } else {
-    addImportedPromptPreset(pre)
+    if (hasModelPresetOnlyFields(importedSource)) {
+      addImportedLegacyPreset(pre)
+    } else {
+      addImportedPromptPreset(pre)
+    }
+    return true
+  } catch {
+    alertError(language.errors.noData)
+    return false
   }
 }

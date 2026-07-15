@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 // Importing presets must not write decoded payloads to console.log.
 
@@ -21,6 +22,8 @@ import { importPreset, presetTemplate } from './database.svelte'
 import { clearCachedServerCommandRevision } from '../server/commands'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { setResourceWriteGuardEnabled } from '../server/resourceWriteGuard.svelte'
+import { alertStore } from '../stores.svelte'
+import { language } from '../../lang'
 
 interface CapturedFetch {
   url: string
@@ -140,6 +143,7 @@ beforeEach(() => {
     promptPresets: [],
     promptPresetsId: -1,
   } as any)
+  alertStore.set({ type: 'none', msg: 'n' })
 })
 
 afterEach(() => {
@@ -147,6 +151,43 @@ afterEach(() => {
 })
 
 describe('importPreset warm-path logging (L37)', () => {
+  it('rejects malformed JSON without changing presets or escaping the event handler', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    try {
+      await expect(importPreset({ name: 'broken.json', data: new TextEncoder().encode('{"name":') })).resolves.toBe(
+        false,
+      )
+
+      expect(getResourceDatabase().modelPresets).toEqual([])
+      expect(getResourceDatabase().promptPresets).toEqual([])
+      expect(get(alertStore)).toMatchObject({ type: 'error', msg: language.errors.noData })
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('rejects a binary file with the wrong envelope before reading its payload', async () => {
+    const file = fflate.compressSync(
+      encodeMsgpack({
+        presetVersion: 2,
+        type: 'character',
+        preset: new Uint8Array([1, 2, 3]),
+      }),
+    )
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+
+    try {
+      await expect(importPreset({ name: 'wrong.risupreset', data: file })).resolves.toBe(false)
+
+      expect(getResourceDatabase().modelPresets).toEqual([])
+      expect(getResourceDatabase().promptPresets).toEqual([])
+      expect(get(alertStore)).toMatchObject({ type: 'error', msg: language.errors.noData })
+    } finally {
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
   it('L37: a .risupreset binary import logs nothing to console.log', async () => {
     const calls = stubCommandFetch()
     const file = await buildRisupresetFile({ name: 'Risup Roundtrip', temperature: 42 })
