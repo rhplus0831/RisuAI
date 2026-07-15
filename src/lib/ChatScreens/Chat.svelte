@@ -571,7 +571,7 @@
     if (!chat || (target.chatId ? chat.id !== target.chatId : chat !== target.chatReference)) return null
     const messageIndex = target.messageId
       ? chat.message.findIndex((candidate) => candidate.chatId === target.messageId)
-      : target.messageIndex
+      : chat.message.findIndex((candidate) => candidate === target.messageReference)
     const liveMessage = chat.message?.[messageIndex]
     if (
       messageIndex < 0 ||
@@ -623,6 +623,31 @@
     if (chat.id) {
       dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
     }
+  }
+
+  function deleteMessageAtTarget(target: MessageEditorTarget): void {
+    const resolved = resolveActiveMessageTarget(target)
+    if (!resolved) return
+
+    const { chat, messageIndex } = resolved
+    const previous = currentChatScopedSnapshot()
+    if (canUseServerCommands()) {
+      const messageId = chat.message[messageIndex]?.chatId
+      if (messageId) {
+        dispatchDeleteMessageScoped(messageId, previous)
+      } else {
+        const nextMessages = cloneMessagesWithIds(chat)
+        nextMessages.splice(messageIndex, 1)
+        dispatchReplaceMessagesForChat(chat, nextMessages, previous)
+      }
+      return
+    }
+
+    const messages = chat.message
+    const messageId = ensureMessageId(messages[messageIndex])
+    messages.splice(messageIndex, 1)
+    chat.message = messages
+    dispatchDeleteMessageScoped(messageId, previous)
   }
 
   function applyOptimisticBookmarkMetadata(
@@ -858,8 +883,6 @@
     if (translationInProgress) return
     const messageTarget = captureMessageEditorTarget()
     if (!messageTarget) return
-    const previous = currentChatScopedSnapshot()
-    const chat = getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
     if (e.shiftKey) {
       await truncateAtMessageTarget(messageTarget)
       return
@@ -869,43 +892,13 @@
     if (rm) {
       if (getDatabase().instantRemove || rec) {
         const r = await alertConfirm(language.instantRemoveConfirm)
-        let msg = chat.message
         if (!r) {
           await truncateAtMessageTarget(messageTarget)
         } else {
-          if (canUseServerCommands()) {
-            const messageId = chat.message[idx]?.chatId
-            if (messageId) {
-              dispatchDeleteMessageScoped(messageId, previous)
-            } else {
-              const nextMessages = cloneMessagesWithIds(chat)
-              nextMessages.splice(idx, 1)
-              dispatchReplaceMessagesForChat(chat, nextMessages, previous)
-            }
-          } else {
-            const messageId = ensureMessageId(msg[idx])
-            msg.splice(idx, 1)
-            chat.message = msg
-            dispatchDeleteMessageScoped(messageId, previous)
-          }
+          deleteMessageAtTarget(messageTarget)
         }
       } else {
-        if (canUseServerCommands()) {
-          const messageId = chat.message[idx]?.chatId
-          if (messageId) {
-            dispatchDeleteMessageScoped(messageId, previous)
-          } else {
-            const nextMessages = cloneMessagesWithIds(chat)
-            nextMessages.splice(idx, 1)
-            dispatchReplaceMessagesForChat(chat, nextMessages, previous)
-          }
-        } else {
-          let msg = chat.message
-          const messageId = ensureMessageId(msg[idx])
-          msg.splice(idx, 1)
-          chat.message = msg
-          dispatchDeleteMessageScoped(messageId, previous)
-        }
+        deleteMessageAtTarget(messageTarget)
       }
     }
   }

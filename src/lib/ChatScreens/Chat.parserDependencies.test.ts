@@ -46,7 +46,7 @@ const languageMocks = vi.hoisted(() => {
     selectMatch: 'Select match',
   }
 
-  const language = new Proxy(
+  const language = new Proxy<Record<string, any>>(
     {},
     {
       get: (_target, property) => (property === 'partialEdit' ? partialEdit : String(property)),
@@ -192,7 +192,7 @@ import {
   selectedCharID,
 } from '../../ts/stores.svelte'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../ts/server/resourceWriteGuard.svelte'
-import { dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
+import { dispatchDeleteMessageScoped, dispatchUpdateMessageScoped } from 'src/ts/chatCommands'
 
 chatParserMocks.getDatabase.mockImplementation(() => getResourceDatabase())
 
@@ -273,6 +273,14 @@ function makeRows(count: number): ParserDependencyRow[] {
     name: index % 2 === 0 ? `Parser Bot ${index}` : 'User',
     role: index % 2 === 0 ? 'char' : 'user',
   }))
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve
+  })
+  return { promise, resolve }
 }
 
 function seedDatabase(rows: ParserDependencyRow[]) {
@@ -563,6 +571,90 @@ describe('Chat parser dependencies', () => {
 
     expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith('row-0', { data: 'changed message' }, {})
     expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('visible message 0')
+  })
+
+  it('deletes the confirmed message by stable id after the live transcript shifts', async () => {
+    const rows = makeRows(3)
+    const confirmation = deferred<boolean>()
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    chatParserMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().askRemoval = true
+    })
+    mountHarness(rows)
+    await settle()
+
+    const removeButtons = target.querySelectorAll<HTMLButtonElement>('.button-icon-remove')
+    removeButtons[1]?.click()
+    await settle()
+    expect(chatParserMocks.alertConfirm).toHaveBeenCalledWith(languageMocks.language.removeChat)
+
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().characters[0].chats[0].message.unshift({
+        chatId: 'newer-row',
+        data: 'newer message',
+        role: 'user',
+      })
+    })
+    confirmation.resolve(true)
+    await settle()
+
+    expect(dispatchDeleteMessageScoped).toHaveBeenCalledWith('row-1', {})
+    expect(dispatchDeleteMessageScoped).not.toHaveBeenCalledWith('row-0', expect.anything())
+  })
+
+  it('keeps the same deletion target across the instant-remove confirmation', async () => {
+    const rows = makeRows(3)
+    const instantConfirmation = deferred<boolean>()
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    chatParserMocks.alertConfirm.mockResolvedValueOnce(true).mockReturnValueOnce(instantConfirmation.promise)
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().askRemoval = true
+      getResourceDatabase().instantRemove = true
+    })
+    mountHarness(rows)
+    await settle()
+
+    const removeButtons = target.querySelectorAll<HTMLButtonElement>('.button-icon-remove')
+    removeButtons[1]?.click()
+    await settle()
+    expect(chatParserMocks.alertConfirm).toHaveBeenCalledTimes(2)
+
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().characters[0].chats[0].message.splice(0, 1)
+    })
+    instantConfirmation.resolve(true)
+    await settle()
+
+    expect(dispatchDeleteMessageScoped).toHaveBeenCalledWith('row-1', {})
+    expect(dispatchDeleteMessageScoped).not.toHaveBeenCalledWith('row-2', expect.anything())
+  })
+
+  it('does not delete a replacement row when the confirmed message disappeared', async () => {
+    const rows = makeRows(3)
+    const confirmation = deferred<boolean>()
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    chatParserMocks.alertConfirm.mockReturnValueOnce(confirmation.promise)
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().askRemoval = true
+    })
+    mountHarness(rows)
+    await settle()
+
+    const removeButtons = target.querySelectorAll<HTMLButtonElement>('.button-icon-remove')
+    removeButtons[1]?.click()
+    await settle()
+
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().characters[0].chats[0].message.splice(1, 1)
+    })
+    confirmation.resolve(true)
+    await settle()
+
+    expect(dispatchDeleteMessageScoped).not.toHaveBeenCalled()
   })
 
   it('drops partial edit saves when the live source data changed while the modal was open', async () => {
