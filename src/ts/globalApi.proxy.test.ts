@@ -34,8 +34,12 @@ class FakeWebSocket {
   onclose: (() => void) | null = null
   closeCalls = 0
 
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    readonly protocols?: string | string[],
+  ) {
     fakeWebSocketUrls.push(url)
+    fakeWebSocketProtocols.push(protocols)
     fakeWebSockets.push(this)
   }
 
@@ -69,6 +73,7 @@ class FakeWebSocket {
 
 const fetchCalls: Array<{ url: string; init?: RequestInit }> = []
 const fakeWebSocketUrls: string[] = []
+const fakeWebSocketProtocols: Array<string | string[] | undefined> = []
 const fakeWebSockets: FakeWebSocket[] = []
 
 async function waitForWebSocket(index = 0): Promise<FakeWebSocket> {
@@ -104,6 +109,7 @@ beforeEach(() => {
   }
   fetchCalls.length = 0
   fakeWebSocketUrls.length = 0
+  fakeWebSocketProtocols.length = 0
   fakeWebSockets.length = 0
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
@@ -155,9 +161,9 @@ describe('Fastify proxy routing', () => {
     expect(res.status).toBe(502)
     expect(fetchCalls[0].url).toBe('/api/v1/proxy/stream-jobs')
     expect(fetchCalls[0].url).not.toContain('/proxy-stream-jobs')
-    expect(fakeWebSocketUrls).toEqual([
-      'ws://localhost:3000/api/v1/proxy/stream-jobs/job%201/ws?risu-auth=proxy-auth-token',
-    ])
+    expect(fakeWebSocketUrls).toEqual(['ws://localhost:3000/api/v1/proxy/stream-jobs/job%201/ws'])
+    expect(fakeWebSocketProtocols).toEqual([['risu-stream-v1', 'risu-auth.proxy-auth-token']])
+    expect(fakeWebSocketUrls[0]).not.toContain('proxy-auth-token')
     expect(fakeWebSocketUrls[0]).not.toContain('/proxy-stream-jobs')
   })
 

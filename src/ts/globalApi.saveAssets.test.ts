@@ -129,4 +129,20 @@ describe('saveAssets server bulk upload', () => {
     })
     expect(Array.from(bulkBody.bytes)).toEqual([...missingAsset, ...otherMissingAsset])
   })
+
+  it('batches large existence probes to stay within the public endpoint limit', async () => {
+    const assets = Array.from({ length: 1025 }, (_, index) => ({
+      data: new Uint8Array([index >> 8, index & 0xff]),
+      fileName: `${index}.png`,
+    }))
+
+    const ids = await saveAssets(assets)
+
+    expect(ids).toHaveLength(1025)
+    expect(fetchCalls).toHaveLength(2)
+    const first = (await readRequestJson(fetchCalls[0].init)) as { ids: string[] }
+    const second = (await readRequestJson(fetchCalls[1].init)) as { ids: string[] }
+    expect(first.ids).toHaveLength(1024)
+    expect(second.ids).toHaveLength(1)
+  })
 })

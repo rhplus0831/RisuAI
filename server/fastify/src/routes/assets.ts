@@ -15,12 +15,14 @@ import {
   missingAssetIds,
   type AddAssetResult,
 } from '../repository.js'
-import { assetBulkUploadRateLimit, assetUploadRateLimit } from '../routeRateLimits.js'
+import { assetBulkUploadRateLimit, assetExistsRateLimit, assetUploadRateLimit } from '../routeRateLimits.js'
 import { emitProtocolMetric } from '../protocolMetrics.js'
 
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable'
 const BASE64_RE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 export const ASSET_BULK_BINARY_CONTENT_TYPE = 'application/vnd.risu.assets-bulk'
+export const ASSET_EXISTS_MAX_IDS = 1024
+const ASSET_EXISTS_BODY_LIMIT = 128 * 1024
 
 interface ExistsBody {
   ids?: unknown
@@ -50,6 +52,7 @@ const existsBodySchema = {
     properties: {
       ids: {
         type: 'array',
+        maxItems: ASSET_EXISTS_MAX_IDS,
         items: { type: 'string' },
       },
     },
@@ -84,6 +87,9 @@ function readAttachedValidationError(req: { validationError?: unknown }): unknow
 
 function assetExistsValidationErrorMessage(error: unknown): string {
   const validation = (error as FastifyValidationError | undefined)?.validation ?? []
+  if (validation.some((entry) => entry.keyword === 'maxItems')) {
+    return `ids must contain at most ${ASSET_EXISTS_MAX_IDS} items`
+  }
   const hasInvalidItem = validation.some((entry) => {
     const path = entry.instancePath ?? entry.dataPath ?? ''
     return entry.keyword === 'type' && /^\/ids\/\d+$/.test(path)
@@ -318,6 +324,8 @@ export function registerAssetsRoutes(
     '/api/v1/assets/exists',
     {
       attachValidation: true,
+      bodyLimit: ASSET_EXISTS_BODY_LIMIT,
+      config: { rateLimit: assetExistsRateLimit },
       preValidation: validateAssetExistsEnvelope,
       schema: existsBodySchema,
     },
@@ -332,15 +340,15 @@ export function registerAssetsRoutes(
         reply.code(400)
         return { error: 'ids: string[] required' }
       }
-      const validIds: string[] = []
+      const validIds = new Set<string>()
       for (const id of body.ids) {
         if (typeof id !== 'string' || !isValidAssetId(id)) {
           reply.code(400)
           return { error: 'ids must be sha256 hex strings' }
         }
-        validIds.push(id)
+        validIds.add(id)
       }
-      return { missing: missingAssetIds(db, validIds) }
+      return { missing: missingAssetIds(db, [...validIds]) }
     },
   )
 }

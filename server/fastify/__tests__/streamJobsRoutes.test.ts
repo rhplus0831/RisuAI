@@ -16,7 +16,7 @@ interface Harness {
   dataDir: string
 }
 
-async function startHarness(): Promise<Harness> {
+async function startHarness(agentDevAuthBypass = false): Promise<Harness> {
   process.env.LOG_LEVEL = 'silent'
   const dataDir = mkdtempSync(path.join(tmpdir(), 'risu-fastify-'))
   const { app } = await buildApp({
@@ -28,6 +28,7 @@ async function startHarness(): Promise<Harness> {
       importMaxBytes: Infinity,
       trustProxy: false,
       hubUrl: 'https://sv.risuai.xyz',
+      agentDevAuthBypass,
     },
   })
   return { app, dataDir }
@@ -199,6 +200,20 @@ describe('Phase 3B-2 POST /api/v1/proxy/stream-jobs', () => {
     expect(res.statusCode).toBe(401)
   })
 
+  it('honors the agent-development auth bypass consistently', async () => {
+    await stopHarness(harness)
+    harness = await startHarness(true)
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/proxy/stream-jobs',
+      payload: { url: echo.url },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ jobId: expect.any(String) })
+  })
+
   it('returns 401 without auth once a password is set', async () => {
     await harness.app.inject({
       method: 'POST',
@@ -355,7 +370,7 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     expect(combined).toBe('onetwo')
   })
 
-  it('accepts the assertion via risu-auth query parameter', async () => {
+  it('accepts the assertion via a WebSocket subprotocol without putting it in the URL', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const create = await harness.app.inject({
       method: 'POST',
@@ -365,11 +380,23 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     })
     const { jobId } = create.json() as { jobId: string }
 
-    const url = `/api/v1/proxy/stream-jobs/${jobId}/ws?risu-auth=${encodeURIComponent(assertion)}`
-    const { ws, events } = await injectAndCollect(harness.app, url, {}, (e) => e.type === 'done')
+    const url = `/api/v1/proxy/stream-jobs/${jobId}/ws`
+    const { ws, events } = await injectAndCollect(
+      harness.app,
+      url,
+      { headers: { 'sec-websocket-protocol': `risu-stream-v1, risu-auth.${assertion}` } },
+      (e) => e.type === 'done',
+    )
     ws.close()
     expect(events[0].type).toBe('job_accepted')
     expect(events.at(-1)?.type).toBe('done')
+  })
+
+  it('does not accept credentials from the WebSocket query string', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await expect(
+      harness.app.injectWS(`/api/v1/proxy/stream-jobs/anything/ws?risu-auth=${encodeURIComponent(assertion)}`),
+    ).rejects.toThrow(/401/)
   })
 
   it('rejects WS upgrade without auth once a password is set', async () => {
@@ -442,9 +469,10 @@ describe('Phase 3B-2 WebSocket /api/v1/proxy/stream-jobs/:id/ws', () => {
     await harness.app.listen({ host: '127.0.0.1', port: 0 })
     const port = (harness.app.server.address() as AddressInfo).port
     const { WebSocket: WsClient } = await import('ws')
-    const ws = new WsClient(
-      `ws://127.0.0.1:${port}/api/v1/proxy/stream-jobs/${jobId}/ws?risu-auth=${encodeURIComponent(assertion)}`,
-    )
+    const ws = new WsClient(`ws://127.0.0.1:${port}/api/v1/proxy/stream-jobs/${jobId}/ws`, [
+      'risu-stream-v1',
+      `risu-auth.${assertion}`,
+    ])
     const events: { type: string }[] = []
     ws.on('message', (data, isBinary) => {
       if (isBinary) return

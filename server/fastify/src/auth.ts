@@ -10,6 +10,7 @@ const subtle = webcrypto.subtle
 // cap is deliberately conservative; the only operational cost of eviction is
 // that an evicted client must log in again.
 const KNOWN_KEY_HASH_CAP = 4096
+export const SESSION_TOKEN_TTL_SECONDS = 24 * 60 * 60
 
 export interface AuthState {
   passwordPath: string
@@ -110,7 +111,8 @@ export function registerPublicKey(state: AuthState, publicKey: unknown): void {
 }
 
 export function registerSessionToken(state: AuthState): string {
-  const token = `session.${randomBytes(32).toString('base64url')}`
+  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TOKEN_TTL_SECONDS
+  const token = `session.${expiresAt.toString(36)}.${randomBytes(32).toString('base64url')}`
   state.knownSessionTokenHashes.add(hashToken(token))
   trimToCap(state.knownSessionTokenHashes)
   persistKnownSessionTokens(state)
@@ -175,8 +177,16 @@ export type VerifyResult =
 export async function verifyAssertion(state: AuthState, token: string): Promise<VerifyResult> {
   if (!token) return { ok: false, reason: 'missing' }
   if (token.startsWith('session.')) {
+    const parts = token.split('.')
+    const expiresAt = parts.length === 3 ? Number.parseInt(parts[1] ?? '', 36) : Number.NaN
+    if (!Number.isSafeInteger(expiresAt)) return { ok: false, reason: 'malformed' }
     const hash = hashToken(token)
     if (!state.knownSessionTokenHashes.has(hash)) return { ok: false, reason: 'unknown-key' }
+    if (expiresAt < Math.floor(Date.now() / 1000)) {
+      state.knownSessionTokenHashes.delete(hash)
+      persistKnownSessionTokens(state)
+      return { ok: false, reason: 'expired' }
+    }
     touch(state.knownSessionTokenHashes, hash)
     return { ok: true }
   }

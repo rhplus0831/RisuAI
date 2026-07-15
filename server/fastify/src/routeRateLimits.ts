@@ -42,6 +42,11 @@ export const assetBulkUploadRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const assetExistsRateLimit: RateLimitOptions = {
+  max: 120,
+  timeWindow: MINUTE,
+}
+
 export const generationSubmitRateLimit: RateLimitOptions = {
   max: 60,
   timeWindow: MINUTE,

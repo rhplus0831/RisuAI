@@ -3,7 +3,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 const repoRoot = process.cwd()
 const frontendPort = parsePort(process.env.RISU_AGENT_DEV_PORT, 6418, 'RISU_AGENT_DEV_PORT')
 const apiPort = parsePort(process.env.RISU_AGENT_API_PORT, 6419, 'RISU_AGENT_API_PORT')
-const host = process.env.RISU_AGENT_DEV_HOST ?? '0.0.0.0'
+// Agent mode disables authentication for automated browser sessions, so keep
+// it local unless the operator explicitly opts into a network-visible bind.
+const host = process.env.RISU_AGENT_DEV_HOST ?? '127.0.0.1'
 const traceMode = process.env.RISU_API_TRACE_MODE?.trim().toLowerCase()
 const defaultAuthBypass = traceMode === 'human' ? 'FALSE' : 'TRUE'
 const shutdownGraceMs = 5_000

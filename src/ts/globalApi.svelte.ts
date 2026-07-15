@@ -198,27 +198,32 @@ async function sha256Hex(data: Uint8Array): Promise<string> {
 async function findMissingServerAssetIds(assetIds: readonly string[]): Promise<Set<string>> {
   const uniqueAssetIds = [...new Set(assetIds)]
   if (uniqueAssetIds.length === 0) return new Set()
-  const response = await fetch('/api/v1/assets/exists', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ ids: uniqueAssetIds }),
-  })
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new Error(body || `Failed to check server assets: ${response.status}`)
-  }
-  const responseBody = (await response.json()) as { missing?: unknown }
-  if (!Array.isArray(responseBody.missing)) {
-    throw new Error('Server asset exists response has invalid missing ids')
-  }
+  const assetExistsBatchSize = 1024
   const missing = new Set<string>()
-  for (const [index, id] of responseBody.missing.entries()) {
-    if (typeof id !== 'string') {
-      throw new Error(`Server asset exists response missing[${index}] is invalid`)
+
+  for (let offset = 0; offset < uniqueAssetIds.length; offset += assetExistsBatchSize) {
+    const ids = uniqueAssetIds.slice(offset, offset + assetExistsBatchSize)
+    const response = await fetch('/api/v1/assets/exists', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ ids }),
+    })
+    if (!response.ok) {
+      const body = await response.text().catch(() => '')
+      throw new Error(body || `Failed to check server assets: ${response.status}`)
     }
-    missing.add(id)
+    const responseBody = (await response.json()) as { missing?: unknown }
+    if (!Array.isArray(responseBody.missing)) {
+      throw new Error('Server asset exists response has invalid missing ids')
+    }
+    for (const [index, id] of responseBody.missing.entries()) {
+      if (typeof id !== 'string') {
+        throw new Error(`Server asset exists response missing[${index}] is invalid`)
+      }
+      missing.add(id)
+    }
   }
   return missing
 }
@@ -1080,7 +1085,8 @@ async function fetchViaProxyJobWs(
   jobId = created.jobId
 
   const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const wsUrl = `${wsProtocol}//${location.host}${getProxyStreamJobWsPath(jobId)}?risu-auth=${encodeURIComponent(auth)}`
+  const wsUrl = `${wsProtocol}//${location.host}${getProxyStreamJobWsPath(jobId)}`
+  const wsProtocols = auth ? ['risu-stream-v1', `risu-auth.${auth}`] : ['risu-stream-v1']
 
   let headersReady = false
   let status = 200
@@ -1093,7 +1099,7 @@ async function fetchViaProxyJobWs(
   let streamController: ReadableStreamDefaultController<Uint8Array> | null = null
   const encoder = new TextEncoder()
 
-  const ws = new WebSocket(wsUrl)
+  const ws = new WebSocket(wsUrl, wsProtocols)
   ws.binaryType = 'arraybuffer'
   let terminalProxyFrameSeen = false
   let localRequestAborted = false

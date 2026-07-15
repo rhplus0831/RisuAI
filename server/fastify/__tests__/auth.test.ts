@@ -2,7 +2,13 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { createAuthState, registerPublicKey } from '../src/auth.js'
+import {
+  createAuthState,
+  registerPublicKey,
+  registerSessionToken,
+  SESSION_TOKEN_TTL_SECONDS,
+  verifyAssertion,
+} from '../src/auth.js'
 
 describe('auth.knownKeyHashes (A4EC5 / B6 bounded accumulator)', () => {
   let tmpDir: string
@@ -115,6 +121,27 @@ describe('agent dev auth bypass', () => {
         await app.close()
       }
     } finally {
+      fs.rmSync(dataDir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('fallback session authentication', () => {
+  it('expires server-issued fallback tokens and removes their stored hash', async () => {
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'risu-auth-session-'))
+    const now = Date.UTC(2026, 0, 1)
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+    try {
+      const state = createAuthState(dataDir)
+      const token = registerSessionToken(state)
+      expect(token.split('.')).toHaveLength(3)
+      await expect(verifyAssertion(state, token)).resolves.toEqual({ ok: true })
+
+      clock.mockReturnValue(now + (SESSION_TOKEN_TTL_SECONDS + 1) * 1000)
+      await expect(verifyAssertion(state, token)).resolves.toEqual({ ok: false, reason: 'expired' })
+      expect(state.knownSessionTokenHashes.size).toBe(0)
+    } finally {
+      clock.mockRestore()
       fs.rmSync(dataDir, { recursive: true, force: true })
     }
   })

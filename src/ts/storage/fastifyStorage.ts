@@ -32,16 +32,44 @@ function subtleCrypto(): SubtleCrypto | null {
   return globalThis.crypto?.subtle ?? null
 }
 
+function clearSessionAuth(): void {
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem('risuauth')
+  } catch {}
+}
+
+function isCurrentSessionAuth(token: string): boolean {
+  const parts = token.split('.')
+  if (parts.length !== 3 || !token.startsWith(SESSION_AUTH_PREFIX)) return false
+  const expiresAt = Number.parseInt(parts[1] ?? '', 36)
+  return Number.isSafeInteger(expiresAt) && expiresAt >= Math.floor(Date.now() / 1000)
+}
+
 function storedSessionAuth(): string | null {
-  if (typeof localStorage === 'undefined') return null
-  const token = localStorage.getItem('risuauth')
-  return token?.startsWith(SESSION_AUTH_PREFIX) ? token : null
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('risuauth')?.startsWith(SESSION_AUTH_PREFIX)) {
+      // Migrate away from the old persistent fallback token storage. The server
+      // now expires these tokens too, but they should not survive a browser
+      // session on insecure origins where WebCrypto is unavailable.
+      localStorage.removeItem('risuauth')
+    }
+    if (typeof sessionStorage === 'undefined') return null
+    const token = sessionStorage.getItem('risuauth')
+    if (!token?.startsWith(SESSION_AUTH_PREFIX)) return null
+    if (isCurrentSessionAuth(token)) return token
+    sessionStorage.removeItem('risuauth')
+    return null
+  } catch {
+    return null
+  }
 }
 
 function saveSessionAuth(token: string): void {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('risuauth', token)
-  }
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('risuauth', token)
+    }
+  } catch {}
 }
 
 async function fetchAuthStatus(assertion: string): Promise<AuthStatus> {
@@ -95,8 +123,8 @@ export class FastifyStorage {
   async getProxyAuth() {
     await this.checkAuth()
     const auth = await this.createAuth()
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('risuauth', auth)
+    if (auth.startsWith(SESSION_AUTH_PREFIX)) {
+      saveSessionAuth(auth)
     }
     return auth
   }
@@ -225,9 +253,17 @@ export class FastifyStorage {
   }
 
   private async checkAuth() {
+    const canUseWebCrypto = subtleCrypto() !== null
+    // Session tokens are deliberately short-lived. A tab can outlive one, so
+    // invalidate the cached auth decision before its next request and obtain a
+    // fresh server-issued token through the normal login flow.
+    if (!canUseWebCrypto && !storedSessionAuth()) {
+      this.authChecked = false
+      clearSessionAuth()
+    }
+
     if (!this.authChecked) {
       const status = await fetchAuthStatus(await this.createAuth())
-      const canUseWebCrypto = subtleCrypto() !== null
 
       if (status === 'unset') {
         const keypair = canUseWebCrypto ? await this.getKeyPair() : null

@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { WebSocket } from 'ws'
-import { type AuthState, hasPassword, verifyAssertion } from '../auth.js'
+import { type AuthState, hasPassword, isAgentDevAuthBypassed, verifyAssertion } from '../auth.js'
 import { extractRisuAuth } from '../http.js'
 import {
   type JobClient,
@@ -29,9 +29,7 @@ interface JobIdParams {
   id: string
 }
 
-interface WsQuerystring {
-  'risu-auth'?: string
-}
+const WS_AUTH_PROTOCOL_PREFIX = 'risu-auth.'
 
 function wsBufferedBytes(socket: WebSocket): number {
   return Math.max(0, socket.bufferedAmount)
@@ -61,6 +59,7 @@ function sendBoundedWs(socket: WebSocket, frame: StreamJobFrame): void {
 }
 
 async function checkProxyAuth(authState: AuthState, req: FastifyRequest, reply: FastifyReply): Promise<boolean> {
+  if (isAgentDevAuthBypassed(authState)) return true
   if (!hasPassword(authState)) {
     reply.code(401).send({ error: 'Auth required' })
     return false
@@ -78,18 +77,27 @@ async function checkProxyAuth(authState: AuthState, req: FastifyRequest, reply: 
   return true
 }
 
-async function checkProxyAuthWithQuery(
+function extractWebSocketProtocolAuth(req: FastifyRequest): string {
+  const value = req.headers['sec-websocket-protocol']
+  const protocols = (Array.isArray(value) ? value.join(',') : (value ?? '')).split(',')
+  const authProtocol = protocols
+    .map((protocol) => protocol.trim())
+    .find((protocol) => protocol.startsWith(WS_AUTH_PROTOCOL_PREFIX))
+  return authProtocol?.slice(WS_AUTH_PROTOCOL_PREFIX.length) ?? ''
+}
+
+async function checkProxyWebSocketAuth(
   authState: AuthState,
-  req: FastifyRequest<{ Querystring: WsQuerystring }>,
+  req: FastifyRequest,
   reply: FastifyReply,
 ): Promise<boolean> {
+  if (isAgentDevAuthBypassed(authState)) return true
   if (!hasPassword(authState)) {
     reply.code(401).send({ error: 'Auth required' })
     return false
   }
   const headerToken = extractRisuAuth(req)
-  const queryToken = typeof req.query['risu-auth'] === 'string' ? req.query['risu-auth'] : ''
-  const token = headerToken || queryToken
+  const token = headerToken || extractWebSocketProtocolAuth(req)
   if (!token) {
     reply.code(401).send({ error: 'Auth required' })
     return false
@@ -178,12 +186,12 @@ export function registerStreamJobRoutes(app: FastifyInstance, authState: AuthSta
     return { success: true }
   })
 
-  app.get<{ Params: JobIdParams; Querystring: WsQuerystring }>(
+  app.get<{ Params: JobIdParams }>(
     '/api/v1/proxy/stream-jobs/:id/ws',
     {
       websocket: true,
       preValidation: async (req, reply) => {
-        const authed = await checkProxyAuthWithQuery(authState, req, reply)
+        const authed = await checkProxyWebSocketAuth(authState, req, reply)
         if (!authed) return
         if (!registry.has(req.params.id)) {
           reply.code(404).send({ error: 'Job not found' })

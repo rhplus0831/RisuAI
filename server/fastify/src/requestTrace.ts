@@ -105,6 +105,7 @@ const REDACTED_HEADER_NAMES = new Set([
   'cookie',
   'proxy-authorization',
   'risu-auth',
+  'sec-websocket-protocol',
   'set-cookie',
   'x-api-key',
   'xi-api-key',

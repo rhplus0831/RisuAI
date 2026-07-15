@@ -772,6 +772,17 @@ describe('Phase 2C assets', () => {
     expect(res.json()).toEqual({ error: 'ids must be sha256 hex strings' })
   })
 
+  it('POST /assets/exists rejects oversized lookup batches', async () => {
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/assets/exists',
+      payload: { ids: Array.from({ length: 1025 }, (_, index) => index.toString(16).padStart(64, '0')) },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'ids must contain at most 1024 items' })
+  })
+
   it('POST /assets/bulk rejects malformed asset payloads', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const badBase64 = await harness.app.inject({

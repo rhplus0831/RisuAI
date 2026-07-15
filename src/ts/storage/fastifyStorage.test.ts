@@ -64,9 +64,9 @@ function captureFetch(handler: (url: string, init: RequestInit) => Response): Ca
   return calls
 }
 
-function stubLocalStorage(): Map<string, string> {
+function stubStorage(name: 'localStorage' | 'sessionStorage'): Map<string, string> {
   const store = new Map<string, string>()
-  vi.stubGlobal('localStorage', {
+  vi.stubGlobal(name, {
     getItem: vi.fn((key: string) => store.get(key) ?? null),
     setItem: vi.fn((key: string, value: string) => {
       store.set(key, String(value))
@@ -153,8 +153,9 @@ describe('FastifyStorage client', () => {
 
   it('uses server-issued session auth when WebCrypto is unavailable', async () => {
     vi.stubGlobal('crypto', {})
-    const sessionToken = 'session.test-token'
-    const stored = stubLocalStorage()
+    const sessionToken = `session.${(Math.floor(Date.now() / 1000) + 3600).toString(36)}.test-token`
+    const local = stubStorage('localStorage')
+    const session = stubStorage('sessionStorage')
     const calls = captureFetch((url) => {
       if (url === '/api/v1/auth/status') return jsonResponse({ noPassword: true })
       if (url === '/api/v1/auth/crypto') return textResponse('hashed-password')
@@ -179,6 +180,39 @@ describe('FastifyStorage client', () => {
       sessionAuth: true,
     })
     expect(calls[3].headers['risu-auth']).toBe(sessionToken)
-    expect(stored.get('risuauth')).toBe(sessionToken)
+    expect(session.get('risuauth')).toBe(sessionToken)
+    expect(local.has('risuauth')).toBe(false)
+  })
+
+  it('renews an expired session token in a long-lived WebCrypto-less tab', async () => {
+    vi.stubGlobal('crypto', {})
+    const now = 2_000_000_000
+    vi.spyOn(Date, 'now').mockReturnValue(now * 1000)
+    const expiredToken = `session.${(now - 1).toString(36)}.expired-token`
+    const replacementToken = `session.${(now + 3600).toString(36)}.replacement-token`
+    stubStorage('localStorage')
+    const session = stubStorage('sessionStorage')
+    session.set('risuauth', expiredToken)
+    const calls = captureFetch((url) => {
+      if (url === '/api/v1/auth/status') return jsonResponse({ authorized: false })
+      if (url === '/api/v1/auth/crypto') return textResponse('hashed-password')
+      if (url === '/api/v1/auth/login') {
+        return jsonResponse({ status: 'success', authToken: replacementToken })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    const storage = new FastifyStorage()
+    storage.authChecked = true
+
+    await expect(storage.getProxyAuth()).resolves.toBe(replacementToken)
+
+    expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
+      'GET /api/v1/auth/status',
+      'POST /api/v1/auth/crypto',
+      'POST /api/v1/auth/login',
+    ])
+    expect(calls[0].headers['risu-auth']).toBe('')
+    expect(session.get('risuauth')).toBe(replacementToken)
+    expect(alertState.alertInput).toHaveBeenCalledTimes(1)
   })
 })

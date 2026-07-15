@@ -202,6 +202,7 @@ describe('request trace', () => {
       url: '/api/v1/health',
       headers: {
         'risu-auth': 'secret-auth-token',
+        'sec-websocket-protocol': 'risu-stream-v1, risu-auth.secret-websocket-token',
         'user-agent': '',
         'x-debug-test': 'trace-me',
       },
@@ -222,6 +223,7 @@ describe('request trace', () => {
     const responseHeaders = JSON.parse(entry['Response-Header']) as Record<string, string>
     expect(requestHeaders['x-debug-test']).toBe('trace-me')
     expect(requestHeaders['risu-auth']).toBe('[redacted]')
+    expect(requestHeaders['sec-websocket-protocol']).toBe('[redacted]')
     expect(requestHeaders[uidHeaderName]).toBe(responseUid)
     expect(responseHeaders[uidHeaderName]).toBe(responseUid)
   })
