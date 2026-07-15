@@ -304,6 +304,41 @@ describe('server-backed data-driven settings', () => {
     ])
   })
 
+  it('patches one custom quote as an array field and restores it when persistence fails', async () => {
+    vi.useFakeTimers()
+    const calls = stubSettingsFetch()
+    replaceResourceDatabase({
+      customQuotes: true,
+      customQuotesData: ['"', '"', "'", "'"],
+      modelPresets: [],
+      modelPresetsId: -1,
+      promptPresets: [],
+      promptPresetsId: -1,
+    } as any)
+    const item = displaySettingsItems.find((candidate) => candidate.id === 'display.leadingDoubleQuote')!
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, '«', ctx)
+    expect(getResourceDatabase().customQuotesData).toEqual(['«', '"', "'", "'"])
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await vi.waitFor(() => {
+      expect(getResourceDatabase().customQuotesData).toEqual(['"', '"', "'", "'"])
+    })
+
+    expect(calls).toEqual([
+      { url: '/api/v1/bootstrap', method: 'GET', body: null },
+      {
+        url: '/api/v1/commands/settings/display',
+        method: 'PATCH',
+        body: {
+          baseRevision: 4,
+          patch: { customQuotesData: ['«', '"', "'", "'"] },
+        },
+      },
+    ])
+  })
+
   it('restores local state when a number clear would produce an undefined server patch', async () => {
     const calls = stubSettingsFetch()
     replaceResourceDatabase({ maxResponse: 100 } as any)

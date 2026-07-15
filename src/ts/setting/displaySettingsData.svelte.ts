@@ -432,6 +432,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'text',
     labelKey: 'leadingDoubleQuote',
     condition: (ctx) => ctx.db.customQuotes,
+    bindPath: 'customQuotesData.0',
     getValue: (db) => db.customQuotesData?.[0] ?? '',
     setValue: (db, value: string) => {
       db.customQuotesData ??= ['"', '"', "'", "'"]
@@ -444,6 +445,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'text',
     labelKey: 'trailingDoubleQuote',
     condition: (ctx) => ctx.db.customQuotes,
+    bindPath: 'customQuotesData.1',
     getValue: (db) => db.customQuotesData?.[1] ?? '',
     setValue: (db, value: string) => {
       db.customQuotesData ??= ['"', '"', "'", "'"]
@@ -456,6 +458,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'text',
     labelKey: 'leadingSingleQuote',
     condition: (ctx) => ctx.db.customQuotes,
+    bindPath: 'customQuotesData.2',
     getValue: (db) => db.customQuotesData?.[2] ?? '',
     setValue: (db, value: string) => {
       db.customQuotesData ??= ['"', '"', "'", "'"]
@@ -468,6 +471,7 @@ export const displayOtherSettingsItems: SettingItem[] = [
     type: 'text',
     labelKey: 'trailingSingleQuote',
     condition: (ctx) => ctx.db.customQuotes,
+    bindPath: 'customQuotesData.3',
     getValue: (db) => db.customQuotesData?.[3] ?? '',
     setValue: (db, value: string) => {
       db.customQuotesData ??= ['"', '"', "'", "'"]
