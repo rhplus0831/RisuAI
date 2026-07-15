@@ -187,11 +187,14 @@
   let currentCharacter = $derived(getDatabase().characters[$selectedCharID])
   let activeChatOpen = $derived.by(() => {
     if ($selectedCharID < 0) return false
-    const characterId = getDatabase().characters?.[$selectedCharID]?.chaId
-    if (characterId === '§playground') return $PlaygroundStore === 2
+    const character = getDatabase().characters?.[$selectedCharID]
+    if (character?.chaId === '§playground') {
+      const activePlaygroundChat = character.chats?.[character.chatPage]
+      return $PlaygroundStore === 2 && Array.isArray(activePlaygroundChat?.message)
+    }
     return (
       $currentRoute.kind === 'character' &&
-      $currentRoute.chaId === characterId &&
+      $currentRoute.chaId === character?.chaId &&
       typeof $currentRoute.chatId === 'string'
     )
   })

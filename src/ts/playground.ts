@@ -22,14 +22,8 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
     }
 
     const previous = currentCharacterSelectionSnapshot(PLAYGROUND_CHARACTER_ID)
-    const char = structuredClone(getDatabase().characters[charIndex]) as character
-    char.utilityBot = true
-    char.name = 'assistant'
-    char.firstMessage = '{{none}}'
-    const formattedChar = characterFormatUpdate(char)
     const lastInteraction = Date.now()
-    formattedChar.lastInteraction = lastInteraction
-    setCharacterByIndex(charIndex, formattedChar)
+    const formattedChar = formatPlaygroundCharacterAtIndex(charIndex, lastInteraction)
 
     selectedCharID.set(charIndex)
     dispatchSelectCharacter(formattedChar.chaId, previous, lastInteraction)
@@ -75,5 +69,17 @@ export async function openPlaygroundChat(options: { isFresh?: () => boolean } = 
 function selectPlaygroundCharacter(): void {
   const index = findCharacterIndexbyId(PLAYGROUND_CHARACTER_ID)
   if (index === -1) return
+  formatPlaygroundCharacterAtIndex(index)
   selectedCharID.set(index)
+}
+
+function formatPlaygroundCharacterAtIndex(index: number, lastInteraction = Date.now()): character {
+  const char = structuredClone(getDatabase().characters[index]) as character
+  char.utilityBot = true
+  char.name = 'assistant'
+  char.firstMessage = '{{none}}'
+  const formattedChar = characterFormatUpdate(char)
+  formattedChar.lastInteraction = lastInteraction
+  setCharacterByIndex(index, formattedChar)
+  return formattedChar
 }

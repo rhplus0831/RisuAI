@@ -404,6 +404,26 @@ describe('chat history hydration failure', () => {
   })
 })
 
+describe('playground character creation reconciliation', () => {
+  it('renders the transient empty state while the first-created playground character has no local chat', async () => {
+    seedDatabase({
+      ...makeHydratedCharacter(),
+      chaId: '§playground',
+      name: 'assistant',
+      chatPage: 0,
+      chats: [],
+    })
+    shellMocks.setCurrentRoute({ kind: 'playground', path: '/playground/chat', page: 2 })
+    PlaygroundStore.set(2)
+
+    const error = tryMount()
+    await tick()
+
+    expect(error, `playground create reconciliation threw: ${String(error)}`).toBeNull()
+    expect(target.querySelector('[data-risu-chat-empty-state]')).toBeTruthy()
+  })
+})
+
 describe('generation control ownership', () => {
   it('does not expose the previous chat abort control while its stream settles', async () => {
     const stream = deferred<void>()

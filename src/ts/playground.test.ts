@@ -27,8 +27,20 @@ vi.mock('./util', () => ({
 }))
 
 vi.mock('./characters', () => ({
-  characterFormatUpdate: (character: Record<string, unknown>) => structuredClone(character),
-  createBlankChar: () => ({ chaId: 'blank', chats: [] }),
+  characterFormatUpdate: (character: Record<string, unknown>) => {
+    const formatted = structuredClone(character)
+    const chats = formatted.chats as Array<Record<string, unknown>> | undefined
+    if (!chats?.length) {
+      formatted.chats = [{ id: 'local-playground-chat', message: [], name: 'Chat 1', note: '', localLore: [] }]
+      formatted.chatPage = 0
+    }
+    return formatted
+  },
+  createBlankChar: () => ({
+    chaId: 'blank',
+    chatPage: 0,
+    chats: [{ id: 'initial-playground-chat', message: [], name: 'Chat 1', note: '', localLore: [] }],
+  }),
 }))
 
 vi.mock('./storage/database.svelte', () => ({
@@ -49,7 +61,11 @@ vi.mock('./stores.svelte', async () => {
 vi.mock('./characterCommands', () => ({
   currentCharacterSelectionSnapshot: () => ({}),
   dispatchSelectCharacter: playgroundMocks.dispatchSelectCharacter,
-  toCharacterSnapshot: (character: Record<string, unknown>) => structuredClone(character),
+  toCharacterSnapshot: (character: Record<string, unknown>) => {
+    const snapshot = structuredClone(character)
+    delete snapshot.chats
+    return snapshot
+  },
 }))
 
 vi.mock('./server/resourceWriteGuard.svelte', () => ({
@@ -117,7 +133,9 @@ beforeEach(() => {
   playgroundMocks.fetchServerCharacters.mockImplementation(async () => ({
     status: 'ok',
     revision: 11,
-    characters: playgroundState.persistedCharacter ? [structuredClone(playgroundState.persistedCharacter)] : [],
+    characters: playgroundState.persistedCharacter
+      ? [{ ...structuredClone(playgroundState.persistedCharacter), chats: [] }]
+      : [],
   }))
   playgroundMocks.applyCharactersResource.mockImplementation(
     (result: { characters: Array<Record<string, unknown>> }) => {
@@ -154,6 +172,27 @@ describe('openPlaygroundChat', () => {
     )
     expect(get(selectedCharID)).toBe(0)
     expect(get(PlaygroundStore)).toBe(2)
+  })
+
+  it('formats the reconciled first-create character with a local chat before selecting it', async () => {
+    await openPlaygroundChat()
+
+    expect(playgroundMocks.createAndSelectCharacterCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        character: expect.not.objectContaining({ chats: expect.anything() }),
+      }),
+    )
+    expect(playgroundState.database.characters[0]).toMatchObject({
+      chaId: PLAYGROUND_CHARACTER_ID,
+      chatPage: 0,
+      chats: [
+        expect.objectContaining({
+          id: 'local-playground-chat',
+          message: [],
+        }),
+      ],
+    })
+    expect(get(selectedCharID)).toBe(0)
   })
 
   it('does not refresh or select a playground character after a failed create', async () => {
