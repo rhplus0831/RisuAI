@@ -119,6 +119,7 @@ type MCPRequestOptions = {
   initMethod?: 'init' | 'none'
   id?: string | number
   requestTimeoutMs?: number
+  connectionRetryAttempted?: boolean
 }
 
 type MCPFetchOptions = {
@@ -828,6 +829,30 @@ export class MCPClient {
         })
       }
 
+      const shouldRestoreSession =
+        !options.notifications &&
+        !options.connectionRetryAttempted &&
+        initMethod !== 'init' &&
+        !!this.sessionId &&
+        response.status === 404
+      const shouldRestoreAccessToken =
+        !options.notifications &&
+        !options.connectionRetryAttempted &&
+        initMethod !== 'init' &&
+        !!this.accessToken &&
+        response.status === 401
+
+      if (shouldRestoreSession || shouldRestoreAccessToken) {
+        if (!abortController.signal.aborted) abortController.abort()
+        if (responsePromise) await responsePromise
+        await response.body?.cancel().catch(() => undefined)
+        await this.restoreRejectedConnection(shouldRestoreAccessToken)
+        return this.request(method, params, {
+          ...options,
+          connectionRetryAttempted: true,
+        })
+      }
+
       if (this.sseEndpoint && options.notifications) {
         return {
           rpc: {
@@ -869,13 +894,6 @@ export class MCPClient {
 
       if (responsePromise) {
         return responsePromise
-      }
-
-      const shouldResetSession = !!this.sessionId && response.status === 404
-      const shouldResetAccessToken = !!this.accessToken && response.status === 401 && initMethod !== 'init'
-      if (shouldResetSession || shouldResetAccessToken) {
-        this.destroy()
-        return this.request(method, params, options)
       }
 
       const contentType = response.headers.get('Content-Type') || ''
@@ -1124,6 +1142,13 @@ export class MCPClient {
     for (const sse of this.sses) sse.abortController?.abort()
     this.sseIdDone.clear()
     this.sses = []
+  }
+
+  private async restoreRejectedConnection(clearAccessToken: boolean): Promise<void> {
+    this.initialized = false
+    if (clearAccessToken) this.accessToken = null
+    this.resetSseTransport()
+    await this.handshake()
   }
 
   oauthLogin(): Promise<void> {

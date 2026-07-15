@@ -381,6 +381,63 @@ describe('MCPClient OAuth handshake retry', () => {
     expect(fetchNativeMock).toHaveBeenCalledOnce()
     expect(client.accessToken).toBe('rejected-access-token')
   })
+
+  it('refreshes an expired token, restores the handshake, and retries an active request once', async () => {
+    fetchNativeMock
+      .mockResolvedValueOnce(jsonRpcResponse({ error: 'expired' }, 401))
+      .mockResolvedValueOnce(jsonRpcResponse({ error: 'authentication required' }, 401))
+      .mockResolvedValueOnce(jsonRpcResponse(initialized.rpc))
+      .mockResolvedValueOnce(jsonRpcResponse({ result: null }, 202))
+      .mockResolvedValueOnce(jsonRpcResponse({ result: { tools: [] } }))
+
+    const client = new MCPClient('https://mcp.example/messages', { accessToken: 'expired-access-token' })
+    client.initialized = true
+    client.serverInfo = initialized.rpc.result
+    client.getRefreshToken = async () => ({ source: 'stored' })
+    client.refreshStoredAccessToken = vi.fn(async () => 'refreshed-access-token')
+
+    const result = await client.request('tools/list')
+
+    expect(result.rpc.result).toEqual({ tools: [] })
+    expect(client.refreshStoredAccessToken).toHaveBeenCalledOnce()
+    expect(fetchNativeMock).toHaveBeenCalledTimes(5)
+    expect(fetchNativeMock.mock.calls[0]?.[1]?.headers.Authorization).toBe('Bearer expired-access-token')
+    expect(fetchNativeMock.mock.calls[1]?.[1]?.headers.Authorization).toBeUndefined()
+    for (const call of fetchNativeMock.mock.calls.slice(2)) {
+      expect(call[1]?.headers.Authorization).toBe('Bearer refreshed-access-token')
+    }
+  })
+
+  it('performs a new handshake before retrying an expired session', async () => {
+    const renewedSessionResponse = new Response(JSON.stringify(initialized.rpc), {
+      status: 200,
+      headers: {
+        'content-type': 'application/json',
+        'Mcp-Session-Id': 'renewed-session',
+      },
+    })
+    fetchNativeMock
+      .mockResolvedValueOnce(jsonRpcResponse({ error: 'session expired' }, 404))
+      .mockResolvedValueOnce(renewedSessionResponse)
+      .mockResolvedValueOnce(jsonRpcResponse({ result: null }, 202))
+      .mockResolvedValueOnce(jsonRpcResponse({ result: { prompts: [] } }))
+
+    const client = new MCPClient('https://mcp.example/messages', { accessToken: 'valid-access-token' })
+    client.initialized = true
+    client.sessionId = 'expired-session'
+    client.serverInfo = initialized.rpc.result
+    const oauthLogin = vi.spyOn(client, 'oauthLogin')
+
+    const result = await client.request('prompts/list')
+
+    expect(result.rpc.result).toEqual({ prompts: [] })
+    expect(oauthLogin).not.toHaveBeenCalled()
+    expect(client.sessionId).toBe('renewed-session')
+    expect(fetchNativeMock).toHaveBeenCalledTimes(4)
+    expect(fetchNativeMock.mock.calls[0]?.[1]?.headers['Mcp-Session-Id']).toBe('expired-session')
+    expect(fetchNativeMock.mock.calls[1]?.[1]?.headers['Mcp-Session-Id']).toBeUndefined()
+    expect(fetchNativeMock.mock.calls[3]?.[1]?.headers['Mcp-Session-Id']).toBe('renewed-session')
+  })
 })
 
 describe('MCPClient deadlines and SSE listener cleanup', () => {
