@@ -98,6 +98,7 @@
 
   let typingTimeout: ReturnType<typeof setTimeout> | null = null
   let typingRun = 0
+  let dialogueEpoch = 0
 
   const atEnd = $derived(!isTyping && currentIndex >= dialogue.length - 1)
   const waitingForReply = $derived(atEnd && dialogue[dialogue.length - 1]?.speaker === 'You')
@@ -195,6 +196,8 @@
     if (!trimmed) return
     if (isUnsupportedModel) return
     pushDialogue({ speaker: 'You', text: trimmed })
+    const submittedLine = dialogue.at(-1)
+    const submittedEpoch = dialogueEpoch
     userInput = ''
 
     const history: OpenAIChat[] = [
@@ -207,7 +210,9 @@
         })),
     ]
 
-    await requestLLM(history)
+    if (submittedLine) {
+      await requestLLM(history, submittedLine, submittedEpoch)
+    }
   }
 
   function handleKey(e: KeyboardEvent) {
@@ -251,20 +256,48 @@
     )
   }
 
-  async function requestLLM(chat: OpenAIChat[]) {
-    const res = await requestChatData(
-      {
-        formated: chat,
-        bias: {},
-        tools: await new RisuAccessClient().getToolList(),
-      },
-      'otherAx',
-    )
+  function isCurrentRequest(submittedLine: DialogueLine, submittedEpoch: number) {
+    return submittedEpoch === dialogueEpoch && dialogue.includes(submittedLine)
+  }
+
+  function removeSubmittedLine(submittedLine: DialogueLine) {
+    const lineIndex = dialogue.indexOf(submittedLine)
+    if (lineIndex < 0) return
+    dialogue.splice(lineIndex, 1)
+    if (currentIndex >= dialogue.length) {
+      currentIndex = Math.max(0, dialogue.length - 1)
+      if (typingTimeout) clearTimeout(typingTimeout)
+      typingTimeout = null
+      typingRun += 1
+      displayedText = dialogue[currentIndex]?.text ?? ''
+      isTyping = false
+    }
+    saveDialogue()
+  }
+
+  async function requestLLM(chat: OpenAIChat[], submittedLine: DialogueLine, submittedEpoch: number) {
+    let res
+    try {
+      res = await requestChatData(
+        {
+          formated: chat,
+          bias: {},
+          tools: await new RisuAccessClient().getToolList(),
+        },
+        'otherAx',
+      )
+    } catch (error) {
+      if (!isCurrentRequest(submittedLine, submittedEpoch)) return
+      alertError(error)
+      removeSubmittedLine(submittedLine)
+      return
+    }
+    if (!isCurrentRequest(submittedLine, submittedEpoch)) return
     if (res.type === 'success') {
       pushDialogue({ speaker: 'Iris', text: res.result })
     } else {
       alertError('Failed to get response from LLM: ' + res.result)
-      dialogue.pop()
+      removeSubmittedLine(submittedLine)
     }
   }
 
@@ -290,6 +323,7 @@
   })
 
   onDestroy(() => {
+    dialogueEpoch += 1
     typingRun += 1
     if (typingTimeout) {
       clearTimeout(typingTimeout)
@@ -316,6 +350,7 @@
   })
 
   function resetDialogue() {
+    dialogueEpoch += 1
     dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
     currentIndex = 0
     saveDialogue()
