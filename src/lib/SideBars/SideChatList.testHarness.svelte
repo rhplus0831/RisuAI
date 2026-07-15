@@ -5,11 +5,5 @@
 </script>
 
 {#if $selectedCharID >= 0 && getDatabase().characters?.[$selectedCharID]}
-  <SideChatList
-    bind:chara={
-      () => getDatabase().characters[$selectedCharID],
-      (value) => {
-        getDatabase().characters[$selectedCharID] = value
-      }
-    } />
+  <SideChatList chara={getDatabase().characters[$selectedCharID]} />
 {/if}
