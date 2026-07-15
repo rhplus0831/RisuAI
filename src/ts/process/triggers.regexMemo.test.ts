@@ -234,4 +234,65 @@ describe('trigger-effect compiled regex memoization (L40)', () => {
     expect(run?.chat.scriptstate?.['$extracted2']).toBe('12345')
     expect(compilesAfterPass).toBe(1)
   })
+
+  it('low-level extractRegex returns an empty substitution when the regex does not match', async () => {
+    const char = characterWithTriggers(
+      [
+        {
+          comment: 'extract-no-match',
+          type: 'manual',
+          conditions: [],
+          effect: [
+            {
+              type: 'extractRegex',
+              value: 'no matching value',
+              regex: 'id=(\\d+)',
+              flags: '',
+              result: 'before-$1-$&-$$-after',
+              inputVar: 'extracted',
+            },
+          ],
+        },
+      ],
+      { lowLevelAccess: true },
+    )
+
+    const run = await runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'extract-no-match',
+      deferLiveChatSideEffects: true,
+    })
+    expect(run?.chat.scriptstate?.['$extracted']).toBe('before---$-after')
+  })
+
+  it('low-level extractRegex renders unmatched optional captures as empty text', async () => {
+    const char = characterWithTriggers(
+      [
+        {
+          comment: 'extract-optional',
+          type: 'manual',
+          conditions: [],
+          effect: [
+            {
+              type: 'extractRegex',
+              value: 'b',
+              regex: '^(a)?b$',
+              flags: '',
+              result: '<$1>|<$&>',
+              inputVar: 'extracted',
+            },
+          ],
+        },
+      ],
+      { lowLevelAccess: true },
+    )
+
+    const run = await runTrigger(char, 'manual', {
+      chat: char.chats[char.chatPage],
+      manualName: 'extract-optional',
+      deferLiveChatSideEffects: true,
+    })
+
+    expect(run?.chat.scriptstate?.['$extracted']).toBe('<>|<b>')
+  })
 })

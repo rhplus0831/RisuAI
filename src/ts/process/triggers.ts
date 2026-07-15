@@ -1946,9 +1946,9 @@ export async function runTrigger(
           const result = effect.result
             .replace(/\$[0-9]+/g, (match) => {
               const index = Number(match.slice(1))
-              return regexResult[index]
+              return regexResult?.[index] ?? ''
             })
-            .replace(/\$&/g, regexResult[0])
+            .replace(/\$&/g, regexResult?.[0] ?? '')
             .replace(/\$\$/g, '$')
 
           setVar(effect.inputVar, result)
