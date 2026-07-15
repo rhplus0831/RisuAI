@@ -476,7 +476,7 @@
       currentModule.lorebook ??= []
       submenu = 1
     }}
-    class="p2 flex-1 border-r border-darkborderc"
+    class="p-2 flex-1 border-r border-darkborderc"
     class:bg-darkbutton={submenu === 1}>
     <span>{language.loreBook}</span>
   </button>

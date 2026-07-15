@@ -82,7 +82,7 @@
       onclick={() => {
         submenu = 1
       }}
-      class="p2 flex-1 border-r border-l border-selected"
+      class="p-2 flex-1 border-r border-l border-selected"
       class:bg-selected={submenu === 1}>
       <span>{language.Chat}</span>
     </button>

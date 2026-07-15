@@ -985,7 +985,7 @@
       onclick={() => {
         viewSubMenu = 1
       }}
-      class="p2 flex-1 border-r border-l border-selected"
+      class="p-2 flex-1 border-r border-l border-selected"
       class:bg-selected={viewSubMenu === 1}>
       <span>{language.viewScreen}</span>
     </button>
