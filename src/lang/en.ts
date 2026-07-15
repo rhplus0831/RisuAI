@@ -1010,6 +1010,7 @@ export const languageEnglish = {
   textScreenBorder: 'Text Screen Borders',
   ttsReadOnlyQuoted: 'Read Only Quoted',
   ttsStop: 'Stop TTS',
+  ttsCatalogError: 'Unable to load the TTS voice catalog.',
   askRemoval: 'Ask Removal',
   replaceGlobalNote: 'Global Note Replacement',
   charLoreBook: 'Character Lorebook',

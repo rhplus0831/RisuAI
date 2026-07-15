@@ -483,11 +483,7 @@
   })
 
   async function loadFishSpeechModelsIntoEditor() {
-    try {
-      fishSpeechModels = await loadFishSpeechModels()
-    } catch {
-      fishSpeechModels = []
-    }
+    fishSpeechModels = await loadFishSpeechModels()
   }
 
   function currentEditableCharacterTarget(): { selectedIndex: number; character: character } | null {
@@ -1626,6 +1622,8 @@
             <OptionInput value={voice.voice_id}>{voice.name}</OptionInput>
           {/each}
         </SelectInput>
+      {:catch}
+        <span class="text-textcolor">{language.ttsCatalogError}</span>
       {/await}
     {:else if characterDraft.value.ttsMode === 'VOICEVOX'}
       <span class="text-textcolor">Speaker</span>
@@ -1852,7 +1850,7 @@
           {/each}
         </SelectInput>
       {:catch}
-        <span class="text-textcolor">An error occurred while fetching the models.</span>
+        <span class="text-textcolor">{language.ttsCatalogError}</span>
       {/await}
 
       <span class="text-textcolor">Chunk Length</span>

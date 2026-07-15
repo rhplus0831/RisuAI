@@ -38,6 +38,11 @@ const characterMediaMocks = vi.hoisted(() => ({
   selectCharacterAvatarImage: vi.fn(),
 }))
 
+const ttsCatalogMocks = vi.hoisted(() => ({
+  getElevenTTSVoices: vi.fn(),
+  getFishSpeechModels: vi.fn(),
+}))
+
 const serverCommandState = vi.hoisted(() => ({
   enabled: false,
   updateCharacterCalls: [] as Record<string, unknown>[],
@@ -208,8 +213,8 @@ vi.mock('src/ts/process/transformers', () => ({
 }))
 
 vi.mock('src/ts/process/tts', () => ({
-  getElevenTTSVoices: vi.fn(() => []),
-  getFishSpeechModels: vi.fn(() => []),
+  getElevenTTSVoices: ttsCatalogMocks.getElevenTTSVoices,
+  getFishSpeechModels: ttsCatalogMocks.getFishSpeechModels,
   getNovelAIVoices: vi.fn(() => []),
   getVOICEVOXVoices: vi.fn(() => []),
   getWebSpeechTTSVoices: vi.fn((synthesis?: Pick<SpeechSynthesis, 'getVoices'>) =>
@@ -422,6 +427,8 @@ beforeEach(() => {
   transformerMocks.registerOnnxModelFromFileCalls.length = 0
   transformerMocks.registerOnnxModelFromFileQueue.length = 0
   characterMediaMocks.selectCharacterAvatarImage.mockReset().mockResolvedValue(undefined)
+  ttsCatalogMocks.getElevenTTSVoices.mockReset().mockResolvedValue([])
+  ttsCatalogMocks.getFishSpeechModels.mockReset().mockResolvedValue([])
   serverCommandState.enabled = false
   serverCommandState.updateCharacterCalls.length = 0
   assetMocks.saveAsset.mockReset().mockResolvedValue('asset-id')
@@ -691,6 +698,19 @@ describe('CharConfig Web Speech voice catalog', () => {
     unmount(component as MountedComponent)
     component = undefined
     expect(removeEventListener).toHaveBeenCalledWith('voiceschanged', expect.any(Function))
+  })
+})
+
+describe('CharConfig remote TTS catalogs', () => {
+  it.each([
+    { mode: 'elevenlab', load: () => ttsCatalogMocks.getElevenTTSVoices },
+    { mode: 'fishspeech', load: () => ttsCatalogMocks.getFishSpeechModels },
+  ])('contains a $mode catalog failure instead of rejecting the settings view', async ({ mode, load }) => {
+    load().mockRejectedValueOnce(new Error('provider unavailable'))
+
+    await mountCharConfig(5, { ttsMode: mode })
+
+    expect(target.textContent).toContain('Unable to load the TTS voice catalog.')
   })
 })
 
