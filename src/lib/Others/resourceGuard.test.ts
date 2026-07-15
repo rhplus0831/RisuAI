@@ -221,7 +221,7 @@ describe('server resource guarded UI paths', () => {
     expect(getDatabase().characters[0].chats[0].hypaV3Data).toBeUndefined()
   })
 
-  it('renames bookmarks through a command patch without mutating guarded chat state', async () => {
+  it('renames bookmarks immediately while the command patch is pending', async () => {
     const calls = stubCommandFetch()
     vi.mocked(alertInput).mockResolvedValue('New name')
     bookmarkListOpen.set(true)
@@ -238,10 +238,13 @@ describe('server resource guarded UI paths', () => {
       (call) => call.url === '/api/v1/commands/chats/chat-1' && call.method === 'PATCH',
     )
     expect(command.body.patch.bookmarkNames).toEqual({ 'msg-1': 'New name' })
-    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'Old name' })
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'New name' })
+    await tick()
+    expect(target.textContent).toContain('New name')
+    expect(target.textContent).not.toContain('Old name')
   })
 
-  it('removes bookmarks through a command patch without mutating guarded chat state', async () => {
+  it('removes bookmarks immediately while the command patch is pending', async () => {
     const calls = stubCommandFetch()
     bookmarkListOpen.set(true)
     setResourceWriteGuardEnabled(true)
@@ -258,7 +261,10 @@ describe('server resource guarded UI paths', () => {
     )
     expect(command.body.patch.bookmarks).toEqual([])
     expect(command.body.patch.bookmarkNames).toEqual({})
-    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual(['msg-1'])
-    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({ 'msg-1': 'Old name' })
+    expect(getDatabase().characters[0].chats[0].bookmarks).toEqual([])
+    expect(getDatabase().characters[0].chats[0].bookmarkNames).toEqual({})
+    await tick()
+    expect(target.textContent).toContain('No Bookmarks')
+    expect(target.textContent).not.toContain('Old name')
   })
 })

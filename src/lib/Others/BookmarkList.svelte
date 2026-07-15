@@ -7,8 +7,15 @@
   import { createSimpleCharacter, bookmarkListOpen, selectedCharID, ScrollToMessageStore } from 'src/ts/stores.svelte'
   import { language } from 'src/lang'
   import { alertInput } from 'src/ts/alert'
-  import { currentChatStateSnapshot, dispatchUpdateChat } from 'src/ts/chatCommands'
+  import {
+    currentChatScopedSnapshot,
+    currentChatStateSnapshot,
+    dispatchUpdateChat,
+    dispatchUpdateChatScoped,
+  } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
+  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
+  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
 
@@ -89,22 +96,44 @@
     }
   }
 
+  function applyOptimisticBookmarkMetadata(
+    chatId: string,
+    patch: { bookmarks?: string[]; bookmarkNames?: Record<string, string> },
+  ): boolean {
+    let applied = false
+    withTrustedResourceWrite(() => {
+      const character = getDatabase().characters[$selectedCharID]
+      const liveChat = character?.chats?.find((candidate) => candidate.id === chatId)
+      if (!liveChat) return
+      if (patch.bookmarks) liveChat.bookmarks = patch.bookmarks
+      if (patch.bookmarkNames) liveChat.bookmarkNames = patch.bookmarkNames
+      applied = true
+    })
+    if (applied) syncServerBackedChatMetadataBaselines()
+    return applied
+  }
+
   async function editName(chatId: string) {
     const chat = chara.chats[chara.chatPage]
     const newName = await alertInput(language.bookmarkAskNameOrCancel, [], chat.bookmarkNames?.[chatId] || '')
     if (newName && newName.trim() !== '') {
+      if (canUseServerCommands()) {
+        if (!chat.id) return
+        const previous = currentChatScopedSnapshot()
+        if (previous.chatId !== chat.id || !previous.chat) return
+        const nextBookmarkNames = {
+          ...(previous.chat.bookmarkNames ?? {}),
+          [chatId]: newName,
+        }
+        if (!applyOptimisticBookmarkMetadata(chat.id, { bookmarkNames: nextBookmarkNames })) return
+        dispatchUpdateChatScoped(chat.id, { bookmarkNames: nextBookmarkNames }, previous)
+        return
+      }
+
       const nextBookmarkNames = {
         ...(chat.bookmarkNames ?? {}),
         [chatId]: newName,
       }
-
-      if (canUseServerCommands()) {
-        if (chat.id) {
-          dispatchUpdateChat(chat.id, { bookmarkNames: nextBookmarkNames }, currentChatStateSnapshot())
-        }
-        return
-      }
-
       chat.bookmarkNames = nextBookmarkNames
     }
   }
@@ -114,21 +143,22 @@
     const bookmarks = chat.bookmarks ?? []
     const index = bookmarks.indexOf(chatId)
     if (index > -1) {
-      const nextBookmarks = bookmarks.filter((id) => id !== chatId)
-      const nextBookmarkNames = { ...(chat.bookmarkNames ?? {}) }
-      delete nextBookmarkNames[chatId]
-
       if (canUseServerCommands()) {
-        if (chat.id) {
-          dispatchUpdateChat(
-            chat.id,
-            { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames },
-            currentChatStateSnapshot(),
-          )
-        }
+        if (!chat.id) return
+        const previous = currentChatScopedSnapshot()
+        if (previous.chatId !== chat.id || !previous.chat) return
+        const nextBookmarks = (previous.chat.bookmarks ?? []).filter((id) => id !== chatId)
+        const nextBookmarkNames = { ...(previous.chat.bookmarkNames ?? {}) }
+        delete nextBookmarkNames[chatId]
+        if (!applyOptimisticBookmarkMetadata(chat.id, { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames }))
+          return
+        dispatchUpdateChatScoped(chat.id, { bookmarks: nextBookmarks, bookmarkNames: nextBookmarkNames }, previous)
         return
       }
 
+      const nextBookmarks = bookmarks.filter((id) => id !== chatId)
+      const nextBookmarkNames = { ...(chat.bookmarkNames ?? {}) }
+      delete nextBookmarkNames[chatId]
       chat.bookmarks = nextBookmarks
       chat.bookmarkNames = nextBookmarkNames
       if (chat.id) {
