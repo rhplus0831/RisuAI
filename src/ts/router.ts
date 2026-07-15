@@ -169,10 +169,12 @@ export function installRouter(): void {
 }
 
 export function navigate(path: string, options: { replace?: boolean } = {}): void {
-  const nextRoute = parseRoute(path)
+  const requestedRoute = parseRoute(path)
+  const canonicalPath = activeGenerationOwnerPathForCharacterRoute(requestedRoute) ?? path
+  const nextRoute = canonicalPath === path ? requestedRoute : parseRoute(canonicalPath)
   if (blocksActiveCharacterGeneration(nextRoute)) return
 
-  commitPath(path, {
+  commitPath(canonicalPath, {
     replace: options.replace ?? false,
     stateDriven: false,
   })
@@ -447,6 +449,13 @@ function resolvedActiveGenerationOwner(): { characterId: string; chatId: string 
 function activeGenerationOwnerMatches(characterId: string, chatId: string | undefined): boolean {
   const owner = resolvedActiveGenerationOwner()
   return !!owner && owner.characterId === characterId && owner.chatId === chatId
+}
+
+function activeGenerationOwnerPathForCharacterRoute(route: AppRoute): string | null {
+  if (route.kind !== 'character' || route.chatId !== undefined || !get(doingChat)) return null
+  const owner = resolvedActiveGenerationOwner()
+  if (!owner?.chatId || owner.characterId !== route.chaId) return null
+  return characterRoutePath(owner.characterId, owner.chatId)
 }
 
 function blocksActiveCharacterGeneration(nextRoute: AppRoute): boolean {

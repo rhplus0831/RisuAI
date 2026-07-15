@@ -188,6 +188,30 @@ describe('router initial application', () => {
 })
 
 describe('router character route freshness', () => {
+  it('routes character-only navigation to the active generation owner chat', async () => {
+    const router = await importRouterAt('/')
+    const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')
+    activeGenerationTarget.set({
+      selectedCharID: 0,
+      chatPage: 1,
+      characterId: 'char-a',
+      chatId: 'chat-owner',
+    })
+    doingChat.set(true)
+
+    router.navigate('/character/char-a')
+
+    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'character',
+      chaId: 'char-a',
+      chatId: 'chat-owner',
+    })
+
+    router.navigate('/character/char-b')
+    expect(window.location.pathname).toBe('/character/char-a/chat-owner')
+  })
+
   it('reopens exactly the active generation owner after leaving the chat', async () => {
     const router = await importRouterAt('/settings/model')
     const stores = await import('./stores.svelte')
