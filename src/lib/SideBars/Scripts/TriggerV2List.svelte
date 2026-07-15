@@ -25,6 +25,21 @@
     lowLevelAble?: boolean
   }
 
+  type EffectDisplayColor = 'gray' | 'blue' | 'green' | 'yellow' | 'cyan'
+
+  interface EffectDisplayPart {
+    text: string
+    color?: EffectDisplayColor
+  }
+
+  interface EffectDisplay {
+    indent: number
+    isComment: boolean
+    isUnsupported: boolean
+    parts: EffectDisplayPart[]
+    plainText: string
+  }
+
   const showDeprecatedTriggerV2Draft = createServerBackedSettingDraft<boolean>('showDeprecatedTriggerV2', false)
 
   const effectCategories = {
@@ -2184,53 +2199,81 @@
     e.stopPropagation()
   }
 
-  const formatEffectDisplay = (effect: triggerEffect) => {
+  const effectDisplayPart = (effect: triggerEffect, field: string): EffectDisplayPart => {
     const type = effect.type
+    const effectRecord = effect as unknown as Record<string, unknown>
+    const value = effectRecord[field]
+
+    if (type === 'v2Comment' && field === 'value') {
+      return { color: 'gray', text: String(value || '') }
+    }
+
+    if (typeof value === 'boolean') {
+      return { color: 'blue', text: value ? 'true' : 'false' }
+    }
+
+    if (field.endsWith('Type')) {
+      return { color: 'blue', text: String(value || 'null') }
+    }
+    if (field === 'condition' || field === 'operator') {
+      return { color: 'green', text: String(value || 'null') }
+    }
+    if (effectRecord[field + 'Type'] === 'var') {
+      return { color: 'yellow', text: String(value || 'null') }
+    }
+    if (effectRecord[field + 'Type'] === 'value') {
+      return { color: 'green', text: `"${String(value)}"` }
+    }
+    if (effect.type === 'v2If' && field === 'source') {
+      return { color: 'yellow', text: String(value || 'null') }
+    }
+    if (effect.type === 'v2SetVar' && field === 'var') {
+      return { color: 'yellow', text: String(value || 'null') }
+    }
+    if (effect.type === 'v2DeclareLocalVar' && field === 'var') {
+      return { color: 'cyan', text: String(value || 'null') }
+    }
+    return { color: 'blue', text: String(value || 'null') }
+  }
+
+  const formatEffectDisplay = (effect: triggerEffect): EffectDisplay => {
+    const type = effect.type
+    const rawIndent = Number((effect as triggerEffectV2).indent)
+    const indent = Number.isFinite(rawIndent) ? rawIndent : 0
 
     if (!checkSupported(type)) {
-      return `<span class="text-red-500">${language.triggerDesc.v2UnsupportedTriggerDesc}</span>`
+      const plainText = language.triggerDesc.v2UnsupportedTriggerDesc
+      return {
+        indent,
+        isComment: false,
+        isUnsupported: true,
+        parts: [{ text: plainText }],
+        plainText,
+      }
     }
 
-    const txt = ((language.triggerDesc[type + 'Desc'] as string) || type).replace(/{{(.+?)}}/g, (match, p1) => {
-      const d = effect[p1]
+    const template = (language.triggerDesc[type + 'Desc'] as string) || type
+    const parts: EffectDisplayPart[] = []
+    const placeholderPattern = /{{(.+?)}}/g
+    let lastIndex = 0
+    let match: RegExpExecArray | null
 
-      if (type === 'v2Comment' && p1 === 'value') {
-        return `<span class="text-gray-400">${d || ''}</span>`
+    while ((match = placeholderPattern.exec(template))) {
+      if (match.index > lastIndex) {
+        parts.push({ text: template.slice(lastIndex, match.index) })
       }
-
-      if (typeof d === 'boolean') {
-        return `<span class="text-blue-500">${d ? 'true' : 'false'}</span>`
-      }
-
-      if (p1.endsWith('Type')) {
-        return `<span class="text-blue-500">${d || 'null'}</span>`
-      }
-      if (p1 === 'condition' || p1 === 'operator') {
-        return `<span class="text-green-500">${d || 'null'}</span>`
-      }
-      if (effect[p1 + 'Type'] === 'var') {
-        return `<span class="text-yellow-500">${d || 'null'}</span>`
-      }
-      if (effect[p1 + 'Type'] === 'value') {
-        return `<span class="text-green-500">"${d}"</span>`
-      }
-      if (effect.type === 'v2If' && p1 === 'source') {
-        return `<span class="text-yellow-500">${d || 'null'}</span>`
-      }
-      if (effect.type === 'v2SetVar' && p1 === 'var') {
-        return `<span class="text-yellow-500">${d || 'null'}</span>`
-      }
-      if (effect.type === 'v2DeclareLocalVar' && p1 === 'var') {
-        return `<span class="text-cyan-500">${d || 'null'}</span>`
-      }
-      return `<span class="text-blue-500">${d || 'null'}</span>`
-    })
-
-    if (type === 'v2Comment') {
-      return `<div class="text-gray-500 italic line-clamp-4" style="margin-left:${(effect as triggerEffectV2).indent}rem; word-break: break-all; overflow-wrap: break-word;">// ${txt}</div>`
+      parts.push(effectDisplayPart(effect, match[1]))
+      lastIndex = match.index + match[0].length
     }
 
-    return `<div class="text-purple-500 line-clamp-4" style="margin-left:${(effect as triggerEffectV2).indent}rem; word-break: break-all; overflow-wrap: break-word;">${txt}</div>`
+    if (lastIndex < template.length) {
+      parts.push({ text: template.slice(lastIndex) })
+    }
+
+    const isComment = type === 'v2Comment'
+    const plainText = `${isComment ? '// ' : ''}${parts.map((part) => part.text).join('')}`
+
+    return { indent, isComment, isUnsupported: false, parts, plainText }
   }
 
   const updateGuideLines = () => {
@@ -2844,7 +2887,29 @@
                     {#if effect.type === 'v2EndIndent'}
                       <div class="text-textcolor" style:margin-left={effect.indent + 'rem'}>...</div>
                     {:else}
-                      {@html formatEffectDisplay(effect)}
+                      {@const display = formatEffectDisplay(effect)}
+                      {#if display.isUnsupported}
+                        <span class="text-red-500" data-risu-trigger-effect-display="true">{display.plainText}</span>
+                      {:else}
+                        <div
+                          class="line-clamp-4"
+                          class:text-gray-500={display.isComment}
+                          class:italic={display.isComment}
+                          class:text-purple-500={!display.isComment}
+                          style:margin-left={display.indent + 'rem'}
+                          style:word-break="break-all"
+                          style:overflow-wrap="break-word"
+                          data-risu-trigger-effect-display="true">
+                          {#if display.isComment}{'// '}
+                          {/if}{#each display.parts as part}{#if part.color === 'gray'}<span class="text-gray-400"
+                                >{part.text}</span
+                              >{:else if part.color === 'blue'}<span class="text-blue-500">{part.text}</span
+                              >{:else if part.color === 'green'}<span class="text-green-500">{part.text}</span
+                              >{:else if part.color === 'yellow'}<span class="text-yellow-500">{part.text}</span
+                              >{:else if part.color === 'cyan'}<span class="text-cyan-500">{part.text}</span
+                              >{:else}{part.text}{/if}{/each}
+                        </div>
+                      {/if}
                     {/if}
                   </button>
 
@@ -2869,7 +2934,7 @@
                         e.dataTransfer?.setData('effectIndex', i.toString())
 
                         const dragElement = document.createElement('div')
-                        dragElement.textContent = formatEffectDisplay(effect).replace(/<[^>]*>/g, '') || 'Effect'
+                        dragElement.textContent = formatEffectDisplay(effect).plainText || 'Effect'
                         dragElement.className =
                           'absolute -top-96 -left-96 px-4 py-2 bg-darkbg text-textcolor2 rounded-sm text-sm whitespace-nowrap shadow-lg pointer-events-none z-50'
                         document.body.appendChild(dragElement)
