@@ -65,6 +65,7 @@ const runtimeApi = vi.hoisted(() => ({
 
 const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
+const pushApi = vi.hoisted(() => ({ reconcile: vi.fn(async () => ({ status: 'applied' })) }))
 
 interface TestCommandEvent {
   type: string
@@ -160,7 +161,9 @@ vi.mock('./model/modellist', () => ({
   getModelInfo: vi.fn(() => ({ type: 'chat' })),
   registerModelDynamic: vi.fn(),
 }))
-vi.mock('./server/pushNotifications', () => ({ enableChatCompletionPushNotifications: vi.fn() }))
+vi.mock('./server/pushNotificationSetting', () => ({
+  reconcileChatCompletionPushNotificationSetting: pushApi.reconcile,
+}))
 
 import {
   calculateServerResourceReconnectDelayMs,
@@ -332,6 +335,47 @@ describe('API-backed client bootstrap', () => {
     )
   })
 
+  it('reconciles disabled device push state after the initial settings load', async () => {
+    await loadData()
+
+    expect(pushApi.reconcile).toHaveBeenCalledTimes(2)
+    expect(pushApi.reconcile).toHaveBeenNthCalledWith(1, false)
+    expect(pushApi.reconcile).toHaveBeenNthCalledWith(2, false)
+  })
+
+  it('reconciles a notification projection received while startup is still loading', async () => {
+    let releasePlugins!: () => void
+    vi.mocked(loadPlugins).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePlugins = resolve
+        }),
+    )
+
+    const loading = loadData()
+    await vi.waitFor(() => expect(loadPlugins).toHaveBeenCalledOnce())
+    expect(get(loadedStore)).toBe(false)
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 6,
+          group: 'display',
+          settings: { notification: true },
+        },
+        ['notification'],
+      ),
+    ).toBe(true)
+    expect(pushApi.reconcile).toHaveBeenCalledTimes(1)
+    expect(pushApi.reconcile).toHaveBeenLastCalledWith(false)
+
+    releasePlugins()
+    await loading
+
+    expect(pushApi.reconcile).toHaveBeenCalledTimes(2)
+    expect(pushApi.reconcile).toHaveBeenLastCalledWith(true)
+  })
+
   it('reapplies display runtime effects after an authoritative settings projection', () => {
     expect(
       applySettingsGroupResource(
@@ -366,6 +410,25 @@ describe('API-backed client bootstrap', () => {
     expect(updateGuisize).toHaveBeenCalledOnce()
     expect(updateAnimationSpeed).toHaveBeenCalledOnce()
     expect(updateHeightMode).toHaveBeenCalledOnce()
+  })
+
+  it('reconciles device push state after an authoritative notification projection', async () => {
+    await loadData()
+    pushApi.reconcile.mockClear()
+
+    expect(
+      applySettingsGroupResource(
+        {
+          revision: 6,
+          group: 'display',
+          settings: { notification: true },
+        },
+        ['notification'],
+      ),
+    ).toBe(true)
+
+    expect(pushApi.reconcile).toHaveBeenCalledOnce()
+    expect(pushApi.reconcile).toHaveBeenCalledWith(true)
   })
 
   it('loads resource APIs, seeds the resource revision, and starts runtime services', async () => {

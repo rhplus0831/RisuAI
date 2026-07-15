@@ -3,24 +3,20 @@
   import { alertError as alertModuleError } from 'src/ts/alert'
   import { getDatabase as getModuleDatabase } from 'src/ts/storage/database.svelte'
   import { applyServerBackedSetting as applyModuleSetting } from 'src/ts/server/settingsBridge.svelte'
-  import {
-    disableChatCompletionPushNotifications,
-    enableChatCompletionPushNotifications,
-  } from 'src/ts/server/pushNotifications'
-  import { createNotificationToggleReconciler } from './notificationToggleReconciler'
+  import { reconcileChatCompletionPushNotificationSetting } from 'src/ts/server/pushNotificationSetting'
 
-  const notificationToggleReconciler = createNotificationToggleReconciler(async (enabled) => {
-    if (!enabled) {
-      await disableChatCompletionPushNotifications()
-      return
-    }
-
-    const pushResult = await enableChatCompletionPushNotifications()
-    if (pushResult.status === 'permission-denied' && getModuleDatabase().notification) {
+  async function reconcileNotificationSetting(enabled: boolean): Promise<void> {
+    const outcome = await reconcileChatCompletionPushNotificationSetting(enabled)
+    if (
+      outcome.status === 'applied' &&
+      enabled &&
+      outcome.result.status === 'permission-denied' &&
+      getModuleDatabase().notification
+    ) {
       alertModuleError(moduleLanguage.permissionDenied)
       applyModuleSetting('notification', false)
     }
-  })
+  }
 </script>
 
 <script lang="ts">
@@ -36,6 +32,6 @@
     name={language.notification}
     onChange={(nextValue) => {
       applyServerBackedSetting('notification', nextValue)
-      void notificationToggleReconciler.reconcile(nextValue)
+      void reconcileNotificationSetting(nextValue)
     }} />
 </div>

@@ -164,6 +164,7 @@ import {
 import type { Database } from '../storage/database.svelte'
 import '../stores.svelte'
 import { notifyServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
+import { setSettingsRuntimeProjectionHook } from './settingsRuntimeProjectionHooks'
 import {
   applyOnboardingServerBackedSettings,
   applyServerBackedSettingsPatch,
@@ -251,6 +252,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setSettingsRuntimeProjectionHook(null)
   vi.useRealTimers()
   ;(testDatabaseState as { db: unknown }).db = {}
 })
@@ -486,6 +488,28 @@ describe('settingsBridge coalescing', () => {
 
     expect(testDatabaseState.db.notification).toBe(false)
     expect(testDatabaseState.db.textTheme).toBe('newer local')
+  })
+
+  it('reapplies runtime effects only for setting fields actually rolled back', async () => {
+    const projectedKeys: string[][] = []
+    setSettingsRuntimeProjectionHook((keys) => projectedKeys.push([...keys]))
+    setupSettings({
+      notification: false,
+      textTheme: 'before',
+    })
+
+    applyServerBackedSettingsPatch({
+      notification: true,
+      textTheme: 'attempted',
+    })
+    await Promise.resolve()
+
+    testDatabaseState.db.textTheme = 'newer local'
+    recorded.patches[0].rollback?.()
+
+    expect(testDatabaseState.db.notification).toBe(false)
+    expect(testDatabaseState.db.textTheme).toBe('newer local')
+    expect(projectedKeys).toEqual([['notification']])
   })
 
   it('rebases a later same-key rollback after two immediate settings writes fail', async () => {

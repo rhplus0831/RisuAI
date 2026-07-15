@@ -58,7 +58,7 @@ import {
 import { setActiveMessageTranslations, startActiveMessageTranslationRefresh } from './server/messageTranslationJobs'
 import { applyServerHypaV3Progress } from './process/request/serverMemory'
 import { shouldAcceptMemoryJobUpdate } from './server/memoryJobOrdering'
-import { enableChatCompletionPushNotifications } from './server/pushNotifications'
+import { reconcileChatCompletionPushNotificationSetting } from './server/pushNotificationSetting'
 import { loadInitialServerResources, refreshInvalidatedServerResources } from './server/resourceInvalidation'
 import { forceServerResourceRefresh, serverResourceInvalidationHooks } from './server/resourceRefresh'
 import {
@@ -127,6 +127,9 @@ setSettingsRuntimeProjectionHook((keys) => {
   if (hasProjectedRuntimeKey(keys, GUI_SIZE_RUNTIME_KEYS)) updateGuisize()
   if (keys.includes('animationSpeed')) updateAnimationSpeed()
   if (keys.includes('heightMode')) updateHeightMode()
+  if (get(loadedStore) && keys.includes('notification')) {
+    void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
+  }
 })
 
 const SERVER_RESOURCE_RECONNECT_BASE_DELAY_MS = 1000
@@ -160,9 +163,7 @@ export async function loadData() {
     try {
       await loadWebInitialDatabase()
       const db = getDatabase()
-      if (db.notification === true) {
-        void enableChatCompletionPushNotifications()
-      }
+      void reconcileChatCompletionPushNotificationSetting(db.notification === true)
       LoadingStatusState.text = 'Loading Plugins...'
       try {
         await loadPlugins()
@@ -187,6 +188,7 @@ export async function loadData() {
         botMakerMode.set(true)
       }
       loadedStore.set(true)
+      void reconcileChatCompletionPushNotificationSetting(getDatabase().notification === true)
       selectedCharID.set(initialSelectedCharFromDatabase(db))
       startObserveDom()
       registerModelDynamic()

@@ -33,6 +33,7 @@ import {
 } from './resourceWriteGuard.svelte'
 import { applyAttemptedFieldRollback } from './staleStateGuards'
 import { subscribeServerCommandLocalEffectApplied } from './commandLocalEffectEvents'
+import { applySettingsRuntimeProjectionEffects } from './settingsRuntimeProjectionHooks'
 import {
   appliedLocalEffectAcknowledgesSettingDraft,
   serverSettingDraftOwnerKey,
@@ -865,18 +866,20 @@ function withSuppressedSettingsWatcher(fn: () => void): void {
 }
 
 function rollbackSettings(previous: SettingsPatch, attempted: SettingsPatch): void {
+  let runtimeProjectionKeys: string[] = []
   withTrustedResourceWrite(() => {
     const target = getDatabase() as unknown as Record<string, unknown>
     const genericPrevious: SettingsPatch = { ...previous }
     const genericAttempted: SettingsPatch = { ...attempted }
 
     rollbackHypaV3Presets(target, genericPrevious, genericAttempted)
-    applyAttemptedFieldRollback({
+    runtimeProjectionKeys = applyAttemptedFieldRollback({
       target,
       previous: genericPrevious,
       attempted: genericAttempted,
     })
   })
+  applySettingsRuntimeProjectionEffects(runtimeProjectionKeys)
 }
 
 function rollbackHypaV3Presets(
