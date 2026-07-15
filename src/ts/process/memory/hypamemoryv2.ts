@@ -7,6 +7,7 @@ import { globalFetch } from 'src/ts/globalApi.svelte'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { appendLastPath } from 'src/ts/util'
 import { isMobile } from 'src/ts/platform'
+import { getEmbeddingCacheKey } from './embeddingCacheKey'
 
 export interface HypaProcessorV2Options {
   model?: HypaModel
@@ -349,15 +350,15 @@ export class HypaProcessorV2<TMetadata> {
 
   private getCacheKey(content: string, contextTexts?: string[]): string {
     const db = getDatabase()
-    const suffix =
-      this.options.model === 'custom' && db.hypaCustomSettings?.model?.trim()
-        ? `-${db.hypaCustomSettings.model.trim()}`
-        : ''
-
     const ctxProvider = isContextModel(this.options.model) ? getContextProvider(this.options.model) : null
     const ctxSuffix = ctxProvider ? ctxProvider.getCacheKeySuffix(contextTexts) : ''
 
-    return `${content}|${this.options.model}${suffix}${ctxSuffix}`
+    return getEmbeddingCacheKey(content, {
+      model: this.options.model,
+      customEmbeddingUrl: this.options.customEmbeddingUrl,
+      customEmbeddingModel: db.hypaCustomSettings?.model,
+      contextSuffix: ctxSuffix,
+    })
   }
 
   private getOptimalChunkSize(): number {

@@ -4,6 +4,7 @@ import { runEmbedding } from '../transformers'
 import { appendLastPath } from 'src/ts/util'
 import { getDatabase } from 'src/ts/storage/database.svelte'
 import { isContextModel, getContextProvider } from './contextualEmbedding'
+import { getEmbeddingCacheKey } from './embeddingCacheKey'
 
 export type HypaModel =
   | 'custom'
@@ -160,22 +161,32 @@ export class HypaProcesser {
   }
 
   async testText(text: string) {
-    const forageResult: number[] = await this.forage.getItem(text)
+    const db = getDatabase()
+    const cacheKey = getEmbeddingCacheKey(text, {
+      model: this.model,
+      customEmbeddingUrl: this.customEmbeddingUrl,
+      customEmbeddingModel: db.hypaCustomSettings?.model,
+    })
+    const forageResult: number[] = await this.forage.getItem(cacheKey)
     if (forageResult) {
       return forageResult
     }
     const vec = (await this.embedDocuments([text]))[0]
-    await this.forage.setItem(text, vec)
+    await this.forage.setItem(cacheKey, vec)
     return vec
   }
 
   async addText(texts: string[]) {
     const db = getDatabase()
-    const suffix =
-      this.model === 'custom' && db.hypaCustomSettings?.model?.trim() ? `-${db.hypaCustomSettings.model.trim()}` : ''
+    const cacheKey = (text: string) =>
+      getEmbeddingCacheKey(text, {
+        model: this.model,
+        customEmbeddingUrl: this.customEmbeddingUrl,
+        customEmbeddingModel: db.hypaCustomSettings?.model,
+      })
 
     for (let i = 0; i < texts.length; i++) {
-      const itm: memoryVector = await this.forage.getItem(texts[i] + '|' + this.model + suffix)
+      const itm: memoryVector = await this.forage.getItem(cacheKey(texts[i]))
       if (itm) {
         itm.alreadySaved = true
         this.vectors.push(itm)
@@ -204,7 +215,7 @@ export class HypaProcesser {
     for (let i = 0; i < memoryVectors.length; i++) {
       const vec = memoryVectors[i]
       if (!vec.alreadySaved) {
-        await this.forage.setItem(texts[i] + '|' + this.model + suffix, vec)
+        await this.forage.setItem(cacheKey(texts[i]), vec)
       }
     }
 
