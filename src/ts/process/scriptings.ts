@@ -29,6 +29,7 @@ import { fetchNative, readImage } from '../globalApi.svelte'
 import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { getPersonaPrompt, getUserName, getUserIcon, parseKeyValue } from '../util'
 import { safeStructuredClone } from '../polyfill'
+import type { PyWorkerRequest, PyWorkerResponse } from './pyworker'
 let luaFactory: LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
@@ -1171,33 +1172,36 @@ export async function runScripted(
       if (ScriptingEngineState.type === 'py') {
         switch (mode) {
           case 'input': {
-            res = await ScriptingEngineState.pyodide?.python(`onInput('${accessKey}')`)
+            res = await ScriptingEngineState.pyodide?.python('onInput', [accessKey])
             break
           }
           case 'output': {
-            res = await ScriptingEngineState.pyodide?.python(`onOutput('${accessKey}')`)
+            res = await ScriptingEngineState.pyodide?.python('onOutput', [accessKey])
             break
           }
           case 'start': {
-            res = await ScriptingEngineState.pyodide?.python(`onStart('${accessKey}')`)
+            res = await ScriptingEngineState.pyodide?.python('onStart', [accessKey])
             break
           }
           case 'onButtonClick': {
-            res = await ScriptingEngineState.pyodide?.python(`onButtonClick('${accessKey}', '${data as string}')`)
+            res = await ScriptingEngineState.pyodide?.python('onButtonClick', [accessKey, data as string])
             break
           }
           case 'editRequest':
           case 'editDisplay':
           case 'editInput':
           case 'editOutput': {
-            res = await ScriptingEngineState.pyodide?.python(
-              `callListenMain('${mode}', '${accessKey}', '${JSON.stringify(data)}', '${JSON.stringify(meta)}')`,
-            )
+            res = await ScriptingEngineState.pyodide?.python('callListenMain', [
+              mode,
+              accessKey,
+              JSON.stringify(data),
+              JSON.stringify(meta),
+            ])
             res = JSON.parse(res)
             break
           }
           default: {
-            res = await ScriptingEngineState.pyodide?.python(`${mode}('${accessKey}')`)
+            res = await ScriptingEngineState.pyodide?.python(mode, [accessKey])
             break
           }
         }
@@ -1724,93 +1728,160 @@ function createLuaButtonWorkingGetVar(char: character | simpleCharacterArgument,
 }
 
 class PyodideContext {
-  worker: Worker
-  apis: Record<string, (...args: any[]) => any> = {}
-  inited: boolean = false
+  private worker: Worker
+  private apis: Record<string, (...args: any[]) => any> = {}
+  private inited = false
+  private initPromise: Promise<void> | null = null
+  private closed = false
+  private pending = new Map<
+    string,
+    {
+      resolve: (result: unknown) => void
+      reject: (error: Error) => void
+    }
+  >()
+
   constructor() {
     this.worker = new Worker(new URL('./pyworker.ts', import.meta.url), {
       type: 'module',
     })
-    this.worker.onmessage = (event: MessageEvent) => {
-      if (event.data.type === 'call') {
-        const { function: func, args, callId } = event.data
-        if (this.apis[func]) {
-          this.apis[func](...args)
-            .then((result) => {
-              this.worker.postMessage({
-                type: 'functionResult',
-                callId: callId,
-                result: result,
-              })
-            })
-            .catch((error) => {
-              this.worker.postMessage({
-                type: 'error',
-                error: error.message,
-                id: callId,
-              })
-            })
-        } else {
-          this.worker.postMessage({
-            type: 'error',
-            error: `Function ${func} not found`,
-            id: callId,
-          })
-        }
-      }
+    this.worker.onmessage = this.handleMessage
+    this.worker.onerror = (event) => {
+      event.preventDefault()
+      this.terminate(new Error(event.message || 'Python scripting worker failed.'))
+    }
+    this.worker.onmessageerror = () => {
+      this.terminate(new Error('Python scripting worker returned an unreadable message.'))
     }
   }
+
+  private error(error: unknown, fallback = 'Python scripting worker failed.'): Error {
+    if (error instanceof Error) return error
+    if (typeof error === 'string' && error) return new Error(error)
+    return new Error(fallback)
+  }
+
+  private handleMessage = (event: MessageEvent<PyWorkerResponse>) => {
+    const message = event.data
+    if (message.type === 'call') {
+      void this.handleHostCall(message)
+      return
+    }
+
+    const pending = this.pending.get(message.id)
+    if (!pending) return
+    this.pending.delete(message.id)
+    if (message.type === 'result') {
+      pending.resolve(message.result)
+    } else {
+      pending.reject(new Error(message.error))
+    }
+  }
+
+  private async handleHostCall(message: Extract<PyWorkerResponse, { type: 'call' }>) {
+    const api = this.apis[message.method]
+    if (!api) {
+      this.postHostResponse({
+        type: 'functionError',
+        callId: message.callId,
+        error: `Function ${message.method} not found`,
+      })
+      return
+    }
+
+    try {
+      const result = await Promise.resolve(api(...message.args))
+      this.postHostResponse({
+        type: 'functionResult',
+        callId: message.callId,
+        result,
+      })
+    } catch (error) {
+      this.postHostResponse({
+        type: 'functionError',
+        callId: message.callId,
+        error: this.error(error).message,
+      })
+    }
+  }
+
+  private postHostResponse(message: Extract<PyWorkerRequest, { type: 'functionResult' | 'functionError' }>) {
+    if (this.closed) return
+    try {
+      this.worker.postMessage(message)
+    } catch (error) {
+      this.terminate(this.error(error))
+    }
+  }
+
+  private request<T>(message: Extract<PyWorkerRequest, { id: string }>): Promise<T> {
+    if (this.closed) {
+      return Promise.reject(new Error('Python scripting worker is terminated.'))
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      this.pending.set(message.id, {
+        resolve: (result) => resolve(result as T),
+        reject,
+      })
+      try {
+        this.worker.postMessage(message)
+      } catch (error) {
+        this.terminate(this.error(error))
+      }
+    })
+  }
+
   declareAPI(name: string, func: (...args: any[]) => any) {
     this.apis[name] = func
   }
+
   async init(code: string) {
     if (this.inited) {
       return
     }
-    const id = crypto.randomUUID()
-    return new Promise<void>((resolve, reject) => {
-      this.worker.onmessage = (event: MessageEvent) => {
-        if (event.data.id !== id) {
-          return
-        }
+    this.initPromise ??= this.request({
+      type: 'init',
+      code,
+      id: crypto.randomUUID(),
+      moduleFunctions: Object.keys(this.apis),
+    }).then(() => {
+      this.inited = true
+    })
+    try {
+      await this.initPromise
+    } finally {
+      this.initPromise = null
+    }
+  }
 
-        if (event.data.type === 'init') {
-          this.inited = true
-          resolve()
-        } else if (event.data.type === 'error') {
-          reject(new Error(event.data.error))
-        }
-      }
-      this.worker.postMessage({
-        type: 'init',
-        code: code,
-        id: id,
-        moduleFunctions: Object.keys(this.apis),
-      })
+  async python(method: string, args: unknown[] = []) {
+    return this.request({
+      type: 'python',
+      method,
+      args,
+      id: crypto.randomUUID(),
     })
   }
-  async python(call: string) {
-    const id = crypto.randomUUID()
-    return new Promise<any>((resolve, reject) => {
-      this.worker.onmessage = (event: MessageEvent) => {
-        if (event.data.id !== id) {
-          return
-        }
 
-        if (event.data.type === 'python') {
-          resolve(event.data.call)
-        } else if (event.data.type === 'error') {
-          reject(new Error(event.data.error))
-        }
+  private terminate(error: Error) {
+    if (this.closed) return
+    this.closed = true
+    this.worker.onmessage = null
+    this.worker.onerror = null
+    this.worker.onmessageerror = null
+    try {
+      this.worker.terminate()
+    } finally {
+      const pending = Array.from(this.pending.values())
+      this.pending.clear()
+      for (const request of pending) {
+        request.reject(error)
       }
-      this.worker.postMessage({
-        type: 'python',
-        call: call,
-        id: id,
-      })
-    })
+    }
   }
+
   close() {
-    this.worker.terminate()
+    this.terminate(new Error('Python scripting worker is terminated.'))
   }
 }

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Chat, character } from '../storage/database.svelte'
+import type { PyWorkerRequest, PyWorkerResponse } from './pyworker'
 
 const luaMock = vi.hoisted(() => {
   let nextEngineId = 0
@@ -213,6 +214,54 @@ function makeCharacter(chat: Chat): character {
     globalLore: [],
     type: 'character',
   } as unknown as character
+}
+
+class FakePythonWorker {
+  static instances: FakePythonWorker[] = []
+  static onPostMessage: (worker: FakePythonWorker, message: PyWorkerRequest) => void = () => {}
+
+  onmessage: ((event: MessageEvent<PyWorkerResponse>) => void) | null = null
+  onerror: ((event: ErrorEvent) => void) | null = null
+  onmessageerror: ((event: MessageEvent) => void) | null = null
+  readonly messages: PyWorkerRequest[] = []
+  readonly terminate = vi.fn()
+
+  constructor() {
+    FakePythonWorker.instances.push(this)
+  }
+
+  postMessage(message: PyWorkerRequest) {
+    this.messages.push(message)
+    FakePythonWorker.onPostMessage(this, message)
+  }
+
+  respond(message: PyWorkerResponse) {
+    queueMicrotask(() => {
+      this.onmessage?.({ data: message } as MessageEvent<PyWorkerResponse>)
+    })
+  }
+
+  static reset() {
+    FakePythonWorker.instances = []
+    FakePythonWorker.onPostMessage = () => {}
+  }
+}
+
+async function waitForFakePythonWorker(): Promise<FakePythonWorker> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (FakePythonWorker.instances[0]) return FakePythonWorker.instances[0]
+    await Promise.resolve()
+  }
+  throw new Error('Python run did not create a worker')
+}
+
+async function waitForPythonRequest(worker: FakePythonWorker, type: PyWorkerRequest['type']): Promise<PyWorkerRequest> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const message = worker.messages.find((candidate) => candidate.type === type)
+    if (message) return message
+    await Promise.resolve()
+  }
+  throw new Error(`Python worker did not receive ${type}`)
 }
 
 beforeEach(() => {
@@ -491,37 +540,142 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
 
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
   })
+})
 
-  it('L41: Python editDisplay rejection cleans up access key', async () => {
-    class RejectingWorker {
-      onmessage: ((event: MessageEvent) => void) | null = null
-      postMessage(message: { id: string; type: string }) {
-        queueMicrotask(() => {
-          if (message.type === 'init') {
-            this.onmessage?.({ data: { id: message.id, type: 'init' } } as MessageEvent)
-            return
-          }
-          this.onmessage?.({
-            data: { id: message.id, type: 'error', error: 'python failed' },
-          } as MessageEvent)
-        })
+describe('client Python worker protocol', () => {
+  beforeEach(() => {
+    FakePythonWorker.reset()
+    vi.stubGlobal('Worker', FakePythonWorker)
+  })
+
+  it('multiplexes init and a successful structured Python call through one dispatcher', async () => {
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: { version: 'test' } })
+      } else if (message.type === 'python') {
+        worker.respond({ type: 'result', id: message.id, result: message.args[2] })
       }
-      terminate() {}
     }
-    vi.stubGlobal('Worker', RejectingWorker)
     const chat = makeChat()
     const char = makeCharacter(chat)
 
-    await expect(
-      runScripted('def callListenMain(*args): return "{}"', {
-        char,
-        chat,
-        mode: 'editDisplay',
-        type: 'py',
-        data: 'body',
-      }),
-    ).rejects.toThrow('python failed')
+    const result = await runScripted('def callListenMain(*args): return args[2]', {
+      char,
+      chat,
+      mode: 'editDisplay',
+      type: 'py',
+      data: 'body',
+    })
 
-    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
+    expect(result.res).toBe('body')
+    const worker = FakePythonWorker.instances[0]
+    expect(worker.messages.filter((message) => message.type === 'init')).toHaveLength(1)
+    expect(worker.messages.find((message) => message.type === 'python')).toEqual(
+      expect.objectContaining({
+        type: 'python',
+        method: 'callListenMain',
+        args: ['editDisplay', expect.any(String), JSON.stringify('body'), JSON.stringify({})],
+      }),
+    )
+  })
+
+  it('resolves synchronous host APIs called while a Python request is pending', async () => {
+    let pythonRequest: Extract<PyWorkerRequest, { type: 'python' }> | undefined
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      } else if (message.type === 'python') {
+        pythonRequest = message
+        worker.respond({
+          type: 'call',
+          callId: 'sync-host-call',
+          method: 'getChatLength',
+          args: [message.args[0]],
+        })
+      } else if (message.type === 'functionResult' && pythonRequest) {
+        worker.respond({ type: 'result', id: pythonRequest.id, result: message.result })
+      }
+    }
+    const chat = makeChat()
+    chat.message = [
+      { role: 'user', data: 'one' },
+      { role: 'char', data: 'two' },
+    ] as Chat['message']
+
+    const result = await runScripted('def getChatLength(*args): return getChatLength(*args)', {
+      char: makeCharacter(chat),
+      chat,
+      mode: 'getChatLength',
+      type: 'py',
+    })
+
+    expect(result.res).toBe(2)
+    expect(FakePythonWorker.instances[0].messages).toContainEqual({
+      type: 'functionResult',
+      callId: 'sync-host-call',
+      result: 2,
+    })
+  })
+
+  it('returns host API failures to Python and rejects the pending run', async () => {
+    let pythonRequest: Extract<PyWorkerRequest, { type: 'python' }> | undefined
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      } else if (message.type === 'python') {
+        pythonRequest = message
+        worker.respond({
+          type: 'call',
+          callId: 'failed-host-call',
+          method: 'getChatVar',
+          args: [message.args[0], 'broken'],
+        })
+      } else if (message.type === 'functionError' && pythonRequest) {
+        worker.respond({ type: 'error', id: pythonRequest.id, error: message.error })
+      }
+    }
+    const chat = makeChat()
+
+    await expect(
+      runScripted('def hostFailure(*args): return getChatVar(*args)', {
+        char: makeCharacter(chat),
+        chat,
+        mode: 'hostFailure',
+        type: 'py',
+        getVar: () => {
+          throw new Error('host API failed')
+        },
+      }),
+    ).rejects.toThrow('host API failed')
+
+    expect(FakePythonWorker.instances[0].messages).toContainEqual({
+      type: 'functionError',
+      callId: 'failed-host-call',
+      error: 'host API failed',
+    })
+    expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.safe).toBe(0)
+  })
+
+  it('rejects pending Python work when its cached context is terminated', async () => {
+    FakePythonWorker.onPostMessage = (worker, message) => {
+      if (message.type === 'init') {
+        worker.respond({ type: 'result', id: message.id, result: null })
+      }
+    }
+    const chat = makeChat()
+    const run = runScripted('def pendingRun(*args): return None', {
+      char: makeCharacter(chat),
+      chat,
+      mode: 'pendingRun',
+      type: 'py',
+    })
+    const rejection = expect(run).rejects.toThrow('Python scripting worker is terminated.')
+    const worker = await waitForFakePythonWorker()
+    await waitForPythonRequest(worker, 'python')
+
+    resetScriptingEngineCacheForTests()
+
+    await rejection
+    expect(worker.terminate).toHaveBeenCalledOnce()
   })
 })
