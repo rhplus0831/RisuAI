@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { language } from 'src/lang'
   import { encodeMultilangString, languageCodes, parseMultilangString, toLangName } from 'src/ts/util'
   import { untrack } from 'svelte'
   import TextAreaInput from './TextAreaInput.svelte'
@@ -74,6 +75,7 @@
   {#each Object.keys(valueObject) as lang}
     {#if lang !== 'xx'}
       <button
+        aria-pressed={selectedLang === lang}
         class="bg-bgcolor py-2 rounded-lg px-4"
         class:ring-1={selectedLang === lang}
         onclick={() => {
@@ -83,6 +85,8 @@
     {/if}
   {/each}
   <button
+    aria-label={language.add}
+    aria-expanded={addingLang}
     class="text-nowrap bg-bgcolor py-2 rounded-lg px-4"
     class:ring-1={addingLang}
     onclick={() => {

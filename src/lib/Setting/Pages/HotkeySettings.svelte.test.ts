@@ -69,6 +69,15 @@ afterEach(() => {
 })
 
 describe('HotkeySettings recorder keyboard behavior', () => {
+  it('announces the selected modifier keys', () => {
+    const buttons = Array.from(target.querySelectorAll('button'))
+    expect(buttons.map((button) => [button.textContent?.trim(), button.getAttribute('aria-pressed')])).toEqual([
+      ['Ctrl', 'true'],
+      ['Shift', 'false'],
+      ['Alt', 'true'],
+    ])
+  })
+
   it('updates the layout when the viewport crosses the mobile breakpoint', async () => {
     expect(target.querySelector('table')).toBeTruthy()
 

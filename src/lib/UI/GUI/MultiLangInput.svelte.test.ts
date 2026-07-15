@@ -68,6 +68,8 @@ describe('MultiLangInput external value changes', () => {
 
     languageButton('fr').click()
     await tick()
+    expect(languageButton('fr').getAttribute('aria-pressed')).toBe('true')
+    expect(languageButton('en').getAttribute('aria-pressed')).toBe('false')
     expect(textarea().value).toBe('Note française')
 
     component.switchValue('Legacy creator note')

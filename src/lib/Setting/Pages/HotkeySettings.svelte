@@ -49,6 +49,7 @@
           <td>{language.hotkeyDesc[hotkey.action]}</td>
           <td>
             <button
+              aria-pressed={hotkey.ctrl}
               class:text-textcolor={hotkey.ctrl}
               class:text-textcolor2={!hotkey.ctrl}
               onclick={() => {
@@ -59,6 +60,7 @@
           </td>
           <td>
             <button
+              aria-pressed={hotkey.shift}
               class:text-textcolor={hotkey.shift}
               class:text-textcolor2={!hotkey.shift}
               onclick={() => {
@@ -69,6 +71,7 @@
           </td>
           <td>
             <button
+              aria-pressed={hotkey.alt}
               class:text-textcolor={hotkey.alt}
               class:text-textcolor2={!hotkey.alt}
               onclick={() => {

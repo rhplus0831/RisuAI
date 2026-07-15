@@ -41,6 +41,7 @@
     {#if sortedLangs.priority}
       {#if sortedLangs.priority !== 'xx' || Object.keys(valueObject).length === 1}
         <button
+          aria-pressed={selectedLang === sortedLangs.priority}
           class="bg-bgcolor py-2 rounded-lg px-4"
           class:ring-1={selectedLang === sortedLangs.priority}
           onclick={(e) => {
@@ -55,6 +56,7 @@
     {#each sortedLangs.rest as lang}
       {#if lang !== 'xx' || Object.keys(valueObject).length === 1}
         <button
+          aria-pressed={selectedLang === lang}
           class="bg-bgcolor py-2 rounded-lg px-4"
           class:ring-1={selectedLang === lang}
           onclick={(e) => {
