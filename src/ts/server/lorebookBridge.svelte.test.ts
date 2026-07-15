@@ -98,6 +98,7 @@ import {
   currentLorebookEntryScopedSnapshot,
   currentLorebookStateSnapshot,
   deleteGlobalLorebook,
+  deleteGlobalLorebookById,
   dispatchCreateGlobalLorebook,
   dispatchDeleteGlobalLorebook,
   dispatchReorderGlobalLorebooks,
@@ -119,6 +120,7 @@ import {
   restoreLorebookEntryState,
   restoreLorebookState,
   renameGlobalLorebook,
+  renameGlobalLorebookById,
   scopedLorebookStateSnapshot,
   selectGlobalLorebook,
   setActiveChatLorebookLocalActivation,
@@ -846,8 +848,8 @@ describe('global lorebook modal bridge helpers', () => {
     expect(source).not.toContain('dispatchCreateGlobalLorebook')
     expect(source).not.toContain('dispatchDeleteGlobalLorebook')
     expect(source).toContain('createGlobalLorebook()')
-    expect(source).toContain('renameGlobalLorebook(ind, value)')
-    expect(source).toContain('deleteGlobalLorebook(ind)')
+    expect(source).toContain('renameGlobalLorebookById(lorebookId, value)')
+    expect(source).toContain('deleteGlobalLorebookById(lorebookId)')
   })
 
   it('creates a global lorebook, dispatches create, and rolls back to the previous list', async () => {
@@ -1002,6 +1004,51 @@ describe('global lorebook modal bridge helpers', () => {
     deletes[0].rollback?.()
     expect(globalLorebookIds()).toEqual(['g1', 'g2'])
     expect(getDatabase().loreBookPage).toBe(1)
+  })
+
+  it('deletes a global lorebook by stable id after the live list reorders', async () => {
+    setupGlobalLorebooks([
+      { id: 'g1', name: 'Initial', data: [] },
+      { id: 'g2', name: 'Second', data: [] },
+      { id: 'g3', name: 'Third', data: [] },
+    ])
+    getDatabase().loreBook = [getDatabase().loreBook[2], getDatabase().loreBook[0], getDatabase().loreBook[1]]
+
+    expect(deleteGlobalLorebookById('g2')).toBe(true)
+    await flushServerCommandRecording()
+
+    expect(globalLorebookIds()).toEqual(['g3', 'g1'])
+    expect(globalDeleteCommands()).toHaveLength(1)
+    expect(globalDeleteCommands()[0].a).toMatchObject({ lorebookId: 'g2' })
+  })
+
+  it('aborts a stable-id global lorebook delete when the target vanished', async () => {
+    setupGlobalLorebooks([
+      { id: 'g1', name: 'Initial', data: [] },
+      { id: 'g2', name: 'Second', data: [] },
+    ])
+    getDatabase().loreBook = [getDatabase().loreBook[0]]
+
+    expect(deleteGlobalLorebookById('g2')).toBe(false)
+    await flushServerCommandRecording()
+
+    expect(globalLorebookIds()).toEqual(['g1'])
+    expect(globalDeleteCommands()).toHaveLength(0)
+  })
+
+  it('aborts stable-id global lorebook mutations when the id is duplicated', async () => {
+    setupGlobalLorebooks([
+      { id: 'duplicate', name: 'First', data: [] },
+      { id: 'duplicate', name: 'Second', data: [] },
+      { id: 'g3', name: 'Third', data: [] },
+    ])
+
+    expect(renameGlobalLorebookById('duplicate', 'Wrong target')).toBe(false)
+    expect(deleteGlobalLorebookById('duplicate')).toBe(false)
+    await flushServerCommandRecording()
+
+    expect(getDatabase().loreBook.map((book) => book.name)).toEqual(['First', 'Second', 'Third'])
+    expect(globalDeleteCommands()).toHaveLength(0)
   })
 
   it('failed delete reinserts only a still-missing row and preserves newer rows', async () => {

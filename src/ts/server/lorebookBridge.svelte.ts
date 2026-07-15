@@ -925,6 +925,11 @@ export function renameGlobalLorebook(index: number, name: string): boolean {
   return true
 }
 
+export function renameGlobalLorebookById(lorebookId: string, name: string): boolean {
+  const index = uniqueGlobalLorebookIndexById(lorebookId)
+  return index >= 0 ? renameGlobalLorebook(index, name) : false
+}
+
 export function deleteGlobalLorebook(index: number): boolean {
   const loreBooks = (getDatabase().loreBook ?? []) as GlobalLorebook[]
   if (loreBooks.length <= 1 || !loreBooks[index]) return false
@@ -943,6 +948,11 @@ export function deleteGlobalLorebook(index: number): boolean {
   })
 
   return true
+}
+
+export function deleteGlobalLorebookById(lorebookId: string): boolean {
+  const index = uniqueGlobalLorebookIndexById(lorebookId)
+  return index >= 0 ? deleteGlobalLorebook(index) : false
 }
 
 // Global-lorebook list operations roll back only the attempted row/order/page
@@ -2572,6 +2582,19 @@ function currentSelectedGlobalLorebookId(): string | null {
 
 function stableGlobalLorebookId(value: unknown): string | null {
   return isStableCommandId(value) ? value : null
+}
+
+function uniqueGlobalLorebookIndexById(lorebookId: string): number {
+  const stableId = stableGlobalLorebookId(lorebookId)
+  if (!stableId) return -1
+
+  let foundIndex = -1
+  for (const [index, lorebook] of ((getDatabase().loreBook ?? []) as GlobalLorebook[]).entries()) {
+    if (lorebook.id !== stableId) continue
+    if (foundIndex >= 0) return -1
+    foundIndex = index
+  }
+  return foundIndex
 }
 
 function globalLorebookKey(lorebook: GlobalLorebook): string | null {

@@ -8,13 +8,28 @@
   import {
     createGlobalLorebook,
     deleteGlobalLorebook,
+    deleteGlobalLorebookById,
     renameGlobalLorebook,
+    renameGlobalLorebookById,
     selectGlobalLorebook,
     watchServerBackedLorebooks,
   } from 'src/ts/server/lorebookBridge.svelte'
   let editMode = $state(false)
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
+
+  /** @param {unknown} value */
+  function stableLorebookId(value) {
+    return typeof value === 'string' && value.trim() ? value : null
+  }
+
+  /** @param {{id?: unknown}} lorebook */
+  function lorebookRenderKey(lorebook) {
+    const lorebookId = stableLorebookId(lorebook.id)
+    if (!lorebookId) return lorebook
+    const matches = getDatabase().loreBook.filter((candidate) => candidate.id === lorebookId)
+    return matches.length === 1 ? lorebookId : lorebook
+  }
 
   $effect(() => {
     // This modal only edits the global lorebook list, so scope change detection
@@ -37,13 +52,23 @@
         </button>
       </div>
     </div>
-    {#each getDatabase().loreBook as lore, ind}
+    {#each getDatabase().loreBook as lore, ind (lorebookRenderKey(lore))}
       <div
         class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
         class:bg-selected={ind === getDatabase().loreBookPage}>
         {#if editMode}
           <TextInput
-            bind:value={() => getDatabase().loreBook[ind].name, (value) => renameGlobalLorebook(ind, value)}
+            bind:value={
+              () => lore.name,
+              (value) => {
+                const lorebookId = stableLorebookId(lore.id)
+                if (lorebookId) {
+                  renameGlobalLorebookById(lorebookId, value)
+                } else if (getDatabase().loreBook[ind] === lore) {
+                  renameGlobalLorebook(ind, value)
+                }
+              }
+            }
             placeholder="string"
             padding={false} />
         {:else}
@@ -58,9 +83,15 @@
               if (getDatabase().loreBook.length === 1) {
                 return
               }
+              const lorebookId = stableLorebookId(lore.id)
+              const lorebookReference = lore
               const d = await alertConfirm(`${language.removeConfirm}${lore.name}`)
               if (d) {
-                deleteGlobalLorebook(ind)
+                if (lorebookId) {
+                  deleteGlobalLorebookById(lorebookId)
+                } else if (getDatabase().loreBook[ind] === lorebookReference) {
+                  deleteGlobalLorebook(ind)
+                }
               }
             }}>
             <TrashIcon size={18} />
