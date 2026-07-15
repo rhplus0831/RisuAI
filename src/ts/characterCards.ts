@@ -65,6 +65,7 @@ import {
 } from './server/realmImport'
 import { refreshServerRealmImportResources } from './server/resourceRefresh'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
+import { sanitizeHubAdditionalHtml } from './hubAdditionalHtml'
 
 export const hubURL = '/api/v1/hub'
 
@@ -1755,7 +1756,9 @@ export async function getRisuHub(arg: {
     if (Array.isArray(jso)) {
       return jso
     }
-    hubAdditionalHTML = jso.additionalHTML || hubAdditionalHTML
+    if (typeof jso.additionalHTML === 'string' && jso.additionalHTML.length > 0) {
+      hubAdditionalHTML = sanitizeHubAdditionalHtml(jso.additionalHTML)
+    }
     return jso.cards
   } catch (error) {
     return []

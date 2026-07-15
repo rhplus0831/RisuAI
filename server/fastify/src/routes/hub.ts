@@ -85,6 +85,18 @@ function resolveUpstreamUrl(req: FastifyRequest, hubUrl: string): string {
   return hubUrl + (suffix.length > 0 ? suffix : '/')
 }
 
+export function resolveHubRedirectUrl(location: string, upstreamUrl: string, hubOrigin: string): string | null {
+  try {
+    const redirectUrl = new URL(location, upstreamUrl)
+    if ((redirectUrl.protocol !== 'http:' && redirectUrl.protocol !== 'https:') || redirectUrl.origin !== hubOrigin) {
+      return null
+    }
+    return redirectUrl.href
+  } catch {
+    return null
+  }
+}
+
 interface HubAbort {
   signal: AbortSignal
   timedOut(): boolean
@@ -237,7 +249,17 @@ export function registerHubRoutes(app: FastifyInstance, authState: AuthState, hu
                 error: 'Hub request redirects with bodies are not replayed',
               }
             }
-            await forwardOnce(reply, first.location, req.method, headers, undefined, abort.signal, false)
+            // The initial target is either the configured Hub or an explicitly
+            // authenticated complete-URL override. Pin the one allowed redirect
+            // to that already-authorized target's origin.
+            const redirectUrl = resolveHubRedirectUrl(first.location, upstreamUrl, new URL(upstreamUrl).origin)
+            if (!redirectUrl) {
+              reply.code(502)
+              return {
+                error: 'Hub redirect target is not allowed',
+              }
+            }
+            await forwardOnce(reply, redirectUrl, req.method, headers, undefined, abort.signal, false)
           }
         } catch (err) {
           if (isAbortError(err, abort.signal)) {

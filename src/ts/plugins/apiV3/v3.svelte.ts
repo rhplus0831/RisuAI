@@ -739,8 +739,8 @@ const unloadV3Plugin = async (pluginName: string) => {
   await unloadV3PluginInstance(instance)
 }
 
-const permissionGivenPlugins: Set<string> = new Set()
-const permissionDeniedPlugins: Set<string> = new Set()
+const grantedPluginPermissions = new Set<string>()
+const deniedPluginPermissions = new Set<string>()
 const permissionForage = localforage.createInstance({
   name: 'plugin_permissions',
   storeName: 'plugin_permissions',
@@ -867,15 +867,7 @@ const getPluginPermission = async (
   permissionDesc: 'fetchLogs' | 'db' | 'mainDom' | 'replacer' | 'provider' | 'sendChat',
   reconfirm: boolean | 'periodically' = false,
 ) => {
-  if (permissionGivenPlugins.has(pluginName)) {
-    return true
-  }
-  if (permissionDeniedPlugins.has(pluginName)) {
-    return false
-  }
-
-  let pluginHash = ''
-
+  const permissionKey = `${pluginName}\u0000${permissionDesc}`
   let requiresReconfirm = false
 
   if (reconfirm === 'periodically') {
@@ -889,12 +881,19 @@ const getPluginPermission = async (
     requiresReconfirm = true
   }
 
-  pluginHash =
+  if (!requiresReconfirm && grantedPluginPermissions.has(permissionKey)) {
+    return true
+  }
+  if (deniedPluginPermissions.has(permissionKey)) {
+    return false
+  }
+
+  const pluginHash =
     (await hasher(new TextEncoder().encode(getDatabase().plugins.find((p) => p.name === pluginName)?.script))) +
     `_${permissionDesc}`
 
   if (!requiresReconfirm && (await permissionForage.getItem(pluginHash))) {
-    permissionGivenPlugins.add(pluginName)
+    grantedPluginPermissions.add(permissionKey)
     return true
   }
 
@@ -917,14 +916,16 @@ const getPluginPermission = async (
   }
   const conf = await alertConfirm(alertTitle)
   if (conf && pluginHash) {
-    permissionGivenPlugins.add(pluginName)
+    deniedPluginPermissions.delete(permissionKey)
+    grantedPluginPermissions.add(permissionKey)
     await permissionForage.setItem(pluginHash, true)
     if (reconfirm === 'periodically') {
       await permissionForage.setItem(pluginName + '_' + permissionDesc + '_lastGrantTime', Date.now())
     }
     return true
   }
-  permissionDeniedPlugins.add(pluginName)
+  grantedPluginPermissions.delete(permissionKey)
+  deniedPluginPermissions.add(permissionKey)
   return false
 }
 
@@ -1028,8 +1029,11 @@ const makeRisuaiAPIV3 = (
       )
       const handler = async (arg: PluginV2ProviderArgument, abortSignal?: AbortSignal) => {
         assertV3InstanceCurrent(instance)
-        await getPluginPermission(plugin.name, 'provider', 'periodically')
+        const conf = await getPluginPermission(plugin.name, 'provider', 'periodically')
         assertV3InstanceCurrent(instance)
+        if (!conf) {
+          return { success: false, content: language.permissionDenied }
+        }
         // Force v3 mode for plugin provider isolation.
         arg.mode = 'v3'
         return await func(arg, abortSignal)
@@ -1838,6 +1842,8 @@ export const __v3PluginLifecycleTestHooks = {
     bodyIntercepterStore.splice(0, bodyIntercepterStore.length)
     pluginV2.providers.clear()
     pluginV2.providerOptions.clear()
+    grantedPluginPermissions.clear()
+    deniedPluginPermissions.clear()
     syncCustomProviderStoreFromMap()
   },
   createLifecycle() {
@@ -1880,6 +1886,7 @@ export const __v3PluginLifecycleTestHooks = {
   beginGeneration() {
     return beginV3Generation()
   },
+  getPluginPermission,
   unloadInstance(instance: V3PluginInstance) {
     return unloadV3PluginInstance(instance)
   },

@@ -50,6 +50,17 @@ const mockPluginMCP = vi.hoisted(() => ({
   unregisterMCPModule: vi.fn(),
 }))
 
+const mockPermissionForage = vi.hoisted(() => {
+  const values = new Map<string, unknown>()
+  return {
+    values,
+    getItem: vi.fn(async (key: string) => values.get(key) ?? null),
+    setItem: vi.fn(async (key: string, value: unknown) => {
+      values.set(key, value)
+    }),
+  }
+})
+
 vi.mock('../plugins.svelte', () => ({
   allowedDbKeys: [],
   customProviderStore: mockCustomProviderStore,
@@ -197,6 +208,7 @@ vi.mock('src/lang', () => ({
     replacerPermissionConsent: '{}',
     providerPermissionConsent: '{}',
     sendChatConsent: '{}',
+    permissionDenied: 'Permission denied',
   },
 }))
 
@@ -219,15 +231,12 @@ vi.mock('src/ts/translator/translator', () => ({
 }))
 
 vi.mock('src/ts/parser/parser.svelte', () => ({
-  hasher: vi.fn(async () => 'hash'),
+  hasher: vi.fn(async (value: Uint8Array) => `hash:${new TextDecoder().decode(value)}`),
 }))
 
 vi.mock('localforage', () => ({
   default: {
-    createInstance: () => ({
-      getItem: vi.fn(async () => null),
-      setItem: vi.fn(async () => undefined),
-    }),
+    createInstance: () => mockPermissionForage,
   },
 }))
 
@@ -256,6 +265,7 @@ vi.mock('src/ts/server/resourceWriteGuard.svelte', () => ({
 }))
 
 import { customProviderStore, pluginV2 } from '../plugins.svelte'
+import { alertConfirm } from 'src/ts/alert'
 import { prepareCompatibleCharacterUpdateScoped } from 'src/ts/characterCommands'
 import { additionalFloatingActionButtons } from 'src/ts/stores.svelte'
 import { patchServerBackedSettings } from 'src/ts/server/commands'
@@ -318,6 +328,11 @@ beforeEach(async () => {
   vi.mocked(updateTextThemeAndCSS).mockReset()
   vi.mocked(registerMCPModule).mockReset()
   vi.mocked(unregisterMCPModule).mockReset()
+  vi.mocked(alertConfirm).mockReset()
+  vi.mocked(alertConfirm).mockResolvedValue(true)
+  mockPermissionForage.values.clear()
+  mockPermissionForage.getItem.mockClear()
+  mockPermissionForage.setItem.mockClear()
   await __v3PluginLifecycleTestHooks.reset()
 })
 
@@ -588,6 +603,103 @@ describe('V3 plugin settings rollback', () => {
     expect((mockDbState.db as any).textTheme).toBe('standard')
     expect(updateColorScheme).not.toHaveBeenCalled()
     expect(updateTextThemeAndCSS).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('V3 plugin permissions', () => {
+  it('does not reuse a granted capability for another capability from the same plugin', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(true).mockResolvedValueOnce(false)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'mainDom')).resolves.toBe(false)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'mainDom')).resolves.toBe(false)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not reuse a denied capability for another capability from the same plugin', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(false)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'mainDom')).resolves.toBe(true)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(false)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'mainDom')).resolves.toBe(true)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps decisions for the same capability independent between plugins', async () => {
+    const pluginA = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    const pluginB = { ...seedV3Plugin('plugin-b'), script: 'script-b' }
+    mockDbState.db.plugins = [pluginA, pluginB]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(pluginA.name, 'db')).resolves.toBe(false)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(pluginB.name, 'db')).resolves.toBe(true)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('continues to honor persisted script-hash grants without prompting', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    mockPermissionForage.values.set('hash:script-a_db', true)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
+
+    expect(alertConfirm).not.toHaveBeenCalled()
+  })
+
+  it('bypasses an in-memory grant when explicit reconfirmation is requested', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db')).resolves.toBe(true)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db', true)).resolves.toBe(true)
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('reconfirms a periodic capability after its grant expires', async () => {
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000)
+
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db', 'periodically')).resolves.toBe(
+      true,
+    )
+    now.mockReturnValue(1_001)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db', 'periodically')).resolves.toBe(
+      true,
+    )
+    now.mockReturnValue(1_000 + 3 * 24 * 60 * 60 * 1_000 + 1)
+    await expect(__v3PluginLifecycleTestHooks.getPluginPermission(plugin.name, 'db', 'periodically')).resolves.toBe(
+      true,
+    )
+
+    expect(alertConfirm).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns a failed provider result without invoking plugin code when permission is denied', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const plugin = { ...seedV3Plugin('plugin-a'), script: 'script-a' }
+    mockDbState.db.plugins = [plugin]
+    vi.mocked(alertConfirm).mockResolvedValueOnce(false)
+    const provider = vi.fn(async () => ({ success: true, content: 'provider response' }))
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+    api.addProvider('denied-provider', provider)
+    const registeredProvider = pluginV2.providers.get('denied-provider')
+    const arg = { mode: 'normal' } as any
+
+    await expect(registeredProvider?.(arg)).resolves.toEqual({ success: false, content: 'Permission denied' })
+
+    expect(provider).not.toHaveBeenCalled()
+    expect(arg.mode).toBe('normal')
   })
 })
 

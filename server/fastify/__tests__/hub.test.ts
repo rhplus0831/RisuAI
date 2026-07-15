@@ -452,6 +452,42 @@ describe('Phase 3C hub passthrough', () => {
     }
   })
 
+  it('allows an authenticated complete-URL override to redirect within its own origin', async () => {
+    const altPaths: string[] = []
+    const altServer = http.createServer((req, res) => {
+      altPaths.push(req.url ?? '')
+      if (req.url === '/first') {
+        res.writeHead(302, { location: '/final?from=override' })
+        res.end()
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('override redirect complete')
+    })
+    await new Promise<void>((resolve) => altServer.listen(0, '127.0.0.1', () => resolve()))
+    const altAddress = altServer.address() as AddressInfo
+    const altUrl = `http://127.0.0.1:${altAddress.port}/first`
+
+    try {
+      const { assertion } = await setupAuthedClient(harness.app)
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/hub/ignored',
+        headers: {
+          'risu-auth': assertion,
+          'x-risu-node-path': encodeURIComponent(altUrl),
+        },
+      })
+
+      expect(res.statusCode).toBe(200)
+      expect(res.body).toBe('override redirect complete')
+      expect(altPaths).toEqual(['/first', '/final?from=override'])
+      expect(echo.requests).toHaveLength(0)
+    } finally {
+      await new Promise<void>((resolve) => altServer.close(() => resolve()))
+    }
+  })
+
   it('follows a single 302 redirect and returns the redirected response', async () => {
     const altPaths: string[] = []
     let redirectedTo: string | undefined
@@ -476,6 +512,73 @@ describe('Phase 3C hub passthrough', () => {
     expect(res.body).toBe('final body')
     expect(altPaths).toEqual(['/final'])
     expect(redirectedTo).toBeDefined()
+  })
+
+  it('resolves relative redirects against the original Hub request', async () => {
+    echo.setResponder((req, res) => {
+      if (req.url === '/nested/first') {
+        res.writeHead(302, { location: '../final?from=relative' })
+        res.end()
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end(`resolved ${req.url}`)
+    })
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/hub/nested/first',
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.body).toBe('resolved /final?from=relative')
+    expect(echo.requests.map((request) => request.url)).toEqual(['/nested/first', '/final?from=relative'])
+  })
+
+  it('rejects redirects that escape the configured Hub origin', async () => {
+    const escapedRequests: string[] = []
+    const escapedServer = http.createServer((req, res) => {
+      escapedRequests.push(req.url ?? '')
+      res.writeHead(200, { 'content-type': 'text/plain' })
+      res.end('private response')
+    })
+    await new Promise<void>((resolve) => escapedServer.listen(0, '127.0.0.1', () => resolve()))
+    const escapedAddress = escapedServer.address() as AddressInfo
+    echo.setResponder((_req, res) => {
+      res.writeHead(302, {
+        location: `http://127.0.0.1:${escapedAddress.port}/private`,
+      })
+      res.end()
+    })
+
+    try {
+      const res = await harness.app.inject({
+        method: 'GET',
+        url: '/api/v1/hub/redirect-outside',
+      })
+
+      expect(res.statusCode).toBe(502)
+      expect(res.json()).toEqual({ error: 'Hub redirect target is not allowed' })
+      expect(echo.requests).toHaveLength(1)
+      expect(escapedRequests).toEqual([])
+    } finally {
+      await new Promise<void>((resolve) => escapedServer.close(() => resolve()))
+    }
+  })
+
+  it('rejects redirects to non-HTTP schemes', async () => {
+    echo.setResponder((_req, res) => {
+      res.writeHead(302, { location: 'file:///etc/passwd' })
+      res.end()
+    })
+
+    const res = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/hub/redirect-file',
+    })
+
+    expect(res.statusCode).toBe(502)
+    expect(res.json()).toEqual({ error: 'Hub redirect target is not allowed' })
+    expect(echo.requests).toHaveLength(1)
   })
 
   it('L27: rejects body-bearing redirects instead of replaying the buffered upload', async () => {
