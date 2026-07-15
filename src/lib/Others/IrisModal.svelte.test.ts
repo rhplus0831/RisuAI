@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const irisMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   forageGetItem: vi.fn(async () => null),
-  forageSetItem: vi.fn(async () => undefined),
+  forageSetItem: vi.fn(async (_key: string, _value: unknown) => undefined),
   getIrisSystemPrompt: vi.fn(async () => 'Iris system prompt'),
   requestChatData: vi.fn(),
   getToolList: vi.fn(async () => []),
