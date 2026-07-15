@@ -65,7 +65,7 @@
     chara: character
   }
 
-  let { chara = $bindable() }: Props = $props()
+  let { chara }: Props = $props()
   let editMode = $state(false)
 
   let chatsStb: Sortable[] = []
@@ -580,7 +580,7 @@
 
       {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
         <AuthorNoteEditor {chara} />
-        <Toggles bind:chara />
+        <Toggles {chara} />
       {/if}
     </div>
   {:else}

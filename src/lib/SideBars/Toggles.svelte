@@ -48,7 +48,7 @@
     noContainer?: boolean
   }
 
-  let { chara = $bindable(), noContainer }: Props = $props()
+  let { chara, noContainer }: Props = $props()
 
   let selectedTogglePresetId = $state('')
 
