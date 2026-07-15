@@ -26,6 +26,7 @@ const loadPageMocks = vi.hoisted(() => ({
   processMultiCommand: vi.fn(async () => false),
   sendChat: vi.fn(async () => true),
   sleep: vi.fn(async () => undefined),
+  stopTTS: vi.fn(),
   guardActiveChatGenerationSettingsForSend: vi.fn(() => ({ status: 'ok' })),
   hydrateActiveChatFully: vi.fn(async () => undefined),
   hydrateActiveChatWindow: vi.fn(async () => undefined),
@@ -166,7 +167,7 @@ vi.mock('src/ts/process/coldstorage.svelte', () => ({
 }))
 
 vi.mock('src/ts/process/tts', () => ({
-  stopTTS: vi.fn(),
+  stopTTS: loadPageMocks.stopTTS,
 }))
 
 vi.mock('src/ts/chatCommands', () => ({
@@ -528,6 +529,23 @@ afterEach(() => {
 })
 
 describe('DefaultChatScreen transcript window state', () => {
+  it('offers the Stop TTS action for every active synthesis mode', async () => {
+    seedDatabase([2])
+    getResourceDatabase().characters[0].ttsMode = 'gptsovits'
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-menu-button"]')).toBeTruthy()
+    })
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await tick()
+
+    const stop = findClickableByText('ttsStop')
+    expect(stop).toBeTruthy()
+    stop!.click()
+    expect(loadPageMocks.stopTTS).toHaveBeenCalledTimes(1)
+  })
+
   it('uses the configured display tail count for the initial chat window', async () => {
     seedDatabase([80])
     getResourceDatabase().chatDisplayTailCount = 12

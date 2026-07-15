@@ -1654,7 +1654,7 @@
             e.stopPropagation()
           }}>
           <!-- svelte-ignore block_empty -->
-          {#if getDatabase().characters[$selectedCharID].ttsMode === 'webspeech' || getDatabase().characters[$selectedCharID].ttsMode === 'elevenlab'}
+          {#if getDatabase().characters[$selectedCharID].ttsMode && getDatabase().characters[$selectedCharID].ttsMode !== 'none'}
             <div
               class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
               onclick={() => {
