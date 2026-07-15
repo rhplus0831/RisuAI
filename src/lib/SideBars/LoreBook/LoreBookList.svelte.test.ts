@@ -27,8 +27,11 @@ const lorebookListMocks = vi.hoisted(() => {
   }
 
   const confirmQueue: QueuedConfirm[] = []
+  const applyLorebookEntryDraftEdit = vi.fn(() => true)
+  const flushPendingLorebookEntryDraftEdit = vi.fn()
   const replaceCharacterLorebookCollection = vi.fn()
   const replaceChatLorebookCollection = vi.fn()
+  const replaceGlobalLorebookEntryCollection = vi.fn()
 
   function createDeferred<T>(): Deferred<T> {
     let resolveDeferred!: (value: T) => void
@@ -59,7 +62,9 @@ const lorebookListMocks = vi.hoisted(() => {
       return isDeferred(next) ? next.promise : Promise.resolve(next)
     }),
     alertMd: vi.fn(),
+    applyLorebookEntryDraftEdit,
     createDeferred,
+    flushPendingLorebookEntryDraftEdit,
     queueConfirm,
     reset: () => {
       confirmQueue.splice(0)
@@ -67,6 +72,7 @@ const lorebookListMocks = vi.hoisted(() => {
     },
     replaceCharacterLorebookCollection,
     replaceChatLorebookCollection,
+    replaceGlobalLorebookEntryCollection,
     setActiveChatLorebookLocalActivation: vi.fn(),
     languageMock: {
       language: {
@@ -119,18 +125,18 @@ vi.mock('src/ts/alert', () => ({
 }))
 
 vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
-  applyLorebookEntryDraftEdit: vi.fn(),
+  applyLorebookEntryDraftEdit: lorebookListMocks.applyLorebookEntryDraftEdit,
   applyLorebookEntryDraftRollback: vi.fn((draft: loreBook) => ({ draft, restoredFields: [] })),
   applyServerCharacterLorebookResource: vi.fn(() => true),
   changedLorebookEntryDraftFields: vi.fn(() => []),
   clearDirtyLorebookEntryFieldsMatchingProjection: vi.fn(),
-  flushPendingLorebookEntryDraftEdit: vi.fn(),
+  flushPendingLorebookEntryDraftEdit: lorebookListMocks.flushPendingLorebookEntryDraftEdit,
   markCharacterLorebookHydrated: vi.fn(),
   mergeLorebookEntryProjectionDraft: vi.fn((draft: loreBook) => draft),
   recordHydratedCharacterLorebooks: vi.fn(),
   replaceCharacterLorebookCollection: lorebookListMocks.replaceCharacterLorebookCollection,
   replaceChatLorebookCollection: lorebookListMocks.replaceChatLorebookCollection,
-  replaceGlobalLorebookEntryCollection: vi.fn(),
+  replaceGlobalLorebookEntryCollection: lorebookListMocks.replaceGlobalLorebookEntryCollection,
   resetLorebookHydration: vi.fn(),
   setActiveChatLorebookLocalActivation: lorebookListMocks.setActiveChatLorebookLocalActivation,
   subscribeLorebookEntryDraftRollbacks: vi.fn(() => () => {}),
@@ -466,5 +472,109 @@ describe('LoreBookList', () => {
     await flushAsyncWork()
 
     expect(lorebookListMocks.replaceChatLorebookCollection).toHaveBeenCalledWith('chat-resource', [])
+  })
+
+  it('renders selected global lorebook entries with stable id-backed row identity', async () => {
+    const initialEntries = [
+      makeLoreBook({ id: 'global-entry-a', comment: 'Global Entry A', content: 'Open content' }),
+      makeLoreBook({ id: 'global-entry-b', comment: 'Global Entry B' }),
+    ]
+    setDatabaseLite({
+      characters: [],
+      loreBook: [{ id: 'global-book', name: 'Global Book', data: initialEntries }],
+      loreBookPage: 0,
+    } as unknown as Database)
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    expect(lorebookRows().map((row) => row.dataset.risuLorebookId)).toEqual(['global-entry-a', 'global-entry-b'])
+    const entryARow = rowByEntryId('global-entry-a')
+    toggleButtonForRow(entryARow).click()
+    await tick()
+    expect(entryARow.textContent).toContain('Prompt')
+
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'global-book',
+          name: 'Global Book',
+          data: cloneEntries([initialEntries[1], initialEntries[0]]),
+        },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    await tick()
+
+    expect(rowByEntryId('global-entry-a')).toBe(entryARow)
+    expect(entryARow.textContent).toContain('Prompt')
+  })
+
+  it('dispatches global entry edits and deletion to the captured lorebook id', async () => {
+    const initialEntries = [
+      makeLoreBook({ id: 'global-entry-a', comment: 'Global Entry A' }),
+      makeLoreBook({ id: 'global-entry-b', comment: 'Global Entry B' }),
+    ]
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        { id: 'other-book', name: 'Other Book', data: [] },
+        { id: 'global-book', name: 'Global Book', data: initialEntries },
+      ],
+      loreBookPage: 1,
+    } as unknown as Database)
+
+    resourceComponent = mount(LoreBookList, { target, props: { globalMode: true } })
+    await tick()
+
+    toggleButtonForRow(rowByEntryId('global-entry-a')).click()
+    await tick()
+    const nameInput = rowByEntryId('global-entry-a').querySelector<HTMLInputElement>('input')
+    expect(nameInput).toBeTruthy()
+    nameInput!.value = 'Updated Global Entry'
+    nameInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    nameInput!.dispatchEvent(new FocusEvent('focusout', { bubbles: true, relatedTarget: null }))
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.applyLorebookEntryDraftEdit).toHaveBeenCalledWith(
+      { kind: 'global', lorebookId: 'global-book' },
+      0,
+      expect.objectContaining({ id: 'global-entry-a', comment: 'Updated Global Entry' }),
+    )
+    expect(lorebookListMocks.flushPendingLorebookEntryDraftEdit).toHaveBeenCalledWith({
+      kind: 'global',
+      lorebookId: 'global-book',
+    })
+
+    const confirm = lorebookListMocks.createDeferred<boolean>()
+    lorebookListMocks.queueConfirm(confirm)
+    deleteButtonForRow(rowByEntryId('global-entry-b')).click()
+    await tick()
+
+    setDatabaseLite({
+      characters: [],
+      loreBook: [
+        {
+          id: 'global-book',
+          name: 'Global Book',
+          data: [
+            makeLoreBook({ id: 'global-entry-x', comment: 'Inserted Global Entry' }),
+            ...cloneEntries([initialEntries[1], initialEntries[0]]),
+          ],
+        },
+        { id: 'other-book', name: 'Other Book', data: [] },
+      ],
+      loreBookPage: 0,
+    } as unknown as Database)
+    await tick()
+
+    confirm.resolve(true)
+    await flushAsyncWork()
+
+    expect(lorebookListMocks.replaceGlobalLorebookEntryCollection).toHaveBeenCalledWith('global-book', [
+      expect.objectContaining({ id: 'global-entry-x' }),
+      expect.objectContaining({ id: 'global-entry-a' }),
+    ])
   })
 })

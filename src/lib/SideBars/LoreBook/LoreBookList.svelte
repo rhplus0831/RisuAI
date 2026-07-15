@@ -73,8 +73,18 @@
     return database.loreBook?.[database.loreBookPage]?.data ?? []
   }
 
+  function selectedGlobalLorebookId(): string | null {
+    const database = getDatabase()
+    const lorebookId = (database.loreBook?.[database.loreBookPage] as { id?: unknown } | undefined)?.id
+    return typeof lorebookId === 'string' && lorebookId.trim() ? lorebookId : null
+  }
+
   function internalEntryDraftScopeKey(): string | undefined {
     if (externalLoreBooks) return undefined
+    if (globalMode) {
+      const lorebookId = selectedGlobalLorebookId()
+      return lorebookId ? `global:${lorebookId}` : undefined
+    }
     if (submenu === 0) {
       const characterId = selectedCharacter()?.chaId
       return characterId ? `character:${characterId}` : undefined
@@ -121,6 +131,18 @@
     }
     // Legacy id-less rows cannot be matched safely after cloning without
     // risking that open state transfers to a reordered sibling.
+    return entry
+  }
+
+  function globalEntryRenderKey(lorebookId: string | null, entries: loreBook[], entry: loreBook): LorebookOpenRef {
+    const entryId = stableEntryId(entry)
+    if (entryId && entries.filter((candidate) => stableEntryId(candidate) === entryId).length === 1) {
+      return `global:${lorebookId ?? ''}:entry:${entryId}`
+    }
+    if (entry.mode === 'folder' && typeof entry.key === 'string' && entry.key.trim()) {
+      const matchingFolders = entries.filter((candidate) => candidate.mode === 'folder' && candidate.key === entry.key)
+      if (matchingFolders.length === 1) return `global:${lorebookId ?? ''}:folder:${entry.key}`
+    }
     return entry
   }
 
@@ -239,10 +261,17 @@
     replaceChatLorebookCollection(chatId, entries)
   }
 
-  function updateGlobalLorebookCollection(entries: loreBook[]): void {
-    const database = getDatabase()
-    const lorebook = database.loreBook?.[database.loreBookPage]
-    const lorebookId = (lorebook as { id?: string } | undefined)?.id
+  function updateGlobalLoreValue(lorebookId: string | null, index: number, value: loreBook): void {
+    if (!lorebookId) return
+    applyLorebookEntryDraftEdit({ kind: 'global', lorebookId }, index, value)
+  }
+
+  function flushGlobalLoreValue(lorebookId: string | null): void {
+    if (!lorebookId) return
+    flushPendingLorebookEntryDraftEdit({ kind: 'global', lorebookId })
+  }
+
+  function updateGlobalLorebookCollection(entries: loreBook[], lorebookId = selectedGlobalLorebookId()): void {
     if (!lorebookId) return
     replaceGlobalLorebookEntryCollection(lorebookId, entries)
   }
@@ -514,7 +543,41 @@
     bind:this={ele}
     data-show-folder={showFolder || ''}>
     {#if globalMode}
-      <!-- Global lorebooks render elsewhere. -->
+      {@const lorebookId = selectedGlobalLorebookId()}
+      {@const entries = globalLorebookEntries()}
+      {@const visibleItems = entries.filter((book) => (!showFolder && !book.folder) || showFolder === book.folder)}
+      {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
+      {#if entries.length === 0}
+        <span class="text-textcolor2">No Lorebook</span>
+      {:else}
+        {#each entries as book, i (globalEntryRenderKey(lorebookId, entries, book))}
+          {#if (!showFolder && !book.folder) || showFolder === book.folder}
+            <LoreBookData
+              {idgroup}
+              entryDraftScopeKey={resolvedEntryDraftScopeKey}
+              value={entries[i]}
+              onDraftChange={(value) => updateGlobalLoreValue(lorebookId, i, value)}
+              onDraftSettled={() => flushGlobalLoreValue(lorebookId)}
+              idx={i}
+              isOpen={openedRefs.has(openedRefForEntry(book))}
+              openFolders={openFolders()}
+              isLastInContainer={book === lastVisibleItem}
+              onRemove={(target) =>
+                removeLorebookTarget(entries, target, (nextEntries) =>
+                  updateGlobalLorebookCollection(nextEntries, lorebookId),
+                )}
+              onOpen={(isDetail = true) => onOpen(isDetail, book)}
+              onClose={(isDetail = true) => onClose(isDetail, book)}
+              externalLoreBooks={entries}
+              onCollectionChange={(nextEntries) => updateGlobalLorebookCollection(nextEntries, lorebookId)}
+              onEntryChange={(index, value) => updateGlobalLoreValue(lorebookId, index, value)}
+              onEntrySettled={() => flushGlobalLoreValue(lorebookId)} />
+          {:else}
+            <!-- Hidden marker for filtered items (for SortableJS) -->
+            <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
+          {/if}
+        {/each}
+      {/if}
     {:else if externalLoreBooks}
       {@const visibleItems = externalLoreBooks.filter(
         (book) => (!showFolder && !book.folder) || showFolder === book.folder,
