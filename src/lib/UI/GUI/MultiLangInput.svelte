@@ -1,8 +1,8 @@
 <script lang="ts">
   import { encodeMultilangString, languageCodes, parseMultilangString, toLangName } from 'src/ts/util'
+  import { untrack } from 'svelte'
   import TextAreaInput from './TextAreaInput.svelte'
   let addingLang = $state(false)
-  let selectedLang = $state('en')
   interface Props {
     value: string
     className?: string
@@ -10,20 +10,48 @@
   }
 
   let { value = $bindable(), className = '', onInput = () => {} }: Props = $props()
-  let parsed = parseMultilangString(value)
-  if (parsed['en'] === undefined) {
-    parsed['en'] = parsed['xx']
-    delete parsed['xx']
+
+  function normalizeValue(nextValue: string): Record<string, string> {
+    const parsed = parseMultilangString(nextValue)
+    const localizedLanguages = Object.keys(parsed).filter((lang) => lang !== 'xx')
+    let legacyContent = parsed.xx ?? ''
+    delete parsed.xx
+
+    if (legacyContent.trim() !== '') {
+      if (localizedLanguages.length > 0) {
+        legacyContent = legacyContent.replace(/\n$/, '')
+      }
+
+      if (parsed.en === undefined || parsed.en === '') {
+        parsed.en = legacyContent
+      } else if (parsed.en !== legacyContent) {
+        const separator = legacyContent.endsWith('\n') || parsed.en.startsWith('\n') ? '' : '\n'
+        parsed.en = `${legacyContent}${separator}${parsed.en}`
+      }
+    }
+
+    if (Object.keys(parsed).length === 0) {
+      parsed.en = ''
+    }
+
+    return parsed
   }
-  let valueObject: { [code: string]: string } = $state(parsed)
+
+  function availableLanguage(valueByLanguage: Record<string, string>, currentLanguage: string): string {
+    if (valueByLanguage[currentLanguage] !== undefined) return currentLanguage
+    if (valueByLanguage.en !== undefined) return 'en'
+    return Object.keys(valueByLanguage)[0] ?? 'en'
+  }
+
+  const initialValueObject = normalizeValue(value)
+  let valueObject: { [code: string]: string } = $state(initialValueObject)
+  let selectedLang = $state(availableLanguage(initialValueObject, 'en'))
+
   const updateValue = () => {
     for (let lang in valueObject) {
       if (valueObject[lang] === '' && lang !== selectedLang && lang !== 'en') {
         delete valueObject[lang]
       }
-    }
-    if (valueObject.xx) {
-      delete valueObject.xx
     }
     if (valueObject.en === '') {
       valueObject.en = ' '
@@ -31,9 +59,14 @@
     valueObject = valueObject // force update
     value = encodeMultilangString(valueObject)
   }
-  updateValue()
+
   $effect.pre(() => {
-    valueObject = parseMultilangString(value)
+    const nextValueObject = normalizeValue(value)
+    selectedLang = availableLanguage(
+      nextValueObject,
+      untrack(() => selectedLang),
+    )
+    valueObject = nextValueObject
   })
 </script>
 
