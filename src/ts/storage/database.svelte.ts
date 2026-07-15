@@ -2115,6 +2115,7 @@ export function setDatabase(data: Database) {
   if (!data.hotkeys) {
     data.hotkeys = safeStructuredClone(defaultHotkeys)
   } else {
+    data.hotkeys = data.hotkeys.filter((hotkey) => !RETIRED_HOTKEY_ACTIONS.has(hotkey.action))
     const existingActions = new Set(data.hotkeys.map((h) => h.action))
     const newHotkeys = defaultHotkeys.filter((h) => !existingActions.has(h.action))
     if (newHotkeys.length > 0) {
@@ -4976,7 +4977,7 @@ import { selectedCharID } from '../stores.svelte'
 import { LLMFlags, LLMFormat, LLMTokenizer } from '../model/modellist'
 import type { HypaModel } from '../process/memory/hypamemory'
 import type { SerializableHypaV3Data } from '../process/memory/hypav3'
-import { defaultHotkeys, type Hotkey } from '../defaulthotkeys'
+import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS, type Hotkey } from '../defaulthotkeys'
 import type { OpenAIChat } from '../process/index.svelte'
 import type { Loadout } from '../loadout'
 

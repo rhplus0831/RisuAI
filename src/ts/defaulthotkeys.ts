@@ -6,6 +6,8 @@ export interface Hotkey {
   action: string
 }
 
+export const RETIRED_HOTKEY_ACTIONS: ReadonlySet<string> = new Set(['modelSelect', 'toggleVoice', 'webcam'])
+
 export const defaultHotkeys: Hotkey[] = [
   {
     key: 'r',
@@ -70,18 +72,10 @@ export const defaultHotkeys: Hotkey[] = [
     action: 'persona',
   },
   {
-    key: 'm',
-    ctrl: true,
-    action: 'modelSelect',
-  },
-  {
     key: '.',
     ctrl: true,
     action: 'toggleCSS',
   },
-
-  //Needs to implement after this
-
   {
     key: '[',
     ctrl: true,
@@ -103,11 +97,6 @@ export const defaultHotkeys: Hotkey[] = [
     action: 'quickSettings',
   },
   {
-    key: 'v',
-    ctrl: true,
-    action: 'toggleVoice',
-  },
-  {
     key: 'l',
     ctrl: true,
     action: 'toggleLog',
@@ -116,11 +105,6 @@ export const defaultHotkeys: Hotkey[] = [
     key: 'u',
     ctrl: true,
     action: 'previewRequest',
-  },
-  {
-    key: 'w',
-    ctrl: true,
-    action: 'webcam',
   },
   {
     key: ' ',

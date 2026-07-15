@@ -199,4 +199,26 @@ describe('database defaults', () => {
 
     expect(database.keepSessionAlive).toBe('sound')
   })
+
+  it('removes retired hotkey rows while preserving supported custom bindings', () => {
+    const database = normalizeDatabaseDefaults(
+      {
+        hotkeys: [
+          { action: 'home', ctrl: true, key: 'j' },
+          { action: 'modelSelect', ctrl: true, key: 'm' },
+          { action: 'toggleVoice', ctrl: true, key: 'v' },
+          { action: 'webcam', ctrl: true, key: 'w' },
+          { action: 'popupEditor', ctrl: true, key: 'e' },
+        ],
+      },
+      { providerDefaults: false },
+    )
+
+    const hotkeys = database.hotkeys as Array<Record<string, unknown>>
+    expect(hotkeys.map((hotkey) => hotkey.action)).not.toEqual(
+      expect.arrayContaining(['modelSelect', 'toggleVoice', 'webcam']),
+    )
+    expect(hotkeys.find((hotkey) => hotkey.action === 'home')).toMatchObject({ ctrl: true, key: 'j' })
+    expect(hotkeys.find((hotkey) => hotkey.action === 'popupEditor')).toMatchObject({ ctrl: true, key: 'e' })
+  })
 })

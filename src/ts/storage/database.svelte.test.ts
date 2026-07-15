@@ -356,6 +356,28 @@ describe('settings database normalization', () => {
 
     expect(getDatabase().keepSessionAlive).toBe('sound')
   })
+
+  it('removes retired hotkey rows while preserving supported custom bindings', () => {
+    seedPresetDatabase({
+      hotkeys: [
+        { action: 'home', ctrl: true, key: 'j' },
+        { action: 'modelSelect', ctrl: true, key: 'm' },
+        { action: 'toggleVoice', ctrl: true, key: 'v' },
+        { action: 'webcam', ctrl: true, key: 'w' },
+        { action: 'popupEditor', ctrl: true, key: 'e' },
+      ],
+    })
+    const data = clonePlain(getDatabase())
+
+    setDatabase(data)
+
+    const hotkeys = getDatabase().hotkeys
+    expect(hotkeys.map((hotkey) => hotkey.action)).not.toEqual(
+      expect.arrayContaining(['modelSelect', 'toggleVoice', 'webcam']),
+    )
+    expect(hotkeys.find((hotkey) => hotkey.action === 'home')).toMatchObject({ ctrl: true, key: 'j' })
+    expect(hotkeys.find((hotkey) => hotkey.action === 'popupEditor')).toMatchObject({ ctrl: true, key: 'e' })
+  })
 })
 
 describe('model profile database normalization', () => {

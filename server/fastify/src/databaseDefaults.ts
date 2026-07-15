@@ -1,6 +1,6 @@
 import { defaultAutoSuggestPrompt, defaultInputTranslatorPrompt } from '../../../src/ts/storage/defaultPrompts.js'
 import { prebuiltNAIpresets, prebuiltPresets } from '../../../src/ts/process/templates/templates.js'
-import { defaultHotkeys } from '../../../src/ts/defaulthotkeys.js'
+import { defaultHotkeys, RETIRED_HOTKEY_ACTIONS } from '../../../src/ts/defaulthotkeys.js'
 import { LLMFormat } from '../../../src/ts/model/types.js'
 import { DEFAULT_CHAT_DISPLAY_TAIL_COUNT } from '../../../src/ts/chatDisplayTailCount.js'
 import { createExtractedModelPreset, createExtractedPromptPreset } from '../../../src/ts/presetSplit.js'
@@ -876,17 +876,22 @@ function normalizeHotkeys(database: JsonRecord): void {
     database.hotkeys = cloneJson(defaultHotkeys)
     return
   }
+  const hotkeys = database.hotkeys.filter(
+    (hotkey) => !isRecord(hotkey) || !RETIRED_HOTKEY_ACTIONS.has(String(hotkey.action)),
+  )
   const existingActions = new Set(
-    database.hotkeys
+    hotkeys
       .filter((hotkey): hotkey is JsonRecord => isRecord(hotkey))
       .map((hotkey) => hotkey.action)
       .filter((action): action is string => typeof action === 'string'),
   )
   const missing = defaultHotkeys.filter((hotkey) => !existingActions.has(hotkey.action))
-  if (missing.length > 0) database.hotkeys.push(...cloneJson(missing))
+  if (missing.length > 0) hotkeys.push(...cloneJson(missing))
   if (database.enableScrollToActiveChar === false) {
-    database.hotkeys = database.hotkeys.filter((hotkey) => !isRecord(hotkey) || hotkey.action !== 'scrollToActiveChar')
+    database.hotkeys = hotkeys.filter((hotkey) => !isRecord(hotkey) || hotkey.action !== 'scrollToActiveChar')
+    return
   }
+  database.hotkeys = hotkeys
 }
 
 function normalizeFallbackModels(database: JsonRecord): void {
