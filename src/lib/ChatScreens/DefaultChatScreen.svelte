@@ -1056,7 +1056,8 @@
         mergedCanvas.height = totalHeight
       }
 
-      mergedCtx.fillStyle = 'var(--risu-theme-bgcolor)'
+      const themeBackground = getComputedStyle(document.documentElement).getPropertyValue('--risu-theme-bgcolor').trim()
+      mergedCtx.fillStyle = themeBackground || '#282a36'
       mergedCtx.fillRect(0, 0, maxWidth, totalHeight)
       let indh = 0
       for (let i = 0; i < canvases.length; i++) {

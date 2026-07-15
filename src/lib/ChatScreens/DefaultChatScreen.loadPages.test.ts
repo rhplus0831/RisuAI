@@ -515,6 +515,7 @@ afterEach(() => {
   loadPageMocks.chatFoldedState.data = null
   loadPageMocks.chatFoldedStateMessageIndex.index = -1
   replaceResourceDatabase({} as Database)
+  document.documentElement.style.removeProperty('--risu-theme-bgcolor')
   target.remove()
   document.body.innerHTML = ''
 })
@@ -635,6 +636,25 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(messageRowIndexes()).not.toContain(0)
     expect(loadPageMocks.downloadFile).not.toHaveBeenCalled()
     expect(consoleErrorSpy).toHaveBeenCalled()
+  })
+
+  it('paints the resolved theme color behind transparent screenshot rows', async () => {
+    seedDatabase([2])
+    document.documentElement.style.setProperty('--risu-theme-bgcolor', 'rgb(12, 34, 56)')
+    const mergedContext = {
+      fillStyle: '',
+      fillRect: vi.fn(),
+      drawImage: vi.fn(),
+    } as unknown as CanvasRenderingContext2D
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockReturnValue(mergedContext)
+    mountScreen()
+    await waitFor(() => expect(messageRowIndexes()).toHaveLength(2))
+
+    await clickScreenshotMenuItem()
+
+    await waitFor(() => expect(loadPageMocks.downloadFile).toHaveBeenCalledTimes(1))
+    expect(mergedContext.fillStyle).toBe('rgb(12, 34, 56)')
+    expect(mergedContext.fillRect).toHaveBeenCalled()
   })
 
   it('blocks a prefilled incomplete-chat send without clearing the composer or appending', async () => {
