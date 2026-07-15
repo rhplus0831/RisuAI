@@ -11,6 +11,7 @@ vi.mock('src/ts/process/modules', async (importActual) => {
 })
 
 import AlertComp from './AlertComp.svelte'
+import { alertConfirm } from 'src/ts/alert'
 import { alertStore } from 'src/ts/stores.svelte'
 
 function deferred<T>() {
@@ -116,6 +117,49 @@ describe('AlertComp input dialog', () => {
       expect(cancel).toBeTruthy()
       cancel?.click()
       expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
+})
+
+describe('AlertComp confirmation queue', () => {
+  beforeEach(() => {
+    translateStackTrace.mockReset()
+    alertStore.set({ type: 'none', msg: '' })
+  })
+
+  it('renders concurrent confirmations one at a time and binds each button response to its caller', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      const firstResult = alertConfirm('First queued confirmation')
+      const secondResult = alertConfirm('Second queued confirmation')
+      await tick()
+
+      expect(target.textContent).toContain('First queued confirmation')
+      expect(target.textContent).not.toContain('Second queued confirmation')
+
+      const yesButton = Array.from(target.querySelectorAll('button')).find((button) => button.textContent === 'YES')
+      expect(yesButton).toBeTruthy()
+      yesButton?.click()
+      await expect(firstResult).resolves.toBe(true)
+      await tick()
+
+      expect(target.textContent).not.toContain('First queued confirmation')
+      expect(target.textContent).toContain('Second queued confirmation')
+
+      const noButton = Array.from(target.querySelectorAll('button')).find((button) => button.textContent === 'NO')
+      expect(noButton).toBeTruthy()
+      noButton?.click()
+      await expect(secondResult).resolves.toBe(false)
+      await tick()
+
+      expect(target.querySelector('[role="alertdialog"]')).toBeNull()
     } finally {
       unmount(component)
       target.remove()

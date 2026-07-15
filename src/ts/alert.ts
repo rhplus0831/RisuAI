@@ -1,5 +1,4 @@
 import { get, writable } from 'svelte/store'
-import { sleep } from './util'
 import { language } from '../lang'
 import { getDatabase, type MessageGenerationInfo } from './storage/database.svelte'
 import { alertStore as alertStoreImported } from './stores.svelte'
@@ -36,9 +35,20 @@ export interface alertData {
   defaultValue?: string
   progress?: number | null
   waitOwner?: AlertWaitHandle
+  dialogOwner?: AlertDialogHandle
 }
 
 export type AlertWaitHandle = symbol
+export type AlertDialogHandle = symbol
+
+type ConfirmationAlertType = 'ask' | 'pluginconfirm'
+
+interface ConfirmationRequest {
+  owner: AlertDialogHandle
+  type: ConfirmationAlertType
+  msg: string
+  resolve: (confirmed: boolean) => void
+}
 
 type AlertGenerationInfoStoreData = {
   genInfo: MessageGenerationInfo
@@ -49,6 +59,101 @@ export const alertStore = {
   set: (d: alertData) => {
     alertStoreImported.set(d)
   },
+}
+
+const confirmationQueue: ConfirmationRequest[] = []
+let activeConfirmation: ConfirmationRequest | undefined
+let confirmationQueueBlocked = false
+let confirmationResumeTimer: ReturnType<typeof setTimeout> | undefined
+
+function displayConfirmation(request: ConfirmationRequest) {
+  alertStoreImported.set({
+    type: request.type,
+    msg: request.msg,
+    dialogOwner: request.owner,
+  })
+}
+
+function showNextConfirmation() {
+  if (activeConfirmation || confirmationQueue.length === 0 || confirmationQueueBlocked) return
+  if (get(alertStoreImported).type !== 'none') return
+
+  activeConfirmation = confirmationQueue.shift()
+  if (activeConfirmation) displayConfirmation(activeConfirmation)
+}
+
+function resumeConfirmationQueueAfterCurrentCallers() {
+  if (confirmationResumeTimer !== undefined) return
+
+  confirmationResumeTimer = setTimeout(() => {
+    confirmationResumeTimer = undefined
+    showNextConfirmation()
+  }, 0)
+}
+
+function settleActiveConfirmation(confirmed: boolean) {
+  const request = activeConfirmation
+  if (!request) return
+
+  activeConfirmation = undefined
+  request.resolve(confirmed)
+}
+
+alertStoreImported.subscribe((value) => {
+  const request = activeConfirmation
+  if (request) {
+    const isOwnedDialog = value.type === request.type && value.dialogOwner === request.owner
+    if (isOwnedDialog) return
+
+    const isOwnedResult = value.type === 'none' && value.dialogOwner === request.owner
+    settleActiveConfirmation(isOwnedResult && value.msg === 'yes')
+    confirmationQueueBlocked = value.type !== 'none'
+  }
+
+  if (value.type === 'none') {
+    confirmationQueueBlocked = false
+    if (request) {
+      showNextConfirmation()
+    } else {
+      // An unrelated modal owns its result until its awaiting caller resumes.
+      // Starting a queued confirmation in this same store notification would
+      // replace that result before the caller can read it.
+      resumeConfirmationQueueAfterCurrentCallers()
+    }
+  }
+})
+
+function queueConfirmation(type: ConfirmationAlertType, msg: string): Promise<boolean> {
+  const promise = new Promise<boolean>((resolve) => {
+    confirmationQueue.push({
+      owner: Symbol('alert-dialog'),
+      type,
+      msg,
+      resolve,
+    })
+  })
+
+  showNextConfirmation()
+  return promise
+}
+
+/**
+ * Resolves only the confirmation dialog that owns the supplied handle. A stale
+ * button or callback from an older dialog cannot settle the next queued prompt.
+ */
+export function resolveAlertConfirmation(owner: AlertDialogHandle | undefined, confirmed: boolean): boolean {
+  const request = activeConfirmation
+  const current = get(alertStoreImported)
+  if (!request || owner !== request.owner || current.dialogOwner !== request.owner || current.type !== request.type) {
+    return false
+  }
+
+  alertStoreImported.set({
+    type: 'none',
+    msg: confirmed ? 'yes' : 'no',
+    dialogOwner: request.owner,
+  })
+  return true
 }
 
 export function alertError(msg: unknown) {
@@ -92,13 +197,23 @@ export function alertError(msg: unknown) {
   })
 }
 
-export async function waitAlert() {
-  while (true) {
-    if (get(alertStoreImported).type === 'none') {
-      break
+export function waitAlert(): Promise<alertData> {
+  const current = get(alertStoreImported)
+  if (current.type === 'none') return Promise.resolve(current)
+
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | undefined
+    let completed = false
+    const handleValue = (value: alertData) => {
+      if (value.type !== 'none') return
+      completed = true
+      resolve(value)
+      unsubscribe?.()
     }
-    await sleep(10)
-  }
+
+    unsubscribe = alertStoreImported.subscribe(handleValue)
+    if (completed) unsubscribe()
+  })
 }
 
 export function alertNormal(msg: string) {
@@ -121,9 +236,7 @@ export async function alertAddCharacter() {
     type: 'addchar',
     msg: language.addCharacter,
   })
-  await waitAlert()
-
-  return get(alertStoreImported).msg
+  return (await waitAlert()).msg
 }
 
 export async function alertChatOptions() {
@@ -131,9 +244,7 @@ export async function alertChatOptions() {
     type: 'chatOptions',
     msg: language.chatOptions,
   })
-  await waitAlert()
-
-  return parseInt(get(alertStoreImported).msg)
+  return parseInt((await waitAlert()).msg)
 }
 
 export async function alertLogin() {
@@ -141,9 +252,7 @@ export async function alertLogin() {
     type: 'login',
     msg: 'login',
   })
-  await waitAlert()
-
-  return get(alertStoreImported).msg
+  return (await waitAlert()).msg
 }
 
 export async function alertSelect(msg: string[], display?: string) {
@@ -153,9 +262,7 @@ export async function alertSelect(msg: string[], display?: string) {
     msg: message,
   })
 
-  await waitAlert()
-
-  return get(alertStoreImported).msg
+  return (await waitAlert()).msg
 }
 
 export async function alertErrorWait(msg: string) {
@@ -263,31 +370,15 @@ export async function alertSelectChar() {
     msg: '',
   })
 
-  await waitAlert()
-
-  return get(alertStoreImported).msg
+  return (await waitAlert()).msg
 }
 
-export async function alertConfirm(msg: string) {
-  alertStoreImported.set({
-    type: 'ask',
-    msg: msg,
-  })
-
-  await waitAlert()
-
-  return get(alertStoreImported).msg === 'yes'
+export function alertConfirm(msg: string) {
+  return queueConfirmation('ask', msg)
 }
 
-export async function alertPluginConfirm(msg: string) {
-  alertStoreImported.set({
-    type: 'pluginconfirm',
-    msg: msg,
-  })
-
-  await waitAlert()
-
-  return get(alertStoreImported).msg === 'yes'
+export function alertPluginConfirm(msg: string) {
+  return queueConfirmation('pluginconfirm', msg)
 }
 
 export interface CardExportResult {
@@ -318,9 +409,7 @@ export async function alertCardExport(type: string = ''): Promise<CardExportResu
     submsg: type,
   })
 
-  await waitAlert()
-
-  return parseCardExportResult(get(alertStoreImported).msg)
+  return parseCardExportResult((await waitAlert()).msg)
 }
 
 export async function alertTOS() {
@@ -337,9 +426,9 @@ export async function alertTOS() {
     msg: 'tos',
   })
 
-  await waitAlert()
+  const result = await waitAlert()
 
-  if (get(alertStoreImported).msg === 'yes') {
+  if (result.msg === 'yes') {
     localStorage.setItem('tos4', 'true')
     return true
   }
@@ -360,9 +449,7 @@ export async function alertInput(msg: string, datalist?: [string, string][], def
     defaultValue: defaultValue ?? '',
   })
 
-  await waitAlert()
-
-  return get(alertStoreImported).msg
+  return (await waitAlert()).msg
 }
 
 export async function alertModuleSelect() {
@@ -371,14 +458,7 @@ export async function alertModuleSelect() {
     msg: '',
   })
 
-  while (true) {
-    if (get(alertStoreImported).type === 'none') {
-      break
-    }
-    await sleep(20)
-  }
-
-  return get(alertStoreImported).msg
+  return (await waitAlert()).msg
 }
 
 export function alertRequestData(info: AlertGenerationInfoStoreData) {

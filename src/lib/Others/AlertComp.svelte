@@ -1,5 +1,10 @@
 <script lang="ts">
-  import { alertGenerationInfoStore, cardExportCancelMessage, type alertData } from '../../ts/alert'
+  import {
+    alertGenerationInfoStore,
+    cardExportCancelMessage,
+    resolveAlertConfirmation,
+    type alertData,
+  } from '../../ts/alert'
 
   import { getCharImage } from '../../ts/characters'
   import { ParseMarkdown } from '../../ts/parser/parser.svelte'
@@ -436,18 +441,12 @@
           <Button
             className="mt-4 grow"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: 'yes',
-              })
+              resolveAlertConfirmation($alertStore.dialogOwner, true)
             }}>YES</Button>
           <Button
             className="mt-4 grow"
             onclick={() => {
-              alertStore.set({
-                type: 'none',
-                msg: 'no',
-              })
+              resolveAlertConfirmation($alertStore.dialogOwner, false)
             }}>NO</Button>
         </div>
       {:else if $alertStore.type === 'tos' && import.meta.env.VITE_RISU_LEGAL_CONFIGURED}

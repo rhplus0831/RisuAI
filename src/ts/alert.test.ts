@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const alertTestState = vi.hoisted(() => ({
   alertStoreValue: { type: 'none', msg: '' } as Record<string, unknown>,
   alertStoreSet: vi.fn(),
+  alertStoreSubscribers: new Set<(value: Record<string, unknown>) => void>(),
   getDatabase: vi.fn(() => ({ usePlainFetch: false })),
 }))
 
@@ -14,10 +15,12 @@ vi.mock('./stores.svelte', () => ({
     set: (value: Record<string, unknown>) => {
       alertTestState.alertStoreValue = value
       alertTestState.alertStoreSet(value)
+      for (const subscriber of alertTestState.alertStoreSubscribers) subscriber(value)
     },
     subscribe: (run: (value: Record<string, unknown>) => void) => {
+      alertTestState.alertStoreSubscribers.add(run)
       run(alertTestState.alertStoreValue)
-      return () => undefined
+      return () => alertTestState.alertStoreSubscribers.delete(run)
     },
   },
   selIdState: {
@@ -53,24 +56,156 @@ vi.mock('src/lang', () => ({
 }))
 
 import {
+  alertClear,
+  alertConfirm,
   alertError,
+  alertInput,
   alertNormal,
+  alertPluginConfirm,
   alertProgress,
   alertTOS,
   beginAlertWait,
   cardExportCancelMessage,
   clearAlertWait,
   parseCardExportResult,
+  resolveAlertConfirmation,
+  alertStore,
   updateAlertWait,
 } from './alert'
 
 beforeEach(() => {
   vi.unstubAllEnvs()
   alertTestState.alertStoreValue = { type: 'none', msg: '' }
+  for (const subscriber of alertTestState.alertStoreSubscribers) subscriber(alertTestState.alertStoreValue)
   alertTestState.alertStoreSet.mockClear()
   alertTestState.getDatabase.mockClear()
   alertTestState.getDatabase.mockReturnValue({ usePlainFetch: false })
   localStorage.clear()
+})
+
+describe('confirmation queue', () => {
+  it('shows concurrent confirmations in FIFO order and keeps their yes/no results separate', async () => {
+    const firstResult = alertConfirm('First confirmation')
+    const secondResult = alertConfirm('Second confirmation')
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'First confirmation' })
+    const firstOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+
+    expect(resolveAlertConfirmation(firstOwner, true)).toBe(true)
+    await expect(firstResult).resolves.toBe(true)
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Second confirmation' })
+    const secondOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    expect(secondOwner).not.toBe(firstOwner)
+
+    expect(resolveAlertConfirmation(secondOwner, false)).toBe(true)
+    await expect(secondResult).resolves.toBe(false)
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'none', msg: 'no' })
+  })
+
+  it('shares FIFO ownership between normal and plugin confirmations', async () => {
+    const firstResult = alertPluginConfirm('Plugin permission')
+    const secondResult = alertConfirm('Follow-up confirmation')
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'pluginconfirm', msg: 'Plugin permission' })
+    const firstOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(firstOwner, false)
+    await expect(firstResult).resolves.toBe(false)
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Follow-up confirmation' })
+    const secondOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(secondOwner, true)
+    await expect(secondResult).resolves.toBe(true)
+  })
+
+  it('treats a programmatic close as cancellation before advancing the queue', async () => {
+    const firstResult = alertConfirm('Close this confirmation')
+    const secondResult = alertConfirm('Show this after close')
+
+    alertClear()
+
+    await expect(firstResult).resolves.toBe(false)
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Show this after close' })
+
+    const secondOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(secondOwner, true)
+    await expect(secondResult).resolves.toBe(true)
+  })
+
+  it('waits for an unrelated modal instead of overwriting it', async () => {
+    alertNormal('Read this notice first')
+
+    const result = alertConfirm('Confirmation after notice')
+
+    expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Read this notice first' })
+
+    alertClear()
+    await vi.waitFor(() =>
+      expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Confirmation after notice' }),
+    )
+
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(owner, true)
+    await expect(result).resolves.toBe(true)
+  })
+
+  it('cancels a replaced confirmation and resumes the queue only after the replacement closes', async () => {
+    const replacedResult = alertConfirm('Confirmation being replaced')
+    const queuedResult = alertConfirm('Confirmation waiting behind replacement')
+
+    alertNormal('Unrelated urgent notice')
+
+    await expect(replacedResult).resolves.toBe(false)
+    expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Unrelated urgent notice' })
+
+    alertClear()
+    await vi.waitFor(() =>
+      expect(alertTestState.alertStoreValue).toMatchObject({
+        type: 'ask',
+        msg: 'Confirmation waiting behind replacement',
+      }),
+    )
+
+    const queuedOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(queuedOwner, false)
+    await expect(queuedResult).resolves.toBe(false)
+  })
+
+  it('ignores a stale response without resolving or hiding the active confirmation', async () => {
+    const firstResult = alertConfirm('Old confirmation')
+    const secondResult = alertConfirm('Current confirmation')
+    const firstOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+
+    resolveAlertConfirmation(firstOwner, true)
+    await expect(firstResult).resolves.toBe(true)
+    const secondOwner = alertTestState.alertStoreValue.dialogOwner as symbol
+
+    expect(resolveAlertConfirmation(firstOwner, false)).toBe(false)
+    expect(alertTestState.alertStoreValue).toMatchObject({
+      type: 'ask',
+      msg: 'Current confirmation',
+      dialogOwner: secondOwner,
+    })
+
+    resolveAlertConfirmation(secondOwner, false)
+    await expect(secondResult).resolves.toBe(false)
+  })
+
+  it('preserves an unrelated dialog result before displaying a queued confirmation', async () => {
+    const inputResult = alertInput('Name')
+    const confirmationResult = alertConfirm('Continue after input')
+
+    alertStore.set({ type: 'none', msg: 'Risu' })
+
+    await expect(inputResult).resolves.toBe('Risu')
+    await vi.waitFor(() =>
+      expect(alertTestState.alertStoreValue).toMatchObject({ type: 'ask', msg: 'Continue after input' }),
+    )
+
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
+    resolveAlertConfirmation(owner, true)
+    await expect(confirmationResult).resolves.toBe(true)
+  })
 })
 
 describe('alertError', () => {
