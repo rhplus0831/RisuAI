@@ -12,6 +12,7 @@
   import { getModelInfo, LLMFormat } from 'src/ts/model/modellist'
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { language } from 'src/lang'
 
   interface DialogueLine {
     speaker: string
@@ -540,6 +541,7 @@
           <input
             bind:this={userInputEl}
             bind:value={userInput}
+            aria-label={language.messageInput}
             onkeydown={handleInputKey}
             type="text"
             placeholder={waitingForReply ? 'Waiting for reply…' : 'Type a message…'}

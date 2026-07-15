@@ -279,6 +279,7 @@
     <div class="flex items-center gap-2 px-5 py-3 border-t border-textcolor/10 shrink-0">
       <input
         type="text"
+        aria-label={`${language.loadout} ${language.name}`}
         bind:value={saveName}
         placeholder="Loadout name…"
         disabled={operationBusy}

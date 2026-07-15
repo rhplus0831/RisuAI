@@ -37,6 +37,7 @@ import IrisModal from './IrisModal.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { irisStore } from 'src/ts/stores.svelte'
+import { language } from 'src/lang'
 
 const originalAnimate = Element.prototype.animate
 
@@ -213,7 +214,7 @@ describe('IrisModal model availability', () => {
     await vi.runAllTimersAsync()
     await settle()
 
-    expect(target.querySelector('input[type="text"]')).not.toBeNull()
+    expect(target.querySelector('input[type="text"]')?.getAttribute('aria-label')).toBe(language.messageInput)
     await submitMessage('Question after restore')
     await vi.waitFor(() => expect(irisMocks.requestChatData).toHaveBeenCalledOnce())
     await settle()

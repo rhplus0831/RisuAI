@@ -200,6 +200,7 @@ describe('LoadoutModal operations', () => {
     const save = target.querySelector<HTMLButtonElement>('[data-risu-loadout-action="save"]')
     const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
     if (!input || !save || !dialog) throw new Error('Loadout save controls not found')
+    expect(input.getAttribute('aria-label')).toBe('Loadout Name')
     input.value = '  Snapshot  '
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
