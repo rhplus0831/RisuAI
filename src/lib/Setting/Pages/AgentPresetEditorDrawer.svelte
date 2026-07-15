@@ -576,6 +576,11 @@
     if (event.key !== 'Escape') return
     event.preventDefault()
     event.stopPropagation()
+    if (controlsLocked) return
+    if (stepEditorMode) {
+      cancelStepEdit()
+      return
+    }
     requestClose()
   }
 

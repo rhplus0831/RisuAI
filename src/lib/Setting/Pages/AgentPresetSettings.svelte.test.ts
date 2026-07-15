@@ -1130,4 +1130,49 @@ describe('AgentPresetSettings', () => {
     expect(backgroundBranch.inert).toBe(false)
     expect(document.activeElement).toBe(editTrigger)
   })
+
+  it('uses Escape to cancel the inline step editor before closing its parent drawer', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent' })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    const createStep = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((candidate) =>
+      candidate.textContent?.includes(language.agentPresets.createStep),
+    )
+    if (!createStep) throw new Error('Create step button not found')
+    createStep.click()
+    await tick()
+
+    const dialog = target.querySelector<HTMLElement>('[data-risu-agent-preset-editor]')
+    if (!dialog) throw new Error('Agent Preset editor not found')
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }))
+    await tick()
+
+    expect(window.confirm).not.toHaveBeenCalled()
+    expect(target.querySelector('[data-risu-agent-preset-step-form]')).toBeNull()
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBe(dialog)
+
+    createStep.click()
+    await tick()
+    const stepName = target.querySelector<HTMLInputElement>('[data-risu-agent-preset-step-form] input')
+    if (!stepName) throw new Error('Step name input not found')
+    stepName.value = 'Unsaved step'
+    stepName.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(window.confirm).mockReturnValueOnce(false)
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }))
+    await tick()
+    expect(window.confirm).toHaveBeenCalledWith(language.agentPresets.discardStepChangesConfirm)
+    expect(target.querySelector('[data-risu-agent-preset-step-form]')).toBeTruthy()
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBe(dialog)
+
+    vi.mocked(window.confirm).mockReturnValueOnce(true)
+    dialog.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' }))
+    await tick()
+    expect(target.querySelector('[data-risu-agent-preset-step-form]')).toBeNull()
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBe(dialog)
+  })
 })
