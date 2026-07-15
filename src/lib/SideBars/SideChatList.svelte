@@ -619,6 +619,8 @@
               class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
               <button
                 data-risu-chat-action="toggle-folder"
+                aria-expanded={!folder.folded}
+                aria-controls={`risu-chat-folder-panel-${folder.id}`}
                 onclick={() => {
                   if (!editMode) {
                     const previous = currentChatStateSnapshot()
@@ -720,6 +722,7 @@
                 </div>
               </button>
               <div
+                id={`risu-chat-folder-panel-${folder.id}`}
                 data-risu-chat-folder-panel-id={folder.id}
                 hidden={folder.folded}
                 class="risu-chat flex flex-col w-full text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md {folder.folded

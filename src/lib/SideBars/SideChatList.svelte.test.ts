@@ -1011,7 +1011,13 @@ describe('SideChatList DOM contract harness', () => {
     component = mount(SideChatListHarness, { target })
     await tick()
 
-    folderHeader(folderElementById('folder-a')).click()
+    const folder = folderElementById('folder-a')
+    const header = folderHeader(folder)
+    const panel = folderPanelById('folder-a')
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(header.getAttribute('aria-controls')).toBe(panel.id)
+
+    header.click()
     await tick()
 
     expect(sidebarMocks.dispatchUpdateChatFolder).toHaveBeenCalledWith(
@@ -1021,8 +1027,9 @@ describe('SideChatList DOM contract harness', () => {
       sidebarMocks.rollbackServerBackedChatFolderRowMetadata,
     )
     expect(selectedCharacter().chatFolders[0].folded).toBe(true)
-    expect(folderElementById('folder-a').dataset.risuChatFolderFolded).toBe('true')
-    expect(folderPanelById('folder-a').hidden).toBe(true)
+    expect(folder.dataset.risuChatFolderFolded).toBe('true')
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+    expect(panel.hidden).toBe(true)
   })
 
   it('routes a failed direct folder toggle through the bridge-safe rollback callback', async () => {
