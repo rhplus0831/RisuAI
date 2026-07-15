@@ -549,6 +549,10 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
     expect(menuButton.getAttribute('aria-haspopup')).toBe('menu')
     expect(menuButton.getAttribute('aria-controls')).toBe(menu?.id)
     expect(menuButton.getAttribute('aria-expanded')).toBe('true')
+    expect(menu?.classList).toContain('overflow-y-auto')
+    expect(menu?.classList).toContain('overscroll-contain')
+    expect(menu?.className).toContain('max-h-[calc(100dvh-5rem)]')
+    expect(menu?.className).toContain('max-w-[calc(100vw-1rem)]')
 
     const items = Array.from(menu!.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]'))
     expect(items.length).toBeGreaterThan(0)
@@ -617,6 +621,43 @@ describe('DefaultChatScreen overflow menu accessibility', () => {
 })
 
 describe('DefaultChatScreen floating action accessibility', () => {
+  it('uses the localized new-message name for the icon-only floating control', async () => {
+    seedDatabase([1])
+    getResourceDatabase().autoScrollToNewMessage = true
+    getResourceDatabase().newMessageButtonStyle = 'floating-circle'
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('.chat-message-container')).toBeTruthy()
+    })
+    const latestRow = target.querySelector<HTMLElement>('.chat-message-container')!
+    latestRow.getBoundingClientRect = () => ({
+      top: 1_000,
+      bottom: 1_100,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: 100,
+      x: 0,
+      y: 1_000,
+      toJSON() {},
+    })
+
+    getResourceDatabase().characters[0].chats[0].message.push({
+      chatId: 'new-message',
+      role: 'char',
+      data: 'New response',
+    })
+
+    await waitFor(() => {
+      expect(target.querySelector('button[aria-label="newMessage"]')).toBeTruthy()
+    })
+
+    const newMessageButton = target.querySelector<HTMLButtonElement>('button[aria-label="newMessage"]')!
+    expect(newMessageButton.type).toBe('button')
+    expect(newMessageButton.title).toBe('newMessage')
+  })
+
   it('names attachment removal for the selected attachment', async () => {
     seedDatabase([1])
     loadPageMocks.postChatFile.mockResolvedValueOnce([{ type: 'asset', data: 'asset-a' }])
@@ -664,6 +705,20 @@ describe('DefaultChatScreen floating action accessibility', () => {
 })
 
 describe('DefaultChatScreen transcript window state', () => {
+  it('renders one native Load More control instead of nested buttons', async () => {
+    seedDatabase([20])
+    loadPageMocks.chatFoldedStateMessageIndex.index = 10
+    mountScreen()
+
+    await waitFor(() => {
+      const loadMoreButtons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter(
+        (button) => button.textContent?.trim() === 'loadMore',
+      )
+      expect(loadMoreButtons).toHaveLength(1)
+    })
+    expect(target.querySelector('button button')).toBeNull()
+  })
+
   it('offers the Stop TTS action for every active synthesis mode', async () => {
     seedDatabase([2])
     getResourceDatabase().characters[0].ttsMode = 'gptsovits'

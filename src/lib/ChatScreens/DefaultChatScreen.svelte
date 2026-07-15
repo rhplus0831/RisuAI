@@ -1301,9 +1301,11 @@
 
     {#if getDatabase().newMessageButtonStyle === 'floating-circle'}
       <button
+        type="button"
+        aria-label={language.newMessage}
         class="absolute bottom-36 right-4 bg-blue-500 text-white w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-blue-600 transition-colors"
         onclick={scrollToBottom}
-        title="4. 원형 (우하단)">
+        title={language.newMessage}>
         <ArrowDown size={20} />
       </button>
     {/if}
@@ -1632,7 +1634,7 @@
         {/await}
       {:else}
         {#if chatFoldedStateMessageIndex.index !== -1}
-          <button class="w-full flex justify-center max-w-full p-4">
+          <div class="w-full flex justify-center max-w-full p-4">
             <Button
               className="max-w-xl w-full"
               onclick={async () => {
@@ -1641,7 +1643,7 @@
               }}>
               {language.loadMore}
             </Button>
-          </button>
+          </div>
         {/if}
 
         <AgentPresetProgress />
@@ -1735,7 +1737,7 @@
           aria-label={language.menu}
           class="{getDatabase().fixedChatTextarea
             ? 'fixed'
-            : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+            : 'absolute'} right-2 bottom-16 max-h-[calc(100dvh-5rem)] max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
           onkeydown={handleChatMenuKeydown}
           onclick={(e) => {
             e.stopPropagation()
