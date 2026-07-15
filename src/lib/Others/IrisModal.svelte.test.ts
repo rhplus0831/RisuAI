@@ -124,4 +124,33 @@ describe('IrisModal model availability', () => {
     }>
     expect(savedDialogue.at(-1)).toEqual({ speaker: 'You', text: 'Hello' })
   })
+
+  it('cancels an older typing animation when a newer line starts', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+    const pushDialogue = (
+      component as unknown as {
+        pushDialogue: (line: { speaker: string; text: string }) => void
+      }
+    ).pushDialogue
+
+    pushDialogue({ speaker: 'You', text: 'First line' })
+    pushDialogue({ speaker: 'You', text: 'Second line' })
+    await vi.runAllTimersAsync()
+    await settle()
+
+    const dialogueText = target.querySelector('[aria-live="polite"]')
+    expect(dialogueText?.textContent?.trim()).toBe('Second line')
+  })
+
+  it('clears the active typing timer when the modal is destroyed', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+    expect(vi.getTimerCount()).toBeGreaterThan(0)
+
+    unmount(component)
+    component = undefined
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

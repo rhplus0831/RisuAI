@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fade, fly } from 'svelte/transition'
-  import { onMount } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
   import IrisImage from '../../etc/Airisu.webp'
   import { irisStore } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
@@ -97,22 +97,30 @@
   })
 
   let typingTimeout: ReturnType<typeof setTimeout> | null = null
+  let typingRun = 0
 
   const atEnd = $derived(!isTyping && currentIndex >= dialogue.length - 1)
   const waitingForReply = $derived(atEnd && dialogue[dialogue.length - 1]?.speaker === 'You')
   const seenDialogue = $derived(dialogue.slice(0, currentIndex + 1))
 
   function startTyping(text: string) {
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+      typingTimeout = null
+    }
+    const run = ++typingRun
     displayedText = ''
     isTyping = true
     let i = 0
 
     function typeNext() {
+      if (run !== typingRun) return
       if (i < text.length) {
         displayedText += text[i]
         i++
         typingTimeout = setTimeout(typeNext, 30)
       } else {
+        typingTimeout = null
         isTyping = false
       }
     }
@@ -129,6 +137,8 @@
 
     if (isTyping) {
       if (typingTimeout) clearTimeout(typingTimeout)
+      typingTimeout = null
+      typingRun += 1
       displayedText = dialogue[currentIndex].text
       isTyping = false
       return
@@ -277,6 +287,14 @@
         currentIndex = 0
         startTyping(dialogue[currentIndex].text)
       })
+  })
+
+  onDestroy(() => {
+    typingRun += 1
+    if (typingTimeout) {
+      clearTimeout(typingTimeout)
+      typingTimeout = null
+    }
   })
 
   $effect(() => {
