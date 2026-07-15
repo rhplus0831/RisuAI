@@ -99,7 +99,7 @@ function settleActiveConfirmation(confirmed: boolean) {
   request.resolve(confirmed)
 }
 
-alertStoreImported.subscribe((value) => {
+function handleConfirmationStoreValue(value: alertData) {
   const request = activeConfirmation
   if (request) {
     const isOwnedDialog = value.type === request.type && value.dialogOwner === request.owner
@@ -121,9 +121,21 @@ alertStoreImported.subscribe((value) => {
       resumeConfirmationQueueAfterCurrentCallers()
     }
   }
-})
+}
+
+let confirmationStoreSubscribed = false
+
+function ensureConfirmationStoreSubscription() {
+  if (confirmationStoreSubscribed) return
+  confirmationStoreSubscribed = true
+  alertStoreImported.subscribe(handleConfirmationStoreValue)
+}
 
 function queueConfirmation(type: ConfirmationAlertType, msg: string): Promise<boolean> {
+  // Keep confirmation bookkeeping lazy. Several non-UI consumers import
+  // alert helpers with a deliberately partial stores mock, and importing this
+  // module must not subscribe to UI state until a confirmation is requested.
+  ensureConfirmationStoreSubscription()
   const promise = new Promise<boolean>((resolve) => {
     confirmationQueue.push({
       owner: Symbol('alert-dialog'),
