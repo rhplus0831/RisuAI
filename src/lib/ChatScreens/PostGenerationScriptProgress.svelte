@@ -4,7 +4,13 @@
   import { postGenerationProgress, type ActivePostGenerationProgress } from 'src/ts/process/postGenerationProgress'
   import { getPostGenerationScriptProgress } from './chatGenerationLoading'
 
+  let { characterId, chatId }: { characterId: string; chatId: string } = $props()
   let now = $state(Date.now())
+  let progress = $derived.by(() => {
+    const current = $postGenerationProgress
+    if (!current) return null
+    return current.target.characterId === characterId && current.target.chatId === chatId ? current : null
+  })
 
   function ownerLabel(progress: ActivePostGenerationProgress): string {
     const rawName = progress.ownerName || progress.ownerId || language.chatPostGenerationProgressUnknownScript
@@ -26,7 +32,6 @@
   }
 
   let progressLabel = $derived.by(() => {
-    const progress = $postGenerationProgress
     if (!progress) return ''
     return language.chatPostGenerationProgressLabel(
       ownerLabel(progress),
@@ -37,12 +42,11 @@
   })
 
   let progressPercent = $derived.by(() => {
-    const progress = $postGenerationProgress
     return progress ? getPostGenerationScriptProgress(progress.startedAt, now, progress.llmCallCount) : 0
   })
 
   $effect(() => {
-    if (!$postGenerationProgress) return
+    if (!progress) return
     now = Date.now()
     const timer = setInterval(() => {
       now = Date.now()
@@ -51,7 +55,7 @@
   })
 </script>
 
-{#if $postGenerationProgress}
+{#if progress}
   <div class="post-generation-progress" role="status" aria-live="polite" aria-busy="true">
     <div class="post-generation-progress-header">
       <LoaderCircleIcon size={15} class="animate-spin shrink-0" />

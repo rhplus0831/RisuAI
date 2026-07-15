@@ -654,6 +654,7 @@ describe('requestServerChat', () => {
       expect(snapshots).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            target: { characterId: 'char-1', chatId: 'chat-1' },
             phase: 'onOutput',
             ownerType: 'module',
             ownerName: 'Translator',
@@ -666,6 +667,106 @@ describe('requestServerChat', () => {
     } finally {
       unsubscribe()
     }
+  })
+
+  it('keeps a superseded chat stream from replacing or clearing the current post-generation progress', async () => {
+    const encoder = new TextEncoder()
+    const controlledStream = () => {
+      let controller!: ReadableStreamDefaultController<Uint8Array>
+      const response = new Response(
+        new ReadableStream<Uint8Array>({
+          start(value) {
+            controller = value
+          },
+        }),
+        {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        },
+      )
+      return {
+        response,
+        send(event: string, data: Record<string, unknown>) {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+        },
+        close() {
+          controller.close()
+        },
+      }
+    }
+    const sendReadyFrames = (stream: ReturnType<typeof controlledStream>, generationId: string) => {
+      stream.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+      stream.send('info', {
+        generationId,
+        generationInfo: { generationId, model: 'm' },
+      })
+    }
+    const sendProgress = (
+      stream: ReturnType<typeof controlledStream>,
+      ownerName: string,
+      status: 'started' | 'running',
+    ) => {
+      stream.send('post_generation_progress', {
+        phase: 'onOutput',
+        status,
+        runSeq: 1,
+        ownerType: 'module',
+        ownerName,
+        llmCallCount: status === 'started' ? 0 : 1,
+        pendingLlmCount: status === 'started' ? 0 : 1,
+        llmCallCounts: { LLM: 0, axLLM: status === 'started' ? 0 : 1 },
+        pendingLlmCounts: { LLM: 0, axLLM: status === 'started' ? 0 : 1 },
+      })
+    }
+
+    const first = controlledStream()
+    const second = controlledStream()
+    const responses = [first.response, second.response]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => responses.shift()!),
+    )
+
+    const firstPending = requestServerChatGeneration(baseInput, null)
+    sendReadyFrames(first, 'gen-first')
+    sendProgress(first, 'First Chat Script', 'started')
+    const firstResult = await firstPending
+    expect(firstResult.status).toBe('ok')
+    if (firstResult.status !== 'ok') return
+    await vi.waitFor(() => {
+      expect(get(postGenerationProgress)).toMatchObject({
+        target: { characterId: 'char-1', chatId: 'chat-1' },
+        ownerName: 'First Chat Script',
+      })
+    })
+
+    const secondInput = { ...baseInput, characterId: 'char-2', chatId: 'chat-2' }
+    const secondPending = requestServerChatGeneration(secondInput, null)
+    sendReadyFrames(second, 'gen-second')
+    sendProgress(second, 'Second Chat Script', 'running')
+    const secondResult = await secondPending
+    expect(secondResult.status).toBe('ok')
+    if (secondResult.status !== 'ok') return
+    await vi.waitFor(() => {
+      expect(get(postGenerationProgress)).toMatchObject({
+        target: { characterId: 'char-2', chatId: 'chat-2' },
+        ownerName: 'Second Chat Script',
+      })
+    })
+
+    sendProgress(first, 'Late First Chat Script', 'running')
+    first.send('done', { generationId: 'gen-first', generationInfo: { generationId: 'gen-first' } })
+    first.close()
+    await expect(firstResult.terminal).resolves.toMatchObject({ status: 'done' })
+    expect(get(postGenerationProgress)).toMatchObject({
+      target: { characterId: 'char-2', chatId: 'chat-2' },
+      ownerName: 'Second Chat Script',
+    })
+
+    second.send('done', { generationId: 'gen-second', generationInfo: { generationId: 'gen-second' } })
+    second.close()
+    await expect(secondResult.terminal).resolves.toMatchObject({ status: 'done' })
+    expect(get(postGenerationProgress)).toBeNull()
   })
 
   it('updates and clears Agent Preset progress from generation streams', async () => {

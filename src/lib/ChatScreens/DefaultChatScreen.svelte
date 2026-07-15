@@ -1540,7 +1540,7 @@
         {/if}
 
         <AgentPresetProgress />
-        <PostGenerationScriptProgress />
+        <PostGenerationScriptProgress characterId={currentCharacter.chaId} chatId={currentChatId} />
 
         <Chats
           bind:this={chatsInstance}
