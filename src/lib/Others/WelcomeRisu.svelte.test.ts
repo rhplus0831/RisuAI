@@ -18,6 +18,9 @@ vi.mock('../ChatScreens/Chat.svelte', async () => {
 vi.mock('src/lang', () => ({
   changeLanguage: welcomeMocks.changeLanguage,
   language: {
+    hotkeyDesc: {
+      send: 'Send',
+    },
     recommended: 'Recommended',
     setup: {
       allDone: 'All done',
@@ -48,7 +51,6 @@ vi.mock('src/lang', () => ({
       setupMessageOption2: 'Set up later',
       setupOpenAI: 'Enter OpenAI key',
       setupOpenRouter: 'Enter OpenRouter key',
-      send: 'Send',
       welcome: 'Welcome',
       welcome2: 'Welcome back {username}',
     },
