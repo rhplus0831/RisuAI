@@ -294,6 +294,7 @@
             <td class="px-3 py-3">
               <SelectInput
                 size="sm"
+                disabled={applying}
                 value={binding.mode}
                 onchange={(event) => setBindingMode(role, event.currentTarget.value as BindingMode)}>
                 <OptionInput value="profile">{language.modelProfiles.bindingModes.profile}</OptionInput>
@@ -306,6 +307,7 @@
                 <SelectInput
                   size="sm"
                   className="mt-2 w-full"
+                  disabled={applying}
                   value={binding.profileId}
                   onchange={(event) => setBindingProfile(role, event.currentTarget.value)}>
                   {#if profiles.length === 0}

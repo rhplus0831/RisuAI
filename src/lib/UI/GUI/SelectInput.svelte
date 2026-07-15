@@ -3,6 +3,7 @@
     value: string | number
     className?: string
     size?: 'sm' | 'md' | 'lg' | 'xl'
+    disabled?: boolean
     children?: import('svelte').Snippet
     onchange?: (
       event: Event & {
@@ -11,7 +12,7 @@
     ) => any
   }
 
-  let { value = $bindable(), className = '', size = 'md', children, onchange }: Props = $props()
+  let { value = $bindable(), className = '', size = 'md', disabled = false, children, onchange }: Props = $props()
 </script>
 
 <select
@@ -27,6 +28,7 @@
   class:py-1={size === 'sm'}
   class:px-6={size === 'lg'}
   class:py-3={size === 'lg'}
+  {disabled}
   bind:value
   {onchange}>
   {@render children?.()}

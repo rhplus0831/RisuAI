@@ -175,4 +175,26 @@ describe('ModelProfileRoleList', () => {
     })
     expect(commandSpies.runServerCommandSequence).toHaveBeenCalledTimes(1)
   })
+
+  it('prevents role edits while Apply is pending', async () => {
+    const roleCommand = createDeferred<{ status: 'ok' }>()
+    commandSpies.updateModelRoleProfilesCommand.mockReturnValue(roleCommand.promise)
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    const [chatMainModeSelect] = Array.from(target.querySelectorAll('select'))
+    if (!(chatMainModeSelect instanceof HTMLSelectElement)) throw new Error('Chat main binding mode select not found')
+
+    setSelectValue(chatMainModeSelect, 'profile')
+    await tick()
+    buttonByText(language.modelProfiles.apply).click()
+    await tick()
+
+    expect(Array.from(target.querySelectorAll('select')).every((select) => select.disabled)).toBe(true)
+
+    roleCommand.resolve({ status: 'ok' })
+    await flushAsync()
+
+    expect(Array.from(target.querySelectorAll('select')).every((select) => !select.disabled)).toBe(true)
+  })
 })
