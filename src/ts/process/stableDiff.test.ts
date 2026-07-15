@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   db: {} as any,
   fetchNative: vi.fn(),
   globalFetch: vi.fn(),
-  processZip: vi.fn(async () => 'data:image/png;base64,zip-image'),
+  requestImageGeneration: vi.fn(),
   readImage: vi.fn(),
   requestChatData: vi.fn(),
 }))
@@ -42,8 +42,14 @@ vi.mock('./request/request', () => ({
   requestChatData: state.requestChatData,
 }))
 
-vi.mock('./processzip', () => ({
-  processZip: state.processZip,
+vi.mock('../server/imageGeneration', () => ({
+  imageGenerationCredential: (apiKey: string) =>
+    apiKey === '__RISU_SECRET_MASKED__'
+      ? { source: 'stored' }
+      : apiKey
+        ? { source: 'provided', apiKey }
+        : { source: 'none' },
+  requestImageGeneration: state.requestImageGeneration,
 }))
 
 vi.mock('../kei/kei', () => ({
@@ -115,19 +121,17 @@ describe('stableDiff image-generation hygiene', () => {
     })
     state.db.NAII2I = true
     state.readImage.mockResolvedValueOnce(new Uint8Array([1, 2, 3]))
-    state.globalFetch.mockResolvedValueOnce({
-      ok: true,
-      data: new Uint8Array([9, 8, 7]),
-    })
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,zip-image')
 
     await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,zip-image')
 
     expect(state.readImage).toHaveBeenCalledTimes(1)
     expect(state.readImage).toHaveBeenCalledWith('saved-i2i-asset')
-    expect(state.globalFetch).toHaveBeenCalledWith(
-      'https://novelai.example.test/generate',
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({
+        provider: 'novelai',
+        credential: { source: 'provided', apiKey: 'nai-key' },
+        payload: expect.objectContaining({
           action: 'img2img',
           parameters: expect.objectContaining({
             image: 'AQID',
@@ -136,6 +140,7 @@ describe('stableDiff image-generation hygiene', () => {
           }),
         }),
       }),
+      expect.any(AbortSignal),
     )
   })
 
@@ -146,23 +151,21 @@ describe('stableDiff image-generation hygiene', () => {
       base64image: 'legacy-inline-image',
     })
     state.db.NAII2I = true
-    state.globalFetch.mockResolvedValueOnce({
-      ok: true,
-      data: new Uint8Array([9, 8, 7]),
-    })
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,zip-image')
 
     await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,zip-image')
 
     expect(state.readImage).not.toHaveBeenCalled()
-    expect(state.globalFetch).toHaveBeenCalledWith(
-      'https://novelai.example.test/generate',
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({
+        provider: 'novelai',
+        payload: expect.objectContaining({
           parameters: expect.objectContaining({
             image: 'legacy-inline-image',
           }),
         }),
       }),
+      expect.any(AbortSignal),
     )
   })
 
@@ -174,23 +177,21 @@ describe('stableDiff image-generation hygiene', () => {
     })
     state.db.NAII2I = true
     state.readImage.mockRejectedValueOnce(new Error('asset missing'))
-    state.globalFetch.mockResolvedValueOnce({
-      ok: true,
-      data: new Uint8Array([9, 8, 7]),
-    })
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,zip-image')
 
     await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,zip-image')
 
     expect(state.readImage).toHaveBeenCalledWith('missing-imported-asset')
-    expect(state.globalFetch).toHaveBeenCalledWith(
-      'https://novelai.example.test/generate',
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
       expect.objectContaining({
-        body: expect.objectContaining({
+        provider: 'novelai',
+        payload: expect.objectContaining({
           parameters: expect.objectContaining({
             image: 'legacy-fallback-image',
           }),
         }),
       }),
+      expect.any(AbortSignal),
     )
   })
 
@@ -207,35 +208,21 @@ describe('stableDiff image-generation hygiene', () => {
       },
     }
     state.readImage.mockResolvedValueOnce(new Uint8Array([4, 5, 6]))
-    state.globalFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { data: { id: 'prediction-1' } },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { data: { status: 'completed', outputs: ['https://images.example.test/result.png'] } },
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        data: new Uint8Array([7, 8, 9]),
-        headers: { 'content-type': 'image/png' },
-      })
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,BwgJ')
 
     await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe('data:image/png;base64,BwgJ')
 
     expect(state.readImage).toHaveBeenCalledTimes(1)
     expect(state.readImage).toHaveBeenCalledWith('saved-wavespeed-asset')
-    expect(state.globalFetch).toHaveBeenNthCalledWith(
-      1,
-      'https://api.wavespeed.ai/api/v3/wavespeed/model-a',
-      expect.objectContaining({
-        body: {
-          prompt: 'prompt',
-          images: ['BAUG'],
-          loras: [],
-        },
-      }),
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
+      {
+        provider: 'wavespeed',
+        credential: { source: 'provided', apiKey: 'wavespeed-key' },
+        prompt: 'prompt',
+        model: 'wavespeed/model-a',
+        images: ['BAUG'],
+      },
+      expect.any(AbortSignal),
     )
   })
 
@@ -259,10 +246,7 @@ describe('stableDiff image-generation hygiene', () => {
       type: 'success',
       result: '<Thoughts>private chain</Thoughts>\nblue-haired mage with lantern',
     })
-    state.globalFetch.mockResolvedValueOnce({
-      ok: true,
-      data: { data: [{ b64_json: 'dalle-image' }] },
-    })
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,dalle-image')
 
     await expect(
       stableDiff(char, 'User asks for a moonlit character image.', { signal: abortController.signal }),
@@ -291,18 +275,124 @@ describe('stableDiff image-generation hygiene', () => {
       'otherAx',
       abortController.signal,
     )
-    expect(state.globalFetch).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/images/generations',
-      expect.objectContaining({
-        body: expect.objectContaining({
-          prompt: 'cinematic portrait of blue-haired mage with lantern',
-          model: 'dall-e-3',
-          response_format: 'b64_json',
-          style: 'natural',
-          quality: 'standard',
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
+      {
+        provider: 'dalle',
+        credential: { source: 'provided', apiKey: 'openai-key' },
+        prompt: 'cinematic portrait of blue-haired mage with lantern',
+        quality: 'standard',
+      },
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('uses the stored credential sentinel without sending it upstream from the browser', async () => {
+    const char = makeCharacter()
+    seedNovelAiDb()
+    state.db.NAIApiKey = '__RISU_SECRET_MASKED__'
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,server-image')
+
+    await expect(generateAIImage('prompt', char, 'negative', 'inlay')).resolves.toBe(
+      'data:image/png;base64,server-image',
+    )
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
+      expect.objectContaining({ credential: { source: 'stored' }, provider: 'novelai' }),
+      expect.any(AbortSignal),
+    )
+  })
+
+  it('aborts and suppresses an older server image result for the same character target', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: '__RISU_SECRET_MASKED__',
+      dallEQuality: 'standard',
+    }
+    const pending: Array<{ resolve: (value: string) => void; signal: AbortSignal }> = []
+    state.requestImageGeneration.mockImplementation(
+      async (_request: unknown, signal: AbortSignal) =>
+        new Promise<string>((resolve) => {
+          pending.push({ resolve, signal })
         }),
-        abortSignal: abortController.signal,
-      }),
+    )
+
+    const first = generateAIImage('first', char, '', '')
+    const second = generateAIImage('second', char, '', '')
+    expect(pending).toHaveLength(2)
+    expect(pending[0].signal.aborted).toBe(true)
+
+    pending[1].resolve('data:image/png;base64,newer')
+    await expect(second).resolves.toBe('')
+    pending[0].resolve('data:image/png;base64,older')
+    await expect(first).resolves.toBe(false)
+    expect(state.charEmotionValue[char.chaId]).toEqual([
+      ['data:image/png;base64,newer', 'data:image/png;base64,newer', expect.any(Number)],
+    ])
+    expect(state.alertError).not.toHaveBeenCalled()
+  })
+
+  it('applies Imagen results to the character emotion view in non-inlay mode', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'Imagen',
+      google: { accessToken: '__RISU_SECRET_MASKED__' },
+      ImagenModel: 'imagen-4.0-generate-001',
+      ImagenImageSize: '1K',
+      ImagenAspectRatio: '1:1',
+      ImagenPersonGeneration: 'allow_all',
+    }
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,imagen')
+
+    await expect(generateAIImage('prompt', char, '', '')).resolves.toBe('')
+    expect(state.charEmotionValue[char.chaId]).toEqual([
+      ['data:image/png;base64,imagen', 'data:image/png;base64,imagen', expect.any(Number)],
+    ])
+  })
+
+  it('forwards caller cancellation and never applies a cancelled server response', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'dalle',
+      openAIKey: '__RISU_SECRET_MASKED__',
+      dallEQuality: 'standard',
+    }
+    let resolveRequest!: (value: string) => void
+    let forwardedSignal!: AbortSignal
+    state.requestImageGeneration.mockImplementation(
+      async (_request: unknown, signal: AbortSignal) =>
+        new Promise<string>((resolve) => {
+          forwardedSignal = signal
+          resolveRequest = resolve
+        }),
+    )
+    const controller = new AbortController()
+
+    const pending = generateAIImage('prompt', char, '', '', { signal: controller.signal })
+    controller.abort()
+    expect(forwardedSignal.aborted).toBe(true)
+    resolveRequest('data:image/png;base64,cancelled')
+
+    await expect(pending).resolves.toBe(false)
+    expect(state.charEmotionValue[char.chaId]).toBeUndefined()
+    expect(state.alertError).not.toHaveBeenCalled()
+  })
+
+  it('keeps the legacy Kei account token behind the same stored-secret operation', async () => {
+    const char = makeCharacter()
+    state.db = {
+      sdProvider: 'kei',
+      account: { token: '__RISU_SECRET_MASKED__' },
+    }
+    state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,kei')
+
+    await expect(generateAIImage('prompt', char, '', 'inlay')).resolves.toBe('data:image/png;base64,kei')
+    expect(state.requestImageGeneration).toHaveBeenCalledWith(
+      {
+        provider: 'kei',
+        credential: { source: 'stored' },
+        prompt: 'prompt',
+      },
+      expect.any(AbortSignal),
     )
   })
 
@@ -311,10 +401,7 @@ describe('stableDiff image-generation hygiene', () => {
     const char = makeCharacter()
     try {
       seedNovelAiDb()
-      state.globalFetch.mockResolvedValueOnce({
-        ok: true,
-        data: new Uint8Array([1, 2, 3]),
-      })
+      state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,novel-image')
       await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toMatch(/^data:image\/png;base64,/)
 
       state.db = {
@@ -322,10 +409,7 @@ describe('stableDiff image-generation hygiene', () => {
         openAIKey: 'openai-key',
         dallEQuality: 'standard',
       }
-      state.globalFetch.mockResolvedValueOnce({
-        ok: true,
-        data: { data: [{ b64_json: 'dalle-image' }] },
-      })
+      state.requestImageGeneration.mockResolvedValueOnce('data:image/png;base64,dalle-image')
       await expect(generateAIImage('prompt', char, 'neg', 'inlay')).resolves.toBe('data:image/png;base64,dalle-image')
 
       state.db = {

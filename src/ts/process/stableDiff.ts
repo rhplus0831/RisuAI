@@ -5,15 +5,96 @@ import { alertError } from '../alert'
 import { fetchNative, globalFetch, readImage } from '../globalApi.svelte'
 import { CharEmotion } from '../stores.svelte'
 import type { OpenAIChat } from './index.svelte'
-import { processZip } from './processzip'
-import { keiServerURL } from '../kei/kei'
 import random from 'lodash/random'
+import { imageGenerationCredential, requestImageGeneration } from '../server/imageGeneration'
+import type { ImageGenerationRequest } from '../server/imageGenerationProtocol'
 
 interface ImageGenerationOptions {
   signal?: AbortSignal
 }
 
 const REFERENCE_IMAGE_LOAD_TIMEOUT_MS = 10_000
+const SERVER_IMAGE_PROVIDERS = new Set([
+  'novelai',
+  'dalle',
+  'stability',
+  'fal',
+  'Imagen',
+  'openai-compat',
+  'wavespeed',
+  'kei',
+])
+
+interface ActiveImageGeneration {
+  key: string
+  sequence: number
+  controller: AbortController
+  signal: AbortSignal
+  cleanupCallerAbort: () => void
+}
+
+const activeImageGenerations = new Map<string, ActiveImageGeneration>()
+let nextImageGenerationSequence = 0
+
+function beginServerImageGeneration(
+  currentChar: character,
+  returnSdData: string,
+  callerSignal?: AbortSignal,
+): ActiveImageGeneration {
+  const key = `${currentChar.chaId}:${returnSdData === 'inlay' ? 'inlay' : 'emotion'}`
+  const previous = activeImageGenerations.get(key)
+  previous?.controller.abort()
+  previous?.cleanupCallerAbort()
+  const controller = new AbortController()
+  const forwardCallerAbort = () => controller.abort(callerSignal?.reason)
+  if (callerSignal?.aborted) {
+    forwardCallerAbort()
+  } else {
+    callerSignal?.addEventListener('abort', forwardCallerAbort, { once: true })
+  }
+  const operation: ActiveImageGeneration = {
+    key,
+    sequence: ++nextImageGenerationSequence,
+    controller,
+    signal: controller.signal,
+    cleanupCallerAbort: () => callerSignal?.removeEventListener('abort', forwardCallerAbort),
+  }
+  activeImageGenerations.set(key, operation)
+  return operation
+}
+
+function isFreshImageGeneration(operation: ActiveImageGeneration): boolean {
+  return activeImageGenerations.get(operation.key)?.sequence === operation.sequence
+}
+
+function clearImageGeneration(operation: ActiveImageGeneration): void {
+  operation.cleanupCallerAbort()
+  if (isFreshImageGeneration(operation)) activeImageGenerations.delete(operation.key)
+}
+
+async function requestAndApplyServerImage(
+  request: ImageGenerationRequest,
+  currentChar: character,
+  returnSdData: string,
+  operation: ActiveImageGeneration,
+): Promise<string | false> {
+  try {
+    const image = await requestImageGeneration(request, operation.signal)
+    if (operation.signal.aborted || !isFreshImageGeneration(operation)) return false
+    if (returnSdData === 'inlay') return image
+
+    const charemotions = get(CharEmotion)
+    charemotions[currentChar.chaId] = [[image, image, Date.now()]]
+    CharEmotion.set(charemotions)
+    return returnSdData
+  } catch (error) {
+    if (operation.signal.aborted || !isFreshImageGeneration(operation)) return false
+    alertError(error)
+    return false
+  } finally {
+    clearImageGeneration(operation)
+  }
+}
 
 function isImageGenerationAborted(signal?: AbortSignal): boolean {
   return signal?.aborted === true
@@ -183,6 +264,10 @@ export async function generateAIImage(
   if (isImageGenerationAborted(options.signal)) {
     return false
   }
+  const serverOperation = SERVER_IMAGE_PROVIDERS.has(db.sdProvider)
+    ? beginServerImageGeneration(currentChar, returnSdData, options.signal)
+    : null
+  const imageGenerationSignal = serverOperation?.signal ?? options.signal
 
   if (db.sdProvider === 'webui') {
     const uri = new URL(db.webUiUrl)
@@ -323,10 +408,6 @@ export async function generateAIImage(
           director_reference_strength_values: [],
         },
       },
-      headers: {
-        Authorization: 'Bearer ' + db.NAIApiKey,
-      },
-      rawResponse: true,
     }
 
     // Add Variety+ option
@@ -410,9 +491,9 @@ export async function generateAIImage(
         const imageObj = new Image()
 
         await loadStableDiffReferenceImageForTests(imageObj, `data:image/png;base64,${base64img}`, {
-          signal: options.signal,
+          signal: imageGenerationSignal,
         })
-        if (isImageGenerationAborted(options.signal)) {
+        if (isImageGenerationAborted(imageGenerationSignal)) {
           return false
         }
 
@@ -440,7 +521,12 @@ export async function generateAIImage(
           base64img = Buffer.from(arrayBuffer).toString('base64')
         }
       } catch (error) {
+        if (imageGenerationSignal?.aborted || !isFreshImageGeneration(serverOperation!)) {
+          clearImageGeneration(serverOperation!)
+          return false
+        }
         alertError(`Reference image failed to load: ${error}`)
+        clearImageGeneration(serverOperation!)
         return false
       }
 
@@ -461,8 +547,6 @@ export async function generateAIImage(
     }
 
     if (db.NAII2I) {
-      let seed = random(0, 1000000000)
-
       const base64img = await resolveStoredImageBase64(
         db.NAIImgConfig.image,
         db.NAIImgConfig.base64image,
@@ -475,139 +559,57 @@ export async function generateAIImage(
         reqlist.body.parameters.image = base64img
         reqlist.body.parameters.strength = db.NAIImgConfig.strength || 0.7
         reqlist.body.parameters.noise = db.NAIImgConfig.noise || 0
+      } else {
+        if (imageGenerationSignal?.aborted || !isFreshImageGeneration(serverOperation!)) {
+          clearImageGeneration(serverOperation!)
+          return false
+        }
+        alertError('Reference image failed to load')
+        clearImageGeneration(serverOperation!)
+        return false
       }
     } else {
       reqlist = commonReq
       reqlist.body.action = 'generate'
     }
-    try {
-      const da = await globalFetch(db.NAIImgUrl, { ...reqlist, abortSignal: options.signal })
-
-      if (isImageGenerationAborted(options.signal)) {
-        return false
-      }
-
-      if (returnSdData === 'inlay') {
-        if (da.ok) {
-          const img = await processZip(da.data)
-          return img
-        } else {
-          alertError(Buffer.from(da.data).toString())
-          return ''
-        }
-      } else if (da.ok) {
-        let charemotions = get(CharEmotion)
-        const img = await processZip(da.data)
-        const emos: [string, string, number][] = [[img, img, Date.now()]]
-        charemotions[currentChar.chaId] = emos
-        CharEmotion.set(charemotions)
-      } else {
-        alertError(Buffer.from(da.data).toString())
-        return false
-      }
-
-      return returnSdData
-    } catch (error) {
-      alertError(error)
-      return false
-    }
+    return requestAndApplyServerImage(
+      {
+        provider: 'novelai',
+        credential: imageGenerationCredential(db.NAIApiKey),
+        payload: reqlist.body,
+      },
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   if (db.sdProvider === 'dalle') {
-    const da = await globalFetch('https://api.openai.com/v1/images/generations', {
-      body: {
+    return requestAndApplyServerImage(
+      {
+        provider: 'dalle',
+        credential: imageGenerationCredential(db.openAIKey),
         prompt: genPrompt,
-        model: 'dall-e-3',
-        response_format: 'b64_json',
-        style: 'natural',
         quality: db.dallEQuality || 'standard',
       },
-      headers: {
-        Authorization: 'Bearer ' + db.openAIKey,
-      },
-      abortSignal: options.signal,
-    })
-
-    if (isImageGenerationAborted(options.signal)) {
-      return false
-    }
-
-    if (returnSdData === 'inlay') {
-      let res = da?.data?.data?.[0]?.b64_json
-      if (!res) {
-        alertError(JSON.stringify(da.data))
-        return ''
-      }
-      return `data:image/png;base64,${res}`
-    } else if (da.ok) {
-      let charemotions = get(CharEmotion)
-      let img = da?.data?.data?.[0]?.b64_json
-      if (!img) {
-        alertError(JSON.stringify(da.data))
-        return false
-      }
-      img = `data:image/png;base64,${img}`
-      const emos: [string, string, number][] = [[img, img, Date.now()]]
-      charemotions[currentChar.chaId] = emos
-      CharEmotion.set(charemotions)
-    } else {
-      alertError(Buffer.from(da.data).toString())
-      return false
-    }
-    return returnSdData
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   if (db.sdProvider === 'stability') {
-    const formData = new FormData()
-    const model = db.stabilityModel
-    formData.append('prompt', genPrompt)
-    if (model !== 'core' && model !== 'ultra') {
-      formData.append('negative_prompt', neg)
-      formData.append('model', model)
-    }
-    if (model === 'core') {
-      if (db.stabllityStyle) {
-        formData.append('style_preset', db.stabllityStyle)
-      }
-    }
-    if (model === 'ultra') {
-      formData.append('negative_prompt', neg)
-    }
-
-    const uri = model === 'core' ? 'core' : model === 'ultra' ? 'ultra' : 'sd3'
-    const da = await fetch('https://api.stability.ai/v2beta/stable-image/generate/' + uri, {
-      body: formData,
-      headers: {
-        authorization: 'Bearer ' + db.stabilityKey,
-        accept: 'image/*',
+    return requestAndApplyServerImage(
+      {
+        provider: 'stability',
+        credential: imageGenerationCredential(db.stabilityKey),
+        prompt: genPrompt,
+        negativePrompt: neg,
+        model: db.stabilityModel,
+        style: db.stabllityStyle || '',
       },
-      method: 'POST',
-      signal: options.signal,
-    })
-
-    if (isImageGenerationAborted(options.signal)) {
-      return false
-    }
-
-    const res = await da.arrayBuffer()
-    if (!da.ok) {
-      alertError(Buffer.from(res).toString())
-      return false
-    }
-
-    if ((da.headers['content-type'] ?? '').startsWith('application/json')) {
-      alertError(Buffer.from(res).toString())
-      return false
-    }
-
-    if (returnSdData === 'inlay') {
-      return `data:image/png;base64,${Buffer.from(res).toString('base64')}`
-    }
-
-    let charemotions = get(CharEmotion)
-    const img = `data:image/png;base64,${Buffer.from(res).toString('base64')}`
-    const emos: [string, string, number][] = [[img, img, Date.now()]]
-    charemotions[currentChar.chaId] = emos
-    CharEmotion.set(charemotions)
-    return returnSdData
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
 
   if (db.sdProvider === 'comfy' || db.sdProvider === 'comfyui') {
@@ -726,390 +728,107 @@ export async function generateAIImage(
     }
   }
   if (db.sdProvider === 'kei') {
-    const db = getDatabase()
-    const auth = db?.account?.token
-    const da = await globalFetch(keiServerURL() + '/imaggen', {
-      body: {
+    return requestAndApplyServerImage(
+      {
+        provider: 'kei',
+        credential: imageGenerationCredential(db.account?.token),
         prompt: genPrompt,
       },
-      headers: {
-        'x-api-key': auth,
-      },
-      abortSignal: options.signal,
-    })
-
-    if (isImageGenerationAborted(options.signal)) {
-      return false
-    }
-
-    if (!da.ok || !da.data.success) {
-      alertError(Buffer.from(da.data.message || da.data).toString())
-      return false
-    }
-    if (returnSdData === 'inlay') {
-      return da.data.data
-    } else {
-      let charemotions = get(CharEmotion)
-      const img = da.data.data
-      const emos: [string, string, number][] = [[img, img, Date.now()]]
-      charemotions[currentChar.chaId] = emos
-      CharEmotion.set(charemotions)
-    }
-    return returnSdData
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   if (db.sdProvider === 'fal') {
-    const model = db.falModel
-    const token = db.falToken
-
-    let body: { [key: string]: any } = {
-      prompt: genPrompt,
-      enable_safety_checker: false,
-      sync_mode: true,
-      image_size: {
+    return requestAndApplyServerImage(
+      {
+        provider: 'fal',
+        credential: imageGenerationCredential(db.falToken),
+        prompt: genPrompt,
+        model: db.falModel,
         width: db.sdConfig.width,
         height: db.sdConfig.height,
+        ...(db.falModel === 'fal-ai/flux-lora' && db.falLora?.trim()
+          ? {
+              lora: {
+                path: db.falLora,
+                scale: db.falLoraScale,
+              },
+            }
+          : {}),
       },
-    }
-
-    if (db.falModel === 'fal-ai/flux-lora') {
-      let loraPath = db.falLora
-      if (loraPath.startsWith('urn:') || loraPath.startsWith('civitai:')) {
-        const id = loraPath.split('@').pop()
-        loraPath = `https://civitai.com/api/download/models/${id}?type=Model&format=SafeTensor`
-      }
-      body.loras = [
-        {
-          path: loraPath,
-          scale: db.falLoraScale,
-        },
-      ]
-    }
-
-    if (db.falModel === 'fal-ai/flux-pro') {
-      delete body.enable_safety_checker
-    }
-
-    const res = await globalFetch('https://fal.run/' + model, {
-      headers: {
-        Authorization: 'Key ' + token,
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-      body: body,
-      abortSignal: options.signal,
-    })
-
-    if (isImageGenerationAborted(options.signal)) {
-      return false
-    }
-
-    if (!res.ok) {
-      alertError(JSON.stringify(res.data))
-      return false
-    }
-
-    let image = res.data?.images?.[0]?.url
-    if (!image) {
-      alertError(JSON.stringify(res.data))
-      return false
-    }
-
-    if (returnSdData === 'inlay') {
-      return image
-    } else {
-      let charemotions = get(CharEmotion)
-      const emos: [string, string, number][] = [[image, image, Date.now()]]
-      charemotions[currentChar.chaId] = emos
-      CharEmotion.set(charemotions)
-    }
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   if (db.sdProvider === 'Imagen') {
-    const model = db.ImagenModel
-    const size = db.ImagenImageSize
-    const aspect = db.ImagenAspectRatio
-    const person = db.ImagenPersonGeneration
-
-    let body: any = {
-      instances: [
-        {
-          prompt: genPrompt,
-        },
-      ],
-      parameters: {
-        sampleCount: 1,
-        aspectRatio: aspect,
-        personGeneration: person,
+    return requestAndApplyServerImage(
+      {
+        provider: 'imagen',
+        credential: imageGenerationCredential(db.google.accessToken),
+        prompt: genPrompt,
+        model: db.ImagenModel,
+        imageSize: db.ImagenImageSize,
+        aspectRatio: db.ImagenAspectRatio,
+        personGeneration: db.ImagenPersonGeneration,
       },
-    }
-
-    if (model === 'imagen-4.0-generate-001' || model === 'imagen-4.0-ultra-generate-001') {
-      body.parameters = {
-        ...body.parameters,
-        sampleImageSize: size,
-      }
-    }
-
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${db.google.accessToken}`
-
-    const res = await globalFetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      method: 'POST',
-      body: body,
-      abortSignal: options.signal,
-    })
-
-    if (isImageGenerationAborted(options.signal)) {
-      return false
-    }
-
-    if (!res.ok) {
-      alertError(JSON.stringify(res.data))
-      return false
-    }
-
-    const img64 = res.data?.predictions?.[0]?.bytesBase64Encoded
-
-    if (!img64) {
-      alertError(JSON.stringify(res.data))
-      return false
-    }
-
-    const mimeType = res.data?.predictions?.[0]?.mimeType || 'image/png'
-    return `data:${mimeType};base64,${img64}`
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   if (db.sdProvider === 'openai-compat') {
     const config = db.openaiCompatImage
     if (!config.url) {
       alertError('OpenAI Compatible API URL is not set')
+      clearImageGeneration(serverOperation!)
       return false
     }
 
-    const body: { [key: string]: any } = {
-      prompt: genPrompt,
-      response_format: 'b64_json',
-      size: config.size || '1024x1024',
-      quality: config.quality || 'auto',
-    }
-
-    if (config.model) {
-      body.model = config.model
-    }
-
-    const headers: { [key: string]: string } = {
-      'Content-Type': 'application/json',
-    }
-
-    if (config.key) {
-      headers['Authorization'] = 'Bearer ' + config.key
-    }
-
-    const da = await globalFetch(config.url, {
-      body: body,
-      headers: headers,
-      abortSignal: options.signal,
-    })
-
-    if (isImageGenerationAborted(options.signal)) {
-      return false
-    }
-
-    if (returnSdData === 'inlay') {
-      let res = da?.data?.data?.[0]?.b64_json
-      if (!res) {
-        alertError(JSON.stringify(da.data))
-        return ''
-      }
-      return `data:image/png;base64,${res}`
-    }
-
-    if (da.ok) {
-      let charemotions = get(CharEmotion)
-      let img = da?.data?.data?.[0]?.b64_json
-      if (!img) {
-        alertError(JSON.stringify(da.data))
-        return false
-      }
-      img = `data:image/png;base64,${img}`
-      const emos: [string, string, number][] = [[img, img, Date.now()]]
-      charemotions[currentChar.chaId] = emos
-      CharEmotion.set(charemotions)
-    } else {
-      alertError(JSON.stringify(da.data))
-      return false
-    }
-    return returnSdData
+    return requestAndApplyServerImage(
+      {
+        provider: 'openai-compat',
+        credential: imageGenerationCredential(config.key),
+        prompt: genPrompt,
+      },
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   if (db.sdProvider === 'wavespeed') {
     const config = db.wavespeedImage
     if (!config.key) {
       alertError('Please enter wavespeed API key')
+      clearImageGeneration(serverOperation!)
       return false
     }
-    const body: { [key: string]: any } = {}
-
-    // Prompt
-    body.prompt = genPrompt
-
-    // reference image
     let base64img = ''
     if (config.reference_mode === 'image') {
-      // reference: uploaded image
       base64img = await resolveStoredImageBase64(config.reference_image, config.reference_base64image)
     } else if (config.reference_mode === 'character') {
-      // reference: auto use the character's default image
       base64img = await resolveStoredImageBase64(currentChar.image, '')
     }
-    if (base64img) {
-      body.images = [base64img]
-    }
+    const loras = Array.isArray(config.loras)
+      ? config.loras
+          .filter((lora) => lora?.path?.trim())
+          .map((lora) => ({ path: lora.path, scale: typeof lora.scale === 'number' ? lora.scale : 1 }))
+      : undefined
 
-    // LoRAs
-    if (config.loras && Array.isArray(config.loras)) {
-      body.loras = []
-      for (const lora of config.loras) {
-        if (lora && lora.path && lora.path.trim() !== '') {
-          body.loras.push({
-            path: lora.path,
-            scale: typeof lora.scale === 'number' ? lora.scale : 1.0,
-          })
-        }
-      }
-    }
-
-    // Request
-    try {
-      // First: submit task
-      const requestEndpoint = `https://api.wavespeed.ai/api/v3/${config.model}`
-      const requestResponse = await globalFetch(requestEndpoint, {
-        body: body,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + config.key,
-        },
-        abortSignal: options.signal,
-      })
-      if (isImageGenerationAborted(options.signal)) {
-        return false
-      }
-      let requestId: string
-      if (requestResponse.ok) {
-        /*
-         * submit response:
-         * {
-         *   code: number = HTTP status code (e.g., 200 for success)
-         *   message: string = Status message (e.g., “success”)
-         *   data: {
-         *     id: string = Unique identifier for the prediction, Task Id
-         *   }
-         * }
-         * */
-        requestId = requestResponse.data.data.id
-      } else {
-        alertError(`Submit task failed ${requestResponse.status}: ${requestResponse.data}`)
-        return false
-      }
-
-      // Second: monitor task
-      const taskEndpoint = `https://api.wavespeed.ai/api/v3/predictions/${requestId}/result`
-      let resultEndpoint: string
-      const POLL_INTERVAL = 3000 // monitor every 3 seconds
-      const MAX_WAIT_TIME = 10 * 60 * 1000 // 10 minutes absolute timeout
-      const startTime = Date.now()
-      while (true) {
-        if (isImageGenerationAborted(options.signal)) {
-          return false
-        }
-        const elapsedTime = Date.now() - startTime
-        if (elapsedTime > MAX_WAIT_TIME) {
-          alertError(`Task timeout after ${MAX_WAIT_TIME / 1000}s`)
-          break
-        }
-        const taskResponse = await globalFetch(taskEndpoint, {
-          method: 'GET',
-          headers: {
-            Authorization: 'Bearer ' + config.key,
-          },
-          abortSignal: options.signal,
-        })
-        if (isImageGenerationAborted(options.signal)) {
-          return false
-        }
-        if (taskResponse.ok) {
-          /*
-           * monitor response:
-           * {
-           *   code: number = HTTP status code (e.g., 200 for success)
-           *   message: string = Status message (e.g., “success”)
-           *   data: {
-           *     status: string = Status of the task: created, processing, completed, or failed
-           *     outputs: string[] = Array of URLs to the generated content (empty when status is not completed)
-           *   }
-           * }
-           * */
-          if (taskResponse.data.data.status === 'completed') {
-            resultEndpoint = taskResponse.data.data.outputs[0]
-            break
-          } else if (taskResponse.data.data.status === 'failed') {
-            alertError(JSON.stringify(taskResponse.data))
-            break
-          }
-          // else keep loop
-          if (!(await waitForPollInterval(POLL_INTERVAL, options.signal))) {
-            return false
-          }
-        } else {
-          alertError(JSON.stringify(taskResponse.data))
-          break
-        }
-      }
-      if (!resultEndpoint) {
-        alertError('Task finished but no result URL')
-        return false
-      }
-
-      // Third: get result
-      const resultResponse = await globalFetch(resultEndpoint, {
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer ' + config.key,
-        },
-        rawResponse: true,
-        abortSignal: options.signal,
-      })
-      if (isImageGenerationAborted(options.signal)) {
-        return false
-      }
-      if (resultResponse.ok) {
-        // mime-type: jpeg (default), png, webp
-        const contentType = resultResponse.headers?.['content-type'] || 'image/jpeg'
-        const mimeType = contentType.split(';')[0] // resolve "image/png; charset=utf-8"
-
-        // binary image file, need to convert to base64
-        const binary = resultResponse.data
-        const res = Buffer.from(binary).toString('base64')
-        const img = `data:${mimeType};base64,${res}`
-
-        // inlay mode
-        if (returnSdData === 'inlay') {
-          return img
-        }
-        // default mode
-        else {
-          let charemotions = get(CharEmotion)
-          charemotions[currentChar.chaId] = [[img, img, Date.now()]]
-          CharEmotion.set(charemotions)
-          return returnSdData
-        }
-      } else {
-        alertError(JSON.stringify(resultResponse.data))
-        return false
-      }
-    } catch (error) {
-      alertError(error)
-      return false
-    }
+    return requestAndApplyServerImage(
+      {
+        provider: 'wavespeed',
+        credential: imageGenerationCredential(config.key),
+        prompt: genPrompt,
+        model: config.model,
+        ...(base64img ? { images: [base64img] } : {}),
+        ...(loras?.length ? { loras } : {}),
+      },
+      currentChar,
+      returnSdData,
+      serverOperation!,
+    )
   }
   return ''
 }
