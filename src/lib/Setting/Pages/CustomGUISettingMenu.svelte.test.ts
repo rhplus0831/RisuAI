@@ -69,6 +69,36 @@ afterEach(() => {
 })
 
 describe('CustomGUISettingMenu persistence', () => {
+  it('exposes tree semantics and supports keyboard selection and deletion', async () => {
+    getDatabase().guiHTML = `
+      <div class="flex" data-risu-type="leftToRightContainer"></div>
+      <div class="flex" data-risu-type="topToBottomContainer"></div>
+    `
+    component = mount(CustomGUISettingMenu, { target })
+    await tick()
+
+    const tree = target.querySelector<HTMLElement>('[role="tree"]')
+    const firstNode = target.querySelector<HTMLElement>('[x-tree="0"]')
+    expect(tree?.getAttribute('aria-label')).toBe(language.defineCustomGUI)
+    expect(firstNode?.getAttribute('role')).toBe('treeitem')
+    expect(firstNode?.getAttribute('aria-label')).toBe('leftToRightContainer')
+    expect(firstNode?.getAttribute('aria-selected')).toBe('false')
+
+    firstNode!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await tick()
+    await Promise.resolve()
+
+    const selectedNode = target.querySelector<HTMLElement>('[x-tree="0"]')
+    expect(selectedNode?.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(selectedNode)
+
+    selectedNode!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }))
+    await tick()
+
+    expect(getDatabase().guiHTML).not.toContain('leftToRightContainer')
+    expect(target.querySelector('[x-tree="0"]')?.getAttribute('aria-label')).toBe('topToBottomContainer')
+  })
+
   it('loads the editor tree from the server-backed guiHTML setting', async () => {
     getDatabase().guiHTML = '<component class="flex flex-col flex-1" data-risu-type="fullWidthChat">\n</component>\n'
 

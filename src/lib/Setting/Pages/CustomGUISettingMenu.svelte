@@ -98,27 +98,56 @@
       }
       element.appendChild(textElement)
       element.setAttribute('x-tree', treeChain)
+      element.id = `risu-custom-gui-tree-${treeChain.replaceAll('.', '-')}`
+      element.setAttribute('role', 'treeitem')
+      element.setAttribute('aria-label', currentTree.type)
+      element.setAttribute('aria-level', String(treeChain.split('.').length))
+      element.setAttribute('aria-selected', String(treeChain === selectedContatiner))
+      element.tabIndex = 0
       dom.appendChild(element)
 
+      const selectTreeNode = () => {
+        selectedContatiner = treeChain
+        renderMainTree(tree, treeChain)
+      }
+
+      const deleteTreeNode = () => {
+        if (removeTreeChain(tree, treeChain)) {
+          selectedContatiner = rebaseTreeChainAfterRemoval(selectedContatiner, treeChain)
+          if (selectedContatiner !== 'root' && !resolveTreeChain(tree, selectedContatiner)) {
+            selectedContatiner = 'root'
+          }
+          persistTree()
+        }
+        renderMainTree(tree, selectedContatiner)
+      }
+
       element.addEventListener('mouseup', (e) => {
-        console.log(treeChain, e.button)
         e.preventDefault()
         e.stopPropagation()
         switch (e.button) {
           case 0:
-            selectedContatiner = treeChain
-            renderMainTree(tree)
+            selectTreeNode()
             break
           case 2:
-            if (removeTreeChain(tree, treeChain)) {
-              selectedContatiner = rebaseTreeChainAfterRemoval(selectedContatiner, treeChain)
-              if (selectedContatiner !== 'root' && !resolveTreeChain(tree, selectedContatiner)) {
-                selectedContatiner = 'root'
-              }
-              persistTree()
-            }
-            renderMainTree(tree)
+            deleteTreeNode()
             break
+        }
+      })
+
+      element.addEventListener('click', (e) => {
+        e.stopPropagation()
+      })
+
+      element.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          e.stopPropagation()
+          selectTreeNode()
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault()
+          e.stopPropagation()
+          deleteTreeNode()
         }
       })
 
@@ -190,12 +219,21 @@
     return false
   }
 
-  function renderMainTree(tree: CustomTree[]) {
+  function renderMainTree(tree: CustomTree[], focusTreeChain?: string) {
     if (!mainTree) return
     mainTree.innerHTML = ''
     tree.forEach((child, i) => {
       renderTree(mainTree, child, i.toString())
     })
+    if (focusTreeChain) {
+      queueMicrotask(() => {
+        if (focusTreeChain === 'root') {
+          mainTree?.focus()
+        } else {
+          mainTree?.querySelector<HTMLElement>(`[x-tree="${focusTreeChain}"]`)?.focus()
+        }
+      })
+    }
   }
 
   function HTMLtoTree(html: string) {
@@ -322,16 +360,22 @@
   class="absolute top-0 left-0 z-30 p-2 border bg-white text-black rounded-sm"
   onclick={closeEditor}>{language.goback}</button>
 
-<!-- svelte-ignore a11y_role_has_required_aria_props -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <div
   class="w-full h-full relative flex p-4 border"
   class:border-blue-500={selectedContatiner === 'root'}
-  role="option"
+  role="tree"
+  aria-label={language.defineCustomGUI}
   tabindex="0"
-  onclick={() => {
+  onclick={(event) => {
+    if (event.target !== event.currentTarget) return
     selectedContatiner = 'root'
-    renderMainTree(tree)
+    renderMainTree(tree, 'root')
+  }}
+  onkeydown={(event) => {
+    if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+    event.preventDefault()
+    selectedContatiner = 'root'
+    renderMainTree(tree, 'root')
   }}
   oncontextmenu={(e) => {
     e.preventDefault()
@@ -343,18 +387,21 @@
   <div class="w-138 max-w-full h-full bg-white text-black border-l border-l-black p-4 flex flex-col gap-2 z-20">
     <div class="flex">
       <button
+        aria-pressed={subMenu === 0}
         class="mr-2 p-2 border border-black rounded-sm"
         class:text-gray-500={subMenu !== 0}
         onclick={() => {
           subMenu = 0
         }}>Component</button>
       <button
+        aria-pressed={subMenu === 1}
         class="mr-2 p-2 border border-black rounded-sm"
         class:text-gray-500={subMenu !== 1}
         onclick={() => {
           subMenu = 1
         }}>Container</button>
       <button
+        aria-pressed={subMenu === 2}
         class="mr-2 p-2 border border-black rounded-sm"
         class:text-gray-500={subMenu !== 2}
         onclick={() => {
@@ -395,6 +442,7 @@
   </div>
 {:else}
   <button
+    aria-expanded={menuOpen}
     class="absolute top-0 right-0 z-20 p-2 border bg-white rounded-sm"
     onclick={() => {
       menuOpen = !menuOpen
