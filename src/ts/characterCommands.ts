@@ -917,7 +917,7 @@ export function applyCompatibleCharacterPatch(previousCharacter: character, patc
 export function dispatchDeleteCharacter(characterId: string, previous: CharacterStateSnapshot): void {
   const rollback = characterDeleteRollbackFromState(characterId, previous)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
-  normalizeCurrentCharacterPointerAfterDelete(characterId)
+  normalizeCurrentCharacterPointerAfterDelete(characterId, previous)
   runCharacterCommand(
     (baseRevision) =>
       deleteCharacterCommand({
@@ -928,12 +928,23 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
   )
 }
 
-function normalizeCurrentCharacterPointerAfterDelete(characterId: string): void {
+function normalizeCurrentCharacterPointerAfterDelete(characterId: string, previous: CharacterStateSnapshot): void {
   const characters = getDatabase().characters ?? []
   if (characters.some((candidate) => candidate?.chaId === characterId)) return
 
   withTrustedResourceWrite(() => {
     const database = getDatabase() as unknown as { currentChar?: number }
+    const previousCurrentCharacterId = Number.isInteger(previous.currentChar)
+      ? previous.characters[previous.currentChar as number]?.chaId
+      : undefined
+    if (previousCurrentCharacterId && previousCurrentCharacterId !== characterId) {
+      const preservedIndex = characters.findIndex((candidate) => candidate?.chaId === previousCurrentCharacterId)
+      if (preservedIndex >= 0) {
+        database.currentChar = preservedIndex
+        return
+      }
+    }
+
     let currentChar = database.currentChar
     if (!Number.isInteger(currentChar)) {
       currentChar = characters.length > 0 ? 0 : -1

@@ -626,6 +626,32 @@ describe('character list create/delete rollback', () => {
     await waitForCallCount(calls, 2)
   })
 
+  it('keeps the current character pointer on the same row when an earlier character is deleted', async () => {
+    const calls = stubCharacterCollectionCommandFetch()
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-trash', name: 'Trash', chats: [], trashTime: 123 },
+        { chaId: 'char-b', name: 'B', chats: [] },
+        { chaId: 'char-c', name: 'C', chats: [] },
+      ],
+      characterOrder: ['char-b', 'char-c'],
+      currentChar: 1,
+    } as any
+    selectedCharID.set(1)
+    setResourceWriteGuardEnabled(true)
+    const previous = currentCharacterStateSnapshot()
+
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.splice(0, 1)
+    })
+    dispatchDeleteCharacter('char-trash', previous)
+
+    expect(testDatabaseState.db.characters.map((character: any) => character.chaId)).toEqual(['char-b', 'char-c'])
+    expect((testDatabaseState.db as any).currentChar).toBe(0)
+    expect(testDatabaseState.db.characters[(testDatabaseState.db as any).currentChar].chaId).toBe('char-b')
+    await waitForCallCount(calls, 2)
+  })
+
   it('failed permanent delete preserves a newer selection of the shifted next character after rollback', async () => {
     const calls = stubCharacterCollectionCommandFetch({
       failDelete: true,
