@@ -31,14 +31,18 @@
     charas = nextCharas
   }
 
+  function refreshHubFromFirstPage(): Promise<void> {
+    page = 0
+    return getHub()
+  }
+
   function changeSort(type: string) {
     if (sort === type) {
       sort = 'recommended'
     } else {
       sort = type
     }
-    page = 0
-    return getHub()
+    return refreshHubFromFirstPage()
   }
 
   getHub()
@@ -61,8 +65,7 @@
         if (sort === 'random' || sort === 'recommended') {
           sort = ''
         }
-        page = 0
-        getHub()
+        refreshHubFromFirstPage()
       }}
       class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors">
       <SearchIcon />
@@ -82,7 +85,7 @@
       <button
         onclick={() => {
           nsfw = !nsfw
-          getHub()
+          refreshHubFromFirstPage()
         }}>
         {nsfw ? 'NSFW' : 'SFW'}
       </button>
@@ -103,7 +106,7 @@
               sort = ''
               break
           }
-          getHub()
+          refreshHubFromFirstPage()
         }}>
         {sort === 'recommended'
           ? language.recommended
@@ -124,7 +127,7 @@
       class:ring-3={nsfw}
       onclick={() => {
         nsfw = !nsfw
-        getHub()
+        refreshHubFromFirstPage()
       }}>
       NSFW
     </button>

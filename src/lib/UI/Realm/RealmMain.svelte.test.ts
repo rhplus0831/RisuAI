@@ -76,6 +76,30 @@ function button(label: string): HTMLButtonElement {
   return match
 }
 
+function nextPageButton(): HTMLButtonElement {
+  const match = target.querySelector<SVGElement>('svg.lucide-arrow-right')?.closest('button')
+  if (!match) throw new Error('next page button not found')
+  return match
+}
+
+function searchInput(): HTMLInputElement {
+  const match = target.querySelector('input')
+  if (!match) throw new Error('Realm search input not found')
+  return match
+}
+
+function searchButton(): HTMLButtonElement {
+  const match = searchInput().nextElementSibling
+  if (!(match instanceof HTMLButtonElement)) throw new Error('Realm search button not found')
+  return match
+}
+
+function latestQuery(): { search: string; page: number; nsfw: boolean; sort: string } {
+  const call = realmMocks.getRisuHub.mock.calls.at(-1)
+  if (!call) throw new Error('Realm query not found')
+  return call[0]
+}
+
 let component: Parameters<typeof unmount>[0] | undefined
 let target: HTMLElement
 
@@ -117,5 +141,51 @@ describe('RealmMain request ownership', () => {
     await tick()
     expect(target.textContent).toContain('Latest result')
     expect(target.textContent).not.toContain('Older result')
+  })
+})
+
+describe('RealmMain query pagination', () => {
+  it('returns desktop search, sort, and content filters to the first page', async () => {
+    realmMocks.getRisuHub.mockResolvedValue([])
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    button('Recent').click()
+    await tick()
+    nextPageButton().click()
+    expect(latestQuery()).toMatchObject({ page: 1, sort: '' })
+
+    button('NSFW').click()
+    expect(latestQuery()).toMatchObject({ page: 0, nsfw: true, sort: '' })
+    expect(button('1')).toBeTruthy()
+
+    nextPageButton().click()
+    const input = searchInput()
+    input.value = 'new query'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    searchButton().click()
+    expect(latestQuery()).toMatchObject({ search: 'new query', page: 0 })
+    expect(button('1')).toBeTruthy()
+
+    nextPageButton().click()
+    button('Trending').click()
+    expect(latestQuery()).toMatchObject({ page: 0, sort: 'trending' })
+    expect(button('1')).toBeTruthy()
+  })
+
+  it('returns the mobile sort cycle to the first page', async () => {
+    MobileGUI.set(true)
+    realmMocks.getRisuHub.mockResolvedValue([])
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    button('Recommended').click()
+    await tick()
+    nextPageButton().click()
+    expect(latestQuery()).toMatchObject({ page: 1, sort: '' })
+
+    button('Recent').click()
+    expect(latestQuery()).toMatchObject({ page: 0, sort: 'trending' })
+    expect(button('1')).toBeTruthy()
   })
 })
