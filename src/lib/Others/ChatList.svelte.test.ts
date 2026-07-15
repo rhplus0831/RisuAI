@@ -399,6 +399,67 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-c', false)
     expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
+
+  it('closes and removes an open modal when the route clears the selected character', async () => {
+    seedModalDatabase()
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await tick()
+    expect(modalRoot()).toBeTruthy()
+
+    selectedCharID.set(-1)
+    await tick()
+
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+    expect(close).toHaveBeenCalledOnce()
+
+    selectedCharID.set(0)
+    await tick()
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+  })
+
+  it('does not let stale modal actions target a newly selected character', async () => {
+    const charA = seedModalDatabase()
+    const charB = {
+      ...charA,
+      chaId: 'char-b',
+      name: 'Other Character',
+      chatPage: 0,
+      chats: [makeChat('other-chat-a', 'Other Chat A'), makeChat('other-chat-b', 'Other Chat B')],
+      chatFolders: [],
+    } as character
+    getDatabase().characters.push(charB)
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await tick()
+
+    const staleCreateButton = createButton()
+    const staleOpenButton = rowActionButton(rowByChatId('chat-c'), 'open')
+    const staleExportButton = rowActionButton(rowByChatId('chat-c'), 'export')
+    const staleDeleteButton = rowActionButton(rowByChatId('chat-c'), 'delete')
+    const staleImportButton = modalRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="import"]')!
+
+    selectedCharID.set(1)
+    staleCreateButton.click()
+    staleOpenButton.click()
+    staleExportButton.click()
+    staleDeleteButton.click()
+    staleImportButton.click()
+    await tick()
+
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+    expect(close).toHaveBeenCalledOnce()
+    expect(charA.chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b', 'chat-c'])
+    expect(charB.chats.map((chat) => chat.id)).toEqual(['other-chat-a', 'other-chat-b'])
+    expect(chatListMocks.changeChatTo).not.toHaveBeenCalled()
+    expect(chatListMocks.alertConfirm).not.toHaveBeenCalled()
+    expect(chatListMocks.exportChat).not.toHaveBeenCalled()
+    expect(chatListMocks.importChat).not.toHaveBeenCalled()
+    expect(chatListMocks.navigate).not.toHaveBeenCalled()
+  })
+
   it('paints a chat rename before dispatching the update command', async () => {
     seedModalDatabase()
     chatListMocks.setServerCommandsEnabled(true)
@@ -643,8 +704,9 @@ describe('ChatList DOM contract harness', () => {
       }),
     )
     const command = chatListMocks.createDeferredDeleteCommand()
+    const close = vi.fn()
 
-    component = mount(ChatList, { target, props: { close: vi.fn() } })
+    component = mount(ChatList, { target, props: { close } })
     await tick()
 
     deleteButtonForRow(rowByChatId('chat-b')).click()
@@ -652,7 +714,8 @@ describe('ChatList DOM contract harness', () => {
 
     selectedCharID.set(1)
     await tick()
-    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['other-chat-a', 'other-chat-b'])
+    expect(target.querySelector('[data-risu-chat-list="modal"]')).toBeNull()
+    expect(close).toHaveBeenCalledOnce()
 
     resolveConfirm(true)
     await flushCommandWork()

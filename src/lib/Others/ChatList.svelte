@@ -33,6 +33,49 @@
   let chatNameDraftOwner = $state(undefined)
   /** @type {{close?: any}} */
   let { close = () => {} } = $props()
+  const ownerSelectedCharIndex = $selectedCharID
+  const ownerCharacterReference = getDatabase().characters?.[ownerSelectedCharIndex]
+  const ownerCharacterId = ownerCharacterReference?.chaId
+  let invalidated = $state(false)
+
+  function resolveOriginCharacter(originCharacterId, originSelectedCharIndex, originCharacterReference) {
+    if (originCharacterId) {
+      return getDatabase().characters?.find((candidate) => candidate.chaId === originCharacterId)
+    }
+
+    const byIndex = getDatabase().characters?.[originSelectedCharIndex]
+    if (originCharacterReference && byIndex !== originCharacterReference) return undefined
+    return byIndex
+  }
+
+  function isOriginCharacterSelected(originCharacter, originCharacterId) {
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    return (
+      selectedCharacter === originCharacter || (originCharacterId && selectedCharacter?.chaId === originCharacterId)
+    )
+  }
+
+  let modalCharacter = $derived.by(() => {
+    if (invalidated) return undefined
+    const character = resolveOriginCharacter(ownerCharacterId, ownerSelectedCharIndex, ownerCharacterReference)
+    if (!character || !isOriginCharacterSelected(character, ownerCharacterId)) return undefined
+    return character
+  })
+
+  function invalidateModal() {
+    if (invalidated) return
+    invalidated = true
+    close()
+  }
+
+  function resolveActiveOwnerCharacter() {
+    const character = modalCharacter
+    if (!character) {
+      invalidateModal()
+      return undefined
+    }
+    return character
+  }
 
   $effect(() => {
     const stop = untrack(() => watchServerBackedChatMetadata())
@@ -40,11 +83,17 @@
   })
 
   $effect(() => {
+    if (!modalCharacter) {
+      untrack(() => invalidateModal())
+    }
+  })
+
+  $effect(() => {
     const previousDrafts = untrack(() => chatNameDrafts)
     const previousBaselines = untrack(() => chatNameBaselines)
     const previousOwner = untrack(() => chatNameDraftOwner)
-    const character = getDatabase().characters[$selectedCharID]
-    const owner = character?.chaId ?? `index:${$selectedCharID}`
+    const character = modalCharacter
+    const owner = character?.chaId ?? `index:${ownerSelectedCharIndex}`
     const drafts = {}
     const baselines = {}
     for (const chat of character?.chats ?? []) {
@@ -63,33 +112,38 @@
   })
 
   function updateChatName(chat, name) {
-    if (!chat?.id || chat.name === name) return
+    const character = resolveActiveOwnerCharacter()
+    const liveTargetChat = character?.chats?.find((candidate) => candidate.id === chat?.id)
+    if (!character || !liveTargetChat?.id || liveTargetChat.name === name) return
     if (!canUseServerCommands()) {
-      chat.name = name
+      liveTargetChat.name = name
       return
     }
 
     const previous = currentChatStateSnapshot()
-    const previousCharacter = previous.characters[previous.selectedCharID]
-    const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === chat.id)
+    const previousCharacter = ownerCharacterId
+      ? previous.characters.find((candidate) => candidate.chaId === ownerCharacterId)
+      : previous.characters[ownerSelectedCharIndex]
+    const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
     let applied = false
     withTrustedResourceWrite(() => {
       const liveCharacter = previousCharacter?.chaId
         ? getDatabase().characters?.find((candidate) => candidate.chaId === previousCharacter.chaId)
-        : getDatabase().characters?.[previous.selectedCharID]
-      const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === chat.id)
+        : resolveOriginCharacter(undefined, ownerSelectedCharIndex, ownerCharacterReference)
+      const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === liveTargetChat.id)
       if (!liveChat || liveChat.name !== previousChat?.name) return
       liveChat.name = name
       applied = true
     })
     if (!applied) return
     syncServerBackedChatMetadataBaselines()
-    dispatchUpdateChat(chat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata)
+    dispatchUpdateChat(liveTargetChat.id, { name }, previous, false, rollbackServerBackedChatRowMetadata)
   }
 
   function openChatRoute(index) {
-    const character = getDatabase().characters[$selectedCharID]
+    const character = resolveActiveOwnerCharacter()
     const chatId = character?.chats?.[index]?.id
+    if (!character || !chatId) return
     if (character?.chaId && chatId) {
       navigate(characterRoutePath(character.chaId, chatId))
       close()
@@ -100,30 +154,14 @@
     close()
   }
 
-  function resolveOriginCharacter(originCharacterId, originSelectedCharIndex) {
-    if (originCharacterId) {
-      const byId = getDatabase().characters?.find((candidate) => candidate.chaId === originCharacterId)
-      if (byId) return byId
-    }
-
-    const byIndex = getDatabase().characters?.[originSelectedCharIndex]
-    if (originCharacterId && byIndex?.chaId && byIndex.chaId !== originCharacterId) return undefined
-    return byIndex
-  }
-
-  function isOriginCharacterSelected(originCharacter, originCharacterId) {
-    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
-    return (
-      selectedCharacter === originCharacter || (originCharacterId && selectedCharacter?.chaId === originCharacterId)
-    )
-  }
-
   async function deleteModalChat(chat) {
-    const originSelectedCharIndex = $selectedCharID
-    const originCharacter = getDatabase().characters?.[originSelectedCharIndex]
-    const originCharacterId = originCharacter?.chaId
+    const originSelectedCharIndex = ownerSelectedCharIndex
+    const originCharacter = resolveActiveOwnerCharacter()
+    const originCharacterId = ownerCharacterId
     const targetChatId = chat?.id
     const targetChatName = chat?.name ?? ''
+
+    if (!originCharacter || !originCharacter.chats?.some((candidate) => candidate.id === targetChatId)) return
 
     if (originCharacter?.chats?.length === 1) {
       alertError(language.errors.onlyOneChat)
@@ -133,12 +171,20 @@
     const confirmed = await alertConfirm(`${language.removeConfirm}${targetChatName}`)
     if (!confirmed || !targetChatId) return
 
-    const resolvedOriginCharacter = resolveOriginCharacter(originCharacterId, originSelectedCharIndex)
+    const resolvedOriginCharacter = resolveOriginCharacter(
+      originCharacterId,
+      originSelectedCharIndex,
+      ownerCharacterReference,
+    )
     const liveChatIndex = resolvedOriginCharacter?.chats?.findIndex((candidate) => candidate.id === targetChatId) ?? -1
     if (!resolvedOriginCharacter || liveChatIndex < 0 || resolvedOriginCharacter.chats.length <= 1) return
 
     const previous = currentChatStateSnapshot()
-    previous.selectedCharID = originSelectedCharIndex
+    const previousOwnerIndex = originCharacterId
+      ? previous.characters.findIndex((candidate) => candidate.chaId === originCharacterId)
+      : originSelectedCharIndex
+    if (previousOwnerIndex < 0) return
+    previous.selectedCharID = previousOwnerIndex
     const originStillSelected = isOriginCharacterSelected(resolvedOriginCharacter, originCharacterId)
 
     if (canUseServerCommands()) {
@@ -160,118 +206,129 @@
     }
     dispatchDeleteChat(targetChatId, previous)
   }
+
+  function createModalChat() {
+    const character = resolveActiveOwnerCharacter()
+    if (!character) return
+
+    const previous = currentChatStateSnapshot()
+    const chat = {
+      message: [],
+      note: '',
+      name: `New Chat ${character.chats.length + 1}`,
+      localLore: [],
+      fmIndex: -1,
+      id: v4(),
+    }
+    if (!canUseServerCommands()) {
+      character.chats.unshift(chat)
+      changeChatTo(0)
+    } else {
+      const applied = applyOptimisticCreatedChat(character.chaId, chat, previous)
+      if (applied && character.chaId && chat.id) {
+        navigate(characterRoutePath(character.chaId, chat.id))
+      }
+    }
+    dispatchCreateChat(character.chaId, chat, previous)
+    close()
+  }
+
+  function exportModalChat(index) {
+    if (!resolveActiveOwnerCharacter()) return
+    exportChat(index)
+  }
+
+  function importModalChat() {
+    if (!resolveActiveOwnerCharacter()) return
+    importChat()
+  }
 </script>
 
-<div data-risu-chat-list="modal" class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
-  <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto">
-    <div class="flex items-center text-textcolor mb-4">
-      <h2 class="mt-0 mb-0">{language.chatList}</h2>
-      <div class="grow flex justify-end">
-        <button
-          data-risu-chat-action="close"
-          aria-label={language.close}
-          class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
-          onclick={close}>
-          <XIcon size={24} />
-        </button>
-      </div>
-    </div>
-    {#each getDatabase().characters[$selectedCharID].chats as chat, i}
-      <div
-        data-risu-chat-id={chat.id ?? ''}
-        data-risu-chat-idx={i}
-        data-risu-chat-selected={i === getDatabase().characters[$selectedCharID].chatPage ? 'true' : 'false'}
-        class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
-        class:bg-selected={i === getDatabase().characters[$selectedCharID].chatPage}>
-        {#if editMode}
-          <TextInput
-            bind:value={chatNameDrafts[chat.id]}
-            padding={false}
-            onchange={() => {
-              updateChatName(chat, chatNameDrafts[chat.id])
-            }} />
-        {:else}
-          <button data-risu-chat-action="open" class="grow text-left" onclick={() => openChatRoute(i)}
-            >{chat.name}</button>
-        {/if}
+{#if modalCharacter}
+  <div data-risu-chat-list="modal" class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto">
+      <div class="flex items-center text-textcolor mb-4">
+        <h2 class="mt-0 mb-0">{language.chatList}</h2>
         <div class="grow flex justify-end">
           <button
-            type="button"
-            data-risu-chat-action="export"
-            aria-label={`${language.export}: ${chat.name}`}
-            class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-            onclick={async () => {
-              exportChat(i)
-            }}>
-            <DownloadIcon size={18} />
-          </button>
-          <button
-            type="button"
-            data-risu-chat-action="delete"
-            aria-label={`${language.remove}: ${chat.name}`}
-            class="text-textcolor2 hover:text-green-500 cursor-pointer"
-            onclick={async () => {
-              await deleteModalChat(chat)
-            }}>
-            <TrashIcon size={18} />
+            data-risu-chat-action="close"
+            aria-label={language.close}
+            class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
+            onclick={close}>
+            <XIcon size={24} />
           </button>
         </div>
       </div>
-    {/each}
-    <div class="flex mt-2 items-center">
-      <button
-        data-risu-chat-action="create"
-        aria-label={language.newChat}
-        class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
-        onclick={() => {
-          const previous = currentChatStateSnapshot()
-          const cha = getDatabase().characters[$selectedCharID]
-          const len = getDatabase().characters[$selectedCharID].chats.length
-          const chat = {
-            message: [],
-            note: '',
-            name: `New Chat ${len + 1}`,
-            localLore: [],
-            fmIndex: -1,
-            id: v4(),
-          }
-          if (!canUseServerCommands()) {
-            let chats = getDatabase().characters[$selectedCharID].chats
-            chats.unshift(chat)
-            getDatabase().characters[$selectedCharID].chats = chats
-            changeChatTo(0)
-          } else {
-            const applied = applyOptimisticCreatedChat(cha.chaId, chat, previous)
-            if (applied && cha.chaId && chat.id) {
-              navigate(characterRoutePath(cha.chaId, chat.id))
-            }
-          }
-          dispatchCreateChat(cha.chaId, chat, previous)
-          close()
-        }}>
-        <PlusIcon />
-      </button>
-      <button
-        data-risu-chat-action="import"
-        aria-label={language.import}
-        class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
-        onclick={() => {
-          importChat()
-        }}>
-        <HardDriveUploadIcon size={18} />
-      </button>
-      <button
-        data-risu-chat-action="edit"
-        aria-label={language.edit}
-        class="text-textcolor2 hover:text-green-500 cursor-pointer"
-        onclick={() => {
-          editMode = !editMode
-        }}>
-        <SquarePenIcon size={18} />
-      </button>
+      {#each modalCharacter.chats as chat, i}
+        <div
+          data-risu-chat-id={chat.id ?? ''}
+          data-risu-chat-idx={i}
+          data-risu-chat-selected={i === modalCharacter.chatPage ? 'true' : 'false'}
+          class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
+          class:bg-selected={i === modalCharacter.chatPage}>
+          {#if editMode}
+            <TextInput
+              bind:value={chatNameDrafts[chat.id]}
+              padding={false}
+              onchange={() => {
+                updateChatName(chat, chatNameDrafts[chat.id])
+              }} />
+          {:else}
+            <button data-risu-chat-action="open" class="grow text-left" onclick={() => openChatRoute(i)}
+              >{chat.name}</button>
+          {/if}
+          <div class="grow flex justify-end">
+            <button
+              type="button"
+              data-risu-chat-action="export"
+              aria-label={`${language.export}: ${chat.name}`}
+              class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+              onclick={async () => {
+                exportModalChat(i)
+              }}>
+              <DownloadIcon size={18} />
+            </button>
+            <button
+              type="button"
+              data-risu-chat-action="delete"
+              aria-label={`${language.remove}: ${chat.name}`}
+              class="text-textcolor2 hover:text-green-500 cursor-pointer"
+              onclick={async () => {
+                await deleteModalChat(chat)
+              }}>
+              <TrashIcon size={18} />
+            </button>
+          </div>
+        </div>
+      {/each}
+      <div class="flex mt-2 items-center">
+        <button
+          data-risu-chat-action="create"
+          aria-label={language.newChat}
+          class="text-textcolor2 hover:text-green-500 cursor-pointer mr-1"
+          onclick={createModalChat}>
+          <PlusIcon />
+        </button>
+        <button
+          data-risu-chat-action="import"
+          aria-label={language.import}
+          class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+          onclick={importModalChat}>
+          <HardDriveUploadIcon size={18} />
+        </button>
+        <button
+          data-risu-chat-action="edit"
+          aria-label={language.edit}
+          class="text-textcolor2 hover:text-green-500 cursor-pointer"
+          onclick={() => {
+            editMode = !editMode
+          }}>
+          <SquarePenIcon size={18} />
+        </button>
+      </div>
     </div>
   </div>
-</div>
+{/if}
 
 <style>
   .break-any {
