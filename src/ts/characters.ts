@@ -164,7 +164,15 @@ export async function getCharImage(loc: string, type: 'plain' | 'css' | 'contain
   }
 }
 
-export async function selectCharImg(charIndex: number) {
+export interface CharacterAvatarImageSelection {
+  image: string
+  pngExif: Record<string, string>
+}
+
+export async function selectCharacterAvatarImage(
+  charIndex: number,
+  onSelected: (selection: CharacterAvatarImageSelection) => void,
+): Promise<void> {
   const previous = currentCharacterRowSnapshot(charIndex)
   const previousCharacter = previous.character
   const characterId = previousCharacter?.chaId
@@ -244,12 +252,21 @@ export async function selectCharImg(charIndex: number) {
       return
     }
 
+    onSelected({ image: imgp, pngExif })
+  } finally {
+    if (token) {
+      characterAvatarUploadGuard.clear(token)
+    }
+  }
+}
+
+export async function selectCharImg(charIndex: number) {
+  const previous = currentCharacterRowSnapshot(charIndex)
+  const previousCharacter = previous.character
+
+  await selectCharacterAvatarImage(charIndex, ({ image, pngExif }) => {
     let applied = false
     withTrustedResourceWrite(() => {
-      if (!isFreshAvatarUpload(token)) {
-        return
-      }
-
       dumpCharImage(charIndex, { dispatch: false })
       const character = getDatabase().characters[charIndex]
       const pngExifEntries = Object.entries(pngExif)
@@ -260,18 +277,14 @@ export async function selectCharImg(charIndex: number) {
           character.extentions.pngExif[key] = value
         }
       }
-      character.image = imgp
+      character.image = image
       applied = true
     })
 
     if (applied) {
       dispatchCompatibleCharacterUpdateScoped(previousCharacter, getDatabase().characters[charIndex], previous)
     }
-  } finally {
-    if (token) {
-      characterAvatarUploadGuard.clear(token)
-    }
-  }
+  })
 }
 
 export function dumpCharImage(charIndex: number, options: { dispatch?: boolean } = {}) {

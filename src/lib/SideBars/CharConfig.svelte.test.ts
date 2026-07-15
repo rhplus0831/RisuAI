@@ -34,6 +34,15 @@ const assetMocks = vi.hoisted(() => ({
   saveAsset: vi.fn(),
 }))
 
+const characterMediaMocks = vi.hoisted(() => ({
+  selectCharacterAvatarImage: vi.fn(),
+}))
+
+const serverCommandState = vi.hoisted(() => ({
+  enabled: false,
+  updateCharacterCalls: [] as Record<string, unknown>[],
+}))
+
 vi.mock('src/ts/server/commands', () => {
   const command =
     (kind: string) =>
@@ -44,7 +53,7 @@ vi.mock('src/ts/server/commands', () => {
 
   return {
     appendMessageCommand: command('appendMessage'),
-    canUseServerCommands: () => false,
+    canUseServerCommands: () => serverCommandState.enabled,
     createAndSelectCharacterCommand: command('createAndSelectCharacter'),
     createCharacterCommand: command('createCharacter'),
     createChatCommand: command('createChat'),
@@ -73,7 +82,10 @@ vi.mock('src/ts/server/commands', () => {
     selectCharacterCommand: command('selectCharacter'),
     subscribeServerCommandLocalEffectApplied: vi.fn(() => () => {}),
     truncateMessagesCommand: command('truncateMessages'),
-    updateCharacterCommand: command('updateCharacter'),
+    updateCharacterCommand: vi.fn(async (args: Record<string, unknown> = {}) => {
+      serverCommandState.updateCharacterCalls.push(structuredClone(args))
+      return { kind: 'updateCharacter', ...args }
+    }),
     updateChatCommand: command('updateChat'),
     updateChatFolderCommand: command('updateChatFolder'),
     updateMessageCommand: command('updateMessage'),
@@ -106,9 +118,12 @@ vi.mock('../../ts/characters', async () => {
     addingEmotion: writable(false),
     changeCharImage: vi.fn(),
     createBlankChar: vi.fn(() => ({ name: 'Blank' })),
-    getCharImage: vi.fn(async () => ''),
+    getCharImage: vi.fn(async (location: string, type: string) =>
+      type === 'plain' ? location : `background: url("${location}");`,
+    ),
     removeChar: vi.fn(),
     rmCharEmotion: vi.fn(),
+    selectCharacterAvatarImage: characterMediaMocks.selectCharacterAvatarImage,
     selectCharImg: vi.fn(),
   }
 })
@@ -369,6 +384,24 @@ function notificationImageClearButton(): HTMLButtonElement {
   return button as HTMLButtonElement
 }
 
+function avatarAddButton(): HTMLButtonElement {
+  const tile = target.querySelector('div.h-24.w-24.border-dashed')
+  const button = tile?.closest('button')
+  expect(button).toBeTruthy()
+  return button as HTMLButtonElement
+}
+
+async function showCharacterViewScreen(): Promise<void> {
+  buttons()[1].click()
+  await settleComponent()
+}
+
+function emotionAddButton(): HTMLButtonElement {
+  const button = target.querySelector('svg.lucide-plus')?.closest('button')
+  expect(button).toBeTruthy()
+  return button as HTMLButtonElement
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   let reject!: (error?: unknown) => void
@@ -386,6 +419,9 @@ beforeEach(() => {
   selectedFileState.multipleQueue.length = 0
   transformerMocks.registerOnnxModelFromFileCalls.length = 0
   transformerMocks.registerOnnxModelFromFileQueue.length = 0
+  characterMediaMocks.selectCharacterAvatarImage.mockReset().mockResolvedValue(undefined)
+  serverCommandState.enabled = false
+  serverCommandState.updateCharacterCalls.length = 0
   assetMocks.saveAsset.mockReset().mockResolvedValue('asset-id')
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 })
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: 600 })
@@ -402,6 +438,7 @@ afterEach(() => {
   target?.remove()
   document.body.innerHTML = ''
   selectedCharID.set(-1)
+  serverCommandState.enabled = false
   CharConfigSubMenu.set(0)
   MobileGUI.set(false)
   setDatabaseLite({} as never)
@@ -617,6 +654,131 @@ describe('CharConfig character media callback freshness contracts', () => {
   })
 })
 
+describe('CharConfig draft-backed avatar and emotion controls', () => {
+  it('renders an alternate avatar rotation immediately and emits one debounced character patch', async () => {
+    serverCommandState.enabled = true
+    await mountCharConfig(1, {
+      image: 'primary-avatar',
+      ccAssets: [{ type: 'icon', name: 'alternate', uri: 'alternate-avatar', ext: 'png' }],
+    })
+
+    const alternateTile = Array.from(target.querySelectorAll<HTMLElement>('div.h-24.w-24.shadow-lg')).find((tile) =>
+      tile.getAttribute('style')?.includes('alternate-avatar'),
+    )
+    expect(alternateTile).toBeTruthy()
+    ;(alternateTile?.closest('button') as HTMLButtonElement).click()
+    await settleComponent()
+
+    const renderedAvatars = Array.from(target.querySelectorAll<HTMLElement>('div.h-24.w-24.shadow-lg')).map((tile) =>
+      tile.getAttribute('style'),
+    )
+    expect(renderedAvatars[0]).toContain('alternate-avatar')
+    expect(renderedAvatars[1]).toContain('primary-avatar')
+    expect(getDatabase().characters[0]).toMatchObject({
+      image: 'alternate-avatar',
+      ccAssets: [{ type: 'icon', name: 'iconx', uri: 'primary-avatar', ext: 'png' }],
+    })
+    expect(serverCommandState.updateCharacterCalls).toHaveLength(0)
+
+    await vi.advanceTimersByTimeAsync(301)
+    await settleComponent()
+
+    expect(serverCommandState.updateCharacterCalls).toHaveLength(1)
+    expect(serverCommandState.updateCharacterCalls[0]).toMatchObject({
+      characterId: 'char-1',
+      patch: {
+        image: 'alternate-avatar',
+        ccAssets: [{ type: 'icon', name: 'iconx', uri: 'primary-avatar', ext: 'png' }],
+      },
+    })
+  })
+
+  it('applies a guarded avatar selection to the draft, including PNG metadata', async () => {
+    characterMediaMocks.selectCharacterAvatarImage.mockImplementationOnce(async (_index, onSelected) => {
+      onSelected({
+        image: 'uploaded-avatar',
+        pngExif: { Description: 'uploaded metadata' },
+      })
+    })
+
+    await mountCharConfig(1, {
+      image: 'primary-avatar',
+      ccAssets: [{ type: 'icon', name: 'prior', uri: 'prior-avatar', ext: 'png' }],
+      extentions: { pngExif: { Title: 'existing metadata' } },
+    })
+
+    avatarAddButton().click()
+    await settleComponent()
+
+    expect(characterMediaMocks.selectCharacterAvatarImage).toHaveBeenCalledTimes(1)
+    expect(getDatabase().characters[0]).toMatchObject({
+      image: 'uploaded-avatar',
+      ccAssets: [
+        { type: 'icon', name: 'prior', uri: 'prior-avatar', ext: 'png' },
+        { type: 'icon', name: 'iconx', uri: 'primary-avatar', ext: 'png' },
+      ],
+      extentions: {
+        pngExif: {
+          Title: 'existing metadata',
+          Description: 'uploaded metadata',
+        },
+      },
+    })
+    expect(
+      Array.from(target.querySelectorAll<HTMLElement>('div.h-24.w-24.shadow-lg'))[0].getAttribute('style'),
+    ).toContain('uploaded-avatar')
+  })
+
+  it('renders emotion additions and deletions from the character draft immediately', async () => {
+    selectedFileState.multipleQueue.push([selectedFile('happy.webp')])
+    assetMocks.saveAsset.mockResolvedValueOnce('happy-upload')
+    await mountCharConfig(1, { viewScreen: 'emotion' })
+    await showCharacterViewScreen()
+
+    emotionAddButton().click()
+    await settleComponent()
+
+    expect(target.querySelector('img[src="happy-upload"]')).toBeTruthy()
+    expect(
+      Array.from(target.querySelectorAll<HTMLInputElement>('input')).some((input) => input.value === 'happy'),
+    ).toBe(true)
+    expect(getDatabase().characters[0].emotionImages).toEqual([['happy', 'happy-upload']])
+
+    const emotionRow = target.querySelector('img[src="happy-upload"]')?.closest('tr')
+    ;(emotionRow?.querySelector('button') as HTMLButtonElement).click()
+    await settleComponent()
+
+    expect(target.querySelector('img[src="happy-upload"]')).toBeNull()
+    expect(getDatabase().characters[0].emotionImages).toEqual([])
+  })
+
+  it('does not restore an emotion upload after the draft list changes while saving', async () => {
+    const pendingUpload = deferred<string>()
+    selectedFileState.multipleQueue.push([selectedFile('stale.gif')])
+    assetMocks.saveAsset.mockReturnValueOnce(pendingUpload.promise)
+    await mountCharConfig(1, {
+      viewScreen: 'emotion',
+      emotionImages: [['existing', 'existing-emotion']],
+    })
+    await showCharacterViewScreen()
+
+    emotionAddButton().click()
+    await settleComponent()
+    expect(assetMocks.saveAsset).toHaveBeenCalledTimes(1)
+
+    const existingRow = target.querySelector('img[src="existing-emotion"]')?.closest('tr')
+    ;(existingRow?.querySelector('button') as HTMLButtonElement).click()
+    await settleComponent()
+    expect(getDatabase().characters[0].emotionImages).toEqual([])
+
+    pendingUpload.resolve('stale-upload')
+    await settleComponent()
+
+    expect(target.querySelector('img[src="stale-upload"]')).toBeNull()
+    expect(getDatabase().characters[0].emotionImages).toEqual([])
+  })
+})
+
 describe('CharConfig character draft target guards', () => {
   it('does not gate persistent character actions on the profile draft type field', () => {
     const source = charConfigSource()
@@ -626,6 +788,9 @@ describe('CharConfig character draft target guards', () => {
     expect(source).toContain('isServerCharacterShell(selectedCharacter)')
     expect(source).toContain("selectedCharacter.type && selectedCharacter.type !== 'character'")
     expect(source).toContain('characterDraft.characterId !== selectedCharacter.chaId')
+    expect(source).not.toContain('changeCharImage($selectedCharID')
+    expect(source).not.toContain('rmCharEmotion($selectedCharID')
+    expect(source).not.toContain('addCharEmotion($selectedCharID')
   })
 
   it('keeps script definitions out of the profile draft and validates the script draft target before adding', () => {

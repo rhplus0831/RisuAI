@@ -30,15 +30,7 @@
     ArrowDown,
   } from '@lucide/svelte'
   import Check from '../UI/GUI/CheckInput.svelte'
-  import {
-    addCharEmotion,
-    addingEmotion,
-    getCharImage,
-    rmCharEmotion,
-    selectCharImg,
-    removeChar,
-    changeCharImage,
-  } from '../../ts/characters'
+  import { addingEmotion, getCharImage, removeChar, selectCharacterAvatarImage } from '../../ts/characters'
   import LoreBook from './LoreBook/LoreBookSetting.svelte'
   import BarIcon from './BarIcon.svelte'
   import { selectMultipleFile, selectSingleFile } from '../../ts/util'
@@ -81,6 +73,15 @@
     type CharacterAdditionalAssetEntry,
     type CharacterAdditionalAssetUploadOperation,
   } from 'src/ts/server/characterAdditionalAssetUpload'
+  import {
+    appendFreshCharacterEmotionImages,
+    beginCharacterEmotionUpload,
+    captureCharacterEmotionUploadTarget,
+    clearCharacterEmotionUpload,
+    isFreshCharacterEmotionUpload,
+    type CharacterEmotionImageEntry,
+    type CharacterEmotionUploadOperation,
+  } from 'src/ts/server/characterEmotionUpload'
   import {
     applyFreshCharacterGptSoVitsReferenceAudioUpload,
     applyFreshCharacterVitsModelRegistration,
@@ -150,6 +151,7 @@
     'notificationImage',
     'image',
     'ccAssets',
+    'extentions',
     'largePortrait',
     'viewScreen',
     'emotionImages',
@@ -555,6 +557,154 @@
   function updateCharacterDraft(mutator: (character: character) => void): void {
     mutator(characterDraft.value as unknown as character)
     characterDraft.value = { ...characterDraft.value }
+  }
+
+  function characterDraftAvatarSnapshot(): string {
+    const draft = characterDraft.value as unknown as character
+    return snapshotJson({
+      image: draft.image,
+      ccAssets: draft.ccAssets,
+      pngExif: draft.extentions?.pngExif,
+    })
+  }
+
+  async function selectCharacterAvatarFromEditor(): Promise<void> {
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return
+
+    const characterId = target.character.chaId
+    const characterIndex = target.selectedIndex
+    const avatarSnapshot = characterDraftAvatarSnapshot()
+
+    await selectCharacterAvatarImage(characterIndex, ({ image, pngExif }) => {
+      const currentTarget = currentRealCharacterDraftTarget()
+      if (
+        currentTarget?.selectedIndex !== characterIndex ||
+        currentTarget.character.chaId !== characterId ||
+        characterDraftAvatarSnapshot() !== avatarSnapshot
+      ) {
+        return
+      }
+
+      updateCharacterDraft((character) => {
+        if (character.image) {
+          character.ccAssets ??= []
+          character.ccAssets.push({
+            type: 'icon',
+            name: 'iconx',
+            uri: character.image,
+            ext: 'png',
+          })
+        }
+
+        if (Object.keys(pngExif).length > 0) {
+          character.extentions ??= {}
+          character.extentions.pngExif ??= {}
+          Object.assign(character.extentions.pngExif, pngExif)
+        }
+        character.image = image
+      })
+    })
+  }
+
+  function rotateCharacterImageFromDraft(index: number): void {
+    if (!currentRealCharacterDraftTarget()) return
+
+    updateCharacterDraft((character) => {
+      const selectedAsset = character.ccAssets?.[index]
+      if (!selectedAsset) return
+
+      character.ccAssets?.splice(index, 1)
+      if (character.image) {
+        character.ccAssets ??= []
+        character.ccAssets.push({
+          type: 'icon',
+          name: 'iconx',
+          uri: character.image,
+          ext: 'png',
+        })
+      }
+      character.image = selectedAsset.uri
+    })
+  }
+
+  function currentEditorEmotionUploadTarget() {
+    const target = currentRealCharacterDraftTarget()
+    if (!target) return null
+
+    return captureCharacterEmotionUploadTarget({
+      characterId: target.character.chaId,
+      characterIndex: target.selectedIndex,
+      emotionImages: (characterDraft.value as unknown as character).emotionImages,
+    })
+  }
+
+  function editorEmotionUploadFreshness(operation: CharacterEmotionUploadOperation) {
+    const selectedCharacter = getDatabase().characters?.[$selectedCharID]
+    const targetRow =
+      operation.characterIndex === undefined ? undefined : getDatabase().characters?.[operation.characterIndex]
+
+    return {
+      currentCharacterId: selectedCharacter?.chaId,
+      rowCharacterId: operation.characterIndex === undefined ? undefined : (targetRow?.chaId ?? null),
+      draftCharacterId: characterDraft.characterId,
+      emotionImages: (characterDraft.value as unknown as character).emotionImages,
+    }
+  }
+
+  function isCurrentEditorEmotionUpload(operation: CharacterEmotionUploadOperation): boolean {
+    return isFreshCharacterEmotionUpload(operation, editorEmotionUploadFreshness(operation))
+  }
+
+  async function addCharacterEmotionsFromEditor(): Promise<void> {
+    addingEmotion.set(true)
+    let operation: CharacterEmotionUploadOperation | null = null
+    try {
+      const target = currentEditorEmotionUploadTarget()
+      if (!target) return
+
+      const files = await selectMultipleFile(['png', 'webp', 'gif'], {
+        onFilesSelected: () => {
+          operation = beginCharacterEmotionUpload(target)
+        },
+      })
+      if (!files || files.length === 0 || !operation) return
+
+      const activeOperation = operation
+      const entries: CharacterEmotionImageEntry[] = []
+      for (const file of files) {
+        if (!isCurrentEditorEmotionUpload(activeOperation)) return
+
+        const image = await saveAsset(file.data)
+        if (!isCurrentEditorEmotionUpload(activeOperation)) return
+
+        entries.push([file.name.replace(/\.(png|webp|gif)$/i, ''), image])
+      }
+
+      const emotionImages = appendFreshCharacterEmotionImages({
+        operation: activeOperation,
+        freshness: editorEmotionUploadFreshness(activeOperation),
+        entries,
+      })
+      if (!emotionImages) return
+
+      updateCharacterDraft((character) => {
+        character.emotionImages = emotionImages
+      })
+    } finally {
+      if (operation) {
+        clearCharacterEmotionUpload(operation)
+      }
+      addingEmotion.set(false)
+    }
+  }
+
+  function removeCharacterEmotionFromDraft(index: number): void {
+    if (!currentRealCharacterDraftTarget()) return
+
+    updateCharacterDraft((character) => {
+      character.emotionImages.splice(index, 1)
+    })
   }
 
   function additionalAssetExtension(name: string): string {
@@ -1034,7 +1184,7 @@
           <button
             onclick={async () => {
               if (!iconRemoveMode) {
-                changeCharImage($selectedCharID, i)
+                rotateCharacterImageFromDraft(i)
               } else if (currentRealCharacterDraftTarget()) {
                 removeCharacterCcAsset(i)
                 iconRemoveMode = false
@@ -1059,7 +1209,7 @@
       {/if}
       <button
         onclick={async () => {
-          await selectCharImg($selectedCharID)
+          await selectCharacterAvatarFromEditor()
         }}>
         <div
           class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
@@ -1168,7 +1318,7 @@
                     <button
                       class="font-medium cursor-pointer hover:text-green-500"
                       onclick={() => {
-                        rmCharEmotion($selectedCharID, i)
+                        removeCharacterEmotionFromDraft(i)
                       }}><TrashIcon /></button>
                   </td>
                 </tr>
@@ -1183,7 +1333,7 @@
           <button
             class="cursor-pointer hover:text-green-500"
             onclick={() => {
-              addCharEmotion($selectedCharID)
+              void addCharacterEmotionsFromEditor()
             }}>
             <PlusIcon />
           </button>
