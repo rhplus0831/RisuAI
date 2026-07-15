@@ -74,6 +74,7 @@ vi.mock('./lang', () => ({
     Chat: 'Chat',
     character: 'Character',
     home: 'Home',
+    menu: 'Menu',
     playground: { playground: 'Playground' },
     settings: 'Settings',
     successImport: 'Imported',
@@ -85,6 +86,7 @@ vi.mock('src/lang', () => ({
     Chat: 'Chat',
     character: 'Character',
     home: 'Home',
+    menu: 'Menu',
     playground: { playground: 'Playground' },
     settings: 'Settings',
     successImport: 'Imported',
@@ -383,6 +385,7 @@ async function mountApp() {
 
 describe('App route/refreeze mounted DOM behavior', () => {
   beforeEach(async () => {
+    vi.stubEnv('VITE_RISU_LEGAL_CONFIGURED', 'true')
     target = document.createElement('div')
     document.body.appendChild(target)
     window.history.replaceState(null, '', routePath)
@@ -480,6 +483,44 @@ describe('App route/refreeze mounted DOM behavior', () => {
         settingsOpen: true,
       }),
     )
+  })
+
+  it('contains and restores focus while the responsive sidebar is open and closes it with Escape', async () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Open navigation'
+    document.body.insertBefore(opener, target)
+    opener.focus()
+
+    DynamicGUI.set(true)
+    await tick()
+    await Promise.resolve()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]')
+    expect(get(DynamicGUI)).toBe(true)
+    expect(get(sideBarStore)).toBe(true)
+    expect(dialog, target.innerHTML).toBeTruthy()
+    expect(dialog?.getAttribute('aria-label')).toBe('Menu')
+    expect(opener.inert).toBe(true)
+    expect(dialog?.contains(document.activeElement)).toBe(true)
+
+    opener.focus()
+    expect(dialog?.contains(document.activeElement)).toBe(true)
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    dialog?.dispatchEvent(escape)
+    await tick()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(get(sideBarClosing)).toBe(true)
+    dialog?.querySelector<HTMLElement>('.setting-area')?.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await tick()
+    await Promise.resolve()
+
+    expect(target.querySelector('[role="dialog"][aria-modal="true"]')).toBeNull()
+    expect(get(sideBarStore)).toBe(false)
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
   })
 
   it('does not report a failed dropped preset import as successful', async () => {

@@ -3,6 +3,7 @@
   import {
     DynamicGUI,
     settingsOpen,
+    sideBarClosing,
     sideBarStore,
     openPresetList,
     openPersonaList,
@@ -66,6 +67,7 @@
     navigate,
     syncRouteFromState,
   } from './ts/router'
+  import { modalFocusTrap } from './ts/gui/modalFocusTrap'
 
   let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
   let aprilFoolsPage = $state(0)
@@ -78,6 +80,18 @@
       return
     }
     navigate('/')
+  }
+
+  function closeResponsiveSidebar(): void {
+    if ($sideBarClosing) return
+    sideBarClosing.set(true)
+  }
+
+  function handleResponsiveSidebarKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeResponsiveSidebar()
   }
 
   let routeChatIsOpen = $derived($currentRoute.kind === 'character' && typeof $currentRoute.chatId === 'string')
@@ -279,11 +293,16 @@
           navigate('/grid')
         }}
         hidden={!$sideBarStore} />
-    {:else}
+    {:else if $sideBarStore}
       <div
-        class="top-0 w-full h-full left-0 z-30 flex flex-row items-center"
-        class:fixed={$sideBarStore}
-        class:hidden={!$sideBarStore}>
+        data-modal-root
+        use:modalFocusTrap
+        role="dialog"
+        aria-modal="true"
+        aria-label={language.menu}
+        tabindex="-1"
+        class="fixed top-0 w-full h-full left-0 z-30 flex flex-row items-center"
+        onkeydown={handleResponsiveSidebarKeydown}>
         <Sidebar
           openGrid={() => {
             navigate('/grid')
