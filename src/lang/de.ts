@@ -1271,6 +1271,8 @@ export const languageGerman = {
   destinationLanguage: 'Zielsprache',
   noWebGPU: 'Ihr Browser oder Betriebssystem unterstützt WebGPU nicht. Dies wird die Leistung erheblich verlangsamen.',
   menuSideBar: 'Menü-Seitenleiste',
+  collapseSidebar: 'Seitenleiste einklappen',
+  expandSidebar: 'Seitenleiste ausklappen',
   home: 'Startseite',
   showSavingIcon: 'Speichersymbol anzeigen',
   pluginVersionWarn:

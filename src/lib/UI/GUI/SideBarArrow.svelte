@@ -1,11 +1,13 @@
 <script lang="ts">
   import { ArrowLeft, ArrowRight } from '@lucide/svelte'
+  import { language } from 'src/lang'
   import { DynamicGUI, MobileGUI, sideBarClosing, sideBarStore } from 'src/ts/stores.svelte'
 </script>
 
 {#if !$MobileGUI}
   {#if $sideBarStore && !$DynamicGUI}
     <button
+      aria-label={language.collapseSidebar}
       onclick={() => {
         sideBarClosing.set(true)
       }}
@@ -14,6 +16,7 @@
     </button>
   {:else}
     <button
+      aria-label={language.expandSidebar}
       onclick={() => {
         sideBarClosing.set(false)
         sideBarStore.set(true)

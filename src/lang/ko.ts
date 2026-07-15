@@ -1246,6 +1246,8 @@ export const languageKorean = {
   destinationLanguage: '목표 언어',
   noWebGPU: '브라우저 또는 OS가 WebGPU를 지원하지 않습니다. 이로 인해 성능이 크게 저하될 수 있습니다.',
   menuSideBar: '메뉴 사이드바',
+  collapseSidebar: '사이드바 접기',
+  expandSidebar: '사이드바 펼치기',
   home: '홈',
   showSavingIcon: '저장 아이콘 표시',
   pluginVersionWarn:

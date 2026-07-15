@@ -1464,6 +1464,8 @@ export const languageEnglish = {
   destinationLanguage: 'Destination Language',
   noWebGPU: "Your Browser or OS doesn't support WebGPU. This will slow down the performance significantly.",
   menuSideBar: 'Menu Side Bar',
+  collapseSidebar: 'Collapse sidebar',
+  expandSidebar: 'Expand sidebar',
   home: 'Home',
   showSavingIcon: 'Show Saving Icon',
   pluginVersionWarn:

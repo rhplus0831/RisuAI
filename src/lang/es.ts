@@ -1252,6 +1252,8 @@ export const languageSpanish = {
   destinationLanguage: 'Idioma de Destino',
   noWebGPU: 'Tu navegador o SO no soporta WebGPU. Esto ralentizará el rendimiento significativamente.',
   menuSideBar: 'Barra Lateral del Menú',
+  collapseSidebar: 'Contraer barra lateral',
+  expandSidebar: 'Expandir barra lateral',
   home: 'Inicio',
   showSavingIcon: 'Mostrar Icono de Guardado',
   pluginVersionWarn:

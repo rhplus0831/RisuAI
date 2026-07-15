@@ -1241,6 +1241,8 @@ export const languageVietnamese = {
   destinationLanguage: 'Ngôn ngữ đích',
   noWebGPU: 'Trình duyệt hoặc hệ điều hành của bạn không hỗ trợ WebGPU. Điều này sẽ làm chậm hiệu suất đáng kể.',
   menuSideBar: 'Thanh bên menu',
+  collapseSidebar: 'Thu gọn thanh bên',
+  expandSidebar: 'Mở rộng thanh bên',
   home: 'Trang chủ',
   showSavingIcon: 'Hiển thị biểu tượng đang lưu',
   pluginVersionWarn:

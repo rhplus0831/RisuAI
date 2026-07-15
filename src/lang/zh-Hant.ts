@@ -1197,6 +1197,8 @@ export const languageChineseTraditional = {
   destinationLanguage: '目標語言',
   noWebGPU: '由於目前的瀏覽器或作業系統不支援 WebGPU，效能將大幅下降。',
   menuSideBar: '選單側邊欄',
+  collapseSidebar: '收合側邊欄',
+  expandSidebar: '展開側邊欄',
   home: '首頁',
   showSavingIcon: '顯示儲存圖示',
   pluginVersionWarn:

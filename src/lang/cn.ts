@@ -1179,6 +1179,8 @@ export const languageChinese = {
   destinationLanguage: '目标语言',
   noWebGPU: '您的浏览器或操作系统不支持 WebGPU。这将显着降低性能。',
   menuSideBar: '菜单侧边栏',
+  collapseSidebar: '收起侧边栏',
+  expandSidebar: '展开侧边栏',
   home: '主页',
   showSavingIcon: '显示保存图标',
   pluginVersionWarn:
