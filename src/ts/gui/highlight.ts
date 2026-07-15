@@ -101,6 +101,8 @@ export const highlighter = (highlightDom: HTMLElement, id: number) => {
 }
 
 const runHighlight = () => {
+  if (!CSS.highlights) return
+
   const formatedRanges: { [key: string]: Range[] } = {}
   for (const h of highLights) {
     for (const range of h[1]) {
@@ -112,11 +114,21 @@ const runHighlight = () => {
     }
   }
 
+  for (const type of activeHighlightTypes) {
+    if (!formatedRanges[type]) {
+      CSS.highlights.delete(type)
+      activeHighlightTypes.delete(type)
+    }
+  }
+
   for (const key in formatedRanges) {
     const highlight = new Highlight(...formatedRanges[key])
     CSS.highlights.set(key, highlight)
+    activeHighlightTypes.add(key as HighlightType)
   }
 }
+
+const activeHighlightTypes = new Set<HighlightType>()
 
 let highlightIds = 0
 
@@ -126,6 +138,7 @@ export const getNewHighlightId = () => {
 
 export const removeHighlight = (id: number) => {
   highLights.delete(id)
+  runHighlight()
 }
 
 const normalCBS = [
