@@ -78,24 +78,45 @@ export async function autoServerBackup() {
 }
 
 let lastKeiSave = 0
-export function saveDbKei() {
+let keiSaveInFlight: Promise<void> | null = null
+
+export function saveDbKei(): Promise<void> {
   try {
-    let db = getDatabase()
-    if (db.account.kei) {
-      if (Date.now() - lastKeiSave < 60000 * 5) {
-        return
-      }
-      lastKeiSave = Date.now()
-      fetch(keiServerURL() + '/autobackup/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          token: db.account.token,
-          database: db,
-        }),
-      })
+    const db = getDatabase()
+    if (!db.account.kei || Date.now() - lastKeiSave < 60000 * 5) {
+      return Promise.resolve()
     }
-  } catch (e) {}
+    if (keiSaveInFlight) return keiSaveInFlight
+
+    keiSaveInFlight = fetch(keiServerURL() + '/autobackup/save', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        token: db.account.token,
+        database: db,
+      }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          lastKeiSave = Date.now()
+        }
+      })
+      .catch(() => {
+        // A later save should be allowed to retry after a transient failure.
+      })
+      .finally(() => {
+        keiSaveInFlight = null
+      })
+
+    return keiSaveInFlight
+  } catch {
+    return Promise.resolve()
+  }
+}
+
+export function resetKeiBackupStateForTests() {
+  lastKeiSave = 0
+  keiSaveInFlight = null
 }

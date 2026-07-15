@@ -25,13 +25,14 @@ vi.mock('../globalApi.svelte', () => ({
   requiresFullEncoderReload: { state: false },
 }))
 
-import { autoServerBackup } from './backup'
+import { autoServerBackup, resetKeiBackupStateForTests, saveDbKei } from './backup'
 
 beforeEach(() => {
   backupMocks.alertNormal.mockReset()
   backupMocks.alertSelect.mockReset()
   backupMocks.setDatabase.mockReset()
   backupMocks.database = { account: { kei: false, token: 'kei-token' } }
+  resetKeiBackupStateForTests()
 })
 
 afterEach(() => {
@@ -71,5 +72,38 @@ describe('Risu-Kei backups', () => {
       'backup-8',
       'backup-9',
     ])
+  })
+
+  it('allows an automatic save to retry after a failed request', async () => {
+    backupMocks.database = { account: { kei: true, token: 'kei-token' }, value: 'database' }
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await saveDbKei()
+    await saveDbKei()
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('coalesces concurrent automatic saves and throttles only after success', async () => {
+    backupMocks.database = { account: { kei: true, token: 'kei-token' }, value: 'database' }
+    let resolveSave!: (response: Response) => void
+    const pendingSave = new Promise<Response>((resolve) => {
+      resolveSave = resolve
+    })
+    const fetchMock = vi.fn(() => pendingSave)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = saveDbKei()
+    const second = saveDbKei()
+    expect(fetchMock).toHaveBeenCalledOnce()
+    resolveSave(new Response(null, { status: 204 }))
+    await Promise.all([first, second])
+    await saveDbKei()
+
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 })
