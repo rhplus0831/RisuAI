@@ -423,6 +423,11 @@ function pickerRow(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElemen
   )
 }
 
+function pickerSelectionControl(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElement {
+  const row = pickerRow(kind, id)
+  return row.querySelector<HTMLElement>('[data-risu-picker-select]') ?? row
+}
+
 function toggleControl(key: string): HTMLElement {
   return elementBySelector<HTMLElement>(
     `[data-risu-generation-toggle-control][data-risu-toggle-key="${key}"]`,
@@ -1046,7 +1051,9 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerRow('prompt', 'preset-b').textContent).toContain('Prompt preset Beta')
     expect(pickerRow('prompt', 'preset-b').dataset.risuSelected).toBe('false')
 
-    pickerRow('prompt', 'preset-b').click()
+    const promptSelection = pickerSelectionControl('prompt', 'preset-b')
+    expect(promptSelection).toBeInstanceOf(HTMLButtonElement)
+    promptSelection.click()
     await tick()
     await waitForGenerationSettingsSaveCount(calls, 1)
 
@@ -1068,7 +1075,7 @@ describe('sidebar chat generation settings controls', () => {
     expect(pickerRow('persona', 'persona-b').textContent).toContain('Persona Beta')
     expect(pickerRow('persona', 'persona-b').dataset.risuSelected).toBe('false')
 
-    pickerRow('persona', 'persona-b').click()
+    pickerSelectionControl('persona', 'persona-b').click()
     await tick()
     await waitForGenerationSettingsSaveCount(calls, 2)
 
@@ -1137,7 +1144,7 @@ describe('sidebar chat generation settings controls', () => {
     testDatabaseState().characters[0].chatPage = 1
     await tick()
 
-    pickerRow('prompt', 'preset-a').click()
+    pickerSelectionControl('prompt', 'preset-a').click()
     await flushAsyncWork()
 
     expect(get(openPresetList)).toBe(true)
@@ -1160,7 +1167,7 @@ describe('sidebar chat generation settings controls', () => {
     testDatabaseState().characters[0].chatPage = 1
     await tick()
 
-    pickerRow('persona', 'persona-a').click()
+    pickerSelectionControl('persona', 'persona-a').click()
     await flushAsyncWork()
 
     expect(get(openPersonaList)).toBe(true)
@@ -1188,7 +1195,7 @@ describe('sidebar chat generation settings controls', () => {
     pickerButton('prompt').click()
     await tick()
 
-    pickerRow('prompt', 'preset-a').click()
+    pickerSelectionControl('prompt', 'preset-a').click()
     await tick()
     await waitForGenerationSettingsSaveCount(calls, 1)
 
