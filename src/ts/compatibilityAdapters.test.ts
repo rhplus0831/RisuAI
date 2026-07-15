@@ -44,6 +44,7 @@ import { isServerCharacterShell, type Chat, type character, type Database } from
 import { changeChar, changeCharImage, createNewCharacter, rmCharEmotion } from './characters'
 import { alertError } from './alert'
 import { getColdStorageItem } from './process/coldstorage.svelte'
+import { isCharacterLorebookMutationReady, resetLorebookHydration } from './server/lorebookBridge.svelte'
 
 const testDatabaseState = {
   get db() {
@@ -148,6 +149,7 @@ function seedCharacter(): character {
 
 beforeEach(() => {
   clearCachedServerCommandRevision()
+  resetLorebookHydration()
   setResourceWriteGuardEnabled(false)
   vi.unstubAllGlobals()
   selectedCharID.set(0)
@@ -392,6 +394,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
   it('creates characters through trusted optimistic projection writes under the guard', async () => {
     const calls = stubCommandFetch()
+    ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
     setResourceWriteGuardEnabled(true)
 
     expect(() => {
@@ -402,6 +405,7 @@ describe('Phase 9-3f compatibility adapters', () => {
 
     expect(index).toBe(1)
     expect(testDatabaseState.db.characters[1].name).toBe('')
+    expect(isCharacterLorebookMutationReady(testDatabaseState.db.characters[1].chaId)).toBe(true)
     expect(() => {
       testDatabaseState.db.characters.push({ chaId: 'direct-2', name: 'Direct', chats: [] } as any)
     }).toThrow()

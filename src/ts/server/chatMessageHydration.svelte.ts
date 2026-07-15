@@ -11,7 +11,11 @@ import {
   withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
-import { isCharacterLorebookHydrated, markCharacterLorebookHydrated } from './lorebookBridge.svelte'
+import {
+  isCharacterLorebookHydrated,
+  isCharacterLorebookMutationReady,
+  markCharacterLorebookHydrated,
+} from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
   fetchServerBulkCharacterLorebooks,
@@ -671,25 +675,23 @@ function activeCharacterId(): string | undefined {
 
 /** Reactive: is this character's stubbed global lorebook waiting for hydration? */
 export function isCharacterLorebookHydrationPending(characterId: string | undefined): boolean {
-  if (!getDatabase().enableLorebookStubs || !characterId) return false
-  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) return false
-  if (!canUseServerResourceReads()) return false
+  if (!characterId || !canUseServerResourceReads()) return false
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId)) return false
   return !attemptedCharLorebookIds.has(characterId)
 }
 
 /** Reactive: did the latest hydration of this character's global lorebook fail? */
 export function hasCharacterLorebookHydrationFailed(characterId: string | undefined): boolean {
-  if (!getDatabase().enableLorebookStubs || !characterId) return false
-  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) return false
+  if (!characterId) return false
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId)) return false
   return !canUseServerResourceReads() || failedCharLorebookIds.has(characterId)
 }
 
 async function hydrateCharacterLorebook(characterId: string, force: boolean): Promise<void> {
   if (!canUseServerResourceReads()) return
-  // Off unless globalLore is actually stubbed (the EXPERIMENTAL setting). When off,
-  // globalLore is already resident — no fetch needed and nothing to hydrate.
-  if (!getDatabase().enableLorebookStubs) return
-  if (!force && (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId))) return
+  // Readiness follows the projection that is actually resident. A setting
+  // transition can leave an older stub in memory even after stub mode is off.
+  if (!force && (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId))) return
   const currentRequest = charLorebookInFlight.get(characterId)
   if (currentRequest) return currentRequest
 
@@ -747,7 +749,7 @@ async function hydrateCharacterLorebooksBulk(
   characterIds: readonly string[],
   options: BulkHydrationOptions = {},
 ): Promise<void> {
-  if (!canUseServerResourceReads() || !getDatabase().enableLorebookStubs || characterIds.length === 0) {
+  if (!canUseServerResourceReads() || characterIds.length === 0) {
     return
   }
 
@@ -825,7 +827,7 @@ async function hydrateCharacterLorebooksBulk(
   }
 }
 
-/** Hydrate the open character's `globalLore` (no-op if already hydrated / stubs off). */
+/** Hydrate the open character's `globalLore` when its resident projection is a stub. */
 export async function hydrateActiveCharacterLorebook(options: { force?: boolean } = {}): Promise<void> {
   const characterId = activeCharacterId()
   if (characterId) await hydrateCharacterLorebook(characterId, options.force ?? false)
@@ -837,12 +839,12 @@ export async function ensureCharacterLorebookHydrated(
   options: { force?: boolean } = {},
 ): Promise<boolean> {
   if (!characterId) return false
-  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) return true
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookMutationReady(characterId)) return true
   // A resident projection is recorded in the authoritative bridge registry at
   // bootstrap/refresh. If it is not recorded, fail closed even when reads are
   // unavailable or the stub setting just changed; exporting `[]` would create a
   // plausible-looking but incomplete file.
-  if (!canUseServerResourceReads() || !getDatabase().enableLorebookStubs) return false
+  if (!canUseServerResourceReads()) return false
   await hydrateCharacterLorebook(characterId, options.force ?? false)
   return hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)
 }
@@ -852,7 +854,7 @@ export async function ensureCharacterLorebookHydrated(
  * walk all characters' lorebooks must await this first when stubs are on.
  */
 export async function ensureAllCharacterLorebooksHydrated(options: BulkHydrationOptions = {}): Promise<void> {
-  if (!canUseServerResourceReads() || !getDatabase().enableLorebookStubs) return
+  if (!canUseServerResourceReads()) return
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
   for (const character of getDatabase().characters ?? []) {
@@ -860,7 +862,7 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
       typeof character.chaId !== 'string' ||
       !character.chaId ||
       hydratedCharLorebookIds.has(character.chaId) ||
-      isCharacterLorebookHydrated(character.chaId)
+      isCharacterLorebookMutationReady(character.chaId)
     ) {
       continue
     }
@@ -880,7 +882,7 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
         typeof character.chaId === 'string' &&
         character.chaId &&
         !hydratedCharLorebookIds.has(character.chaId) &&
-        !isCharacterLorebookHydrated(character.chaId)
+        !isCharacterLorebookMutationReady(character.chaId)
       ) {
         missing.push(character.chaId)
       }

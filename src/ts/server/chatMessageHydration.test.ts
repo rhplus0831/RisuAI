@@ -44,7 +44,11 @@ import {
   isChatMessageHydrationPending,
   resetChatHydration,
 } from './chatMessageHydration.svelte'
-import { isCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
+import {
+  isCharacterLorebookHydrated,
+  recordHydratedCharacterLorebooks,
+  resetLorebookHydration,
+} from './lorebookBridge.svelte'
 import { getProtocolDiagnosticsSnapshot } from './protocolDiagnostics'
 import {
   getRerollBuffer,
@@ -923,6 +927,27 @@ describe('character globalLore hydration (Phase 5)', () => {
     // Deduped on a second call (no refetch).
     await hydrateActiveCharacterLorebook()
     expect(projectionState.fetchCharLore).toHaveBeenCalledTimes(1)
+  })
+
+  it('hydrates a resident stub after stub mode is turned off', async () => {
+    ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    recordHydratedCharacterLorebooks([{ chaId: 'char-1' }])
+    ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = false
+    projectionState.fetchCharLore.mockResolvedValue({
+      status: 'ok',
+      revision: 1,
+      characterId: 'char-1',
+      globalLore: [{ key: 'transition', content: 'real lore' }],
+    })
+
+    expect(isCharacterLorebookHydrationPending('char-1')).toBe(true)
+    await hydrateActiveCharacterLorebook()
+
+    expect(projectionState.fetchCharLore).toHaveBeenCalledWith('char-1')
+    expect((db().characters[0] as { globalLore?: unknown[] }).globalLore).toEqual([
+      { key: 'transition', content: 'real lore' },
+    ])
+    expect(isCharacterLorebookHydrationPending('char-1')).toBe(false)
   })
 
   it('does not let a forced hydration overwrite a newer local lorebook body', async () => {

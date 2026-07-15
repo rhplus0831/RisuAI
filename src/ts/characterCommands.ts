@@ -17,6 +17,7 @@ import {
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
+import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte'
 import { selectedCharID } from './stores.svelte'
 import type { character, folder } from './storage/database.svelte'
 
@@ -665,6 +666,7 @@ export function runCharacterCommand<T extends Record<string, unknown>>(
 }
 
 export function dispatchCreateCharacter(character: character, previous: CharacterStateSnapshot): void {
+  recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, false)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
   runCharacterCommand(
@@ -682,6 +684,7 @@ export function dispatchCreateAndSelectCharacter(
   previous: CharacterStateSnapshot,
   lastInteraction: number,
 ): void {
+  recordHydratedCharacterLorebooks([character])
   const rollback = characterCreateRollbackFromState(character, previous, true)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
   runCharacterCommand(

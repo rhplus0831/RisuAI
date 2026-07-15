@@ -428,6 +428,7 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
   it('rejects optimistic character collection writes until the stub is hydrated', async () => {
     setupCharacter([] as Entry[])
     ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    recordHydratedCharacterLorebooks([{ chaId: 'c1' }])
     const attempted = [{ key: 'new', content: 'must not appear', id: 'entry-new' }] as Entry[]
 
     const replaced = replaceCharacterLorebookCollection('c1', attempted as any, DELAY)
@@ -436,6 +437,11 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     expect(getDatabase().characters[0].globalLore).toEqual([])
     await vi.advanceTimersByTimeAsync(DELAY)
     expect(recorded.commands).toHaveLength(0)
+
+    // Turning the setting off changes future projections, but the currently
+    // resident row is still the same stub and must remain read-only.
+    ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = false
+    expect(replaceCharacterLorebookCollection('c1', attempted as any, DELAY)).toBe(false)
 
     markCharacterLorebookHydrated('c1')
     expect(replaceCharacterLorebookCollection('c1', attempted as any, DELAY)).toBe(true)

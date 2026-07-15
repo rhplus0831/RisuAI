@@ -134,6 +134,10 @@ let selectedCharMirror = $state(-1)
 // lorebooks still use field presence because absent module lorebooks are not
 // defaulted.
 const hydratedCharacterLorebooks = new SvelteSet<string>()
+// Characters whose latest raw projection omitted `globalLore`. Keep this
+// separate from the current setting: turning stub mode off does not
+// retroactively replace stubs that are already resident in the client.
+const stubbedCharacterLorebooks = new SvelteSet<string>()
 
 export function resetServerBackedLorebookBridgeForTests(): void {
   for (const pending of pendingReplacements.values()) {
@@ -153,7 +157,9 @@ export function resetServerBackedLorebookBridgeForTests(): void {
 
 /** Mark a character's `globalLore` as hydrated (real, persistable). */
 export function markCharacterLorebookHydrated(characterId: string): void {
-  if (characterId) hydratedCharacterLorebooks.add(characterId)
+  if (!characterId) return
+  hydratedCharacterLorebooks.add(characterId)
+  stubbedCharacterLorebooks.delete(characterId)
 }
 
 /** Whether a character's `globalLore` is hydrated (not a stub). */
@@ -167,7 +173,11 @@ export function isCharacterLorebookHydrated(characterId: string): boolean {
  * real hydrated collection.
  */
 export function isCharacterLorebookMutationReady(characterId: string): boolean {
-  return !getDatabase()?.enableLorebookStubs || hydratedCharacterLorebooks.has(characterId)
+  if (hydratedCharacterLorebooks.has(characterId)) return true
+  if (stubbedCharacterLorebooks.has(characterId)) return false
+  // Unknown rows are treated conservatively while stub mode is active. Rows
+  // created locally are registered by the character command bridge.
+  return !getDatabase()?.enableLorebookStubs
 }
 
 /**
@@ -177,6 +187,7 @@ export function isCharacterLorebookMutationReady(characterId: string): boolean {
  */
 export function resetLorebookHydration(): void {
   hydratedCharacterLorebooks.clear()
+  stubbedCharacterLorebooks.clear()
 }
 
 /**
@@ -189,8 +200,11 @@ export function recordHydratedCharacterLorebooks(
   characters: ReadonlyArray<{ chaId?: string; globalLore?: unknown }> | undefined,
 ): void {
   for (const character of characters ?? []) {
-    if (character?.chaId && Array.isArray(character.globalLore)) {
-      hydratedCharacterLorebooks.add(character.chaId)
+    if (!character?.chaId) continue
+    if (Array.isArray(character.globalLore)) markCharacterLorebookHydrated(character.chaId)
+    else {
+      hydratedCharacterLorebooks.delete(character.chaId)
+      stubbedCharacterLorebooks.add(character.chaId)
     }
   }
 }
