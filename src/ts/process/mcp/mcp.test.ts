@@ -52,6 +52,7 @@ import {
 } from '../../server/resourceState.svelte'
 import {
   callMCPTool,
+  callMCPToolFrom,
   callOnlyMCPs,
   getTools,
   initializeMCPs,
@@ -520,6 +521,41 @@ describe('MCP module import logging', () => {
 })
 
 describe('MCP indexed tool dispatch', () => {
+  it('routes a duplicate tool name to the MCP selected by the caller', async () => {
+    const firstIdentifier = 'plugin:selected-first'
+    const secondIdentifier = 'plugin:selected-second'
+    const firstCallTool = vi.fn(async () => [{ type: 'text' as const, text: 'first' }])
+    const secondCallTool = vi.fn(async () => [{ type: 'text' as const, text: 'second' }])
+
+    await registerMCPModule(
+      {
+        identifier: firstIdentifier,
+        name: 'Selected First MCP',
+        version: '1.0.0',
+        description: 'First duplicate-name MCP fixture.',
+      },
+      async () => [toolFixture('shared_tool')],
+      firstCallTool,
+    )
+    await registerMCPModule(
+      {
+        identifier: secondIdentifier,
+        name: 'Selected Second MCP',
+        version: '1.0.0',
+        description: 'Second duplicate-name MCP fixture.',
+      },
+      async () => [toolFixture('shared_tool')],
+      secondCallTool,
+    )
+    moduleMocks.mcps = [firstIdentifier, secondIdentifier]
+
+    await expect(callMCPToolFrom(secondIdentifier, 'shared_tool', { selected: true })).resolves.toEqual([
+      { type: 'text', text: 'second' },
+    ])
+    expect(firstCallTool).not.toHaveBeenCalled()
+    expect(secondCallTool).toHaveBeenCalledWith('shared_tool', { selected: true })
+  })
+
   it('replaces an initialized plugin MCP and ignores delayed cleanup from the old registration', async () => {
     const identifier = 'plugin:reload-current-registration'
     const oldGetToolList = vi.fn(async () => [toolFixture('old_plugin_tool')])

@@ -450,6 +450,23 @@ export async function callMCPTool(methodName: string, args: any): Promise<RPCToo
   ]
 }
 
+export async function callMCPToolFrom(mcpURL: string, methodName: string, args: any): Promise<RPCToolCallContent[]> {
+  await initializeMCPs()
+  const client = MCPs[mcpURL]
+  if (client) {
+    const tools = await client.getToolList()
+    if (tools.some((tool) => tool.name === methodName)) {
+      return await client.callTool(methodName, args)
+    }
+  }
+  return [
+    {
+      type: 'text',
+      text: `Tool ${methodName} not found on MCP ${mcpURL}`,
+    },
+  ]
+}
+
 // Tool registry entrypoint.
 export async function getTools() {
   return await getMCPTools()
