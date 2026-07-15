@@ -29,6 +29,7 @@
     onchange?: () => void
     popupLanguage?: string
     popupEditor?: PopupEditorAvailability
+    ariaLabel?: string
   }
 
   let {
@@ -48,6 +49,7 @@
     onchange = () => {},
     popupLanguage = 'markdown',
     popupEditor = 'auto',
+    ariaLabel,
   }: Props = $props()
   let selectingAutoComplete = $state(0)
   // highlight is captured once when the input is created.
@@ -366,6 +368,7 @@
       {autocomplete}
       {placeholder}
       {id}
+      aria-label={ariaLabel}
       bind:value
       oninput={(e) => {
         if (optimaizedInput) {
@@ -412,6 +415,7 @@
         handleKeyDown(e)
       }}
       role="textbox"
+      aria-label={ariaLabel}
       tabindex="0"
       oninput={(e) => {
         value = e.currentTarget.textContent ?? ''

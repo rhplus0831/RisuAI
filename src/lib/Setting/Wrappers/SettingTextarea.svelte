@@ -16,10 +16,11 @@
     () => item,
     () => ctx,
   )
+  let label = $derived(getLabel(item))
 </script>
 
 <span class="text-textcolor {item.classes ?? ''}">
-  {getLabel(item)}
+  {label}
   {#if item.helpKey}<Help key={item.helpKey as any} />{/if}
 </span>
-<TextAreaInput bind:value={draft.value} placeholder={item.options?.placeholder} />
+<TextAreaInput bind:value={draft.value} ariaLabel={label} placeholder={item.options?.placeholder} />

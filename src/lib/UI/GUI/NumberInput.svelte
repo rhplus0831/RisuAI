@@ -18,6 +18,7 @@
     className?: string
     disabled?: boolean
     placeholder?: string
+    ariaLabel?: string
   }
 
   let {
@@ -35,6 +36,7 @@
     className = '',
     disabled = false,
     placeholder,
+    ariaLabel,
   }: Props = $props()
 </script>
 
@@ -63,6 +65,7 @@
   {disabled}
   bind:value
   onchange={onChange}
+  aria-label={ariaLabel}
   {placeholder} />
 
 <style>

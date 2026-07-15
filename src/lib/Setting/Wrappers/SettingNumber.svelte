@@ -13,6 +13,7 @@
   let { item, ctx }: Props = $props()
 
   let localValue: any = $state(untrack(() => getSettingValue(item, ctx)))
+  let label = $derived(getLabel(item))
 
   // Sync: DB → local (one-way read)
   $effect(() => {
@@ -39,7 +40,7 @@
 </script>
 
 <span class="text-textcolor {item.classes ?? ''}">
-  {getLabel(item)}
+  {label}
   {#if item.helpKey}<Help key={item.helpKey as any} />{/if}
 </span>
 <NumberInput
@@ -48,4 +49,5 @@
   min={item.options?.min}
   max={item.options?.max}
   step={item.options?.step}
+  ariaLabel={label}
   bind:value={localValue} />

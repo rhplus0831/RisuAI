@@ -15,6 +15,7 @@
     disableable?: boolean
     customText?: string | undefined
     onchange?: Function
+    ariaLabel?: string
   }
 
   let {
@@ -28,6 +29,7 @@
     disableable = false,
     customText = undefined,
     onchange,
+    ariaLabel,
   }: Props = $props()
 
   let isDisabledValue = $derived(value === -1000 || value === undefined)
@@ -80,6 +82,8 @@
       <CheckInput
         check={value !== -1000 && value !== undefined}
         margin={false}
+        name={ariaLabel ? `${language.enable}: ${ariaLabel}` : ''}
+        hiddenName={true}
         onChange={(c) => {
           onchange?.()
           if (c) {
@@ -97,6 +101,7 @@
     aria-valuemax={max}
     aria-valuenow={sliderValue}
     aria-valuetext={displayText}
+    aria-label={ariaLabel}
     class="relative w-full h-8 border-darkborderc border rounded-full cursor-pointer"
     class:rounded-l-none={disableable}
     style:background={`linear-gradient(to right, var(--risu-theme-darkbutton) 0%, var(--risu-theme-darkbutton) ${sliderPercent}%, var(--risu-theme-darkbg) ${sliderPercent}%, var(--risu-theme-darkbg) 100%)`}

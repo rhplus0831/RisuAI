@@ -15,6 +15,7 @@
   let { item, ctx }: Props = $props()
 
   let localValue: any = $state(untrack(() => getSettingValue(item, ctx)))
+  let label = $derived(getLabel(item))
 
   // Filter out conditionally hidden options.
   let processedOptions = $derived(
@@ -74,10 +75,10 @@
 </script>
 
 <span class="text-textcolor {item.classes ?? 'mt-4'}">
-  {getLabel(item)}
+  {label}
   {#if item.helpKey}<Help key={item.helpKey as any} />{/if}
 </span>
-<SelectInput bind:value={localValue}>
+<SelectInput bind:value={localValue} ariaLabel={label}>
   {#each processedOptions as opt}
     <OptionInput value={opt.value}>
       {opt.labelKey ? (language as any)[opt.labelKey] : opt.label}

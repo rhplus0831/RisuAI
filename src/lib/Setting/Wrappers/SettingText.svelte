@@ -18,10 +18,11 @@
     () => ctx,
   )
   let ownerKey = $derived(getSettingWriteOwnerKey(item, ctx))
+  let label = $derived(getLabel(item))
 </script>
 
 <span class="text-textcolor {item.classes ?? ''}">
-  {getLabel(item)}
+  {label}
   {#if item.helpKey}<Help key={item.helpKey as any} />{/if}
 </span>
 {#if item.options?.hideText}
@@ -30,7 +31,13 @@
     size="sm"
     bind:value={draft.value}
     {ownerKey}
+    ariaLabel={label}
     placeholder={item.options?.placeholder} />
 {:else}
-  <TextInput marginBottom={true} size="sm" bind:value={draft.value} placeholder={item.options?.placeholder} />
+  <TextInput
+    marginBottom={true}
+    size="sm"
+    bind:value={draft.value}
+    ariaLabel={label}
+    placeholder={item.options?.placeholder} />
 {/if}

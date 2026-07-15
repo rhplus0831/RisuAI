@@ -16,6 +16,7 @@
     () => item,
     () => ctx,
   )
+  let label = $derived(getLabel(item))
 
   let customText = $derived(
     typeof item.options?.customText === 'function' ? item.options.customText(draft.value) : item.options?.customText,
@@ -23,7 +24,7 @@
 </script>
 
 <span class="text-textcolor {item.classes ?? ''}">
-  {getLabel(item)}
+  {label}
   {#if item.helpKey}<Help key={item.helpKey as any} />{/if}
 </span>
 <SliderInput
@@ -34,5 +35,6 @@
   fixed={item.options?.fixed}
   multiple={item.options?.multiple}
   disableable={item.options?.disableable}
+  ariaLabel={label}
   {customText}
   bind:value={draft.value} />

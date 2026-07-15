@@ -4,6 +4,7 @@
     className?: string
     size?: 'sm' | 'md' | 'lg' | 'xl'
     disabled?: boolean
+    ariaLabel?: string
     children?: import('svelte').Snippet
     onchange?: (
       event: Event & {
@@ -12,7 +13,15 @@
     ) => any
   }
 
-  let { value = $bindable(), className = '', size = 'md', disabled = false, children, onchange }: Props = $props()
+  let {
+    value = $bindable(),
+    className = '',
+    size = 'md',
+    disabled = false,
+    ariaLabel,
+    children,
+    onchange,
+  }: Props = $props()
 </script>
 
 <select
@@ -29,6 +38,7 @@
   class:px-6={size === 'lg'}
   class:py-3={size === 'lg'}
   {disabled}
+  aria-label={ariaLabel}
   bind:value
   {onchange}>
   {@render children?.()}
