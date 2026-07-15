@@ -20,7 +20,7 @@
   import { getCharToken } from 'src/ts/tokenizer'
   import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, HardDriveUploadIcon } from '@lucide/svelte'
   import { alertError, alertInput, alertConfirm, alertNormal } from 'src/ts/alert'
-  import { createHypaV3Preset } from 'src/ts/process/memory/hypav3'
+  import { createHypaV3Preset, type HypaV3Preset } from 'src/ts/process/memory/hypav3'
   import { onDestroy } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
@@ -84,7 +84,7 @@
   const fishSpeechKeyDraft = createServerBackedSettingDraft<string>('fishSpeechKey', '')
   const emotionProcesserDraft = createServerBackedSettingDraft<string>('emotionProcesser', 'submodel')
   const hypaV3Draft = createServerBackedSettingDraft<boolean>('hypaV3', false)
-  const hypaV3PresetsDraft = createServerBackedSettingDraft<any[]>('hypaV3Presets', [])
+  const hypaV3PresetsDraft = createServerBackedSettingDraft<HypaV3Preset[]>('hypaV3Presets', [])
   const hypaV3PresetIdDraft = createServerBackedSettingDraft<number>('hypaV3PresetId', 0)
   const hypaModelDraft = createServerBackedSettingDraft<string>('hypaModel', 'MiniLM')
   const hypaV3KeyDraft = createServerBackedSettingDraft<string>('hypaV3Key', '')
@@ -94,6 +94,32 @@
     model: '',
   })
   const voyageApiKeyDraft = createServerBackedSettingDraft<string>('voyageApiKey', '')
+
+  interface HypaV3PresetTarget {
+    collection: HypaV3Preset[]
+    preset: HypaV3Preset
+    selection: number
+  }
+
+  function captureHypaV3PresetTarget(): HypaV3PresetTarget | null {
+    const collection = hypaV3PresetsDraft.value
+    const selection = hypaV3PresetIdDraft.value
+    const preset = collection?.[selection]
+
+    if (!preset) return null
+
+    return { collection, preset, selection }
+  }
+
+  function stillOwnsHypaV3PresetTarget(target: HypaV3PresetTarget): boolean {
+    const currentCollection = hypaV3PresetsDraft.value
+
+    return (
+      currentCollection === target.collection &&
+      hypaV3PresetIdDraft.value === target.selection &&
+      currentCollection[target.selection] === target.preset
+    )
+  }
 
   const NAI_CHARACTER_REFERENCE_UPLOAD_FIELDS = {
     image: 'character_image',
@@ -1241,20 +1267,20 @@
         <button
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
-            const presets = [...hypaV3PresetsDraft.value]
+            const target = captureHypaV3PresetTarget()
 
-            if (presets.length === 0) {
+            if (!target) {
               alertError('There must be least one preset.')
               return
             }
 
-            const id = hypaV3PresetIdDraft.value
-            const preset = presets[id]
-            const newName = await alertInput(`Enter new name for ${preset.name}`, [], preset.name)
+            const newName = await alertInput(`Enter new name for ${target.preset.name}`, [], target.preset.name)
 
             if (!newName || newName.trim().length === 0) return
+            if (!stillOwnsHypaV3PresetTarget(target)) return
 
-            presets[id] = { ...preset, name: newName }
+            const presets = [...hypaV3PresetsDraft.value]
+            presets[target.selection] = { ...target.preset, name: newName }
             hypaV3PresetsDraft.value = presets
           }}>
           <PencilIcon size={24} />
@@ -1262,21 +1288,21 @@
 
         <button
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
-          onclick={async (e) => {
-            const presets = [...hypaV3PresetsDraft.value]
+          onclick={async () => {
+            const target = captureHypaV3PresetTarget()
 
-            if (presets.length <= 1) {
+            if (hypaV3PresetsDraft.value.length <= 1 || !target) {
               alertError('There must be least one preset.')
               return
             }
 
-            const id = hypaV3PresetIdDraft.value
-            const preset = presets[id]
-            const confirmed = await alertConfirm(`${language.removeConfirm}${preset.name}`)
+            const confirmed = await alertConfirm(`${language.removeConfirm}${target.preset.name}`)
 
             if (!confirmed) return
+            if (!stillOwnsHypaV3PresetTarget(target)) return
 
-            presets.splice(id, 1)
+            const presets = [...hypaV3PresetsDraft.value]
+            presets.splice(target.selection, 1)
             hypaV3PresetIdDraft.value = 0
             hypaV3PresetsDraft.value = presets
           }}>

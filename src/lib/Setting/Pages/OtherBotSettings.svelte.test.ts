@@ -43,6 +43,23 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
       let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
       if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
       if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
+      if (key === 'hypaV3Presets') {
+        const valueStore = writable(value)
+        const reactiveValue = fromStore(valueStore)
+        const draft = {
+          get value() {
+            return reactiveValue.current
+          },
+          set value(nextValue: unknown) {
+            valueStore.set(clone(nextValue))
+          },
+          project(nextValue: unknown) {
+            valueStore.set(clone(nextValue))
+          },
+        }
+        otherBotMocks.drafts.set(key, draft)
+        return draft
+      }
       if (key !== 'wavespeedImage') {
         const draft = { value }
         otherBotMocks.drafts.set(key, draft)
@@ -142,6 +159,12 @@ function buttonNamed(name: string): HTMLButtonElement {
   return button
 }
 
+function hypaPresetNames(): Array<string | null> {
+  const select = target.querySelector<HTMLSelectElement>('select')
+  if (!select) throw new Error('Hypa preset select not found')
+  return Array.from(select.options, (option) => option.textContent)
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
   const promise = new Promise<T>((promiseResolve) => {
@@ -154,7 +177,9 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   otherBotMocks.drafts.clear()
+  otherBotMocks.alertConfirm.mockReset()
   otherBotMocks.alertError.mockReset()
+  otherBotMocks.alertInput.mockReset()
   otherBotMocks.hypaEnabled = false
   otherBotMocks.hypaPresets = []
   otherBotMocks.loraWrites.length = 0
@@ -403,5 +428,76 @@ describe('OtherBotSettings Hypa preset import', () => {
     await vi.waitFor(() => expect(otherBotMocks.selectSingleFile).toHaveBeenCalledWith(['json']))
     expect(otherBotMocks.alertError).not.toHaveBeenCalled()
     expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(presetsBeforeCancel)
+  })
+})
+
+describe('OtherBotSettings Hypa preset async actions', () => {
+  it('does not rename an authoritative preset projection after stale input resolves', async () => {
+    const rename = deferred<string | null>()
+    const authoritativePresets = [
+      { name: 'Server One', settings: { recentMemoryRatio: 0.2 } },
+      { name: 'Server Two', settings: { recentMemoryRatio: 0.3 } },
+    ]
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [
+      { name: 'Local One', settings: { recentMemoryRatio: 0.1 } },
+      { name: 'Local Two', settings: { recentMemoryRatio: 0.4 } },
+    ]
+    otherBotMocks.alertInput.mockReturnValue(rename.promise)
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const renameButton = target.querySelector<SVGElement>('svg.lucide-pencil')?.closest('button')
+    expect(renameButton).toBeTruthy()
+    renameButton?.click()
+    await vi.waitFor(() => expect(otherBotMocks.alertInput).toHaveBeenCalledOnce())
+
+    const presetsDraft = otherBotMocks.drafts.get('hypaV3Presets')!
+    presetsDraft.project?.(authoritativePresets)
+    await vi.waitFor(() => {
+      expect(hypaPresetNames()).toEqual(['Server One', 'Server Two'])
+    })
+
+    rename.resolve('Stale Rename')
+    await tick()
+    await Promise.resolve()
+
+    expect(presetsDraft.value).toEqual(authoritativePresets)
+    expect(hypaPresetNames()).toEqual(['Server One', 'Server Two'])
+  })
+
+  it('does not delete from an authoritative preset projection after stale confirmation resolves', async () => {
+    const confirmation = deferred<boolean>()
+    const authoritativePresets = [
+      { name: 'Server One', settings: { recentMemoryRatio: 0.2 } },
+      { name: 'Server Two', settings: { recentMemoryRatio: 0.3 } },
+      { name: 'Server Three', settings: { recentMemoryRatio: 0.4 } },
+    ]
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [
+      { name: 'Local One', settings: { recentMemoryRatio: 0.1 } },
+      { name: 'Local Two', settings: { recentMemoryRatio: 0.5 } },
+    ]
+    otherBotMocks.alertConfirm.mockReturnValue(confirmation.promise)
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const deleteButton = target.querySelector<SVGElement>('svg.lucide-trash')?.closest('button')
+    expect(deleteButton).toBeTruthy()
+    deleteButton?.click()
+    await vi.waitFor(() => expect(otherBotMocks.alertConfirm).toHaveBeenCalledOnce())
+
+    const presetsDraft = otherBotMocks.drafts.get('hypaV3Presets')!
+    presetsDraft.project?.(authoritativePresets)
+    await vi.waitFor(() => {
+      expect(hypaPresetNames()).toEqual(['Server One', 'Server Two', 'Server Three'])
+    })
+
+    confirmation.resolve(true)
+    await tick()
+    await Promise.resolve()
+
+    expect(presetsDraft.value).toEqual(authoritativePresets)
+    expect(hypaPresetNames()).toEqual(['Server One', 'Server Two', 'Server Three'])
   })
 })
