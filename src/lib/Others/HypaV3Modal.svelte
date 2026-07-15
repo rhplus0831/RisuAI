@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte'
+  import { onDestroy, tick, untrack } from 'svelte'
   import { ChevronUpIcon, ChevronDownIcon } from '@lucide/svelte'
   import { type SerializableHypaV3Data, type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
@@ -337,6 +337,11 @@
   let summaryItemStateMap = new WeakMap<SerializableSummary, SummaryItemState>()
   let expandedMessageState = $state<ExpandedMessageState>(null)
   let searchState = $state<SearchState>(null)
+  let pendingSearchFocusRestore: {
+    timeoutId: number
+    searchInput: HTMLInputElement
+    textarea: HTMLTextAreaElement
+  } | null = null
   let filterSelected = $state(false)
   let bulkResummaryState = $state<BulkResummaryState | null>(null)
   let bulkResummaryOperationToken = 0
@@ -372,6 +377,15 @@
     collapsedSummaries: new Set(),
     dropdownOpen: false,
   })
+
+  function cancelPendingSearchFocusRestore(): void {
+    if (!pendingSearchFocusRestore) return
+    window.clearTimeout(pendingSearchFocusRestore.timeoutId)
+    pendingSearchFocusRestore.textarea.readOnly = false
+    pendingSearchFocusRestore = null
+  }
+
+  onDestroy(cancelPendingSearchFocusRestore)
 
   function captureBulkResummaryOwner(): BulkResummaryOwner {
     return {
@@ -883,13 +897,26 @@
 
       // Mouse/keyboard users can focus the match without opening a touch keyboard.
       if (!('ontouchend' in window)) {
+        cancelPendingSearchFocusRestore()
+        const searchInput = searchState.ref
+
         // Make readonly temporarily
         textarea.readOnly = true
         textarea.focus()
-        window.setTimeout(() => {
-          searchState.ref.focus() // Restore focus to search bar
+        const focusRestore = {
+          timeoutId: 0,
+          searchInput,
+          textarea,
+        }
+        focusRestore.timeoutId = window.setTimeout(() => {
+          if (pendingSearchFocusRestore !== focusRestore) return
+          pendingSearchFocusRestore = null
           textarea.readOnly = false // Remove readonly after focus moved
+          if (searchState?.ref === searchInput && searchInput.isConnected) {
+            searchInput.focus() // Restore focus to the active search bar
+          }
         }, 300)
+        pendingSearchFocusRestore = focusRestore
       }
     } else {
       const summary = hypaV3Data.summaries[result.summaryIndex]

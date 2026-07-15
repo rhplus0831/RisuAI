@@ -283,6 +283,43 @@ describe('Hypa V3 async ownership', () => {
     expect(target.textContent).not.toContain('2/2')
   })
 
+  it('cancels a delayed search focus restore when the modal unmounts', async () => {
+    vi.useFakeTimers()
+    try {
+      seedDatabase(true)
+      component = mount(HypaV3Modal, { target }) as MountedComponent
+      await settle()
+
+      const searchButton = buttonForIcon(target, 'lucide-search')
+      expect(searchButton).not.toBeNull()
+      searchButton!.click()
+      await settle()
+
+      const searchInput = target.querySelector<HTMLInputElement>(
+        `input[placeholder="${language.hypaV3Modal.searchPlaceholder}"]`,
+      )
+      expect(searchInput).not.toBeNull()
+
+      searchInput!.value = 'summary'
+      searchInput!.dispatchEvent(new Event('input', { bubbles: true }))
+      searchInput!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+      await settle()
+
+      const matchedSummary = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).find((textarea) =>
+        textarea.value.includes('summary'),
+      )
+      expect(matchedSummary?.readOnly).toBe(true)
+
+      unmount(component)
+      component = undefined
+
+      expect(matchedSummary?.readOnly).toBe(false)
+      expect(() => vi.advanceTimersByTime(300)).not.toThrow()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('does not delete the summary that replaces a removed target during confirmation', async () => {
     seedDatabase(true)
     const pendingConfirmation = deferred<boolean>()
