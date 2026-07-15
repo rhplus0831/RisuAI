@@ -2,7 +2,11 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const sidebarKeyboardMocks = vi.hoisted(() => ({
+  alertInput: vi.fn(),
+  alertSelect: vi.fn(),
   navigate: vi.fn(),
+  selectSingleFile: vi.fn(),
+  updateCharacterOrderFolder: vi.fn(),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -26,6 +30,31 @@ vi.mock('src/ts/router', async (importActual) => {
   return {
     ...actual,
     navigate: sidebarKeyboardMocks.navigate,
+  }
+})
+
+vi.mock('src/ts/alert', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/alert')>()
+  return {
+    ...actual,
+    alertInput: sidebarKeyboardMocks.alertInput,
+    alertSelect: sidebarKeyboardMocks.alertSelect,
+  }
+})
+
+vi.mock('src/ts/characterCommands', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/characterCommands')>()
+  return {
+    ...actual,
+    updateCharacterOrderFolder: sidebarKeyboardMocks.updateCharacterOrderFolder,
+  }
+})
+
+vi.mock('src/ts/util', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/util')>()
+  return {
+    ...actual,
+    selectSingleFile: sidebarKeyboardMocks.selectSingleFile,
   }
 })
 
@@ -54,6 +83,61 @@ function seedSidebarDatabase() {
     menuSideBar: false,
     roundIcons: false,
   } as never)
+}
+
+function seedFolderSidebarDatabase(order: readonly ('folder-a' | 'folder-b')[] = ['folder-a', 'folder-b']) {
+  const folders = {
+    'folder-a': {
+      id: 'folder-a',
+      name: 'Folder A',
+      color: 'blue',
+      data: ['char-a'],
+    },
+    'folder-b': {
+      id: 'folder-b',
+      name: 'Folder B',
+      color: 'green',
+      data: ['char-b'],
+    },
+  }
+
+  setDatabaseLite({
+    characterOrder: order.map((folderId) => folders[folderId]),
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'Alpha',
+        image: '',
+        chatPage: 0,
+        chats: [],
+      },
+      {
+        chaId: 'char-b',
+        name: 'Beta',
+        image: '',
+        chatPage: 0,
+        chats: [],
+      },
+    ],
+    hamburgerButtonBottom: false,
+    menuSideBar: false,
+    roundIcons: false,
+    showFolderName: true,
+  } as never)
+}
+
+function openFolderContextMenu(folderName: string) {
+  const folder = target.querySelector<HTMLElement>(`[role="button"][aria-label="${folderName}"]`)
+  expect(folder).toBeTruthy()
+  folder!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
 }
 
 beforeEach(() => {
@@ -96,5 +180,66 @@ describe('Sidebar character keyboard activation', () => {
 
     expect(space.defaultPrevented).toBe(true)
     expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledWith('/character/char-a')
+  })
+})
+
+describe('Sidebar character folder context menu', () => {
+  beforeEach(async () => {
+    seedFolderSidebarDatabase()
+    component = mount(Sidebar, { target })
+    await tick()
+  })
+
+  it('offers a color cancel choice without submitting an undefined color', async () => {
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce('8')
+
+    openFolderContextMenu('Folder A')
+
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
+    await tick()
+
+    expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(9)
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
+  })
+
+  it('ignores an invalid nested color selection', async () => {
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce('not-an-index')
+
+    openFolderContextMenu('Folder A')
+
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
+    await tick()
+
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
+  })
+
+  it('offers an image cancel choice without resetting or opening the file picker', async () => {
+    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('2').mockResolvedValueOnce('2')
+
+    openFolderContextMenu('Folder A')
+
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
+    await tick()
+
+    expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(3)
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
+    expect(sidebarKeyboardMocks.selectSingleFile).not.toHaveBeenCalled()
+  })
+
+  it('keeps a delayed color change bound to the originally opened folder after reorder', async () => {
+    const outerSelection = deferred<string>()
+    sidebarKeyboardMocks.alertSelect.mockReturnValueOnce(outerSelection.promise).mockResolvedValueOnce('0')
+
+    openFolderContextMenu('Folder A')
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(1))
+
+    seedFolderSidebarDatabase(['folder-b', 'folder-a'])
+    await tick()
+    expect(target.querySelector('[role="button"][aria-label="Folder B"]')).toBeTruthy()
+
+    outerSelection.resolve('1')
+
+    await vi.waitFor(() => expect(sidebarKeyboardMocks.updateCharacterOrderFolder).toHaveBeenCalledTimes(1))
+    expect(sidebarKeyboardMocks.updateCharacterOrderFolder).toHaveBeenCalledWith('folder-a', { color: 'red' })
   })
 })

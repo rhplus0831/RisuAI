@@ -63,6 +63,18 @@
   let editMode = $state(false)
   let menuMode = $state(0)
   let devTool = $state(false)
+  const characterFolderColors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default'] as const
+
+  function parseAlertSelection(value: unknown, optionCount: number): number | null {
+    if (typeof value !== 'string') return null
+
+    const normalized = value.trim()
+    if (!/^\d+$/.test(normalized)) return null
+
+    const selection = Number(normalized)
+    if (!Number.isSafeInteger(selection) || selection < 0 || selection >= optionCount) return null
+    return selection
+  }
 
   function reseter() {
     menuMode = 0
@@ -436,33 +448,45 @@
                     backgroundimg={char.img ? getCharImage(char.img, 'plain') : ''}
                     oncontextmenu={async (e) => {
                       e.preventDefault()
-                      const sel = parseInt(
-                        await alertSelect([
-                          language.renameFolder,
-                          language.changeFolderColor,
-                          language.changeFolderImage,
-                          language.cancel,
-                        ]),
-                      )
-                      if (sel === 0) {
-                        const v = await alertInput(language.changeFolderName, [], char.name)
-                        if (v) {
-                          updateCharacterOrderFolder({ id: char.id, index: ind }, { name: v })
-                        }
-                      } else if (sel === 1) {
-                        const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
-                        const sel = parseInt(await alertSelect(colors))
-                        updateCharacterOrderFolder({ id: char.id, index: ind }, { color: colors[sel] })
-                      } else if (sel === 2) {
-                        const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
+                      const folderId = char.id
+                      const folderName = char.name
+                      const folderActions = [
+                        language.renameFolder,
+                        language.changeFolderColor,
+                        language.changeFolderImage,
+                        language.cancel,
+                      ]
+                      const selectedAction = parseAlertSelection(await alertSelect(folderActions), folderActions.length)
+                      if (selectedAction === null) return
 
-                        switch (sel) {
+                      if (selectedAction === 0) {
+                        const v = await alertInput(language.changeFolderName, [], folderName)
+                        if (v) {
+                          updateCharacterOrderFolder(folderId, { name: v })
+                        }
+                      } else if (selectedAction === 1) {
+                        const colorActions = [...characterFolderColors, language.cancel]
+                        const selectedColor = parseAlertSelection(await alertSelect(colorActions), colorActions.length)
+                        if (selectedColor === null) return
+
+                        const color = characterFolderColors[selectedColor]
+                        if (!color) return
+                        updateCharacterOrderFolder(folderId, { color })
+                      } else if (selectedAction === 2) {
+                        const imageActions = ['Reset to Default Image', 'Select Image File', language.cancel]
+                        const selectedImageAction = parseAlertSelection(
+                          await alertSelect(imageActions),
+                          imageActions.length,
+                        )
+                        if (selectedImageAction === null) return
+
+                        switch (selectedImageAction) {
                           case 0:
-                            updateCharacterOrderFolder({ id: char.id, index: ind }, { imgFile: null, img: '' })
+                            updateCharacterOrderFolder(folderId, { imgFile: null, img: '' })
                             break
 
                           case 1:
-                            await uploadCharacterFolderImage(char.id)
+                            await uploadCharacterFolderImage(folderId)
                             break
                         }
                       }
