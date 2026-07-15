@@ -61,6 +61,13 @@
     value = value.filter((_, index) => index !== matchingIndices[0])
   }
 
+  const rowKey = (script: customscript): string | customscript => {
+    const id = script.id?.trim()
+    if (!id) return script
+    const idIsUnique = value.filter((candidate) => candidate.id?.trim() === id).length === 1
+    return idIsUnique ? `regex:${id}` : script
+  }
+
   onMount(createStb)
 
   onDestroy(() => {
@@ -79,7 +86,7 @@
     {#if value.length === 0}
       <div class="text-textcolor2">No Scripts</div>
     {/if}
-    {#each value as customscript, i}
+    {#each value as customscript, i (rowKey(customscript))}
       <RegexData idx={i} bind:value={value[i]} {onOpen} {onClose} onRemove={removeById} />
     {/each}
   </div>

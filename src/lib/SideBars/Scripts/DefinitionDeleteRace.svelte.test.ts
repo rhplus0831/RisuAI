@@ -7,7 +7,7 @@ const deleteRaceMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('src/lang', () => ({
-  language: { removeConfirm: 'Remove ' },
+  language: { hotkeyDesc: { popupEditor: 'Popup Editor' }, removeConfirm: 'Remove ' },
 }))
 
 vi.mock('src/ts/alert', () => ({
@@ -56,6 +56,25 @@ async function verifyStableDelete(kind: 'regex' | 'trigger', selector: string, e
   expect(target.querySelector('[data-testid="ids"]')?.textContent).toBe(expectedRemainingId)
 }
 
+async function verifyExpandedRowIdentity(kind: 'regex' | 'trigger') {
+  component = mount(DefinitionDeleteRaceHarness, { target, props: { kind } })
+  await tick()
+
+  const expandButtons = target.querySelectorAll<HTMLButtonElement>('button.endflex')
+  expect(expandButtons).toHaveLength(2)
+  expandButtons[1].click()
+  await tick()
+  expect(expandButtons[1].getAttribute('aria-expanded')).toBe('true')
+
+  target.querySelector<HTMLButtonElement>('[data-testid="remove-target"]')?.click()
+  await tick()
+
+  const remainingButton = target.querySelector<HTMLButtonElement>('button.endflex')
+  expect(target.querySelectorAll('button.endflex')).toHaveLength(1)
+  expect(remainingButton?.textContent).toContain('B')
+  expect(remainingButton?.getAttribute('aria-expanded')).toBe('true')
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -99,5 +118,13 @@ describe('definition row deletion', () => {
     await Promise.resolve()
 
     expect(target.querySelector('[data-testid="ids"]')?.textContent).toBe('script-b')
+  })
+
+  it('keeps an expanded regex editor attached to its definition after an earlier row disappears', async () => {
+    await verifyExpandedRowIdentity('regex')
+  })
+
+  it('keeps an expanded V1 trigger editor attached to its definition after an earlier row disappears', async () => {
+    await verifyExpandedRowIdentity('trigger')
   })
 })

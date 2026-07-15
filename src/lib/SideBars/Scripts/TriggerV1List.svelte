@@ -65,6 +65,13 @@
     value = value.filter((_, index) => index !== matchingIndices[0])
   }
 
+  const rowKey = (trigger: triggerscript): string | triggerscript => {
+    const id = trigger.id?.trim()
+    if (!id) return trigger
+    const idIsUnique = value.filter((candidate) => candidate.id?.trim() === id).length === 1
+    return idIsUnique ? `trigger:${id}` : trigger
+  }
+
   onMount(createStb)
 
   onDestroy(() => {
@@ -83,7 +90,7 @@
     {#if value.length === 0}
       <div class="text-textcolor2">No Scripts</div>
     {/if}
-    {#each value as triggerscript, i}
+    {#each value as triggerscript, i (rowKey(triggerscript))}
       <TriggerData idx={i} bind:value={value[i]} {lowLevelAble} {onOpen} {onClose} onRemove={removeById} />
     {/each}
   </div>
