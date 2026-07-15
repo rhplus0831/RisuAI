@@ -66,6 +66,21 @@ afterEach(() => {
 })
 
 describe('SegmentedControl indicator alignment', () => {
+  it('announces the selected option and contains long options on narrow surfaces', async () => {
+    await settleIndicator()
+
+    const container = target.querySelector<HTMLElement>('.segmented-control-container')
+    const buttons = target.querySelectorAll<HTMLButtonElement>('[data-segment-btn]')
+    expect(container).toBeTruthy()
+    expect(container!.classList.contains('max-w-full')).toBe(true)
+    expect(container!.classList.contains('overflow-x-auto')).toBe(true)
+    expect(Array.from(buttons, (button) => button.getAttribute('aria-pressed'))).toEqual(['true', 'false'])
+
+    buttons[1].click()
+    await settleIndicator()
+    expect(Array.from(buttons, (button) => button.getAttribute('aria-pressed'))).toEqual(['false', 'true'])
+  })
+
   it('recalculates after option labels and size change without changing the selected value', async () => {
     await settleIndicator()
     expect(indicator().style.transform).toBe('translateX(14px)')

@@ -85,7 +85,7 @@
   }
 </script>
 
-<div class="segmented-control-container {className}" bind:this={containerRef}>
+<div class="segmented-control-container max-w-full overflow-x-auto {className}" bind:this={containerRef}>
   <!-- Sliding indicator -->
   <div class="segmented-indicator" class:no-transition={!mounted} style={indicatorStyle}></div>
 
@@ -93,6 +93,7 @@
     <button
       data-segment-btn
       type="button"
+      aria-pressed={opt.value === value}
       class="segmented-btn"
       class:segmented-btn-active={opt.value === value}
       class:text-xs={size === 'sm'}
@@ -156,6 +157,7 @@
     white-space: nowrap;
     transition: color 0.2s ease;
     line-height: 1.4;
+    flex-shrink: 0;
   }
 
   .segmented-btn:hover:not(.segmented-btn-active) {
