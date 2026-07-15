@@ -81,6 +81,47 @@ describe('playground run-state recovery', () => {
     expect(target.textContent).toContain('Generate')
   })
 
+  it('discards an image generation result when its submitted prompts are stale', async () => {
+    let finishGeneration: ((image: string) => void) | undefined
+    runMocks.generateAIImage.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          finishGeneration = resolve
+        }),
+    )
+    component = mount(PlaygroundImageGen, { target })
+
+    const [promptInput, negativePromptInput] = Array.from(target.querySelectorAll('textarea'))
+    promptInput.value = 'submitted prompt'
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }))
+    negativePromptInput.value = 'submitted negative prompt'
+    negativePromptInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Generate'),
+    )
+    expect(button).toBeTruthy()
+    button!.click()
+
+    await vi.waitFor(() =>
+      expect(runMocks.generateAIImage).toHaveBeenCalledWith(
+        'submitted prompt',
+        expect.anything(),
+        'submitted negative prompt',
+        'inlay',
+      ),
+    )
+
+    promptInput.value = 'new prompt'
+    promptInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    finishGeneration!('data:image/png;base64,stale')
+
+    await vi.waitFor(() => expect(target.querySelector('.loadmove')).toBeNull())
+    expect(target.querySelector('img')).toBeNull()
+  })
+
   it('restores the embedding run button after an embedding failure', async () => {
     runMocks.addText.mockRejectedValue(new Error('embedding failed'))
     component = mount(PlaygroundEmbedding, { target })

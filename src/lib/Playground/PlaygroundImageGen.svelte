@@ -8,6 +8,8 @@
   let prompt = $state('')
   let negPrompt = $state('')
   let img = $state('')
+  let generatedPrompt = $state('')
+  let generatedNegPrompt = $state('')
   let generating = $state(false)
   const run = async () => {
     console.log('running')
@@ -15,10 +17,14 @@
       return
     }
     generating = true
+    const submittedPrompt = prompt
+    const submittedNegPrompt = negPrompt
     try {
-      const gen = await generateAIImage(prompt, createBlankChar(), negPrompt, 'inlay')
-      if (gen) {
+      const gen = await generateAIImage(submittedPrompt, createBlankChar(), submittedNegPrompt, 'inlay')
+      if (gen && prompt === submittedPrompt && negPrompt === submittedNegPrompt) {
         img = gen
+        generatedPrompt = submittedPrompt
+        generatedNegPrompt = submittedNegPrompt
       }
     } catch (error) {
       alertError(error)
@@ -36,7 +42,7 @@
 <span class="text-textcolor text-lg">Neg. Prompt</span>
 <TextAreaInput bind:value={negPrompt} />
 
-{#if img}
+{#if img && prompt === generatedPrompt && negPrompt === generatedNegPrompt}
   <span class="text-textcolor text-lg">Generated</span>
   <img src={img} class="max-w-full mt-4" alt="Generated" />
 {/if}
