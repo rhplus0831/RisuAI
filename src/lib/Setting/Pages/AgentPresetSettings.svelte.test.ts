@@ -449,20 +449,30 @@ describe('AgentPresetSettings', () => {
     input.value = 'Pending Agent'
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
-    button('[data-risu-agent-preset-save]').click()
+    const save = button('[data-risu-agent-preset-save]')
+    save.click()
     await tick()
+
+    const controls = target.querySelector<HTMLFieldSetElement>('[data-risu-agent-preset-controls]')
+    expect(controls).toBeTruthy()
+    expect(controls!.disabled).toBe(true)
+    expect(controls!.contains(input)).toBe(true)
+    expect(controls!.contains(descriptionInput())).toBe(true)
+    expect(controls!.contains(metadataCheckbox(language.agentPresets.enabledLabel))).toBe(true)
 
     const close = target.querySelector<HTMLButtonElement>(
       `[data-risu-agent-preset-editor] button[aria-label="${language.modelRoles.close}"]`,
     )
     expect(close).toBeTruthy()
+    expect(close!.matches(':disabled')).toBe(true)
     close!.click()
     await tick()
-    expect(window.confirm).toHaveBeenCalledWith(language.agentPresets.discardChangesConfirm)
+    expect(window.confirm).not.toHaveBeenCalled()
     expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeTruthy()
 
     settleUpdate()
     await flushAsyncWork()
+    expect(controls!.disabled).toBe(false)
   })
 
   it('renders disabled, invalid, and incomplete statuses from resolver helpers', async () => {
@@ -767,6 +777,49 @@ describe('AgentPresetSettings', () => {
     expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
       name: 'Renamed Context Step',
     })
+  })
+
+  it('locks every step editor control while a step save is pending', async () => {
+    let settleUpdate!: () => void
+    const pendingUpdate = new Promise<void>((resolve) => {
+      settleUpdate = resolve
+    })
+    agentPresetSpies.updateAgentPresetStep.mockImplementationOnce(async () => {
+      await pendingUpdate
+      return { status: 'ok', revision: 2, event: { type: 'ok', revision: 2 } }
+    })
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const name = stepTextInput('Gather Context')
+    name.value = 'Pending Context Step'
+    name.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await tick()
+
+    const controls = target.querySelector<HTMLFieldSetElement>('[data-risu-agent-preset-controls]')
+    expect(controls).toBeTruthy()
+    expect(controls!.disabled).toBe(true)
+    expect(controls!.contains(name)).toBe(true)
+    expect(controls!.contains(stepInstructionInput())).toBe(true)
+    expect(controls!.contains(stepPhaseSelect())).toBe(true)
+    expect(controls!.contains(stepCheckbox(language.agentPresets.stepEnabledLabel))).toBe(true)
+
+    settleUpdate()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      name: 'Pending Context Step',
+    })
+    expect(target.querySelector('[data-risu-agent-preset-step-form]')).toBeNull()
   })
 
   it('sends multiple changed fields while preserving false and empty values', async () => {

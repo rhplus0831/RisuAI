@@ -121,14 +121,14 @@
     stepInitialSnapshotJson !== '' && stepInitialSnapshotJson !== snapshot(stepSnapshotForSave()),
   )
   let isDirty = $derived(metadataDirty || stepDirty)
+  let controlsLocked = $derived(busy || stepBusy)
   let outputKeyValid = $derived(isValidAgentPresetOutputKey(draftStepOutputKey.trim()))
-  let canSave = $derived(draftName.trim().length > 0 && !busy && (mode === 'create' || metadataDirty))
+  let canSave = $derived(draftName.trim().length > 0 && !controlsLocked && (mode === 'create' || metadataDirty))
   let canSaveStep = $derived(
     mode === 'edit' &&
       !!initialPresetId &&
       !!stepEditorMode &&
-      !busy &&
-      !stepBusy &&
+      !controlsLocked &&
       draftStepName.trim().length > 0 &&
       outputKeyValid &&
       (draftStepModelMode === 'inheritMain' || draftStepModelProfileId.trim().length > 0),
@@ -566,6 +566,7 @@
   }
 
   function requestClose(): void {
+    if (controlsLocked) return
     if (isDirty && !window.confirm(language.agentPresets.discardChangesConfirm)) return
     onCancel()
   }
@@ -598,6 +599,7 @@
     class="flex h-full w-full max-w-4xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
     aria-modal="true"
+    aria-busy={controlsLocked}
     aria-label={drawerTitle}
     tabindex="-1"
     data-risu-agent-preset-editor
@@ -614,12 +616,16 @@
         type="button"
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
         aria-label={language.modelRoles.close}
+        disabled={controlsLocked}
         onclick={requestClose}>
         <XIcon size={20} />
       </button>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+    <fieldset
+      class="m-0 flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto border-0 p-4"
+      disabled={controlsLocked}
+      data-risu-agent-preset-controls>
       {#if commandError}
         <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
       {/if}
@@ -1022,11 +1028,11 @@
       </section>
 
       <AgentPresetDiagnosticsPanel presetId={mode === 'edit' ? initialPresetId : ''} />
-    </div>
+    </fieldset>
 
     <div class="flex justify-end gap-2 border-t border-darkborderc p-4">
       <span data-risu-agent-preset-cancel>
-        <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>
+        <Button size="sm" styled="outlined" disabled={controlsLocked} onclick={requestClose}>
           {language.agentPresets.cancel}
         </Button>
       </span>
