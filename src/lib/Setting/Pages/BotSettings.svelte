@@ -1101,6 +1101,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel="GoogleAI API Key"
         ownerKey="google.accessToken"
         bind:value={googleDraft.value.accessToken} />
     {/if}
@@ -1110,6 +1111,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel="Project ID"
         bind:value={googleDraft.value.projectId}
         oninput={clearVertexToken} />
       <span class="text-textcolor">Vertex Client Email</span>
@@ -1117,6 +1119,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel="Vertex Client Email"
         bind:value={vertexClientEmailDraft.value}
         oninput={clearVertexToken} />
       <span class="text-textcolor">Vertex Private Key</span>
@@ -1124,11 +1127,13 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel="Vertex Private Key"
         ownerKey="vertexPrivateKey"
         bind:value={vertexPrivateKeyDraft.value}
         oninput={clearVertexToken} />
       <span class="text-textcolor">Region</span>
       <SelectInput
+        ariaLabel="Region"
         value={vertexRegionDraft.value}
         onchange={(e) => {
           vertexRegionDraft.value = e.currentTarget.value
@@ -1145,6 +1150,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel={`NovelList ${language.apiKey}`}
         ownerKey="novellistAPI"
         bind:value={novellistAPIDraft.value} />
     {/if}
@@ -1154,6 +1160,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel={`Mancer ${language.apiKey}`}
         ownerKey="mancerHeader"
         bind:value={mancerHeaderDraft.value} />
     {/if}
@@ -1163,6 +1170,7 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel={`Claude ${language.apiKey}`}
         ownerKey="claudeAPIKey"
         bind:value={claudeAPIKeyDraft.value} />
     {/if}
@@ -1172,27 +1180,40 @@
         marginBottom={true}
         size={'sm'}
         placeholder="..."
+        ariaLabel={`Mistral ${language.apiKey}`}
         ownerKey="mistralKey"
         bind:value={mistralKeyDraft.value} />
     {/if}
     {#if usesNovelAIProvider}
       <span class="text-textcolor">NovelAI Bearer Token</span>
-      <SecretInput ownerKey="novelai.token" bind:value={novelaiDraft.value.token} />
+      <SecretInput ownerKey="novelai.token" ariaLabel="NovelAI Bearer Token" bind:value={novelaiDraft.value.token} />
     {/if}
     {#if usesReverseProxyModel}
       <span class="text-textcolor mt-2">URL <Help key="forceUrl" /></span>
-      <TextInput marginBottom={false} size={'sm'} bind:value={forceReplaceUrlDraft.value} placeholder="https//..." />
+      <TextInput
+        marginBottom={false}
+        size={'sm'}
+        ariaLabel="URL"
+        bind:value={forceReplaceUrlDraft.value}
+        placeholder="https//..." />
       <span class="text-textcolor mt-4"> {language.proxyAPIKey}</span>
       <SecretInput
         marginBottom={false}
         size={'sm'}
         placeholder="leave it blank if it hasn't password"
+        ariaLabel={language.proxyAPIKey}
         ownerKey="proxyKey"
         bind:value={proxyKeyDraft.value} />
       <span class="text-textcolor mt-4"> {language.proxyRequestModel}</span>
-      <TextInput marginBottom={false} size={'sm'} bind:value={customProxyRequestModelDraft.value} placeholder="Name" />
+      <TextInput
+        marginBottom={false}
+        size={'sm'}
+        ariaLabel={language.proxyRequestModel}
+        bind:value={customProxyRequestModelDraft.value}
+        placeholder="Name" />
       <span class="text-textcolor mt-4"> {language.format}</span>
       <SelectInput
+        ariaLabel={language.format}
         value={customAPIFormatDraft.value.toString()}
         onchange={(e) => {
           customAPIFormatDraft.value = parseInt(e.currentTarget.value) as LLMFormat
@@ -1207,12 +1228,17 @@
     {/if}
     {#if usesCohereProvider}
       <span class="text-textcolor mt-4">Cohere {language.apiKey}</span>
-      <SecretInput ownerKey="cohereAPIKey" marginBottom={false} size={'sm'} bind:value={cohereAPIKeyDraft.value} />
+      <SecretInput
+        ownerKey="cohereAPIKey"
+        marginBottom={false}
+        size={'sm'}
+        ariaLabel={`Cohere ${language.apiKey}`}
+        bind:value={cohereAPIKeyDraft.value} />
     {/if}
     {#if usesOllamaLocal || usesOllamaCloud}
       {#if usesOllamaLocal}
         <span class="text-textcolor mt-4">Ollama URL</span>
-        <TextInput marginBottom={false} size={'sm'} bind:value={ollamaURLDraft.value} />
+        <TextInput marginBottom={false} size={'sm'} ariaLabel="Ollama URL" bind:value={ollamaURLDraft.value} />
       {/if}
 
       {#if usesOllamaCloud}
@@ -1229,6 +1255,7 @@
           <TextInput
             marginBottom={false}
             size={'sm'}
+            ariaLabel={`Ollama ${language.model}`}
             bind:value={ollamaCloudModelDraft.value}
             placeholder="Model"
             oninput={() => (ollamaCloudModelNameDraft.value = '')} />
@@ -1250,10 +1277,16 @@
         {/if}
 
         <span class="text-textcolor mt-4">Ollama {language.apiKey}</span>
-        <SecretInput ownerKey="ollamaApiKey" marginBottom={false} size={'sm'} bind:value={ollamaApiKeyDraft.value} />
+        <SecretInput
+          ownerKey="ollamaApiKey"
+          marginBottom={false}
+          size={'sm'}
+          ariaLabel={`Ollama ${language.apiKey}`}
+          bind:value={ollamaApiKeyDraft.value} />
 
         <span class="text-textcolor mt-4">Ollama {language.format}</span>
         <SelectInput
+          ariaLabel={`Ollama ${language.format}`}
           value={ollamaRequestFormatDraft.value.toString()}
           onchange={(e) => {
             ollamaRequestFormatDraft.value = parseInt(e.currentTarget.value) as LLMFormat
@@ -1274,6 +1307,7 @@
         <TextInput
           marginBottom={false}
           size={'sm'}
+          ariaLabel="Ollama Model"
           bind:value={ollamaModelDraft.value}
           placeholder="Model"
           oninput={() => {
@@ -1284,7 +1318,7 @@
 
       {#if usesOllamaLocal || (usesOllamaCloud && ollamaRequestFormatDraft.value === LLMFormat.Ollama)}
         <span class="text-textcolor mt-4">Ollama Thinking</span>
-        <SelectInput bind:value={ollamaThinkingModeDraft.value}>
+        <SelectInput ariaLabel="Ollama Thinking" bind:value={ollamaThinkingModeDraft.value}>
           <OptionInput value="auto">Auto</OptionInput>
           <OptionInput value="off">Off</OptionInput>
           <OptionInput value="on">On</OptionInput>
@@ -1296,7 +1330,12 @@
     {/if}
     {#if usesNanoGPTModel}
       <span class="text-textcolor mt-4">NanoGPT {language.apiKey}</span>
-      <SecretInput ownerKey="nanogptKey" marginBottom={false} size={'sm'} bind:value={nanogptKeyDraft.value} />
+      <SecretInput
+        ownerKey="nanogptKey"
+        marginBottom={false}
+        size={'sm'}
+        ariaLabel={`NanoGPT ${language.apiKey}`}
+        bind:value={nanogptKeyDraft.value} />
 
       <NanoGPTDashboard apiKey={nanogptCatalogApiKey} currentApiKey={nanogptKeyDraft.value} />
 
@@ -1321,6 +1360,7 @@
         <TextInput
           marginBottom={false}
           size={'sm'}
+          ariaLabel={`NanoGPT ${language.model}`}
           bind:value={nanogptRequestModelDraft.value}
           placeholder={(language as any).nanoGPTManualModelSelect || 'Manual Model Select'}
           oninput={() => (nanogptRequestModelNameDraft.value = '')} />
@@ -1349,7 +1389,12 @@
     {/if}
     {#if usesOpenRouterModel}
       <span class="text-textcolor mt-4">OpenRouter {language.apiKey}</span>
-      <SecretInput ownerKey="openrouterKey" marginBottom={false} size={'sm'} bind:value={openrouterKeyDraft.value} />
+      <SecretInput
+        ownerKey="openrouterKey"
+        marginBottom={false}
+        size={'sm'}
+        ariaLabel={`OpenRouter ${language.apiKey}`}
+        bind:value={openrouterKeyDraft.value} />
 
       <span class="text-textcolor mt-4">OpenRouter {language.model}</span>
       {#await getOpenRouterModels({ apiKey: openrouterCatalogApiKey })}
@@ -1363,7 +1408,7 @@
     {/if}
     {#if usesOpenRouterModel || usesReverseProxyModel}
       <span class="text-textcolor">{language.tokenizer}</span>
-      <SelectInput bind:value={customTokenizerDraft.value}>
+      <SelectInput ariaLabel={language.tokenizer} bind:value={customTokenizerDraft.value}>
         {#each tokenizerList as entry}
           <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
         {/each}
@@ -1374,6 +1419,7 @@
       <SecretInput
         marginBottom={false}
         size={'sm'}
+        ariaLabel={`OpenAI ${language.apiKey}`}
         ownerKey="openAIKey"
         bind:value={openAIKeyDraft.value}
         placeholder="sk-XXXXXXXXXXXXXXXXXXXX" />
@@ -1384,6 +1430,7 @@
       <SecretInput
         marginBottom={false}
         size={'sm'}
+        ariaLabel={`${apiKeyModel.name} ${language.apiKey}`}
         ownerKey={`OaiCompAPIKeys.${apiKeyModel.keyIdentifier}`}
         bind:value={OaiCompAPIKeysDraft.value[apiKeyModel.keyIdentifier]}
         placeholder="..." />
@@ -1410,7 +1457,7 @@
 
     {#if usesCustomModel}
       <span class="text-textcolor mt-2">{language.plugin}</span>
-      <SelectInput className="mt-2 mb-4" bind:value={currentPluginProviderDraft}>
+      <SelectInput className="mt-2 mb-4" ariaLabel={language.plugin} bind:value={currentPluginProviderDraft}>
         <OptionInput value="">None</OptionInput>
         {#each $customProviderStore as plugin}
           <OptionInput value={plugin}>{plugin}</OptionInput>
@@ -1420,29 +1467,42 @@
 
     {#if usesKoboldModel}
       <span class="text-textcolor">Kobold URL</span>
-      <TextInput marginBottom={true} bind:value={koboldURLDraft.value} />
+      <TextInput marginBottom={true} ariaLabel="Kobold URL" bind:value={koboldURLDraft.value} />
     {/if}
 
     {#if usesEchoModel}
       <span class="text-textcolor mt-2">Echo Message</span>
       <TextAreaInput
         margin="bottom"
+        ariaLabel="Echo Message"
         bind:value={echoMessageDraft.value}
         placeholder={"The message you want to receive as the bot's response\n(e.g., Lumi tilts her head, her white hair sliding down as her pretty green and aqua eyes sparkle…)"} />
       <span class="text-textcolor mt-2">Echo Delay (Seconds)</span>
-      <NumberInput marginBottom={true} bind:value={echoDelayDraft.value} min={0} />
+      <NumberInput marginBottom={true} ariaLabel="Echo Delay (Seconds)" bind:value={echoDelayDraft.value} min={0} />
     {/if}
 
     {#if usesHordeModel}
       <span class="text-textcolor">Horde {language.apiKey}</span>
-      <SecretInput ownerKey="hordeConfig.apiKey" marginBottom={true} bind:value={hordeConfigDraft.value.apiKey} />
+      <SecretInput
+        ownerKey="hordeConfig.apiKey"
+        marginBottom={true}
+        ariaLabel={`Horde ${language.apiKey}`}
+        bind:value={hordeConfigDraft.value.apiKey} />
     {/if}
     {#if usesTextgenWebUIModel || usesMancerModel}
       <span class="text-textcolor mt-2">Blocking {language.providerURL}</span>
-      <TextInput marginBottom={true} bind:value={textgenWebUIBlockingURLDraft.value} placeholder="https://..." />
+      <TextInput
+        marginBottom={true}
+        ariaLabel={`Blocking ${language.providerURL}`}
+        bind:value={textgenWebUIBlockingURLDraft.value}
+        placeholder="https://..." />
       <span class="text-draculared text-xs mb-2">You must use textgen webui with --public-api</span>
       <span class="text-textcolor mt-2">Stream {language.providerURL}</span>
-      <TextInput marginBottom={true} bind:value={textgenWebUIStreamURLDraft.value} placeholder="wss://..." />
+      <TextInput
+        marginBottom={true}
+        ariaLabel={`Stream ${language.providerURL}`}
+        bind:value={textgenWebUIStreamURLDraft.value}
+        placeholder="wss://..." />
       <span class="text-draculared text-xs mb-2"
         >To reach a local WebUI from the browser, use ngrok or other tunnels.</span>
       <span class="text-draculared text-xs mb-2"
@@ -1451,7 +1511,11 @@
     {/if}
     {#if usesOobaModel}
       <span class="text-textcolor mt-2">Ooba {language.providerURL}</span>
-      <TextInput marginBottom={true} bind:value={textgenWebUIBlockingURLDraft.value} placeholder="https://..." />
+      <TextInput
+        marginBottom={true}
+        ariaLabel={`Ooba ${language.providerURL}`}
+        bind:value={textgenWebUIBlockingURLDraft.value}
+        placeholder="https://..." />
     {/if}
     {#if usesHordeModel || usesKoboldModel}
       <ChatFormatSettings />
@@ -1565,7 +1629,12 @@
           {#each activeLocalStopStringsDraft.value as stopString, i}
             <div class="flex w-full">
               <div class="grow">
-                <TextInput marginBottom bind:value={activeLocalStopStringsDraft.value[i]} fullwidth fullh />
+                <TextInput
+                  marginBottom
+                  ariaLabel={`${language.customStopWords} ${i + 1}`}
+                  bind:value={activeLocalStopStringsDraft.value[i]}
+                  fullwidth
+                  fullh />
               </div>
               <div>
                 <button
@@ -1588,9 +1657,9 @@
     {:else if modelInfo.format === LLMFormat.NovelAI}
       <div class="flex flex-col p-3 bg-darkbg mt-4">
         <span class="text-textcolor">Starter</span>
-        <TextInput bind:value={activeNAIsettingsDraft.value.starter} placeholder={'⁂'} />
+        <TextInput ariaLabel="Starter" bind:value={activeNAIsettingsDraft.value.starter} placeholder={'⁂'} />
         <span class="text-textcolor">Seperator</span>
-        <TextInput bind:value={activeNAIsettingsDraft.value.seperator} placeholder={'\\n'} />
+        <TextInput ariaLabel="Seperator" bind:value={activeNAIsettingsDraft.value.seperator} placeholder={'\\n'} />
       </div>
       <span class="text-textcolor">Top P</span>
       <SliderInput
@@ -1812,10 +1881,16 @@
             {#each biasDraft.value as bias, i}
               <tr>
                 <td class="font-medium truncate">
-                  <TextInput bind:value={biasDraft.value[i][0]} size="lg" fullwidth />
+                  <TextInput ariaLabel={`Bias ${i + 1}`} bind:value={biasDraft.value[i][0]} size="lg" fullwidth />
                 </td>
                 <td class="font-medium truncate">
-                  <NumberInput bind:value={biasDraft.value[i][1]} max={100} min={-101} size="lg" fullwidth />
+                  <NumberInput
+                    ariaLabel={`${language.value} ${i + 1}`}
+                    bind:value={biasDraft.value[i][1]}
+                    max={100}
+                    min={-101}
+                    size="lg"
+                    fullwidth />
                 </td>
                 <td>
                   <button
@@ -1869,10 +1944,18 @@
             {#each activeAdditionalParamsDraft.value as additionalParams, i}
               <tr>
                 <td class="font-medium truncate">
-                  <TextInput bind:value={activeAdditionalParamsDraft.value[i][0]} size="lg" fullwidth />
+                  <TextInput
+                    ariaLabel={`${language.key} ${i + 1}`}
+                    bind:value={activeAdditionalParamsDraft.value[i][0]}
+                    size="lg"
+                    fullwidth />
                 </td>
                 <td class="font-medium truncate">
-                  <TextInput bind:value={activeAdditionalParamsDraft.value[i][1]} size="lg" fullwidth />
+                  <TextInput
+                    ariaLabel={`${language.value} ${i + 1}`}
+                    bind:value={activeAdditionalParamsDraft.value[i][1]}
+                    size="lg"
+                    fullwidth />
                 </td>
                 <td>
                   <button
@@ -1955,7 +2038,12 @@
 
     {#if showPromptExtras}
       <Accordion styled name={language.moduleIntergration} help="moduleIntergration">
-        <TextAreaInput bind:value={moduleIntergrationDraft.value} fullwidth height={'32'} autocomplete="off" />
+        <TextAreaInput
+          ariaLabel={language.moduleIntergration}
+          bind:value={moduleIntergrationDraft.value}
+          fullwidth
+          height={'32'}
+          autocomplete="off" />
       </Accordion>
     {/if}
 
@@ -2012,13 +2100,28 @@
       <span class="text-textcolor2">{language.loading}</span>
     {:else if !selectedPromptPresetOwnsPromptTemplate}
       <span class="text-textcolor">{language.mainPrompt} <Help key="mainprompt" /></span>
-      <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={mainPromptDraft.value}></TextAreaInput>
+      <TextAreaInput
+        fullwidth
+        autocomplete="off"
+        height={'32'}
+        ariaLabel={language.mainPrompt}
+        bind:value={mainPromptDraft.value}></TextAreaInput>
       <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.mainPrompt} {language.tokens}</span>
       <span class="text-textcolor">{language.jailbreakPrompt} <Help key="jailbreak" /></span>
-      <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={jailbreakDraft.value}></TextAreaInput>
+      <TextAreaInput
+        fullwidth
+        autocomplete="off"
+        height={'32'}
+        ariaLabel={language.jailbreakPrompt}
+        bind:value={jailbreakDraft.value}></TextAreaInput>
       <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.jailbreak} {language.tokens}</span>
       <span class="text-textcolor">{language.globalNote} <Help key="globalNote" /></span>
-      <TextAreaInput fullwidth autocomplete="off" height={'32'} bind:value={globalNoteDraft.value}></TextAreaInput>
+      <TextAreaInput
+        fullwidth
+        autocomplete="off"
+        height={'32'}
+        ariaLabel={language.globalNote}
+        bind:value={globalNoteDraft.value}></TextAreaInput>
       <span class="text-textcolor2 mb-6 text-sm mt-2">{tokens.globalNote} {language.tokens}</span>
       <span class="text-textcolor mb-2 mt-4">{language.formatingOrder} <Help key="formatOrder" /></span>
       <DropList bind:list={formatingOrderDraft.value} />
