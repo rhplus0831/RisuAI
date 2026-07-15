@@ -1742,18 +1742,21 @@
                     const ctx = canvas.getContext('2d')
                     const imgElement = new Image()
                     imgElement.crossOrigin = 'anonymous'
-                    imgElement.src = await data.blob().then(
+                    const imageDataUrl = await data.blob().then(
                       (b) =>
-                        new Promise((resolve, reject) => {
+                        new Promise<string>((resolve, reject) => {
                           const reader = new FileReader()
                           reader.onload = () => resolve(reader.result as string)
                           reader.onerror = reject
                           reader.readAsDataURL(b)
                         }),
                     )
-                    await new Promise((resolve) => {
-                      imgElement.onload = resolve
+                    const decoded = await new Promise<boolean>((resolve) => {
+                      imgElement.onload = () => resolve(true)
+                      imgElement.onerror = () => resolve(false)
+                      imgElement.src = imageDataUrl
                     })
+                    if (!decoded) continue
                     canvas.width = imgElement.width
                     canvas.height = imgElement.height
                     ctx.drawImage(imgElement, 0, 0)
@@ -1791,28 +1794,39 @@
                     const ctx = canvas.getContext('2d')
                     const img = new Image()
                     img.crossOrigin = 'anonymous'
-                    img.src = await data.blob().then(
+                    const imageDataUrl = await data.blob().then(
                       (b) =>
-                        new Promise((resolve, reject) => {
+                        new Promise<string>((resolve, reject) => {
                           const reader = new FileReader()
                           reader.onload = () => resolve(reader.result as string)
                           reader.onerror = reject
                           reader.readAsDataURL(b)
                         }),
                     )
-                    await new Promise((resolve, reject) => {
+                    await new Promise<boolean>((resolve) => {
                       img.onload = () => {
-                        canvas.width = img.width
-                        canvas.height = img.height
-                        ctx.drawImage(img, 0, 0)
-                        iconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
-                        hasValidImage = true
-                        resolve(true)
+                        try {
+                          if (!ctx) {
+                            hasValidImage = false
+                            resolve(false)
+                            return
+                          }
+                          canvas.width = img.width
+                          canvas.height = img.height
+                          ctx.drawImage(img, 0, 0)
+                          iconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
+                          hasValidImage = true
+                          resolve(true)
+                        } catch {
+                          hasValidImage = false
+                          resolve(false)
+                        }
                       }
                       img.onerror = () => {
                         hasValidImage = false
                         resolve(false)
                       }
+                      img.src = imageDataUrl
                     })
                   }
                 }
@@ -1858,28 +1872,39 @@
                         const ctx = canvas.getContext('2d')
                         const img = new Image()
                         img.crossOrigin = 'anonymous'
-                        img.src = await data.blob().then(
+                        const imageDataUrl = await data.blob().then(
                           (b) =>
-                            new Promise((resolve, reject) => {
+                            new Promise<string>((resolve, reject) => {
                               const reader = new FileReader()
                               reader.onload = () => resolve(reader.result as string)
                               reader.onerror = reject
                               reader.readAsDataURL(b)
                             }),
                         )
-                        await new Promise((resolve, reject) => {
+                        await new Promise<boolean>((resolve) => {
                           img.onload = () => {
-                            canvas.width = img.width
-                            canvas.height = img.height
-                            ctx.drawImage(img, 0, 0)
-                            finalIconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
-                            finalHasValidImage = true
-                            resolve(true)
+                            try {
+                              if (!ctx) {
+                                finalHasValidImage = false
+                                resolve(false)
+                                return
+                              }
+                              canvas.width = img.width
+                              canvas.height = img.height
+                              ctx.drawImage(img, 0, 0)
+                              finalIconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
+                              finalHasValidImage = true
+                              resolve(true)
+                            } catch {
+                              finalHasValidImage = false
+                              resolve(false)
+                            }
                           }
                           img.onerror = () => {
                             finalHasValidImage = false
                             resolve(false)
                           }
+                          img.src = imageDataUrl
                         })
                       }
                     }
@@ -1915,16 +1940,14 @@
             ])
             alertNormal(language.copied)
             return
-          } catch (e) {
+          } catch {
             alertClear()
-            window.navigator.clipboard.writeText(msgDisplay).then(() => {
-              setStatusMessage(language.copied)
-            })
           }
         }
-        window.navigator.clipboard.writeText(msgDisplay).then(() => {
+        try {
+          await window.navigator.clipboard.writeText(msgDisplay)
           setStatusMessage(language.copied)
-        })
+        } catch {}
       }}>
       <CopyIcon size={20} />
       {#if showNames}

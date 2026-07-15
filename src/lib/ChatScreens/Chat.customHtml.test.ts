@@ -78,6 +78,7 @@ const customHtmlMocks = vi.hoisted(() => {
       },
     })),
     getLLMCache: vi.fn(async () => null),
+    getFileSrc: vi.fn(async () => ''),
     ParseMarkdown: vi.fn(async (html: string) => html),
     risuChatParser: vi.fn(
       (message: string, arg?: { cbsConditions?: { firstmsg?: boolean; chatRole?: string | null } }) => {
@@ -137,7 +138,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
   changeChatTo: customHtmlMocks.changeChatTo,
   createChatCopyName: (name: string, suffix: string) => `${name} ${suffix}`,
   foldChatToMessage: customHtmlMocks.foldChatToMessage,
-  getFileSrc: vi.fn(async () => ''),
+  getFileSrc: customHtmlMocks.getFileSrc,
 }))
 
 vi.mock('src/ts/router', async (importActual) => {
@@ -511,6 +512,7 @@ beforeEach(() => {
     }
   })
   customHtmlMocks.sleep.mockResolvedValue(undefined)
+  customHtmlMocks.getFileSrc.mockResolvedValue('')
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
   customHtmlMocks.runServerCommand.mockImplementation(
     async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
@@ -792,6 +794,116 @@ describe('message popup editor target freshness', () => {
 })
 
 describe('message action target freshness', () => {
+  it('settles rich copy and replaces the blocking alert when copied images cannot decode', async () => {
+    const clipboard = {
+      write: vi.fn(async () => undefined),
+      writeText: vi.fn(async () => undefined),
+    }
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard')
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    })
+    const imageDecodeErrors = vi.fn()
+
+    class BrokenImage {
+      crossOrigin = ''
+      height = 0
+      onerror: (() => void) | null = null
+      onload: (() => void) | null = null
+      width = 0
+
+      set src(_value: string) {
+        imageDecodeErrors()
+        this.onerror?.()
+      }
+    }
+
+    class DataUrlFileReader {
+      onerror: (() => void) | null = null
+      onload: (() => void) | null = null
+      result: string | null = null
+
+      readAsDataURL() {
+        this.result = 'data:image/png;base64,Y29ycnVwdA=='
+        this.onload?.()
+      }
+    }
+
+    vi.stubGlobal('ClipboardItem', class ClipboardItem {})
+    vi.stubGlobal('FileReader', DataUrlFileReader)
+    vi.stubGlobal('Image', BrokenImage)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        blob: async () => new Blob(['corrupt image bytes'], { type: 'image/png' }),
+        ok: true,
+      })),
+    )
+
+    try {
+      seedDatabase(1, null as unknown as string)
+      testDatabaseState.db.useChatCopy = true
+      testDatabaseState.db.characters[0].image = 'corrupt-avatar'
+      customHtmlMocks.getFileSrc.mockResolvedValue('https://example.test/corrupt-avatar.png')
+      customHtmlMocks.ParseMarkdown.mockResolvedValueOnce('<img src="https://example.test/corrupt.png">')
+      mountCustomHtmlRows(1)
+      await settle()
+
+      target.querySelector<HTMLButtonElement>('.button-icon-copy')?.click()
+
+      await vi.waitFor(() => expect(customHtmlMocks.alertNormal).toHaveBeenCalledWith('copied'))
+      expect(customHtmlMocks.alertWait).toHaveBeenCalledWith('loading')
+      expect(imageDecodeErrors).toHaveBeenCalledTimes(2)
+      expect(clipboard.write).toHaveBeenCalledOnce()
+      expect(clipboard.writeText).not.toHaveBeenCalled()
+      expect(customHtmlMocks.alertWait.mock.invocationCallOrder[0]).toBeLessThan(
+        customHtmlMocks.alertNormal.mock.invocationCallOrder[0],
+      )
+    } finally {
+      if (clipboardDescriptor) {
+        Object.defineProperty(window.navigator, 'clipboard', clipboardDescriptor)
+      } else {
+        Reflect.deleteProperty(window.navigator, 'clipboard')
+      }
+    }
+  })
+
+  it('clears rich-copy loading and runs the plain-text fallback only once', async () => {
+    const clipboard = {
+      write: vi.fn(async () => {
+        throw new Error('rich clipboard unavailable')
+      }),
+      writeText: vi.fn(async () => undefined),
+    }
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'clipboard')
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: clipboard,
+    })
+    vi.stubGlobal('ClipboardItem', class ClipboardItem {})
+
+    try {
+      seedDatabase(1, null as unknown as string)
+      testDatabaseState.db.useChatCopy = true
+      mountCustomHtmlRows(1)
+      await settle()
+
+      target.querySelector<HTMLButtonElement>('.button-icon-copy')?.click()
+
+      await vi.waitFor(() => expect(clipboard.writeText).toHaveBeenCalledOnce())
+      expect(customHtmlMocks.alertWait).toHaveBeenCalledWith('loading')
+      expect(customHtmlMocks.alertClear).toHaveBeenCalledOnce()
+      expect(clipboard.write).toHaveBeenCalledOnce()
+    } finally {
+      if (clipboardDescriptor) {
+        Object.defineProperty(window.navigator, 'clipboard', clipboardDescriptor)
+      } else {
+        Reflect.deleteProperty(window.navigator, 'clipboard')
+      }
+    }
+  })
+
   it('does not expose transcript-only actions for the synthetic greeting', async () => {
     seedDatabase(0, null as unknown as string)
     testDatabaseState.db.enableBookmark = true
