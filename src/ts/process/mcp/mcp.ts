@@ -584,6 +584,11 @@ export async function callTool(methodName: string, args: any) {
 }
 
 export async function importMCPModule() {
+  if (canUseServerCommands()) {
+    alertError('MCP module import is not supported in Fastify server-backed mode yet')
+    return
+  }
+
   const x = await alertInput('Please enter the URL of the MCP module to import:', [
     ['internal:aiaccess', 'LLM Call Client (internal:aiaccess)'],
     ['internal:risuai', 'Risu Access Client (internal:risuai)'],
@@ -614,10 +619,6 @@ export async function importMCPModule() {
     const meta = metas[x]
     if (!meta) {
       alertError('MCP module not found or invalid URL')
-      return
-    }
-    if (canUseServerCommands()) {
-      alertError('MCP module import is not supported in Fastify server-backed mode yet')
       return
     }
     const db = getDatabase()

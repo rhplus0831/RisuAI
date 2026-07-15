@@ -750,39 +750,24 @@ describe('MCP runtime persistence', () => {
   })
 })
 
-describe('MCP module import logging', () => {
-  it('L57: importing an MCP module does not log the meta payload by default', async () => {
-    const identifier = 'plugin:mcp-import-log-silence'
-    await registerMCPModule(
-      {
-        identifier,
-        name: 'Import Log Silence MCP',
-        version: '1.0.0',
-        description: 'MCP fixture used to prove import meta payload logging is opt-in.',
-      },
-      async () => [],
-      async () => [],
-    )
-    alertMocks.alertInput.mockResolvedValue(identifier)
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {
-      /* test spy */
-    })
+describe('MCP module import', () => {
+  it('rejects Fastify imports before prompting, networking, or initializing registries', async () => {
+    alertMocks.alertInput.mockResolvedValue('https://mcp.example/sse')
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy)
 
     await importMCPModule()
 
     expect(alertMocks.alertError).toHaveBeenCalledWith(
       'MCP module import is not supported in Fastify server-backed mode yet',
     )
-    expect(logSpy).not.toHaveBeenCalledWith(
-      expect.objectContaining({
-        [identifier]: expect.objectContaining({
-          serverInfo: expect.objectContaining({
-            name: 'Import Log Silence MCP',
-          }),
-        }),
-      }),
-    )
-    expect(logSpy).not.toHaveBeenCalled()
+    expect(alertMocks.alertInput).not.toHaveBeenCalled()
+    expect(alertMocks.alertNormal).not.toHaveBeenCalled()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(mcpOAuthMocks.requestStoredMcpOAuthRefresh).not.toHaveBeenCalled()
+    expect(MCPs).toEqual({})
+    expect(callOnlyMCPs).toEqual({})
+    expect(registeredCustomPluginMCPs.size).toBe(0)
   })
 })
 
