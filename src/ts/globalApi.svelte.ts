@@ -432,7 +432,7 @@ function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
     if (originalSignal.aborted) {
       controller.abort()
     } else {
-      originalSignal.addEventListener('abort', onAbort, { once: true })
+      originalSignal.addEventListener('abort', onAbort)
     }
   }
 
@@ -444,6 +444,93 @@ function buildTimeoutSignal(originalSignal?: AbortSignal, timeoutMs?: number) {
       clearTimeout(timeoutId)
       originalSignal?.removeEventListener('abort', onAbort)
     },
+  }
+}
+
+function retainFetchCancellationThroughBody(
+  response: Response,
+  requestSignal: AbortSignal | undefined,
+  cleanupRequest: () => void,
+): Response {
+  let settled = false
+  let bodyTerminated = false
+  let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined
+  let onAbort: (() => void) | undefined
+  const settle = () => {
+    if (settled) return
+    settled = true
+    if (onAbort) requestSignal?.removeEventListener('abort', onAbort)
+    cleanupRequest()
+  }
+
+  if (!response.body) {
+    settle()
+    return response
+  }
+
+  const sourceReader = response.body.getReader()
+  onAbort = () => {
+    settle()
+    if (bodyTerminated) return
+    bodyTerminated = true
+    const reason = requestSignal?.reason ?? new DOMException('The operation was aborted.', 'AbortError')
+    bodyController?.error(reason)
+    void sourceReader.cancel(reason).catch(() => {})
+  }
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      bodyController = controller
+    },
+    async pull(controller) {
+      try {
+        const chunk = await sourceReader.read()
+        if (bodyTerminated) return
+        if (chunk.done) {
+          bodyTerminated = true
+          settle()
+          controller.close()
+          return
+        }
+        controller.enqueue(chunk.value)
+      } catch (error) {
+        if (bodyTerminated) return
+        bodyTerminated = true
+        settle()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      if (bodyTerminated) return
+      bodyTerminated = true
+      settle()
+      await sourceReader.cancel(reason)
+    },
+  })
+
+  requestSignal?.addEventListener('abort', onAbort, { once: true })
+  if (requestSignal?.aborted) onAbort()
+
+  try {
+    const managedResponse = new Response(body, {
+      headers: response.headers,
+      status: response.status,
+      statusText: response.statusText,
+    })
+    Object.defineProperties(managedResponse, {
+      redirected: {
+        configurable: true,
+        enumerable: true,
+        get: () => response.redirected,
+      },
+      type: { configurable: true, enumerable: true, get: () => response.type },
+      url: { configurable: true, enumerable: true, get: () => response.url },
+    })
+    return managedResponse
+  } catch (error) {
+    bodyTerminated = true
+    settle()
+    void sourceReader.cancel(error)
+    throw error
   }
 }
 
@@ -641,7 +728,12 @@ async function fetchWithPlainFetch(url: string, arg: GlobalFetchArgs): Promise<G
     const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json()
     const ok = response.ok && response.status >= 200 && response.status < 300
     addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
-    return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
+    return {
+      ok,
+      data,
+      headers: Object.fromEntries(response.headers),
+      status: response.status,
+    }
   } catch (error) {
     return { ok: false, data: `${error}`, headers: {}, status: 400 }
   }
@@ -666,7 +758,12 @@ async function fetchWithUSFetch(url: string, arg: GlobalFetchArgs): Promise<Glob
     const data = arg.rawResponse ? new Uint8Array(await response.arrayBuffer()) : await response.json()
     const ok = response.ok && response.status >= 200 && response.status < 300
     addFetchLogInGlobalFetch(data, ok, url, arg, response.status)
-    return { ok, data, headers: Object.fromEntries(response.headers), status: response.status }
+    return {
+      ok,
+      data,
+      headers: Object.fromEntries(response.headers),
+      status: response.status,
+    }
   } catch (error) {
     return { ok: false, data: `${error}`, headers: {}, status: 400 }
   }
@@ -695,7 +792,9 @@ async function fetchWithProxy(url: string, arg: GlobalFetchArgs): Promise<Global
         'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
       }),
       ...(nodeProxyAuth && { 'risu-auth': nodeProxyAuth }),
-      ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+      ...(getDatabase()?.requestLocation && {
+        'risu-location': getDatabase().requestLocation,
+      }),
     }
 
     const body = arg.body instanceof URLSearchParams ? arg.body.toString() : JSON.stringify(arg.body)
@@ -1324,6 +1423,16 @@ export async function fetchNative(
   const throughProxy = useLocalNetworkRoute
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
   const requestSignal = timeoutSignal.signal
+  let requestCleaned = false
+  const cleanupRequest = () => {
+    if (requestCleaned) return
+    requestCleaned = true
+    timeoutSignal.cleanup()
+  }
+  const finalizeResponse = (response: Response) => {
+    if (!arg.requestTimeoutMs || arg.requestTimeoutMs <= 0) return response
+    return retainFetchCancellationThroughBody(response, requestSignal, cleanupRequest)
+  }
   const fetchLogIndex = arg.sensitive
     ? -1
     : addFetchLog({
@@ -1337,27 +1446,31 @@ export async function fetchNative(
       })
   try {
     if (window.userScriptFetch && !throughProxy) {
-      return await window.userScriptFetch(url, {
-        body: realBody as any,
-        headers: headers,
-        method: arg.method,
-        signal: requestSignal,
-      })
+      return finalizeResponse(
+        await window.userScriptFetch(url, {
+          body: realBody as any,
+          headers: headers,
+          method: arg.method,
+          signal: requestSignal,
+        }),
+      )
     } else if (throughProxy) {
       const useProxyJobWs = arg.interceptor === 'openai_streaming' && arg.method === 'POST' && useLocalNetworkRoute
       const nodeProxyAuth = await getNodeServerProxyAuth()
 
       if (useProxyJobWs) {
         try {
-          return await fetchViaProxyJobWs(url, {
-            body: realBody,
-            headers,
-            method: arg.method,
-            signal: requestSignal,
-            requestTimeoutMs: arg.requestTimeoutMs,
-            chatId: arg.chatId,
-            fetchLogIndex,
-          })
+          return finalizeResponse(
+            await fetchViaProxyJobWs(url, {
+              body: realBody,
+              headers,
+              method: arg.method,
+              signal: requestSignal,
+              requestTimeoutMs: arg.requestTimeoutMs,
+              chatId: arg.chatId,
+              fetchLogIndex,
+            }),
+          )
         } catch (wsErr) {
           console.warn('[ProxyJobWS] falling back to Fastify proxy fetch due to error:', wsErr)
         }
@@ -1375,7 +1488,9 @@ export async function fetchNative(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+              ...(getDatabase()?.requestLocation && {
+                'risu-location': getDatabase().requestLocation,
+              }),
             }
           : {
               'risu-header': encodeURIComponent(JSON.stringify(headers)),
@@ -1385,26 +1500,34 @@ export async function fetchNative(
                 'risu-timeout-ms': Math.max(1, Math.floor(arg.requestTimeoutMs)).toString(),
               }),
               ...(nodeProxyAuth ? { 'risu-auth': nodeProxyAuth } : {}),
-              ...(getDatabase()?.requestLocation && { 'risu-location': getDatabase().requestLocation }),
+              ...(getDatabase()?.requestLocation && {
+                'risu-location': getDatabase().requestLocation,
+              }),
             },
         method: arg.method,
         signal: requestSignal,
       })
 
-      return new Response(r.body, {
-        headers: r.headers,
-        status: r.status,
-      })
+      return finalizeResponse(
+        new Response(r.body, {
+          headers: r.headers,
+          status: r.status,
+          statusText: r.statusText,
+        }),
+      )
     } else {
-      return await fetch(url, {
-        body: realBody as any,
-        headers: headers,
-        method: arg.method,
-        signal: requestSignal,
-      })
+      return finalizeResponse(
+        await fetch(url, {
+          body: realBody as any,
+          headers: headers,
+          method: arg.method,
+          signal: requestSignal,
+        }),
+      )
     }
-  } finally {
-    timeoutSignal.cleanup()
+  } catch (error) {
+    cleanupRequest()
+    throw error
   }
 }
 
