@@ -198,8 +198,11 @@ describe('startObserveDom', () => {
     expect(AudioMock).toHaveBeenCalledTimes(1)
   })
 
-  it('clears rejected BGM playback and allows a later scan to retry it', async () => {
-    const play = vi.fn().mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+  it('retries rejected BGM playback on the next user interaction without another scan', async () => {
+    const play = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+      .mockResolvedValueOnce(undefined)
     const pause = vi.fn()
     const remove = vi.fn()
     const audioInstances: Array<{ src: string; volume: number }> = []
@@ -235,12 +238,44 @@ describe('startObserveDom', () => {
     expect(pause).toHaveBeenCalledTimes(1)
     expect(remove).toHaveBeenCalledTimes(1)
 
-    play.mockResolvedValueOnce(undefined)
-    startObserveDom()
+    document.dispatchEvent(new Event('pointerdown', { bubbles: true }))
 
     expect(AudioMock).toHaveBeenCalledTimes(2)
     expect(audioInstances[1]).toMatchObject({ src: '/blocked-bgm.mp3', volume: 0.5 })
     expect(_getBgmElementForTesting()).toBe(audioInstances[1])
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    expect(AudioMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not retry rejected BGM playback after its control is removed', async () => {
+    const play = vi.fn().mockRejectedValueOnce(new DOMException('Autoplay blocked', 'NotAllowedError'))
+    const AudioMock = vi.fn(function (this: {
+      volume: number
+      addEventListener: () => void
+      play: () => Promise<void>
+      pause: () => void
+      remove: () => void
+    }) {
+      this.volume = 0
+      this.addEventListener = () => {}
+      this.play = play
+      this.pause = vi.fn()
+      this.remove = vi.fn()
+    })
+    vi.stubGlobal('Audio', AudioMock)
+
+    const ctrl = document.createElement('div')
+    ctrl.setAttribute('risu-ctrl', 'bgm___auto___/removed-bgm.mp3')
+    document.body.appendChild(ctrl)
+
+    startObserveDom()
+    await Promise.resolve()
+    ctrl.remove()
+    document.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+
+    expect(AudioMock).toHaveBeenCalledTimes(1)
+    expect(_getBgmElementForTesting()).toBeNull()
   })
 
   it('L33: chat switch cleanup pauses current BGM and lets the next control attach', async () => {

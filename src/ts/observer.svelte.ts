@@ -6,8 +6,47 @@ let observedControlNodes = new WeakSet<HTMLElement>()
 let domObserver: MutationObserver | null = null
 let observedBody: HTMLElement | null = null
 let bodyRetryTimer: ReturnType<typeof setTimeout> | null = null
+let pendingBgmRetry: { node: HTMLElement; control: string } | null = null
+let bgmRetryListenersAttached = false
+
+function clearPendingBgmRetry() {
+  pendingBgmRetry = null
+  if (!bgmRetryListenersAttached || typeof document === 'undefined') return
+
+  document.removeEventListener('pointerdown', retryPendingBgm, true)
+  document.removeEventListener('keydown', retryPendingBgm, true)
+  bgmRetryListenersAttached = false
+}
+
+function retryPendingBgm() {
+  const pending = pendingBgmRetry
+  clearPendingBgmRetry()
+  if (
+    !pending ||
+    bgmElement ||
+    !pending.node.isConnected ||
+    pending.node.getAttribute('risu-ctrl') !== pending.control
+  ) {
+    return
+  }
+
+  observedControlNodes.delete(pending.node)
+  nodeObserve(pending.node)
+}
+
+function scheduleBgmRetry(node: HTMLElement, control: string) {
+  pendingBgmRetry = { node, control }
+  if (bgmRetryListenersAttached || typeof document === 'undefined') return
+
+  // Invoke play directly from the next user-activation event so browser
+  // autoplay policies can accept the retry.
+  document.addEventListener('pointerdown', retryPendingBgm, true)
+  document.addEventListener('keydown', retryPendingBgm, true)
+  bgmRetryListenersAttached = true
+}
 
 function stopCurrentBgm() {
+  clearPendingBgmRetry()
   const current = bgmElement
   if (!current) {
     return
@@ -89,6 +128,7 @@ function nodeObserve(node: HTMLElement) {
         observedControlNodes.add(node)
         const volume = split[1] === 'auto' ? 0.5 : parseFloat(split[1])
         if (!bgmElement) {
+          clearPendingBgmRetry()
           const audio = new Audio(split[2])
           bgmElement = audio
           audio.volume = volume
@@ -106,6 +146,9 @@ function nodeObserve(node: HTMLElement) {
               audio.pause()
               audio.remove()
               observedControlNodes.delete(node)
+              if (node.isConnected && node.getAttribute('risu-ctrl') === ctrlName) {
+                scheduleBgmRetry(node, ctrlName)
+              }
             })
           }
         }
