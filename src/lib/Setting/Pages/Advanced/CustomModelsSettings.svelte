@@ -69,27 +69,34 @@
 
 {#snippet mainBody()}
   {#each customModelsDraft.value as model, index (model.id)}
+    {@const modelDisplayName = model.name?.trim() || 'Unnamed'}
     <div class="flex flex-col mt-2">
-      <button
-        type="button"
-        aria-label={model.name ?? 'Unnamed'}
-        aria-expanded={openedModels.has(model.id)}
+      <div
         class="hover:bg-selected px-6 py-2 text-lg rounded-t-md border-selected border flex justify-between items-center"
         class:bg-selected={openedModels.has(model.id)}
-        class:rounded-b-md={!openedModels.has(model.id)}
-        onclick={() => {
-          if (openedModels.has(model.id)) {
-            openedModels.delete(model.id)
-          } else {
-            openedModels.add(model.id)
-          }
-          openedModels = new Set(openedModels)
-        }}>
-        <span class="text-left">{model.name ?? 'Unnamed'}</span>
+        class:rounded-b-md={!openedModels.has(model.id)}>
+        <button
+          id={`custom-model-trigger-${model.id}`}
+          type="button"
+          aria-label={modelDisplayName}
+          aria-expanded={openedModels.has(model.id)}
+          aria-controls={`custom-model-panel-${model.id}`}
+          class="min-w-0 grow text-left"
+          onclick={() => {
+            if (openedModels.has(model.id)) {
+              openedModels.delete(model.id)
+            } else {
+              openedModels.add(model.id)
+            }
+            openedModels = new Set(openedModels)
+          }}>
+          <span class="block truncate">{modelDisplayName}</span>
+        </button>
         <div class="flex items-center gap-1">
           <Button
             size="sm"
             styled="outlined"
+            disabled={index === 0}
             onclick={(e) => {
               e.stopPropagation()
               if (index === 0) return
@@ -99,12 +106,13 @@
                 models[index - 1] = temp
               })
             }}>
-            <span class="sr-only">{language.moveUp}: {model.name ?? 'Unnamed'}</span>
+            <span class="sr-only">{language.moveUp}: {modelDisplayName}</span>
             <ArrowUp aria-hidden="true" />
           </Button>
           <Button
             size="sm"
             styled="outlined"
+            disabled={index === customModelsDraft.value.length - 1}
             onclick={(e) => {
               e.stopPropagation()
               if (index === customModelsDraft.value.length - 1) return
@@ -114,7 +122,7 @@
                 models[index + 1] = temp
               })
             }}>
-            <span class="sr-only">{language.moveDown}: {model.name ?? 'Unnamed'}</span>
+            <span class="sr-only">{language.moveDown}: {modelDisplayName}</span>
             <ArrowDown aria-hidden="true" />
           </Button>
           <Button
@@ -128,13 +136,17 @@
               openedModels.delete(model.id)
               openedModels = new Set(openedModels)
             }}>
-            <span class="sr-only">{language.remove}: {model.name ?? 'Unnamed'}</span>
+            <span class="sr-only">{language.remove}: {modelDisplayName}</span>
             <TrashIcon aria-hidden="true" />
           </Button>
         </div>
-      </button>
+      </div>
       {#if openedModels.has(model.id)}
-        <div class="flex flex-col border border-selected p-2 rounded-b-md overflow-x-auto">
+        <div
+          id={`custom-model-panel-${model.id}`}
+          role="region"
+          aria-labelledby={`custom-model-trigger-${model.id}`}
+          class="flex flex-col border border-selected p-2 rounded-b-md overflow-x-auto">
           <span class="text-textcolor mt-4">{language.name}</span>
           <TextInput
             size={'sm'}

@@ -77,9 +77,13 @@ describe('CustomModelsSettings flags', () => {
 
     const disclosure = buttonByLabel('All Flags')
     expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(disclosure.querySelector('button')).toBeNull()
     disclosure.click()
     await tick()
     expect(disclosure.getAttribute('aria-expanded')).toBe('true')
+    const panel = document.getElementById(disclosure.getAttribute('aria-controls') ?? '')
+    expect(panel?.getAttribute('role')).toBe('region')
+    expect(panel?.getAttribute('aria-labelledby')).toBe(disclosure.id)
     buttonByText(language.flags).click()
     await tick()
 
@@ -112,5 +116,6 @@ describe('CustomModelsSettings flags', () => {
     expect(buttonByText(`${language.moveDown}: All Flags`)).toBeTruthy()
     expect(buttonByText(`${language.remove}: All Flags`)).toBeTruthy()
     expect(buttonByLabel(`${language.add}: ${language.customModels}`).type).toBe('button')
+    expect(target.querySelector('button button')).toBeNull()
   })
 })
