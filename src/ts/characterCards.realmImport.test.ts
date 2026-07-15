@@ -263,6 +263,36 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('Realm URL imports', () => {
+  it('waits for the Realm information request before completing URL processing', async () => {
+    const realmInfo = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn(() => realmInfo.promise) as unknown as typeof fetch)
+    window.history.replaceState(null, '', '/?realm=author%2Fcharacter')
+    let settled = false
+
+    const importing = characterURLImport().finally(() => {
+      settled = true
+    })
+    await Promise.resolve()
+
+    expect(settled).toBe(false)
+    realmInfo.resolve(new Response('Realm unavailable', { status: 503 }))
+    await importing
+
+    expect(fetch).toHaveBeenCalledWith('/api/v1/hub/hub/info/author/character')
+    expect(alertState.alertError).toHaveBeenCalledWith('Realm unavailable')
+  })
+
+  it('contains Realm information network failures and reports them to the user', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Promise.reject(new Error('offline'))) as unknown as typeof fetch)
+    window.history.replaceState(null, '', '/?realm=author%2Fcharacter')
+
+    await expect(characterURLImport()).resolves.toBeUndefined()
+
+    expect(alertState.alertError).toHaveBeenCalledWith('No data')
+  })
+})
+
 describe('Realm character import finish refresh', () => {
   it('passes the pending charx token when retrying after low-level confirmation', async () => {
     realmImportState.importRealmCharacterFromServer

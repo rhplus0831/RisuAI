@@ -365,9 +365,11 @@ export async function characterURLImport() {
   const realmPath = new URLSearchParams(location.search).get('realm')
   try {
     if (realmPath) {
-      getRealmInfo(realmPath)
+      await getRealmInfo(realmPath)
     }
-  } catch (error) {}
+  } catch (error) {
+    alertError(language.errors.noData)
+  }
 
   const charPath = new URLSearchParams(location.search).get('charahub')
   try {
