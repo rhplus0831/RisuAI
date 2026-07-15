@@ -177,6 +177,7 @@
 {:else}
   <div class="w-full p-1 flex mb-3 overflow-x-auto sm:justify-center">
     <button
+      aria-pressed={nsfw}
       class="bg-darkbg p-2 rounded-lg ml-2 flex justify-center items-center hover:bg-selected transition-shadow"
       class:ring-3={nsfw}
       onclick={() => {
@@ -187,6 +188,7 @@
     </button>
     <div class="ml-2 mr-2 h-full border-r border-r-selected"></div>
     <button
+      aria-pressed={sort === ''}
       class="bg-darkbg p-2 rounded-lg ml-2 flex justify-center items-center hover:bg-selected transition-shadow"
       class:ring-3={sort === ''}
       onclick={() => {
@@ -195,6 +197,7 @@
       {language.recent}
     </button>
     <button
+      aria-pressed={sort === 'trending'}
       class="bg-darkbg p-2 rounded-lg ml-2 flex justify-center items-center hover:bg-selected transition-shadow"
       class:ring-3={sort === 'trending'}
       onclick={() => {
@@ -203,6 +206,7 @@
       {language.trending}
     </button>
     <button
+      aria-pressed={sort === 'downloads'}
       class="bg-darkbg p-2 rounded-lg ml-2 flex justify-center items-center hover:bg-selected transition-shadow"
       class:ring-3={sort === 'downloads'}
       onclick={() => {
@@ -211,6 +215,7 @@
       {language.downloads}
     </button>
     <button
+      aria-pressed={sort === 'random'}
       class="bg-darkbg p-2 rounded-lg ml-2 flex justify-center items-center hover:bg-selected transition-shadow min-w-0 max-w-full"
       class:ring-3={sort === 'random'}
       onclick={() => {

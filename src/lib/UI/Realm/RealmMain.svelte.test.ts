@@ -213,6 +213,24 @@ describe('RealmMain request ownership', () => {
 })
 
 describe('RealmMain query pagination', () => {
+  it('announces the active desktop catalog filters', async () => {
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    expect(button('NSFW').getAttribute('aria-pressed')).toBe('false')
+    expect(button('Recent').getAttribute('aria-pressed')).toBe('false')
+
+    button('NSFW').click()
+    button('Trending').click()
+    await tick()
+
+    expect(button('NSFW').getAttribute('aria-pressed')).toBe('true')
+    expect(button('Recent').getAttribute('aria-pressed')).toBe('false')
+    expect(button('Trending').getAttribute('aria-pressed')).toBe('true')
+    expect(button('Downloads').getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('returns desktop search, sort, and content filters to the first page', async () => {
     realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     component = mount(RealmMain, { target })
