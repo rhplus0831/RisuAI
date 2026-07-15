@@ -6,8 +6,9 @@ import { ModuleHandler } from './modules'
 
 export class RisuAccessClient extends MCPClientLike {
   private handlers: MCPToolHandler[]
+  private readonly abortSignal?: AbortSignal
 
-  constructor() {
+  constructor(abortSignal?: AbortSignal) {
     const additionalServerInfo = `
 <About Risuai Features>
 Characters are the AI personas that Risuai users chat with. Fields:
@@ -64,13 +65,14 @@ Lorebooks are texts containing various information about the character with cond
 backgroundEmbedding is an HTML string mainly for custom styling. It can, and mostly include <style> tags with CSS. Note that all selectors will be prefixed with '.chattext ' so they cannot escape the chat boundary - No html, body, :root access.
 `
     super('internal:risuai')
+    this.abortSignal = abortSignal
     this.serverInfo.serverInfo.name = 'Risuai Access MCP'
     this.serverInfo.serverInfo.version = '1.0.0'
     this.serverInfo.instructions =
       "Risuai Access MCP provides access to Risuai's features and tools, which is the software currently running on. Use the available tools to interact with Risuai's functionalities." +
       additionalServerInfo
 
-    this.handlers = [new CharacterHandler(), new ChatHandler(), new ModuleHandler()]
+    this.handlers = [new CharacterHandler(abortSignal), new ChatHandler(), new ModuleHandler(abortSignal)]
   }
 
   async getToolList(): Promise<MCPTool[]> {
@@ -82,9 +84,11 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
   }
 
   async callTool(toolName: string, args: any): Promise<RPCToolCallContent[]> {
+    if (this.abortSignal?.aborted) return [{ type: 'text', text: 'Tool call aborted.' }]
     try {
       for (const handler of this.handlers) {
         const result = await handler.handle(toolName, args)
+        if (this.abortSignal?.aborted) return [{ type: 'text', text: 'Tool call aborted.' }]
         if (result) {
           return result
         }

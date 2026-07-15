@@ -13,6 +13,13 @@
   import { resolveModelForRole } from 'src/ts/model/modelRoles'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { language } from 'src/lang'
+  import {
+    SERVER_TOOL_MAX_RESULT_BYTES,
+    SERVER_TOOL_MAX_ROUNDS,
+    validateServerToolCalls,
+    type ServerToolResult,
+    type ServerToolRound,
+  } from 'src/ts/process/request/serverToolProtocol'
 
   interface DialogueLine {
     speaker: string
@@ -23,6 +30,12 @@
   interface OpenAIChat {
     role: 'system' | 'user' | 'assistant'
     content: string
+  }
+
+  interface ActiveSubmission {
+    controller: AbortController
+    line: DialogueLine
+    epoch: number
   }
 
   const introDialogue: Record<string, DialogueLine[]> = {
@@ -102,6 +115,7 @@
   let typingRun = 0
   let dialogueEpoch = 0
   let dialogueHydrated = $state(false)
+  let activeSubmission: ActiveSubmission | null = null
 
   const atEnd = $derived(!isTyping && currentIndex >= dialogue.length - 1)
   const waitingForReply = $derived(atEnd && dialogue[dialogue.length - 1]?.speaker === 'You')
@@ -133,6 +147,7 @@
   }
 
   function hide() {
+    invalidateActiveSubmission(true)
     irisStore.open = false
   }
 
@@ -203,18 +218,32 @@
     const submittedEpoch = dialogueEpoch
     userInput = ''
 
-    const history: OpenAIChat[] = [
-      { role: 'system', content: await getIrisSystemPrompt() },
-      ...dialogue
-        .filter((l) => l.speaker === 'You' || l.speaker === 'Iris')
-        .map((l) => ({
-          role: (l.speaker === 'You' ? 'user' : 'assistant') as 'user' | 'assistant',
-          content: l.text,
-        })),
-    ]
+    if (!submittedLine) return
+    const submission: ActiveSubmission = {
+      controller: new AbortController(),
+      line: submittedLine,
+      epoch: submittedEpoch,
+    }
+    activeSubmission = submission
 
-    if (submittedLine) {
-      await requestLLM(history, submittedLine, submittedEpoch)
+    try {
+      const history: OpenAIChat[] = [
+        { role: 'system', content: await getIrisSystemPrompt() },
+        ...dialogue
+          .filter((l) => l.speaker === 'You' || l.speaker === 'Iris')
+          .map((l) => ({
+            role: (l.speaker === 'You' ? 'user' : 'assistant') as 'user' | 'assistant',
+            content: l.text,
+          })),
+      ]
+      if (submission.controller.signal.aborted) return
+      await requestLLM(history, submission)
+    } catch (error) {
+      if (submission.controller.signal.aborted || !isCurrentRequest(submission.line, submission.epoch)) return
+      alertError(error)
+      removeSubmittedLine(submission.line)
+    } finally {
+      if (activeSubmission === submission) activeSubmission = null
     }
   }
 
@@ -287,29 +316,96 @@
     saveDialogue()
   }
 
-  async function requestLLM(chat: OpenAIChat[], submittedLine: DialogueLine, submittedEpoch: number) {
-    let res
-    try {
-      res = await requestChatData(
+  function invalidateActiveSubmission(removeLine: boolean) {
+    dialogueEpoch += 1
+    const active = activeSubmission
+    activeSubmission = null
+    if (!active) return
+    active.controller.abort()
+    if (removeLine && dialogue.includes(active.line)) removeSubmittedLine(active.line)
+  }
+
+  function boundedTextSegments(segments: Iterable<string>): string {
+    const encoder = new TextEncoder()
+    const bytes = new Uint8Array(SERVER_TOOL_MAX_RESULT_BYTES)
+    let byteLength = 0
+
+    outer: for (const segment of segments) {
+      for (const codePoint of segment) {
+        const encoded = encoder.encode(codePoint)
+        if (byteLength + encoded.byteLength > bytes.byteLength) break outer
+        bytes.set(encoded, byteLength)
+        byteLength += encoded.byteLength
+      }
+    }
+    return new TextDecoder().decode(bytes.subarray(0, byteLength))
+  }
+
+  function textToolResult(contents: Awaited<ReturnType<RisuAccessClient['callTool']>>): string {
+    let textCount = 0
+    function* textSegments(): Generator<string> {
+      for (const content of contents) {
+        if (content.type !== 'text') continue
+        if (textCount > 0) yield '\n'
+        textCount += 1
+        yield content.text
+      }
+    }
+    const result = boundedTextSegments(textSegments())
+    if (textCount === 0) return 'Tool call completed without a text response.'
+    return result
+  }
+
+  async function requestLLM(chat: OpenAIChat[], submission: ActiveSubmission) {
+    const client = new RisuAccessClient(submission.controller.signal)
+    const tools = await client.getToolList()
+    const allowedToolNames = new Set(tools.map((tool) => tool.name))
+    const toolRounds: ServerToolRound[] = []
+
+    while (true) {
+      if (submission.controller.signal.aborted) return
+      const res = await requestChatData(
         {
           formated: chat,
           bias: {},
-          tools: await new RisuAccessClient().getToolList(),
+          tools,
+          toolRounds: [...toolRounds],
         },
         'otherAx',
+        submission.controller.signal,
       )
-    } catch (error) {
-      if (!isCurrentRequest(submittedLine, submittedEpoch)) return
-      alertError(error)
-      removeSubmittedLine(submittedLine)
-      return
-    }
-    if (!isCurrentRequest(submittedLine, submittedEpoch)) return
-    if (res.type === 'success') {
-      pushDialogue({ speaker: 'Iris', text: res.result })
-    } else {
-      alertError('Failed to get response from LLM: ' + res.result)
-      removeSubmittedLine(submittedLine)
+      if (submission.controller.signal.aborted || !isCurrentRequest(submission.line, submission.epoch)) return
+      if (res.type !== 'success') {
+        alertError('Failed to get response from LLM: ' + res.result)
+        removeSubmittedLine(submission.line)
+        return
+      }
+
+      if (!res.toolCalls?.length) {
+        pushDialogue({ speaker: 'Iris', text: res.result })
+        return
+      }
+      if (toolRounds.length >= SERVER_TOOL_MAX_ROUNDS) {
+        alertError(language.errors.irisToolCallLimit(SERVER_TOOL_MAX_ROUNDS))
+        removeSubmittedLine(submission.line)
+        return
+      }
+
+      const calls = validateServerToolCalls(res.toolCalls, allowedToolNames)
+      if (calls.ok === false) {
+        alertError(language.errors.irisToolRequestInvalid(calls.error))
+        removeSubmittedLine(submission.line)
+        return
+      }
+      const assistantContent = boundedTextSegments([res.result])
+      const results: ServerToolResult[] = []
+      for (const call of calls.value) {
+        if (submission.controller.signal.aborted) return
+        const content = textToolResult(await client.callTool(call.name, call.arguments))
+        if (submission.controller.signal.aborted || !isCurrentRequest(submission.line, submission.epoch)) return
+        results.push({ callId: call.id, name: call.name, content })
+      }
+      toolRounds.push({ assistantContent, calls: calls.value, results })
     }
   }
 
@@ -345,7 +441,7 @@
   })
 
   onDestroy(() => {
-    dialogueEpoch += 1
+    invalidateActiveSubmission(true)
     typingRun += 1
     if (typingTimeout) {
       clearTimeout(typingTimeout)
@@ -372,7 +468,7 @@
   })
 
   function resetDialogue() {
-    dialogueEpoch += 1
+    invalidateActiveSubmission(false)
     dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
     currentIndex = 0
     saveDialogue()

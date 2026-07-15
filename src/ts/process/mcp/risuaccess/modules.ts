@@ -27,8 +27,16 @@ const moduleNotFound = (id: string): RPCToolCallContent[] => [
 ]
 
 export class ModuleHandler extends MCPToolHandler {
-  private promptAccess(tool: string, action: string) {
-    return alertConfirm(language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action))
+  constructor(private readonly abortSignal?: AbortSignal) {
+    super()
+  }
+
+  private async promptAccess(tool: string, action: string) {
+    if (this.abortSignal?.aborted) return false
+    const accepted = await alertConfirm(
+      language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action),
+    )
+    return accepted && !this.abortSignal?.aborted
   }
 
   getTools(): MCPTool[] {

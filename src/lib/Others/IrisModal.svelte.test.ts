@@ -8,6 +8,8 @@ const irisMocks = vi.hoisted(() => ({
   getIrisSystemPrompt: vi.fn(async () => 'Iris system prompt'),
   requestChatData: vi.fn(),
   getToolList: vi.fn(async () => []),
+  callTool: vi.fn(async () => []),
+  risuAccessSignals: [] as Array<AbortSignal | undefined>,
 }))
 
 vi.mock('src/ts/alert', () => ({ alertError: irisMocks.alertError }))
@@ -29,7 +31,12 @@ vi.mock('src/ts/process/request/request', () => ({
 
 vi.mock('src/ts/process/mcp/risuaccess', () => ({
   RisuAccessClient: class {
+    constructor(signal?: AbortSignal) {
+      irisMocks.risuAccessSignals.push(signal)
+    }
+
     getToolList = irisMocks.getToolList
+    callTool = irisMocks.callTool
   },
 }))
 
@@ -38,6 +45,7 @@ import type { Database } from 'src/ts/storage/database.svelte'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 import { irisStore } from 'src/ts/stores.svelte'
 import { language } from 'src/lang'
+import { SERVER_TOOL_MAX_RESULT_BYTES } from 'src/ts/process/request/serverToolProtocol'
 
 const originalAnimate = Element.prototype.animate
 
@@ -105,6 +113,7 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   irisStore.open = true
+  irisMocks.risuAccessSignals.length = 0
   setDatabaseLite({
     language: 'en',
     aiModel: 'echo_model',
@@ -235,7 +244,10 @@ describe('IrisModal model availability', () => {
 
     await submitMessage('Question before reset')
     expect(irisMocks.requestChatData).toHaveBeenCalledOnce()
+    const signal = irisMocks.requestChatData.mock.calls[0]?.[2] as AbortSignal
+    expect(signal.aborted).toBe(false)
     await resetFromBacklog()
+    expect(signal.aborted).toBe(true)
 
     response.resolve({ type: 'success', result: 'Stale Iris response' })
     await settle()
@@ -243,6 +255,138 @@ describe('IrisModal model availability', () => {
     const savedDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as DialogueLineForTest[]
     expect(savedDialogue).toHaveLength(1)
     expect(savedDialogue.some((line) => line.text === 'Stale Iris response')).toBe(false)
+  })
+
+  it('executes only its supplied RisuAccess tool and feeds the result into a bounded follow-up round', async () => {
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+    }
+    irisMocks.getToolList.mockResolvedValueOnce([tool])
+    irisMocks.callTool.mockResolvedValueOnce([{ type: 'text', text: '{"name":"Mira"}' }])
+    irisMocks.requestChatData
+      .mockResolvedValueOnce({
+        type: 'success',
+        result: '',
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: tool.name,
+            arguments: { id: 'mira-id' },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ type: 'success', result: 'Mira is ready.' })
+    component = mount(IrisModal, { target })
+    await settle()
+
+    await submitMessage('Is Mira available?')
+    await vi.waitFor(() => expect(irisMocks.requestChatData).toHaveBeenCalledTimes(2))
+    await settle()
+
+    expect(irisMocks.callTool).toHaveBeenCalledOnce()
+    expect(irisMocks.callTool).toHaveBeenCalledWith(tool.name, { id: 'mira-id' })
+    const [firstArg, firstMode, firstSignal] = irisMocks.requestChatData.mock.calls[0]
+    const [secondArg, secondMode, secondSignal] = irisMocks.requestChatData.mock.calls[1]
+    expect(firstMode).toBe('otherAx')
+    expect(secondMode).toBe('otherAx')
+    expect(firstSignal).toBeInstanceOf(AbortSignal)
+    expect(secondSignal).toBe(firstSignal)
+    expect(irisMocks.risuAccessSignals).toEqual([firstSignal])
+    expect(firstArg).toMatchObject({ tools: [tool], toolRounds: [] })
+    expect(secondArg.toolRounds).toEqual([
+      {
+        assistantContent: '',
+        calls: [{ id: 'call-1', name: tool.name, arguments: { id: 'mira-id' } }],
+        results: [{ callId: 'call-1', name: tool.name, content: '{"name":"Mira"}' }],
+      },
+    ])
+
+    const savedDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as DialogueLineForTest[]
+    expect(savedDialogue.at(-1)).toEqual({ speaker: 'Iris', text: 'Mira is ready.' })
+  })
+
+  it('rejects an unsupplied tool name with the localized Iris protocol error', async () => {
+    irisMocks.getToolList.mockResolvedValueOnce([
+      {
+        name: 'risu-get-character-info',
+        description: 'Get character information.',
+        inputSchema: { type: 'object' },
+      },
+    ])
+    irisMocks.requestChatData.mockResolvedValueOnce({
+      type: 'success',
+      result: '',
+      toolCalls: [{ id: 'call-1', name: 'arbitrary-tool', arguments: {} }],
+    })
+    component = mount(IrisModal, { target })
+    await settle()
+
+    await submitMessage('Use an invalid tool')
+    await vi.waitFor(() => expect(irisMocks.alertError).toHaveBeenCalledOnce())
+
+    expect(irisMocks.callTool).not.toHaveBeenCalled()
+    expect(irisMocks.alertError).toHaveBeenCalledWith(
+      language.errors.irisToolRequestInvalid('tool call requested an unavailable tool: arbitrary-tool'),
+    )
+  })
+
+  it('truncates multibyte tool output on a valid UTF-8 boundary before the follow-up', async () => {
+    const tool = {
+      name: 'risu-get-character-info',
+      description: 'Get character information.',
+      inputSchema: { type: 'object' },
+    }
+    const prefix = 'a'.repeat(SERVER_TOOL_MAX_RESULT_BYTES - 1)
+    irisMocks.getToolList.mockResolvedValueOnce([tool])
+    irisMocks.callTool.mockResolvedValueOnce([{ type: 'text', text: `${prefix}😀tail` }])
+    irisMocks.requestChatData
+      .mockResolvedValueOnce({
+        type: 'success',
+        result: `${prefix}😀assistant tail`,
+        toolCalls: [{ id: 'call-1', name: tool.name, arguments: {} }],
+      })
+      .mockResolvedValueOnce({ type: 'success', result: 'Done.' })
+    component = mount(IrisModal, { target })
+    await settle()
+
+    await submitMessage('Read a large result')
+    await vi.waitFor(() => expect(irisMocks.requestChatData).toHaveBeenCalledTimes(2))
+
+    const followUp = irisMocks.requestChatData.mock.calls[1]?.[0]
+    const content = followUp.toolRounds[0].results[0].content as string
+    const assistantContent = followUp.toolRounds[0].assistantContent as string
+    expect(content).toBe(prefix)
+    expect(content).not.toContain('�')
+    expect(new TextEncoder().encode(content).byteLength).toBeLessThanOrEqual(SERVER_TOOL_MAX_RESULT_BYTES)
+    expect(assistantContent).toBe(prefix)
+    expect(new TextEncoder().encode(assistantContent).byteLength).toBeLessThanOrEqual(SERVER_TOOL_MAX_RESULT_BYTES)
+  })
+
+  it('aborts a deferred submission on destroy without surfacing an error or late output', async () => {
+    const response = deferred<{ type: 'success'; result: string }>()
+    irisMocks.requestChatData.mockReturnValue(response.promise)
+    component = mount(IrisModal, { target })
+    await settle()
+
+    await submitMessage('Question before close')
+    const signal = irisMocks.requestChatData.mock.calls[0]?.[2] as AbortSignal
+    expect(signal.aborted).toBe(false)
+
+    unmount(component)
+    component = undefined
+    expect(signal.aborted).toBe(true)
+    response.resolve({ type: 'success', result: 'Late Iris response' })
+    await settle()
+
+    expect(irisMocks.alertError).not.toHaveBeenCalled()
+    const savedDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as DialogueLineForTest[]
+    expect(savedDialogue.some((line) => line.text === 'Late Iris response')).toBe(false)
   })
 
   it('ignores a failed response after the dialogue is reset', async () => {

@@ -196,6 +196,34 @@ afterEach(() => {
 })
 
 describe('MCP character writes optimistic projection', () => {
+  it('does not mutate after its owner aborts while access confirmation is pending', async () => {
+    setResourceWriteGuardEnabled(true)
+    const { calls } = stubCommandFetch()
+    const controller = new AbortController()
+    const handler = new CharacterHandler(controller.signal)
+    let acceptPrompt!: (accepted: boolean) => void
+    alertConfirmSpy.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          acceptPrompt = resolve
+        }),
+    )
+    const previousName = getDatabase().characters[1].name
+
+    const pending = handler.handle('risu-set-character-info', {
+      id: 'char-1',
+      data: { name: 'Invisible aborted mutation' },
+    })
+    expect(alertConfirmSpy).toHaveBeenCalledTimes(1)
+
+    controller.abort()
+    acceptPrompt(true)
+
+    expect(toolText(await pending)).toBe('Access denied by user.')
+    expect(getDatabase().characters[1].name).toBe(previousName)
+    expect(calls).toEqual([])
+  })
+
   it('rejects setCharacterInfo when the character is deleted while access is pending', async () => {
     setResourceWriteGuardEnabled(true)
     const { calls } = stubCommandFetch()

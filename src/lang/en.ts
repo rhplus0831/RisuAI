@@ -51,6 +51,8 @@ export const languageEnglish = {
     anthropicCredentialInvalid: 'The key assigned to this request is invalid.',
     anthropicStreamFailed: 'Anthropic stream failed',
     anthropicToolCallLimit: 'Anthropic tool call limit reached',
+    irisToolCallLimit: (limit: number) => `Iris stopped after ${limit} consecutive tool rounds.`,
+    irisToolRequestInvalid: (error: string) => `Iris received an invalid tool request: ${error}`,
     claudeBatchResultMissing: 'No results URL returned from Claude batch request',
     claudeBatchTimedOut: 'Claude batch request timed out after 24 hours',
     claudeBatchExpired: 'Claude batch request expired',
