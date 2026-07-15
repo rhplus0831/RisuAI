@@ -75,4 +75,95 @@ describe('SandboxHost lifecycle', () => {
     expect(ping).toHaveBeenCalledTimes(1)
     expect(logSpy).not.toHaveBeenCalled()
   })
+
+  it('rejects a pending iframe execution when the sandbox terminates', async () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    const host = new SandboxHost({})
+
+    host.run(iframe, '')
+    const execution = host.executeInIframe('await new Promise(() => {})')
+    const rejection = expect(execution).rejects.toThrow('Sandbox host terminated')
+
+    host.terminate()
+
+    await rejection
+  })
+
+  it('rejects a pending guest callback and removes its forwarded abort listener on terminate', async () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    let callback: ((signal: AbortSignal) => Promise<unknown>) | undefined
+    const registerCallback = vi.fn(async (value: typeof callback) => {
+      callback = value
+    })
+    const host = new SandboxHost({ registerCallback })
+
+    host.run(iframe, '')
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: iframe.contentWindow,
+        data: {
+          type: 'CALL_ROOT',
+          reqId: 'register-callback',
+          method: 'registerCallback',
+          args: [{ __type: 'CALLBACK_REF', id: 'guest-callback' }],
+        },
+      }),
+    )
+    await vi.waitFor(() => expect(callback).toBeTypeOf('function'))
+
+    const abortController = new AbortController()
+    const removeAbortSpy = vi.spyOn(abortController.signal, 'removeEventListener')
+    const callbackResult = callback!(abortController.signal)
+    const rejection = expect(callbackResult).rejects.toThrow('Sandbox host terminated')
+
+    host.terminate()
+
+    await rejection
+    expect(removeAbortSpy).toHaveBeenCalledWith('abort', expect.any(Function))
+    await expect(callback!(new AbortController().signal)).rejects.toThrow('Sandbox host terminated')
+  })
+
+  it('aborts and releases guest-forwarded host signals on terminate', async () => {
+    const iframe = document.createElement('iframe')
+    document.body.appendChild(iframe)
+    let forwardedSignal: AbortSignal | undefined
+    let finishRequest: (() => void) | undefined
+    const waitForAbort = vi.fn(async (options: { signal: AbortSignal }) => {
+      forwardedSignal = options.signal
+      await new Promise<void>((resolve) => {
+        finishRequest = resolve
+      })
+    })
+    const host = new SandboxHost({ waitForAbort })
+
+    host.run(iframe, '')
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        source: iframe.contentWindow,
+        data: {
+          type: 'CALL_ROOT',
+          reqId: 'forward-abort',
+          method: 'waitForAbort',
+          args: [
+            {
+              signal: {
+                __type: 'ABORT_SIGNAL_REF',
+                abortId: 'guest-abort',
+                aborted: false,
+              },
+            },
+          ],
+        },
+      }),
+    )
+    await vi.waitFor(() => expect(forwardedSignal).toBeInstanceOf(AbortSignal))
+    expect(forwardedSignal?.aborted).toBe(false)
+
+    host.terminate()
+
+    expect(forwardedSignal?.aborted).toBe(true)
+    finishRequest?.()
+  })
 })

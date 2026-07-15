@@ -34,6 +34,19 @@ interface AbortSignalRef {
   aborted: boolean
 }
 
+interface PendingCallback {
+  resolve: (value: unknown) => void
+  reject: (reason?: unknown) => void
+  cleanup: () => void
+}
+
+interface PendingExecution {
+  handler: (event: MessageEvent) => void
+  reject: (reason?: unknown) => void
+}
+
+const SANDBOX_TERMINATED_MESSAGE = 'Sandbox host terminated'
+
 const GUEST_BRIDGE_SCRIPT = `
 await (async function() {
     const pendingRequests = new Map();
@@ -297,25 +310,30 @@ export class SandboxHost {
   private abortControllers = new Map<string, AbortController>()
   private callbackWrapperCache = new Map<string, Function>()
 
-  private pendingCallbacks = new Map<string, { resolve: Function; reject: Function }>()
+  private pendingCallbacks = new Map<string, PendingCallback>()
   private runCleanup: (() => void) | null = null
-  private executeMessageHandlers = new Set<(event: MessageEvent) => void>()
+  private pendingExecutions = new Map<string, PendingExecution>()
 
   constructor(apiFactory: any) {
     this.apiFactory = apiFactory
   }
 
   public executeInIframe(code: string): Promise<any> {
+    const targetWindow = this.iframe?.contentWindow
+    if (!targetWindow || !this.runCleanup) {
+      return Promise.reject(new Error(SANDBOX_TERMINATED_MESSAGE))
+    }
+
     return new Promise((resolve, reject) => {
       const reqId = 'exec_' + Math.random().toString(36).substring(2)
 
       const handler = (event: MessageEvent) => {
-        if (event.source !== this.iframe.contentWindow) return
+        if (event.source !== targetWindow) return
         const data = event.data
 
         if (data.type === 'EXEC_RESULT' && data.reqId === reqId) {
           window.removeEventListener('message', handler)
-          this.executeMessageHandlers.delete(handler)
+          this.pendingExecutions.delete(reqId)
           if (data.error) {
             reject(new Error(data.error))
           } else {
@@ -325,16 +343,22 @@ export class SandboxHost {
       }
 
       window.addEventListener('message', handler)
-      this.executeMessageHandlers.add(handler)
+      this.pendingExecutions.set(reqId, { handler, reject })
 
-      this.iframe.contentWindow?.postMessage(
-        {
-          type: 'EXECUTE_CODE',
-          reqId,
-          code,
-        },
-        '*',
-      )
+      try {
+        targetWindow.postMessage(
+          {
+            type: 'EXECUTE_CODE',
+            reqId,
+            code,
+          },
+          '*',
+        )
+      } catch (error) {
+        window.removeEventListener('message', handler)
+        this.pendingExecutions.delete(reqId)
+        reject(error)
+      }
     })
   }
 
@@ -403,10 +427,21 @@ export class SandboxHost {
         const cached = this.callbackWrapperCache.get(cbRef.id)
         if (cached) return cached
 
+        const targetWindow = this.iframe?.contentWindow
+        const lifecycle = this.runCleanup
         const wrapper = async (...innerArgs: any[]) => {
-          return new Promise((resolve, reject) => {
+          if (!targetWindow || !lifecycle || this.runCleanup !== lifecycle) {
+            throw new Error(SANDBOX_TERMINATED_MESSAGE)
+          }
+
+          return new Promise<any>((resolve, reject) => {
             const reqId = 'cb_req_' + Math.random().toString(36).substring(2)
-            this.pendingCallbacks.set(reqId, { resolve, reject })
+            const abortListeners: Array<{ signal: AbortSignal; listener: () => void }> = []
+            const cleanup = () => {
+              for (const { signal, listener } of abortListeners) {
+                signal.removeEventListener('abort', listener)
+              }
+            }
 
             // AbortSignal cannot be structured-cloned for postMessage.
             // Convert to a serializable ref and forward abort events
@@ -420,23 +455,22 @@ export class SandboxHost {
                   aborted: arg.aborted,
                 }
                 if (!arg.aborted) {
-                  arg.addEventListener(
-                    'abort',
-                    () => {
-                      try {
-                        this.iframe.contentWindow?.postMessage(
-                          {
-                            type: 'ABORT_SIGNAL',
-                            abortId,
-                          } as RpcMessage,
-                          '*',
-                        )
-                      } catch (_) {
-                        /* iframe already removed */
-                      }
-                    },
-                    { once: true },
-                  )
+                  const listener = () => {
+                    if (this.runCleanup !== lifecycle) return
+                    try {
+                      targetWindow.postMessage(
+                        {
+                          type: 'ABORT_SIGNAL',
+                          abortId,
+                        } as RpcMessage,
+                        '*',
+                      )
+                    } catch (_) {
+                      /* iframe already removed */
+                    }
+                  }
+                  abortListeners.push({ signal: arg, listener })
+                  arg.addEventListener('abort', listener, { once: true })
                 }
                 return ref
               }
@@ -449,8 +483,15 @@ export class SandboxHost {
               reqId,
               args: sanitizedArgs,
             }
-            const transferables = this.collectTransferables(message)
-            this.iframe.contentWindow?.postMessage(message, '*', transferables)
+            this.pendingCallbacks.set(reqId, { resolve, reject, cleanup })
+            try {
+              const transferables = this.collectTransferables(message)
+              targetWindow.postMessage(message, '*', transferables)
+            } catch (error) {
+              this.pendingCallbacks.delete(reqId)
+              cleanup()
+              reject(error)
+            }
           })
         }
         this.callbackWrapperCache.set(cbRef.id, wrapper)
@@ -485,12 +526,20 @@ export class SandboxHost {
   }
 
   private cleanupRuntimeState() {
-    for (const handler of this.executeMessageHandlers) {
+    for (const { handler, reject } of this.pendingExecutions.values()) {
       window.removeEventListener('message', handler)
+      reject(new Error(SANDBOX_TERMINATED_MESSAGE))
     }
-    this.executeMessageHandlers.clear()
-    this.instanceRegistry.clear()
+    this.pendingExecutions.clear()
+    for (const pending of this.pendingCallbacks.values()) {
+      pending.cleanup()
+      pending.reject(new Error(SANDBOX_TERMINATED_MESSAGE))
+    }
     this.pendingCallbacks.clear()
+    for (const controller of this.abortControllers.values()) {
+      controller.abort()
+    }
+    this.instanceRegistry.clear()
     this.abortControllers.clear()
     this.callbackWrapperCache.clear()
   }
@@ -525,9 +574,10 @@ export class SandboxHost {
       if (data.type === 'CALLBACK_RETURN') {
         const req = this.pendingCallbacks.get(data.reqId!)
         if (req) {
+          this.pendingCallbacks.delete(data.reqId!)
+          req.cleanup()
           if (data.error) req.reject(new Error(data.error))
           else req.resolve(data.result)
-          this.pendingCallbacks.delete(data.reqId!)
         }
         return
       }
@@ -592,10 +642,10 @@ export class SandboxHost {
 
     const cleanup = () => {
       if (this.runCleanup !== cleanup) return
+      this.runCleanup = null
       window.removeEventListener('message', messageHandler)
       this.iframe.remove()
       this.cleanupRuntimeState()
-      this.runCleanup = null
     }
 
     window.addEventListener('message', messageHandler)
