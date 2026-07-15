@@ -1623,7 +1623,7 @@
         {@render translationButton()}
         {#if $SizeStore.w >= 640}
           {@render majorIconButtonsBody(false)}
-          {#if getDatabase().characters[selIdState.selId]}
+          {#if getDatabase().characters[selIdState.selId] && idx > -1}
             <PopupButton>
               {@render minorIconButtonsBody(true)}
             </PopupButton>
@@ -1631,7 +1631,9 @@
         {:else if getDatabase().characters[selIdState.selId]}
           <PopupButton>
             {@render majorIconButtonsBody(true)}
-            {@render minorIconButtonsBody(true)}
+            {#if idx > -1}
+              {@render minorIconButtonsBody(true)}
+            {/if}
           </PopupButton>
         {:else}
           {@render majorIconButtonsBody(false)}
@@ -2127,6 +2129,7 @@
         getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
           idx
         ]
+      if (!currentMessage) return
       const previous = currentChatScopedSnapshot()
       const disabled = !currentMessage.disabled
       const messageId = currentMessage.chatId
@@ -2164,6 +2167,7 @@
         getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage].message[
           idx
         ]
+      if (!currentMessage) return
       const previous = currentChatScopedSnapshot()
       const disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
       const messageId = currentMessage.chatId

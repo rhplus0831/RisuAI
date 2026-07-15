@@ -792,6 +792,40 @@ describe('message popup editor target freshness', () => {
 })
 
 describe('message action target freshness', () => {
+  it('does not expose transcript-only actions for the synthetic greeting', async () => {
+    seedDatabase(0, null as unknown as string)
+    testDatabaseState.db.enableBookmark = true
+    testDatabaseState.db.useChatCopy = true
+    SizeStore.set({ w: 320, h: 700 })
+    mountPopupList()
+    components.push(
+      mount(Chat, {
+        target,
+        props: {
+          message: 'Character greeting',
+          name: 'Template Bot',
+          isLastMemory: false,
+          idx: -1,
+          role: 'char',
+          totalLength: 0,
+          firstMessage: true,
+          img: '',
+          rerollIcon: false,
+          disabled: false,
+        },
+      }) as MountedComponent,
+    )
+    await settle()
+
+    await openMessageActions()
+
+    expect(buttonByText('copy')).toBeTruthy()
+    expect(buttonByText('bookmark')).toBeUndefined()
+    expect(buttonByText('branch')).toBeUndefined()
+    expect(buttonByText('disableMessage')).toBeUndefined()
+    expect(buttonByText('disableAbove')).toBeUndefined()
+  })
+
   it('paints a bookmark before the server command completes', async () => {
     customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     customHtmlMocks.alertInput.mockResolvedValueOnce('Pinned now')
