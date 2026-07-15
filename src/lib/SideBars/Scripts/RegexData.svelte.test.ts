@@ -114,4 +114,37 @@ describe('RegexData action accessibility', () => {
     expect(globalFlag?.getAttribute('aria-pressed')).toBe('true')
     expect(caseFlag?.getAttribute('aria-pressed')).toBe('false')
   })
+
+  it('supports legacy custom-flag scripts whose flag value is absent', async () => {
+    const value = {
+      id: 'legacy-script',
+      comment: 'Legacy script',
+      in: '',
+      out: '',
+      type: 'editinput',
+      ableFlag: true,
+    } as customscript
+
+    component = mount(RegexData, {
+      target,
+      props: { value, idx: 0 },
+    })
+
+    target.querySelector<HTMLButtonElement>('button.endflex')?.click()
+    await tick()
+    const flagsAccordion = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === 'FLAGS',
+    )
+    flagsAccordion?.click()
+    await tick()
+
+    const globalFlag = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes('Global (g)'),
+    )
+    expect(globalFlag?.getAttribute('aria-pressed')).toBe('false')
+
+    globalFlag?.click()
+    await tick()
+    expect(value.flag).toBe('g')
+  })
 })

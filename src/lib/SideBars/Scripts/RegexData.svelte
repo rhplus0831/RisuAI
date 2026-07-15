@@ -23,23 +23,25 @@
 
   let { value = $bindable(), onRemove = () => {}, onClose = () => {}, onOpen = () => {}, idx }: Props = $props()
 
-  const checkFlagContain = (flag: string, matchFlag: string) => {
+  const currentFlag = () => value.flag ?? ''
+
+  const checkFlagContain = (flag: string, matchFlag = currentFlag()) => {
     if (flag.length === 1) {
-      matchFlag = value.flag.replace(/<(.+?)>/g, '')
+      matchFlag = currentFlag().replace(/<(.+?)>/g, '')
     }
     return matchFlag.includes(flag)
   }
 
   const toggleFlag = (flag: string) => {
-    console.log(flag, checkFlagContain(flag, value.flag), value.flag)
-    if (checkFlagContain(flag, value.flag)) {
-      value.flag = value.flag.replace(flag, '')
+    const existingFlag = currentFlag()
+    if (checkFlagContain(flag, existingFlag)) {
+      value.flag = existingFlag.replace(flag, '')
     } else {
-      value.flag += flag
+      value.flag = existingFlag + flag
     }
   }
 
-  const getOrder = (flag: string) => {
+  const getOrder = (flag = currentFlag()) => {
     const order = flag.match(/<order (-?\d+)>/)?.[1]
     if (order === undefined || order === null) {
       return 0
@@ -48,10 +50,11 @@
   }
 
   const changeOrder = (order: number) => {
-    if (value.flag.includes('<order')) {
-      value.flag = value.flag.replace(/<order (-?\d+)>/, `<order ${order}>`)
+    const existingFlag = currentFlag()
+    if (existingFlag.includes('<order')) {
+      value.flag = existingFlag.replace(/<order (-?\d+)>/, `<order ${order}>`)
     } else {
-      value.flag += `<order ${order}>`
+      value.flag = existingFlag + `<order ${order}>`
     }
   }
 
@@ -149,11 +152,11 @@
             {#each flags as flag, i}
               <button
                 class="w-full bg-darkbg border-darkborderc text-sm py-1"
-                aria-pressed={checkFlagContain(flag[1], value.flag)}
+                aria-pressed={checkFlagContain(flag[1])}
                 class:border-r-1={i % 2 === 0}
                 class:border-b-1={i < flags.length - 2}
-                class:text-textcolor2={!checkFlagContain(flag[1], value.flag)}
-                class:text-textcolor={checkFlagContain(flag[1], value.flag)}
+                class:text-textcolor2={!checkFlagContain(flag[1])}
+                class:text-textcolor={checkFlagContain(flag[1])}
                 onclick={() => {
                   toggleFlag(flag[1])
                 }}>
@@ -164,7 +167,7 @@
 
           <span class="text-textcolor mt-3">Order Flag</span>
           <NumberInput
-            value={getOrder(value.flag)}
+            value={getOrder()}
             onChange={(e) => {
               changeOrder(parseInt(e.currentTarget.value))
             }} />
