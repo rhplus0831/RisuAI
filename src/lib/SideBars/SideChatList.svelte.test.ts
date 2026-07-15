@@ -445,14 +445,20 @@ function sidebarRoot(): HTMLElement {
   return root!
 }
 
-function chatRows(): HTMLButtonElement[] {
-  return Array.from(sidebarRoot().querySelectorAll<HTMLButtonElement>('button[data-risu-chat-idx][data-risu-chat-id]'))
+function chatRows(): HTMLElement[] {
+  return Array.from(sidebarRoot().querySelectorAll<HTMLElement>('[data-risu-chat-idx][data-risu-chat-id]'))
 }
 
-function rowByChatId(chatId: string): HTMLButtonElement {
+function rowByChatId(chatId: string): HTMLElement {
   const row = chatRows().find((candidate) => candidate.dataset.risuChatId === chatId)
   expect(row, `chat row ${chatId}`).toBeTruthy()
   return row!
+}
+
+function selectButtonForRow(row: HTMLElement): HTMLButtonElement {
+  const button = row.querySelector<HTMLButtonElement>('[data-risu-chat-action="select"]')
+  expect(button, 'select chat button').toBeTruthy()
+  return button!
 }
 
 function createButton(): HTMLButtonElement {
@@ -489,11 +495,16 @@ function deleteButtonForRow(row: HTMLElement): HTMLElement {
 }
 
 function folderHeader(folder: HTMLElement): HTMLButtonElement {
-  const header = Array.from(folder.children).find(
-    (child): child is HTMLButtonElement =>
-      child instanceof HTMLButtonElement && child.dataset.risuChatAction === 'toggle-folder',
+  const header = folder.querySelector<HTMLButtonElement>(
+    ':scope > [data-risu-chat-folder-header] > [data-risu-chat-action="toggle-folder"]',
   )
   expect(header, 'folder header').toBeTruthy()
+  return header!
+}
+
+function folderHeaderContainer(folder: HTMLElement): HTMLElement {
+  const header = folder.querySelector<HTMLElement>(':scope > [data-risu-chat-folder-header]')
+  expect(header, 'folder header container').toBeTruthy()
   return header!
 }
 
@@ -629,26 +640,25 @@ describe('SideChatList DOM contract harness', () => {
     }
   })
 
-  it('activates chat and folder icon actions with Space without scrolling', async () => {
+  it('uses native sibling buttons for chat and folder actions', async () => {
     seedSidebarDatabase()
     component = mount(SideChatListHarness, { target })
     await tick()
 
     const chatExport = rowActionButton(rowByChatId('chat-root-a'), 'export')
-    const chatSpace = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
-    chatExport.dispatchEvent(chatSpace)
+    expect(chatExport).toBeInstanceOf(HTMLButtonElement)
+    chatExport.click()
     await tick()
 
-    expect(chatSpace.defaultPrevented).toBe(true)
     expect(sidebarMocks.exportChat).toHaveBeenCalledWith(0)
 
     const folderDelete = rowActionButton(folderElementById('folder-a'), 'folder-delete')
-    const folderSpace = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
-    folderDelete.dispatchEvent(folderSpace)
+    expect(folderDelete).toBeInstanceOf(HTMLButtonElement)
+    folderDelete.click()
     await flushCommandWork()
 
-    expect(folderSpace.defaultPrevented).toBe(true)
     expect(sidebarMocks.alertConfirm).toHaveBeenCalledWith('Remove Pinned Folder')
+    expect(sidebarRoot().querySelector('button button, button input, button [role="button"]')).toBeNull()
   })
 
   it('remints copied message ids before dispatching a server-backed chat copy', async () => {
@@ -1089,7 +1099,7 @@ describe('SideChatList DOM contract harness', () => {
       sidebarMocks.rollbackServerBackedChatFolderRowMetadata,
     )
     expect(selectedCharacter().chatFolders[0].color).toBe('red')
-    expect(folderHeader(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
+    expect(folderHeaderContainer(folderElementById('folder-a')).classList.contains('bg-red-900')).toBe(true)
   })
 
   it('keeps persona unbinding pending until failure rolls state and DOM back', async () => {
@@ -1114,6 +1124,8 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectedCharacter().chats[1].bindedPersona).toBe('')
     expect(options.getAttribute('aria-busy')).toBe('true')
     expect(options.getAttribute('aria-disabled')).toBe('true')
+    expect(options).toBeInstanceOf(HTMLButtonElement)
+    expect((options as HTMLButtonElement).disabled).toBe(true)
     expect(sidebarMocks.alertNormal).not.toHaveBeenCalled()
     expect(sidebarMocks.alertError).not.toHaveBeenCalled()
 
@@ -1128,6 +1140,7 @@ describe('SideChatList DOM contract harness', () => {
     expect(selectedCharacter().chats[1].bindedPersona).toBe('persona-a')
     expect(options.getAttribute('aria-busy')).toBe('false')
     expect(options.getAttribute('aria-disabled')).toBe('false')
+    expect((options as HTMLButtonElement).disabled).toBe(false)
     expect(sidebarMocks.alertError).toHaveBeenCalledWith('Persona binding failed')
     expect(sidebarMocks.alertNormal).not.toHaveBeenCalled()
   })
@@ -1174,7 +1187,7 @@ describe('SideChatList DOM contract harness', () => {
 
     expectRowSelected('chat-foldered', true)
 
-    rowByChatId('chat-root-b').click()
+    selectButtonForRow(rowByChatId('chat-root-b')).click()
     await tick()
 
     expect(sidebarMocks.navigate).toHaveBeenCalledWith('/character/char-a/chat-root-b')
@@ -1203,7 +1216,7 @@ describe('SideChatList DOM contract harness', () => {
     expectRowSelected('chat-root-a', true)
     expectRowSelected('chat-root-b', false)
 
-    rowByChatId('chat-root-b').click()
+    selectButtonForRow(rowByChatId('chat-root-b')).click()
     await tick()
 
     expect(sidebarMocks.navigate).not.toHaveBeenCalled()

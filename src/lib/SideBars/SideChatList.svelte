@@ -114,12 +114,6 @@
     }
   }
 
-  function activateRoleButton(event: KeyboardEvent & { currentTarget: EventTarget & HTMLElement }): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    event.currentTarget.click()
-  }
-
   function createChat(): void {
     const previous = currentChatStateSnapshot()
     const len = chara.chats.length
@@ -617,20 +611,8 @@
               data-risu-chat-folder-id={folder.id}
               data-risu-chat-folder-folded={folder.folded ? 'true' : 'false'}
               class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
-              <button
-                data-risu-chat-action="toggle-folder"
-                aria-expanded={!folder.folded}
-                aria-controls={`risu-chat-folder-panel-${folder.id}`}
-                onclick={() => {
-                  if (!editMode) {
-                    const previous = currentChatStateSnapshot()
-                    const folded = !folder.folded
-                    if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded)))
-                      return
-                    dispatchUpdateChatFolder(folder.id, { folded }, previous, rollbackServerBackedChatFolderRowMetadata)
-                    reloadGuiDisplay()
-                  }
-                }}
+              <div
+                data-risu-chat-folder-header
                 class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                 class:bg-red-900={folder.color === 'red'}
                 class:bg-yellow-900={folder.color === 'yellow'}
@@ -643,17 +625,36 @@
                   <TextInput
                     bind:value={() => folder.name, (value) => updateFolderName(folder, value)}
                     className="grow min-w-0"
+                    ariaLabel={`${language.edit}: ${folder.name}`}
                     padding={false} />
                 {:else}
-                  <span>{folder.name}</span>
+                  <button
+                    type="button"
+                    data-risu-chat-action="toggle-folder"
+                    aria-expanded={!folder.folded}
+                    aria-controls={`risu-chat-folder-panel-${folder.id}`}
+                    class="min-w-0 grow cursor-pointer text-left"
+                    onclick={() => {
+                      const previous = currentChatStateSnapshot()
+                      const folded = !folder.folded
+                      if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded)))
+                        return
+                      dispatchUpdateChatFolder(
+                        folder.id,
+                        { folded },
+                        previous,
+                        rollbackServerBackedChatFolderRowMetadata,
+                      )
+                      reloadGuiDisplay()
+                    }}>
+                    <span>{folder.name}</span>
+                  </button>
                 {/if}
-                <div class="grow flex justify-end">
-                  <div
+                <div class="ml-auto flex shrink-0 justify-end">
+                  <button
+                    type="button"
                     data-risu-chat-action="folder-options"
-                    role="button"
                     aria-label={`${language.options}: ${folder.name}`}
-                    tabindex="0"
-                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
@@ -677,26 +678,22 @@
                       }
                     }}>
                     <MenuIcon size={18} />
-                  </div>
-                  <div
+                  </button>
+                  <button
+                    type="button"
                     data-risu-chat-action="folder-edit"
-                    role="button"
                     aria-label={`${language.edit}: ${folder.name}`}
-                    tabindex="0"
-                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={(e) => {
                       e.stopPropagation()
                       editMode = !editMode
                     }}>
                     <PencilIcon size={18} />
-                  </div>
-                  <div
+                  </button>
+                  <button
+                    type="button"
                     data-risu-chat-action="folder-delete"
-                    role="button"
                     aria-label={`${language.remove}: ${folder.name}`}
-                    tabindex="0"
-                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
@@ -718,9 +715,9 @@
                       }
                     }}>
                     <TrashIcon size={18} />
-                  </div>
+                  </button>
                 </div>
-              </button>
+              </div>
               <div
                 id={`risu-chat-folder-panel-${folder.id}`}
                 data-risu-chat-folder-panel-id={folder.id}
@@ -733,36 +730,40 @@
                   <div></div>
                 {:else}
                   {#each chatsByFolderId.get(folder.id) ?? [] as { chat, index }}
-                    <button
+                    <div
                       data-risu-chat-idx={index}
                       data-risu-chat-id={chat.id ?? ''}
                       data-risu-chat-folder-id={chat.folderId ?? ''}
                       data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
-                      onclick={() => {
-                        if (!editMode) {
-                          selectChat(index)
-                          reloadGuiDisplay()
-                        }
-                      }}
                       class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                       class:bg-selected={index === chara.chatPage}>
                       {#if editMode}
                         <TextInput
                           bind:value={() => chat.name, (value) => updateChatName(chat, value)}
                           className="grow min-w-0"
+                          ariaLabel={`${language.edit}: ${chat.name}`}
                           padding={false} />
                       {:else}
-                        <span>{chat.name}</span>
+                        <button
+                          type="button"
+                          data-risu-chat-action="select"
+                          aria-current={index === chara.chatPage ? 'page' : undefined}
+                          class="min-w-0 grow cursor-pointer text-left"
+                          onclick={() => {
+                            selectChat(index)
+                            reloadGuiDisplay()
+                          }}>
+                          <span>{chat.name}</span>
+                        </button>
                       {/if}
-                      <div class="grow flex justify-end">
-                        <div
+                      <div class="ml-auto flex shrink-0 justify-end">
+                        <button
+                          type="button"
                           data-risu-chat-action="options"
-                          role="button"
                           aria-label={`${language.chatOptions}: ${chat.name}`}
                           aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
                           aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                          tabindex={pendingPersonaBindings[chat.id ?? ''] ? -1 : 0}
-                          onkeydown={activateRoleButton}
+                          disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
                           onclick={async (e) => {
@@ -781,48 +782,42 @@
                             }
                           }}>
                           <MenuIcon size={18} />
-                        </div>
-                        <div
+                        </button>
+                        <button
+                          type="button"
                           data-risu-chat-action="edit"
-                          role="button"
                           aria-label={`${language.edit}: ${chat.name}`}
-                          tabindex="0"
-                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={(e) => {
                             e.stopPropagation()
                             editMode = !editMode
                           }}>
                           <PencilIcon size={18} />
-                        </div>
-                        <div
+                        </button>
+                        <button
+                          type="button"
                           data-risu-chat-action="export"
-                          role="button"
                           aria-label={`${language.export}: ${chat.name}`}
-                          tabindex="0"
-                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
                             exportChat(chara.chats.indexOf(chat))
                           }}>
                           <DownloadIcon size={18} />
-                        </div>
-                        <div
+                        </button>
+                        <button
+                          type="button"
                           data-risu-chat-action="delete"
-                          role="button"
                           aria-label={`${language.remove}: ${chat.name}`}
-                          tabindex="0"
-                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
                             await deleteChat(chat, chara.chats.indexOf(chat))
                           }}>
                           <TrashIcon size={18} />
-                        </div>
+                        </button>
                       </div>
-                    </button>
+                    </div>
                   {/each}
                 {/if}
               </div>
@@ -832,36 +827,40 @@
         <div class="risu-chat flex flex-col">
           {#each chara.chats as chat, i}
             {#if chat.folderId == null}
-              <button
+              <div
                 data-risu-chat-idx={i}
                 data-risu-chat-id={chat.id ?? ''}
                 data-risu-chat-folder-id={chat.folderId ?? ''}
                 data-risu-chat-selected={i === chara.chatPage ? 'true' : 'false'}
-                onclick={() => {
-                  if (!editMode) {
-                    selectChat(i)
-                    reloadGuiDisplay()
-                  }
-                }}
                 class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
                 class:bg-selected={i === chara.chatPage}>
                 {#if editMode}
                   <TextInput
                     bind:value={() => chat.name, (value) => updateChatName(chat, value)}
                     className="grow min-w-0"
+                    ariaLabel={`${language.edit}: ${chat.name}`}
                     padding={false} />
                 {:else}
-                  <span>{chat.name}</span>
+                  <button
+                    type="button"
+                    data-risu-chat-action="select"
+                    aria-current={i === chara.chatPage ? 'page' : undefined}
+                    class="min-w-0 grow cursor-pointer text-left"
+                    onclick={() => {
+                      selectChat(i)
+                      reloadGuiDisplay()
+                    }}>
+                    <span>{chat.name}</span>
+                  </button>
                 {/if}
-                <div class="grow flex justify-end">
-                  <div
+                <div class="ml-auto flex shrink-0 justify-end">
+                  <button
+                    type="button"
                     data-risu-chat-action="options"
-                    role="button"
                     aria-label={`${language.chatOptions}: ${chat.name}`}
                     aria-busy={pendingPersonaBindings[chat.id ?? ''] ?? false}
                     aria-disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
-                    tabindex={pendingPersonaBindings[chat.id ?? ''] ? -1 : 0}
-                    onkeydown={activateRoleButton}
+                    disabled={pendingPersonaBindings[chat.id ?? ''] ?? false}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     class:opacity-50={pendingPersonaBindings[chat.id ?? '']}
                     onclick={async (e) => {
@@ -880,48 +879,42 @@
                       }
                     }}>
                     <MenuIcon size={18} />
-                  </div>
-                  <div
+                  </button>
+                  <button
+                    type="button"
                     data-risu-chat-action="edit"
-                    role="button"
                     aria-label={`${language.edit}: ${chat.name}`}
-                    tabindex="0"
-                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={(e) => {
                       e.stopPropagation()
                       editMode = !editMode
                     }}>
                     <PencilIcon size={18} />
-                  </div>
-                  <div
+                  </button>
+                  <button
+                    type="button"
                     data-risu-chat-action="export"
-                    role="button"
                     aria-label={`${language.export}: ${chat.name}`}
-                    tabindex="0"
-                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
                       exportChat(i)
                     }}>
                     <DownloadIcon size={18} />
-                  </div>
-                  <div
+                  </button>
+                  <button
+                    type="button"
                     data-risu-chat-action="delete"
-                    role="button"
                     aria-label={`${language.remove}: ${chat.name}`}
-                    tabindex="0"
-                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
                       await deleteChat(chat, i)
                     }}>
                     <TrashIcon size={18} />
-                  </div>
+                  </button>
                 </div>
-              </button>
+              </div>
             {/if}
           {/each}
         </div>
