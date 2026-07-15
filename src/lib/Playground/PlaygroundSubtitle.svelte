@@ -14,7 +14,13 @@
   import SelectInput from '../UI/GUI/SelectInput.svelte'
   import OptionInput from '../UI/GUI/OptionInput.svelte'
   import sendSound from '../../etc/send.mp3'
-  import { decodeAudioFileWithTemporaryContext, probeVideoDuration, stereoAudioChannels } from './subtitleMedia'
+  import {
+    decodeAudioFileWithTemporaryContext,
+    probeVideoDuration,
+    stereoAudioChannels,
+    subtitlePreviewMimeType,
+  } from './subtitleMedia'
+  import { requestOpenAITranscription } from 'src/ts/server/openAITranscription'
 
   let LLMModePrompt =
     "Transcribe and create a caption and timestamp of it, according to the user's audio or video input. inside a markdown code block. (prefix ```webvtt / postfix ```)\n\nFormat\n```\n[TIME] CONTENT\n```\n\nExample\n```\n[00:00] Hildy!\n[00:01] How are you?\n[00:03] Tell me, is the lord of the universe in?\n[00:07] Somebody must've stolen the crown jewels\n```\n\nStep 2. Generate another subtitle, this time, as a translation to {{slot}}, with same format with Step 1., using step 1 as ref.\n\n The translation must be in natural {{slot}}.\n\n Now, start (Hint: media length is {{slot::time}})"
@@ -266,19 +272,7 @@
         return false
       }
     } else {
-      const formData = new FormData()
-      formData.append('file', requestFile)
-      formData.append('model', 'whisper-1')
-      formData.append('response_format', 'vtt')
-
-      const d = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${getDatabase().openAIKey}`,
-        },
-        body: formData,
-      })
-      outputText = await d.text()
+      outputText = await requestOpenAITranscription(requestFile)
     }
 
     const v = await requestChatData(
@@ -332,7 +326,7 @@
     const fileBuffer = await file.arrayBuffer()
     outputText = latest
     vttB64 = `data:text/vtt;base64,${Buffer.from(outputText).toString('base64')}`
-    fileB64 = `data:audio/wav;base64,${Buffer.from(fileBuffer).toString('base64')}`
+    fileB64 = `data:${subtitlePreviewMimeType(file)};base64,${Buffer.from(fileBuffer).toString('base64')}`
     vobj = convertWebVTTtoObj(outputText)
 
     const audio = new Audio(sendSound)
@@ -522,7 +516,7 @@
   <div class="mt-4">
     {#key vttB64}
       <video controls src={fileB64} class="w-full">
-        <track default kind="captions" src={vttB64} srclang="en" />
+        <track default kind="captions" src={vttB64} srclang={selLang || 'en'} />
       </video>
     {/key}
   </div>

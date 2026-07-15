@@ -32,3 +32,21 @@ export function stereoAudioChannels(
   const right = audioBuffer.numberOfChannels > 1 ? audioBuffer.getChannelData(1) : left
   return [left, right]
 }
+
+const SUBTITLE_PREVIEW_MIME_BY_EXTENSION: Readonly<Record<string, string>> = {
+  avi: 'video/x-msvideo',
+  flac: 'audio/flac',
+  mkv: 'video/x-matroska',
+  mov: 'video/quicktime',
+  mp3: 'audio/mpeg',
+  mp4: 'video/mp4',
+  ogg: 'audio/ogg',
+  wav: 'audio/wav',
+  webm: 'video/webm',
+}
+
+export function subtitlePreviewMimeType(file: Pick<File, 'name' | 'type'>): string {
+  if (file.type.startsWith('audio/') || file.type.startsWith('video/')) return file.type
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return SUBTITLE_PREVIEW_MIME_BY_EXTENSION[extension] ?? 'application/octet-stream'
+}

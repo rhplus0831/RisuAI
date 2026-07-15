@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { decodeAudioFileWithTemporaryContext, probeVideoDuration, stereoAudioChannels } from './subtitleMedia'
+import {
+  decodeAudioFileWithTemporaryContext,
+  probeVideoDuration,
+  stereoAudioChannels,
+  subtitlePreviewMimeType,
+} from './subtitleMedia'
 
 class StubAudioContext {
   static instances: StubAudioContext[] = []
@@ -30,6 +35,12 @@ afterEach(() => {
 })
 
 describe('Playground subtitle media cleanup', () => {
+  it('uses the selected media type for preview data instead of labelling every file as WAV', () => {
+    expect(subtitlePreviewMimeType({ name: 'voice.mp3', type: '' })).toBe('audio/mpeg')
+    expect(subtitlePreviewMimeType({ name: 'clip.mov', type: '' })).toBe('video/quicktime')
+    expect(subtitlePreviewMimeType({ name: 'clip.bin', type: 'video/custom' })).toBe('video/custom')
+  })
+
   it('duplicates mono input for stereo MP3 encoding instead of reading a missing channel', () => {
     const mono = new Float32Array([0.25, -0.25])
     const getChannelData = vi.fn(() => mono)
