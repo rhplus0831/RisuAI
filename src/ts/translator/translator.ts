@@ -172,12 +172,37 @@ function safeStringify(value: unknown) {
 }
 
 function getTranslatorSettingsSignature(db = getDatabase()) {
+  const selectedCharacter = db.characters?.[get(selectedCharID)]
+  const presetIndex =
+    typeof db.translatorPresetId === 'number' && Number.isInteger(db.translatorPresetId) ? db.translatorPresetId : -1
+  const selectedPreset = Array.isArray(db.translatorPresets) ? db.translatorPresets[presetIndex] : undefined
   return {
     translatorType: db.translatorType,
     translator: db.translator,
     translatorInputLanguage: db.translatorInputLanguage,
     aiModel: db.aiModel,
     translateProfile: db.translatorType === 'llm' ? getTranslateProfileCacheSignature(db) : null,
+    llmPrompt:
+      db.translatorType === 'llm'
+        ? {
+            presetId: typeof selectedPreset?.id === 'string' ? selectedPreset.id : null,
+            prompt:
+              typeof selectedPreset?.prompt === 'string'
+                ? selectedPreset.prompt
+                : typeof db.translatorPrompt === 'string'
+                  ? db.translatorPrompt
+                  : '',
+            maxResponse:
+              typeof selectedPreset?.maxResponse === 'number' && Number.isFinite(selectedPreset.maxResponse)
+                ? selectedPreset.maxResponse
+                : finiteNumber(db.translatorMaxResponse, 1000),
+            characterId: selectedCharacter?.chaId ?? null,
+            translatorNote:
+              selectedCharacter?.type === 'character' && typeof selectedCharacter.translatorNote === 'string'
+                ? selectedCharacter.translatorNote
+                : '',
+          }
+        : null,
     useExperimentalGoogleTranslator: db.useExperimentalGoogleTranslator,
     deeplOptions: {
       freeApi: db.deeplOptions?.freeApi,

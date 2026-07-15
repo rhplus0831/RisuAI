@@ -308,6 +308,54 @@ describe('auto-translate cache', () => {
     expect(__translatorTestHooks.getTranslateCacheEntries()).toHaveLength(1)
   })
 
+  it('separates completed LLM translations after prompt or character-note edits', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorPresets = [
+      createTranslatorPreset('Active', { id: 'preset-a', prompt: 'Prompt A {{slot}}', maxResponse: 100 }),
+    ]
+    testState.db.translatorPresetId = 0
+    testState.db.characters[0].translatorNote = 'Note A'
+    let callCount = 0
+    testState.requestChatData.mockImplementation(async () => ({
+      type: 'success',
+      result: `translation-${++callCount}`,
+    }))
+
+    await expect(translate('same text', false)).resolves.toBe('translation-1')
+    testState.db.translatorPresets[0].prompt = 'Prompt B {{slot}}'
+    await expect(translate('same text', false)).resolves.toBe('translation-2')
+    testState.db.characters[0].translatorNote = 'Note B'
+    await expect(translate('same text', false)).resolves.toBe('translation-3')
+
+    expect(testState.requestChatData).toHaveBeenCalledTimes(3)
+  })
+
+  it('does not share an in-flight LLM translation after the active prompt changes', async () => {
+    testState.db.translatorType = 'llm'
+    testState.db.translatorPresets = [
+      createTranslatorPreset('Active', { id: 'preset-a', prompt: 'Prompt A {{slot}}', maxResponse: 100 }),
+    ]
+    testState.db.translatorPresetId = 0
+    const resolvers: Array<(value: { type: 'success'; result: string }) => void> = []
+    testState.requestChatData.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvers.push(resolve)
+        }),
+    )
+
+    const first = translate('pending text', false)
+    await vi.waitFor(() => expect(testState.requestChatData).toHaveBeenCalledTimes(1))
+    testState.db.translatorPresets[0].prompt = 'Prompt B {{slot}}'
+    const second = translate('pending text', false)
+    await vi.waitFor(() => expect(testState.requestChatData).toHaveBeenCalledTimes(2))
+
+    resolvers[0]({ type: 'success', result: 'first' })
+    resolvers[1]({ type: 'success', result: 'second' })
+    await expect(first).resolves.toBe('first')
+    await expect(second).resolves.toBe('second')
+  })
+
   it('v4-L26: separates LLM translation cache entries by translator signature', async () => {
     testState.db.translatorType = 'llm'
     testState.requestChatData.mockImplementation(async () => ({
