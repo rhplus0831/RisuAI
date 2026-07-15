@@ -5,9 +5,15 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { webcrypto } from 'node:crypto'
+import { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance } from 'fastify'
 import { buildApp } from '../src/app.js'
-import { HUB_FORWARD_DEFAULT_TIMEOUT_MS, normalizeHubForwardTimeoutMs } from '../src/routes/hub.js'
+import {
+  HUB_FORWARD_DEFAULT_TIMEOUT_MS,
+  REALM_REMOVE_BODY_MAX_BYTES,
+  normalizeHubForwardTimeoutMs,
+} from '../src/routes/hub.js'
+import { MASKED_PROVIDER_SECRET } from '../src/providerSecrets.js'
 
 const subtle = webcrypto.subtle
 
@@ -175,6 +181,23 @@ async function setupAuthedClient(app: FastifyInstance): Promise<{ assertion: str
   return { assertion: await signAssertion(keypair.privateKey, publicKey) }
 }
 
+function persistRealmAccount(dataDir: string, account: unknown): void {
+  const sqlite = new DatabaseSync(path.join(dataDir, 'risu.db'))
+  try {
+    const row = sqlite.prepare('SELECT data_json FROM settings WHERE id = 1').get() as { data_json: string } | undefined
+    const settings = row ? (JSON.parse(row.data_json) as Record<string, unknown>) : {}
+    settings.account = account
+    sqlite
+      .prepare(
+        `INSERT INTO settings (id, data_json) VALUES (1, ?)
+         ON CONFLICT(id) DO UPDATE SET data_json = excluded.data_json`,
+      )
+      .run(JSON.stringify(settings))
+  } finally {
+    sqlite.close()
+  }
+}
+
 let harness: Harness
 let echo: EchoServer
 
@@ -332,6 +355,172 @@ describe('Phase 3C hub passthrough', () => {
     expect(echo.requests[0].headers['content-type']).toBe('application/json')
     expect(echo.requests[0].headers['x-custom-thing']).toBe('present')
     expect(echo.requests[0].headers['origin']).toBe(new URL(echo.url).origin)
+  })
+
+  it('injects the persisted Realm token only for the exact removal operation', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: 'persisted-realm-token',
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/remove',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'text/plain',
+      },
+      payload: JSON.stringify({ id: 'realm-card-id' }),
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(echo.requests).toHaveLength(1)
+    expect(echo.requests[0].url).toBe('/hub/remove')
+    expect(echo.requests[0].headers['content-type']).toBe('application/json')
+    expect(JSON.parse(echo.requests[0].body.toString('utf8'))).toEqual({
+      id: 'realm-card-id',
+      token: 'persisted-realm-token',
+    })
+  })
+
+  it('does not inject the persisted Realm token into other Hub requests', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: 'persisted-realm-token',
+    })
+
+    const payload = { id: 'realm-card-id', report: 'unsafe content' }
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/report',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/json',
+      },
+      payload,
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(echo.requests).toHaveLength(1)
+    expect(JSON.parse(echo.requests[0].body.toString('utf8'))).toEqual(payload)
+  })
+
+  it('rejects removal bodies with caller-supplied credentials or extra fields', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: 'persisted-realm-token',
+    })
+
+    for (const payload of [
+      { id: 'realm-card-id', token: 'caller-token' },
+      { id: 'realm-card-id', extra: true },
+      { id: '' },
+      { id: 'path/segment' },
+    ]) {
+      const res = await harness.app.inject({
+        method: 'POST',
+        url: '/api/v1/hub/hub/remove',
+        headers: {
+          'risu-auth': assertion,
+          'content-type': 'application/json',
+        },
+        payload,
+      })
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toEqual({ error: 'Invalid Realm removal request' })
+    }
+    expect(echo.requests).toHaveLength(0)
+  })
+
+  it('rejects proxy overrides before a persisted Realm token can be injected', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: 'persisted-realm-token',
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/remove',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/json',
+        'x-risu-node-path': encodeURIComponent(`${echo.url}/attacker-capture`),
+      },
+      payload: { id: 'realm-card-id' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Invalid Realm removal route' })
+    expect(echo.requests).toHaveLength(0)
+  })
+
+  it('rejects query variants of the secret-injecting Realm removal route', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: 'persisted-realm-token',
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/remove?forward=elsewhere',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/json',
+      },
+      payload: { id: 'realm-card-id' },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json()).toEqual({ error: 'Invalid Realm removal route' })
+    expect(echo.requests).toHaveLength(0)
+  })
+
+  it('applies a small independent body cap to Realm removal requests', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: 'persisted-realm-token',
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/remove',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/json',
+      },
+      payload: Buffer.alloc(REALM_REMOVE_BODY_MAX_BYTES + 1, 0x20),
+    })
+
+    expect(res.statusCode).toBe(413)
+    expect(echo.requests).toHaveLength(0)
+  })
+
+  it('refuses removal when no usable persisted Realm credential exists', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    persistRealmAccount(harness.dataDir, {
+      id: 'realm-owner',
+      token: MASKED_PROVIDER_SECRET,
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/hub/hub/remove',
+      headers: {
+        'risu-auth': assertion,
+        'content-type': 'application/json',
+      },
+      payload: { id: 'realm-card-id' },
+    })
+
+    expect(res.statusCode).toBe(409)
+    expect(res.json()).toEqual({ error: 'Realm account credentials are unavailable' })
+    expect(echo.requests).toHaveLength(0)
   })
 
   it('uses the shared proxy response-header strip policy', async () => {

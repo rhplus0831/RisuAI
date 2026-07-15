@@ -120,18 +120,18 @@
         }}>
         <FlagIcon />
       </button>
-      {#if (getDatabase().account?.token?.split('-') ?? [])[1] === openedData.creator}
+      {#if getDatabase().account?.id === openedData.creator}
         <button
           class="text-textcolor2 hover:text-red-500"
           onclick={async (e) => {
             e.stopPropagation()
+            const targetId = openedData.id
             const conf = await alertConfirm('Do you want to remove this character from Realm?')
             if (conf) {
               const da = await authenticatedHubFetch(hubURL + '/hub/remove', {
                 method: 'POST',
                 body: JSON.stringify({
-                  id: openedData.id,
-                  token: getDatabase().account?.token,
+                  id: targetId,
                 }),
               })
               alertNormal(await da.text())

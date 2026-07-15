@@ -1,9 +1,12 @@
 import { Readable } from 'node:stream'
 import { finished } from 'node:stream/promises'
+import type { DatabaseSync } from 'node:sqlite'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { AuthState } from '../auth.js'
 import { requireAuth } from '../http.js'
+import { MASKED_PROVIDER_SECRET } from '../providerSecrets.js'
 import { filterResponseHeaders, normalizeForwardHeaders } from '../proxy.js'
+import { loadSettingsFromSqlite } from '../repository.js'
 import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, normalizeStreamTimeoutMs } from '../streamJobs.js'
 
 const HUB_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'] as const
@@ -15,6 +18,10 @@ const STRIP_REQUEST_HEADERS = new Set(['x-risu-node-path'])
 const HUB_TRANSPORT_RESPONSE_HEADERS = new Set(['content-length', 'transfer-encoding'])
 
 const PREFIX = '/api/v1/hub'
+const REALM_REMOVE_PATH = `${PREFIX}/hub/remove`
+export const REALM_REMOVE_BODY_MAX_BYTES = 1_024
+const REALM_REMOVE_ID_MAX_BYTES = 256
+const REALM_ACCOUNT_TOKEN_MAX_BYTES = 8_192
 const REALM_QUERY_PATHS = new Set([`${PREFIX}/realm`, `${PREFIX}/realm/`])
 const REALM_QUERY_KEYS = ['search', 'page', 'nsfw', 'sort', 'web'] as const
 const REALM_QUERY_DEFAULTS = {
@@ -53,6 +60,66 @@ function buildForwardHeaders(source: Record<string, unknown>, hubOrigin: string)
   }
   out['origin'] = hubOrigin
   return out
+}
+
+function setForwardHeader(headers: Record<string, string>, name: string, value: string): void {
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === name.toLowerCase()) delete headers[key]
+  }
+  headers[name] = value
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+type RealmRemoveBodyResult = { ok: true; body: Buffer } | { ok: false; statusCode: 400 | 409 | 413; error: string }
+
+function realmRemoveForwardBody(db: DatabaseSync, body: Buffer | undefined): RealmRemoveBodyResult {
+  if (!body || body.length === 0) {
+    return { ok: false, statusCode: 400, error: 'Invalid Realm removal request' }
+  }
+  if (body.length > REALM_REMOVE_BODY_MAX_BYTES) {
+    return { ok: false, statusCode: 413, error: 'Realm removal request is too large' }
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body.toString('utf8'))
+  } catch {
+    return { ok: false, statusCode: 400, error: 'Invalid Realm removal request' }
+  }
+
+  if (!isRecord(parsed) || Object.keys(parsed).length !== 1 || !Object.hasOwn(parsed, 'id')) {
+    return { ok: false, statusCode: 400, error: 'Invalid Realm removal request' }
+  }
+  const id = parsed.id
+  if (
+    typeof id !== 'string' ||
+    id.length === 0 ||
+    id !== id.trim() ||
+    Buffer.byteLength(id, 'utf8') > REALM_REMOVE_ID_MAX_BYTES ||
+    /[\s/?#\u0000-\u001f\u007f]/u.test(id)
+  ) {
+    return { ok: false, statusCode: 400, error: 'Invalid Realm removal request' }
+  }
+
+  const settings = loadSettingsFromSqlite(db)
+  const account = settings?.account
+  const token = isRecord(account) ? account.token : undefined
+  if (
+    typeof token !== 'string' ||
+    token.length === 0 ||
+    token === MASKED_PROVIDER_SECRET ||
+    Buffer.byteLength(token, 'utf8') > REALM_ACCOUNT_TOKEN_MAX_BYTES
+  ) {
+    return { ok: false, statusCode: 409, error: 'Realm account credentials are unavailable' }
+  }
+
+  return {
+    ok: true,
+    body: Buffer.from(JSON.stringify({ id, token })),
+  }
 }
 
 function resolveRealmQuerySuffix(url: string): string | null {
@@ -210,7 +277,65 @@ function isAbortError(err: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (err as { name?: string } | null)?.name === 'AbortError'
 }
 
-export function registerHubRoutes(app: FastifyInstance, authState: AuthState, hubUrl: string): void {
+async function forwardHubRequest(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  upstreamUrl: string,
+  headers: Record<string, string>,
+  body: Buffer | undefined,
+) {
+  const timeoutMs = normalizeHubForwardTimeoutMs(req.headers['risu-timeout-ms'])
+  const abort = createHubAbort(req, reply, timeoutMs)
+
+  try {
+    const first = await forwardOnce(reply, upstreamUrl, req.method, headers, body, abort.signal, true)
+    if (first.location) {
+      if (body !== undefined) {
+        reply.code(502)
+        return {
+          error: 'Hub request redirects with bodies are not replayed',
+        }
+      }
+      // The initial target is either the configured Hub or an explicitly
+      // authenticated complete-URL override. Pin the one allowed redirect to
+      // that already-authorized target's origin.
+      const redirectUrl = resolveHubRedirectUrl(first.location, upstreamUrl, new URL(upstreamUrl).origin)
+      if (!redirectUrl) {
+        reply.code(502)
+        return {
+          error: 'Hub redirect target is not allowed',
+        }
+      }
+      await forwardOnce(reply, redirectUrl, req.method, headers, undefined, abort.signal, false)
+    }
+  } catch (err) {
+    if (isAbortError(err, abort.signal)) {
+      if (!reply.raw.headersSent) {
+        reply.code(504)
+        return {
+          error:
+            abort.timedOut() && !abort.clientClosed()
+              ? `Hub request timed out after ${timeoutMs}ms`
+              : 'Hub request aborted',
+        }
+      }
+      reply.raw.end()
+      return
+    }
+    req.log.warn({ err }, 'hub proxy upstream failed')
+    if (!reply.raw.headersSent) {
+      reply.code(502)
+      return {
+        error: `Proxy request failed: ${(err as Error)?.message ?? err}`,
+      }
+    }
+    reply.raw.end()
+  } finally {
+    abort.cleanup()
+  }
+}
+
+export function registerHubRoutes(app: FastifyInstance, db: DatabaseSync, authState: AuthState, hubUrl: string): void {
   const hubOrigin = new URL(hubUrl).origin
 
   app.register(async (instance) => {
@@ -218,6 +343,36 @@ export function registerHubRoutes(app: FastifyInstance, authState: AuthState, hu
     instance.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => {
       done(null, body)
     })
+
+    instance.post(
+      REALM_REMOVE_PATH,
+      {
+        bodyLimit: REALM_REMOVE_BODY_MAX_BYTES,
+        compress: false,
+        onRequest: async (req, reply) => {
+          await requireAuth(authState, req, reply)
+        },
+      },
+      async (req, reply) => {
+        // This is the only Hub operation that receives a server-owned secret.
+        // Keep its route and target exact so proxy overrides and query variants
+        // cannot turn it into a credential-forwarding primitive.
+        if (req.url !== REALM_REMOVE_PATH || hasUpstreamOverride(req)) {
+          reply.code(400)
+          return { error: 'Invalid Realm removal route' }
+        }
+
+        const removal = realmRemoveForwardBody(db, Buffer.isBuffer(req.body) ? req.body : undefined)
+        if (removal.ok === false) {
+          reply.code(removal.statusCode)
+          return { error: removal.error }
+        }
+
+        const headers = buildForwardHeaders(req.headers as Record<string, unknown>, hubOrigin)
+        setForwardHeader(headers, 'content-type', 'application/json')
+        return await forwardHubRequest(req, reply, `${hubUrl}/hub/remove`, headers, removal.body)
+      },
+    )
 
     instance.route({
       method: [...HUB_METHODS],
@@ -236,56 +391,7 @@ export function registerHubRoutes(app: FastifyInstance, authState: AuthState, hu
           Buffer.isBuffer(req.body) && !METHODS_WITHOUT_BODY.has(req.method) && req.body.length > 0
             ? req.body
             : undefined
-
-        const timeoutMs = normalizeHubForwardTimeoutMs(req.headers['risu-timeout-ms'])
-        const abort = createHubAbort(req, reply, timeoutMs)
-
-        try {
-          const first = await forwardOnce(reply, upstreamUrl, req.method, headers, body, abort.signal, true)
-          if (first.location) {
-            if (body !== undefined) {
-              reply.code(502)
-              return {
-                error: 'Hub request redirects with bodies are not replayed',
-              }
-            }
-            // The initial target is either the configured Hub or an explicitly
-            // authenticated complete-URL override. Pin the one allowed redirect
-            // to that already-authorized target's origin.
-            const redirectUrl = resolveHubRedirectUrl(first.location, upstreamUrl, new URL(upstreamUrl).origin)
-            if (!redirectUrl) {
-              reply.code(502)
-              return {
-                error: 'Hub redirect target is not allowed',
-              }
-            }
-            await forwardOnce(reply, redirectUrl, req.method, headers, undefined, abort.signal, false)
-          }
-        } catch (err) {
-          if (isAbortError(err, abort.signal)) {
-            if (!reply.raw.headersSent) {
-              reply.code(504)
-              return {
-                error:
-                  abort.timedOut() && !abort.clientClosed()
-                    ? `Hub request timed out after ${timeoutMs}ms`
-                    : 'Hub request aborted',
-              }
-            }
-            reply.raw.end()
-            return
-          }
-          req.log.warn({ err }, 'hub proxy upstream failed')
-          if (!reply.raw.headersSent) {
-            reply.code(502)
-            return {
-              error: `Proxy request failed: ${(err as Error)?.message ?? err}`,
-            }
-          }
-          reply.raw.end()
-        } finally {
-          abort.cleanup()
-        }
+        return await forwardHubRequest(req, reply, upstreamUrl, headers, body)
       },
     })
   })
