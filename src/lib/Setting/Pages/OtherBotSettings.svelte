@@ -5,7 +5,7 @@
   import { selectSingleFile } from 'src/ts/util'
   import { selectedCharID } from 'src/ts/stores.svelte'
   import { getResourceDatabase as getDatabase } from 'src/ts/server/resourceState.svelte'
-  import { saveAsset, downloadFile, globalFetch } from 'src/ts/globalApi.svelte'
+  import { saveAsset, downloadFile } from 'src/ts/globalApi.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import SecretInput from 'src/lib/UI/GUI/SecretInput.svelte'
@@ -25,6 +25,8 @@
   import { onDestroy } from 'svelte'
   import { createServerBackedSettingDraft, watchServerBackedSettings } from 'src/ts/server/settingsBridge.svelte'
   import { ensurePromptTemplateHydrated } from 'src/ts/server/promptTemplateHydration'
+  import { providerOperationCredential, requestProviderOperation } from 'src/ts/server/providerOperations'
+  import { createLatestOperationGuard, type LatestOperationToken } from 'src/ts/server/staleStateGuards'
   import {
     applyFreshSettingsMediaAssetUpload,
     beginSettingsMediaAssetUpload,
@@ -228,34 +230,39 @@
   let isWavespeedLoading = $state(false)
   let wavespeedSearchQuery = $state('')
   let wavespeedLoras = $state<LoraItem[]>(createWavespeedLoraRows(wavespeedImageDraft.value.loras))
+  const wavespeedModelFetchGuard = createLatestOperationGuard<'wavespeed-models'>()
+  let activeWavespeedModelFetch: LatestOperationToken<'wavespeed-models'> | null = null
+
+  onDestroy(() => {
+    if (!activeWavespeedModelFetch) return
+    wavespeedModelFetchGuard.clear(activeWavespeedModelFetch)
+    activeWavespeedModelFetch = null
+  })
 
   /**
    * Fetch models from WaveSpeed API dynamically
    * https://wavespeed.ai/docs/docs-common-api/models
    */
   async function fetchWavespeedModels() {
-    if (!wavespeedImageDraft.value.key || wavespeedImageDraft.value.key.trim() === '') {
+    const apiKey = wavespeedImageDraft.value.key
+    if (!apiKey || apiKey.trim() === '') {
       alertError('WaveSpeed API Key not set')
       return []
     }
 
+    const token = wavespeedModelFetchGuard.issue('wavespeed-models')
+    activeWavespeedModelFetch = token
+    const isFresh = () => wavespeedModelFetchGuard.isLatest(token) && wavespeedImageDraft.value.key === apiKey
     isWavespeedLoading = true
     try {
-      const result = await globalFetch('https://api.wavespeed.ai/api/v3/models', {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${wavespeedImageDraft.value.key}`,
-        },
+      const result = await requestProviderOperation<unknown>('wavespeed.models', {
+        credential: providerOperationCredential(apiKey),
       })
+      if (!isFresh()) return
 
-      if (!result.ok || !result.data) {
-        alertError('Failed to fetch WaveSpeed models')
-        return
-      }
-
-      let responseData
+      let responseData: any
       try {
-        responseData = typeof result.data === 'string' ? JSON.parse(result.data) : result.data
+        responseData = typeof result === 'string' ? JSON.parse(result) : result
       } catch (e) {
         alertError('Failed to parse WaveSpeed response')
         return
@@ -290,9 +297,13 @@
       wavespeedModels = filteredModels
       alertNormal(`Successfully loaded ${filteredModels.length} models`)
     } catch (error) {
-      alertError(`Failed to fetch models: ${error}`)
+      if (isFresh()) alertError(`Failed to fetch models: ${error}`)
     } finally {
-      isWavespeedLoading = false
+      if (wavespeedModelFetchGuard.isLatest(token)) {
+        isWavespeedLoading = false
+        activeWavespeedModelFetch = null
+      }
+      wavespeedModelFetchGuard.clear(token)
     }
   }
 

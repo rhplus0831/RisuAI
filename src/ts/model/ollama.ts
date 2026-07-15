@@ -1,4 +1,5 @@
 import { globalFetch } from '../globalApi.svelte'
+import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import type { ModelGridItem } from './modelGrid'
 import { createKeyedRequestCache, type KeyedRequestOptions } from './keyedRequestCache'
 
@@ -30,30 +31,33 @@ export async function getOllamaModels(
   options?: KeyedRequestOptions,
 ): Promise<ModelGridItem[]> {
   try {
-    const baseUrl = source === 'cloud' ? 'https://ollama.com' : host.replace(/\/$/, '')
-    const load = async (): Promise<ModelGridItem[]> => {
-      const headers: Record<string, string> = {}
-
-      if (source === 'cloud' && apiKey) {
-        headers.Authorization = `Bearer ${apiKey}`
-      }
-
-      const response = await globalFetch(`${baseUrl}/api/tags`, {
-        method: 'GET',
-        headers,
-        interceptor: 'ollama_models',
-      })
-
-      if (!response.ok) throw new Error('Ollama model request failed')
-      if (!Array.isArray(response.data?.models)) throw new Error('Ollama model response was malformed')
-      const models: OllamaTagModel[] = response.data.models
-      return models.map((model) => toModelGridItem(model, source))
-    }
-
     if (source === 'cloud') {
-      return await ollamaCloudModelRequests.request(JSON.stringify([baseUrl, apiKey]), load, options)
+      const credential = providerOperationCredential(apiKey)
+      return await ollamaCloudModelRequests.request(
+        apiKey,
+        async () => {
+          const response = await requestProviderOperation<{ models?: OllamaTagModel[] }>('ollama.cloud-models', {
+            credential,
+          })
+          if (!Array.isArray(response.models)) throw new Error('Ollama model response was malformed')
+          return response.models.map((model) => toModelGridItem(model, source))
+        },
+        {
+          ...options,
+          refresh: options?.refresh || credential.source === 'stored' || credential.source === 'model-profile',
+        },
+      )
     }
-    return await load()
+
+    const baseUrl = host.replace(/\/$/, '')
+    const response = await globalFetch(`${baseUrl}/api/tags`, {
+      method: 'GET',
+      headers: {},
+      interceptor: 'ollama_models',
+    })
+    if (!response.ok) throw new Error('Ollama model request failed')
+    if (!Array.isArray(response.data?.models)) throw new Error('Ollama model response was malformed')
+    return response.data.models.map((model: OllamaTagModel) => toModelGridItem(model, source))
   } catch {
     return []
   }

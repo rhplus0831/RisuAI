@@ -12,7 +12,7 @@ import {
 import { OpenAIModels } from './providers/openai'
 import { AnthropicModels } from './providers/anthropic'
 import { GoogleModels } from './providers/google'
-import { fetchNative } from '../globalApi.svelte'
+import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import { customProviderStore, pluginV2 } from '../plugins/plugins.svelte'
 import { get } from 'svelte/store'
 import { customV3ProviderMetaStore } from '../plugins/apiV3/v3.svelte'
@@ -632,14 +632,9 @@ export async function registerModelDynamic() {
   try {
     const googleAccessToken = getDatabase().google.accessToken
     if (googleAccessToken) {
-      const res = await fetchNative(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${googleAccessToken}`,
-        {
-          method: 'GET',
-        },
-      )
-      const json = await res.json()
-      console.log('Google models response', json)
+      const json = await requestProviderOperation<{ models?: any[] }>('google.models', {
+        credential: providerOperationCredential(googleAccessToken),
+      })
       const models = json?.models || []
       for (let model of models) {
         if (!model.supportedGenerationMethods || !model.supportedGenerationMethods.includes('generateContent')) {
@@ -681,16 +676,12 @@ export async function registerModelDynamic() {
   try {
     const claudeAPIKey = getDatabase().claudeAPIKey
     if (claudeAPIKey) {
-      const res = await fetchNative('https://api.anthropic.com/v1/models', {
-        method: 'GET',
-        headers: {
-          'anthropic-version': '2023-06-01',
-          'x-api-key': claudeAPIKey,
+      const json = await requestProviderOperation<{ data?: { id: string; display_name: string }[] }>(
+        'anthropic.models',
+        {
+          credential: providerOperationCredential(claudeAPIKey),
         },
-      })
-
-      const json = await res.json()
-      console.log('Anthropic models response', json)
+      )
       const models: {
         id: string
         display_name: string

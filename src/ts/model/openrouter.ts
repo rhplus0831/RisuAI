@@ -1,9 +1,11 @@
 import { getDatabase } from '../storage/database.svelte'
+import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import type { ModelGridItem } from './modelGrid'
 import { createKeyedRequestCache } from './keyedRequestCache'
 
 export type OpenRouterCatalogFetchContext = {
   apiKey?: string | null
+  profileId?: string | null
   refresh?: boolean
 }
 
@@ -44,34 +46,37 @@ const openRouterModelRequests = createKeyedRequestCache<OpenRouterModelInfo[]>({
   ttlMs: OPENROUTER_CATALOG_CACHE_TTL_MS,
 })
 
-function resolveOpenRouterCatalogKey(context?: OpenRouterCatalogFetchContext): string {
+function resolveOpenRouterCatalogContext(context?: OpenRouterCatalogFetchContext): {
+  apiKey: string
+  profileId?: string | null
+} {
   if (context !== undefined) {
-    return context.apiKey ?? ''
+    return { apiKey: context.apiKey ?? '', profileId: context.profileId }
   }
-  return getDatabase().openrouterKey
+  return { apiKey: getDatabase().openrouterKey }
 }
 
 export async function getOpenRouterProviders(
   context?: OpenRouterCatalogFetchContext,
 ): Promise<{ name: string; slug: string }[]> {
   try {
-    const apiKey = resolveOpenRouterCatalogKey(context)
+    const { apiKey, profileId } = resolveOpenRouterCatalogContext(context)
+    const credential = providerOperationCredential(apiKey, { profileId })
     return await openRouterProviderRequests.request(
-      apiKey,
+      JSON.stringify([apiKey, profileId ?? '']),
       async () => {
-        const headers = {
-          Authorization: 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-        }
-        const response = await fetch('https://openrouter.ai/api/v1/providers', {
-          headers,
-        })
-        if (!response.ok) throw new Error(`OpenRouter provider request failed (${response.status})`)
-        const providers: { data?: { name: string; slug: string }[] } = await response.json()
+        const providers = await requestProviderOperation<{ data?: { name: string; slug: string }[] }>(
+          'openrouter.providers',
+          {
+            credential,
+          },
+        )
         if (!Array.isArray(providers.data)) throw new Error('OpenRouter provider response was malformed')
         return providers.data.map(({ name, slug }) => ({ name, slug })).sort((a, b) => a.name.localeCompare(b.name))
       },
-      { refresh: context?.refresh },
+      {
+        refresh: context?.refresh || credential.source === 'stored' || credential.source === 'model-profile',
+      },
     )
   } catch {
     return []
@@ -80,19 +85,14 @@ export async function getOpenRouterProviders(
 
 export async function getOpenRouterModels(context?: OpenRouterCatalogFetchContext): Promise<OpenRouterModelInfo[]> {
   try {
-    const apiKey = resolveOpenRouterCatalogKey(context)
+    const { apiKey, profileId } = resolveOpenRouterCatalogContext(context)
+    const credential = providerOperationCredential(apiKey, { profileId })
     return await openRouterModelRequests.request(
-      apiKey,
+      JSON.stringify([apiKey, profileId ?? '']),
       async () => {
-        const headers = {
-          Authorization: 'Bearer ' + apiKey,
-          'Content-Type': 'application/json',
-        }
-        const response = await fetch('https://openrouter.ai/api/v1/models', {
-          headers,
+        const aim = await requestProviderOperation<{ data?: any[] }>('openrouter.models', {
+          credential,
         })
-        if (!response.ok) throw new Error(`OpenRouter model request failed (${response.status})`)
-        const aim: { data?: any[] } = await response.json()
         if (!Array.isArray(aim.data)) throw new Error('OpenRouter model response was malformed')
 
         return aim.data
@@ -133,7 +133,9 @@ export async function getOpenRouterModels(context?: OpenRouterCatalogFetchContex
             return a.price - b.price
           })
       },
-      { refresh: context?.refresh },
+      {
+        refresh: context?.refresh || credential.source === 'stored' || credential.source === 'model-profile',
+      },
     )
   } catch {
     return []

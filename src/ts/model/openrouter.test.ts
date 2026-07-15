@@ -1,11 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  clearOpenRouterRequestCachesForTests,
-  getFreeOpenRouterModels,
-  getOpenRouterModels,
-  getOpenRouterProviders,
-  type OpenRouterCatalogFetchContext,
-} from './openrouter'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const providerOperations = vi.hoisted(() => ({
+  credential: vi.fn((apiKey: string | null | undefined, options?: { profileId?: string | null }) => {
+    if (apiKey === '__RISU_SECRET_MASKED__') {
+      return options?.profileId ? { source: 'model-profile', profileId: options.profileId } : { source: 'stored' }
+    }
+    return apiKey ? { source: 'provided', apiKey } : { source: 'none' }
+  }),
+  request: vi.fn(),
+}))
+
+vi.mock('../server/providerOperations', () => ({
+  providerOperationCredential: providerOperations.credential,
+  requestProviderOperation: providerOperations.request,
+}))
 
 const mockDatabase = vi.hoisted(() => ({
   value: {
@@ -17,19 +25,13 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => mockDatabase.value,
 }))
 
-const fetchMock = vi.fn()
-
-function mockJsonResponse(body: unknown): Response {
-  return {
-    ok: true,
-    status: 200,
-    json: vi.fn().mockResolvedValue(body),
-  } as unknown as Response
-}
-
-function firstFetchInit(): { headers: Record<string, string> } {
-  return fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
-}
+import {
+  clearOpenRouterRequestCachesForTests,
+  getFreeOpenRouterModels,
+  getOpenRouterModels,
+  getOpenRouterProviders,
+  type OpenRouterCatalogFetchContext,
+} from './openrouter'
 
 function openRouterModel(id = 'anthropic/claude-sonnet', name = 'Anthropic: Claude Sonnet') {
   return {
@@ -47,41 +49,33 @@ function openRouterModel(id = 'anthropic/claude-sonnet', name = 'Anthropic: Clau
   }
 }
 
-describe('getOpenRouterModels', () => {
+describe('OpenRouter provider operations', () => {
   beforeEach(() => {
     mockDatabase.value = { openrouterKey: 'global-openrouter-key' }
     clearOpenRouterRequestCachesForTests()
-    fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
+    providerOperations.credential.mockClear()
+    providerOperations.request.mockReset()
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('uses the global OpenRouter key when no catalog context is provided', async () => {
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+  it('uses the global OpenRouter credential when no catalog context is provided', async () => {
+    providerOperations.request.mockResolvedValueOnce({ data: [] })
 
     await getOpenRouterModels()
 
-    expect(fetchMock).toHaveBeenCalledWith('https://openrouter.ai/api/v1/models', {
-      headers: {
-        Authorization: 'Bearer global-openrouter-key',
-        'Content-Type': 'application/json',
-      },
+    expect(providerOperations.credential).toHaveBeenCalledWith('global-openrouter-key', { profileId: undefined })
+    expect(providerOperations.request).toHaveBeenCalledWith('openrouter.models', {
+      credential: expect.objectContaining({ apiKey: 'global-openrouter-key' }),
     })
   })
 
-  it('uses an explicit catalog key instead of the saved global key', async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockJsonResponse({
-        data: [openRouterModel()],
-      }),
-    )
+  it('uses an explicit catalog credential and maps model pricing', async () => {
+    providerOperations.request.mockResolvedValueOnce({ data: [openRouterModel()] })
 
     const models = await getOpenRouterModels({ apiKey: 'draft-openrouter-key' })
 
-    expect(firstFetchInit().headers.Authorization).toBe('Bearer draft-openrouter-key')
+    expect(providerOperations.request).toHaveBeenCalledWith('openrouter.models', {
+      credential: expect.objectContaining({ apiKey: 'draft-openrouter-key' }),
+    })
     expect(models[0]).toMatchObject({
       id: 'anthropic/claude-sonnet',
       name: 'Anthropic: Claude Sonnet - $0.00125/1k',
@@ -99,34 +93,44 @@ describe('getOpenRouterModels', () => {
     expect(models[0].cacheReadPrice1M).toBeCloseTo(0.1)
   })
 
-  it('shares rapid same-key requests and supports an explicit refresh', async () => {
-    let resolveResponse!: (response: Response) => void
-    fetchMock.mockReturnValueOnce(
-      new Promise<Response>((resolve) => {
+  it('routes a masked model-profile credential with its profile id', async () => {
+    providerOperations.request.mockResolvedValue({ data: [] })
+
+    await getOpenRouterModels({ apiKey: '__RISU_SECRET_MASKED__', profileId: 'profile-a' })
+    await getOpenRouterModels({ apiKey: '__RISU_SECRET_MASKED__', profileId: 'profile-a' })
+
+    expect(providerOperations.credential).toHaveBeenCalledWith('__RISU_SECRET_MASKED__', { profileId: 'profile-a' })
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
+  })
+
+  it('shares rapid same-context requests and supports an explicit refresh', async () => {
+    let resolveResponse!: (response: { data: unknown[] }) => void
+    providerOperations.request.mockReturnValueOnce(
+      new Promise((resolve) => {
         resolveResponse = resolve
       }),
     )
 
-    const first = getOpenRouterModels({ apiKey: 'same-key' })
-    const second = getOpenRouterModels({ apiKey: 'same-key' })
+    const first = getOpenRouterModels({ apiKey: 'same-key', profileId: 'same-profile' })
+    const second = getOpenRouterModels({ apiKey: 'same-key', profileId: 'same-profile' })
     await Promise.resolve()
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    resolveResponse(mockJsonResponse({ data: [openRouterModel()] }))
+    expect(providerOperations.request).toHaveBeenCalledTimes(1)
+    resolveResponse({ data: [openRouterModel()] })
     await Promise.all([first, second])
-    await getOpenRouterModels({ apiKey: 'same-key' })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await getOpenRouterModels({ apiKey: 'same-key', profileId: 'same-profile' })
+    expect(providerOperations.request).toHaveBeenCalledTimes(1)
 
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [] }))
-    await getOpenRouterModels({ apiKey: 'same-key', refresh: true })
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    providerOperations.request.mockResolvedValueOnce({ data: [] })
+    await getOpenRouterModels({ apiKey: 'same-key', profileId: 'same-profile', refresh: true })
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
   })
 
   it('does not share cached results across changed API keys', async () => {
-    fetchMock.mockImplementation(async (_url, init: RequestInit) => {
-      const authorization = (init.headers as Record<string, string>).Authorization
-      const suffix = authorization.endsWith('first-key') ? 'first' : 'second'
-      return mockJsonResponse({ data: [openRouterModel(`provider/${suffix}`, `Provider: ${suffix}`)] })
+    providerOperations.request.mockImplementation(async (_operation, options) => {
+      const key = options.credential.apiKey as string
+      const suffix = key.endsWith('first-key') ? 'first' : 'second'
+      return { data: [openRouterModel(`provider/${suffix}`, `Provider: ${suffix}`)] }
     })
 
     const firstModels = await getOpenRouterModels({ apiKey: 'first-key' })
@@ -134,71 +138,42 @@ describe('getOpenRouterModels', () => {
 
     expect(firstModels[0].id).toBe('provider/first')
     expect(secondModels[0].id).toBe('provider/second')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer first-key',
-    })
-    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer second-key',
-    })
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
   })
 
-  it('does not cache failures', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('network unavailable'))
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [openRouterModel()] }))
+  it('does not cache failures and returns an empty id for an empty free catalog', async () => {
+    providerOperations.request.mockRejectedValueOnce(new Error('network unavailable'))
+    providerOperations.request.mockResolvedValueOnce({ data: [openRouterModel()] })
 
     expect(await getOpenRouterModels({ apiKey: 'retry-key' })).toEqual([])
     expect(await getOpenRouterModels({ apiKey: 'retry-key' })).toHaveLength(1)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
 
-  it('returns an empty model id when the free-model catalog is empty', async () => {
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [] }))
-
+    providerOperations.request.mockResolvedValueOnce({ data: [] })
     await expect(getFreeOpenRouterModels({ apiKey: 'empty-catalog-key' })).resolves.toBe('')
-  })
-})
-
-describe('getOpenRouterProviders', () => {
-  beforeEach(() => {
-    mockDatabase.value = { openrouterKey: 'global-openrouter-key' }
-    clearOpenRouterRequestCachesForTests()
-    fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
-  })
-
-  afterEach(() => {
-    vi.unstubAllGlobals()
   })
 
   it.each<[string, OpenRouterCatalogFetchContext]>([
     ['blank', { apiKey: '' }],
     ['undefined', { apiKey: undefined }],
     ['missing', {}],
-  ])(
-    'treats an explicit %s catalog context as intentional instead of falling back to global',
-    async (_label, context) => {
-      fetchMock.mockResolvedValueOnce(
-        mockJsonResponse({
-          data: [
-            { name: 'Zed', slug: 'zed' },
-            { name: 'Alpha', slug: 'alpha' },
-          ],
-        }),
-      )
-
-      const providers = await getOpenRouterProviders(context)
-
-      expect(fetchMock).toHaveBeenCalledWith('https://openrouter.ai/api/v1/providers', {
-        headers: {
-          Authorization: 'Bearer ',
-          'Content-Type': 'application/json',
-        },
-      })
-      expect(providers).toEqual([
-        { name: 'Alpha', slug: 'alpha' },
+  ])('treats an explicit %s catalog context as intentional public access', async (_label, context) => {
+    providerOperations.request.mockResolvedValueOnce({
+      data: [
         { name: 'Zed', slug: 'zed' },
-      ])
-    },
-  )
+        { name: 'Alpha', slug: 'alpha' },
+      ],
+    })
+
+    const providers = await getOpenRouterProviders(context)
+
+    expect(providerOperations.credential).toHaveBeenCalledWith('', { profileId: undefined })
+    expect(providerOperations.request).toHaveBeenCalledWith('openrouter.providers', {
+      credential: expect.objectContaining({ source: 'none' }),
+    })
+    expect(providers).toEqual([
+      { name: 'Alpha', slug: 'alpha' },
+      { name: 'Zed', slug: 'zed' },
+    ])
+  })
 })

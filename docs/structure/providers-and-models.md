@@ -1,6 +1,6 @@
 # Providers And Models
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-16.
 
 Provider/model behavior is split between browser model metadata, Fastify
 provider dispatch, and the shared capability table that decides whether a
@@ -42,16 +42,24 @@ metadata, dynamic Google/Anthropic model registration, and prefixed ids such as
 pass the capability table. The server reconstructs narrow dispatch metadata from
 persisted settings, profile-owned options, string prefixes, and the OpenAI model
 allowlist; it does not import the full browser UI registry.
-`src/ts/model/providers/nanogpt.ts` contains static endpoint constants; dynamic
-NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`. OpenRouter,
-NanoGPT, Ollama, and Horde helpers carry richer browser catalog metadata for
-picker/filter UI than the server needs for dispatch.
+Dynamic NanoGPT account/model fetching lives in `src/ts/model/nanogpt.ts`.
+OpenRouter, NanoGPT, Ollama, and Horde helpers carry richer browser catalog
+metadata for picker/filter UI than the server needs for dispatch. NanoGPT,
+OpenRouter, Ollama Cloud, WaveSpeed, Google, and Anthropic catalog/account calls
+use the fixed allowlist in `server/fastify/src/providerOperations.ts` through
+`src/ts/server/providerOperations.ts`; callers cannot supply an upstream URL,
+method, or arbitrary headers. Stored and profile-local masked credentials are
+resolved only by Fastify and never projected back to the browser. A user-edited
+draft key is a one-shot override for the selected fixed provider operation.
 
 OpenRouter model/provider and NanoGPT model/provider catalog requests are keyed
-by their full credential/model context, share an in-flight promise, and briefly
-reuse successful results; failed requests are not retained. OpenRouter and
-NanoGPT catalogs use a 30-second TTL. Ollama Cloud tags use a 15-second cache
-keyed by base URL and API key, while local Ollama discovery remains uncached.
+by their full credential/model context and share an in-flight promise. Public
+and explicit-draft contexts briefly reuse successful results; failed requests
+are not retained. Opaque stored/profile credential references bypass completed
+result reuse so a server-side key rotation cannot be hidden behind an unchanged
+masked placeholder. OpenRouter and NanoGPT catalogs use a 30-second TTL where
+reuse is safe. Ollama Cloud tags use a 15-second cache keyed by credential under
+the same rule, while local Ollama discovery remains uncached.
 NanoGPT balance/subscription lookups dedupe only concurrent calls. The legacy
 model settings surface also debounces draft catalog credentials for 400 ms, so
 typing a key does not issue one catalog request per character.

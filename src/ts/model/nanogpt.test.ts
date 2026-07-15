@@ -1,15 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  clearNanoGPTRequestCachesForTests,
-  getNanoGPTModelCatalog,
-  getNanoGPTModels,
-  type NanoGPTCatalogFetchContext,
-} from './nanogpt'
-import {
-  NANOGPT_MODELS_ENDPOINT,
-  NANOGPT_PERSONALIZED_MODELS_ENDPOINT,
-  NANOGPT_SUBSCRIPTION_MODELS_ENDPOINT,
-} from './providers/nanogpt'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const providerOperations = vi.hoisted(() => ({
+  credential: vi.fn((apiKey: string | null | undefined, options?: { profileId?: string | null }) => {
+    if (apiKey === '__RISU_SECRET_MASKED__') {
+      return options?.profileId ? { source: 'model-profile', profileId: options.profileId } : { source: 'stored' }
+    }
+    return apiKey ? { source: 'provided', apiKey } : { source: 'none' }
+  }),
+  request: vi.fn(),
+}))
+
+vi.mock('../server/providerOperations', () => ({
+  providerOperationCredential: providerOperations.credential,
+  requestProviderOperation: providerOperations.request,
+}))
 
 const mockDatabase = vi.hoisted(() => ({
   value: {
@@ -21,19 +25,15 @@ vi.mock('../storage/database.svelte', () => ({
   getDatabase: () => mockDatabase.value,
 }))
 
-const fetchMock = vi.fn()
-
-function mockJsonResponse(body: unknown): Response {
-  return {
-    ok: true,
-    status: 200,
-    json: vi.fn().mockResolvedValue(body),
-  } as unknown as Response
-}
-
-function firstFetchInit(): { headers: Record<string, string> } {
-  return fetchMock.mock.calls[0][1] as { headers: Record<string, string> }
-}
+import {
+  clearNanoGPTRequestCachesForTests,
+  getNanoGPTBalance,
+  getNanoGPTModelCatalog,
+  getNanoGPTModelProviders,
+  getNanoGPTModels,
+  getNanoGPTSubscription,
+  type NanoGPTCatalogFetchContext,
+} from './nanogpt'
 
 function nanoModel() {
   return {
@@ -51,28 +51,22 @@ function nanoModel() {
   }
 }
 
-describe('getNanoGPTModels', () => {
+describe('NanoGPT provider operations', () => {
   beforeEach(() => {
     mockDatabase.value = { nanogptKey: 'global-nanogpt-key' }
     clearNanoGPTRequestCachesForTests()
-    fetchMock.mockReset()
-    vi.stubGlobal('fetch', fetchMock)
+    providerOperations.credential.mockClear()
+    providerOperations.request.mockReset()
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
-
-  it('uses the global NanoGPT key when no catalog context is provided', async () => {
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [nanoModel()] }))
+  it('uses the global NanoGPT credential and maps catalog models', async () => {
+    providerOperations.request.mockResolvedValueOnce({ data: [nanoModel()] })
 
     const models = await getNanoGPTModels()
 
-    expect(fetchMock).toHaveBeenCalledWith(`${NANOGPT_PERSONALIZED_MODELS_ENDPOINT}?detailed=true`, {
-      headers: {
-        Authorization: 'Bearer global-nanogpt-key',
-        'Content-Type': 'application/json',
-      },
+    expect(providerOperations.credential).toHaveBeenCalledWith('global-nanogpt-key', { profileId: undefined })
+    expect(providerOperations.request).toHaveBeenCalledWith('nanogpt.models', {
+      credential: expect.objectContaining({ apiKey: 'global-nanogpt-key' }),
     })
     expect(models).toEqual([
       {
@@ -89,46 +83,43 @@ describe('getNanoGPTModels', () => {
     ])
   })
 
-  it('uses an explicit catalog key instead of the saved global key', async () => {
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+  it('uses an explicit model-profile context instead of the saved global key', async () => {
+    providerOperations.request.mockResolvedValue({ data: [] })
 
-    await getNanoGPTModels({ apiKey: 'draft-nanogpt-key' })
+    await getNanoGPTModels({ apiKey: '__RISU_SECRET_MASKED__', profileId: 'profile-a' })
+    await getNanoGPTModels({ apiKey: '__RISU_SECRET_MASKED__', profileId: 'profile-a' })
 
-    expect(fetchMock).toHaveBeenCalledWith(`${NANOGPT_PERSONALIZED_MODELS_ENDPOINT}?detailed=true`, {
-      headers: {
-        Authorization: 'Bearer draft-nanogpt-key',
-        'Content-Type': 'application/json',
-      },
-    })
+    expect(providerOperations.credential).toHaveBeenCalledWith('__RISU_SECRET_MASKED__', { profileId: 'profile-a' })
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
   })
 
-  it('shares a rapid same-key request and briefly reuses its successful result', async () => {
-    let resolveResponse!: (response: Response) => void
-    fetchMock.mockReturnValueOnce(
-      new Promise<Response>((resolve) => {
+  it('shares a rapid same-context request and briefly reuses its successful result', async () => {
+    let resolveResponse!: (response: { data: unknown[] }) => void
+    providerOperations.request.mockReturnValueOnce(
+      new Promise((resolve) => {
         resolveResponse = resolve
       }),
     )
 
-    const first = getNanoGPTModels({ apiKey: 'same-key' })
-    const second = getNanoGPTModels({ apiKey: 'same-key' })
+    const first = getNanoGPTModels({ apiKey: 'same-key', profileId: 'same-profile' })
+    const second = getNanoGPTModels({ apiKey: 'same-key', profileId: 'same-profile' })
     await Promise.resolve()
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    resolveResponse(mockJsonResponse({ data: [nanoModel()] }))
+    expect(providerOperations.request).toHaveBeenCalledTimes(1)
+    resolveResponse({ data: [nanoModel()] })
     const [firstModels, secondModels] = await Promise.all([first, second])
-    const cachedModels = await getNanoGPTModels({ apiKey: 'same-key' })
+    const cachedModels = await getNanoGPTModels({ apiKey: 'same-key', profileId: 'same-profile' })
 
     expect(firstModels).toEqual(secondModels)
     expect(cachedModels).toEqual(firstModels)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(providerOperations.request).toHaveBeenCalledTimes(1)
   })
 
   it('keeps changed API keys isolated from cached requests and results', async () => {
-    fetchMock.mockImplementation(async (_url, init: RequestInit) => {
-      const authorization = (init.headers as Record<string, string>).Authorization
-      const suffix = authorization.endsWith('first-key') ? 'first' : 'second'
-      return mockJsonResponse({ data: [{ ...nanoModel(), id: `nano/${suffix}`, name: suffix }] })
+    providerOperations.request.mockImplementation(async (_operation, options) => {
+      const key = options.credential.apiKey as string
+      const suffix = key.endsWith('first-key') ? 'first' : 'second'
+      return { data: [{ ...nanoModel(), id: `nano/${suffix}`, name: suffix }] }
     })
 
     const firstModels = await getNanoGPTModels({ apiKey: 'first-key' })
@@ -136,47 +127,62 @@ describe('getNanoGPTModels', () => {
 
     expect(firstModels[0].id).toBe('nano/first')
     expect(secondModels[0].id).toBe('nano/second')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-    expect((fetchMock.mock.calls[0][1] as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer first-key',
-    })
-    expect((fetchMock.mock.calls[1][1] as RequestInit).headers).toMatchObject({
-      Authorization: 'Bearer second-key',
-    })
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
   })
 
   it('does not retain failed requests', async () => {
-    fetchMock.mockRejectedValueOnce(new Error('network unavailable'))
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [nanoModel()] }))
+    providerOperations.request.mockRejectedValueOnce(new Error('network unavailable'))
+    providerOperations.request.mockResolvedValueOnce({ data: [nanoModel()] })
 
     expect(await getNanoGPTModels({ apiKey: 'retry-key' })).toEqual([])
     expect(await getNanoGPTModels({ apiKey: 'retry-key' })).toHaveLength(1)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(providerOperations.request).toHaveBeenCalledTimes(2)
   })
 
-  it('does not request the subscription catalog while subscription mode is disabled', async () => {
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [nanoModel()] }))
+  it('uses the pay-as-you-go operation while subscription mode is disabled', async () => {
+    providerOperations.request.mockResolvedValueOnce({ data: [nanoModel()] })
 
     await getNanoGPTModelCatalog('pay-as-you-go-key', false)
 
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0][0]).toBe(`${NANOGPT_PERSONALIZED_MODELS_ENDPOINT}?detailed=true`)
-    expect(fetchMock).not.toHaveBeenCalledWith(
-      `${NANOGPT_SUBSCRIPTION_MODELS_ENDPOINT}?detailed=true`,
-      expect.anything(),
-    )
+    expect(providerOperations.request).toHaveBeenCalledOnce()
+    expect(providerOperations.request).toHaveBeenCalledWith('nanogpt.models', expect.anything())
   })
 
   it.each<[string, NanoGPTCatalogFetchContext]>([
     ['blank', { apiKey: '' }],
     ['undefined', { apiKey: undefined }],
     ['missing', {}],
-  ])('treats an explicit %s catalog context as intentional public catalog access', async (_label, context) => {
-    fetchMock.mockResolvedValueOnce(mockJsonResponse({ data: [] }))
+  ])('treats an explicit %s context as intentional public catalog access', async (_label, context) => {
+    providerOperations.request.mockResolvedValueOnce({ data: [] })
 
     await getNanoGPTModels(context)
 
-    expect(fetchMock.mock.calls[0][0]).toBe(`${NANOGPT_MODELS_ENDPOINT}?detailed=true`)
-    expect(firstFetchInit().headers).toEqual({ 'Content-Type': 'application/json' })
+    expect(providerOperations.credential).toHaveBeenCalledWith('', { profileId: undefined })
+    expect(providerOperations.request).toHaveBeenCalledWith('nanogpt.models', {
+      credential: expect.objectContaining({ source: 'none' }),
+    })
+  })
+
+  it('routes account and provider-detail requests through their fixed operations', async () => {
+    providerOperations.request
+      .mockResolvedValueOnce({ usd_balance: '1', nano_balance: '2', nanoDepositAddress: 'nano-address' })
+      .mockResolvedValueOnce({ active: true, state: 'active' })
+      .mockResolvedValueOnce({ providers: [], canonicalId: 'model-a' })
+
+    await expect(getNanoGPTBalance('account-key')).resolves.toMatchObject({ usd_balance: '1' })
+    await expect(getNanoGPTSubscription('account-key')).resolves.toMatchObject({ state: 'active' })
+    await expect(getNanoGPTModelProviders('account-key', 'owner/model')).resolves.toMatchObject({
+      canonicalId: 'model-a',
+    })
+
+    expect(providerOperations.request.mock.calls.map(([operation]) => operation)).toEqual([
+      'nanogpt.balance',
+      'nanogpt.subscription',
+      'nanogpt.model-providers',
+    ])
+    expect(providerOperations.request).toHaveBeenLastCalledWith('nanogpt.model-providers', {
+      credential: expect.objectContaining({ apiKey: 'account-key' }),
+      input: { modelId: 'owner/model' },
+    })
   })
 })

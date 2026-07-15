@@ -8,11 +8,12 @@ const otherBotMocks = vi.hoisted(() => ({
   alertMd: vi.fn(),
   alertNormal: vi.fn(),
   drafts: new Map<string, { value: any; project?: (value: any) => void }>(),
-  globalFetch: vi.fn(),
   hypaEnabled: false,
   hypaPresets: [] as Array<Record<string, any>>,
   initialWavespeedImage: {} as Record<string, any>,
   loraWrites: [] as Array<Array<{ path: string; scale: number }>>,
+  providerOperation: vi.fn(),
+  providerOperationCredential: vi.fn((apiKey: string) => ({ source: 'provided', apiKey })),
   saveAsset: vi.fn(),
   selectSingleFile: vi.fn(),
 }))
@@ -103,8 +104,12 @@ vi.mock('src/ts/server/settingsBridge.svelte', async () => {
 
 vi.mock('src/ts/globalApi.svelte', () => ({
   downloadFile: vi.fn(),
-  globalFetch: otherBotMocks.globalFetch,
   saveAsset: otherBotMocks.saveAsset,
+}))
+
+vi.mock('src/ts/server/providerOperations', () => ({
+  providerOperationCredential: otherBotMocks.providerOperationCredential,
+  requestProviderOperation: otherBotMocks.providerOperation,
 }))
 
 vi.mock('src/ts/alert', () => ({
@@ -180,6 +185,7 @@ beforeEach(() => {
   otherBotMocks.alertConfirm.mockReset()
   otherBotMocks.alertError.mockReset()
   otherBotMocks.alertInput.mockReset()
+  otherBotMocks.alertNormal.mockReset()
   otherBotMocks.hypaEnabled = false
   otherBotMocks.hypaPresets = []
   otherBotMocks.loraWrites.length = 0
@@ -194,23 +200,21 @@ beforeEach(() => {
     ],
     reference_mode: '',
   }
-  otherBotMocks.globalFetch.mockReset()
-  otherBotMocks.globalFetch.mockResolvedValue({
-    ok: true,
-    data: {
-      code: 200,
-      data: [
-        {
-          type: 'text-to-image',
-          model_id: 'wavespeed/saved-model',
-          name: 'Saved model',
-          base_price: 0.01,
-          api_schema: {
-            api_schemas: [{ request_schema: { properties: { loras: {} } } }],
-          },
+  otherBotMocks.providerOperation.mockReset()
+  otherBotMocks.providerOperationCredential.mockClear()
+  otherBotMocks.providerOperation.mockResolvedValue({
+    code: 200,
+    data: [
+      {
+        type: 'text-to-image',
+        model_id: 'wavespeed/saved-model',
+        name: 'Saved model',
+        base_price: 0.01,
+        api_schema: {
+          api_schemas: [{ request_schema: { properties: { loras: {} } } }],
         },
-      ],
-    },
+      },
+    ],
   })
   setDatabaseLite({ useLegacyGUI: false } as any)
 })
@@ -300,27 +304,24 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
   })
 
   it('orders fetched models by display name instead of unrelated model ids', async () => {
-    otherBotMocks.globalFetch.mockResolvedValue({
-      ok: true,
-      data: {
-        code: 200,
-        data: [
-          {
-            type: 'text-to-image',
-            model_id: 'aaa-id',
-            name: 'Zulu Model',
-            base_price: 0.02,
-            api_schema: { api_schemas: [] },
-          },
-          {
-            type: 'text-to-image',
-            model_id: 'zzz-id',
-            name: 'Alpha Model',
-            base_price: 0.01,
-            api_schema: { api_schemas: [] },
-          },
-        ],
-      },
+    otherBotMocks.providerOperation.mockResolvedValue({
+      code: 200,
+      data: [
+        {
+          type: 'text-to-image',
+          model_id: 'aaa-id',
+          name: 'Zulu Model',
+          base_price: 0.02,
+          api_schema: { api_schemas: [] },
+        },
+        {
+          type: 'text-to-image',
+          model_id: 'zzz-id',
+          name: 'Alpha Model',
+          base_price: 0.01,
+          api_schema: { api_schemas: [] },
+        },
+      ],
     })
     component = mount(OtherBotSettings, { target })
     await tick()
@@ -342,6 +343,48 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
         .map((option) => option.value)
         .filter(Boolean),
     ).toEqual(['zzz-id', 'aaa-id'])
+    expect(otherBotMocks.providerOperation).toHaveBeenCalledWith('wavespeed.models', {
+      credential: { source: 'provided', apiKey: 'wavespeed-key' },
+    })
+  })
+
+  it('drops a delayed model response after the API key draft changes', async () => {
+    const delayedModels = deferred<{
+      code: number
+      data: Array<{ type: string; model_id: string; name: string; base_price: number; api_schema: object }>
+    }>()
+    otherBotMocks.providerOperation.mockReturnValueOnce(delayedModels.promise)
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    buttonNamed(language.imageGeneration).click()
+    await tick()
+    buttonNamed('Refresh Models').click()
+    await vi.waitFor(() => expect(otherBotMocks.providerOperation).toHaveBeenCalledOnce())
+
+    const apiKeyInput = target.querySelector<HTMLInputElement>('input[placeholder="sk-..."]')
+    expect(apiKeyInput).toBeTruthy()
+    apiKeyInput!.value = 'new-wavespeed-key'
+    apiKeyInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    delayedModels.resolve({
+      code: 200,
+      data: [
+        {
+          type: 'text-to-image',
+          model_id: 'stale-model',
+          name: 'Stale model',
+          base_price: 0.01,
+          api_schema: { api_schemas: [] },
+        },
+      ],
+    })
+
+    await vi.waitFor(() => expect(buttonNamed('Refresh Models').disabled).toBe(false))
+    expect(otherBotMocks.drafts.get('wavespeedImage')?.value.key).toBe('new-wavespeed-key')
+    expect(Array.from(target.querySelectorAll('option'), (option) => option.value)).not.toContain('stale-model')
+    expect(otherBotMocks.alertNormal).not.toHaveBeenCalled()
   })
 
   it('keeps an older delayed file read from superseding a newer reference-image selection', async () => {
@@ -352,20 +395,17 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
     let pickerCall = 0
 
     otherBotMocks.initialWavespeedImage.reference_mode = 'image'
-    otherBotMocks.globalFetch.mockResolvedValue({
-      ok: true,
-      data: {
-        code: 200,
-        data: [
-          {
-            type: 'image-to-image',
-            model_id: 'wavespeed/saved-model',
-            name: 'Saved model',
-            base_price: 0.01,
-            api_schema: { api_schemas: [] },
-          },
-        ],
-      },
+    otherBotMocks.providerOperation.mockResolvedValue({
+      code: 200,
+      data: [
+        {
+          type: 'image-to-image',
+          model_id: 'wavespeed/saved-model',
+          name: 'Saved model',
+          base_price: 0.01,
+          api_schema: { api_schemas: [] },
+        },
+      ],
     })
     otherBotMocks.selectSingleFile.mockImplementation(
       async (_extensions: string[], options: { onFileSelected?: (file: File) => void } = {}) => {

@@ -1,17 +1,11 @@
 import { getDatabase } from '../storage/database.svelte'
-import {
-  NANOGPT_PERSONALIZED_MODELS_ENDPOINT,
-  NANOGPT_MODELS_ENDPOINT,
-  NANOGPT_BALANCE_ENDPOINT,
-  NANOGPT_SUBSCRIPTION_ENDPOINT,
-  NANOGPT_SUBSCRIPTION_MODELS_ENDPOINT,
-  NANOGPT_MODEL_PROVIDERS_ENDPOINT,
-} from './providers/nanogpt'
+import { providerOperationCredential, requestProviderOperation } from '../server/providerOperations'
 import type { ModelGridItem } from './modelGrid'
 import { createKeyedRequestCache, type KeyedRequestOptions } from './keyedRequestCache'
 
 export type NanoGPTCatalogFetchContext = {
   apiKey?: string | null
+  profileId?: string | null
   refresh?: boolean
 }
 
@@ -82,14 +76,10 @@ export async function getNanoGPTBalance(key: string, options?: NanoGPTRequestOpt
   try {
     return await nanoGPTBalanceRequests.request(
       key,
-      async () => {
-        const res = await fetch(NANOGPT_BALANCE_ENDPOINT, {
-          method: 'POST',
-          headers: { 'x-api-key': key, 'Content-Type': 'application/json' },
-        })
-        if (!res.ok) throw new Error(`NanoGPT balance request failed (${res.status})`)
-        return await res.json()
-      },
+      () =>
+        requestProviderOperation<NanoGPTBalance>('nanogpt.balance', {
+          credential: providerOperationCredential(key),
+        }),
       options,
     )
   } catch {
@@ -104,13 +94,10 @@ export async function getNanoGPTSubscription(
   try {
     return await nanoGPTSubscriptionRequests.request(
       key,
-      async () => {
-        const res = await fetch(NANOGPT_SUBSCRIPTION_ENDPOINT, {
-          headers: { Authorization: 'Bearer ' + key },
-        })
-        if (!res.ok) throw new Error(`NanoGPT subscription request failed (${res.status})`)
-        return await res.json()
-      },
+      () =>
+        requestProviderOperation<NanoGPTSubscriptionUsage>('nanogpt.subscription', {
+          credential: providerOperationCredential(key),
+        }),
       options,
     )
   } catch {
@@ -164,18 +151,21 @@ export async function getNanoGPTModelProviders(
   options?: NanoGPTRequestOptions,
 ): Promise<NanoGPTModelProviders | null> {
   try {
+    const credential = providerOperationCredential(key)
     return await nanoGPTProviderRequests.request(
       JSON.stringify([key, modelId]),
       async () => {
-        const res = await fetch(`${NANOGPT_MODEL_PROVIDERS_ENDPOINT}/${encodeURIComponent(modelId)}/providers`, {
-          headers: { Authorization: 'Bearer ' + key },
+        const json = await requestProviderOperation<NanoGPTModelProviders>('nanogpt.model-providers', {
+          credential,
+          input: { modelId },
         })
-        if (!res.ok) throw new Error(`NanoGPT provider request failed (${res.status})`)
-        const json = await res.json()
         if (!json || !Array.isArray(json.providers)) throw new Error('NanoGPT provider response was malformed')
         return json
       },
-      options,
+      {
+        ...options,
+        refresh: options?.refresh || credential.source === 'stored' || credential.source === 'model-profile',
+      },
     )
   } catch {
     return null
@@ -188,49 +178,51 @@ export async function getNanoGPTSubscriptionModels(
 ): Promise<NanoGPTModelInfo[]> {
   if (!key) return []
   try {
+    const credential = providerOperationCredential(key)
     return await nanoGPTSubscriptionModelRequests.request(
       key,
       async () => {
-        const res = await fetch(NANOGPT_SUBSCRIPTION_MODELS_ENDPOINT + '?detailed=true', {
-          headers: { Authorization: 'Bearer ' + key },
+        const json = await requestProviderOperation<{ data?: unknown }>('nanogpt.subscription-models', {
+          credential,
         })
-        if (!res.ok) throw new Error(`NanoGPT subscription model request failed (${res.status})`)
-        const json = await res.json()
         return mapNanoGPTModels(json?.data)
       },
-      options,
+      {
+        ...options,
+        refresh: options?.refresh || credential.source === 'stored' || credential.source === 'model-profile',
+      },
     )
   } catch {
     return []
   }
 }
 
-function resolveNanoGPTCatalogKey(context?: NanoGPTCatalogFetchContext): string {
+function resolveNanoGPTCatalogContext(context?: NanoGPTCatalogFetchContext): {
+  apiKey: string
+  profileId?: string | null
+} {
   if (context !== undefined) {
-    return context.apiKey ?? ''
+    return { apiKey: context.apiKey ?? '', profileId: context.profileId }
   }
-  return getDatabase().nanogptKey
+  return { apiKey: getDatabase().nanogptKey }
 }
 
 export async function getNanoGPTModels(context?: NanoGPTCatalogFetchContext): Promise<NanoGPTModelInfo[]> {
   try {
-    const key = resolveNanoGPTCatalogKey(context)
+    const { apiKey, profileId } = resolveNanoGPTCatalogContext(context)
+    const credential = providerOperationCredential(apiKey, { profileId })
 
     return await nanoGPTModelRequests.request(
-      key,
+      JSON.stringify([apiKey, profileId ?? '']),
       async () => {
-        const endpoint = (key ? NANOGPT_PERSONALIZED_MODELS_ENDPOINT : NANOGPT_MODELS_ENDPOINT) + '?detailed=true'
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (key) {
-          headers['Authorization'] = 'Bearer ' + key
-        }
-
-        const res = await fetch(endpoint, { headers })
-        if (!res.ok) throw new Error(`NanoGPT model request failed (${res.status})`)
-        const json = await res.json()
+        const json = await requestProviderOperation<{ data?: unknown }>('nanogpt.models', {
+          credential,
+        })
         return mapNanoGPTModels(json?.data)
       },
-      { refresh: context?.refresh },
+      {
+        refresh: context?.refresh || credential.source === 'stored' || credential.source === 'model-profile',
+      },
     )
   } catch {
     return []

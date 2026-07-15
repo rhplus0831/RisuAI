@@ -374,7 +374,10 @@ export async function requestOpenAI(arg: RequestDataArgumentExtended): Promise<r
 
   if (aiModel === 'openrouter' && openrouterRequestModel === 'risu/free') {
     const freeOpenRouterModel = await (hasResolvedProfile
-      ? getFreeOpenRouterModels({ apiKey: providerOptions?.apiKey })
+      ? getFreeOpenRouterModels({
+          apiKey: providerOptions?.apiKey,
+          profileId: arg.resolvedProfile?.source.kind === 'durable-profile' ? arg.resolvedProfile.profileId : undefined,
+        })
       : getFreeOpenRouterModels())
     if (!freeOpenRouterModel) {
       return {

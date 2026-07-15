@@ -6,6 +6,20 @@ vi.mock('../../modules', async (importActual) => {
   return { ...actual, moduleUpdate: () => {}, getModuleToggles: () => '', getModuleTriggers: () => [] }
 })
 
+const providerOperations = vi.hoisted(() => ({
+  credential: vi.fn((apiKey: string | null | undefined, options?: { profileId?: string | null }) => ({
+    source: apiKey ? 'provided' : 'none',
+    apiKey,
+    profileId: options?.profileId,
+  })),
+  request: vi.fn(),
+}))
+
+vi.mock('../../../server/providerOperations', () => ({
+  providerOperationCredential: providerOperations.credential,
+  requestProviderOperation: providerOperations.request,
+}))
+
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../model/modelProfileResolver'
 import { LLMFlags, LLMFormat, LLMProvider, LLMTokenizer, OpenAIParameters, type LLMModel } from '../../../model/types'
 import { getDatabase, setDatabase, type Database } from '../../../storage/database.svelte'
@@ -107,6 +121,8 @@ beforeEach(() => {
     value === undefined ? undefined : JSON.parse(JSON.stringify(value)),
   )
   vi.spyOn(console, 'log').mockImplementation(() => {})
+  providerOperations.credential.mockClear()
+  providerOperations.request.mockReset()
 })
 
 afterEach(() => {
@@ -375,50 +391,35 @@ describe('requestOpenAI profile provider options', () => {
         openrouterRequestModel: 'risu/free',
       } as Partial<Database>),
     )
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
-      const authorization = (init?.headers as Record<string, string> | undefined)?.Authorization
-      const data =
-        authorization === 'Bearer sk-profile-openrouter-free'
-          ? [
-              {
-                id: 'profile/free-small',
-                name: 'Profile Free Small',
-                context_length: 2048,
-                description: 'Profile small free model',
-                pricing: { prompt: '0', completion: '0' },
-              },
-              {
-                id: 'profile/free-large',
-                name: 'Profile Free Large',
-                context_length: 32768,
-                description: 'Profile large free model',
-                pricing: { prompt: '0', completion: '0' },
-              },
-            ]
-          : [
-              {
-                id: 'flat/free-large',
-                name: 'Flat Free Large',
-                context_length: 65536,
-                description: 'Flat free model',
-                pricing: { prompt: '0', completion: '0' },
-              },
-            ]
-
-      return new Response(JSON.stringify({ data }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })
+    providerOperations.request.mockResolvedValue({
+      data: [
+        {
+          id: 'profile/free-small',
+          name: 'Profile Free Small',
+          context_length: 2048,
+          description: 'Profile small free model',
+          pricing: { prompt: '0', completion: '0' },
+        },
+        {
+          id: 'profile/free-large',
+          name: 'Profile Free Large',
+          context_length: 32768,
+          description: 'Profile large free model',
+          pricing: { prompt: '0', completion: '0' },
+        },
+      ],
     })
-    vi.stubGlobal('fetch', fetchMock)
 
     const payload = await preview(makeArg(profile))
 
-    expect(fetchMock).toHaveBeenCalledWith('https://openrouter.ai/api/v1/models', {
-      headers: {
-        Authorization: 'Bearer sk-profile-openrouter-free',
-        'Content-Type': 'application/json',
-      },
+    expect(providerOperations.credential).toHaveBeenCalledWith('sk-profile-openrouter-free', {
+      profileId: undefined,
+    })
+    expect(providerOperations.request).toHaveBeenCalledWith('openrouter.models', {
+      credential: expect.objectContaining({
+        apiKey: 'sk-profile-openrouter-free',
+        profileId: undefined,
+      }),
     })
     expect(payload.headers.Authorization).toBe('Bearer sk-profile-openrouter-free')
     expect(payload.body.model).toBe('profile/free-large')
@@ -440,19 +441,12 @@ describe('requestOpenAI profile provider options', () => {
         openrouterRequestModel: 'risu/free',
       } as Partial<Database>),
     )
-    const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ data: [] }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-    )
-    vi.stubGlobal('fetch', fetchMock)
+    providerOperations.request.mockResolvedValue({ data: [] })
 
     const result = await requestOpenAI(makeArg(profile))
 
     expect(result).toEqual({ type: 'fail', result: language.errors.unknownModel })
-    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(providerOperations.request).toHaveBeenCalledOnce()
   })
 
   it('uses NanoGPT profile key, request model, provider header, and subscription endpoint over flat conflicts', async () => {

@@ -1,6 +1,6 @@
 # Client Runtime Guide
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-16.
 
 This file covers browser TypeScript areas that influence visible Svelte UI. For
 component ownership and UI triage, start with `src/docs/svelte-ui.md`.
@@ -27,6 +27,13 @@ events, and fetches large bodies such as chat messages on demand.
 Retained compatibility and parity helpers still exist under `src/ts/process/`,
 but they are not a selectable browser-local runtime. `src/ts/platform.ts`
 hard-codes Fastify mode.
+
+`src/ts/server/providerOperations.ts` is the browser adapter for provider
+catalog and account metadata. It sends operation ids and credential references
+to the authenticated Fastify endpoint rather than making cross-origin catalog
+requests with stored secrets. Fastify owns the fixed upstream URL, method, and
+headers; masked global/profile secrets remain server-side, while an intentional
+draft key is scoped to that one fixed operation.
 
 ## Startup Sequence
 
