@@ -1868,7 +1868,7 @@ async function streamAssembly(
   preparedAssembly?: PromptAssemblyRun,
   deferredFailure?: AssemblyDeferredFailure,
   metricContext: PromptAssemblyMetricContext = {},
-  requestAbort = attachAbort(req),
+  requestAbort = attachAbort(req, reply),
 ): Promise<void> {
   const { signal, refresh, abort, cleanup } = requestAbort
   let terminalDoneEmitted = false
@@ -3222,7 +3222,7 @@ export function registerGenerationChatRoutes(
       durable,
       clientCapabilities,
     })
-    const requestAbort = attachAbort(req)
+    const requestAbort = attachAbort(req, reply)
     const preflight = preflightChatGenerationSettings(reply, input, dataDir, db)
     if (preflight.status === 'handled') {
       requestAbort.cleanup()
@@ -3331,7 +3331,7 @@ export function registerGenerationChatRoutes(
         durable: false,
         clientCapabilities,
       })
-      const { signal, cleanup } = attachAbort(req)
+      const { signal, cleanup } = attachAbort(req, reply)
       try {
         const { result, deps } = await assemblePromptWithMetrics(input, dataDir, db, signal, metricContext)
         if (result.stopSending) {

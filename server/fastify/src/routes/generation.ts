@@ -451,7 +451,7 @@ async function collectCompletionFrames(
 }
 
 async function handleEchoStreaming(req: FastifyRequest, reply: FastifyReply, options: EchoOptions): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
@@ -465,7 +465,7 @@ async function handleEchoStreaming(req: FastifyRequest, reply: FastifyReply, opt
 }
 
 async function handleEchoBuffered(req: FastifyRequest, reply: FastifyReply, options: EchoOptions): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const echo = resolveEchoRequest({
       message: options.message,
@@ -557,7 +557,7 @@ async function handleAnthropicStreaming(
   messages: unknown[],
   options: AnthropicOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
     if (ap.ok === false) {
@@ -593,7 +593,7 @@ async function handleAnthropicBuffered(
   messages: unknown[],
   options: AnthropicOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceAnthropicAdditionalParams(options)
     if (ap.ok === false) {
@@ -630,7 +630,7 @@ async function handleKoboldBuffered(
   messages: unknown[],
   options: KoboldOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveKoboldRequest({
       messages,
@@ -662,7 +662,7 @@ async function handleOobaLegacyBuffered(
   messages: unknown[],
   options: OobaLegacyOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOobaLegacyRequest({
       messages,
@@ -697,7 +697,7 @@ async function handleOllamaStreaming(
   messages: unknown[],
   options: OllamaOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOllamaRequest({
       model,
@@ -729,7 +729,7 @@ async function handleOllamaBuffered(
   messages: unknown[],
   options: OllamaOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOllamaRequest({
       model,
@@ -762,7 +762,7 @@ async function handleHordeBuffered(
   model: string,
   options: HordeOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveHordeRequest({
       prompt: options.prompt,
@@ -796,7 +796,7 @@ async function handleBedrockBuffered(
   messages: unknown[],
   options: BedrockOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const creds = coerceBedrockCredentials(options.credentials)
     if (creds === null) {
@@ -847,7 +847,7 @@ async function handleResponsesBuffered(
   messages: unknown[],
   options: ResponsesOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceResponsesAdditionalParams(options)
     if (ap.ok === false) {
@@ -886,7 +886,7 @@ async function handleLegacyInstructBuffered(
   messages: unknown[],
   options: LegacyInstructOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceLegacyInstructAdditionalParams(options)
     if (ap.ok === false) {
@@ -927,7 +927,7 @@ async function handleGeminiStreaming(
   messages: unknown[],
   options: GeminiOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const vertex = coerceVertexAuth(options.vertex)
     let vertexAuth: VertexAuthCoerced | undefined
@@ -967,7 +967,7 @@ async function handleGeminiBuffered(
   messages: unknown[],
   options: GeminiOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const vertex = coerceVertexAuth(options.vertex)
     let vertexAuth: VertexAuthCoerced | undefined
@@ -1009,7 +1009,7 @@ async function handleCohereBuffered(
   messages: unknown[],
   options: CohereOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     if (typeof options.apiKey !== 'string' || options.apiKey.length === 0) {
       badRequest(reply, 'options.cohere.apiKey is required')
@@ -1054,7 +1054,7 @@ async function handleMistralStreaming(
   messages: unknown[],
   options: MistralOptions,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceMistralAdditionalParams(options)
     if (ap.ok === false) {
@@ -1093,7 +1093,7 @@ async function handleMistralBuffered(
   messages: unknown[],
   options: MistralOptions,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const ap = coerceMistralAdditionalParams(options)
     if (ap.ok === false) {
@@ -1134,7 +1134,7 @@ async function handleOpenAICompatibleStreaming(
   messages: unknown[],
   variant: OpenAICompatibleVariant,
 ): Promise<void> {
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOpenAIRequest({
       model,
@@ -1165,7 +1165,7 @@ async function handleOpenAICompatibleBuffered(
   messages: unknown[],
   variant: OpenAICompatibleVariant,
 ): Promise<void> {
-  const { signal, cleanup } = attachAbort(req)
+  const { signal, cleanup } = attachAbort(req, reply)
   try {
     const resolved = resolveOpenAIRequest({
       model,
@@ -1231,7 +1231,7 @@ async function handleServerIntentCompletion(
     return badRequest(reply, 'database is not initialized')
   }
 
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const baseDatabase = settingsToCompletionDatabase(settings)
     const profile = selectedCompletionProfile(baseDatabase, body)

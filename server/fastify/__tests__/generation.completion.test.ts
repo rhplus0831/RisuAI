@@ -143,40 +143,42 @@ function ollamaChatResponse(text: string, model = 'ollama-model'): Response {
   })
 }
 
-interface FakeRawReply {
+interface FakeRawReply extends EventEmitter {
   statusCode: number
   headers: Record<string, string>
   chunks: string[]
   ended: boolean
+  writableEnded: boolean
   writeHead(statusCode: number, headers: Record<string, string>): void
   write(chunk: string): void
   end(): void
 }
 
 function fakeReply(): { reply: FastifyReply; raw: FakeRawReply } {
-  const raw: FakeRawReply = {
-    statusCode: 0,
-    headers: {},
-    chunks: [],
-    ended: false,
-    writeHead(statusCode, headers) {
-      this.statusCode = statusCode
-      this.headers = headers
-    },
-    write(chunk) {
-      this.chunks.push(chunk)
-    },
-    end() {
-      this.ended = true
-    },
+  const raw = new EventEmitter() as FakeRawReply
+  raw.statusCode = 0
+  raw.headers = {}
+  raw.chunks = []
+  raw.ended = false
+  raw.writableEnded = false
+  raw.writeHead = (statusCode, headers) => {
+    raw.statusCode = statusCode
+    raw.headers = headers
+  }
+  raw.write = (chunk) => {
+    raw.chunks.push(chunk)
+  }
+  raw.end = () => {
+    raw.ended = true
+    raw.writableEnded = true
   }
   return { reply: { raw } as unknown as FastifyReply, raw }
 }
 
 function fakeAbortReq(): {
-  raw: EventEmitter & { on: EventEmitter['on']; off: EventEmitter['off'] }
+  raw: EventEmitter & { complete: boolean }
 } {
-  return { raw: new EventEmitter() }
+  return { raw: Object.assign(new EventEmitter(), { complete: true }) }
 }
 
 function waitForFrame(ms: number, signal: AbortSignal): Promise<boolean> {
@@ -1194,7 +1196,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
-    const { signal, refresh, cleanup } = attachAbort(req, { deadlineMs: 100 })
+    const { signal, refresh, cleanup } = attachAbort(req, reply, { deadlineMs: 100 })
     let settled = false
 
     async function* frames(): AsyncGenerator<CompletionStreamFrame> {
@@ -1229,7 +1231,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
-    const { signal, refresh, cleanup } = attachAbort(req, { deadlineMs: 100 })
+    const { signal, refresh, cleanup } = attachAbort(req, reply, { deadlineMs: 100 })
 
     async function* frames(): AsyncGenerator<CompletionStreamFrame> {
       if (await waitForFrame(200, signal)) yield { kind: 'token', content: 'late' }
@@ -1252,7 +1254,7 @@ describe('Phase 6-4 POST /api/v1/generate/completion (openai)', () => {
     vi.useFakeTimers()
     const req = fakeAbortReq()
     const { reply, raw } = fakeReply()
-    const { signal, refresh, cleanup } = attachAbort(req, { deadlineMs: 100 })
+    const { signal, refresh, cleanup } = attachAbort(req, reply, { deadlineMs: 100 })
 
     async function* frames(): AsyncGenerator<CompletionStreamFrame> {
       if (await waitForFrame(90, signal)) yield { kind: 'token', content: '' }

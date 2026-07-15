@@ -95,7 +95,7 @@ export async function handleOllamaCloudToolProxy(
     else upstreamPayload.think = target.thinkingMode
   }
 
-  const { signal, refresh, cleanup } = attachAbort(req)
+  const { signal, refresh, cleanup } = attachAbort(req, reply)
   try {
     const upstream = await fetch(target.url, {
       method: 'POST',

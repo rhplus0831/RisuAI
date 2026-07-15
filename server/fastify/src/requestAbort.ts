@@ -3,8 +3,8 @@ import { PROXY_STREAM_DEFAULT_TIMEOUT_MS, normalizeStreamTimeoutMs } from './str
 /**
  * Per-request abort plumbing for the non-durable generation paths.
  *
- * The returned signal fires on client disconnect (`req.raw` close) and at a
- * generous sliding deadline mirroring the durable path's bounded timeout window,
+ * The returned signal fires on client disconnect and at a generous sliding
+ * deadline mirroring the durable path's bounded timeout window,
  * so buffered and streaming provider work is bounded even when the client never
  * goes away. The deadline lives here,
  * at the signal source, so every adapter inherits it instead of each of the ~10
@@ -19,11 +19,19 @@ export interface RequestAbort {
   cleanup: () => void
 }
 
-/** The `req.raw` close-event surface we need (structural, so unit tests can
- *  hand in a bare EventEmitter). */
 interface CloseEmitter {
   on(event: 'close', listener: () => void): unknown
   off(event: 'close', listener: () => void): unknown
+}
+
+/** Structural request/reply close-event surfaces so unit tests can use bare
+ * EventEmitters while production passes Fastify's IncomingMessage/ServerResponse. */
+interface RequestCloseEmitter extends CloseEmitter {
+  complete: boolean
+}
+
+interface ResponseCloseEmitter extends CloseEmitter {
+  writableEnded: boolean
 }
 
 function createDeadlineAbort(opts: { deadlineMs?: number } = {}): RequestAbort {
@@ -55,14 +63,25 @@ export function createDetachedAbort(opts: { deadlineMs?: number } = {}): Request
   return createDeadlineAbort(opts)
 }
 
-export function attachAbort(req: { raw: CloseEmitter }, opts: { deadlineMs?: number } = {}): RequestAbort {
+export function attachAbort(
+  req: { raw: RequestCloseEmitter },
+  reply: { raw: ResponseCloseEmitter },
+  opts: { deadlineMs?: number } = {},
+): RequestAbort {
   const requestAbort = createDeadlineAbort(opts)
-  const onClose = (): void => requestAbort.abort()
-  req.raw.on('close', onClose)
+  const onRequestClose = (): void => {
+    if (!req.raw.complete) requestAbort.abort()
+  }
+  const onResponseClose = (): void => {
+    if (!reply.raw.writableEnded) requestAbort.abort()
+  }
+  req.raw.on('close', onRequestClose)
+  reply.raw.on('close', onResponseClose)
   return {
     ...requestAbort,
     cleanup: () => {
-      req.raw.off('close', onClose)
+      req.raw.off('close', onRequestClose)
+      reply.raw.off('close', onResponseClose)
       requestAbort.cleanup()
     },
   }
