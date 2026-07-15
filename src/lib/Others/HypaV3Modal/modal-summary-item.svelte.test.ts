@@ -11,6 +11,9 @@ vi.mock('src/lang', () => ({
       tag: 'Tag',
       connectedMessageCountLabel: 'Connected messages ({0})',
       connectedFirstMessageLabel: 'First message',
+      connectedMessageRoleLabel: 'Role: {0}',
+      connectedMessageNotFoundLabel: 'Message not found',
+      connectedMessageLoadingError: 'Unable to load message: {0}',
     },
   },
 }))
@@ -66,7 +69,7 @@ afterEach(() => {
 })
 
 describe('HypaV3 summary item keyboard navigation', () => {
-  it('keeps every available summary action button in the tab order', async () => {
+  it('keeps available summary controls in the appropriate tab order', async () => {
     const summary: SerializableSummary = {
       text: 'Summary text',
       chatMemos: ['message-1'],
@@ -102,5 +105,17 @@ describe('HypaV3 summary item keyboard navigation', () => {
 
     await vi.waitFor(() => expect(availableActionButtons()).toHaveLength(13))
     expect(availableActionButtons().every((button) => button.tabIndex === 0)).toBe(true)
+
+    const chatMemoButton = availableActionButtons().find((button) => button.textContent?.trim() === 'message-1')
+    expect(chatMemoButton).toBeTruthy()
+    chatMemoButton?.click()
+
+    await vi.waitFor(() => expect(target.querySelectorAll('textarea[readonly]')).toHaveLength(1))
+    const readonlyTextareas = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea[readonly]'))
+    expect(readonlyTextareas.every((textarea) => textarea.tabIndex === -1)).toBe(true)
+
+    const editableTextareas = Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea:not([readonly])'))
+    expect(editableTextareas).toHaveLength(2)
+    expect(editableTextareas.every((textarea) => textarea.tabIndex === 0)).toBe(true)
   })
 })
