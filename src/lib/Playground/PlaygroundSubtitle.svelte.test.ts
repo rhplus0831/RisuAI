@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const subtitleMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
+  decodeAudioFileWithTemporaryContext: vi.fn(),
+  pipeline: vi.fn(),
   requestChatData: vi.fn(),
+  requestOpenAITranscription: vi.fn(),
+  selectFileByDom: vi.fn(),
   selectSingleFile: vi.fn(),
 }))
 
@@ -40,9 +44,25 @@ vi.mock('src/ts/util', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/util')>()
   return {
     ...actual,
+    selectFileByDom: subtitleMocks.selectFileByDom,
     selectSingleFile: subtitleMocks.selectSingleFile,
   }
 })
+
+vi.mock('src/ts/server/openAITranscription', () => ({
+  requestOpenAITranscription: subtitleMocks.requestOpenAITranscription,
+}))
+
+vi.mock('@huggingface/transformers', () => ({
+  pipeline: subtitleMocks.pipeline,
+}))
+
+vi.mock('./subtitleMedia', () => ({
+  decodeAudioFileWithTemporaryContext: subtitleMocks.decodeAudioFileWithTemporaryContext,
+  probeVideoDuration: vi.fn(),
+  stereoAudioChannels: vi.fn(),
+  subtitlePreviewMimeType: (file: File) => file.type || 'audio/mpeg',
+}))
 
 vi.mock('src/ts/alert', () => ({
   alertError: subtitleMocks.alertError,
@@ -67,6 +87,8 @@ type MountedComponent = Parameters<typeof unmount>[0]
 
 let component: MountedComponent | undefined
 let target: HTMLElement
+let audioPlay: ReturnType<typeof vi.fn>
+let audioConstructor: ReturnType<typeof vi.fn>
 
 function runButton(): HTMLButtonElement | undefined {
   return Array.from(target.querySelectorAll('button')).find((button) => button.textContent?.trim() === 'Run')
@@ -83,8 +105,15 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.append(target)
   subtitleMocks.alertError.mockReset()
+  subtitleMocks.decodeAudioFileWithTemporaryContext.mockReset()
+  subtitleMocks.pipeline.mockReset()
   subtitleMocks.requestChatData.mockReset()
+  subtitleMocks.requestOpenAITranscription.mockReset()
+  subtitleMocks.selectFileByDom.mockReset()
   subtitleMocks.selectSingleFile.mockReset()
+  audioPlay = vi.fn(async () => {})
+  audioConstructor = vi.fn(() => ({ play: audioPlay }))
+  vi.stubGlobal('Audio', audioConstructor)
 })
 
 afterEach(() => {
@@ -93,7 +122,22 @@ afterEach(() => {
     component = undefined
   }
   target.remove()
+  vi.unstubAllGlobals()
 })
+
+async function selectMode(value: 'llm' | 'whisper' | 'whisperLocal'): Promise<void> {
+  const select = Array.from(target.querySelectorAll<HTMLSelectElement>('select')).find((candidate) =>
+    Array.from(candidate.options).some((option) => option.value === 'whisperLocal'),
+  )
+  if (!select) throw new Error('mode select not found')
+  select.value = value
+  select.dispatchEvent(new Event('input', { bubbles: true }))
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+  await tick()
+  if (value !== 'llm') {
+    expect(target.querySelector<HTMLTextAreaElement>('textarea')?.value).toContain('{{slot::data}}')
+  }
+}
 
 describe('PlaygroundSubtitle run recovery', () => {
   it('restores the Run control when the selected model cannot stream subtitles', async () => {
@@ -133,5 +177,94 @@ describe('PlaygroundSubtitle run recovery', () => {
     runButton()!.click()
     await vi.waitFor(() => expect(subtitleMocks.alertError).toHaveBeenCalledTimes(2))
     expect(runButton()).toBeTruthy()
+  })
+
+  it('aborts and cancels an active subtitle stream when the tool unmounts', async () => {
+    const reader = {
+      cancel: vi.fn(async () => {}),
+      read: vi.fn(
+        () =>
+          new Promise(() => {
+            /* intentionally never resolves */
+          }),
+      ),
+      releaseLock: vi.fn(),
+    }
+    subtitleMocks.selectSingleFile.mockResolvedValue({
+      name: 'sample.mp3',
+      data: new Uint8Array([1, 2, 3]),
+    })
+    subtitleMocks.requestChatData.mockResolvedValue({
+      type: 'streaming',
+      result: { getReader: () => reader },
+    })
+    component = mount(PlaygroundSubtitle, { target })
+    setTextareaValue('Create subtitles in {{slot}}')
+
+    runButton()!.click()
+    await vi.waitFor(() => expect(reader.read).toHaveBeenCalledTimes(1))
+    const signal = subtitleMocks.requestChatData.mock.calls[0][2] as AbortSignal
+
+    unmount(component)
+    component = undefined
+
+    expect(signal.aborted).toBe(true)
+    expect(reader.cancel).toHaveBeenCalledTimes(1)
+    expect(audioConstructor).not.toHaveBeenCalled()
+  })
+
+  it('passes teardown cancellation into OpenAI transcription', async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' })
+    subtitleMocks.selectFileByDom.mockResolvedValue([file])
+    subtitleMocks.requestOpenAITranscription.mockImplementation(
+      () =>
+        new Promise(() => {
+          /* intentionally never resolves */
+        }),
+    )
+    component = mount(PlaygroundSubtitle, { target })
+    await selectMode('whisper')
+
+    runButton()!.click()
+    await vi.waitFor(() => expect(subtitleMocks.requestOpenAITranscription).toHaveBeenCalledTimes(1))
+    const signal = subtitleMocks.requestOpenAITranscription.mock.calls[0][1] as AbortSignal
+
+    unmount(component)
+    component = undefined
+
+    expect(signal.aborted).toBe(true)
+    expect(subtitleMocks.requestChatData).not.toHaveBeenCalled()
+    expect(audioConstructor).not.toHaveBeenCalled()
+  })
+
+  it('disposes a local Whisper pipeline when the tool unmounts mid-transcription', async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], 'sample.mp3', { type: 'audio/mpeg' })
+    const dispose = vi.fn(async () => {})
+    const transcriber = Object.assign(
+      vi.fn(
+        () =>
+          new Promise(() => {
+            /* intentionally never resolves */
+          }),
+      ),
+      { dispose },
+    )
+    subtitleMocks.selectFileByDom.mockResolvedValue([file])
+    subtitleMocks.pipeline.mockResolvedValue(transcriber)
+    subtitleMocks.decodeAudioFileWithTemporaryContext.mockResolvedValue({
+      numberOfChannels: 1,
+      getChannelData: () => new Float32Array([0.1, 0.2]),
+    })
+    component = mount(PlaygroundSubtitle, { target })
+    await selectMode('whisperLocal')
+
+    runButton()!.click()
+    await vi.waitFor(() => expect(transcriber).toHaveBeenCalledTimes(1))
+
+    unmount(component)
+    component = undefined
+
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(audioConstructor).not.toHaveBeenCalled()
   })
 })

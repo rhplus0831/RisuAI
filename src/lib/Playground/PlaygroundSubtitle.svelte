@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { language } from 'src/lang'
   import TextInput from '../UI/GUI/TextInput.svelte'
   import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -38,12 +39,121 @@
   let sourceLang: string | null = $state(null)
   let running = $state(false)
 
-  async function runLLMMode(promptSnapshot: string, languageSnapshot: string): Promise<boolean> {
-    const file = await selectSingleFile(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov'])
+  type SubtitleStreamReader = ReadableStreamDefaultReader<Record<string, string>>
+  type DisposablePipeline = {
+    dispose?: () => void | Promise<void>
+  }
+  type LocalTranscriber = DisposablePipeline & ((audio: Float32Array, options: unknown) => Promise<any>)
+  type PipelineProgress = {
+    name?: string
+    status?: string
+    file?: string
+    progress?: number
+  }
+  type SubtitleRun = {
+    controller: AbortController
+    reader: SubtitleStreamReader | null
+    pipeline: DisposablePipeline | null
+  }
+
+  let activeRun: SubtitleRun | null = null
+  let destroyed = false
+  const disposedPipelines = new WeakSet<object>()
+
+  function subtitleAbortError(): DOMException {
+    return new DOMException('Subtitle run aborted', 'AbortError')
+  }
+
+  function isAbortError(error: unknown): boolean {
+    return !!error && typeof error === 'object' && 'name' in error && error.name === 'AbortError'
+  }
+
+  function isCurrentRun(run: SubtitleRun): boolean {
+    return !destroyed && activeRun === run && !run.controller.signal.aborted
+  }
+
+  function requireCurrentRun(run: SubtitleRun): void {
+    if (!isCurrentRun(run)) throw subtitleAbortError()
+  }
+
+  async function awaitRun<T>(
+    value: PromiseLike<T> | T,
+    run: SubtitleRun,
+    onLateValue?: (value: T) => void,
+  ): Promise<T> {
+    requireCurrentRun(run)
+    return await new Promise<T>((resolve, reject) => {
+      const signal = run.controller.signal
+      let settled = false
+      const settle = (callback: () => void) => {
+        if (settled) return false
+        settled = true
+        signal.removeEventListener('abort', onAbort)
+        callback()
+        return true
+      }
+      const onAbort = () => settle(() => reject(subtitleAbortError()))
+      signal.addEventListener('abort', onAbort, { once: true })
+      Promise.resolve(value).then(
+        (result) => {
+          if (!isCurrentRun(run)) {
+            settle(() => reject(subtitleAbortError()))
+            onLateValue?.(result)
+            return
+          }
+          if (!settle(() => resolve(result))) onLateValue?.(result)
+        },
+        (error) => settle(() => reject(error)),
+      )
+      if (signal.aborted) onAbort()
+    })
+  }
+
+  function disposePipeline(pipeline: DisposablePipeline | null): void {
+    if (!pipeline?.dispose) return
+    if (disposedPipelines.has(pipeline)) return
+    disposedPipelines.add(pipeline)
+    try {
+      void Promise.resolve(pipeline.dispose()).catch((error) => {
+        if (!destroyed) console.error('Unable to dispose subtitle transcription pipeline', error)
+      })
+    } catch (error) {
+      if (!destroyed) console.error('Unable to dispose subtitle transcription pipeline', error)
+    }
+  }
+
+  function cancelRun(run: SubtitleRun): void {
+    run.controller.abort()
+    const reader = run.reader
+    run.reader = null
+    if (reader) {
+      try {
+        void reader.cancel().catch(() => {})
+      } catch {
+        // The reader may already have released its lock.
+      }
+    }
+    const pipeline = run.pipeline
+    run.pipeline = null
+    disposePipeline(pipeline)
+  }
+
+  onDestroy(() => {
+    destroyed = true
+    if (activeRun) cancelRun(activeRun)
+    activeRun = null
+  })
+
+  async function runLLMMode(promptSnapshot: string, languageSnapshot: string, run: SubtitleRun): Promise<boolean> {
+    const file = await awaitRun(
+      selectSingleFile(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov']),
+      run,
+    )
 
     if (!file) {
       return false
     }
+    requireCurrentRun(run)
 
     const videos = ['mp4', 'webm', 'mkv', 'avi', 'mov']
 
@@ -67,7 +177,7 @@
         video.src = fileB64
         video.preload = 'metadata'
         video.muted = true
-        await video.play()
+        await awaitRun(video.play(), run)
         d = video.duration
       } finally {
         video.pause()
@@ -81,22 +191,27 @@
       }
     }
 
-    const v = await requestChatData(
-      {
-        formated: [
-          {
-            role: 'user',
-            content: risuChatParser(promptSnapshot)
-              .replace(/{{slot}}/g, languageSnapshot)
-              .replace(/{{slot::time}}/g, time),
-            multimodals: [media],
-          },
-        ],
-        bias: {},
-        useStreaming: true,
-      },
-      'translate',
+    const v = await awaitRun(
+      requestChatData(
+        {
+          formated: [
+            {
+              role: 'user',
+              content: risuChatParser(promptSnapshot)
+                .replace(/{{slot}}/g, languageSnapshot)
+                .replace(/{{slot::time}}/g, time),
+              multimodals: [media],
+            },
+          ],
+          bias: {},
+          useStreaming: true,
+        },
+        'translate',
+        run.controller.signal,
+      ),
+      run,
     )
+    requireCurrentRun(run)
 
     if (v.type === 'multiline') {
       alertError(v.result[0][1])
@@ -108,18 +223,30 @@
       return false
     }
 
-    const reader = v.result.getReader()
+    const reader = v.result.getReader() as SubtitleStreamReader
+    run.reader = reader
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        break
+    try {
+      while (true) {
+        const { done, value } = await awaitRun(reader.read(), run)
+        requireCurrentRun(run)
+        if (done) {
+          break
+        }
+        const firstKey = Object.keys(value)[0]
+
+        outputText = value[firstKey]
       }
-      const firstKey = Object.keys(value)[0]
-
-      outputText = value[firstKey]
+    } finally {
+      if (run.reader === reader) run.reader = null
+      try {
+        reader.releaseLock?.()
+      } catch {
+        // Cancellation may still be settling while the component unmounts.
+      }
     }
 
+    requireCurrentRun(run)
     const extracted = outputText.matchAll(/```(web)?(vtt)?\n(.*?)\n```/gs)
 
     let latest = ''
@@ -131,8 +258,10 @@
     outputText = makeWebVtt(vobj)
     vttB64 = `data:text/vtt;base64,${Buffer.from(outputText).toString('base64')}`
 
-    const audio = new Audio(sendSound)
-    audio.play().catch(() => {})
+    if (isCurrentRun(run)) {
+      const audio = new Audio(sendSound)
+      audio.play().catch(() => {})
+    }
     return true
   }
 
@@ -141,8 +270,12 @@
     promptSnapshot: string,
     languageSnapshot: string,
     sourceLanguageSnapshot: string | null,
+    run: SubtitleRun,
   ): Promise<boolean> {
-    const files = await selectFileByDom(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov'])
+    const files = await awaitRun(
+      selectFileByDom(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov']),
+      run,
+    )
 
     const file = files?.[0]
 
@@ -151,12 +284,14 @@
     if (!file) {
       return false
     }
+    requireCurrentRun(run)
     const videos = ['mp4', 'webm', 'mkv', 'avi', 'mov']
 
     const ext = file.name.split('.').pop()
     if (videos.includes(ext)) {
       let duration = 0
-      const d = await probeVideoDuration(file)
+      const d = await awaitRun(probeVideoDuration(file), run)
+      requireCurrentRun(run)
       if (isNaN(d)) {
         alertError('This video does not have a duration')
         return false
@@ -164,7 +299,7 @@
       duration = d
 
       outputText = 'Converting video to audio...\n\n'
-      const audioBuffer = await decodeAudioFileWithTemporaryContext(file)
+      const audioBuffer = await awaitRun(decodeAudioFileWithTemporaryContext(file), run)
 
       const [left, right] = stereoAudioChannels(audioBuffer)
 
@@ -172,15 +307,17 @@
       const rightInt16 = new Int16Array(right.length)
 
       for (let i = 0; i < left.length; i++) {
+        if (i % 16384 === 0) requireCurrentRun(run)
         leftInt16[i] = left[i] * 0x7fff
         rightInt16[i] = right[i] * 0x7fff
       }
 
-      const lamejs = await import('@breezystack/lamejs')
+      const lamejs = await awaitRun(import('@breezystack/lamejs'), run)
       const mp3encoder = new lamejs.Mp3Encoder(2, audioBuffer.sampleRate, 128)
       const enc = new AppendableBuffer()
 
       for (let pointer = 0; pointer < leftInt16.length; pointer += 1152) {
+        requireCurrentRun(run)
         enc.append(
           mp3encoder.encodeBuffer(
             leftInt16.subarray(pointer, pointer + 1152),
@@ -189,7 +326,7 @@
         )
         if (pointer % 115200 === 0) {
           outputText = `Converting  video to audio... ${((pointer / leftInt16.length) * 100).toFixed(2)}%\n`
-          await sleep(1)
+          await awaitRun(sleep(1), run)
         }
       }
       enc.append(mp3encoder.flush())
@@ -205,8 +342,10 @@
     }
 
     if (runMode === 'whisperLocal') {
+      let transcriber: LocalTranscriber | null = null
       try {
-        const { pipeline } = await import('@huggingface/transformers')
+        const { pipeline } = await awaitRun(import('@huggingface/transformers'), run)
+        requireCurrentRun(run)
         let stats: {
           [key: string]: {
             name: string
@@ -217,27 +356,49 @@
         } = {}
 
         const device = 'gpu' in navigator ? 'webgpu' : 'wasm'
+        const createTranscriber = pipeline as unknown as (
+          task: string,
+          model: string,
+          options: {
+            device: string
+            progress_callback: (progress: PipelineProgress) => void
+            dtype: string
+          },
+        ) => Promise<LocalTranscriber>
 
-        const transcriber = await pipeline(
-          'automatic-speech-recognition',
-          'onnx-community/whisper-large-v3-turbo_timestamped',
-          {
+        transcriber = (await awaitRun(
+          createTranscriber('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo_timestamped', {
             device: device,
             progress_callback: (progress) => {
-              if ('name' in progress && 'file' in progress) {
-                stats[progress.name + progress.file] = progress
+              if (
+                isCurrentRun(run) &&
+                typeof progress.name === 'string' &&
+                typeof progress.file === 'string' &&
+                typeof progress.status === 'string'
+              ) {
+                stats[progress.name + progress.file] = {
+                  name: progress.name,
+                  status: progress.status,
+                  file: progress.file,
+                  progress: progress.progress,
+                }
                 outputText = Object.values(stats)
                   .map((v) => `${v.name}-${v.file}: ${v.status} ${v.progress ? `[${v.progress.toFixed(2)}%]` : ''}`)
                   .join('\n')
               }
             },
             dtype: 'q8',
-          },
-        )
+          }),
+          run,
+          (latePipeline) => disposePipeline(latePipeline as DisposablePipeline),
+        )) as LocalTranscriber
+        requireCurrentRun(run)
+        run.pipeline = transcriber
 
-        const audioBuffer = await decodeAudioFileWithTemporaryContext(requestFile)
+        const audioBuffer = await awaitRun(decodeAudioFileWithTemporaryContext(requestFile), run)
         const combined = new Float32Array(audioBuffer.getChannelData(0).length)
         for (let j = 0; j < audioBuffer.getChannelData(0).length; j++) {
+          if (j % 16384 === 0) requireCurrentRun(run)
           for (let i = 0; i < audioBuffer.numberOfChannels; i++) {
             combined[j] += audioBuffer.getChannelData(i)[j]
           }
@@ -254,42 +415,58 @@
         if (device !== 'webgpu') {
           outputText += `\nYour browser or OS do not support WebGPU, so the transcription may be slower.`
         }
-        await sleep(10)
-        const res1 = await transcriber(combined, {
-          return_timestamps: true,
-          language: sourceLanguageSnapshot,
-        })
+        await awaitRun(sleep(10), run)
+        const res1 = await awaitRun(
+          transcriber(combined, {
+            return_timestamps: true,
+            language: sourceLanguageSnapshot,
+          }),
+          run,
+        )
+        requireCurrentRun(run)
         const res2 = Array.isArray(res1) ? res1[0] : res1
         const chunks = res2.chunks
 
         outputText = 'WEBVTT\n\n'
 
         for (const chunk of chunks) {
+          requireCurrentRun(run)
           outputText += `${chunk.timestamp[0]} --> ${chunk.timestamp[1]}\n${chunk.text}\n\n`
         }
       } catch (error) {
+        if (isAbortError(error)) throw error
         alertError(JSON.stringify(error))
         return false
+      } finally {
+        if (run.pipeline === transcriber) run.pipeline = null
+        disposePipeline(transcriber)
       }
     } else {
-      outputText = await requestOpenAITranscription(requestFile)
+      const transcription = await awaitRun(requestOpenAITranscription(requestFile, run.controller.signal), run)
+      requireCurrentRun(run)
+      outputText = transcription
     }
 
-    const v = await requestChatData(
-      {
-        formated: [
-          {
-            role: 'user',
-            content: risuChatParser(promptSnapshot)
-              .replace(/{{slot}}/g, languageSnapshot)
-              .replace(/{{slot::data}}/g, outputText),
-          },
-        ],
-        bias: {},
-        useStreaming: true,
-      },
-      'translate',
+    const v = await awaitRun(
+      requestChatData(
+        {
+          formated: [
+            {
+              role: 'user',
+              content: risuChatParser(promptSnapshot)
+                .replace(/{{slot}}/g, languageSnapshot)
+                .replace(/{{slot::data}}/g, outputText),
+            },
+          ],
+          bias: {},
+          useStreaming: true,
+        },
+        'translate',
+        run.controller.signal,
+      ),
+      run,
     )
+    requireCurrentRun(run)
 
     if (v.type === 'multiline') {
       alertError(v.result[0][1])
@@ -301,17 +478,29 @@
       return false
     }
 
-    const reader = v.result.getReader()
+    const reader = v.result.getReader() as SubtitleStreamReader
+    run.reader = reader
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) {
-        break
+    try {
+      while (true) {
+        const { done, value } = await awaitRun(reader.read(), run)
+        requireCurrentRun(run)
+        if (done) {
+          break
+        }
+        const firstKey = Object.keys(value)[0]
+
+        outputText = value[firstKey]
       }
-      const firstKey = Object.keys(value)[0]
-
-      outputText = value[firstKey]
+    } finally {
+      if (run.reader === reader) run.reader = null
+      try {
+        reader.releaseLock?.()
+      } catch {
+        // Cancellation may still be settling while the component unmounts.
+      }
     }
+    requireCurrentRun(run)
     if (!outputText.trim().endsWith('```')) {
       outputText = outputText.trim() + '\n```'
     }
@@ -323,14 +512,17 @@
       latest = match[3].trim()
     }
 
-    const fileBuffer = await file.arrayBuffer()
+    const fileBuffer = await awaitRun(file.arrayBuffer(), run)
+    requireCurrentRun(run)
     outputText = latest
     vttB64 = `data:text/vtt;base64,${Buffer.from(outputText).toString('base64')}`
     fileB64 = `data:${subtitlePreviewMimeType(file)};base64,${Buffer.from(fileBuffer).toString('base64')}`
     vobj = convertWebVTTtoObj(outputText)
 
-    const audio = new Audio(sendSound)
-    audio.play().catch(() => {})
+    if (isCurrentRun(run)) {
+      const audio = new Audio(sendSound)
+      audio.play().catch(() => {})
+    }
     return true
   }
 
@@ -341,6 +533,12 @@
     const promptSnapshot = prompt
     const languageSnapshot = selLang
     const sourceLanguageSnapshot = sourceLang
+    const run: SubtitleRun = {
+      controller: new AbortController(),
+      reader: null,
+      pipeline: null,
+    }
+    activeRun = run
     running = true
     outputText = 'Loading...\n\n'
     fileB64 = ''
@@ -350,14 +548,19 @@
     try {
       const completed =
         runMode === 'llm'
-          ? await runLLMMode(promptSnapshot, languageSnapshot)
-          : await runWhisperMode(runMode, promptSnapshot, languageSnapshot, sourceLanguageSnapshot)
-      if (!completed) resetOutput()
+          ? await runLLMMode(promptSnapshot, languageSnapshot, run)
+          : await runWhisperMode(runMode, promptSnapshot, languageSnapshot, sourceLanguageSnapshot, run)
+      if (isCurrentRun(run) && !completed) resetOutput()
     } catch (error) {
-      resetOutput()
-      alertError(error)
+      if (isCurrentRun(run) && !isAbortError(error)) {
+        resetOutput()
+        alertError(error)
+      }
     } finally {
-      running = false
+      if (activeRun === run) {
+        activeRun = null
+        running = false
+      }
     }
   }
 
@@ -478,10 +681,12 @@
 <SelectInput
   bind:value={mode}
   onchange={(e) => {
-    if (mode === 'llm') {
+    const selectedMode = e.currentTarget.value as typeof mode
+    mode = selectedMode
+    if (selectedMode === 'llm') {
       prompt = LLMModePrompt
     }
-    if (mode === 'whisper' || mode === 'whisperLocal') {
+    if (selectedMode === 'whisper' || selectedMode === 'whisperLocal') {
       prompt = WhisperModePrompt
     }
   }}>
