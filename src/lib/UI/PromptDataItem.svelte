@@ -237,10 +237,11 @@
   </div>
   {#if isOpened}
     <span class="mt-6">{language.name}</span>
-    <TextInput bind:value={promptItem.name} />
+    <TextInput bind:value={promptItem.name} ariaLabel={language.name} />
     <span class="mt-2">{language.type} </span>
     <SelectInput
       bind:value={promptItem.type}
+      ariaLabel={language.type}
       onchange={() => {
         if (promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot') {
           promptItem.text = ''
@@ -274,15 +275,15 @@
 
     {#if promptItem.type === 'plain' || promptItem.type === 'jailbreak' || promptItem.type === 'cot'}
       <span>{language.specialType}</span>
-      <SelectInput bind:value={promptItem.type2}>
+      <SelectInput bind:value={promptItem.type2} ariaLabel={language.specialType}>
         <OptionInput value="normal">{language.noSpecialType}</OptionInput>
         <OptionInput value="main">{language.mainPrompt}</OptionInput>
         <OptionInput value="globalNote">{language.globalNote}</OptionInput>
       </SelectInput>
       <span>{language.prompt}</span>
-      <TextAreaInput highlight bind:value={promptItem.text} />
+      <TextAreaInput highlight bind:value={promptItem.text} ariaLabel={language.prompt} />
       <span>{language.role}</span>
-      <SelectInput bind:value={promptItem.role}>
+      <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
         <OptionInput value="user">{language.user}</OptionInput>
         <OptionInput value="bot">{language.character}</OptionInput>
         <OptionInput value="system">{language.systemPrompt}</OptionInput>
@@ -290,13 +291,13 @@
     {/if}
     {#if promptItem.type === 'chatML'}
       <span>{language.prompt}</span>
-      <TextAreaInput highlight bind:value={promptItem.text} />
+      <TextAreaInput highlight bind:value={promptItem.text} ariaLabel={language.prompt} />
     {/if}
     {#if promptItem.type === 'cache'}
       <span>{language.depth}</span>
-      <NumberInput bind:value={promptItem.depth} />
+      <NumberInput bind:value={promptItem.depth} ariaLabel={language.depth} />
       <span>{language.role}</span>
-      <SelectInput bind:value={promptItem.role}>
+      <SelectInput bind:value={promptItem.role} ariaLabel={language.role}>
         <OptionInput value="all">{language.all}</OptionInput>
         <OptionInput value="user">{language.user}</OptionInput>
         <OptionInput value="bot">{language.character}</OptionInput>
@@ -306,10 +307,10 @@
     {#if promptItem.type === 'chat'}
       {#if promptItem.rangeStart !== -1000}
         <span>{language.rangeStart}</span>
-        <NumberInput bind:value={promptItem.rangeStart} />
+        <NumberInput bind:value={promptItem.rangeStart} ariaLabel={language.rangeStart} />
         <span>{language.rangeEnd}</span>
         {#if promptItem.rangeEnd === 'end'}
-          <NumberInput value={0} marginBottom disabled />
+          <NumberInput value={0} marginBottom disabled ariaLabel={language.rangeEnd} />
           <CheckInput
             name={language.untilChatEnd}
             check={true}
@@ -319,7 +320,7 @@
               }
             }} />
         {:else}
-          <NumberInput bind:value={promptItem.rangeEnd} marginBottom />
+          <NumberInput bind:value={promptItem.rangeEnd} marginBottom ariaLabel={language.rangeEnd} />
           <CheckInput
             name={language.untilChatEnd}
             check={false}
@@ -341,7 +342,7 @@
     {/if}
     {#if promptItem.type === 'authornote'}
       <span>{language.defaultPrompt}</span>
-      <TextInput bind:value={promptItem.defaultText} />
+      <TextInput bind:value={promptItem.defaultText} ariaLabel={language.defaultPrompt} />
     {/if}
     {#if promptItem.type === 'persona' || promptItem.type === 'description' || promptItem.type === 'authornote' || promptItem.type === 'memory'}
       {#if !promptItem.innerFormat}
@@ -361,7 +362,7 @@
           }} />
       {:else}
         <span>{language.innerFormat}</span>
-        <TextAreaInput highlight bind:value={promptItem.innerFormat} />
+        <TextAreaInput highlight bind:value={promptItem.innerFormat} ariaLabel={language.innerFormat} />
         <CheckInput
           name={language.customInnerFormat}
           check={true}

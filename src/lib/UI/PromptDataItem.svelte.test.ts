@@ -76,4 +76,20 @@ describe('PromptDataItem disclosure control', () => {
     expect(toggle?.getAttribute('aria-expanded')).toBe('false')
     expect(target.querySelector('[data-testid="opened-state"]')?.textContent).toBe('closed')
   })
+
+  it('names every editable field in an expanded prompt row', async () => {
+    component = mount(PromptDataItemTestHost, { target })
+    await tick()
+
+    Array.from(target.querySelectorAll('button'))
+      .find((button) => button.textContent?.trim() === 'Cached context')
+      ?.click()
+    await tick()
+
+    const names = Array.from(target.querySelectorAll<HTMLInputElement | HTMLSelectElement>('input, select'), (field) =>
+      field.getAttribute('aria-label'),
+    )
+    expect(names).toEqual([language.name, language.type, language.depth, language.role])
+    expect(names.every(Boolean)).toBe(true)
+  })
 })
