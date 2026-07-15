@@ -512,6 +512,8 @@
     {#if getDatabase().translator !== ''}
       <div class="flex mr-2 mb-2">
         <button
+          aria-label={language.translate}
+          aria-pressed={toggleTranslate}
           class={'bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm ' +
             (toggleTranslate ? 'text-green-500' : 'text-textcolor')}
           onclick={() => {
@@ -524,6 +526,7 @@
 
     <div class="flex mr-2 mb-2">
       <button
+        aria-label={language.reroll}
         class="bg-textcolor2 hover:bg-darkbutton font-bold py-2 px-4 rounded-sm text-textcolor"
         onclick={rerollFreshSuggestions}>
         <RefreshCcwIcon />
@@ -532,6 +535,7 @@
     {#each suggestMessages ?? [] as suggest, i}
       <div class="flex mr-2 mb-2">
         <button
+          aria-label={suggest}
           class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm"
           onclick={() => {
             sendFreshSuggestion(suggest, i)
@@ -541,6 +545,7 @@
           {/await}
         </button>
         <button
+          aria-label={`${language.copy}: ${suggest}`}
           class="bg-textcolor2 hover:bg-darkbutton text-textcolor font-bold py-2 px-4 rounded-sm ml-1"
           onclick={() => {
             copyFreshSuggestion(suggest, i)

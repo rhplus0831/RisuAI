@@ -78,6 +78,7 @@ vi.mock('src/ts/process/scripts', () => ({
 }))
 
 import Suggestion, { runSuggestionTranslation } from './Suggestion.svelte'
+import { language } from 'src/lang'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from 'src/ts/server/resourceState.svelte'
 import type { Database } from 'src/ts/storage/database.svelte'
@@ -113,7 +114,7 @@ async function waitFor(assertion: () => void) {
   throw lastError
 }
 
-function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead']) {
+function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead'], translator = '') {
   selectedCharID.set(0)
   replaceResourceDatabase({
     autoSuggestClean: false,
@@ -135,7 +136,7 @@ function seedSuggestionDatabase(suggestMessages: string[] = ['Take the lead']) {
       },
     ],
     subModel: '',
-    translator: '',
+    translator,
   } as unknown as Database)
 }
 
@@ -176,6 +177,28 @@ afterEach(() => {
   selectedCharID.set(-1)
   replaceResourceDatabase({} as Database)
   vi.clearAllMocks()
+})
+
+describe('Suggestion controls', () => {
+  it('names icon actions and exposes the translation toggle state', async () => {
+    seedSuggestionDatabase(['Take the lead'], 'google')
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(Suggestion, { target, props: { send: vi.fn(), messageInput: vi.fn() } })
+
+    try {
+      await settle()
+      expect(target.querySelector(`button[aria-label="${language.translate}"]`)?.getAttribute('aria-pressed')).toBe(
+        'false',
+      )
+      expect(target.querySelector(`button[aria-label="${language.reroll}"]`)).toBeTruthy()
+      expect(target.querySelector('button[aria-label="Take the lead"]')).toBeTruthy()
+      expect(target.querySelector(`button[aria-label="${language.copy}: Take the lead"]`)).toBeTruthy()
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
 })
 
 describe('runSuggestionTranslation', () => {
