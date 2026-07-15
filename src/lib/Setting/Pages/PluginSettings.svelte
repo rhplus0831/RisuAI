@@ -19,6 +19,7 @@
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
+  import RadioInput from 'src/lib/UI/GUI/RadioInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
 
@@ -33,6 +34,10 @@
 
   function pluginParamsId(pluginName: string): string {
     return `plugin-params-${pluginName.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+  }
+
+  function pluginArgRadioGroup(pluginName: string, arg: string): string {
+    return `plugin-arg:${encodeURIComponent(pluginName)}:${encodeURIComponent(arg)}`
   }
 
   function isPluginExpanded(pluginName: string): boolean {
@@ -202,15 +207,14 @@
                   placeholder={plugin?.argMeta?.[arg]?.placeholder} />
               {:else if plugin?.argMeta?.[arg]?.radio}
                 {#each plugin?.argMeta?.[arg]?.radio?.split(',') as radioOption}
-                  <CheckInput
-                    check={getPluginArg(plugin.name, arg) === radioOption.split('|').at(-1)}
-                    onChange={(e) => {
-                      if (e) {
-                        setPluginArg(plugin.name, arg, radioOption.split('|').at(-1))
-                      }
-                    }}
-                    margin={false}
-                    name={radioOption.split('|').at(0)} />
+                  {@const optionValue = radioOption.split('|').at(-1) ?? ''}
+                  <RadioInput
+                    checked={getPluginArg(plugin.name, arg) === optionValue}
+                    group={pluginArgRadioGroup(plugin.name, arg)}
+                    label={radioOption.split('|').at(0) ?? ''}
+                    onChange={() => {
+                      setPluginArg(plugin.name, arg, optionValue)
+                    }} />
                 {/each}
               {:else}
                 <TextInput
@@ -232,15 +236,14 @@
                     : plugin?.argMeta?.[arg]?.checkbox} />
               {:else if plugin?.argMeta?.[arg]?.radio}
                 {#each plugin?.argMeta?.[arg]?.radio?.split(',') as radioOption}
-                  <CheckInput
-                    check={getPluginArg(plugin.name, arg) === parseInt(radioOption.split('|').at(-1))}
-                    onChange={(e) => {
-                      if (e) {
-                        setPluginArg(plugin.name, arg, parseInt(radioOption.split('|').at(-1)))
-                      }
-                    }}
-                    margin={false}
-                    name={radioOption.split('|').at(0)} />
+                  {@const optionValue = parseInt(radioOption.split('|').at(-1) ?? '')}
+                  <RadioInput
+                    checked={getPluginArg(plugin.name, arg) === optionValue}
+                    group={pluginArgRadioGroup(plugin.name, arg)}
+                    label={radioOption.split('|').at(0) ?? ''}
+                    onChange={() => {
+                      setPluginArg(plugin.name, arg, optionValue)
+                    }} />
                 {/each}
               {:else}
                 <NumberInput
