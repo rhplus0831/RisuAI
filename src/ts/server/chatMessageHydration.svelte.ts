@@ -11,7 +11,7 @@ import {
   withTrustedResourceWrite,
 } from '../storage/database.svelte'
 import { getRerollBuffer, getRerollId, seedRerollBufferFromAlternates } from '../process/rerollNavigation.svelte'
-import { markCharacterLorebookHydrated } from './lorebookBridge.svelte'
+import { isCharacterLorebookHydrated, markCharacterLorebookHydrated } from './lorebookBridge.svelte'
 import { peekCachedServerCommandRevision } from './commands'
 import {
   fetchServerBulkCharacterLorebooks,
@@ -80,9 +80,31 @@ const pendingChatHydrationFreshness = new Map<string, Set<ChatHydrationFreshness
 
 // Character ids whose `globalLore` this client has hydrated this session (only
 // when the EXPERIMENTAL `enableLorebookStubs` setting is on).
-const hydratedCharLorebookIds = new Set<string>()
+const hydratedCharLorebookIds = new SvelteSet<string>()
+// Character-lorebook stubs need the same explicit terminal states as chat
+// message stubs. Without them, a failed request is indistinguishable from a
+// legitimately empty lorebook and the editor can expose non-persistable data.
+const attemptedCharLorebookIds = new SvelteSet<string>()
+const failedCharLorebookIds = new SvelteSet<string>()
 const charLorebookInFlight = new Map<string, Promise<void>>()
 let charLorebookHydrationGeneration = 0
+
+function beginCharacterLorebookHydrationState(characterId: string): void {
+  attemptedCharLorebookIds.delete(characterId)
+  failedCharLorebookIds.delete(characterId)
+}
+
+function finishCharacterLorebookHydrationState(characterId: string, generation: number): void {
+  // A reset represents a new projection generation. Do not let an older
+  // request repopulate terminal state after that reset cleared it.
+  if (generation !== charLorebookHydrationGeneration) return
+  attemptedCharLorebookIds.add(characterId)
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) {
+    failedCharLorebookIds.delete(characterId)
+  } else {
+    failedCharLorebookIds.add(characterId)
+  }
+}
 
 function activeChatId(): string | undefined {
   const selId = get(selectedCharID)
@@ -647,15 +669,31 @@ function activeCharacterId(): string | undefined {
   return getDatabase().characters?.[selId]?.chaId
 }
 
+/** Reactive: is this character's stubbed global lorebook waiting for hydration? */
+export function isCharacterLorebookHydrationPending(characterId: string | undefined): boolean {
+  if (!getDatabase().enableLorebookStubs || !characterId) return false
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) return false
+  if (!canUseServerResourceReads()) return false
+  return !attemptedCharLorebookIds.has(characterId)
+}
+
+/** Reactive: did the latest hydration of this character's global lorebook fail? */
+export function hasCharacterLorebookHydrationFailed(characterId: string | undefined): boolean {
+  if (!getDatabase().enableLorebookStubs || !characterId) return false
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) return false
+  return !canUseServerResourceReads() || failedCharLorebookIds.has(characterId)
+}
+
 async function hydrateCharacterLorebook(characterId: string, force: boolean): Promise<void> {
   if (!canUseServerResourceReads()) return
   // Off unless globalLore is actually stubbed (the EXPERIMENTAL setting). When off,
   // globalLore is already resident — no fetch needed and nothing to hydrate.
   if (!getDatabase().enableLorebookStubs) return
-  if (!force && hydratedCharLorebookIds.has(characterId)) return
+  if (!force && (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId))) return
   const currentRequest = charLorebookInFlight.get(characterId)
   if (currentRequest) return currentRequest
 
+  beginCharacterLorebookHydrationState(characterId)
   const generation = charLorebookHydrationGeneration
   const baselineRevision = peekCachedServerCommandRevision()
   const projectionEpoch = captureCharacterLorebookBodyProjectionEpoch(characterId)
@@ -692,7 +730,10 @@ async function hydrateCharacterLorebook(characterId: string, force: boolean): Pr
       // Mark hydrated so the lorebook watcher tracks (and persists) edits to it.
       markCharacterLorebookHydrated(characterId)
       hydratedCharLorebookIds.add(characterId)
+    } catch (error) {
+      hydrationWarning(`character lorebook ${characterId}`, error instanceof Error ? error.message : String(error))
     } finally {
+      finishCharacterLorebookHydrationState(characterId, generation)
       if (charLorebookInFlight.get(characterId) === request) {
         charLorebookInFlight.delete(characterId)
       }
@@ -711,6 +752,9 @@ async function hydrateCharacterLorebooksBulk(
   }
 
   const generation = charLorebookHydrationGeneration
+  for (const characterId of characterIds) {
+    beginCharacterLorebookHydrationState(characterId)
+  }
   const baselineRevision = peekCachedServerCommandRevision()
   const projectionEpochs = new Map(
     characterIds.map((characterId) => [characterId, captureCharacterLorebookBodyProjectionEpoch(characterId)]),
@@ -720,6 +764,9 @@ async function hydrateCharacterLorebooksBulk(
   if (result.status !== 'ok') {
     const message = resultError(result, 'server projection unavailable')
     hydrationWarning('bulk character lorebook', message)
+    for (const characterId of characterIds) {
+      finishCharacterLorebookHydrationState(characterId, generation)
+    }
     if (options.strict) throw new Error(`Bulk character lorebook hydration failed: ${message}`)
     return
   }
@@ -732,6 +779,9 @@ async function hydrateCharacterLorebooksBulk(
   }
   if (isOlderThanBaselineRevision(result.revision, baselineRevision)) {
     recordHydrationStaleDrop('characterLorebook', 'older-than-applied-revision')
+    for (const characterId of characterIds) {
+      finishCharacterLorebookHydrationState(characterId, generation)
+    }
     if (options.strict) {
       throw new Error('Bulk character lorebook hydration result was older than local state')
     }
@@ -743,27 +793,32 @@ async function hydrateCharacterLorebooksBulk(
   for (const characterId of characterIds) {
     if (missing.has(characterId)) {
       missingIds.push(characterId)
+      finishCharacterLorebookHydrationState(characterId, generation)
       continue
     }
     const hydration = result.characters.find((character) => character.characterId === characterId)
     if (!hydration) {
       missingIds.push(characterId)
+      finishCharacterLorebookHydrationState(characterId, generation)
       continue
     }
     const projectionEpoch = projectionEpochs.get(characterId)
     if (projectionEpoch === undefined || hasCharacterLorebookBodyProjectionEpochChanged(characterId, projectionEpoch)) {
       recordHydrationStaleDrop('characterLorebook', 'newer-character-lorebook-body-projection')
+      finishCharacterLorebookHydrationState(characterId, generation)
       continue
     }
     const applied = hydrateServerCharacterLorebook(characterId, hydration.globalLore)
     if (!applied) {
       missingIds.push(characterId)
+      finishCharacterLorebookHydrationState(characterId, generation)
       continue
     }
     markCharacterLorebookBodyResourceRevision(characterId, result.revision)
     markCharacterLorebookProjectionApplied(characterId)
     markCharacterLorebookHydrated(characterId)
     hydratedCharLorebookIds.add(characterId)
+    finishCharacterLorebookHydrationState(characterId, generation)
   }
   if (options.strict && missingIds.length > 0) {
     throw new Error(`Bulk character lorebook hydration did not return data for: ${missingIds.join(', ')}`)
@@ -776,6 +831,22 @@ export async function hydrateActiveCharacterLorebook(options: { force?: boolean 
   if (characterId) await hydrateCharacterLorebook(characterId, options.force ?? false)
 }
 
+/** Ensure one stable character id has real lorebook data before a bulk read/export. */
+export async function ensureCharacterLorebookHydrated(
+  characterId: string,
+  options: { force?: boolean } = {},
+): Promise<boolean> {
+  if (!characterId) return false
+  if (hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)) return true
+  // A resident projection is recorded in the authoritative bridge registry at
+  // bootstrap/refresh. If it is not recorded, fail closed even when reads are
+  // unavailable or the stub setting just changed; exporting `[]` would create a
+  // plausible-looking but incomplete file.
+  if (!canUseServerResourceReads() || !getDatabase().enableLorebookStubs) return false
+  await hydrateCharacterLorebook(characterId, options.force ?? false)
+  return hydratedCharLorebookIds.has(characterId) || isCharacterLorebookHydrated(characterId)
+}
+
 /**
  * Hydrate EVERY character's `globalLore`. Bulk readers (export, tokenizer) that
  * walk all characters' lorebooks must await this first when stubs are on.
@@ -785,7 +856,12 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   const ids: string[] = []
   const pendingRequests: Promise<void>[] = []
   for (const character of getDatabase().characters ?? []) {
-    if (typeof character.chaId !== 'string' || !character.chaId || hydratedCharLorebookIds.has(character.chaId)) {
+    if (
+      typeof character.chaId !== 'string' ||
+      !character.chaId ||
+      hydratedCharLorebookIds.has(character.chaId) ||
+      isCharacterLorebookHydrated(character.chaId)
+    ) {
       continue
     }
     const pending = charLorebookInFlight.get(character.chaId)
@@ -800,7 +876,12 @@ export async function ensureAllCharacterLorebooksHydrated(options: BulkHydration
   if (options.strict) {
     const missing: string[] = []
     for (const character of getDatabase().characters ?? []) {
-      if (typeof character.chaId === 'string' && character.chaId && !hydratedCharLorebookIds.has(character.chaId)) {
+      if (
+        typeof character.chaId === 'string' &&
+        character.chaId &&
+        !hydratedCharLorebookIds.has(character.chaId) &&
+        !isCharacterLorebookHydrated(character.chaId)
+      ) {
         missing.push(character.chaId)
       }
     }
@@ -825,6 +906,8 @@ export function resetChatHydration(): void {
   // A re-stub also re-stubs character globalLore; forget these marks so the open
   // character re-hydrates (the lorebook registry is reset in bootstrap.ts).
   hydratedCharLorebookIds.clear()
+  attemptedCharLorebookIds.clear()
+  failedCharLorebookIds.clear()
   charLorebookHydrationGeneration += 1
   charLorebookInFlight.clear()
 }

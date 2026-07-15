@@ -11,7 +11,12 @@ vi.mock('./resourceReads', () => ({
 import { selectedCharID } from '../stores.svelte'
 import { hydrateServerChatMessages } from '../storage/database.svelte'
 import { setResourceWriteGuardEnabled } from './resourceWriteGuard.svelte'
-import { isChatMessageHydrationPending } from './chatMessageHydration.svelte'
+import {
+  isCharacterLorebookHydrationPending,
+  isChatMessageHydrationPending,
+  resetChatHydration,
+} from './chatMessageHydration.svelte'
+import { markCharacterLorebookHydrated, resetLorebookHydration } from './lorebookBridge.svelte'
 
 function seedStubChat() {
   ;(testDatabaseState as { db: unknown }).db = {
@@ -29,6 +34,8 @@ function seedStubChat() {
 }
 
 beforeEach(() => {
+  resetChatHydration()
+  resetLorebookHydration()
   seedStubChat()
 })
 
@@ -66,6 +73,41 @@ describe('active-chat loading flag reactivity (real resource guard)', () => {
     // After messages land, the overlay must clear so the chat renders.
     expect(seen.at(-1)).toBe(false)
 
+    stop()
+  })
+
+  it('notifies the lorebook loading predicate when a full refresh clears both hydration registries', () => {
+    setResourceWriteGuardEnabled(false)
+    ;(testDatabaseState as { db: unknown }).db = {
+      enableLorebookStubs: true,
+      characters: [
+        {
+          chaId: 'char-1',
+          chatPage: 0,
+          chats: [{ id: 'chat-1', message: [] }],
+          globalLore: [],
+        },
+      ],
+    }
+    selectedCharID.set(0)
+    markCharacterLorebookHydrated('char-1')
+    setResourceWriteGuardEnabled(true)
+
+    const seen: boolean[] = []
+    const stop = $effect.root(() => {
+      $effect(() => {
+        seen.push(isCharacterLorebookHydrationPending('char-1'))
+      })
+    })
+    flushSync()
+    expect(seen.at(-1)).toBe(false)
+
+    // This is the production reset order in resourceRefresh/bootstrap.
+    resetChatHydration()
+    resetLorebookHydration()
+    flushSync()
+
+    expect(seen.at(-1)).toBe(true)
     stop()
   })
 })

@@ -1555,6 +1555,8 @@ export const languageEnglish = {
   experimentalChatCompression: 'Experimental Chat Data Handling',
   loadingChatData: 'Loading Chat Data',
   chatDataLoadFailed: 'Chat data could not be loaded.',
+  loadingLorebookData: 'Loading Lorebook Data',
+  lorebookDataLoadFailed: 'Lorebook data could not be loaded.',
   retry: 'Retry',
   chatGenerationStageStarting: 'Starting response',
   chatGenerationStagePreparingPrompt: 'Preparing prompt',

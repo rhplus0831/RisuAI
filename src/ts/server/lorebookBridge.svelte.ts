@@ -1,4 +1,5 @@
 import { untrack } from 'svelte'
+import { SvelteSet } from 'svelte/reactivity'
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import type { RisuModule } from '../process/modules'
@@ -132,7 +133,7 @@ let selectedCharMirror = $state(-1)
 // registry; re-stubbed characters are absent until hydrated again. Module
 // lorebooks still use field presence because absent module lorebooks are not
 // defaulted.
-const hydratedCharacterLorebooks = new Set<string>()
+const hydratedCharacterLorebooks = new SvelteSet<string>()
 
 export function resetServerBackedLorebookBridgeForTests(): void {
   for (const pending of pendingReplacements.values()) {
@@ -158,6 +159,15 @@ export function markCharacterLorebookHydrated(characterId: string): void {
 /** Whether a character's `globalLore` is hydrated (not a stub). */
 export function isCharacterLorebookHydrated(characterId: string): boolean {
   return hydratedCharacterLorebooks.has(characterId)
+}
+
+/**
+ * Whether it is safe to mutate a character's `globalLore`. Stub mode represents
+ * missing server data as `[]`, so writes must wait until that character has a
+ * real hydrated collection.
+ */
+export function isCharacterLorebookMutationReady(characterId: string): boolean {
+  return !getDatabase()?.enableLorebookStubs || hydratedCharacterLorebooks.has(characterId)
 }
 
 /**
@@ -507,11 +517,7 @@ export function applyLorebookEntryDraftEdit(
   value: loreBook,
   delayMs = 250,
 ): boolean {
-  if (
-    scope.kind === 'character' &&
-    getDatabase()?.enableLorebookStubs &&
-    !hydratedCharacterLorebooks.has(scope.characterId)
-  ) {
+  if (scope.kind === 'character' && !isCharacterLorebookMutationReady(scope.characterId)) {
     return false
   }
 
@@ -551,7 +557,7 @@ export function flushPendingLorebookEntryDraftEdit(
 }
 
 export function replaceCharacterLorebookCollection(characterId: string, entries: loreBook[], delayMs = 250): boolean {
-  if (!characterId) return false
+  if (!characterId || !isCharacterLorebookMutationReady(characterId)) return false
   return replaceLorebookCollection({ kind: 'character', characterId }, entries, delayMs)
 }
 
@@ -560,7 +566,7 @@ export function replaceCharacterLorebookCollectionFull(
   entries: loreBook[],
   delayMs = 250,
 ): boolean {
-  if (!characterId) return false
+  if (!characterId || !isCharacterLorebookMutationReady(characterId)) return false
   return replaceLorebookCollection({ kind: 'character', characterId }, entries, delayMs, 'fullCollection')
 }
 
@@ -1104,7 +1110,7 @@ export function dispatchReplaceCharacterLorebooks(
   // Defense in depth: when stubs are on, never persist a non-hydrated character's
   // globalLore. `entries` would be the stub `[]` and delete the real server
   // entries. A real selected-character edit is safe after hydration on open.
-  if (getDatabase()?.enableLorebookStubs && !hydratedCharacterLorebooks.has(characterId)) return
+  if (!isCharacterLorebookMutationReady(characterId)) return
   if (source === 'collection') ensureClientLorebookEntryIds(entries)
   queueScopedLorebookReplacement({ kind: 'character', characterId }, entries, previous, delayMs, source)
 }

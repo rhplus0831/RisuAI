@@ -425,6 +425,23 @@ describe('watchServerBackedLorebooks — no-data-loss invariant', () => {
     stop()
   })
 
+  it('rejects optimistic character collection writes until the stub is hydrated', async () => {
+    setupCharacter([] as Entry[])
+    ;(getDatabase() as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    const attempted = [{ key: 'new', content: 'must not appear', id: 'entry-new' }] as Entry[]
+
+    const replaced = replaceCharacterLorebookCollection('c1', attempted as any, DELAY)
+
+    expect(replaced).toBe(false)
+    expect(getDatabase().characters[0].globalLore).toEqual([])
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.commands).toHaveLength(0)
+
+    markCharacterLorebookHydrated('c1')
+    expect(replaceCharacterLorebookCollection('c1', attempted as any, DELAY)).toBe(true)
+    expect(getDatabase().characters[0].globalLore).toEqual(attempted)
+  })
+
   it('recordHydratedCharacterLorebooks marks characters whose projected globalLore is present', async () => {
     // Resident (array) → hydrated; stubbed (absent) → not.
     recordHydratedCharacterLorebooks([

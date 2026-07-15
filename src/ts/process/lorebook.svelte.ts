@@ -18,9 +18,11 @@ import {
   type DiscreteLorebookEditScope,
   ensureClientLorebookEntryIds,
   ensureGlobalLorebookListIds,
+  isCharacterLorebookMutationReady,
   type LorebookStateSnapshot,
 } from '../server/lorebookBridge.svelte'
 import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { ensureCharacterLorebookHydrated } from '../server/chatMessageHydration.svelte'
 
 // Scoped pre-edit rollback for the discrete lorebook editor actions below
 // Snapshot only the one collection the action edits (`type`/`mode`
@@ -107,7 +109,7 @@ function assignLorebookImportEntries(target: StableLorebookImportTarget, entries
   switch (target.mode) {
     case 'global': {
       const character = getDatabase().characters?.find((candidate) => candidate.chaId === target.characterId)
-      if (!character) return false
+      if (!character || !isCharacterLorebookMutationReady(target.characterId)) return false
       character.globalLore = entries
       return true
     }
@@ -149,6 +151,8 @@ function dispatchImportedLorebookEntries(
 
 export function addLorebook(type: number) {
   const selectedID = get(selectedCharID)
+  const selectedCharacterId = getDatabase().characters?.[selectedID]?.chaId
+  if (type === 0 && (!selectedCharacterId || !isCharacterLorebookMutationReady(selectedCharacterId))) return
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   if (type === 0) {
     withTrustedResourceWrite(() => {
@@ -219,6 +223,8 @@ export function addLorebook(type: number) {
 
 export function addLorebookFolder(type: number) {
   const selectedID = get(selectedCharID)
+  const selectedCharacterId = getDatabase().characters?.[selectedID]?.chaId
+  if (type === 0 && (!selectedCharacterId || !isCharacterLorebookMutationReady(selectedCharacterId))) return
   const previous = scopedLorebookEditorSnapshot(type, selectedID)
   const id = v4()
   if (type === 0) {
@@ -969,14 +975,30 @@ export function convertExternalLorebook(entries: { [key: string]: CCLorebook }) 
 
 export async function exportLoreBook(mode: 'global' | 'local' | 'sglobal') {
   try {
-    const selectedID = get(selectedCharID)
-    const page = mode === 'sglobal' ? -1 : getDatabase().characters[selectedID].chatPage
-    const lore =
-      mode === 'sglobal'
-        ? getDatabase().loreBook[getDatabase().loreBookPage].data
-        : mode === 'global'
-          ? getDatabase().characters[selectedID].globalLore
-          : getDatabase().characters[selectedID].chats[page].localLore
+    let lore: loreBook[]
+    if (mode === 'sglobal') {
+      lore = getDatabase().loreBook[getDatabase().loreBookPage].data
+    } else {
+      const selectedID = get(selectedCharID)
+      const selectedCharacter = getDatabase().characters[selectedID]
+      const characterId = selectedCharacter?.chaId
+      if (!selectedCharacter || !characterId) return
+
+      if (mode === 'global') {
+        const hydrated = await ensureCharacterLorebookHydrated(characterId)
+        if (!hydrated) {
+          alertError(language.lorebookDataLoadFailed)
+          return
+        }
+        // Selection may change while hydration is in flight. Export the stable
+        // character the user originally requested, not the newly selected row.
+        const character = getDatabase().characters.find((candidate) => candidate.chaId === characterId)
+        if (!character) return
+        lore = character.globalLore
+      } else {
+        lore = selectedCharacter.chats[selectedCharacter.chatPage].localLore
+      }
+    }
     const stringl = Buffer.from(
       JSON.stringify({
         type: 'risu',

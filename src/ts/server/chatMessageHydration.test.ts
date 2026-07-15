@@ -37,8 +37,10 @@ import {
   hydrateChatMessages,
   applyServerChatMessagesResource,
   applyMessageTranslationLocalEffect,
+  hasCharacterLorebookHydrationFailed,
   hasChatMessageHydrationFailed,
   invalidateChatHydration,
+  isCharacterLorebookHydrationPending,
   isChatMessageHydrationPending,
   resetChatHydration,
 } from './chatMessageHydration.svelte'
@@ -859,6 +861,45 @@ describe('isChatMessageHydrationPending', () => {
 })
 
 describe('character globalLore hydration (Phase 5)', () => {
+  it('exposes a failed hydration and returns to loading while retrying', async () => {
+    ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    projectionState.fetchCharLore.mockResolvedValueOnce({ status: 'error', error: 'offline' })
+
+    expect(isCharacterLorebookHydrationPending('char-1')).toBe(true)
+    expect(hasCharacterLorebookHydrationFailed('char-1')).toBe(false)
+
+    await hydrateActiveCharacterLorebook()
+
+    expect(isCharacterLorebookHydrationPending('char-1')).toBe(false)
+    expect(hasCharacterLorebookHydrationFailed('char-1')).toBe(true)
+
+    const retry = deferred<{
+      status: 'ok'
+      revision: number
+      characterId: string
+      globalLore: unknown[]
+    }>()
+    projectionState.fetchCharLore.mockReturnValueOnce(retry.promise)
+    const retryHydration = hydrateActiveCharacterLorebook({ force: true })
+
+    expect(isCharacterLorebookHydrationPending('char-1')).toBe(true)
+    expect(hasCharacterLorebookHydrationFailed('char-1')).toBe(false)
+
+    retry.resolve({
+      status: 'ok',
+      revision: 1,
+      characterId: 'char-1',
+      globalLore: [{ key: 'retry', content: 'loaded' }],
+    })
+    await retryHydration
+
+    expect(isCharacterLorebookHydrationPending('char-1')).toBe(false)
+    expect(hasCharacterLorebookHydrationFailed('char-1')).toBe(false)
+    expect(isCharacterLorebookHydrated('char-1')).toBe(true)
+    warning.mockRestore()
+  })
+
   it('hydrates + marks the open character globalLore when stubs are on', async () => {
     const projectionEpoch = captureCharacterLorebookBodyProjectionEpoch('char-1')
     ;(testDatabaseState.db as { enableLorebookStubs?: boolean }).enableLorebookStubs = true

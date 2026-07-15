@@ -18,6 +18,13 @@ vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'lorebook-projection-token',
 }))
 
+const downloadFile = vi.hoisted(() => vi.fn(async () => undefined))
+
+vi.mock('../../globalApi.svelte', async (importActual) => ({
+  ...(await importActual<typeof import('../../globalApi.svelte')>()),
+  downloadFile,
+}))
+
 vi.mock('../modules', async (importActual) => {
   const actual = await importActual<typeof import('../modules')>()
   return { ...actual, getModuleLorebooks: () => [] }
@@ -42,8 +49,9 @@ vi.mock('../../util', async (importActual) => {
 })
 
 import { safeStructuredClone } from '../../polyfill'
-import { addLorebook, addLorebookFolder, importLoreBook } from '../lorebook.svelte'
+import { addLorebook, addLorebookFolder, exportLoreBook, importLoreBook } from '../lorebook.svelte'
 import { clearCachedServerCommandRevision } from '../../server/commands'
+import { resetLorebookHydration } from '../../server/lorebookBridge.svelte'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { getDatabase, setDatabaseLite } from '../../storage/database.svelte'
 import { selectedCharID } from '../../stores.svelte'
@@ -178,7 +186,9 @@ beforeEach(() => {
   fileSelection.data = null
   fileSelection.beforeResolve = null
   fileSelection.calls = 0
+  downloadFile.mockClear()
   clearCachedServerCommandRevision()
+  resetLorebookHydration()
   setResourceWriteGuardEnabled(false)
   seedDatabase()
 })
@@ -194,6 +204,24 @@ describe('global lorebook durable writes under the resource guard', () => {
     expect(() => {
       ;(getDatabase().loreBook[0] as { data: unknown[] }).data.push({ id: 'raw' })
     }).toThrow(/resource database compatibility view is read-only/)
+  })
+
+  it('does not mutate, import into, or export an unhydrated character lorebook stub', async () => {
+    const calls = stubCommandFetch()
+    fileSelection.data = selectedRisuLore('Must Not Appear')
+    withTrustedResourceWrite(() => {
+      getDatabase().enableLorebookStubs = true
+    })
+    setResourceWriteGuardEnabled(true)
+
+    addLorebook(0)
+    addLorebookFolder(0)
+    await importLoreBook('global')
+    await exportLoreBook('global')
+
+    expect(getDatabase().characters[0].globalLore).toEqual([])
+    expect(downloadFile).not.toHaveBeenCalled()
+    expect(calls.filter((call) => call.url.startsWith('/api/v1/commands/'))).toHaveLength(0)
   })
 
   it('addLorebook(-1) appends a global entry and dispatches the entries command', async () => {
