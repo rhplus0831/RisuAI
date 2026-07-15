@@ -404,12 +404,19 @@ export async function getInlayAssetBlob(id: string) {
 }
 
 export async function listInlayAssets(): Promise<[id: string, InlayAsset][]> {
-  const assets: [id: string, InlayAsset][] = []
+  const assetsByServerId = new Map<string, [id: string, InlayAsset]>()
   await inlayStorage.iterate<InlayAsset, void>((value, key) => {
-    assets.push([key, value])
+    const logicalId = value.serverAssetId ?? key
+    const existing = assetsByServerId.get(logicalId)
+    // Server-backed values are stored under both their content hash and any
+    // legacy/custom id that callers still use. Prefer the readable alias while
+    // exposing only one logical asset in the explorer.
+    if (!existing || (existing[0] === logicalId && key !== logicalId)) {
+      assetsByServerId.set(logicalId, [key, value])
+    }
   })
 
-  return assets
+  return Array.from(assetsByServerId.values())
 }
 
 export async function setInlayAsset(id: string, img: InlayAsset) {
@@ -422,7 +429,20 @@ export async function setInlayAsset(id: string, img: InlayAsset) {
 }
 
 export async function removeInlayAsset(id: string) {
-  await inlayStorage.removeItem(id)
+  const target = await inlayStorage.getItem<InlayAsset | null>(id)
+  const serverAssetId = target?.serverAssetId
+  if (!serverAssetId) {
+    await inlayStorage.removeItem(id)
+    return
+  }
+
+  const aliases: string[] = []
+  await inlayStorage.iterate<InlayAsset, void>((value, key) => {
+    if (key === id || value.serverAssetId === serverAssetId) {
+      aliases.push(key)
+    }
+  })
+  await Promise.all(aliases.map((key) => inlayStorage.removeItem(key)))
 }
 
 export function supportsInlayImage() {

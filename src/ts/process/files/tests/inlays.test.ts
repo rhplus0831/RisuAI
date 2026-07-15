@@ -362,11 +362,41 @@ describe('listInlayAssets', () => {
       ['id-b', { name: 'b.mp3' }],
     ])
   })
+
+  test('collapses a server asset hash and its custom id into one logical row', async () => {
+    const assetId = await setInlayAsset('friendly-id', {
+      data: new Blob(['same bytes'], { type: 'image/png' }),
+      ext: 'png',
+      name: 'friendly.png',
+      type: 'image',
+    })
+
+    expect(store.has(assetId)).toBe(true)
+    expect(store.has('friendly-id')).toBe(true)
+    await expect(listInlayAssets()).resolves.toMatchObject([
+      ['friendly-id', { name: 'friendly.png', serverAssetId: assetId }],
+    ])
+  })
 })
 
 describe('removeInlayAsset', () => {
   test('does not throw when removing a non-existent id', async () => {
     await expect(removeInlayAsset('nope')).resolves.not.toThrow()
+  })
+
+  test('removes every local alias for the same server-backed asset', async () => {
+    const assetId = await setInlayAsset('friendly-id', {
+      data: new Blob(['same bytes'], { type: 'image/png' }),
+      ext: 'png',
+      name: 'friendly.png',
+      type: 'image',
+    })
+
+    await removeInlayAsset('friendly-id')
+
+    expect(store.has('friendly-id')).toBe(false)
+    expect(store.has(assetId)).toBe(false)
+    await expect(listInlayAssets()).resolves.toEqual([])
   })
 })
 
