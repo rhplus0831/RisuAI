@@ -791,6 +791,10 @@ export const languageEnglish = {
   },
   playground: {
     playground: 'Playground',
+    translationFailureTitle: 'Translation errors',
+    translationRunFailed: (error: string) => `Translation failed: ${error}`,
+    translationChunkFailed: (index: number, total: number, error: string) =>
+      `Chunk ${index} of ${total} failed: ${error}`,
     inlayDeleteSelected: 'Delete Selected',
     inlayDeselectAll: 'Deselect All',
     inlayEmpty: 'No saved inlay assets',

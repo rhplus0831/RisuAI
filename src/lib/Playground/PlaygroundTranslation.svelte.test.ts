@@ -42,10 +42,12 @@ type MountedComponent = Parameters<typeof unmount>[0]
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
-  const promise = new Promise<T>((promiseResolve) => {
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
     resolve = promiseResolve
+    reject = promiseReject
   })
-  return { promise, resolve }
+  return { promise, reject, resolve }
 }
 
 let component: MountedComponent | undefined
@@ -116,7 +118,68 @@ async function waitForIdle(): Promise<void> {
   await vi.waitFor(() => expect(translateButton().textContent?.trim()).toBe('Translate'))
 }
 
-describe('PlaygroundTranslation bulk run ownership', () => {
+describe('PlaygroundTranslation run ownership and failures', () => {
+  it('reports a rejected single translation and clears the failure after a successful retry', async () => {
+    const firstTranslation = deferred<string>()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    translationMocks.runTranslator.mockReturnValueOnce(firstTranslation.promise).mockResolvedValueOnce('translated')
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('source text')
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
+    firstTranslation.reject(new Error('provider unavailable'))
+    await waitForIdle()
+
+    expect(textareas()[1]?.value).toBe('')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Translation failed: provider unavailable')
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(2))
+    await waitForIdle()
+
+    expect(textareas()[1]?.value).toBe('translated')
+    expect(target.querySelector('[role="alert"]')).toBeNull()
+    expect(consoleError).toHaveBeenCalledWith(expect.any(Error))
+  })
+
+  it('leaves a failed bulk JSON chunk empty while preserving successful deferred chunks', async () => {
+    const firstTranslation = deferred<string>()
+    const secondTranslation = deferred<string>()
+    const thirdTranslation = deferred<string>()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    translationMocks.runTranslator
+      .mockReturnValueOnce(firstTranslation.promise)
+      .mockReturnValueOnce(secondTranslation.promise)
+      .mockReturnValueOnce(thirdTranslation.promise)
+    component = mount(PlaygroundTranslation, { target })
+    await setSource(
+      JSON.stringify([
+        { text: 'first', metadata: 'one' },
+        { text: 'failed source', metadata: 'two' },
+        { text: 'third', metadata: 'three' },
+      ]),
+    )
+    await enableBulk()
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(1))
+    firstTranslation.resolve('first translated')
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(2))
+    secondTranslation.reject(new Error('chunk provider failure'))
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(3))
+    thirdTranslation.resolve('third translated')
+    await waitForIdle()
+
+    expect(JSON.parse(textareas()[1]?.value ?? '')).toEqual([
+      { text: 'first translated', metadata: 'one' },
+      { text: '', metadata: 'two' },
+      { text: 'third translated', metadata: 'three' },
+    ])
+    expect(textareas()[1]?.value).not.toContain('failed source')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Chunk 2 of 3 failed: chunk provider failure')
+  })
+
   it('releases loading and permits a retry when the source changes during translation', async () => {
     const firstTranslation = deferred<string>()
     translationMocks.runTranslator

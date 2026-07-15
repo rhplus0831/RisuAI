@@ -19,6 +19,12 @@
   let bulk = $state(false)
   let keepContext = $state(false)
   let bulkProgressText = $state('')
+  let failureMessages = $state<string[]>([])
+
+  function translationErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message
+    return String(error)
+  }
 
   async function translate() {
     if (loading) return
@@ -37,11 +43,13 @@
     const abandonStaleRun = () => {
       if (isCurrentRun()) return false
       output = ''
+      failureMessages = []
       return true
     }
 
     bulkProgressText = ''
     output = ''
+    failureMessages = []
     loading = true
     try {
       if (!bulkSnapshot) {
@@ -52,7 +60,7 @@
 
       let preChunks: string[] = []
       const previousContexts: string[] = []
-      const translatedChunks: string[] = []
+      const translatedChunks: Array<string | null> = []
       let parsedJson: unknown = null
       let jsonMode = false
       try {
@@ -70,12 +78,13 @@
       }
 
       const formattedOutput = () => {
-        if (!jsonMode) return translatedChunks.join('\n\n')
+        if (!jsonMode) return translatedChunks.map((chunk) => chunk ?? '').join('\n\n')
         if (!Array.isArray(parsedJson)) return JSON.stringify(parsedJson, null, 2)
 
         const rows = parsedJson.map((item, index) => {
-          if (!translatedChunks[index] || !item || typeof item !== 'object') return item
-          return { ...item, text: translatedChunks[index] }
+          const translatedChunk = translatedChunks[index]
+          if (translatedChunk === undefined || !item || typeof item !== 'object') return item
+          return { ...item, text: translatedChunk ?? '' }
         })
         return JSON.stringify(rows, null, 2)
       }
@@ -121,7 +130,11 @@
         } catch (error) {
           console.error(error)
           if (abandonStaleRun()) return
-          translatedChunks.push(preChunks[i])
+          translatedChunks.push(null)
+          failureMessages = [
+            ...failureMessages,
+            language.playground.translationChunkFailed(i + 1, preChunks.length, translationErrorMessage(error)),
+          ]
         }
 
         if (abandonStaleRun()) return
@@ -131,6 +144,9 @@
       if (!abandonStaleRun()) output = formattedOutput()
     } catch (error) {
       console.error(error)
+      if (!abandonStaleRun()) {
+        failureMessages = [...failureMessages, language.playground.translationRunFailed(translationErrorMessage(error))]
+      }
     } finally {
       loading = false
     }
@@ -152,6 +168,17 @@
   {/each}
 </SelectInput>
 <TextAreaInput value={output} />
+
+{#if failureMessages.length > 0}
+  <div class="mt-3 rounded-md border border-red-500 p-3 text-sm text-red-400" role="alert">
+    <p class="font-bold">{language.playground.translationFailureTitle}</p>
+    <ul class="mt-1 list-disc pl-5">
+      {#each failureMessages as message}
+        <li>{message}</li>
+      {/each}
+    </ul>
+  </div>
+{/if}
 
 <CheckInput bind:check={bulk}>Bulk</CheckInput>
 {#if bulk}
