@@ -61,7 +61,8 @@ function openChat(chatId: string): void {
 beforeEach(() => {
   h.database = { characters: [] }
   h.selectedCharID.set(-1)
-  h.sendChat.mockClear()
+  h.sendChat.mockReset()
+  h.sendChat.mockResolvedValue(true)
   h.createActiveGenerationAbortController.mockClear()
   h.clearActiveGenerationAbortController.mockClear()
   h.doingChat.set(false)
@@ -135,6 +136,44 @@ describe('reattach open-chat generation (Phase 4)', () => {
 
     expect(h.sendChat).not.toHaveBeenCalled()
     expect(get(activeGenerationJobs)).toEqual([{ chatId: 'chat-other', jobId: 'job-x' }])
+  })
+
+  it('restores a consumed job when reattach fails so a later probe can retry', async () => {
+    openChat('chat-1')
+    const job = { chatId: 'chat-1', jobId: 'job-1', mode: 'continue' as const }
+    setActiveGenerationJobs([job])
+    h.sendChat.mockRejectedValueOnce(new Error('temporary network failure'))
+
+    await maybeReattachOpenChatGeneration()
+
+    expect(get(activeGenerationJobs)).toEqual([job])
+    expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores a consumed job when sendChat reports a non-throwing transport failure', async () => {
+    openChat('chat-1')
+    const job = { chatId: 'chat-1', jobId: 'job-1', mode: 'continue' as const }
+    setActiveGenerationJobs([job])
+    h.sendChat.mockResolvedValueOnce(false)
+
+    await maybeReattachOpenChatGeneration()
+
+    expect(get(activeGenerationJobs)).toEqual([job])
+    expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not restore a consumed job after an explicit abort', async () => {
+    openChat('chat-1')
+    setActiveGenerationJobs([{ chatId: 'chat-1', jobId: 'job-1' }])
+    h.sendChat.mockImplementationOnce(async () => {
+      h.createActiveGenerationAbortController.mock.results.at(-1)?.value.abort()
+      return false
+    })
+
+    await maybeReattachOpenChatGeneration()
+
+    expect(get(activeGenerationJobs)).toEqual([])
+    expect(h.clearActiveGenerationAbortController).toHaveBeenCalledTimes(1)
   })
 
   it('does nothing (and keeps the job) while a generation is already in flight', async () => {

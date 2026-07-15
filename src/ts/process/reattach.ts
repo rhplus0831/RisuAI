@@ -98,14 +98,29 @@ export async function maybeReattachOpenChatGeneration(): Promise<void> {
     // row (continue extends the existing row; regenerate targets its slot) rather
     // than as a fresh send. Older servers omit `mode` and are treated as send.
     const controller = createActiveGenerationAbortController()
+    const restoreJob = () => {
+      activeGenerationJobs.update((jobs) => (jobs.some((entry) => entry.jobId === job.jobId) ? jobs : [job, ...jobs]))
+    }
     try {
-      await sendChat(-1, {
+      const attached = await sendChat(-1, {
         signal: controller.signal,
         reattachJobId: job.jobId,
         expectedTarget: target,
         continue: job.mode === 'continue' ? true : undefined,
         regenerateMessageId: job.mode === 'regenerate' ? job.regenerateMessageId : undefined,
       })
+      if (!attached && !controller.signal.aborted) {
+        // sendChat reports HTTP/SSE/transport failures as `false`. Keep the
+        // durable job retryable until the next server projection confirms it is
+        // complete or gone. An explicit user abort is final and must not re-arm.
+        restoreJob()
+      }
+    } catch (error) {
+      // A transport/import failure does not mean the durable server job has
+      // stopped. Put it back so a later selection/SSE probe can retry instead of
+      // silently losing the only local record of the running generation.
+      restoreJob()
+      throw error
     } finally {
       clearActiveGenerationAbortController(controller)
     }
