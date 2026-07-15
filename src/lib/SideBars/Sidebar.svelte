@@ -410,29 +410,15 @@
           }}
           ondragenter={preventCharacterDrag}>
           <SidebarIndicator isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1} />
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <div
-            role="button"
-            tabindex="0"
-            onclick={() => {
-              if (char.type === 'normal') {
-                openCharacterRoute(char.index)
-              }
-            }}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') {
-                if (char.type === 'normal') {
-                  openCharacterRoute(char.index)
-                }
-              }
-            }}>
+          <div>
             {#if char.type === 'normal'}
               <SidebarAvatar
                 src={char.img ? getCharImage(char.img, 'plain') : '/none.webp'}
                 size="56"
                 rounded={IconRounded}
                 name={char.name}
-                chaId={getDatabase().characters[char.index]?.chaId} />
+                chaId={getDatabase().characters[char.index]?.chaId}
+                onClick={() => openCharacterRoute(char.index)} />
             {:else if char.type === 'folder'}
               {#key char.color}
                 {#key char.name}
@@ -557,28 +543,14 @@
                   }}
                   ondragenter={preventCharacterDrag}>
                   <SidebarIndicator isActive={$selectedCharID === char2.index && sideBarMode !== 1} />
-                  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-                  <div
-                    role="button"
-                    tabindex="0"
-                    onclick={() => {
-                      if (char2.type === 'normal') {
-                        openCharacterRoute(char2.index)
-                      }
-                    }}
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        if (char2.type === 'normal') {
-                          openCharacterRoute(char2.index)
-                        }
-                      }
-                    }}>
+                  <div>
                     <SidebarAvatar
                       src={char2.img ? getCharImage(char2.img, 'plain') : '/none.webp'}
                       size="56"
                       rounded={IconRounded}
                       name={char2.name}
-                      chaId={getDatabase().characters[char2.index]?.chaId} />
+                      chaId={getDatabase().characters[char2.index]?.chaId}
+                      onClick={() => openCharacterRoute(char2.index)} />
                   </div>
                 </div>
                 <div

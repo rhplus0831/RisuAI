@@ -13,7 +13,7 @@
     children?: import('svelte').Snippet
     oncontextmenu?: (
       event: MouseEvent & {
-        currentTarget: EventTarget & HTMLDivElement
+        currentTarget: EventTarget & HTMLSpanElement
       },
     ) => any
     chaId?: string
@@ -34,7 +34,6 @@
   }: Props = $props()
 </script>
 
-<!-- svelte-ignore a11y_click_events_have_key_events -->
 <span
   class="flex shrink-0 items-center justify-center avatar"
   class:border={bordered}
@@ -42,9 +41,15 @@
   class:rounded-md={bordered}
   {oncontextmenu}
   onclick={onClick}
+  onkeydown={(event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.currentTarget.click()
+  }}
   use:tooltipRight={name}
   role="button"
   tabindex="0"
+  aria-label={name}
   data-char-id={chaId}>
   {#if src}
     {#if src === 'slot'}
