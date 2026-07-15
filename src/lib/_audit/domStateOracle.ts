@@ -109,13 +109,13 @@ export function readJailbreakSelected(root: ParentNode): boolean | null {
 // Sidebar chat rows: the painted selected row and the rendered row order. Used
 // by the chat-lifecycle journeys.
 export function readSelectedChatRowId(root: ParentNode): string | null {
-  const rows = Array.from(root.querySelectorAll('button[data-risu-chat-idx][data-risu-chat-id]'))
+  const rows = Array.from(root.querySelectorAll('[data-risu-chat-idx][data-risu-chat-id]'))
   const selected = rows.find((row) => row.getAttribute('data-risu-chat-selected') === 'true')
   return selected ? (selected.getAttribute('data-risu-chat-id') ?? '') : null
 }
 
 export function readChatRowIds(root: ParentNode): string[] {
-  return Array.from(root.querySelectorAll('button[data-risu-chat-idx][data-risu-chat-id]')).map(
+  return Array.from(root.querySelectorAll('[data-risu-chat-idx][data-risu-chat-id]')).map(
     (row) => row.getAttribute('data-risu-chat-id') ?? '',
   )
 }

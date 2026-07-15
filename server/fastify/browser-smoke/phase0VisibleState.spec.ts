@@ -182,9 +182,9 @@ async function openCharacter(page: Page): Promise<void> {
 }
 
 async function clickChatRow(page: Page, chatId: string): Promise<void> {
-  const row = page.locator(`button[data-risu-chat-idx][data-risu-chat-id="${chatId}"]`).first()
+  const row = page.locator(`[data-risu-chat-idx][data-risu-chat-id="${chatId}"]`).first()
   await expect(row).toBeVisible({ timeout: 15_000 })
-  await row.click()
+  await row.locator('button[data-risu-chat-action="select"]').click()
 }
 
 function presetPickerSelectedId(page: Page): Promise<string | null> {

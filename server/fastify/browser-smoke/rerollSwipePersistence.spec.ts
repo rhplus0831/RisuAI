@@ -155,16 +155,14 @@ async function expectLoadedCharacterVisible(page: Page): Promise<void> {
 async function openFixtureChat(page: Page): Promise<void> {
   await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
   const fixtureEntry = page
-    .locator(
-      '.default-chat-screen .risu-chat[data-chat-index="0"], button[data-risu-chat-idx][data-risu-chat-id="chat-1"]',
-    )
+    .locator('.default-chat-screen .risu-chat[data-chat-index="0"], [data-risu-chat-idx][data-risu-chat-id="chat-1"]')
     .first()
   await expect(fixtureEntry).toBeVisible({ timeout: 15_000 })
   const needsOpen = await fixtureEntry.evaluate((node) =>
-    node.matches('button[data-risu-chat-idx][data-risu-chat-id="chat-1"]'),
+    node.matches('[data-risu-chat-idx][data-risu-chat-id="chat-1"]'),
   )
   if (needsOpen) {
-    await fixtureEntry.click()
+    await fixtureEntry.locator('button[data-risu-chat-action="select"]').click()
   }
 }
 

@@ -315,11 +315,11 @@ test('core chat controls and blocking alerts remain accessible across responsive
     await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
     await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
 
-    const chatRow = page.locator('button[data-risu-chat-id="chat-smoke"]').first()
+    const chatRow = page.locator('[data-risu-chat-id="chat-smoke"]').first()
     const mobileRecentChat = page.getByRole('button', { name: /Open most recent chat Smoke Chat/ })
     await expect.poll(async () => (await chatRow.isVisible()) || (await mobileRecentChat.isVisible())).toBe(true)
     if (await chatRow.isVisible()) {
-      await chatRow.click()
+      await chatRow.locator('button[data-risu-chat-action="select"]').click()
     } else {
       await mobileRecentChat.click()
     }
