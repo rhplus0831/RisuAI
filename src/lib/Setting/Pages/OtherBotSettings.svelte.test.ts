@@ -9,9 +9,20 @@ const otherBotMocks = vi.hoisted(() => ({
   alertNormal: vi.fn(),
   drafts: new Map<string, { value: any }>(),
   globalFetch: vi.fn(),
+  hypaEnabled: false,
+  hypaPresets: [] as Array<Record<string, any>>,
   initialWavespeedImage: {} as Record<string, any>,
   loraWrites: [] as Array<Array<{ path: string; scale: number }>>,
+  selectSingleFile: vi.fn(),
 }))
+
+vi.mock('src/ts/util', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/util')>()
+  return {
+    ...actual,
+    selectSingleFile: otherBotMocks.selectSingleFile,
+  }
+})
 
 vi.mock('src/ts/process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
@@ -26,6 +37,8 @@ vi.mock('src/ts/server/settingsBridge.svelte', () => ({
     const clone = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T))
 
     let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
+    if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
+    if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
     if (key === 'wavespeedImage') {
       value = new Proxy(clone(otherBotMocks.initialWavespeedImage), {
         set(target, property, nextValue) {
@@ -106,7 +119,11 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   otherBotMocks.drafts.clear()
+  otherBotMocks.alertError.mockReset()
+  otherBotMocks.hypaEnabled = false
+  otherBotMocks.hypaPresets = []
   otherBotMocks.loraWrites.length = 0
+  otherBotMocks.selectSingleFile.mockReset()
   otherBotMocks.initialWavespeedImage = {
     key: 'wavespeed-key',
     model: 'wavespeed/saved-model',
@@ -182,5 +199,24 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
       { path: 'owner/updated-lora', scale: 0.7 },
       { path: 'https://example.com/second-lora.safetensors', scale: 1.4 },
     ])
+  })
+})
+
+describe('OtherBotSettings Hypa preset import', () => {
+  it('silently leaves the preset list unchanged when file selection is canceled', async () => {
+    otherBotMocks.hypaEnabled = true
+    otherBotMocks.hypaPresets = [{ name: 'Existing', settings: {} }]
+    otherBotMocks.selectSingleFile.mockResolvedValue(null)
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    const uploadButton = target.querySelector<SVGElement>('svg.lucide-hard-drive-upload')?.closest('button')
+    expect(uploadButton).toBeTruthy()
+    const presetsBeforeCancel = structuredClone(otherBotMocks.drafts.get('hypaV3Presets')?.value)
+    uploadButton?.click()
+
+    await vi.waitFor(() => expect(otherBotMocks.selectSingleFile).toHaveBeenCalledWith(['json']))
+    expect(otherBotMocks.alertError).not.toHaveBeenCalled()
+    expect(otherBotMocks.drafts.get('hypaV3Presets')?.value).toEqual(presetsBeforeCancel)
   })
 })

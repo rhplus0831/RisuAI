@@ -1301,7 +1301,10 @@
           class="mr-2 text-textcolor2 hover:text-green-500 cursor-pointer"
           onclick={async () => {
             try {
-              const bytesImport = (await selectSingleFile(['json'])).data
+              const selectedFile = await selectSingleFile(['json'])
+              if (!selectedFile) return
+
+              const bytesImport = selectedFile.data
 
               if (!bytesImport) return
 
