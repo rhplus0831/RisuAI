@@ -30,6 +30,21 @@ import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { getPersonaPrompt, getUserName, getUserIcon, parseKeyValue } from '../util'
 import { safeStructuredClone } from '../polyfill'
 import type { PyWorkerRequest, PyWorkerResponse } from './pyworker'
+import {
+  captureActiveChatTarget,
+  isActiveChatTargetFresh,
+  prepareCompatibleChatUpdateScoped,
+  runOptimisticCommandSequence,
+  type ActiveChatTarget,
+  type ChatScopedSnapshot,
+} from '../chatCommands'
+import { canUseServerCommands } from '../server/commands'
+import { withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import {
+  dispatchReplaceChatLorebooks,
+  ensureClientLorebookEntryIds,
+  scopedLorebookStateSnapshot,
+} from '../server/lorebookBridge.svelte'
 let luaFactory: LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
@@ -1628,25 +1643,204 @@ export async function runLuaEditTrigger<T extends string | OpenAIChat[]>(
       }),
     )
     const triggers: triggerscript[] = ownTriggers.concat(getModuleTriggers())
+    const luaTriggerEffects = triggers
+      .map((trigger) => trigger?.effect?.[0])
+      .filter((effect): effect is { type: 'triggerlua'; code: string } => effect?.type === 'triggerlua')
+    if (luaTriggerEffects.length === 0) return data
+    const workingContext = createLuaEditTriggerWorkingContext(char, mode)
 
-    for (let trigger of triggers) {
-      if (trigger?.effect?.[0]?.type === 'triggerlua') {
-        const runResult = await runScripted(trigger.effect[0].code, {
-          char: char,
-          lowLevelAccess: false,
-          mode: mode,
-          data,
-          meta,
-        })
-        data = runResult.res ?? data
-      }
+    for (const effect of luaTriggerEffects) {
+      const runResult = await runScripted(effect.code, {
+        char: workingContext.char,
+        chat: workingContext.chat,
+        setVar: workingContext.chat ? createLuaButtonWorkingSetVar(workingContext.chat) : undefined,
+        getVar: workingContext.chat
+          ? createLuaButtonWorkingGetVar(workingContext.char, workingContext.chat)
+          : undefined,
+        lowLevelAccess: false,
+        mode: mode,
+        data,
+        meta,
+      })
+      data = runResult.res ?? data
     }
 
+    reconcileLuaEditTriggerWorkingChat(workingContext)
     return data
   } catch (error) {
     console.error(`Lua edit trigger failed in ${mode}:`, error)
     return content
   }
+}
+
+interface LuaEditTriggerReconciliation {
+  target: ActiveChatTarget
+  previous: ChatScopedSnapshot
+  messageSnapshot: string | null
+  scriptstateSnapshot: string
+  localLoreSnapshot: string | null
+}
+
+interface LuaEditTriggerWorkingContext {
+  char: character | simpleCharacterArgument
+  chat?: Chat
+  reconciliation?: LuaEditTriggerReconciliation
+}
+
+function createLuaEditTriggerWorkingContext(
+  char: character | simpleCharacterArgument,
+  mode: string,
+): LuaEditTriggerWorkingContext {
+  const canMutateChatCollections = mode !== 'editDisplay'
+  if (char.type !== 'character') {
+    const currentChat = getCurrentChat() ?? createEmptyLuaEditTriggerChat()
+    return {
+      char,
+      chat: cloneLuaEditTriggerChat(currentChat, canMutateChatCollections),
+    }
+  }
+
+  const target = canUseServerCommands() ? captureActiveChatTarget() : null
+  const activeCharacter = target ? getDatabase().characters?.[target.selectedCharID] : undefined
+  const activeChat = activeCharacter?.chats?.[activeCharacter.chatPage]
+  const targetChatIndex = target?.chatId ? char.chats.findIndex((candidate) => candidate.id === target.chatId) : -1
+  const ownsActiveChat =
+    target !== null &&
+    activeCharacter !== undefined &&
+    activeChat !== undefined &&
+    typeof target.chatId === 'string' &&
+    target.chatId.length > 0 &&
+    char.chaId === target.characterId &&
+    activeCharacter.chaId === target.characterId &&
+    activeChat.id === target.chatId &&
+    targetChatIndex >= 0
+
+  const previousChat = ownsActiveChat ? cloneLuaEditTriggerChat(activeChat, canMutateChatCollections) : undefined
+  const characterChat = char.chats[char.chatPage]
+  const sourceChat = ownsActiveChat
+    ? previousChat
+    : (characterChat ?? getCurrentChat() ?? createEmptyLuaEditTriggerChat())
+
+  const workingChat = cloneLuaEditTriggerChat(sourceChat, canMutateChatCollections)
+  const workingChatIndex = ownsActiveChat ? targetChatIndex : characterChat ? char.chatPage : char.chats.length
+  const workingCharacter: character = {
+    ...char,
+    chats: [...char.chats],
+    chatPage: workingChatIndex,
+  }
+  workingCharacter.chats[workingChatIndex] = workingChat
+
+  return {
+    char: workingCharacter,
+    chat: workingChat,
+    reconciliation: ownsActiveChat
+      ? {
+          target,
+          previous: {
+            selectedCharID: target.selectedCharID,
+            characterId: target.characterId,
+            chatId: target.chatId,
+            chat: previousChat,
+          },
+          messageSnapshot: canMutateChatCollections ? luaEditTriggerSnapshot(previousChat.message) : null,
+          scriptstateSnapshot: luaEditTriggerSnapshot(previousChat.scriptstate),
+          localLoreSnapshot: canMutateChatCollections ? luaEditTriggerSnapshot(previousChat.localLore) : null,
+        }
+      : undefined,
+  }
+}
+
+function createEmptyLuaEditTriggerChat(): Chat {
+  return {
+    message: [],
+    note: '',
+    name: '',
+    localLore: [],
+    scriptstate: {},
+  }
+}
+
+function cloneLuaEditTriggerChat(chat: Chat, cloneCollections: boolean): Chat {
+  return {
+    ...chat,
+    message: cloneCollections ? safeStructuredClone(chat.message ?? []) : chat.message,
+    localLore: cloneCollections ? safeStructuredClone(chat.localLore ?? []) : chat.localLore,
+    scriptstate: chat.scriptstate === undefined ? undefined : safeStructuredClone(chat.scriptstate),
+  }
+}
+
+function reconcileLuaEditTriggerWorkingChat(context: LuaEditTriggerWorkingContext): void {
+  const { chat: workingChat, reconciliation } = context
+  const previousChat = reconciliation?.previous.chat
+  if (!workingChat || !reconciliation || !previousChat) return
+
+  const messagesChanged =
+    reconciliation.messageSnapshot !== null &&
+    reconciliation.messageSnapshot !== luaEditTriggerSnapshot(workingChat.message)
+  const scriptstateChanged = reconciliation.scriptstateSnapshot !== luaEditTriggerSnapshot(workingChat.scriptstate)
+  const localLoreChanged =
+    reconciliation.localLoreSnapshot !== null &&
+    reconciliation.localLoreSnapshot !== luaEditTriggerSnapshot(workingChat.localLore)
+  if (!messagesChanged && !scriptstateChanged && !localLoreChanged) return
+  if (!isActiveChatTargetFresh(reconciliation.target)) return
+
+  const nextChat: Chat = { ...previousChat }
+  if (messagesChanged) nextChat.message = safeStructuredClone(workingChat.message)
+  if (scriptstateChanged) nextChat.scriptstate = safeStructuredClone(workingChat.scriptstate)
+
+  const commandPreviousChat: Chat = messagesChanged ? previousChat : { ...previousChat, message: [] }
+  const commandNextChat: Chat = messagesChanged ? nextChat : { ...nextChat, message: [] }
+  const preparation = prepareCompatibleChatUpdateScoped(commandPreviousChat, commandNextChat, reconciliation.previous)
+  const expectedChatCommandCount = Number(messagesChanged) + Number(scriptstateChanged)
+  if (preparation.factories.length !== expectedChatCommandCount) return
+  const nextLocalLore = localLoreChanged ? safeStructuredClone(workingChat.localLore ?? []) : null
+  if (nextLocalLore) ensureClientLorebookEntryIds(nextLocalLore)
+  const lorebookPrevious = localLoreChanged
+    ? scopedLorebookStateSnapshot(`chat:${reconciliation.target.chatId}`, reconciliation.localLoreSnapshot)
+    : null
+
+  const applied = withTrustedResourceWrite(() => {
+    if (!isActiveChatTargetFresh(reconciliation.target)) return false
+
+    const selectedCharacter = getDatabase().characters?.[reconciliation.target.selectedCharID]
+    const liveChat = selectedCharacter?.chats?.[selectedCharacter.chatPage]
+    if (
+      !selectedCharacter ||
+      !liveChat ||
+      selectedCharacter.chaId !== reconciliation.target.characterId ||
+      liveChat.id !== reconciliation.target.chatId
+    ) {
+      return false
+    }
+
+    if (messagesChanged && luaEditTriggerSnapshot(liveChat.message) !== reconciliation.messageSnapshot) {
+      return false
+    }
+    if (scriptstateChanged && luaEditTriggerSnapshot(liveChat.scriptstate) !== reconciliation.scriptstateSnapshot) {
+      return false
+    }
+    if (localLoreChanged && luaEditTriggerSnapshot(liveChat.localLore) !== reconciliation.localLoreSnapshot) {
+      return false
+    }
+
+    if (messagesChanged) liveChat.message = safeStructuredClone(nextChat.message)
+    if (scriptstateChanged) liveChat.scriptstate = safeStructuredClone(nextChat.scriptstate)
+    if (nextLocalLore) liveChat.localLore = nextLocalLore
+    return true
+  })
+  if (!applied) return
+
+  if (preparation.factories.length > 0) {
+    runOptimisticCommandSequence(preparation.factories, preparation.rollback)
+  }
+  if (nextLocalLore && lorebookPrevious && reconciliation.target.chatId) {
+    dispatchReplaceChatLorebooks(reconciliation.target.chatId, nextLocalLore, lorebookPrevious, 0)
+  }
+}
+
+function luaEditTriggerSnapshot(value: unknown): string {
+  const snapshot = JSON.stringify(value)
+  return snapshot === undefined ? '__undefined__' : snapshot
 }
 
 export async function runLuaButtonTrigger(

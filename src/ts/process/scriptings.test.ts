@@ -13,6 +13,7 @@ const luaMock = vi.hoisted(() => {
     lastAccessKey: '',
     rejectDispatch: false,
     dispatchArgs: new Map<string, unknown[]>(),
+    callListenAction: null as null | ((engine: any, accessKey: string) => void | Promise<void>),
   }
 
   function makeEngine(options: Record<string, unknown>) {
@@ -33,6 +34,7 @@ const luaMock = vi.hoisted(() => {
               if (state.rejectDispatch) {
                 throw new Error('lua dispatch failed')
               }
+              await state.callListenAction?.(engine, accessKey)
               return JSON.stringify(JSON.parse(value))
             }
           }
@@ -97,6 +99,7 @@ const luaMock = vi.hoisted(() => {
       state.lastAccessKey = ''
       state.rejectDispatch = false
       state.dispatchArgs.clear()
+      state.callListenAction = null
       state.createEngine.mockClear()
       state.createEngine.mockImplementation(async (options: Record<string, unknown>) => makeEngine(options))
     },
@@ -105,6 +108,9 @@ const luaMock = vi.hoisted(() => {
     },
     setDispatchArgs(name: string, args: unknown[]) {
       state.dispatchArgs.set(name, args)
+    },
+    setCallListenAction(action: null | ((engine: any, accessKey: string) => void | Promise<void>)) {
+      state.callListenAction = action
     },
   }
 })
@@ -123,6 +129,10 @@ const mediaMock = vi.hoisted(() => ({
 vi.mock('wasmoon', () => ({
   LuaFactory: luaMock.LuaFactory,
   LuaEngine: luaMock.LuaEngine,
+}))
+
+vi.mock('../storage/fastifyStorage', () => ({
+  getNodeServerProxyAuth: async () => 'scriptings-test-auth',
 }))
 
 vi.mock('../globalApi.svelte', async (importActual) => {
@@ -190,6 +200,14 @@ import {
   runLuaEditTrigger,
   runScripted,
 } from './scriptings'
+import {
+  clearAppliedServerResourceRevision,
+  clearCachedServerCommandRevision,
+  setServerCommandSuccessReconciler,
+} from '../server/commands'
+import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from '../server/resourceWriteGuard.svelte'
+import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
+import { selectedCharID } from '../stores.svelte'
 
 function makeChat(): Chat {
   return {
@@ -262,6 +280,119 @@ async function waitForPythonRequest(worker: FakePythonWorker, type: PyWorkerRequ
     await Promise.resolve()
   }
   throw new Error(`Python worker did not receive ${type}`)
+}
+
+interface CapturedCommandFetch {
+  url: string
+  method: string
+  body: unknown
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+function stubLuaEditTriggerCommandFetch(): CapturedCommandFetch[] {
+  const calls: CapturedCommandFetch[] = []
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body,
+      })
+      if (url === '/api/v1/bootstrap') return jsonResponse({ revision: 10 })
+      if (url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'POST') {
+        const messageId = (body as { message?: { chatId?: string } } | null)?.message?.chatId
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'message.appended',
+            revision: 11,
+            resource: 'message',
+            id: messageId,
+            parentId: 'chat-a',
+          },
+          chatId: 'chat-a',
+          messageId,
+        })
+      }
+      if (url === '/api/v1/commands/chats/chat-a/scriptstate' && init.method === 'PATCH') {
+        return jsonResponse({
+          revision: 11,
+          event: {
+            type: 'chat.scriptstate.updated',
+            revision: 11,
+            resource: 'chat',
+            id: 'chat-a',
+          },
+          chatId: 'chat-a',
+        })
+      }
+      return jsonResponse({ error: `unexpected ${url}` }, 404)
+    }) as unknown as typeof fetch,
+  )
+  return calls
+}
+
+function seedLuaEditTriggerDatabase(): character {
+  selectedCharID.set(0)
+  setResourceWriteGuardEnabled(false)
+  replaceResourceDatabase({
+    characters: [
+      {
+        chaId: 'char-a',
+        name: 'Character',
+        desc: '',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            message: [{ role: 'user', data: 'original', chatId: 'message-a' }],
+            note: '',
+            name: 'Chat A',
+            localLore: [],
+            scriptstate: {},
+          },
+          {
+            id: 'chat-b',
+            message: [{ role: 'char', data: 'other chat', chatId: 'message-b' }],
+            note: '',
+            name: 'Chat B',
+            localLore: [],
+            scriptstate: {},
+          },
+        ],
+        triggerscript: [
+          {
+            comment: 'mutate chat from Lua',
+            type: 'input',
+            conditions: [],
+            effect: [{ type: 'triggerlua', code: '-- mutate through host API' }],
+          },
+        ],
+        customscript: [],
+        defaultVariables: '',
+        globalLore: [],
+        type: 'character',
+      },
+    ],
+    characterOrder: [],
+    templateDefaultVariables: '',
+  } as any)
+  return getResourceDatabase().characters[0] as character
+}
+
+async function waitForCommandFetches(calls: CapturedCommandFetch[], expected: number): Promise<void> {
+  await vi.waitFor(() => {
+    expect(calls).toHaveLength(expected)
+  })
 }
 
 beforeEach(() => {
@@ -539,6 +670,99 @@ describe('client scripting Lua budgets and cache (L39-L41)', () => {
     ).rejects.toThrow('lua dispatch failed')
 
     expect(getScriptingEngineCacheSnapshotForTests().accessSetSizes.editDisplay).toBe(0)
+  })
+})
+
+describe('Fastify Lua edit-trigger chat mutation', () => {
+  beforeEach(() => {
+    clearAppliedServerResourceRevision()
+    clearCachedServerCommandRevision()
+    setServerCommandSuccessReconciler(null)
+  })
+
+  afterEach(() => {
+    setResourceWriteGuardEnabled(false)
+    selectedCharID.set(-1)
+    clearAppliedServerResourceRevision()
+    clearCachedServerCommandRevision()
+    setServerCommandSuccessReconciler(null)
+  })
+
+  it('applies a Lua host chat mutation through the scoped message command', async () => {
+    const calls = stubLuaEditTriggerCommandFetch()
+    const char = seedLuaEditTriggerDatabase()
+    setResourceWriteGuardEnabled(true)
+    luaMock.setCallListenAction((engine, accessKey) => {
+      engine.hostFns.get('addChat')?.(accessKey, 'char', 'from Lua')
+    })
+
+    await expect(runLuaEditTrigger(char, 'editinput', 'draft')).resolves.toBe('draft')
+
+    expect(getResourceDatabase().characters[0].chats[0].message).toEqual([
+      expect.objectContaining({ role: 'user', data: 'original', chatId: 'message-a' }),
+      expect.objectContaining({ role: 'char', data: 'from Lua', chatId: expect.any(String) }),
+    ])
+    await waitForCommandFetches(calls, 2)
+    expect(calls).toEqual([
+      expect.objectContaining({ url: '/api/v1/bootstrap', method: 'GET' }),
+      expect.objectContaining({
+        url: '/api/v1/commands/chats/chat-a/messages',
+        method: 'POST',
+        body: {
+          baseRevision: 10,
+          message: expect.objectContaining({ role: 'char', data: 'from Lua', chatId: expect.any(String) }),
+        },
+      }),
+    ])
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it('discards detached Lua chat changes when the active chat changes during the trigger', async () => {
+    const calls = stubLuaEditTriggerCommandFetch()
+    const char = seedLuaEditTriggerDatabase()
+    setResourceWriteGuardEnabled(true)
+    luaMock.setCallListenAction((engine, accessKey) => {
+      engine.hostFns.get('addChat')?.(accessKey, 'char', 'stale Lua mutation')
+      withTrustedResourceWrite(() => {
+        getResourceDatabase().characters[0].chatPage = 1
+      })
+    })
+
+    await expect(runLuaEditTrigger(char, 'editinput', 'draft')).resolves.toBe('draft')
+    await Promise.resolve()
+
+    expect(getResourceDatabase().characters[0].chats[0].message).toEqual([
+      expect.objectContaining({ role: 'user', data: 'original', chatId: 'message-a' }),
+    ])
+    expect(getResourceDatabase().characters[0].chats[1].message).toEqual([
+      expect.objectContaining({ role: 'char', data: 'other chat', chatId: 'message-b' }),
+    ])
+    expect(calls).toHaveLength(0)
+    expect(console.error).not.toHaveBeenCalled()
+  })
+
+  it('persists Lua edit-display chat variables through the scriptstate command', async () => {
+    const calls = stubLuaEditTriggerCommandFetch()
+    const char = seedLuaEditTriggerDatabase()
+    setResourceWriteGuardEnabled(true)
+    luaMock.setCallListenAction((engine, accessKey) => {
+      engine.hostFns.get('setChatVar')?.(accessKey, 'choice', 'updated')
+    })
+
+    await expect(runLuaEditTrigger(char, 'editdisplay', 'draft')).resolves.toBe('draft')
+
+    expect(getResourceDatabase().characters[0].chats[0].scriptstate).toEqual({ $choice: 'updated' })
+    await waitForCommandFetches(calls, 2)
+    expect(calls[1]).toEqual({
+      url: '/api/v1/commands/chats/chat-a/scriptstate',
+      method: 'PATCH',
+      body: {
+        baseRevision: 10,
+        patch: { $choice: 'updated' },
+        deleteKeys: [],
+      },
+    })
+    expect(console.error).not.toHaveBeenCalled()
   })
 })
 
