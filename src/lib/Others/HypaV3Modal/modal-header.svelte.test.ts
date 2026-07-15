@@ -3,7 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BulkEditState, CategoryManagerState, FilterState, UIState } from './types'
 
 vi.mock('src/lang', () => ({
-  language: { hypaV3Modal: { titleLabel: 'HypaV3' } },
+  language: {
+    hypaV3Modal: {
+      titleLabel: 'HypaV3',
+      searchAction: 'Search summaries',
+      importantFilterAction: 'Show important summaries',
+      bulkEditAction: 'Bulk edit summaries',
+      categoryManagerAction: 'Manage categories',
+      settingsAction: 'Open HypaV3 settings',
+      moreActionsAction: 'More actions',
+      selectedFilterAction: 'Show selected summaries',
+      resetDataAction: 'Reset HypaV3 data',
+      closeAction: 'Close HypaV3',
+    },
+  },
 }))
 
 vi.mock('src/ts/stores.svelte', async () => {
@@ -73,5 +86,16 @@ describe('HypaV3 modal header keyboard navigation', () => {
     const buttons = Array.from(target.querySelectorAll<HTMLButtonElement>('button'))
     expect(buttons).toHaveLength(9)
     expect(buttons.every((button) => button.tabIndex === 0)).toBe(true)
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual([
+      'Search summaries',
+      'Show important summaries',
+      'Bulk edit summaries',
+      'Manage categories',
+      'Open HypaV3 settings',
+      'More actions',
+      'Show selected summaries',
+      'Reset HypaV3 data',
+      'Close HypaV3',
+    ])
   })
 })

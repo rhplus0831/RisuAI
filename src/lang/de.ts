@@ -1313,6 +1313,15 @@ export const languageGerman = {
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
+    searchAction: 'Zusammenfassungen durchsuchen',
+    importantFilterAction: 'Wichtige Zusammenfassungen anzeigen',
+    bulkEditAction: 'Zusammenfassungen gesammelt bearbeiten',
+    categoryManagerAction: 'Kategorien verwalten',
+    settingsAction: 'HypaV3-Einstellungen öffnen',
+    moreActionsAction: 'Weitere Aktionen',
+    selectedFilterAction: 'Ausgewählte Zusammenfassungen anzeigen',
+    resetDataAction: 'HypaV3-Daten zurücksetzen',
+    closeAction: 'HypaV3 schließen',
     resetConfirmMessage:
       'Diese Aktion kann nicht rückgängig gemacht werden. Möchten Sie die HypaV3-Daten zurücksetzen?',
     resetConfirmSecondMessage: 'Diese Aktion ist unwiderruflich. Möchten Sie die HypaV3-Daten wirklich zurücksetzen?',

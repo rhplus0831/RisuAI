@@ -1294,6 +1294,15 @@ export const languageSpanish = {
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
+    searchAction: 'Buscar resúmenes',
+    importantFilterAction: 'Mostrar resúmenes importantes',
+    bulkEditAction: 'Editar resúmenes en bloque',
+    categoryManagerAction: 'Administrar categorías',
+    settingsAction: 'Abrir la configuración de HypaV3',
+    moreActionsAction: 'Más acciones',
+    selectedFilterAction: 'Mostrar resúmenes seleccionados',
+    resetDataAction: 'Restablecer datos de HypaV3',
+    closeAction: 'Cerrar HypaV3',
     resetConfirmMessage: 'Esta acción no se puede deshacer. ¿Desea restablecer los datos de HypaV3?',
     resetConfirmSecondMessage:
       'Esta acción es irreversible. ¿Está realmente seguro de querer restablecer los datos de HypaV3?',

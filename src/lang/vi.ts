@@ -1282,6 +1282,15 @@ export const languageVietnamese = {
   },
   hypaV3Modal: {
     titleLabel: 'HypaV3',
+    searchAction: 'Tìm kiếm bản tóm tắt',
+    importantFilterAction: 'Chỉ hiển thị bản tóm tắt quan trọng',
+    bulkEditAction: 'Chỉnh sửa hàng loạt bản tóm tắt',
+    categoryManagerAction: 'Quản lý danh mục',
+    settingsAction: 'Mở cài đặt HypaV3',
+    moreActionsAction: 'Thêm thao tác',
+    selectedFilterAction: 'Chỉ hiển thị bản tóm tắt đã chọn',
+    resetDataAction: 'Đặt lại dữ liệu HypaV3',
+    closeAction: 'Đóng HypaV3',
     resetConfirmMessage: 'Hành động này không thể hoàn tác. Bạn có muốn đặt lại dữ liệu HypaV3 không?',
     resetConfirmSecondMessage:
       'Hành động này không thể khôi phục. Bạn có thực sự chắc chắn muốn đặt lại dữ liệu HypaV3 không?',
