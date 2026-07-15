@@ -16,7 +16,6 @@ vi.mock('src/ts/characterCards', () => ({
   downloadRisuHub: realmMocks.downloadRisuHub,
   getRealmInfo: vi.fn(),
   getRisuHub: realmMocks.getRisuHub,
-  hubAdditionalHTML: '',
   hubURL: 'https://realm.example',
 }))
 
@@ -45,7 +44,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import RealmMain from './RealmMain.svelte'
 import { MobileGUI, RealmInitialOpenChar } from 'src/ts/stores.svelte'
-import type { hubType } from 'src/ts/characterCards'
+import type { hubType, RisuHubCatalogResult } from 'src/ts/characterCards'
 import { language } from 'src/lang'
 
 interface Deferred<T> {
@@ -77,6 +76,10 @@ function card(id: string, name: string): hubType {
     license: '',
     type: 'character',
   }
+}
+
+function catalog(cards: hubType[], additionalHTML = ''): RisuHubCatalogResult {
+  return { cards, additionalHTML }
 }
 
 function button(label: string): HTMLButtonElement {
@@ -151,9 +154,9 @@ afterEach(() => {
 })
 
 describe('RealmMain request ownership', () => {
-  it('does not let an older catalog response replace the latest sort results', async () => {
-    const older = deferred<hubType[]>()
-    const latest = deferred<hubType[]>()
+  it('does not let an older catalog response replace the latest cards or banner', async () => {
+    const older = deferred<RisuHubCatalogResult>()
+    const latest = deferred<RisuHubCatalogResult>()
     realmMocks.getRisuHub.mockReturnValueOnce(older.promise).mockReturnValueOnce(latest.promise)
 
     component = mount(RealmMain, { target })
@@ -162,20 +165,56 @@ describe('RealmMain request ownership', () => {
     button('Recent').click()
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(2))
 
-    latest.resolve([card('latest', 'Latest result')])
+    latest.resolve(catalog([card('latest', 'Latest result')], '<aside>Latest banner</aside>'))
     await tick()
     expect(target.textContent).toContain('Latest result')
+    expect(target.textContent).toContain('Latest banner')
 
-    older.resolve([card('older', 'Older result')])
+    older.resolve(catalog([card('older', 'Older result')], '<aside>Older banner</aside>'))
     await tick()
     expect(target.textContent).toContain('Latest result')
+    expect(target.textContent).toContain('Latest banner')
     expect(target.textContent).not.toContain('Older result')
+    expect(target.textContent).not.toContain('Older banner')
+  })
+
+  it('clears the prior banner when the latest response omits it', async () => {
+    realmMocks.getRisuHub
+      .mockResolvedValueOnce(catalog([card('initial', 'Initial result')], '<aside>Initial banner</aside>'))
+      .mockResolvedValueOnce(catalog([card('latest', 'Latest result')]))
+
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Initial banner'))
+
+    button('Recent').click()
+    await vi.waitFor(() => expect(target.textContent).toContain('Latest result'))
+    expect(target.textContent).not.toContain('Initial result')
+    expect(target.textContent).not.toContain('Initial banner')
+  })
+
+  it('invalidates and aborts a pending catalog request when unmounted', async () => {
+    const pending = deferred<RisuHubCatalogResult>()
+    realmMocks.getRisuHub.mockReturnValue(pending.promise)
+
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+    const signal = realmMocks.getRisuHub.mock.calls[0][0].signal as AbortSignal
+    expect(signal.aborted).toBe(false)
+
+    unmount(component)
+    component = undefined
+    expect(signal.aborted).toBe(true)
+
+    pending.resolve(catalog([card('late', 'Late result')], '<aside>Late banner</aside>'))
+    await tick()
+    expect(target.textContent).not.toContain('Late result')
+    expect(target.textContent).not.toContain('Late banner')
   })
 })
 
 describe('RealmMain query pagination', () => {
   it('returns desktop search, sort, and content filters to the first page', async () => {
-    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
 
@@ -204,7 +243,7 @@ describe('RealmMain query pagination', () => {
 
   it('returns the mobile sort cycle to the first page', async () => {
     MobileGUI.set(true)
-    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
 
@@ -221,7 +260,7 @@ describe('RealmMain query pagination', () => {
 
 describe('RealmMain character import input', () => {
   it('does nothing when the input prompt is cancelled or blank', async () => {
-    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     realmMocks.alertInput.mockResolvedValue('   ')
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
@@ -236,7 +275,7 @@ describe('RealmMain character import input', () => {
   })
 
   it('rejects malformed URLs without throwing or starting a download', async () => {
-    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     realmMocks.alertInput.mockResolvedValue('https://[broken')
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
@@ -250,7 +289,7 @@ describe('RealmMain character import input', () => {
   })
 
   it('downloads the path id from a Realm URL without its query or fragment', async () => {
-    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     realmMocks.alertInput.mockResolvedValue('https://realm.risuai.net/character/path-card?source=share#preview')
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
@@ -265,7 +304,7 @@ describe('RealmMain character import input', () => {
 
 describe('RealmMain modal behavior', () => {
   it('traps menu focus and closes it with Escape while restoring its opener', async () => {
-    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([]))
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
 
@@ -288,7 +327,7 @@ describe('RealmMain modal behavior', () => {
   })
 
   it('closes the character dialog through Escape and backdrop clicks', async () => {
-    realmMocks.getRisuHub.mockResolvedValue([card('realm-card', 'Realm result')])
+    realmMocks.getRisuHub.mockResolvedValue(catalog([card('realm-card', 'Realm result')]))
     component = mount(RealmMain, { target })
     await vi.waitFor(() => expect(target.textContent).toContain('Realm result'))
 

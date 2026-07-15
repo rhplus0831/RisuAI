@@ -1714,7 +1714,18 @@ export type hubType = {
   hidden?: boolean
 }
 
-export let hubAdditionalHTML = ''
+export interface RisuHubCatalogResult {
+  cards: hubType[]
+  additionalHTML: string
+}
+
+export interface RisuHubCatalogQuery {
+  search: string
+  page: number
+  nsfw: boolean
+  sort: string
+  signal?: AbortSignal
+}
 
 let latestRealmImportOperationToken = 0
 
@@ -1735,12 +1746,7 @@ function createRealmImportProgressReporter(token: number) {
   }
 }
 
-export async function getRisuHub(arg: {
-  search: string
-  page: number
-  nsfw: boolean
-  sort: string
-}): Promise<hubType[]> {
+export async function getRisuHub(arg: RisuHubCatalogQuery): Promise<RisuHubCatalogResult> {
   try {
     const params = new URLSearchParams({
       search: `${arg.search} __shared`,
@@ -1754,21 +1760,30 @@ export async function getRisuHub(arg: {
       headers: {
         'x-risuai-info': appVer + ';' + 'fastify',
       },
+      signal: arg.signal,
     })
     if (da.status !== 200) {
-      return []
+      return { cards: [], additionalHTML: '' }
     }
     const jso = await da.json()
     if (Array.isArray(jso)) {
-      return jso
+      return { cards: jso, additionalHTML: '' }
     }
-    if (typeof jso.additionalHTML === 'string' && jso.additionalHTML.length > 0) {
-      hubAdditionalHTML = sanitizeHubAdditionalHtml(jso.additionalHTML)
+    const additionalHTML =
+      typeof jso?.additionalHTML === 'string' && jso.additionalHTML.length > 0
+        ? sanitizeHubAdditionalHtml(jso.additionalHTML)
+        : ''
+    return {
+      cards: Array.isArray(jso?.cards) ? jso.cards : [],
+      additionalHTML,
     }
-    return jso.cards
   } catch (error) {
-    return []
+    return { cards: [], additionalHTML: '' }
   }
+}
+
+export async function getRisuHubCards(arg: RisuHubCatalogQuery): Promise<hubType[]> {
+  return (await getRisuHub(arg)).cards
 }
 
 export async function downloadRisuHub(

@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { downloadRisuHub, getRisuHub, hubAdditionalHTML, type hubType } from 'src/ts/characterCards'
+  import { downloadRisuHub, getRisuHub, type hubType, type RisuHubCatalogResult } from 'src/ts/characterCards'
   import { ArrowLeft, ArrowRight, MenuIcon, SearchIcon, XIcon } from '@lucide/svelte'
+  import { onDestroy } from 'svelte'
   import { alertError, alertInput } from 'src/ts/alert'
   import { language } from 'src/lang'
   import RisuHubIcon from './RealmHubIcon.svelte'
@@ -12,6 +13,7 @@
   let openedData: null | hubType = $state(null)
 
   let charas: hubType[] = $state([])
+  let additionalHTML = $state('')
 
   let page = $state(0)
   let sort = $state('recommended')
@@ -20,17 +22,31 @@
   let menuOpen = $state(false)
   let nsfw = $state(false)
   let latestHubRequest = 0
+  let hubRequestController: AbortController | null = null
+  let hubLifecycleActive = true
 
   async function getHub() {
     const request = ++latestHubRequest
-    const nextCharas = await getRisuHub({
+    hubRequestController?.abort()
+    const controller = new AbortController()
+    hubRequestController = controller
+    const nextCatalog = await getRisuHub({
       search: search,
       page: page,
       nsfw: nsfw,
       sort: sort,
+      signal: controller.signal,
     })
-    if (request !== latestHubRequest) return
-    charas = nextCharas
+    if (!hubLifecycleActive || controller.signal.aborted || request !== latestHubRequest) return
+    applyCatalogPresentation(nextCatalog)
+    if (hubRequestController === controller) {
+      hubRequestController = null
+    }
+  }
+
+  function applyCatalogPresentation(nextCatalog: RisuHubCatalogResult): void {
+    charas = nextCatalog.cards
+    additionalHTML = nextCatalog.additionalHTML
   }
 
   function refreshHubFromFirstPage(): Promise<void> {
@@ -72,6 +88,13 @@
   }
 
   getHub()
+
+  onDestroy(() => {
+    hubLifecycleActive = false
+    latestHubRequest += 1
+    hubRequestController?.abort()
+    hubRequestController = null
+  })
 
   $effect(() => {
     if ($RealmInitialOpenChar) {
@@ -197,7 +220,7 @@
     </button>
   </div>
 {/if}
-{@html hubAdditionalHTML}
+{@html additionalHTML}
 <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
   {#key charas}
     {#each charas as chara}
