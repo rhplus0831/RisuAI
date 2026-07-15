@@ -1,11 +1,13 @@
 <script lang="ts">
   import { downloadRisuHub, getRisuHub, hubAdditionalHTML, type hubType } from 'src/ts/characterCards'
   import { ArrowLeft, ArrowRight, MenuIcon, SearchIcon, XIcon } from '@lucide/svelte'
-  import { alertInput } from 'src/ts/alert'
+  import { alertError, alertInput } from 'src/ts/alert'
   import { language } from 'src/lang'
   import RisuHubIcon from './RealmHubIcon.svelte'
   import { MobileGUI, RealmInitialOpenChar } from 'src/ts/stores.svelte'
   import RealmPopUp from './RealmPopUp.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { resolveRealmImportId } from './realmImportInput'
 
   let openedData: null | hubType = $state(null)
 
@@ -45,6 +47,30 @@
     return refreshHubFromFirstPage()
   }
 
+  function closeMenu(): void {
+    menuOpen = false
+  }
+
+  function handleMenuKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeMenu()
+  }
+
+  async function importCharacterFromInput(): Promise<void> {
+    closeMenu()
+    const input = await alertInput(language.realm.importPrompt)
+    if (input.trim().length === 0) return
+
+    const id = resolveRealmImportId(input)
+    if (!id) {
+      alertError(language.realm.invalidImport)
+      return
+    }
+    void downloadRisuHub(id)
+  }
+
   getHub()
 
   $effect(() => {
@@ -59,8 +85,11 @@
   <div class="flex items-stretch w-2xl max-w-full">
     <input
       bind:value={search}
+      aria-label={language.realm.searchCharacters}
       class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full" />
     <button
+      type="button"
+      aria-label={language.search}
       onclick={() => {
         if (sort === 'random' || sort === 'recommended') {
           sort = ''
@@ -71,7 +100,9 @@
       <SearchIcon />
     </button>
     <button
-      onclick={(e) => {
+      type="button"
+      aria-label={language.menu}
+      onclick={() => {
         menuOpen = true
       }}
       class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors">
@@ -182,6 +213,9 @@
   <div class="w-full flex justify-center">
     <div class="flex">
       <button
+        type="button"
+        aria-label={language.realm.previousPage}
+        disabled={page === 0}
         class="bg-darkbg h-14 w-14 min-w-14 rounded-lg flex justify-center items-center hover:ring-3 transition-shadow"
         onclick={() => {
           if (page > 0) {
@@ -191,10 +225,15 @@
         }}>
         <ArrowLeft />
       </button>
-      <button class="bg-darkbg h-14 w-14 min-w-14 rounded-lg ml-2 flex justify-center items-center transition-shadow">
+      <span
+        class="bg-darkbg h-14 w-14 min-w-14 rounded-lg ml-2 flex justify-center items-center transition-shadow"
+        aria-current="page"
+        aria-label={language.realm.currentPage(page + 1)}>
         <span>{page + 1}</span>
-      </button>
+      </span>
       <button
+        type="button"
+        aria-label={language.realm.nextPage}
         class="bg-darkbg h-14 w-14 min-w-14 rounded-lg ml-2 flex justify-center items-center hover:ring-3 transition-shadow"
         onclick={() => {
           page += 1
@@ -211,43 +250,38 @@
 {/if}
 
 {#if menuOpen}
+  <!-- Backdrop click is supplemental to the dialog's Close button and Escape handling. -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    data-modal-root
     class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center"
-    role="button"
-    tabindex="0"
-    onclick={() => {
-      menuOpen = false
-    }}>
-    <div class="max-w-full bg-darkbg rounded-md flex flex-col gap-4 overflow-y-auto p-4">
-      <h1 class="font-bold text-2xl w-full">
-        <span> Menu </span>
+    onclick={closeMenu}>
+    <div
+      use:modalFocusTrap
+      class="max-w-full bg-darkbg rounded-md flex flex-col gap-4 overflow-y-auto p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-realm-menu-title"
+      tabindex="-1"
+      onkeydown={handleMenuKeydown}
+      onclick={(event) => {
+        event.stopPropagation()
+      }}>
+      <h1 id="risu-realm-menu-title" class="font-bold text-2xl w-full">
+        <span>{language.menu}</span>
         <button
+          type="button"
+          data-modal-initial-focus
+          aria-label={language.close}
           class="float-right text-textcolor2 hover:text-green-500"
-          onclick={() => {
-            menuOpen = false
-          }}>
+          onclick={closeMenu}>
           <XIcon />
         </button>
       </h1>
       <div class=" mt-2 w-full border-t-2 border-t-bgcolor"></div>
-      <button
-        class="w-full hover:bg-selected p-4"
-        onclick={async (e) => {
-          e.stopPropagation()
-          menuOpen = false
-          const input = await alertInput('Input URL or ID')
-          if (input.startsWith('http')) {
-            const url = new URL(input)
-            const id = url.searchParams.get('realm') ?? url.searchParams.get('code') ?? input.split('/').at(-1)
-            if (id) {
-              downloadRisuHub(id)
-              return
-            }
-          }
-          const id = input.split('?').at(-1)
-          downloadRisuHub(id)
-        }}>Import Character from URL or ID</button>
+      <button type="button" class="w-full hover:bg-selected p-4" onclick={importCharacterFromInput}
+        >{language.realm.importCharacter}</button>
     </div>
   </div>
 {/if}

@@ -2,19 +2,29 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const realmMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
+  alertError: vi.fn(),
+  alertInput: vi.fn(),
+  alertNormal: vi.fn(),
+  authenticatedHubFetch: vi.fn(),
+  downloadRisuHub: vi.fn(),
   getRisuHub: vi.fn(),
 }))
 
 vi.mock('src/ts/characterCards', () => ({
-  downloadRisuHub: vi.fn(),
+  authenticatedHubFetch: realmMocks.authenticatedHubFetch,
+  downloadRisuHub: realmMocks.downloadRisuHub,
+  getRealmInfo: vi.fn(),
   getRisuHub: realmMocks.getRisuHub,
   hubAdditionalHTML: '',
   hubURL: 'https://realm.example',
 }))
 
 vi.mock('src/ts/alert', () => ({
-  alertInput: vi.fn(),
-  alertNormal: vi.fn(),
+  alertConfirm: realmMocks.alertConfirm,
+  alertError: realmMocks.alertError,
+  alertInput: realmMocks.alertInput,
+  alertNormal: realmMocks.alertNormal,
 }))
 
 vi.mock('src/ts/server/resourceState.svelte', async (importActual) => {
@@ -36,6 +46,7 @@ vi.mock('src/ts/process/modules', () => ({
 import RealmMain from './RealmMain.svelte'
 import { MobileGUI, RealmInitialOpenChar } from 'src/ts/stores.svelte'
 import type { hubType } from 'src/ts/characterCards'
+import { language } from 'src/lang'
 
 interface Deferred<T> {
   promise: Promise<T>
@@ -94,10 +105,22 @@ function searchButton(): HTMLButtonElement {
   return match
 }
 
+function labelledButton(label: string): HTMLButtonElement {
+  const match = target.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  if (!match) throw new Error(`labelled button not found: ${label}`)
+  return match
+}
+
 function latestQuery(): { search: string; page: number; nsfw: boolean; sort: string } {
   const call = realmMocks.getRisuHub.mock.calls.at(-1)
   if (!call) throw new Error('Realm query not found')
   return call[0]
+}
+
+function currentPage(): HTMLElement {
+  const match = target.querySelector<HTMLElement>('[aria-current="page"]')
+  if (!match) throw new Error('current Realm page not found')
+  return match
 }
 
 let component: Parameters<typeof unmount>[0] | undefined
@@ -107,6 +130,12 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   realmMocks.getRisuHub.mockReset()
+  realmMocks.alertConfirm.mockReset()
+  realmMocks.alertError.mockReset()
+  realmMocks.alertInput.mockReset()
+  realmMocks.alertNormal.mockReset()
+  realmMocks.authenticatedHubFetch.mockReset()
+  realmMocks.downloadRisuHub.mockReset()
   MobileGUI.set(false)
   RealmInitialOpenChar.set(null)
 })
@@ -157,7 +186,7 @@ describe('RealmMain query pagination', () => {
 
     button('NSFW').click()
     expect(latestQuery()).toMatchObject({ page: 0, nsfw: true, sort: '' })
-    expect(button('1')).toBeTruthy()
+    expect(currentPage().textContent?.trim()).toBe('1')
 
     nextPageButton().click()
     const input = searchInput()
@@ -165,12 +194,12 @@ describe('RealmMain query pagination', () => {
     input.dispatchEvent(new Event('input', { bubbles: true }))
     searchButton().click()
     expect(latestQuery()).toMatchObject({ search: 'new query', page: 0 })
-    expect(button('1')).toBeTruthy()
+    expect(currentPage().textContent?.trim()).toBe('1')
 
     nextPageButton().click()
     button('Trending').click()
     expect(latestQuery()).toMatchObject({ page: 0, sort: 'trending' })
-    expect(button('1')).toBeTruthy()
+    expect(currentPage().textContent?.trim()).toBe('1')
   })
 
   it('returns the mobile sort cycle to the first page', async () => {
@@ -186,6 +215,102 @@ describe('RealmMain query pagination', () => {
 
     button('Recent').click()
     expect(latestQuery()).toMatchObject({ page: 0, sort: 'trending' })
-    expect(button('1')).toBeTruthy()
+    expect(currentPage().textContent?.trim()).toBe('1')
+  })
+})
+
+describe('RealmMain character import input', () => {
+  it('does nothing when the input prompt is cancelled or blank', async () => {
+    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.alertInput.mockResolvedValue('   ')
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    labelledButton(language.menu).click()
+    await tick()
+    button(language.realm.importCharacter).click()
+
+    await vi.waitFor(() => expect(realmMocks.alertInput).toHaveBeenCalledWith(language.realm.importPrompt))
+    expect(realmMocks.downloadRisuHub).not.toHaveBeenCalled()
+    expect(realmMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('rejects malformed URLs without throwing or starting a download', async () => {
+    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.alertInput.mockResolvedValue('https://[broken')
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    labelledButton(language.menu).click()
+    await tick()
+    button(language.realm.importCharacter).click()
+
+    await vi.waitFor(() => expect(realmMocks.alertError).toHaveBeenCalledWith(language.realm.invalidImport))
+    expect(realmMocks.downloadRisuHub).not.toHaveBeenCalled()
+  })
+
+  it('downloads the path id from a Realm URL without its query or fragment', async () => {
+    realmMocks.getRisuHub.mockResolvedValue([])
+    realmMocks.alertInput.mockResolvedValue('https://realm.risuai.net/character/path-card?source=share#preview')
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    labelledButton(language.menu).click()
+    await tick()
+    button(language.realm.importCharacter).click()
+
+    await vi.waitFor(() => expect(realmMocks.downloadRisuHub).toHaveBeenCalledWith('path-card'))
+  })
+})
+
+describe('RealmMain modal behavior', () => {
+  it('traps menu focus and closes it with Escape while restoring its opener', async () => {
+    realmMocks.getRisuHub.mockResolvedValue([])
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(realmMocks.getRisuHub).toHaveBeenCalledTimes(1))
+
+    const opener = labelledButton(language.menu)
+    opener.focus()
+    opener.click()
+    await tick()
+    await Promise.resolve()
+
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(language.close)
+
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await tick()
+    await Promise.resolve()
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.body.style.overflow).toBe('')
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('closes the character dialog through Escape and backdrop clicks', async () => {
+    realmMocks.getRisuHub.mockResolvedValue([card('realm-card', 'Realm result')])
+    component = mount(RealmMain, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Realm result'))
+
+    const opener = labelledButton(language.openCharacter('Realm result'))
+    opener.focus()
+    opener.click()
+    await tick()
+    await Promise.resolve()
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await tick()
+    await Promise.resolve()
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+
+    opener.click()
+    await tick()
+    const backdrop = target.querySelector<HTMLElement>('[data-modal-root]')
+    expect(backdrop).not.toBeNull()
+    backdrop?.click()
+    await tick()
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
   })
 })

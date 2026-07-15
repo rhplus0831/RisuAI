@@ -1,4 +1,23 @@
 export const languageEnglish = {
+  realm: {
+    searchCharacters: 'Search Realm characters',
+    previousPage: 'Previous Realm page',
+    nextPage: 'Next Realm page',
+    currentPage: (page: number) => `Realm page ${page}`,
+    importCharacter: 'Import character from URL or ID',
+    importPrompt: 'Enter a Realm character URL or ID',
+    invalidImport: 'Enter a valid Realm character URL or ID.',
+    madeBy: (author: string) => `Made by ${author}`,
+    forked: 'Open the original character',
+    reportCharacter: 'Report character',
+    reportConfirm: 'Report this character?',
+    reportPrompt: 'Write a report for the Realm administrators.',
+    removeCharacter: 'Remove character from Realm',
+    removeConfirm: 'Do you want to remove this character from Realm?',
+    copyLink: 'Copy Realm character link',
+    clipboardFailed: 'Could not copy the Realm character link.',
+    chat: 'Chat with character',
+  },
   secretInput: {
     savedPlaceholder: 'Saved credential',
     savedStatus: 'A credential is saved.',

@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const popupMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn(),
+  alertError: vi.fn(),
   alertInput: vi.fn(),
   alertNormal: vi.fn(),
   authenticatedHubFetch: vi.fn(),
+  clipboardWrite: vi.fn(),
+  downloadRisuHub: vi.fn(),
   database: {
     hideAllImages: true,
     language: 'en',
@@ -18,13 +21,14 @@ const popupMocks = vi.hoisted(() => ({
 
 vi.mock('src/ts/characterCards', () => ({
   authenticatedHubFetch: popupMocks.authenticatedHubFetch,
-  downloadRisuHub: vi.fn(),
+  downloadRisuHub: popupMocks.downloadRisuHub,
   getRealmInfo: vi.fn(),
   hubURL: '/api/v1/hub',
 }))
 
 vi.mock('src/ts/alert', () => ({
   alertConfirm: popupMocks.alertConfirm,
+  alertError: popupMocks.alertError,
   alertInput: popupMocks.alertInput,
   alertNormal: popupMocks.alertNormal,
 }))
@@ -47,6 +51,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import RealmPopUp from './RealmPopUp.svelte'
 import type { hubType } from 'src/ts/characterCards'
+import { language } from 'src/lang'
 
 interface Deferred<T> {
   promise: Promise<T>
@@ -93,10 +98,18 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   popupMocks.alertConfirm.mockReset()
+  popupMocks.alertError.mockReset()
   popupMocks.alertInput.mockReset()
   popupMocks.alertNormal.mockReset()
   popupMocks.authenticatedHubFetch.mockReset()
+  popupMocks.clipboardWrite.mockReset()
+  popupMocks.downloadRisuHub.mockReset()
   popupMocks.authenticatedHubFetch.mockResolvedValue(new Response('removed'))
+  popupMocks.clipboardWrite.mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: popupMocks.clipboardWrite },
+  })
 })
 
 afterEach(() => {
@@ -125,5 +138,106 @@ describe('RealmPopUp removal ownership', () => {
     expect(JSON.parse(String(init.body))).not.toHaveProperty('token')
     await tick()
     expect(popupMocks.alertNormal).toHaveBeenCalledWith('removed')
+  })
+
+  it('does not offer removal when the card has no creator identity', () => {
+    const openedData = card()
+    openedData.creator = undefined
+    component = mount(RealmPopUp, { target, props: { openedData } })
+
+    expect(target.querySelector('svg.lucide-trash')).toBeNull()
+  })
+})
+
+describe('RealmPopUp report actions', () => {
+  it('stops when report confirmation is cancelled', async () => {
+    popupMocks.alertConfirm.mockResolvedValue(false)
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    iconButton('lucide-flag').click()
+
+    await vi.waitFor(() => expect(popupMocks.alertConfirm).toHaveBeenCalledWith(language.realm.reportConfirm))
+    expect(popupMocks.alertInput).not.toHaveBeenCalled()
+    expect(popupMocks.authenticatedHubFetch).not.toHaveBeenCalled()
+  })
+
+  it('stops when the report prompt is cancelled or blank', async () => {
+    popupMocks.alertConfirm.mockResolvedValue(true)
+    popupMocks.alertInput.mockResolvedValue('   ')
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    iconButton('lucide-flag').click()
+
+    await vi.waitFor(() => expect(popupMocks.alertInput).toHaveBeenCalledWith(language.realm.reportPrompt))
+    expect(popupMocks.authenticatedHubFetch).not.toHaveBeenCalled()
+  })
+
+  it('keeps the clicked card id stable across both report prompts', async () => {
+    const confirmation = deferred<boolean>()
+    popupMocks.alertConfirm.mockReturnValue(confirmation.promise)
+    popupMocks.alertInput.mockResolvedValue('  actionable report  ')
+    popupMocks.authenticatedHubFetch.mockResolvedValue(new Response('reported'))
+    const openedData = card('original-card')
+    component = mount(RealmPopUp, { target, props: { openedData } })
+
+    iconButton('lucide-flag').click()
+    openedData.id = 'replacement-card'
+    confirmation.resolve(true)
+
+    await vi.waitFor(() => expect(popupMocks.authenticatedHubFetch).toHaveBeenCalledTimes(1))
+    const [url, init] = popupMocks.authenticatedHubFetch.mock.calls[0]
+    expect(url).toBe('/api/v1/hub/hub/report')
+    expect(JSON.parse(String(init.body))).toEqual({
+      id: 'original-card',
+      report: 'actionable report',
+    })
+    expect(popupMocks.alertNormal).toHaveBeenCalledWith('reported')
+  })
+})
+
+describe('RealmPopUp clipboard and modal accessibility', () => {
+  it('reports clipboard failures instead of claiming success', async () => {
+    popupMocks.clipboardWrite.mockRejectedValue(new Error('permission denied'))
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    iconButton('lucide-paperclip').click()
+
+    await vi.waitFor(() => expect(popupMocks.alertError).toHaveBeenCalledWith(language.realm.clipboardFailed))
+    expect(popupMocks.alertNormal).not.toHaveBeenCalledWith(language.clipboardSuccess)
+  })
+
+  it('names every icon-only action for assistive technology', () => {
+    const openedData = card()
+    openedData.hasEmotion = true
+    openedData.hasAsset = true
+    openedData.hasLore = true
+    component = mount(RealmPopUp, { target, props: { openedData } })
+
+    const iconButtons = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).filter((button) =>
+      button.querySelector('svg'),
+    )
+    expect(iconButtons.length).toBeGreaterThan(0)
+    for (const button of iconButtons) {
+      expect(button.getAttribute('aria-label')?.trim()).toBeTruthy()
+    }
+  })
+
+  it('traps initial focus, inerts the modal background, and restores it on destroy', async () => {
+    const background = document.createElement('button')
+    background.textContent = 'Background action'
+    target.appendChild(background)
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    await tick()
+    await Promise.resolve()
+    expect(background.inert).toBe(true)
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(document.activeElement?.getAttribute('aria-label')).toBe(language.close)
+
+    unmount(component)
+    component = undefined
+    await Promise.resolve()
+    expect(background.inert).toBe(false)
+    expect(document.body.style.overflow).toBe('')
   })
 })
