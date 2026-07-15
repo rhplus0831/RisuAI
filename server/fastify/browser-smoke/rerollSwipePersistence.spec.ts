@@ -109,10 +109,10 @@ test('rerolled candidates survive a reload and stay swipe-recoverable (Phase 6c)
   await openFixtureChat(page)
   await expectVisibleChatRow(page, 0, 'greet me')
   await expectVisibleChatRow(page, 1, 'rerolled reply')
-  await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.refreshActiveChatMessages())
 
-  // The reroll buffer is reconstructed: the displaced 'old reply' is recoverable
-  // alongside the new active candidate.
+  // The normal active-chat hydration must reconstruct the reroll buffer. Poll
+  // that production path instead of forcing a second, overlapping hydration.
+  // The displaced 'old reply' is recoverable alongside the new active candidate.
   await expect
     .poll(() => page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.getRerollCandidates()), {
       timeout: 15_000,
