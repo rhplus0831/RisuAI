@@ -472,6 +472,7 @@
 
 <div class="flex w-full rounded-md border border-darkborderc mb-4 overflow-x-auto h-16 min-h-16 overflow-y-clip">
   <button
+    aria-pressed={submenu === 0}
     onclick={() => {
       submenu = 0
     }}
@@ -480,6 +481,7 @@
     <span>{language.basicInfo}</span>
   </button>
   <button
+    aria-pressed={submenu === 1}
     onclick={() => {
       currentModule.lorebook ??= []
       submenu = 1
@@ -489,6 +491,7 @@
     <span>{language.loreBook}</span>
   </button>
   <button
+    aria-pressed={submenu === 2}
     onclick={() => {
       if (!Array.isArray(currentModule.regex)) {
         const regex: customscript[] = []
@@ -503,6 +506,7 @@
     <span>{language.regexScript}</span>
   </button>
   <button
+    aria-pressed={submenu === 3}
     onclick={() => {
       if (!Array.isArray(currentModule.trigger)) {
         const trigger: triggerscript[] = [
@@ -539,6 +543,7 @@
     <span>{language.triggerScript}</span>
   </button>
   <button
+    aria-pressed={submenu === 5}
     onclick={() => {
       currentModule.assets ??= []
       submenu = 5

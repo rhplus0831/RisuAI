@@ -1043,6 +1043,7 @@
     <div class="flex w-full rounded-md border border-darkborderc mb-4">
       {#if hasSubmenu(0)}
         <button
+          aria-pressed={submenu === 0}
           onclick={() => {
             submenu = 0
           }}
@@ -1054,6 +1055,7 @@
       {/if}
       {#if hasSubmenu(1)}
         <button
+          aria-pressed={submenu === 1}
           onclick={() => {
             submenu = 1
           }}
@@ -1065,6 +1067,7 @@
       {/if}
       {#if hasSubmenu(2)}
         <button
+          aria-pressed={submenu === 2}
           onclick={() => {
             submenu = 2
           }}
@@ -1076,6 +1079,7 @@
       {/if}
       {#if hasSubmenu(3)}
         <button
+          aria-pressed={submenu === 3}
           onclick={() => {
             submenu = 3
           }}

@@ -26,6 +26,7 @@
 <div class="flex items-start mt-2 gap-2">
   {#if v1Enabled || getDatabase().showDeprecatedTriggerV1}
     <button
+      aria-pressed={v1Enabled}
       class="bg-bgcolor py-1 rounded-md text-sm px-2"
       class:ring-1={v1Enabled}
       onclick={async (e) => {
@@ -41,6 +42,7 @@
       }}>V1</button>
   {/if}
   <button
+    aria-pressed={value?.[0]?.effect?.[0]?.type === 'v2Header'}
     class="bg-bgcolor py-1 rounded-md text-sm px-2"
     class:ring-1={value?.[0]?.effect?.[0]?.type === 'v2Header'}
     onclick={async (e) => {
@@ -74,6 +76,7 @@
       }
     }}>V2</button>
   <button
+    aria-pressed={value?.[0]?.effect?.[0]?.type === 'triggerlua'}
     class="bg-bgcolor py-1 rounded-md text-sm px-2"
     class:ring-1={value?.[0]?.effect?.[0]?.type === 'triggerlua'}
     onclick={async (e) => {
