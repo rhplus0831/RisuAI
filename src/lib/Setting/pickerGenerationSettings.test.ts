@@ -302,11 +302,17 @@ function pickerRow(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElemen
   )
 }
 
+function pickerSelectionControl(kind: 'model' | 'prompt' | 'persona', id: string): HTMLElement {
+  const row = pickerRow(kind, id)
+  return row.querySelector<HTMLElement>('[data-risu-picker-select]') ?? row
+}
+
 function expectPickerRowSelection(kind: 'model' | 'prompt' | 'persona', id: string, selected: boolean): void {
   const row = pickerRow(kind, id)
+  const selectionControl = pickerSelectionControl(kind, id)
   expect(row.dataset.risuSelected).toBe(selected ? 'true' : 'false')
-  expect(row.getAttribute('aria-pressed')).toBe(selected ? 'true' : 'false')
-  expect(row.getAttribute('aria-current')).toBe(selected ? 'true' : null)
+  expect(selectionControl.getAttribute('aria-pressed')).toBe(selected ? 'true' : 'false')
+  expect(selectionControl.getAttribute('aria-current')).toBe(selected ? 'true' : null)
 }
 
 function mountPresetPicker(mode: GenerationSettingsPickerMode, close = vi.fn(), kind: 'model' | 'prompt' = 'prompt') {
@@ -470,6 +476,11 @@ describe('generation settings picker mode', () => {
     mountPresetPicker('global')
 
     const presetRow = pickerRow('prompt', 'preset-a')
+    const select = pickerSelectionControl('prompt', 'preset-a')
+    expect(presetRow.getAttribute('role')).toBeNull()
+    expect(presetRow.getAttribute('tabindex')).toBeNull()
+    expect(select).toBeInstanceOf(HTMLButtonElement)
+    expect(presetRow.querySelector('button button, button input, button [role="button"]')).toBeNull()
     expect(presetRow.querySelector(`[aria-label="${language.export}: Preset A"]`)).toBeTruthy()
     expect(presetRow.querySelector(`[aria-label="${language.remove}: Preset A"]`)).toBeTruthy()
     expect(target.querySelector(`[aria-label="${language.add}: ${language.promptPresets}"]`)).toBeTruthy()
@@ -493,7 +504,7 @@ describe('generation settings picker mode', () => {
     expectPickerRowSelection('prompt', 'preset-a', false)
     expectPickerRowSelection('prompt', 'preset-b', true)
 
-    pickerRow('prompt', 'preset-a').click()
+    pickerSelectionControl('prompt', 'preset-a').click()
     await tick()
     await waitForCommandFetches(calls)
 
@@ -527,7 +538,7 @@ describe('generation settings picker mode', () => {
     expectPickerRowSelection('prompt', 'preset-a', true)
     expectPickerRowSelection('prompt', 'preset-b', false)
 
-    pickerRow('prompt', 'preset-b').click()
+    pickerSelectionControl('prompt', 'preset-b').click()
     await tick()
     await waitForCommandFetches(calls)
 
@@ -549,7 +560,7 @@ describe('generation settings picker mode', () => {
     const calls = stubCommandFetch({ promptSelectConflictOnce: true })
     const close = mountPresetPicker('global')
 
-    pickerRow('prompt', 'preset-b').click()
+    pickerSelectionControl('prompt', 'preset-b').click()
     await tick()
     await waitForFetchCount(calls, 3)
 
@@ -627,11 +638,11 @@ describe('generation settings picker mode', () => {
     )
 
     mountPresetPicker('global')
-    pickerRow('prompt', 'preset-b').click()
+    pickerSelectionControl('prompt', 'preset-b').click()
     await tick()
     await waitForFetchCount(calls, 2)
 
-    pickerRow('prompt', 'preset-c').click()
+    pickerSelectionControl('prompt', 'preset-c').click()
     await tick()
     // The revisioned command lane keeps C queued until B settles, while the
     // optimistic selection paints C immediately.

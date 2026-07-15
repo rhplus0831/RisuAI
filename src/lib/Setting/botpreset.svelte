@@ -339,18 +339,6 @@
         </div>
 
         <div
-          role="button"
-          tabindex="0"
-          onclick={() => {
-            selectPreset(preset, i)
-          }}
-          onkeydown={(e) => {
-            if (e.target !== e.currentTarget) return
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              selectPreset(preset, i)
-            }
-          }}
           class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
           class:bg-selected={isPresetSelected(preset, i)}
           class:draggable-preset={!editMode}
@@ -360,8 +348,6 @@
           data-risu-row-id={nonEmptyId(preset?.id) ?? ''}
           data-risu-row-index={i}
           data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
-          aria-pressed={isPresetSelected(preset, i)}
-          aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
           draggable={!editMode ? 'true' : 'false'}
           ondragstart={(e) => {
             if (editMode) {
@@ -384,15 +370,26 @@
           {#if editMode}
             <TextInput
               bind:value={() => presetNameDraft(preset, i), (value) => updatePresetNameDraft(preset, i, value)}
+              ariaLabel={`${language.edit}: ${preset.name ?? `#${i + 1}`}`}
               placeholder="string"
               padding={false} />
           {:else}
-            {#if i < 9}
-              <span class="w-2 text-center mr-2 text-textcolor2">{i + 1}</span>
-            {/if}
-            <span>{preset.name}</span>
+            <button
+              type="button"
+              data-risu-picker-select
+              class="flex min-w-0 grow items-center text-left"
+              aria-pressed={isPresetSelected(preset, i)}
+              aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
+              onclick={() => {
+                selectPreset(preset, i)
+              }}>
+              {#if i < 9}
+                <span class="w-2 text-center mr-2 text-textcolor2">{i + 1}</span>
+              {/if}
+              <span>{preset.name}</span>
+            </button>
           {/if}
-          <div class="grow flex justify-end">
+          <div class="ml-auto flex shrink-0 justify-end">
             {#if kind === 'prompt'}
               <button
                 class="text-textcolor2 hover:text-green-500 cursor-pointer mr-2"
