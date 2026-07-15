@@ -101,6 +101,7 @@
     updateMessageCommand,
   } from 'src/ts/server/commands'
   import { activeMessageTranslations } from 'src/ts/server/messageTranslationJobs'
+  import { syncServerBackedChatMetadataBaselines } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import {
     captureChatButtonTriggerFreshness,
@@ -335,6 +336,32 @@
     if (!canUseServerCommands()) {
       callback()
     }
+  }
+
+  function applyOptimisticBookmarkMetadata(
+    previous: ReturnType<typeof currentChatScopedSnapshot>,
+    messageId: string,
+    bookmarks: string[],
+    bookmarkNames: Record<string, string>,
+  ): boolean {
+    if (!previous.chat) return false
+    let applied = false
+    withTrustedResourceWrite(() => {
+      const character = previous.characterId
+        ? getDatabase().characters?.find((candidate) => candidate.chaId === previous.characterId)
+        : getDatabase().characters?.[previous.selectedCharID]
+      const liveChat = previous.chatId
+        ? character?.chats?.find((candidate) => candidate.id === previous.chatId)
+        : character?.chats?.[character.chatPage ?? 0]
+      if (!liveChat?.message?.some((candidate) => candidate.chatId === messageId)) return
+      if (JSON.stringify(liveChat.bookmarks ?? []) !== JSON.stringify(previous.chat?.bookmarks ?? [])) return
+      if (JSON.stringify(liveChat.bookmarkNames ?? {}) !== JSON.stringify(previous.chat?.bookmarkNames ?? {})) return
+      liveChat.bookmarks = [...bookmarks]
+      liveChat.bookmarkNames = { ...bookmarkNames }
+      applied = true
+    })
+    if (applied) syncServerBackedChatMetadataBaselines()
+    return applied
   }
 
   function supportsServerRawTranslation() {
@@ -1020,16 +1047,17 @@
 
     if (!chat.message[idx]) return
 
-    const nextMessages = canUseServerCommands() ? cloneMessagesWithIds(chat) : null
-    let messageId = canUseServerCommands() ? nextMessages?.[idx]?.chatId : chat.message[idx]?.chatId
+    const useServerCommands = canUseServerCommands()
+    const nextMessages = useServerCommands ? cloneMessagesWithIds(chat) : null
+    let messageId = useServerCommands ? nextMessages?.[idx]?.chatId : chat.message[idx]?.chatId
     const messageContent = chat.message[idx]?.data ?? ''
     const hadMessageId = Boolean(chat.message[idx]?.chatId)
 
     if (!messageId) {
       messageId = uuidv4()
-      localChatMutation(() => {
+      if (!useServerCommands) {
         chat.message[idx].chatId = messageId
-      })
+      }
     }
 
     const bookmarks = [...(chat.bookmarks ?? [])]
@@ -1097,19 +1125,18 @@
       }
     }
 
-    localChatMutation(() => {
+    if (!useServerCommands) {
       if (!hadMessageId) {
         chat.message[idx].chatId = messageId
       }
       chat.bookmarks = [...bookmarks]
       chat.bookmarkNames = bookmarkNames
-    })
+    }
     if (!hadMessageId && chat.id) {
-      dispatchReplaceMessagesScoped(
-        chat.id,
-        canUseServerCommands() && nextMessages ? nextMessages : chat.message,
-        previous,
-      )
+      dispatchReplaceMessagesScoped(chat.id, useServerCommands && nextMessages ? nextMessages : chat.message, previous)
+    }
+    if (useServerCommands && !applyOptimisticBookmarkMetadata(previous, messageId, bookmarks, bookmarkNames)) {
+      return
     }
     if (chat.id) {
       dispatchUpdateChatScoped(

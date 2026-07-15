@@ -102,6 +102,7 @@ const customHtmlMocks = vi.hoisted(() => {
     runTrigger: vi.fn<(...args: any[]) => Promise<any>>(async () => undefined),
     sayTTS: vi.fn(),
     setLLMCache: vi.fn(async () => undefined),
+    syncServerBackedChatMetadataBaselines: vi.fn(),
   }
 })
 
@@ -204,7 +205,16 @@ vi.mock('../../ts/translator/translator', () => ({
 
 vi.mock('src/ts/chatCommands', () => ({
   cloneJsonValue: <T>(value: T) => JSON.parse(JSON.stringify(value)) as T,
-  currentChatScopedSnapshot: vi.fn(() => ({})),
+  currentChatScopedSnapshot: vi.fn(() => {
+    const character = customHtmlMocks.getDatabase().characters[0]
+    const chat = character.chats[character.chatPage]
+    return {
+      selectedCharID: 0,
+      characterId: character.chaId,
+      chatId: chat.id,
+      chat: JSON.parse(JSON.stringify(chat)),
+    }
+  }),
   currentChatStateSnapshot: vi.fn(() => ({})),
   dispatchCompatibleChatUpdateScoped: vi.fn(),
   dispatchDeleteMessageScoped: vi.fn(),
@@ -225,6 +235,10 @@ vi.mock('src/ts/server/commands', () => ({
   runServerCommand: customHtmlMocks.runServerCommand,
   translateMessageCommand: customHtmlMocks.translateMessageCommand,
   updateMessageCommand: customHtmlMocks.updateMessageCommand,
+}))
+
+vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  syncServerBackedChatMetadataBaselines: customHtmlMocks.syncServerBackedChatMetadataBaselines,
 }))
 
 vi.mock('src/ts/util', () => ({
@@ -700,9 +714,35 @@ describe('customHTML rendered button trigger freshness', () => {
 })
 
 describe('message action target freshness', () => {
+  it('paints a bookmark before the server command completes', async () => {
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    customHtmlMocks.alertInput.mockResolvedValueOnce('Pinned now')
+    seedDatabase(1, null as unknown as string)
+    testDatabaseState.db.enableBookmark = true
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    const bookmarkButton = target.querySelector<HTMLButtonElement>('.button-icon-bookmark')
+    bookmarkButton?.click()
+    await settle()
+
+    expect(testDatabaseState.db.characters[0].chats[0].bookmarks).toEqual(['message-0'])
+    expect(testDatabaseState.db.characters[0].chats[0].bookmarkNames).toEqual({
+      'message-0': 'Pinned now',
+    })
+    popupStore.openId = 0
+    await openMessageActions()
+    expect(target.querySelector('.button-icon-bookmark')?.classList.contains('text-yellow-400')).toBe(true)
+    expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
+    expect(dispatchUpdateChatScoped).toHaveBeenCalled()
+  })
+
   it('bookmarks the clicked message when the active chat switches before the prompt resolves', async () => {
     const pendingName = deferred<string>()
     customHtmlMocks.alertInput.mockReturnValueOnce(pendingName.promise)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
     seedDatabase(1, null as unknown as string)
     testDatabaseState.db.enableBookmark = true
     mountPopupList()
@@ -720,6 +760,7 @@ describe('message action target freshness', () => {
       'message-0': 'Pinned original',
     })
     expect(testDatabaseState.db.characters[0].chats[1].bookmarks).toEqual([])
+    expect(customHtmlMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(dispatchUpdateChatScoped).toHaveBeenCalledWith(
       'custom-html-chat',
       expect.objectContaining({
