@@ -1,8 +1,10 @@
 import { ValidationError } from './repository.js'
+import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask.js'
+
+export { MASKED_PROVIDER_SECRET }
 
 const WILDCARD = Symbol('secret-path-wildcard')
 
-export const MASKED_PROVIDER_SECRET = '__RISU_SECRET_MASKED__'
 export const MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED =
   'Masked provider secret placeholder cannot be resolved for an array row without stable identity'
 

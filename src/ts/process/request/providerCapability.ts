@@ -1,4 +1,5 @@
 import { LLMFormat } from '../../model/types'
+import { isMaskedProviderSecret } from '../../providerSecretMask'
 
 /**
  * Single source of truth for the server provider-routing decision. Given a
@@ -222,6 +223,10 @@ function isVanillaGemini(input: ProviderCapabilityInput): boolean {
 /** AWS credentials are stored as `accessKeyId:secretAccessKey:region`. */
 function hasBedrockCredentials(claudeAPIKey: string | undefined): boolean {
   if (typeof claudeAPIKey !== 'string') return false
+  // Browser settings projections intentionally expose only this exact marker.
+  // Treat it as proof that a credential exists so prompt preflight can reach
+  // Fastify, which reloads and validates the real value before dispatch.
+  if (isMaskedProviderSecret(claudeAPIKey)) return true
   const parts = claudeAPIKey.split(':')
   return parts.length >= 3 && nonEmpty(parts[0]) && nonEmpty(parts[1]) && nonEmpty(parts[2])
 }

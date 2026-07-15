@@ -27,6 +27,7 @@ vi.mock('../../modules', async (importActual) => {
 
 import { setDatabase, type character, type Chat, type Database } from '../../../storage/database.svelte'
 import { LLMFlags } from '../../../model/modellist'
+import { MASKED_PROVIDER_SECRET } from '../../../providerSecretMask'
 import { pluginV2 } from '../../../plugins/plugins.svelte'
 import {
   resolveServerPromptAssembly,
@@ -150,6 +151,15 @@ describe('resolveServerPromptAssembly', () => {
         modelProfiles: [{ id: 'compat-profile', name: 'Compat Profile', modelId: 'echo_model' }],
         modelRoleProfiles: { chatMain: { mode: 'profile', profileId: 'compat-profile' } },
       } as never)
+      expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })
+    })
+
+    it('routes masked Bedrock credentials to Fastify for authoritative validation', () => {
+      seedDb({
+        aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+        claudeAPIKey: MASKED_PROVIDER_SECRET,
+      } as never)
+
       expect(resolveServerPromptAssembly(makeInput())).toEqual({ type: 'server' })
     })
 

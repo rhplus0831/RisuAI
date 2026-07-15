@@ -11,6 +11,7 @@ import {
 import { resolveModelProfile, type ResolvedModelProfile } from '../../../src/ts/model/modelProfileResolver'
 import type { OpenAIChat } from '../../../src/ts/process/index.svelte'
 import type { Database } from '../../../src/ts/storage/database.svelte'
+import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask'
 import { _resetVertexTokenCacheForTesting } from '../src/generation/vertexAuth.js'
 import { dispatchChatProvider } from '../src/prompt/chatDispatch.js'
 import type { PromptRowSummary } from '../src/prompt/promptSummary.js'
@@ -1257,6 +1258,21 @@ describe('dispatchChatProvider profile providerOptions', () => {
     await expect(dispatchWithProfile(profile, flatConflict)).rejects.toThrow(
       'The key assigned to this request is invalid.',
     )
+    expect(fetchSpy).not.toHaveBeenCalled()
+  })
+
+  it('rejects a masked Bedrock marker if it reaches server dispatch authority', async () => {
+    const database = db({
+      aiModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+      claudeAPIKey: MASKED_PROVIDER_SECRET,
+    } as Partial<Database>)
+    const profile = resolveModelProfile({
+      database,
+    })
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    await expect(dispatchWithProfile(profile, database)).rejects.toThrow('The key assigned to this request is invalid.')
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 

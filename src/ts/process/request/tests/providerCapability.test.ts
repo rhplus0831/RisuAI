@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LLMFormat } from '../../../model/types'
+import { MASKED_PROVIDER_SECRET } from '../../../providerSecretMask'
 import { formatToServerProvider, resolveProviderCapability, type ProviderCapabilityInput } from '../providerCapability'
 
 // The shared capability table is the single source of truth for the server
@@ -133,6 +134,19 @@ describe('resolveProviderCapability — routable providers', () => {
           aiModel: 'anthropic.claude-3-5-sonnet',
           internalID: 'claude-3-5-sonnet',
           config: { claudeAPIKey: 'AKIA:secret:us-east-1' },
+        }),
+      ),
+    ).toEqual({ routable: true, provider: 'bedrock' })
+  })
+
+  it('routes a masked Bedrock credential to the server authority', () => {
+    expect(
+      resolveProviderCapability(
+        input({
+          format: LLMFormat.AWSBedrockClaude,
+          aiModel: 'anthropic.claude-3-5-sonnet',
+          internalID: 'claude-3-5-sonnet',
+          config: { claudeAPIKey: MASKED_PROVIDER_SECRET },
         }),
       ),
     ).toEqual({ routable: true, provider: 'bedrock' })
@@ -345,6 +359,16 @@ describe('resolveProviderCapability — unsupported categories', () => {
     ).toEqual({ routable: false, reason: 'config-incomplete' })
     expect(
       resolveProviderCapability(input({ format: LLMFormat.AWSBedrockClaude, aiModel: 'anthropic.claude', config: {} })),
+    ).toEqual({ routable: false, reason: 'config-incomplete' })
+    expect(
+      resolveProviderCapability(
+        input({
+          format: LLMFormat.AWSBedrockClaude,
+          aiModel: 'anthropic.claude',
+          internalID: 'claude',
+          config: { claudeAPIKey: 'access:missing-region' },
+        }),
+      ),
     ).toEqual({ routable: false, reason: 'config-incomplete' })
     expect(resolveProviderCapability(input({ format: LLMFormat.Horde, aiModel: 'horde:::x', config: {} }))).toEqual({
       routable: false,
