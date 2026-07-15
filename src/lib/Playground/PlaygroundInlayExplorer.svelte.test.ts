@@ -99,4 +99,40 @@ describe('PlaygroundInlayExplorer', () => {
 
     expect(createObjectURL.mock.calls.length).toBe(revokeObjectURL.mock.calls.length)
   })
+
+  it('keeps ownership of the newest preview when selection remounts an asset', async () => {
+    const olderPreview = deferred<{ data: Blob }>()
+    const newerPreview = deferred<{ data: Blob }>()
+    inlayMocks.listInlayAssets.mockResolvedValue([
+      ['asset-1', { data: '', ext: 'png', name: 'Asset 1', type: 'image' }],
+    ])
+    inlayMocks.getInlayAssetBlob.mockReturnValueOnce(olderPreview.promise).mockReturnValueOnce(newerPreview.promise)
+    const createObjectURL = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValueOnce('blob:newer-preview')
+      .mockReturnValueOnce('blob:older-preview')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(inlayMocks.getInlayAssetBlob).toHaveBeenCalledTimes(1))
+
+    const checkbox = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    expect(checkbox).toBeTruthy()
+    checkbox!.click()
+    await vi.waitFor(() => expect(inlayMocks.getInlayAssetBlob).toHaveBeenCalledTimes(2))
+
+    newerPreview.resolve({ data: new Blob(['newer'], { type: 'image/png' }) })
+    await newerPreview.promise
+    await vi.waitFor(() => expect(target.querySelector('img')?.src).toBe('blob:newer-preview'))
+
+    olderPreview.resolve({ data: new Blob(['older'], { type: 'image/png' }) })
+    await olderPreview.promise
+    await tick()
+    await unmount(component)
+    component = undefined
+
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:newer-preview')
+  })
 })

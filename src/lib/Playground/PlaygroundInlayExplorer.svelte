@@ -17,6 +17,7 @@
   // Object URLs to revoke on teardown.
   let previewURLs = $state<Map<string, string>>(new Map())
   let selection = $state<Set<string>>(new SvelteSet())
+  const previewLoadRuns = new Map<string, number>()
   let destroyed = false
 
   const displayedAssets = $derived(allAssets.slice(0, displayCount))
@@ -25,13 +26,15 @@
 
   const getPreviewURL = async (id: string) => {
     if (previewURLs.has(id)) return previewURLs.get(id)!
+    const run = (previewLoadRuns.get(id) ?? 0) + 1
+    previewLoadRuns.set(id, run)
     const result = await getInlayAssetBlob(id)
-    if (result && !destroyed) {
+    if (result && !destroyed && previewLoadRuns.get(id) === run) {
       const url = URL.createObjectURL(result.data)
       previewURLs.set(id, url)
       return url
     }
-    return null
+    return previewURLs.get(id) ?? null
   }
 
   const toggleSelect = (id: string) => {
@@ -138,6 +141,7 @@
 
   onDestroy(() => {
     destroyed = true
+    previewLoadRuns.clear()
     previewURLs.forEach((url) => URL.revokeObjectURL(url))
     observer?.disconnect()
   })
