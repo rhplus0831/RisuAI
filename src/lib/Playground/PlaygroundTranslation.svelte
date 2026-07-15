@@ -19,10 +19,126 @@
   let bulk = $state(false)
   let keepContext = $state(false)
   let bulkProgressText = $state('')
+
+  async function translate() {
+    if (loading) return
+
+    const sourceSnapshot = r
+    const sourceLanguageSnapshot = sourceLang
+    const outputLanguageSnapshot = outputLang
+    const bulkSnapshot = bulk
+    const keepContextSnapshot = keepContext
+    const isCurrentRun = () =>
+      r === sourceSnapshot &&
+      sourceLang === sourceLanguageSnapshot &&
+      outputLang === outputLanguageSnapshot &&
+      bulk === bulkSnapshot &&
+      keepContext === keepContextSnapshot
+    const abandonStaleRun = () => {
+      if (isCurrentRun()) return false
+      output = ''
+      return true
+    }
+
+    bulkProgressText = ''
+    output = ''
+    loading = true
+    try {
+      if (!bulkSnapshot) {
+        const translated = await runTranslator(sourceSnapshot, false, sourceLanguageSnapshot, outputLanguageSnapshot)
+        if (!abandonStaleRun()) output = translated
+        return
+      }
+
+      let preChunks: string[] = []
+      const previousContexts: string[] = []
+      const translatedChunks: string[] = []
+      let parsedJson: unknown = null
+      let jsonMode = false
+      try {
+        parsedJson = JSON.parse(sourceSnapshot.trim())
+        if (Array.isArray(parsedJson)) {
+          preChunks = parsedJson.map((item) => {
+            if (!item || typeof item !== 'object') return ''
+            const text = (item as { text?: unknown }).text
+            return typeof text === 'string' ? text : ''
+          })
+        }
+        jsonMode = true
+      } catch {
+        preChunks = sourceSnapshot.split('\n\n')
+      }
+
+      const formattedOutput = () => {
+        if (!jsonMode) return translatedChunks.join('\n\n')
+        if (!Array.isArray(parsedJson)) return JSON.stringify(parsedJson, null, 2)
+
+        const rows = parsedJson.map((item, index) => {
+          if (!translatedChunks[index] || !item || typeof item !== 'object') return item
+          return { ...item, text: translatedChunks[index] }
+        })
+        return JSON.stringify(rows, null, 2)
+      }
+
+      const previousContentNote =
+        'Previous Content is the content that was translated before the current content. This is used to keep the context of the translation. do not retranslate or return it.'
+
+      for (let i = 0; i < preChunks.length; i++) {
+        try {
+          if (preChunks[i].trim().length === 0) {
+            translatedChunks.push(preChunks[i])
+          } else {
+            bulkProgressText = `(${i + 1} of ${preChunks.length})`
+
+            if (previousContexts.length > 10) {
+              previousContexts.shift()
+            }
+
+            const previousContext = previousContexts.length > 0 ? previousContexts.join('\n\n') : ''
+            if (previousContext) {
+              const previousTokens = await tokenize(previousContext)
+              if (abandonStaleRun()) return
+              bulkProgressText += ` (previous ${previousTokens} tokens)`
+            }
+
+            const translatedChunk = await runTranslator(
+              preChunks[i],
+              false,
+              sourceLanguageSnapshot,
+              outputLanguageSnapshot,
+              {
+                translatorNote: previousContext
+                  ? `<Previous Content>${previousContext.trim()}</Previous Content>\n${previousContentNote}`
+                  : '',
+              },
+            )
+            if (abandonStaleRun()) return
+            if (keepContextSnapshot) {
+              previousContexts.push(`<Original>${preChunks[i]}</Original><Translated>${translatedChunk}</Translated>`)
+            }
+            translatedChunks.push(translatedChunk)
+          }
+        } catch (error) {
+          console.error(error)
+          if (abandonStaleRun()) return
+          translatedChunks.push(preChunks[i])
+        }
+
+        if (abandonStaleRun()) return
+        output = formattedOutput()
+      }
+
+      if (!abandonStaleRun()) output = formattedOutput()
+    } catch (error) {
+      console.error(error)
+    } finally {
+      loading = false
+    }
+  }
 </script>
 
 <span>{language.sourceLanguage}</span>
-<SelectInput bind:value={sourceLang}>
+<SelectInput value={sourceLang} onchange={(event) => (sourceLang = event.currentTarget.value)}>
   {#each getLanguageCodes() as lang}
     <OptionInput value={lang.code}>{lang.name}</OptionInput>
   {/each}
@@ -30,7 +146,7 @@
 <TextAreaInput bind:value={r} />
 
 <span>{language.translatorLanguage}</span>
-<SelectInput bind:value={outputLang}>
+<SelectInput value={outputLang} onchange={(event) => (outputLang = event.currentTarget.value)}>
   {#each getLanguageCodes() as lang}
     <OptionInput value={lang.code}>{lang.name}</OptionInput>
   {/each}
@@ -42,101 +158,7 @@
   <CheckInput bind:check={keepContext}>Keep Context</CheckInput>
 {/if}
 
-<Button
-  className="mt-4"
-  onclick={async () => {
-    bulkProgressText = ''
-    if (bulk) {
-      const format = () => {
-        if (jsonMode) {
-          const d = JSON.parse(r)
-          for (let i = 0; i < d.length; i++) {
-            if (translatedChunks[i]) {
-              d[i].text = translatedChunks[i]
-            }
-          }
-          output = JSON.stringify(d, null, 2)
-          return
-        }
-
-        output = translatedChunks.join('\n\n')
-        console.log(output)
-      }
-      let preChunks = []
-      let prContexts: string[] = []
-      let translatedChunks: string[] = []
-      let jsonMode = false
-      if (loading) {
-        return
-      }
-      loading = true
-      try {
-        const d = JSON.parse(r.trim())
-        if (Array.isArray(d)) {
-          preChunks = d.map((x: { text: string }) => x?.text ?? '')
-        }
-        jsonMode = true
-      } catch (error) {
-        preChunks = r.split('\n\n')
-        jsonMode = false
-      }
-
-      console.log(preChunks, jsonMode)
-      let pvc =
-        'Previous Content is the content that was translated before the current content. This is used to keep the context of the translation. do not retranslate or return it.'
-
-      for (let i = 0; i < preChunks.length; i++) {
-        try {
-          if (preChunks[i].trim().length === 0) {
-            translatedChunks.push(preChunks[i])
-            continue
-          }
-
-          bulkProgressText = `(${i + 1} of ${preChunks.length})`
-
-          if (prContexts.length > 10) {
-            prContexts.shift()
-          }
-
-          const prContext = prContexts.length > 0 ? prContexts.join('\n\n') : ''
-
-          if (prContext) {
-            bulkProgressText += ` (previous ${await tokenize(prContext)} tokens)`
-          }
-
-          const translatedChunk = await runTranslator(preChunks[i], false, sourceLang, outputLang, {
-            translatorNote: prContext ? `<Previous Content>${prContext.trim()}</Previous Content>\n${pvc}` : '',
-          })
-          if (keepContext) {
-            prContexts.push(`<Original>${preChunks[i]}</Original><Translated>${translatedChunk}</Translated>`)
-          }
-          translatedChunks.push(translatedChunk)
-        } catch (error) {
-          console.error(error)
-          translatedChunks.push(preChunks[i])
-        }
-
-        try {
-          format()
-        } catch (error) {}
-      }
-
-      format()
-      loading = false
-      return
-    }
-    try {
-      if (loading) {
-        return
-      }
-      loading = true
-      output = await runTranslator(r, false, sourceLang, outputLang)
-      loading = false
-    } catch (error) {
-      console.error(error)
-      loading = false
-    }
-  }}>
+<Button className="mt-4" onclick={translate}>
   {#if loading}
     Loading... {bulkProgressText}
   {:else}

@@ -1,0 +1,198 @@
+import { mount, tick, unmount } from 'svelte'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const translationMocks = vi.hoisted(() => ({
+  clearLLMCache: vi.fn(),
+  runTranslator: vi.fn(),
+  tokenize: vi.fn(),
+}))
+
+vi.mock('src/ts/process/modules', () => ({
+  getModuleAssets: vi.fn(() => []),
+  getModuleLorebooks: vi.fn(() => []),
+  getModuleRegexScripts: vi.fn(() => []),
+  getModules: vi.fn(() => []),
+  moduleUpdate: vi.fn(),
+}))
+
+vi.mock('src/ts/translator/translator', () => ({
+  clearLLMCache: translationMocks.clearLLMCache,
+  runTranslator: translationMocks.runTranslator,
+}))
+
+vi.mock('src/ts/tokenizer', () => ({
+  tokenize: translationMocks.tokenize,
+}))
+
+vi.mock('src/ts/globalApi.svelte', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/globalApi.svelte')>()
+  return {
+    ...actual,
+    getLanguageCodes: () => [
+      { code: 'en', name: 'English' },
+      { code: 'ko', name: 'Korean' },
+      { code: 'ja', name: 'Japanese' },
+    ],
+  }
+})
+
+import PlaygroundTranslation from './PlaygroundTranslation.svelte'
+
+type MountedComponent = Parameters<typeof unmount>[0]
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
+let component: MountedComponent | undefined
+let target: HTMLElement
+
+beforeEach(() => {
+  target = document.createElement('div')
+  document.body.append(target)
+  translationMocks.clearLLMCache.mockReset()
+  translationMocks.clearLLMCache.mockResolvedValue(undefined)
+  translationMocks.runTranslator.mockReset()
+  translationMocks.tokenize.mockReset()
+  translationMocks.tokenize.mockResolvedValue(0)
+})
+
+afterEach(() => {
+  if (component) {
+    unmount(component)
+    component = undefined
+  }
+  target.remove()
+  vi.restoreAllMocks()
+})
+
+function textareas(): NodeListOf<HTMLTextAreaElement> {
+  return target.querySelectorAll('textarea')
+}
+
+async function setSource(value: string): Promise<void> {
+  const source = textareas()[0]
+  if (!source) throw new Error('Translation source input not found')
+  source.value = value
+  source.dispatchEvent(new Event('input', { bubbles: true }))
+  await tick()
+}
+
+async function setLanguage(index: number, value: string): Promise<void> {
+  const select = target.querySelectorAll('select')[index]
+  if (!(select instanceof HTMLSelectElement)) throw new Error(`Language selector ${index} not found`)
+  select.value = value
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+  await tick()
+}
+
+async function enableBulk(keepContext = false): Promise<void> {
+  const bulk = target.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (!bulk) throw new Error('Bulk translation checkbox not found')
+  bulk.click()
+  await tick()
+
+  if (keepContext) {
+    const context = target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1]
+    if (!context) throw new Error('Keep-context checkbox not found')
+    context.click()
+    await tick()
+  }
+}
+
+function translateButton(): HTMLButtonElement {
+  const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
+    candidate.textContent?.includes('Translate'),
+  )
+  if (!(button instanceof HTMLButtonElement)) throw new Error('Translate button not found')
+  return button
+}
+
+async function waitForIdle(): Promise<void> {
+  await vi.waitFor(() => expect(translateButton().textContent?.trim()).toBe('Translate'))
+}
+
+describe('PlaygroundTranslation bulk run ownership', () => {
+  it('releases loading and permits a retry when the source changes during translation', async () => {
+    const firstTranslation = deferred<string>()
+    translationMocks.runTranslator
+      .mockReturnValueOnce(firstTranslation.promise)
+      .mockResolvedValueOnce('retry translated')
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('[{"text":"first"}]')
+    await enableBulk()
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
+    await setSource('{"broken"')
+    firstTranslation.resolve('first translated')
+
+    await waitForIdle()
+    expect(textareas()[1]?.value).toBe('')
+
+    await setSource('[{"text":"retry","metadata":"preserved"}]')
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(2))
+    await waitForIdle()
+
+    expect(JSON.parse(textareas()[1]?.value ?? '')).toEqual([{ text: 'retry translated', metadata: 'preserved' }])
+  })
+
+  it('does not mix languages or publish output after settings change in flight', async () => {
+    const firstTranslation = deferred<string>()
+    translationMocks.runTranslator.mockReturnValueOnce(firstTranslation.promise)
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('[{"text":"first"},{"text":"second"}]')
+    await setLanguage(0, 'en')
+    await setLanguage(1, 'ko')
+    await enableBulk(true)
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledOnce())
+    expect(translationMocks.runTranslator).toHaveBeenCalledWith('first', false, 'en', 'ko', {
+      translatorNote: '',
+    })
+
+    await setLanguage(1, 'ja')
+    firstTranslation.resolve('first translated')
+
+    await waitForIdle()
+    expect(translationMocks.runTranslator).toHaveBeenCalledOnce()
+    expect(textareas()[1]?.value).toBe('')
+  })
+
+  it('uses the captured context settings consistently across chunks', async () => {
+    translationMocks.runTranslator.mockResolvedValueOnce('first translated').mockResolvedValueOnce('second translated')
+    translationMocks.tokenize.mockResolvedValue(7)
+    component = mount(PlaygroundTranslation, { target })
+    await setSource('[{"text":"first"},{"text":"second"}]')
+    await setLanguage(0, 'en')
+    await setLanguage(1, 'ko')
+    await enableBulk(true)
+
+    translateButton().click()
+    await vi.waitFor(() => expect(translationMocks.runTranslator).toHaveBeenCalledTimes(2))
+    await waitForIdle()
+
+    expect(translationMocks.runTranslator.mock.calls[1]).toEqual([
+      'second',
+      false,
+      'en',
+      'ko',
+      {
+        translatorNote: expect.stringContaining('<Original>first</Original><Translated>first translated</Translated>'),
+      },
+    ])
+    expect(translationMocks.tokenize).toHaveBeenCalledWith(
+      '<Original>first</Original><Translated>first translated</Translated>',
+    )
+    expect(JSON.parse(textareas()[1]?.value ?? '')).toEqual([
+      { text: 'first translated' },
+      { text: 'second translated' },
+    ])
+  })
+})
