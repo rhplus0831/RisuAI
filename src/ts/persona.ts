@@ -1324,11 +1324,11 @@ export function reorderUserPersonasByIndices(indices: number[], selectedPersonaI
   return true
 }
 
-export function deleteSelectedUserPersona(): boolean {
+export function deleteSelectedUserPersona(expectedPersonaId?: string): boolean {
   if (getDatabase().personas.length === 1) return false
   if (!personaCommandIdList()) return false
   const personaId = selectedPersonaId()
-  if (!personaId) return false
+  if (!personaId || (expectedPersonaId !== undefined && personaId !== expectedPersonaId)) return false
   const previous = currentPersonaStateSnapshot()
   saveUserPersona({ dispatch: false })
 

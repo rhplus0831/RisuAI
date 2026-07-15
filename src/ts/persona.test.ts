@@ -1087,6 +1087,22 @@ describe('persona ID read and command preparation', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('does not delete a newly selected persona after confirmation began for another persona', () => {
+    seedPersonaState(
+      [makePersona({ id: 'persona-a', name: 'Persona A' }), makePersona({ id: 'persona-b', name: 'Persona B' })],
+      0,
+    )
+    const confirmedPersonaId = selectedPersonaId()
+    getDatabase().selectedPersona = 1
+    const before = cloneJsonValue(getDatabase())
+
+    expect(confirmedPersonaId).toBe('persona-a')
+    expect(deleteSelectedUserPersona(confirmedPersonaId!)).toBe(false)
+
+    expect(getDatabase({ snapshot: true })).toEqual(before)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('does not assign duplicate IDs or change selection when select preparation cannot form command IDs', () => {
     seedPersonaState(
       [

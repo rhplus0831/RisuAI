@@ -21,6 +21,7 @@
     queueSelectedPersonaUpdate,
     reconcileSelectedPersonaProjectionEpoch,
     reorderUserPersonasByIndices,
+    selectedPersonaId,
     selectUserImg,
     snapshotPersonaJson,
     updateSelectedPersonaDisplayName,
@@ -225,11 +226,13 @@
           if (getDatabase().personas.length === 1) {
             return
           }
+          const targetPersonaId = selectedPersonaId()
+          if (!targetPersonaId) return
           const d = await alertConfirm(
             `${language.removeConfirm}${getPersonaDisplayName(getDatabase().personas[getDatabase().selectedPersona])}`,
           )
           if (d) {
-            deleteSelectedUserPersona()
+            deleteSelectedUserPersona(targetPersonaId)
           }
         }}>{language.remove}</Button>
       <Check
