@@ -115,6 +115,7 @@
     type ChatButtonTriggerIdentity,
     type ChatButtonTriggerTarget,
   } from './chatButtonTriggerFreshness'
+  import { characterRoutePath, navigate } from 'src/ts/router'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -1349,8 +1350,13 @@
             class="text-blue-500 hover:underline"
             onclick={() => {
               console.log(parts)
-              changeChatTo(parts[2] ?? '')
+              const sourceChatId = parts[2] ?? ''
+              const characterId = getDatabase().characters?.[selIdState.selId]?.chaId
+              changeChatTo(sourceChatId)
               foldChatToMessage(parts[4])
+              if (characterId && sourceChatId) {
+                navigate(characterRoutePath(characterId, sourceChatId))
+              }
             }}>
             <GitBranch size={20} class="inline-block mr-1" />
             {language.branchedText.replace('{}', parts[3] ?? '')}
@@ -1937,8 +1943,8 @@
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
       const previous = currentChatStateSnapshot()
-      const currentChat =
-        getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
+      const currentCharacter = getDatabase().characters[selIdState.selId]
+      const currentChat = currentCharacter.chats[currentCharacter.chatPage]
 
       let folder
       let sourcePatch: { folderId?: string | null } = {}
@@ -1998,6 +2004,9 @@
           sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
           folder: existingFolder,
         })
+      }
+      if (currentCharacter.chaId && newChat.id) {
+        navigate(characterRoutePath(currentCharacter.chaId, newChat.id))
       }
     }}>
     <SplitIcon size={20} />

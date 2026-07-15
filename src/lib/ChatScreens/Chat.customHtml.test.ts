@@ -21,6 +21,8 @@ const customHtmlMocks = vi.hoisted(() => {
     alertRequestData: vi.fn(),
     alertWait: vi.fn(),
     canUseServerCommands: vi.fn(() => false),
+    changeChatTo: vi.fn(),
+    foldChatToMessage: vi.fn(),
     getDatabase: vi.fn(),
     getServerCommandBaseRevision: vi.fn(async () => 1),
     runServerCommand: vi.fn(
@@ -80,6 +82,10 @@ const customHtmlMocks = vi.hoisted(() => {
           throw new Error('template parse failed')
         }
 
+        if (message.startsWith('{{specialcomment')) {
+          return message
+        }
+
         if (message === templates.triggerButton) {
           return '<button class="manual-trigger-button" risu-trigger="manual-trigger" risu-id="trigger-id">Run trigger</button>'
         }
@@ -103,6 +109,7 @@ const customHtmlMocks = vi.hoisted(() => {
     sayTTS: vi.fn(),
     setLLMCache: vi.fn(async () => undefined),
     sleep: vi.fn(async () => undefined),
+    navigate: vi.fn(),
     rollbackServerBackedChatRowMetadata: vi.fn(),
     syncServerBackedChatMetadataBaselines: vi.fn(),
   }
@@ -124,11 +131,19 @@ vi.mock('../../lang', () => ({
 
 vi.mock('src/ts/globalApi.svelte', () => ({
   aiLawApplies: () => false,
-  changeChatTo: vi.fn(),
+  changeChatTo: customHtmlMocks.changeChatTo,
   createChatCopyName: (name: string, suffix: string) => `${name} ${suffix}`,
-  foldChatToMessage: vi.fn(),
+  foldChatToMessage: customHtmlMocks.foldChatToMessage,
   getFileSrc: vi.fn(async () => ''),
 }))
+
+vi.mock('src/ts/router', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/router')>()
+  return {
+    ...actual,
+    navigate: customHtmlMocks.navigate,
+  }
+})
 
 vi.mock('src/ts/gui/longtouch', () => ({
   longpress: () => undefined,
@@ -400,6 +415,8 @@ function mountCustomHtmlRows(
   count: number,
   role = 'char',
   props: Partial<{
+    message: string
+    isComment: boolean
     rerollIcon: boolean | 'dynamic'
     onReroll: () => void
     unReroll: () => void
@@ -470,6 +487,14 @@ beforeEach(() => {
   NativeDOMParser = globalThis.DOMParser
   vi.stubGlobal('DOMParser', CountingDOMParser)
   vi.clearAllMocks()
+  customHtmlMocks.changeChatTo.mockImplementation((idOrIndex: string | number) => {
+    const character = testDatabaseState.db.characters[0]
+    const chatIndex =
+      typeof idOrIndex === 'number' ? idOrIndex : character.chats.findIndex((chat) => chat.id === idOrIndex)
+    if (chatIndex >= 0) {
+      character.chatPage = chatIndex
+    }
+  })
   customHtmlMocks.sleep.mockResolvedValue(undefined)
   customHtmlMocks.canUseServerCommands.mockReturnValue(false)
   customHtmlMocks.runServerCommand.mockImplementation(
@@ -810,6 +835,45 @@ describe('message action target freshness', () => {
       expect.anything(),
       customHtmlMocks.rollbackServerBackedChatRowMetadata,
     )
+  })
+
+  it('selects a new branch and navigates to its canonical route', async () => {
+    seedDatabase(1, null as unknown as string)
+    mountPopupList()
+    mountCustomHtmlRows(1)
+    await settle()
+
+    await openMessageActions()
+    buttonByText('branch')?.click()
+    await settle()
+
+    const character = testDatabaseState.db.characters[0]
+    const branchedChat = character.chats.find((chat) =>
+      chat.message.some((message) => message.data.includes('{{specialcomment::branchedfrom::')),
+    )
+    expect(branchedChat?.id).toBeTruthy()
+    expect(customHtmlMocks.changeChatTo).toHaveBeenCalledWith(0)
+    expect(character.chats[character.chatPage].id).toBe(branchedChat?.id)
+    expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
+  })
+
+  it('selects a branch source and navigates to its canonical route', async () => {
+    seedDatabase(1, null as unknown as string)
+    const marker = '{{specialcomment::branchedfrom::custom-html-chat::Custom HTML Chat::message-0::}}'
+    const character = testDatabaseState.db.characters[0]
+    character.chatPage = 1
+    character.chats[1].message[0].data = marker
+
+    mountCustomHtmlRows(1, 'char', { message: marker, isComment: true })
+    await settle()
+
+    buttonByText('branchedText')?.click()
+    await settle()
+
+    expect(customHtmlMocks.changeChatTo).toHaveBeenCalledWith('custom-html-chat')
+    expect(character.chats[character.chatPage].id).toBe('custom-html-chat')
+    expect(customHtmlMocks.foldChatToMessage).toHaveBeenCalledWith('message-0')
+    expect(customHtmlMocks.navigate).toHaveBeenCalledWith('/character/custom-html-character/custom-html-chat')
   })
 
   it('branches from the clicked chat when the active chat switches immediately after the click', async () => {
