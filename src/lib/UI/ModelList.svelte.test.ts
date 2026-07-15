@@ -69,6 +69,12 @@ function buttonByText(text: string): HTMLButtonElement {
   return button
 }
 
+async function settle(): Promise<void> {
+  await tick()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 beforeEach(() => {
   modelListMocks.getModelInfo.mockClear()
   modelListMocks.getModelList.mockClear()
@@ -111,5 +117,60 @@ describe('ModelList provider identity', () => {
     expect(target.textContent).toContain('Beta Model')
     expect(target.textContent).not.toContain('Extra Model')
     expect(target.textContent).not.toContain('Alpha Model')
+  })
+})
+
+describe('ModelList keyboard dialog', () => {
+  it('moves focus into the picker and restores it after Escape closes the dialog', async () => {
+    component = mount(ModelList, {
+      target,
+      props: { value: 'alpha-model' },
+    })
+    await tick()
+
+    const trigger = buttonByText('Current Model')
+    trigger.focus()
+    trigger.click()
+    await settle()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const back = target.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    expect(dialog).not.toBeNull()
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('risu-model-picker-title')
+    expect(trigger.inert).toBe(true)
+    expect(trigger.getAttribute('aria-hidden')).toBe('true')
+    expect(document.activeElement).toBe(back)
+
+    back?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await settle()
+
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
+    expect(trigger.inert).toBe(false)
+    expect(trigger.hasAttribute('aria-hidden')).toBe(false)
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('keeps Tab focus inside the model picker', async () => {
+    component = mount(ModelList, {
+      target,
+      props: { value: 'alpha-model' },
+    })
+    await tick()
+
+    buttonByText('Current Model').click()
+    await settle()
+
+    const back = target.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    const lastControl = target.querySelector<HTMLInputElement>(`input[aria-label="${language.showUnrecommended}"]`)
+    expect(back).not.toBeNull()
+    expect(lastControl).not.toBeNull()
+
+    lastControl?.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    lastControl?.dispatchEvent(tab)
+
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(back)
   })
 })

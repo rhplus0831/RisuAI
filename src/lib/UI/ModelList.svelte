@@ -6,6 +6,7 @@
   import CheckInput from './GUI/CheckInput.svelte'
   import { getModelInfo, getModelList } from 'src/ts/model/modellist'
   import { ArrowLeft } from '@lucide/svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
     value?: string
@@ -28,6 +29,14 @@
     openOptions = false
     onChange(name)
   }
+
+  function handlePickerKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    openOptions = false
+  }
+
   let showUnrec = $state(false)
   let providers = $derived(
     getModelList({
@@ -43,24 +52,30 @@
 </script>
 
 {#if openOptions}
+  <!-- Backdrop click is supplemental to the dialog's Back button and Escape handling. -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
+    data-modal-root
     class="fixed top-0 w-full h-full left-0 bg-black/50 z-50 flex justify-center items-center"
-    role="button"
-    tabindex="0"
     onclick={() => {
       openOptions = false
     }}>
     <div
+      use:modalFocusTrap
       class="w-96 max-w-full max-h-full overflow-y-auto overflow-x-hidden bg-bgcolor p-4 flex flex-col"
-      role="button"
-      tabindex="0"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-model-picker-title"
+      tabindex="-1"
+      onkeydown={handlePickerKeydown}
       onclick={(e) => {
         e.stopPropagation()
         onclick?.(e)
       }}>
       <div class="flex items-center gap-3 mb-4">
         <button
+          data-modal-initial-focus
           class="flex items-center justify-center p-2 rounded-lg hover:bg-selected transition-colors shrink-0"
           onclick={() => {
             openOptions = false
@@ -68,7 +83,7 @@
           title="Back">
           <ArrowLeft size={20} />
         </button>
-        <h1 class="font-bold text-xl flex-1">{language.model}</h1>
+        <h2 id="risu-model-picker-title" class="font-bold text-xl flex-1">{language.model}</h2>
       </div>
       <div class="border-t-1 border-y-selected mb-2"></div>
 
