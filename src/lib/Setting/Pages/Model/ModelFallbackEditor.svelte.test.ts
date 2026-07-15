@@ -11,6 +11,7 @@ vi.mock('src/ts/process/modules', () => ({
 
 import type { ModelProfileRecordFallbackRef } from 'src/ts/model/modelProfileRecords'
 import ModelFallbackEditorTestHost from './ModelFallbackEditor.testHost.svelte'
+import { language } from 'src/lang'
 
 type MountedHost = Parameters<typeof unmount>[0] & {
   currentValue: () => ModelProfileRecordFallbackRef[]
@@ -52,5 +53,38 @@ describe('ModelFallbackEditor row identity', () => {
     expect(component.currentValue()).toEqual([{ mode: 'model', modelId: 'updated-model' }])
     expect(modelInput()).toBe(input)
     expect(document.activeElement).toBe(input)
+  })
+
+  it('gives every fallback control and remove action a row-aware accessible name', async () => {
+    component = mount(ModelFallbackEditorTestHost, {
+      target,
+      props: {
+        profiles: [
+          { id: 'profile-a', name: 'Profile A' },
+          { id: 'profile-b', name: 'Profile B' },
+        ],
+        initialValue: [
+          { mode: 'profile', profileId: 'profile-a' },
+          { mode: 'model', modelId: 'raw-model' },
+          { mode: 'profile', profileId: 'profile-b' },
+        ],
+      },
+    }) as MountedHost
+    await tick()
+
+    for (const index of [1, 2, 3]) {
+      const mode = target.querySelector<HTMLSelectElement>(
+        `select[aria-label="${language.modelProfiles.fallbackModeLabel(index)}"]`,
+      )
+      const remove = target.querySelector<HTMLButtonElement>(
+        `button[aria-label="${language.modelProfiles.removeFallbackLabel(index)}"]`,
+      )
+      expect(mode, `fallback ${index} mode`).toBeTruthy()
+      expect(remove, `fallback ${index} remove`).toBeTruthy()
+    }
+
+    expect(target.querySelector(`select[aria-label="${language.modelProfiles.fallbackProfileLabel(1)}"]`)).toBeTruthy()
+    expect(target.querySelector(`input[aria-label="${language.modelProfiles.fallbackModelLabel(2)}"]`)).toBeTruthy()
+    expect(target.querySelector(`select[aria-label="${language.modelProfiles.fallbackProfileLabel(3)}"]`)).toBeTruthy()
   })
 })

@@ -79,6 +79,7 @@
     <div class="grid gap-2 rounded-md border border-darkborderc p-2 md:grid-cols-[10rem_minmax(0,1fr)_2.25rem]">
       <select
         class="rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+        aria-label={language.modelProfiles.fallbackModeLabel(index + 1)}
         value={fallback.mode}
         onchange={(event) => {
           setFallbackMode(index, event.currentTarget.value === 'model' ? 'model' : 'profile')
@@ -90,6 +91,7 @@
       {#if fallback.mode === 'profile'}
         <select
           class="min-w-0 rounded-md border border-darkborderc bg-transparent px-2 py-1 text-sm text-textcolor shadow-xs transition-colors duration-200 focus:border-borderc focus:outline-hidden focus:ring-2 focus:ring-borderc"
+          aria-label={language.modelProfiles.fallbackProfileLabel(index + 1)}
           value={fallback.profileId}
           onchange={(event) => {
             setFallback(index, { mode: 'profile', profileId: event.currentTarget.value })
@@ -103,6 +105,7 @@
           size="sm"
           fullwidth
           value={fallback.modelId}
+          ariaLabel={language.modelProfiles.fallbackModelLabel(index + 1)}
           placeholder={language.modelProfiles.modelPlaceholder}
           oninput={(event) => {
             setFallback(index, { mode: 'model', modelId: event.currentTarget.value })
@@ -112,7 +115,7 @@
       <button
         type="button"
         class="flex h-9 w-9 items-center justify-center rounded-md bg-red-700 text-white hover:bg-red-500"
-        aria-label={language.remove}
+        aria-label={language.modelProfiles.removeFallbackLabel(index + 1)}
         onclick={() => {
           removeFallback(index)
         }}>
