@@ -13,6 +13,7 @@
     type CharacterAdditionalAssetEntry,
     type CharacterAdditionalAssetUploadOperation,
   } from 'src/ts/server/characterAdditionalAssetUpload'
+  import { assetListRenderKey } from 'src/ts/media/assetList'
   interface Props {
     currentCharacter: character
     onSelect: (additionalAsset: [string, string, string]) => void
@@ -174,7 +175,7 @@
     <PlusIcon />
   </button>
   {#if currentCharacter.additionalAssets}
-    {#each currentCharacter.additionalAssets as additionalAsset (additionalAsset[1])}
+    {#each currentCharacter.additionalAssets as additionalAsset, index (assetListRenderKey(additionalAsset, index))}
       <button
         onclick={() => {
           onSelect(additionalAsset)

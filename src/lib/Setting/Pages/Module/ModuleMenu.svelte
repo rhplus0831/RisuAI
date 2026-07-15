@@ -130,6 +130,7 @@
     type ModuleAssetUploadOperation,
   } from 'src/ts/server/moduleAssetUpload'
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
+  import { assetListRenderKey } from 'src/ts/media/assetList'
 
   const MODULE_ASSET_EXTENSIONS = [
     'png',
@@ -635,7 +636,7 @@
             <td colspan="3">{language.noData}</td>
           </tr>
         {:else}
-          {#each currentModule.assets as assets, i (assets[1])}
+          {#each currentModule.assets as assets, i (assetListRenderKey(assets, i))}
             <tr>
               <td class="font-medium truncate">
                 {#if assetFilePath[assets[1]] && getResourceDatabase().useAdditionalAssetsPreview}

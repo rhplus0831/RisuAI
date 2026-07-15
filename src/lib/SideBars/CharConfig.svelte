@@ -112,6 +112,7 @@
   import { setCurrentChatGreetingIndex } from 'src/ts/chatCommands'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
   import { applyCharacterRowMutationScoped } from 'src/ts/characterCommands'
+  import { assetListRenderKey } from 'src/ts/media/assetList'
 
   let iconRemoveMode = $state(false)
   let viewSubMenu = $state(0)
@@ -1263,7 +1264,7 @@
               <td class="text-textcolor2"> No Assets</td>
             </tr>
           {:else}
-            {#each characterDraft.value.additionalAssets as assets, i (assets[1])}
+            {#each characterDraft.value.additionalAssets as assets, i (assetListRenderKey(assets, i))}
               <tr>
                 <td class="font-medium truncate">
                   {#if assetFilePath[assets[1]] && getDatabase().useAdditionalAssetsPreview}
