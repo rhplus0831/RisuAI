@@ -1,6 +1,6 @@
 # Testing And Operations
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-15.
 
 Use `pnpm` for package scripts. Node.js is declared as `>=24.0.0`. The package
 is root-only; there is no `server/fastify/package.json`. `package.json` does not
@@ -21,11 +21,11 @@ pnpm through Corepack.
 | `pnpm build:site`                  | Production client build with `VITE_RISU_LEGAL_CONFIGURED=TRUE`.                                               |
 | `pnpm preview`                     | Vite preview server for a built client bundle.                                                                |
 | `pnpm check`                       | Run `svelte-check --tsconfig ./tsconfig.json`.                                                                |
-| `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate/audit tests.  |
-| `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate/audit tests.                |
-| `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate/audit tests.                                        |
+| `pnpm test`                        | Alias for `pnpm test:frontend`; runs the default root/browser Vitest lane without explicit gate tests.        |
+| `pnpm test:frontend`               | Run default root/browser Vitest tests outside `server/**`, excluding explicit gate tests.                      |
+| `pnpm test:frontend:all`           | Run all root/browser Vitest tests, including explicit gate tests.                                              |
 | `pnpm test:gates`                  | Run explicit frontend architecture, UI, clone-cost, and render-cost gates.                                     |
-| `pnpm test:gates:audit`            | Run architecture-audit and UI-audit gate tests.                                                               |
+| `pnpm test:gates:audit`            | Run UI-audit gate tests.                                                                                       |
 | `pnpm test:gates:perf`             | Run render-cost and clone-count gates.                                                                         |
 | `pnpm test:server`                 | Run Fastify/server Vitest tests.                                                                              |
 | `pnpm test:smoke`                  | Alias for `pnpm smoke:fastify-browser`.                                                                       |
@@ -33,7 +33,6 @@ pnpm through Corepack.
 | `pnpm coverage:ui-map`             | Run the opt-in focused UI coverage map and write reports to `coverage/ui-map`.                                |
 | `pnpm api:test`                    | Compatibility alias for `pnpm test:server`.                                                                  |
 | `pnpm smoke:fastify-browser`       | Build site, then run Playwright Fastify browser smoke.                                                        |
-| `pnpm client-thinning:audit`       | Run `util/client-thinning-audit.ts`.                                                                          |
 | `pnpm analyze:db <path>`           | Analyze `.risu`, JSON, raw database JSON, or data dirs containing `db.json`; SQLite sidecars are copied when present. Add `--json` for machine-readable output. |
 | `pnpm ts:agent <command>`          | Run the tsserver-backed agent debugging wrapper for navigation, diagnostics, symbols, code actions, imports, and renames. |
 | `pnpm format`, `pnpm format:check` | Prettier write/check.                                                                                         |
@@ -132,22 +131,21 @@ source helper, not generated output.
 
 | Area                        | Command/config                                                     | Environment | Locations                                                                                                                  |
 | --------------------------- | ------------------------------------------------------------------ | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest.config.ts`            | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`, minus explicit gate/audit tests.                |
-| Explicit frontend gates     | `pnpm test:gates`, `vitest.config.ts`                              | `happy-dom` | `src/ts/__tests__/**/*.test.ts`, `src/lib/_audit/**/*.test.ts`, and `util/client-thinning-audit.test.ts`.                  |
-| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                       | `happy-dom` | Root suite outside `server/**`, including explicit gate/audit tests.                                                       |
-| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                       | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`, excluding audit fixtures; reports under `coverage/frontend`. |
+| Browser/client/domain tests | `pnpm test` or `pnpm test:frontend`, `vitest.config.ts`            | `happy-dom` | Root suite outside `server/**`, including `src/**` and `util/**/*.test.ts`, minus explicit gate tests.                     |
+| Explicit frontend gates     | `pnpm test:gates`, `vitest.config.ts`                              | `happy-dom` | `src/ts/__tests__/**/*.test.ts` and `src/lib/_audit/**/*.test.ts`.                                                         |
+| Full frontend tests         | `pnpm test:frontend:all`, `vitest.config.ts`                       | `happy-dom` | Root suite outside `server/**`, including explicit gate tests.                                                             |
+| Frontend coverage           | `pnpm coverage:frontend`, `vitest.config.ts`                       | `happy-dom` | Broad coverage over `src/**/*.{ts,svelte}` and `util/**/*.ts`; reports under `coverage/frontend`.                         |
 | UI coverage map             | `pnpm coverage:ui-map`, `vitest.config.ts`                         | `happy-dom` | Focused UI integration tests mapped over `src/lib/ChatScreens`, `src/lib/Others`, `src/lib/SideBars`, and `src/ts/server`. |
 | Fastify/server tests        | `pnpm test:server` or `pnpm api:test`, `server/fastify/vitest.config.ts` | Node        | `server/fastify/__tests__/**/*.test.ts`.                                                                                   |
 | Backend coverage            | `pnpm coverage:backend`, `server/fastify/vitest.config.ts`         | Node        | Broad coverage over `server/fastify/src/**/*.ts`; reports under `coverage/backend`.                                        |
 | Browser smoke               | `pnpm smoke:fastify-browser` or `pnpm test:smoke`, `playwright.fastify-smoke.config.ts` | Chromium    | `server/fastify/browser-smoke/`; specs start an in-process Fastify app on a random port serving `dist`.                     |
-| Architecture audit          | `pnpm client-thinning:audit`                                       | ts-morph    | Source-level invariant checks in `util/client-thinning-audit.ts`; Vitest regression coverage is in `pnpm test:gates`.      |
 
 Pick the smallest command that covers the changed area. On a fresh machine, run
 `pnpm exec playwright install chromium` before browser smoke.
 
 Config details: root Vitest uses `happy-dom`, browser resolve conditions, the
 `src` alias, and `vitest.setup.ts` to mock `katex` and define
-`safeStructuredClone`. It excludes explicit gate/audit tests unless
+`safeStructuredClone`. It excludes explicit gate tests unless
 `RISU_TEST_INCLUDE_GATES=true` is set. `pnpm test:gates`, the
 `pnpm test:gates:*` sub-lanes, `pnpm test:frontend:all`, and
 `pnpm coverage:frontend` set that variable for the lanes that intentionally
@@ -170,11 +168,10 @@ Prompt/generation fixtures live in `src/ts/process/__fixtures__/`; set
 `UPDATE_FIXTURES=1` to rewrite expected fixtures. Server `.risu` fixture helpers
 live in `server/fastify/__fixtures__/risuSave/`. Explicit frontend gates live in
 `src/ts/__tests__/` and `src/lib/_audit/`; keep performance and UI audit probes
-in those places instead of mixing them into ordinary feature folders. The
-architecture audit can be scoped with `CLIENT_THINNING_AUDIT_CHECK_IDS`. Closed
-v1-v4 stability audits under `.archived-docs/` are historical records, not test
-fixtures; current behavior is protected directly by feature and performance
-regression tests.
+in those places instead of mixing them into ordinary feature folders. Closed
+client-thinning and v1-v4 stability audits under `.archived-docs/` are
+historical records, not test fixtures; current behavior is protected directly
+by feature and performance regression tests.
 
 Communication-cost regressions stay in the normal frontend/server lanes rather
 than a separate package script. The server lane owns the large-corpus and
@@ -301,8 +298,7 @@ Client/build:
 | `VITE_AD_CLIENT`, `VITE_AD_CLIENT_MOBILE`, `VITE_AD_SLOT`, `VITE_AD_SLOT_MOBILE` | Ad UI configuration.                                             |
 
 Test/audit summary variables include `RISU_TEST_INCLUDE_GATES`,
-`CLIENT_THINNING_AUDIT_CHECK_IDS`, `UPDATE_FIXTURES`,
-`RISU_DIRECT_REALM_IMPORT_TEST`,
+`UPDATE_FIXTURES`, `RISU_DIRECT_REALM_IMPORT_TEST`,
 `RISU_COMMAND_METRIC_SUMMARY`,
 `RISU_ASSET_BYTE_SUMMARY`, `RISU_EXPORT_MATERIALIZE_SUMMARY`, and
 `RISU_GENERATION_METRIC_SUMMARY`.

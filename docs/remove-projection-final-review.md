@@ -89,6 +89,6 @@ The following checks passed:
 - Production build
 - Fastify browser smoke tests: 5 passed
 
-`pnpm client-thinning:audit` reports 29 findings and exits nonzero. The same findings and categories are present on the `fastify` baseline, so this branch does not introduce an additional audit regression.
+At review time, the now-retired `pnpm client-thinning:audit` command reported 29 findings and exited nonzero. The same findings and categories were present on the `fastify` baseline, so this branch did not introduce an additional audit regression.
 
 After the P1 and P2 findings are fixed and covered by focused reconciliation tests, the remaining reviewed changes are suitable for fast-forward merge into `fastify`.

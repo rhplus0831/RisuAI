@@ -92,8 +92,8 @@ function triggersUseInteractiveLua(triggers: triggerscript[] | undefined): boole
  * pluginV2 edit hooks (local-assembler class 5, plugin arm): any registered
  * pluginV2 edit/replacer function. **Permanent `unsupported`** because pluginV2
  * code does not execute server-side and is superseded by Plugin V3. This detector
- * never flips to `server`; the client-thinning invariant keeps a server-side
- * execution path from being silently added.
+ * never flips to `server`; the unsupported-feature contract prevents a
+ * server-side execution path from being silently added.
  */
 function hasPluginV2EditSet(): boolean {
   return (
