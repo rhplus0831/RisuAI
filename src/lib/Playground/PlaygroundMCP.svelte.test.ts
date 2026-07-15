@@ -37,6 +37,14 @@ type MountedComponent = Parameters<typeof unmount>[0]
 let component: MountedComponent | undefined
 let target: HTMLElement
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.append(target)
@@ -102,5 +110,27 @@ describe('PlaygroundMCP tool execution', () => {
       expect(mcpMocks.callMCPToolFrom).toHaveBeenCalledWith('plugin:first', 'shared_tool', {})
     })
     expect(mcpMocks.alertError).not.toHaveBeenCalled()
+  })
+
+  it('disables a pending tool and ignores duplicate activation', async () => {
+    const execution = deferred<Array<{ type: string; text: string }>>()
+    mcpMocks.callMCPToolFrom.mockReturnValueOnce(execution.promise)
+    component = mount(PlaygroundMCP, { target })
+
+    buttonsNamed('Refresh')[0].click()
+    await vi.waitFor(() => expect(buttonsNamed('Execute shared_tool')).toHaveLength(2))
+    const execute = buttonsNamed('Execute shared_tool')[0]
+
+    execute.click()
+    execute.click()
+    await tick()
+
+    expect(mcpMocks.callMCPToolFrom).toHaveBeenCalledOnce()
+    expect(execute.disabled).toBe(true)
+
+    execution.resolve([{ type: 'text', text: 'ok' }])
+    await vi.waitFor(() => expect(mcpMocks.alertMd).toHaveBeenCalledOnce())
+    await tick()
+    expect(execute.disabled).toBe(false)
   })
 })

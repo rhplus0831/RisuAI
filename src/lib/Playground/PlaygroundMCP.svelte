@@ -7,6 +7,7 @@
   let metadatas = $state('')
   let tools: MCPToolWithURL[] = $state([])
   let toolInputs: { [key: string]: string } = $state({})
+  let pendingTools: { [key: string]: boolean } = $state({})
 
   async function refresh() {
     await initializeMCPs()
@@ -19,13 +20,18 @@
   }
 
   async function executeTool(tool: MCPToolWithURL): Promise<void> {
+    const key = toolKey(tool)
+    if (pendingTools[key]) return
+    pendingTools[key] = true
     try {
-      const input = toolInputs[toolKey(tool)]?.trim()
+      const input = toolInputs[key]?.trim()
       const args = input ? JSON.parse(input) : {}
       const response = await callMCPToolFrom(tool.mcpURL, tool.name, args)
       await alertMd(`Tool ${tool.name} executed\n\nResponse:\n\`\`\`json\n${JSON.stringify(response, null, 2)}\n\`\`\``)
     } catch (error) {
       alertError(error instanceof Error ? error.message : String(error))
+    } finally {
+      pendingTools[key] = false
     }
   }
 </script>
@@ -46,7 +52,8 @@
         <pre class="overflow-x-auto w-full">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
       </div>
       <TextAreaInput bind:value={toolInputs[toolKey(tool)]} placeholder="Input for this tool" />
-      <Button onclick={() => executeTool(tool)}>Execute {tool.name}</Button>
+      <Button disabled={pendingTools[toolKey(tool)] ?? false} onclick={() => executeTool(tool)}
+        >Execute {tool.name}</Button>
     </div>
   {/each}
 </div>
