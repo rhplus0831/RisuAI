@@ -42,7 +42,7 @@
   }
 
   const selectAll = () => {
-    displayedAssets.forEach(([id]) => selection.add(id))
+    allAssets.forEach(([id]) => selection.add(id))
   }
 
   const deselectAll = () => {
