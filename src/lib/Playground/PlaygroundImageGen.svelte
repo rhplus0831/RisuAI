@@ -4,6 +4,7 @@
   import Button from '../UI/GUI/Button.svelte'
   import { generateAIImage } from 'src/ts/process/stableDiff'
   import { createBlankChar } from 'src/ts/characters'
+  import { alertError } from 'src/ts/alert'
   let prompt = $state('')
   let negPrompt = $state('')
   let img = $state('')
@@ -14,10 +15,15 @@
       return
     }
     generating = true
-    const gen = await generateAIImage(prompt, createBlankChar(), negPrompt, 'inlay')
-    generating = false
-    if (gen) {
-      img = gen
+    try {
+      const gen = await generateAIImage(prompt, createBlankChar(), negPrompt, 'inlay')
+      if (gen) {
+        img = gen
+      }
+    } catch (error) {
+      alertError(error)
+    } finally {
+      generating = false
     }
   }
 </script>

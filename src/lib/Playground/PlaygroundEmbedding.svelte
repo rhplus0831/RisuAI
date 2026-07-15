@@ -6,6 +6,7 @@
   import Button from '../UI/GUI/Button.svelte'
   import { HypaProcesser } from 'src/ts/process/memory/hypamemory'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
+  import { alertError } from 'src/ts/alert'
 
   let query = $state('')
   let model = $state('MiniLM')
@@ -23,11 +24,16 @@
   const run = async () => {
     if (running) return
     running = true
-    const processer = new HypaProcesser(model as any, customEmbeddingUrl)
-    await processer.addText(data)
-    console.log(processer.vectors)
-    dataresult = await processer.similaritySearchScored(query)
-    running = false
+    try {
+      const processer = new HypaProcesser(model as any, customEmbeddingUrl)
+      await processer.addText(data)
+      console.log(processer.vectors)
+      dataresult = await processer.similaritySearchScored(query)
+    } catch (error) {
+      alertError(error)
+    } finally {
+      running = false
+    }
   }
 </script>
 
