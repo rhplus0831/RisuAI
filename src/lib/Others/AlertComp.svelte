@@ -33,6 +33,7 @@
   let translatedStackTrace = $state('')
   let stackTraceTranslationFailed = $state(false)
   let isTranslating = $state(false)
+  let stackTraceTranslationRun = 0
   let osLabel = $state(getFallbackOSLabel())
   const displayedStackTrace = $derived(translatedStackTrace || $alertStore.stackTrace || '')
   const risuVersion = versionData.version
@@ -125,6 +126,8 @@
   }
 
   $effect.pre(() => {
+    $alertStore
+    stackTraceTranslationRun += 1
     showDetails = false
     translatedStackTrace = ''
     stackTraceTranslationFailed = false
@@ -149,32 +152,43 @@
   })
 
   $effect(() => {
+    const sourceStackTrace = $alertStore.stackTrace
     if (
       $alertStore.type === 'error' &&
-      $alertStore.stackTrace &&
+      sourceStackTrace &&
       !translatedStackTrace &&
       !stackTraceTranslationFailed &&
       !isTranslating
     ) {
-      void loadTranslatedTrace()
+      const run = ++stackTraceTranslationRun
+      void loadTranslatedTrace(sourceStackTrace, run)
     }
   })
 
-  async function loadTranslatedTrace() {
-    if (isTranslating || translatedStackTrace || stackTraceTranslationFailed || !$alertStore.stackTrace) return
+  function isCurrentStackTraceTranslation(sourceStackTrace: string, run: number) {
+    return (
+      run === stackTraceTranslationRun && $alertStore.type === 'error' && $alertStore.stackTrace === sourceStackTrace
+    )
+  }
+
+  async function loadTranslatedTrace(sourceStackTrace: string, run: number) {
     isTranslating = true
     try {
-      const result = await translateStackTrace($alertStore.stackTrace)
+      const result = await translateStackTrace(sourceStackTrace)
+      if (!isCurrentStackTraceTranslation(sourceStackTrace, run)) return
       if (result.didTranslate) {
         translatedStackTrace = result.stackTrace
       } else {
         stackTraceTranslationFailed = true
       }
     } catch (e) {
+      if (!isCurrentStackTraceTranslation(sourceStackTrace, run)) return
       console.error('Failed to translate stack trace:', e)
       stackTraceTranslationFailed = true
     } finally {
-      isTranslating = false
+      if (isCurrentStackTraceTranslation(sourceStackTrace, run)) {
+        isTranslating = false
+      }
     }
   }
 
