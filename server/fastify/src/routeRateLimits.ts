@@ -22,6 +22,11 @@ export const proxyFetchRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const providerOperationRateLimit: RateLimitOptions = {
+  max: 60,
+  timeWindow: MINUTE,
+}
+
 export const proxyStreamCreateRateLimit: RateLimitOptions = {
   max: 30,
   timeWindow: MINUTE,

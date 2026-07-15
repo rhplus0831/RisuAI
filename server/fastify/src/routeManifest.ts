@@ -695,6 +695,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'provider-operations',
+    methods: ['POST'],
+    path: '/api/v1/provider-operations',
+    auth: {
+      decision: 'required',
+      reason: 'Provider operations can use server-owned provider credentials for fixed upstream reads.',
+    },
+    activeWriter: {
+      decision: 'runtime-proxy',
+      reason: 'Fixed provider catalog and account reads do not mutate local durable state.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'proxy-fetch',
     methods: ['POST'],
     path: '/api/v1/proxy/fetch',

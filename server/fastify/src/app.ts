@@ -31,6 +31,7 @@ import { registerHubRoutes } from './routes/hub.js'
 import { registerLegacyStorageRoutes } from './routes/legacyStorage.js'
 import { registerMemoryJobRoutes } from './routes/memoryJobs.js'
 import { registerMemoryReadRoutes } from './routes/memoryReads.js'
+import { registerProviderOperationRoutes, type ProviderOperationRouteOptions } from './routes/providerOperations.js'
 import { registerProxyRoutes } from './routes/proxy.js'
 import { registerPushNotificationRoutes } from './routes/pushNotifications.js'
 import { registerRealmImportRoutes } from './routes/realmImport.js'
@@ -71,6 +72,7 @@ export interface BuildAppOptions {
   memoryWorker?: false | Omit<MemoryWorkerOptions, 'db'>
   memoryEvents?: MemoryEventSink
   commandEvents?: CommandEventSink
+  providerOperations?: ProviderOperationRouteOptions
   /**
    * Periodic server-side asset GC. `false` disables the timer (tests that do
    * not exercise GC). An options object tunes the grace window / interval.
@@ -266,6 +268,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerAssetsRoutes(app, db, authState, config.dataDir, activeWriterState)
   registerBackupRoutes(app, db, authState, config.dataDir, commandEventSink)
   registerPushNotificationRoutes(app, authState, pushNotifications)
+  registerProviderOperationRoutes(app, db, authState, opts.providerOperations)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)
   registerHubRoutes(app, authState, config.hubUrl)
