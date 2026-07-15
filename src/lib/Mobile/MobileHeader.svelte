@@ -10,6 +10,8 @@
 <div class="w-full px-4 h-16 border-b border-b-darkborderc bg-darkbg flex justify-start items-center gap-2">
   {#if $selectedCharID !== -1 && $MobileSideBar > 0}
     <button
+      type="button"
+      aria-label={language.goback}
       onclick={() => {
         MobileSideBar.set(0)
       }}>
@@ -18,6 +20,8 @@
     <span class="font-bold text-lg w-2/3 truncate">{language.menu}</span>
   {:else if $selectedCharID !== -1}
     <button
+      type="button"
+      aria-label={language.goback}
       onclick={() => {
         selectedCharID.set(-1)
       }}>
@@ -27,6 +31,8 @@
       >{getCharacterDisplayName(getDatabase().characters[$selectedCharID])}</span>
     <div class="flex-1 flex justify-end">
       <button
+        type="button"
+        aria-label={language.menu}
         onclick={() => {
           MobileSideBar.set(1)
         }}>
@@ -35,6 +41,8 @@
     </div>
   {:else if $MobileGUIStack === 2 && $SettingsMenuIndex > -1}
     <button
+      type="button"
+      aria-label={language.goback}
       onclick={() => {
         SettingsMenuIndex.set(-1)
       }}>

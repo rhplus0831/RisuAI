@@ -34,6 +34,8 @@
       {language.character}
     </button>
     <button
+      type="button"
+      aria-label={language.tools}
       class:text-textcolor={$MobileSideBar === 3}
       onclick={() => {
         $MobileSideBar = 3
