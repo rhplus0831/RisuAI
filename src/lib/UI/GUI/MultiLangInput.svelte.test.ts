@@ -10,6 +10,7 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import MultiLangInputTestHost from './MultiLangInput.testHost.svelte'
+import { language } from 'src/lang'
 import { encodeMultilangString, parseMultilangString, toLangName } from 'src/ts/util'
 
 type MountedHost = Parameters<typeof unmount>[0] & {
@@ -65,6 +66,11 @@ describe('MultiLangInput external value changes', () => {
       },
     }) as MountedHost
     await tick()
+
+    const addLanguage = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.add} ${language.language}"]`,
+    )
+    expect(addLanguage?.getAttribute('aria-expanded')).toBe('false')
 
     languageButton('fr').click()
     await tick()

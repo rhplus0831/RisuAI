@@ -85,7 +85,7 @@
     {/if}
   {/each}
   <button
-    aria-label={language.add}
+    aria-label={`${language.add} ${language.language}`}
     aria-expanded={addingLang}
     class="text-nowrap bg-bgcolor py-2 rounded-lg px-4"
     class:ring-1={addingLang}
