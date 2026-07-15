@@ -1,6 +1,10 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const pluginSettingsMocks = vi.hoisted(() => ({
+  alertSelect: vi.fn(),
+}))
+
 vi.mock('src/ts/process/modules', () => ({
   getModules: () => [],
   getModuleLorebooks: () => [],
@@ -11,7 +15,7 @@ vi.mock('src/ts/process/modules', () => ({
 vi.mock('src/ts/alert', () => ({
   alertConfirm: vi.fn(async () => false),
   alertMd: vi.fn(),
-  alertSelect: vi.fn(),
+  alertSelect: pluginSettingsMocks.alertSelect,
 }))
 
 vi.mock('src/ts/plugins/plugins.svelte', () => ({
@@ -37,6 +41,7 @@ describe('PluginSettings', () => {
   let component: Record<string, never> | undefined
 
   beforeEach(() => {
+    pluginSettingsMocks.alertSelect.mockReset()
     target = document.createElement('div')
     document.body.appendChild(target)
     setDatabaseLite({
@@ -81,5 +86,18 @@ describe('PluginSettings', () => {
 
     const labels = Array.from(target.querySelectorAll('option')).map((option) => option.textContent?.trim())
     expect(labels).toEqual(['fast', 'slow'])
+  })
+
+  it('starts and cleans up the plugin starter download', async () => {
+    pluginSettingsMocks.alertSelect.mockResolvedValue('1')
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    component = mount(PluginSettings, { target })
+
+    const developerButton = target.querySelectorAll('button').item(target.querySelectorAll('button').length - 1)
+    developerButton.click()
+
+    await vi.waitFor(() => expect(click).toHaveBeenCalledOnce())
+    expect(document.querySelector('a[download="plugin_starter.7z"]')).toBeNull()
+    click.mockRestore()
   })
 })

@@ -282,6 +282,8 @@
           a.href = '/plugin_start.7z'
           a.download = 'plugin_starter.7z'
           document.body.appendChild(a)
+          a.click()
+          a.remove()
         }
       }
     }}
