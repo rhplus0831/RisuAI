@@ -1,4 +1,6 @@
 import { untrack } from 'svelte'
+import { language } from '../../lang'
+import { alertError } from '../alert'
 import { prebuiltPresets } from '../process/templates/templates'
 import {
   mirrorTopLevelPresetField,
@@ -84,6 +86,15 @@ const SPARSE_OBJECT_SETTING_KEYS = new Set(['NAIImgConfig', 'wavespeedImage', 's
 const sparseObjectSettingQueues = new Map<string, SparseObjectSettingQueue>()
 
 let suppressRollbackDispatch = false
+
+function createSettingsSaveFailureReporter(): () => void {
+  let reported = false
+  return () => {
+    if (reported) return
+    reported = true
+    alertError(language.errors.settingsSaveFailed)
+  }
+}
 
 export interface WatchServerBackedSettingsOptions<T = unknown> {
   delayMs?: number
@@ -483,17 +494,27 @@ function dispatchTrackedServerBackedSettingsPatch(input: {
   signal?: AbortSignal | null
 }): void {
   const attempt = registerSettingsAttempt(input.previous, input.attempted)
+  const reportFailure = createSettingsSaveFailureReporter()
   const result = patchServerBackedSettings({
     patch: input.patch,
     acknowledgeOptimistic: true,
     optimisticProjectionEpochs: input.optimisticProjectionEpochs,
     keepalive: input.keepalive,
     signal: input.signal,
-    rollback: () => rollbackSettingsAttempt(attempt),
+    rollback: () => {
+      rollbackSettingsAttempt(attempt)
+      reportFailure()
+    },
   })
   void result.then(
-    () => clearSettingsAttempt(attempt),
-    () => clearSettingsAttempt(attempt),
+    (settled) => {
+      clearSettingsAttempt(attempt)
+      if (settled.status !== 'ok') reportFailure()
+    },
+    () => {
+      clearSettingsAttempt(attempt)
+      reportFailure()
+    },
   )
 }
 
@@ -638,6 +659,7 @@ async function dispatchSparseObjectSettingQueue(
 
   state.running = true
   let failed = false
+  const reportFailure = createSettingsSaveFailureReporter()
   const result = await runServerCommand({
     signal: options.signal,
     keepalive: options.keepalive,
@@ -657,8 +679,10 @@ async function dispatchSparseObjectSettingQueue(
     rollback: () => {
       failed = true
       markSettingsGroupAcknowledgementTainted(state.group)
+      reportFailure()
     },
   })
+  if (result.status !== 'ok') reportFailure()
 
   await Promise.resolve()
   let baseline: Record<string, unknown> | null = null

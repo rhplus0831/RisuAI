@@ -22,6 +22,9 @@ const recorded = vi.hoisted(() => ({
   objectResults: [] as Array<unknown | Promise<unknown>>,
   groupReads: [] as unknown[],
 }))
+const alertMocks = vi.hoisted(() => ({
+  alertError: vi.fn(),
+}))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 const presetMocks = vi.hoisted(() => ({
   OAI: {
@@ -137,6 +140,10 @@ vi.mock('./resourceReads', () => ({
   fetchServerSettingsGroup: vi.fn(async () => recorded.groupReads.shift() ?? { status: 'error', error: 'test' }),
 }))
 
+vi.mock('../alert', () => ({
+  alertError: alertMocks.alertError,
+}))
+
 vi.mock('./resourceWriteGuard.svelte', () => ({
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
   withServerResourceApply: (fn: () => unknown) => {
@@ -154,6 +161,7 @@ vi.mock('../process/templates/templates', () => ({
 }))
 
 import type { HypaV3Preset } from '../process/memory/hypav3'
+import { language } from '../../lang'
 import {
   applySettingsGroupResource,
   captureSettingsGroupProjectionEpoch,
@@ -248,6 +256,7 @@ beforeEach(() => {
   recorded.objectResults.length = 0
   recorded.groupReads.length = 0
   resourceGuardState.epoch = 0
+  alertMocks.alertError.mockClear()
   presetMocks.setPreset.mockClear()
 })
 
@@ -417,6 +426,22 @@ describe('settingsBridge coalescing', () => {
       notification: true,
       useAutoSuggestions: true,
     })
+  })
+
+  it('reports an ordinary settings write failure once while preserving rollback', async () => {
+    recorded.patchResults.push({ status: 'error', error: 'failed' })
+    setupSettings({ notification: false })
+
+    applyServerBackedSettingsPatch({ notification: true })
+    await flushAndSettle()
+    await flushAndSettle()
+
+    expect(testDatabaseState.db.notification).toBe(false)
+    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
+    expect(alertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
+
+    recorded.patches[0].rollback?.()
+    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
   })
 
   it('cancels older same-key debounced patches when an immediate patch supersedes them', async () => {
@@ -921,6 +946,29 @@ describe('settingsBridge coalescing', () => {
       attemptedObject: { ...original, height: 1024 },
     })
     expect(testDatabaseState.db.NAIImgConfig).toEqual({ ...original, height: 1024 })
+    stop()
+  })
+
+  it('reports a sparse-object settings write failure once while reconciling the authoritative value', async () => {
+    const original = { width: 512, height: 768 }
+    recorded.objectResults.push({ status: 'error', error: 'failed' })
+    recorded.groupReads.push({
+      status: 'ok',
+      revision: Number.MAX_SAFE_INTEGER,
+      group: 'media',
+      settings: { NAIImgConfig: original },
+    })
+    setupSettings({ NAIImgConfig: original })
+    const stop = watchServerBackedSettings(['NAIImgConfig'], { delayMs: DELAY })
+    flushSync()
+    ;(testDatabaseState.db as unknown as Record<string, unknown>).NAIImgConfig = { ...original, width: 832 }
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+    for (let index = 0; index < 8; index += 1) await flushAndSettle()
+
+    expect(testDatabaseState.db.NAIImgConfig).toEqual(original)
+    expect(alertMocks.alertError).toHaveBeenCalledTimes(1)
+    expect(alertMocks.alertError).toHaveBeenCalledWith(language.errors.settingsSaveFailed)
     stop()
   })
 

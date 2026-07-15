@@ -8,11 +8,21 @@
   let tools: MCPToolWithURL[] = $state([])
   let toolInputs: { [key: string]: string } = $state({})
   let pendingTools: { [key: string]: boolean } = $state({})
+  let refreshing = $state(false)
 
-  async function refresh() {
-    await initializeMCPs()
-    metadatas = JSON.stringify(await getMCPMeta(), null, 4)
-    tools = await getMCPTools()
+  async function refresh(): Promise<void> {
+    if (refreshing) return
+    refreshing = true
+    try {
+      await initializeMCPs()
+      const [nextMetadata, nextTools] = await Promise.all([getMCPMeta(), getMCPTools()])
+      metadatas = JSON.stringify(nextMetadata, null, 4)
+      tools = nextTools
+    } catch (error) {
+      alertError(error instanceof Error ? error.message : String(error))
+    } finally {
+      refreshing = false
+    }
   }
 
   function toolKey(tool: MCPToolWithURL): string {
@@ -58,4 +68,4 @@
   {/each}
 </div>
 
-<Button onclick={refresh}>Refresh</Button>
+<Button disabled={refreshing} onclick={refresh}>Refresh</Button>

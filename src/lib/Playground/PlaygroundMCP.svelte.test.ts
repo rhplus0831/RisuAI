@@ -82,6 +82,28 @@ function buttonsNamed(name: string): HTMLButtonElement[] {
 }
 
 describe('PlaygroundMCP tool execution', () => {
+  it('serializes refreshes and recovers after a refresh failure', async () => {
+    const initialization = deferred<void>()
+    mcpMocks.initializeMCPs.mockReturnValueOnce(initialization.promise)
+    component = mount(PlaygroundMCP, { target })
+
+    const refresh = buttonsNamed('Refresh')[0]
+    refresh.click()
+    refresh.click()
+    await tick()
+
+    expect(mcpMocks.initializeMCPs).toHaveBeenCalledOnce()
+    expect(refresh.disabled).toBe(true)
+
+    initialization.resolve()
+    await vi.waitFor(() => expect(refresh.disabled).toBe(false))
+
+    mcpMocks.initializeMCPs.mockRejectedValueOnce(new Error('MCP refresh failed'))
+    refresh.click()
+    await vi.waitFor(() => expect(mcpMocks.alertError).toHaveBeenCalledWith('MCP refresh failed'))
+    expect(refresh.disabled).toBe(false)
+  })
+
   it('keeps duplicate-name inputs separate and executes the selected server tool', async () => {
     component = mount(PlaygroundMCP, { target })
 
