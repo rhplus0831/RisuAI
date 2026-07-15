@@ -2,6 +2,7 @@ import { get, writable } from 'svelte/store'
 import { changeChar } from './characters'
 import { changeChatTo } from './globalApi.svelte'
 import { openPlaygroundChat, PLAYGROUND_CHARACTER_ID } from './playground'
+import { doingChat } from './process/index.svelte'
 import { findCharacterIndexbyId } from './util'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import {
@@ -168,6 +169,9 @@ export function installRouter(): void {
 }
 
 export function navigate(path: string, options: { replace?: boolean } = {}): void {
+  const nextRoute = parseRoute(path)
+  if (blocksActiveCharacterGeneration(nextRoute)) return
+
   commitPath(path, {
     replace: options.replace ?? false,
     stateDriven: false,
@@ -388,9 +392,15 @@ async function openCharacterRoute(
 
   if (!isFreshRouteApplication()) return
   const liveIndex = findCharacterIndexbyId(characterId)
-  if (liveIndex < 0) return
+  if (liveIndex < 0) {
+    restoreSelectedCharacterRoute()
+    return
+  }
   const liveSelectedIndex = get(selectedCharID)
-  if (liveSelectedIndex !== liveIndex || getDatabase().characters?.[liveSelectedIndex]?.chaId !== characterId) return
+  if (liveSelectedIndex !== liveIndex || getDatabase().characters?.[liveSelectedIndex]?.chaId !== characterId) {
+    restoreSelectedCharacterRoute()
+    return
+  }
 
   if (!chatId) return
   const character = getDatabase().characters?.[liveIndex]
@@ -398,6 +408,27 @@ async function openCharacterRoute(
   if (!character || chatIndex < 0 || character.chatPage === chatIndex) return
   if (!isFreshRouteApplication()) return
   changeChatTo(chatId)
+}
+
+function blocksActiveCharacterGeneration(nextRoute: AppRoute): boolean {
+  if (nextRoute.kind !== 'character' || !get(doingChat)) return false
+
+  const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
+  return !!selectedCharacter?.chaId && selectedCharacter.chaId !== nextRoute.chaId
+}
+
+function restoreSelectedCharacterRoute(): void {
+  const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
+  if (!selectedCharacter?.chaId) {
+    commitPath('/', { replace: true, stateDriven: true })
+    return
+  }
+
+  const selectedChatId = selectedCharacter.chats?.[selectedCharacter.chatPage]?.id
+  commitPath(characterRoutePath(selectedCharacter.chaId, selectedChatId), {
+    replace: true,
+    stateDriven: true,
+  })
 }
 
 function closeRouteBlockingViews(): void {

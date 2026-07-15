@@ -21,6 +21,13 @@ vi.mock('./playground', () => ({
   openPlaygroundChat: routerMocks.openPlaygroundChat,
 }))
 
+vi.mock('./process/index.svelte', async () => {
+  const { writable } = await import('svelte/store')
+  return {
+    doingChat: writable(false),
+  }
+})
+
 vi.mock('./util', () => ({
   findCharacterIndexbyId: routerMocks.findCharacterIndexbyId,
 }))
@@ -174,6 +181,91 @@ describe('router initial application', () => {
 })
 
 describe('router character route freshness', () => {
+  it('keeps the selected character route when in-app navigation is attempted during generation', async () => {
+    const router = await importRouterAt('/')
+    const stores = await import('./stores.svelte')
+    const { doingChat } = await import('./process/index.svelte')
+    const { replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { selectedCharID } = stores
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+        {
+          chaId: 'char-b',
+          chatPage: 0,
+          chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+        },
+      ],
+    } as any)
+    selectedCharID.set(0)
+    router.syncRouteFromState({
+      currentRouteKind: 'home',
+      settingsOpen: false,
+      settingsMenuIndex: 1,
+      selectedCharID: 0,
+      playgroundStore: 0,
+      characterId: 'char-a',
+      chatId: 'chat-a',
+    })
+    doingChat.set(true)
+
+    router.navigate('/character/char-b/chat-b')
+
+    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'character',
+      chaId: 'char-a',
+      chatId: 'chat-a',
+    })
+    expect(get(selectedCharID)).toBe(0)
+    expect(routerMocks.changeChar).not.toHaveBeenCalled()
+  })
+
+  it('canonicalizes a deep or history route when character selection is refused', async () => {
+    const router = await importRouterAt('/character/char-b/chat-b')
+    const stores = await import('./stores.svelte')
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    const { selectedCharID } = stores
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [{ id: 'chat-a', name: 'Chat A', message: [] }],
+        },
+        {
+          chaId: 'char-b',
+          chatPage: 0,
+          chats: [{ id: 'chat-b', name: 'Chat B', message: [] }],
+        },
+      ],
+    } as any)
+    selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+    routerMocks.changeChar.mockResolvedValue(undefined)
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    await flushMicrotasks()
+
+    expect(routerMocks.changeChar).toHaveBeenCalledWith(1, { isFresh: expect.any(Function) })
+    expect(get(selectedCharID)).toBe(0)
+    expect(window.location.pathname).toBe('/character/char-a/chat-a')
+    expect(get(router.currentRoute)).toMatchObject({
+      kind: 'character',
+      chaId: 'char-a',
+      chatId: 'chat-a',
+    })
+    expect(router.isApplyingRouteToStores()).toBe(false)
+    expect(router.hasPendingRouteApplication()).toBe(false)
+  })
+
   it('does not let a stale character route clear a newer pending character route', async () => {
     const router = await importRouterAt('/character/char-a/chat-a')
     const stores = await import('./stores.svelte')
