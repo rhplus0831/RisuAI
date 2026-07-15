@@ -1,6 +1,6 @@
 <script lang="ts">
   import 'src/ts/stores.svelte'
-  import { ArrowLeft, PlusIcon, TrashIcon } from '@lucide/svelte'
+  import { ArrowLeft, PlusIcon, RefreshCcwIcon, TrashIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import PromptDataItem from 'src/lib/UI/PromptDataItem.svelte'
   import {
@@ -158,6 +158,9 @@
   let previousPromptTemplateRevision = peekCachedServerCommandRevision()
   let previousPromptTemplatePresetSelection = promptTemplatePresetSelectionSignature()
   let promptTemplateHydrated = $derived($promptTemplateHydratedStore && isPromptTemplateHydrated())
+  let promptTemplateHydrationPending = $state(!isPromptTemplateHydrated())
+  let promptTemplateHydrationFailed = $state(false)
+  let promptTemplateHydrationRequestId = 0
   const promptSettingsDraft = createPromptSettingsDraft<Record<string, any>>('promptSettings', {})
   const jsonSchemaEnabledDraft = createPromptSettingsDraft<boolean>('jsonSchemaEnabled', false)
   const outputImageModalDraft = createPromptSettingsDraft<boolean>('outputImageModal', false)
@@ -315,11 +318,37 @@
     previousPromptTemplateRevision = peekCachedServerCommandRevision()
   }
 
-  async function hydrateCurrentPromptTemplateOwnerAndReset(): Promise<void> {
+  async function hydrateCurrentPromptTemplateOwner(
+    options: {
+      force?: boolean
+      resetSelectionDirtyState?: boolean
+    } = {},
+  ): Promise<void> {
     const ownerId = currentPromptTemplateOwnerId()
-    if (!(await ensurePromptTemplateHydrated({ promptPresetId: ownerId }))) return
-    if (ownerId !== currentPromptTemplateOwnerId()) return
-    resetPromptTemplateDraftFromProjection()
+    const requestId = ++promptTemplateHydrationRequestId
+    promptTemplateHydrationPending = !isPromptTemplateHydrated(ownerId) || options.force === true
+    promptTemplateHydrationFailed = false
+
+    let hydrated = false
+    try {
+      hydrated = await ensurePromptTemplateHydrated({
+        promptPresetId: ownerId,
+        ...(options.force ? { force: true } : {}),
+      })
+    } catch {
+      hydrated = false
+    }
+
+    if (requestId !== promptTemplateHydrationRequestId || ownerId !== currentPromptTemplateOwnerId()) return
+    promptTemplateHydrationPending = false
+    promptTemplateHydrationFailed = !hydrated
+    if (!hydrated) return
+
+    if (options.resetSelectionDirtyState) {
+      resetPromptTemplateDraftFromProjection()
+    } else {
+      adoptPromptTemplateDraftFromProjection()
+    }
   }
 
   function createPromptItem(): PromptItem {
@@ -886,7 +915,7 @@
     if (selection === previousPromptTemplatePresetSelection) return
     previousPromptTemplatePresetSelection = selection
     untrack(() => {
-      void hydrateCurrentPromptTemplateOwnerAndReset()
+      void hydrateCurrentPromptTemplateOwner({ resetSelectionDirtyState: true })
     })
   })
   $effect(() => {
@@ -993,19 +1022,11 @@
 
   onMount(() => {
     document.addEventListener('keydown', handleKeyDown)
-    let cancelled = false
-    const ownerId = currentPromptTemplateOwnerId()
-    void ensurePromptTemplateHydrated({ promptPresetId: ownerId }).then((hydrated) => {
-      if (cancelled || !hydrated) return
-      if (ownerId !== currentPromptTemplateOwnerId()) return
-      adoptPromptTemplateDraftFromProjection()
-    })
-    return () => {
-      cancelled = true
-    }
+    void hydrateCurrentPromptTemplateOwner()
   })
 
   onDestroy(() => {
+    promptTemplateHydrationRequestId += 1
     document.removeEventListener('keydown', handleKeyDown)
     flushPendingPromptTemplatePatches()
     promptTokenizeDebouncer.cancel()
@@ -1058,8 +1079,29 @@
 {/if}
 
 {#if subMenu === 0}
-  {#if !promptTemplateHydrated}
-    <div class="text-textcolor2 mt-4">{language.loading}</div>
+  {#if promptTemplateHydrationFailed}
+    <div
+      class="flex min-h-28 items-center justify-center px-6 text-textcolor2"
+      role="alert"
+      data-testid="prompt-template-hydration-error">
+      <div class="flex flex-col items-center gap-3 text-center">
+        <span class="text-sm">{language.promptTemplateLoadFailed}</span>
+        <button
+          type="button"
+          data-testid="prompt-template-hydration-retry"
+          class="flex items-center gap-2 rounded-md border border-darkborderc px-3 py-2 text-sm text-textcolor transition-colors hover:border-textcolor hover:bg-selected focus:border-textcolor focus:bg-selected"
+          onclick={() => {
+            void hydrateCurrentPromptTemplateOwner({ force: true, resetSelectionDirtyState: true })
+          }}>
+          <RefreshCcwIcon size={16} />
+          <span>{language.retry}</span>
+        </button>
+      </div>
+    </div>
+  {:else if promptTemplateHydrationPending || !promptTemplateHydrated}
+    <div class="text-textcolor2 mt-4" role="status" data-testid="prompt-template-hydration-loading">
+      {language.loading}
+    </div>
   {:else}
     <div class="contain w-full max-w-full mt-4 flex flex-col p-3 rounded-md">
       {#if promptTemplateDraft.value.length === 0}

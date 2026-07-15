@@ -1438,6 +1438,7 @@ export const languageGerman = {
   experimentalChatCompression: 'Experimentelle Chat-Datenverarbeitung',
   loadingChatData: 'Lade Chat-Daten',
   chatDataLoadFailed: 'Die Chat-Daten konnten nicht geladen werden.',
+  promptTemplateLoadFailed: 'Die Prompt-Vorlage konnte nicht geladen werden.',
   retry: 'Erneut versuchen',
   outputImageModal: 'Ausgabebild-Modal',
   playMessageOnTranslateEnd: 'Audio bei Übersetzungsabschluss abspielen',

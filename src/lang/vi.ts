@@ -1407,6 +1407,7 @@ export const languageVietnamese = {
   experimentalChatCompression: 'Xử lý dữ liệu trò chuyện thử nghiệm',
   loadingChatData: 'Đang tải dữ liệu trò chuyện',
   chatDataLoadFailed: 'Không thể tải dữ liệu trò chuyện.',
+  promptTemplateLoadFailed: 'Không thể tải mẫu nhắc.',
   retry: 'Thử lại',
   outputImageModal: 'Modal hình ảnh đầu ra',
   playMessageOnTranslateEnd: 'Phát âm thanh khi hoàn thành dịch',

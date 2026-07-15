@@ -1363,6 +1363,7 @@ export const languageChineseTraditional = {
   experimentalChatCompression: '對話資料壓縮（實驗性功能）',
   loadingChatData: '正在載入對話資料',
   chatDataLoadFailed: '無法載入對話資料。',
+  promptTemplateLoadFailed: '無法載入提示詞模板。',
   retry: '重試',
   outputImageModal: '輸出圖片彈出視窗',
   playMessageOnTranslateEnd: '翻譯完成後播放音訊',

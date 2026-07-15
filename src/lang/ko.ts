@@ -1422,6 +1422,7 @@ export const languageKorean = {
   experimentalChatCompression: '실험적 채팅 데이터 처리',
   loadingChatData: '채팅 데이터 로딩 중',
   chatDataLoadFailed: '채팅 데이터를 불러오지 못했습니다.',
+  promptTemplateLoadFailed: '프롬프트 템플릿을 불러오지 못했습니다.',
   retry: '재시도',
   outputImageModal: '출력 이미지 모달',
   playMessageOnTranslateEnd: '번역 완료 시 오디오 재생',

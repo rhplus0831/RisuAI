@@ -1342,6 +1342,7 @@ export const languageChinese = {
   experimentalChatCompression: '实验性聊天数据处理',
   loadingChatData: '加载聊天数据',
   chatDataLoadFailed: '无法加载聊天数据。',
+  promptTemplateLoadFailed: '无法加载提示词模板。',
   retry: '重试',
   outputImageModal: '输出图像模态框',
   playMessageOnTranslateEnd: '翻译完成后播放音频',

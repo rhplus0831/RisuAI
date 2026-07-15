@@ -1419,6 +1419,7 @@ export const languageSpanish = {
   experimentalChatCompression: 'Manejo Experimental de Datos de Chat',
   loadingChatData: 'Cargando Datos de Chat',
   chatDataLoadFailed: 'No se pudieron cargar los datos del chat.',
+  promptTemplateLoadFailed: 'No se pudo cargar la plantilla de prompt.',
   retry: 'Reintentar',
   outputImageModal: 'Modal de Imagen de Salida',
   playMessageOnTranslateEnd: 'Reproducir Audio al Completar Traducción',

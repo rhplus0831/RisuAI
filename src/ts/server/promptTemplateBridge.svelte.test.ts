@@ -94,7 +94,7 @@ const hydrationState = vi.hoisted(() => {
   const taintedOwners = new Set<string | null>()
   return {
     ensure: vi.fn(
-      async (options?: { promptPresetId?: string | null }) =>
+      async (options?: { force?: boolean; promptPresetId?: string | null }) =>
         hydrated &&
         (hydratedOwnerId === undefined ||
           hydratedOwnerId === (options?.promptPresetId === undefined ? ownerId : options.promptPresetId)),
@@ -402,7 +402,7 @@ beforeEach(() => {
   hydrationState.resetOwnerEpochs()
   hydrationState.resetTaints()
   hydrationState.ensure.mockClear()
-  hydrationState.ensure.mockImplementation(async (options?: { promptPresetId?: string | null }) =>
+  hydrationState.ensure.mockImplementation(async (options?: { force?: boolean; promptPresetId?: string | null }) =>
     hydrationState.isHydrated(
       options?.promptPresetId === undefined ? hydrationState.currentOwner() : options.promptPresetId,
     ),
@@ -1302,6 +1302,115 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     expect(commandState.commands).toHaveLength(0)
     expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
+  })
+
+  it('PromptSettings shows a localized hydration failure and renders content after retry', async () => {
+    hydrationState.setOwner('preset-a')
+    hydrationState.setHydrated(false, 'preset-a')
+    resourceDatabase.current = {
+      promptSettings: { ...minimalPromptSettings },
+      promptPresetsId: 0,
+      promptPresets: [{ id: 'preset-a', name: 'Preset A' }],
+    }
+    hydrationState.ensure.mockImplementation(async (options?: { force?: boolean; promptPresetId?: string | null }) => {
+      if (!options?.force) return false
+      const hydratedTemplate = [
+        promptItemFixture({ ...item('hydrated-row', 'hydrated text'), name: 'Hydrated retry row' }),
+      ]
+      getResourceDatabase().promptPresets[0].promptTemplate = cloneJsonValue(hydratedTemplate) as never
+      getResourceDatabase().promptTemplate = cloneJsonValue(hydratedTemplate)
+      hydrationState.setHydrated(true, 'preset-a')
+      return true
+    })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      expect(target.querySelector('[data-testid="prompt-template-hydration-error"]')).not.toBeNull()
+      expect(target.textContent).toContain(language.promptTemplateLoadFailed)
+      expect(target.textContent).not.toContain('Hydrated retry row')
+
+      const retry = target.querySelector<HTMLButtonElement>('[data-testid="prompt-template-hydration-retry"]')
+      expect(retry?.textContent).toContain(language.retry)
+      retry?.click()
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      expect(hydrationState.ensure).toHaveBeenNthCalledWith(1, { promptPresetId: 'preset-a' })
+      expect(hydrationState.ensure).toHaveBeenNthCalledWith(2, { force: true, promptPresetId: 'preset-a' })
+      expect(target.querySelector('[data-testid="prompt-template-hydration-error"]')).toBeNull()
+      expect(target.textContent).toContain('Hydrated retry row')
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
+  })
+
+  it('PromptSettings ignores a stale owner hydration failure after the current preset renders', async () => {
+    const presetAHydration = createDeferred<boolean>()
+    hydrationState.setOwner('preset-a')
+    hydrationState.setHydrated(false, 'preset-a')
+    resourceDatabase.current = {
+      promptSettings: { ...minimalPromptSettings },
+      promptPresetsId: 0,
+      promptPresets: [
+        { id: 'preset-a', name: 'Preset A' },
+        { id: 'preset-b', name: 'Preset B' },
+      ],
+    }
+    hydrationState.ensure.mockImplementation(async (options?: { force?: boolean; promptPresetId?: string | null }) => {
+      const ownerId = options?.promptPresetId ?? hydrationState.currentOwner()
+      if (ownerId === 'preset-a') return presetAHydration.promise
+      const hydratedTemplate = [
+        promptItemFixture({ ...item('preset-b-row', 'preset B text'), name: 'Current preset B row' }),
+      ]
+      getResourceDatabase().promptPresets[1].promptTemplate = cloneJsonValue(hydratedTemplate) as never
+      getResourceDatabase().promptTemplate = cloneJsonValue(hydratedTemplate)
+      hydrationState.setHydrated(true, 'preset-b')
+      return true
+    })
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    let component: MountedComponent | null = null
+    try {
+      component = mount(PromptSettings, {
+        target,
+        props: { mode: 'inline', subMenu: 0 },
+      })
+      await tick()
+      expect(hydrationState.ensure).toHaveBeenCalledWith({ promptPresetId: 'preset-a' })
+
+      hydrationState.setOwner('preset-b')
+      hydrationState.setHydrated(false, 'preset-b')
+      getResourceDatabase().promptPresetsId = 1
+      await tick()
+      await flushMicrotasks()
+      await tick()
+
+      expect(target.textContent).toContain('Current preset B row')
+      expect(target.querySelector('[data-testid="prompt-template-hydration-error"]')).toBeNull()
+
+      presetAHydration.resolve(false)
+      await flushMicrotasks()
+      await tick()
+
+      expect(target.textContent).toContain('Current preset B row')
+      expect(target.querySelector('[data-testid="prompt-template-hydration-error"]')).toBeNull()
+    } finally {
+      if (component) await unmount(component)
+      target.remove()
+    }
   })
 
   it('PromptSettings does not repeat an item edit already included in an id sync', async () => {
