@@ -151,6 +151,7 @@ const sidebarMocks = vi.hoisted(() => {
     exportAllChats: vi.fn(),
     exportChat: vi.fn(),
     forkChatCommand: unusedCommand,
+    hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean }) => undefined),
     importChat: vi.fn(),
     navigate: vi.fn(),
     patchChatScriptstateCommand: unusedCommand,
@@ -219,6 +220,7 @@ vi.mock('sortablejs/modular/sortable.core.esm.js', () => ({
 vi.mock('src/lang', () => ({
   language: {
     cancel: 'Cancel',
+    chatDataLoadFailed: 'Chat data could not be loaded.',
     changeFolderColor: 'Change folder color',
     doYouWantToBindCurrentPersona: 'Bind persona?',
     doYouWantToUnbindCurrentPersona: 'Unbind persona?',
@@ -303,6 +305,7 @@ vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
   applyServerChatMessagesResource: vi.fn(() => true),
   ensureAllChatsHydrated: vi.fn(async () => undefined),
   hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateChatMessages: sidebarMocks.hydrateChatMessages,
   resetChatHydration: vi.fn(),
 }))
 
@@ -609,6 +612,48 @@ describe('SideChatList DOM contract harness', () => {
     expect(payload.chat.message.map((message) => message.chatId)).not.toContain('root-message-1')
     expect(new Set(payload.chat.message.map((message) => message.chatId)).size).toBe(payload.chat.message.length)
     expect(chara.chats[0].message.map((message) => message.chatId)).toEqual(['root-message-0', 'root-message-1'])
+  })
+
+  it('hydrates an unopened chat before dispatching a server-backed copy', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats[0].message = []
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertChatOptions.mockResolvedValueOnce(0)
+    sidebarMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      withTrustedResourceWrite(() => {
+        chara.chats[0].message = [
+          { chatId: 'server-message-0', data: 'loaded from server', role: 'user' },
+          { chatId: 'server-message-1', data: 'complete history', role: 'char' },
+        ]
+      })
+    })
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(rowByChatId('chat-root-a'), 'options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.hydrateChatMessages).toHaveBeenCalledWith('chat-root-a', { strict: true })
+    const payload = sidebarMocks.dispatchForkChat.mock.calls[0]?.[2] as { chat: Chat }
+    expect(payload.chat.message.map((message) => message.data)).toEqual(['loaded from server', 'complete history'])
+    expect(payload.chat.message.map((message) => message.chatId)).not.toContain('server-message-0')
+  })
+
+  it('does not copy an unopened chat when strict hydration fails', async () => {
+    seedSidebarDatabase().chats[0].message = []
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertChatOptions.mockResolvedValueOnce(0)
+    sidebarMocks.hydrateChatMessages.mockRejectedValueOnce(new Error('offline'))
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(rowByChatId('chat-root-a'), 'options').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchForkChat).not.toHaveBeenCalled()
+    expect(sidebarMocks.alertError).toHaveBeenCalledWith('Chat data could not be loaded.')
   })
 
   it('shows active-chat controls instead of the chat list on a chat route', async () => {

@@ -31,7 +31,7 @@
   import Toggles from './Toggles.svelte'
   import AuthorNoteEditor from './AuthorNoteEditor.svelte'
   import { changeChatTo, createChatCopyName } from 'src/ts/globalApi.svelte'
-  import { ensureAllChatsHydrated } from 'src/ts/server/chatMessageHydration.svelte'
+  import { ensureAllChatsHydrated, hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
   import {
     applyOptimisticCreatedChat,
     applyOptimisticCreatedChatFolder,
@@ -142,16 +142,36 @@
     reloadGuiDisplay()
   }
 
-  function forkChat(sourceChat: Chat): void {
+  async function forkChat(sourceChat: Chat): Promise<void> {
+    const sourceChatId = sourceChat.id
+    const characterId = chara.chaId
+    let liveSourceChat = sourceChat
+    if (canUseServerCommands() && sourceChatId) {
+      try {
+        await hydrateChatMessages(sourceChatId, { strict: true })
+      } catch {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+
+      const liveCharacter = getDatabase().characters?.find((candidate) => candidate.chaId === characterId)
+      const hydratedSourceChat = liveCharacter?.chats?.find((candidate) => candidate.id === sourceChatId)
+      if (!hydratedSourceChat) {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+      liveSourceChat = hydratedSourceChat
+    }
+
     const previous = currentChatStateSnapshot()
-    const newChat = $state.snapshot(sourceChat)
+    const newChat = $state.snapshot(liveSourceChat)
     newChat.name = createChatCopyName(newChat.name, 'Copy')
     newChat.id = v4()
     for (const message of newChat.message ?? []) {
       message.chatId = v4()
     }
     if (canUseServerCommands()) {
-      dispatchForkChat(sourceChat.id, previous, { chat: newChat })
+      dispatchForkChat(sourceChatId, previous, { chat: newChat })
       return
     }
     chara.chats.unshift(newChat)
@@ -712,7 +732,7 @@
                             const option = await alertChatOptions()
                             switch (option) {
                               case 0: {
-                                forkChat(chat)
+                                await forkChat(chat)
                                 break
                               }
                               case 1: {
@@ -803,7 +823,7 @@
                       const option = await alertChatOptions()
                       switch (option) {
                         case 0: {
-                          forkChat(chat)
+                          await forkChat(chat)
                           break
                         }
                         case 1: {

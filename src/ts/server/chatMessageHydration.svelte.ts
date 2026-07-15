@@ -500,9 +500,13 @@ export async function hydrateActiveChatFully(options: { force?: boolean } = {}):
   if (chatId) await hydrateChat(chatId, { force: options.force, seedReroll: true })
 }
 
-/** Hydrate a specific chat's messages by id (for single-chat bulk reads). */
-export async function hydrateChatMessages(chatId: string): Promise<void> {
-  if (chatId) await hydrateChat(chatId, { seedReroll: activeChatId() === chatId })
+/** Hydrate a specific chat's complete transcript by id. */
+export async function hydrateChatMessages(chatId: string, options: BulkHydrationOptions = {}): Promise<void> {
+  if (!chatId || !canUseServerResourceReads()) return
+  await hydrateChat(chatId, { seedReroll: activeChatId() === chatId })
+  if (options.strict && !hydratedChatIds.has(chatId)) {
+    throw new Error(`Chat hydration incomplete for: ${chatId}`)
+  }
 }
 
 /**

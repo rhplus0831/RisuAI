@@ -49,7 +49,15 @@
   import { capitalize, getUserDisplayName, getUserIcon, sleep } from 'src/ts/util'
   import { v4 as uuidv4, v4 } from 'uuid'
   import { language } from '../../lang'
-  import { alertClear, alertConfirm, alertInput, alertNormal, alertRequestData, alertWait } from '../../ts/alert'
+  import {
+    alertClear,
+    alertConfirm,
+    alertError,
+    alertInput,
+    alertNormal,
+    alertRequestData,
+    alertWait,
+  } from '../../ts/alert'
   import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from '../../ts/parser/parser.svelte'
   import {
     getCurrentCharacter,
@@ -117,6 +125,7 @@
   } from './chatButtonTriggerFreshness'
   import { createBranchComment, parseBranchComment } from './branchComment'
   import { characterRoutePath, navigate } from 'src/ts/router'
+  import { hydrateChatMessages } from 'src/ts/server/chatMessageHydration.svelte'
 
   let translating = $state(false)
   let editMode = $state(false)
@@ -444,6 +453,177 @@
     }
   }
 
+  async function branchFromCurrentMessage(): Promise<void> {
+    const capturedCharacter = getDatabase().characters?.[selIdState.selId]
+    const capturedChat = capturedCharacter?.chats?.[capturedCharacter.chatPage]
+    const capturedMessage = capturedChat?.message?.[idx]
+    if (!capturedCharacter || !capturedChat || !capturedMessage) return
+
+    const sourceCharacterId = capturedCharacter.chaId
+    const sourceChatId = capturedChat.id
+    const sourceMessageId = capturedMessage.chatId
+
+    if (canUseServerCommands()) {
+      if (!sourceCharacterId || !sourceChatId || !sourceMessageId) {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+      try {
+        await hydrateChatMessages(sourceChatId, { strict: true })
+      } catch {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+    }
+
+    const currentCharacter = getDatabase().characters?.[selIdState.selId]
+    const currentChat = currentCharacter?.chats?.[currentCharacter.chatPage]
+    if (
+      !currentCharacter ||
+      !currentChat ||
+      (sourceCharacterId && currentCharacter.chaId !== sourceCharacterId) ||
+      (sourceChatId && currentChat.id !== sourceChatId)
+    ) {
+      return
+    }
+
+    const branchIndex = sourceMessageId
+      ? currentChat.message.findIndex((candidate) => candidate.chatId === sourceMessageId)
+      : idx
+    const currentMessage = currentChat.message[branchIndex]
+    if (branchIndex < 0 || !currentMessage) {
+      alertError(language.chatDataLoadFailed)
+      return
+    }
+
+    const previous = currentChatStateSnapshot()
+    let folder
+    let sourcePatch: { folderId?: string | null } = {}
+    if (getDatabase().createFolderOnBranch && !currentChat.folderId) {
+      const folderId = v4()
+      folder = {
+        id: folderId,
+        name: `Branches of ${currentChat.name}`,
+        folded: false,
+      }
+      sourcePatch = { folderId }
+      localChatMutation(() => {
+        currentCharacter.chatFolders ??= []
+        currentCharacter.chatFolders.unshift(folder)
+        currentChat.folderId = folderId
+      })
+    }
+
+    const newChat = cloneJsonValue(currentChat)
+    if (sourcePatch.folderId) {
+      newChat.folderId = sourcePatch.folderId
+    }
+    newChat.name = createChatCopyName(newChat.name, 'Branch')
+    newChat.id = v4()
+    newChat.message = newChat.message.slice(0, branchIndex + 1)
+    for (const item of newChat.message) {
+      item.chatId = uuidv4()
+    }
+    newChat.message.push({
+      role: 'char',
+      data: createBranchComment({
+        sourceChatId: currentChat.id ?? '',
+        sourceChatName: currentChat.name,
+        sourceMessageId: currentMessage.chatId ?? '',
+      }),
+      isComment: true,
+      disabled: true,
+      chatId: v4(),
+    })
+
+    localChatMutation(() => {
+      currentCharacter.chats.unshift(newChat)
+      changeChatTo(0)
+    })
+    if (currentChat.id) {
+      const existingFolder =
+        folder ??
+        currentCharacter.chatFolders?.find(
+          (item) => item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
+        )
+      dispatchForkChat(currentChat.id, previous, {
+        chat: newChat,
+        sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
+        folder: existingFolder,
+      })
+    }
+    if (currentCharacter.chaId && newChat.id) {
+      navigate(characterRoutePath(currentCharacter.chaId, newChat.id))
+    }
+  }
+
+  function resolveActiveMessageTarget(target: MessageEditorTarget): { chat: Chat; messageIndex: number } | null {
+    const character = getDatabase().characters?.[selIdState.selId]
+    if (
+      !character ||
+      (target.characterId ? character.chaId !== target.characterId : character !== target.characterReference)
+    ) {
+      return null
+    }
+
+    const chat = character.chats?.[character.chatPage]
+    if (!chat || (target.chatId ? chat.id !== target.chatId : chat !== target.chatReference)) return null
+    const messageIndex = target.messageId
+      ? chat.message.findIndex((candidate) => candidate.chatId === target.messageId)
+      : target.messageIndex
+    const liveMessage = chat.message?.[messageIndex]
+    if (
+      messageIndex < 0 ||
+      !liveMessage ||
+      (target.messageId ? liveMessage.chatId !== target.messageId : liveMessage !== target.messageReference)
+    ) {
+      return null
+    }
+    return { chat, messageIndex }
+  }
+
+  async function truncateAtMessageTarget(target: MessageEditorTarget): Promise<void> {
+    let resolved = resolveActiveMessageTarget(target)
+    if (!resolved) return
+
+    if (
+      canUseServerCommands() &&
+      resolved.messageIndex > 0 &&
+      !resolved.chat.message[resolved.messageIndex - 1]?.chatId
+    ) {
+      if (!target.chatId || !target.messageId) {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+      try {
+        await hydrateChatMessages(target.chatId, { strict: true })
+      } catch {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+      resolved = resolveActiveMessageTarget(target)
+      if (!resolved) return
+    }
+
+    const { chat, messageIndex } = resolved
+    const previous = currentChatScopedSnapshot()
+    if (canUseServerCommands()) {
+      const afterMessageId = messageIndex > 0 ? chat.message[messageIndex - 1]?.chatId : null
+      if (!chat.id || (messageIndex > 0 && !afterMessageId)) {
+        alertError(language.chatDataLoadFailed)
+        return
+      }
+      dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
+      return
+    }
+
+    const afterMessageId = messageIndex > 0 ? ensureMessageId(chat.message[messageIndex - 1]) : null
+    chat.message = chat.message.slice(0, messageIndex)
+    if (chat.id) {
+      dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
+    }
+  }
+
   function applyOptimisticBookmarkMetadata(
     previous: ReturnType<typeof currentChatScopedSnapshot>,
     messageId: string,
@@ -672,25 +852,12 @@
 
   async function rm(e: MouseEvent, rec?: boolean) {
     if (translationInProgress) return
+    const messageTarget = captureMessageEditorTarget()
+    if (!messageTarget) return
     const previous = currentChatScopedSnapshot()
     const chat = getDatabase().characters[selIdState.selId].chats[getDatabase().characters[selIdState.selId].chatPage]
     if (e.shiftKey) {
-      if (canUseServerCommands()) {
-        const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
-        if (chat.id && (idx === 0 || afterMessageId)) {
-          dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
-        } else {
-          dispatchReplaceMessagesForChat(chat, cloneMessagesWithIds(chat).slice(0, idx), previous)
-        }
-      } else {
-        let msg = chat.message
-        const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
-        msg = msg.slice(0, idx)
-        chat.message = msg
-        if (chat.id) {
-          dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
-        }
-      }
+      await truncateAtMessageTarget(messageTarget)
       return
     }
 
@@ -700,21 +867,7 @@
         const r = await alertConfirm(language.instantRemoveConfirm)
         let msg = chat.message
         if (!r) {
-          if (canUseServerCommands()) {
-            const afterMessageId = idx > 0 ? chat.message[idx - 1]?.chatId : null
-            if (chat.id && (idx === 0 || afterMessageId)) {
-              dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
-            } else {
-              dispatchReplaceMessagesForChat(chat, cloneMessagesWithIds(chat).slice(0, idx), previous)
-            }
-          } else {
-            const afterMessageId = idx > 0 ? ensureMessageId(msg[idx - 1]) : null
-            msg = msg.slice(0, idx)
-            chat.message = msg
-            if (chat.id) {
-              dispatchTruncateMessagesScoped(chat.id, afterMessageId, previous)
-            }
-          }
+          await truncateAtMessageTarget(messageTarget)
         } else {
           if (canUseServerCommands()) {
             const messageId = chat.message[idx]?.chatId
@@ -1958,69 +2111,7 @@
     aria-label={language.branch}
     class="flex items-center hover:text-blue-500 transition-colors"
     onclick={() => {
-      const previous = currentChatStateSnapshot()
-      const currentCharacter = getDatabase().characters[selIdState.selId]
-      const currentChat = currentCharacter.chats[currentCharacter.chatPage]
-
-      let folder
-      let sourcePatch: { folderId?: string | null } = {}
-      if (getDatabase().createFolderOnBranch && !currentChat.folderId) {
-        const folderId = v4()
-        folder = {
-          id: folderId,
-          name: `Branches of ${currentChat.name}`,
-          folded: false,
-        }
-        sourcePatch = { folderId }
-        localChatMutation(() => {
-          getDatabase().characters[selIdState.selId].chatFolders ??= []
-          getDatabase().characters[selIdState.selId].chatFolders.unshift(folder)
-          currentChat.folderId = folderId
-        })
-      }
-
-      const currentMessage = currentChat.message[idx]
-      const newChat = cloneJsonValue(currentChat)
-      if (sourcePatch.folderId) {
-        newChat.folderId = sourcePatch.folderId
-      }
-      newChat.name = createChatCopyName(newChat.name, 'Branch')
-      newChat.id = v4()
-      newChat.message = newChat.message.slice(0, idx + 1)
-      for (const item of newChat.message) {
-        item.chatId = uuidv4()
-      }
-      newChat.message.push({
-        role: 'char',
-        data: createBranchComment({
-          sourceChatId: currentChat.id ?? '',
-          sourceChatName: currentChat.name,
-          sourceMessageId: currentMessage.chatId ?? '',
-        }),
-        isComment: true,
-        disabled: true,
-        chatId: v4(),
-      })
-
-      localChatMutation(() => {
-        getDatabase().characters[selIdState.selId].chats.unshift(newChat)
-        changeChatTo(0)
-      })
-      if (currentChat.id) {
-        const existingFolder =
-          folder ??
-          getDatabase().characters[selIdState.selId].chatFolders?.find(
-            (item) => item.id === currentChat.folderId && item.name === `Branches of ${currentChat.name}`,
-          )
-        dispatchForkChat(currentChat.id, previous, {
-          chat: newChat,
-          sourcePatch: Object.keys(sourcePatch).length > 0 ? sourcePatch : { folderId: currentChat.folderId ?? null },
-          folder: existingFolder,
-        })
-      }
-      if (currentCharacter.chaId && newChat.id) {
-        navigate(characterRoutePath(currentCharacter.chaId, newChat.id))
-      }
+      void branchFromCurrentMessage()
     }}>
     <SplitIcon size={20} />
     {#if showNames}

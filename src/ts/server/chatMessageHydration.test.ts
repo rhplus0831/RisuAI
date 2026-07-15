@@ -243,6 +243,15 @@ describe('chat message hydration bridge', () => {
     expect(projectionState.fetchChat).toHaveBeenLastCalledWith('chat-1', {})
   })
 
+  it('rejects strict single-chat hydration when the full transcript cannot be loaded', async () => {
+    projectionState.fetchChat.mockResolvedValue({ status: 'error', error: 'offline' })
+
+    await expect(hydrateChatMessages('chat-1', { strict: true })).rejects.toThrow(
+      'Chat hydration incomplete for: chat-1',
+    )
+    expect(db().characters[0].chats[0].message).toEqual([])
+  })
+
   it('drops an invalidated in-flight response while allowing an immediate replacement request', async () => {
     const stale = deferred<ReturnType<typeof okResult>>()
     const fresh = deferred<ReturnType<typeof okResult>>()

@@ -17,6 +17,7 @@ const customHtmlMocks = vi.hoisted(() => {
     templates,
     alertClear: vi.fn(),
     alertConfirm: vi.fn(async () => false),
+    alertError: vi.fn(),
     alertInput: vi.fn(async () => ''),
     alertNormal: vi.fn(),
     alertRequestData: vi.fn(),
@@ -26,6 +27,7 @@ const customHtmlMocks = vi.hoisted(() => {
     foldChatToMessage: vi.fn(),
     getDatabase: vi.fn(),
     getServerCommandBaseRevision: vi.fn(async () => 1),
+    hydrateChatMessages: vi.fn(async (_chatId: string, _options?: { strict?: boolean }) => undefined),
     runServerCommand: vi.fn(
       async (input: { command: (baseRevision: number) => Promise<unknown>; rollback?: () => void }) => {
         try {
@@ -199,6 +201,7 @@ vi.mock('src/ts/process/tts', () => ({
 vi.mock('../../ts/alert', () => ({
   alertClear: customHtmlMocks.alertClear,
   alertConfirm: customHtmlMocks.alertConfirm,
+  alertError: customHtmlMocks.alertError,
   alertInput: customHtmlMocks.alertInput,
   alertNormal: customHtmlMocks.alertNormal,
   alertRequestData: customHtmlMocks.alertRequestData,
@@ -260,6 +263,13 @@ vi.mock('src/ts/server/chatBridge.svelte', () => ({
   syncServerBackedChatMetadataBaselines: customHtmlMocks.syncServerBackedChatMetadataBaselines,
 }))
 
+vi.mock('src/ts/server/chatMessageHydration.svelte', () => ({
+  applyServerChatMessagesResource: vi.fn(() => true),
+  hydrateActiveChat: vi.fn(async () => undefined),
+  hydrateChatMessages: customHtmlMocks.hydrateChatMessages,
+  resetChatHydration: vi.fn(),
+}))
+
 vi.mock('src/ts/util', () => ({
   capitalize: (value: string) => value.charAt(0).toUpperCase() + value.slice(1),
   getUserIcon: () => '',
@@ -290,6 +300,8 @@ import { getResourceDatabase, replaceResourceDatabase } from '../../ts/server/re
 import {
   dispatchCompatibleChatUpdateScoped,
   dispatchForkChat,
+  dispatchReplaceMessagesScoped,
+  dispatchTruncateMessagesScoped,
   dispatchUpdateChatScoped,
   dispatchUpdateMessageScoped,
 } from 'src/ts/chatCommands'
@@ -424,8 +436,10 @@ function mountCustomHtmlRows(
     onNewReroll: () => void
     onSelectRerollCandidate: (index: number) => void
   }> = {},
+  startIndex = 0,
 ) {
-  for (let index = 0; index < count; index += 1) {
+  for (let offset = 0; offset < count; offset += 1) {
+    const index = startIndex + offset
     components.push(
       mount(Chat, {
         target,
@@ -435,7 +449,7 @@ function mountCustomHtmlRows(
           isLastMemory: false,
           idx: index,
           role,
-          totalLength: count,
+          totalLength: Math.max(count, startIndex + count),
           firstMessage: false,
           img: '',
           rerollIcon: false,
@@ -856,6 +870,79 @@ describe('message action target freshness', () => {
     expect(customHtmlMocks.changeChatTo).toHaveBeenCalledWith(0)
     expect(character.chats[character.chatPage].id).toBe(branchedChat?.id)
     expect(customHtmlMocks.navigate).toHaveBeenCalledWith(`/character/custom-html-character/${branchedChat?.id}`)
+  })
+
+  it('hydrates unloaded history before dispatching a server-backed branch', async () => {
+    seedDatabase(3, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message = [
+      { role: 'char', data: '', isComment: true, disabled: true, __risuServerUnloadedMessage: true },
+      { role: 'char', data: '', isComment: true, disabled: true, __risuServerUnloadedMessage: true },
+      { chatId: 'message-2', data: 'visible message 2', role: 'char' },
+    ] as typeof chat.message
+    customHtmlMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      chat.message = [
+        { chatId: 'message-0', data: 'loaded message 0', role: 'user' },
+        { chatId: 'message-1', data: 'loaded message 1', role: 'char' },
+        { chatId: 'message-2', data: 'visible message 2', role: 'char' },
+      ]
+    })
+    mountPopupList()
+    mountCustomHtmlRows(1, 'char', {}, 2)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-menu')?.click()
+    await settle()
+    buttonByText('branch')?.click()
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', { strict: true })
+    const forkPayload = vi.mocked(dispatchForkChat).mock.calls.at(-1)?.[2] as
+      | Parameters<typeof dispatchForkChat>[2]
+      | undefined
+    expect(forkPayload?.chat.message.slice(0, 3).map((item) => item.data)).toEqual([
+      'loaded message 0',
+      'loaded message 1',
+      'visible message 2',
+    ])
+    expect(
+      forkPayload?.chat.message.some(
+        (item) => (item as unknown as Record<string, unknown>).__risuServerUnloadedMessage === true,
+      ),
+    ).toBe(false)
+  })
+
+  it('hydrates an unloaded predecessor before truncating at the visible boundary', async () => {
+    seedDatabase(3, null as unknown as string)
+    customHtmlMocks.canUseServerCommands.mockReturnValue(true)
+    const chat = testDatabaseState.db.characters[0].chats[0]
+    chat.message = [
+      { role: 'char', data: '', isComment: true, disabled: true, __risuServerUnloadedMessage: true },
+      { role: 'char', data: '', isComment: true, disabled: true, __risuServerUnloadedMessage: true },
+      { chatId: 'message-2', data: 'visible message 2', role: 'char' },
+    ] as typeof chat.message
+    customHtmlMocks.hydrateChatMessages.mockImplementationOnce(async () => {
+      chat.message = [
+        { chatId: 'message-0', data: 'loaded message 0', role: 'user' },
+        { chatId: 'message-1', data: 'loaded message 1', role: 'char' },
+        { chatId: 'message-2', data: 'visible message 2', role: 'char' },
+      ]
+    })
+    mountPopupList()
+    mountCustomHtmlRows(1, 'char', {}, 2)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-menu')?.click()
+    await settle()
+    const removeButton = target.querySelector<HTMLButtonElement>('.button-icon-remove')
+    expect(removeButton).toBeTruthy()
+    removeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true, shiftKey: true }))
+    await settle()
+
+    expect(customHtmlMocks.hydrateChatMessages).toHaveBeenCalledWith('custom-html-chat', { strict: true })
+    expect(dispatchTruncateMessagesScoped).toHaveBeenCalledWith('custom-html-chat', 'message-1', expect.anything())
+    expect(dispatchReplaceMessagesScoped).not.toHaveBeenCalled()
   })
 
   it('selects a legacy branch source whose name contains delimiters and navigates to its canonical route', async () => {
