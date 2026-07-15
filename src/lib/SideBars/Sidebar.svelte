@@ -395,7 +395,10 @@
         {/if}
       </div>
     {/if}
-    <div class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0">
+    <div
+      class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
+      data-risu-sidebar-character-controls
+      inert={menuMode === 1}>
       <div
         class="h-4 min-h-4 w-14"
         role="listitem"

@@ -181,6 +181,36 @@ describe('Sidebar character keyboard activation', () => {
     expect(space.defaultPrevented).toBe(true)
     expect(sidebarKeyboardMocks.navigate).toHaveBeenCalledWith('/character/char-a')
   })
+
+  it('makes obscured character controls inert while preserving hamburger menu focus targets', async () => {
+    component = mount(Sidebar, { target })
+    await tick()
+
+    const menuButton = target.querySelector<HTMLButtonElement>('button[aria-label="Menu"]')
+    const characterControls = target.querySelector<HTMLElement>('[data-risu-sidebar-character-controls]')
+    const avatar = target.querySelector<HTMLElement>('[data-char-id="char-a"]')
+    expect(menuButton).toBeTruthy()
+    expect(characterControls).toBeTruthy()
+    expect(avatar).toBeTruthy()
+    expect(characterControls!.hasAttribute('inert')).toBe(false)
+
+    menuButton!.click()
+    await tick()
+
+    const settingsButton = target.querySelector<HTMLButtonElement>('button[aria-label="Settings"]')
+    expect(menuButton!.getAttribute('aria-expanded')).toBe('true')
+    expect(characterControls!.hasAttribute('inert')).toBe(true)
+    expect(avatar!.closest('[inert]')).toBe(characterControls)
+    expect(settingsButton).toBeTruthy()
+    expect(settingsButton!.closest('[inert]')).toBeNull()
+    expect(settingsButton!.tabIndex).toBe(0)
+
+    menuButton!.click()
+    await tick()
+
+    expect(menuButton!.getAttribute('aria-expanded')).toBe('false')
+    expect(characterControls!.hasAttribute('inert')).toBe(false)
+  })
 })
 
 describe('Sidebar character folder context menu', () => {
