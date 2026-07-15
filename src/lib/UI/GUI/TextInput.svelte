@@ -16,6 +16,13 @@
     marginTop?: boolean
     oninput?: FormEventHandler<HTMLInputElement>
     onchange?: FormEventHandler<HTMLInputElement>
+    onkeydown?: (
+      event: KeyboardEvent & {
+        currentTarget: EventTarget & HTMLInputElement
+      },
+    ) => any
+    inputRef?: HTMLInputElement
+    ariaLabel?: string
     fullwidth?: boolean
     fullh?: boolean
     className?: string
@@ -35,6 +42,9 @@
     marginTop = false,
     oninput,
     onchange,
+    onkeydown,
+    inputRef = $bindable(),
+    ariaLabel = undefined,
     fullwidth = false,
     fullh = false,
     className = '',
@@ -70,10 +80,13 @@
     {placeholder}
     {id}
     type="password"
+    bind:this={inputRef}
     bind:value
     {disabled}
     {oninput}
     {onchange}
+    {onkeydown}
+    aria-label={ariaLabel}
     {list} />
 {:else}
   <input
@@ -99,10 +112,13 @@
     {placeholder}
     {id}
     type="text"
+    bind:this={inputRef}
     bind:value
     {disabled}
     {oninput}
-    {onchange} />
+    {onchange}
+    {onkeydown}
+    aria-label={ariaLabel} />
 {/if}
 
 <style>

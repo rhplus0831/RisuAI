@@ -68,8 +68,7 @@
   })
   const promptInfoView = $derived.by(() => normalizeMessagePromptInfo(generationMessage))
 
-  let btn
-  let input = $state('')
+  let alertInputElement: HTMLInputElement | undefined = $state()
   let cardExportType = $state('')
   let cardExportType2 = $state('')
   let generationInfoMenuIndex = $state(0)
@@ -132,12 +131,6 @@
     translatedStackTrace = ''
     stackTraceTranslationFailed = false
     isTranslating = false
-    if (btn) {
-      btn.focus()
-    }
-    if ($alertStore.type !== 'input') {
-      input = ''
-    }
     if ($alertStore.type !== 'branches') {
       branchHover = null
     }
@@ -148,6 +141,13 @@
     if ($alertStore.type !== 'requestlogs') {
       expandedLogs = new Set()
       allExpanded = false
+    }
+  })
+
+  $effect(() => {
+    if ($alertStore.type === 'input' && alertInputElement) {
+      alertInputElement.focus()
+      alertInputElement.select()
     }
   })
 
@@ -239,6 +239,17 @@
       type: 'none',
       msg: cardExportCancelMessage(cardExportType2),
     })
+  }
+
+  function closeInputAlert(value: string) {
+    alertStore.set({
+      type: 'none',
+      msg: value,
+    })
+  }
+
+  function submitInputAlert() {
+    closeInputAlert(alertInputElement?.value ?? $alertStore.defaultValue ?? '')
   }
 </script>
 
@@ -474,20 +485,26 @@
           }}>OK</Button>
       {:else if $alertStore.type === 'input'}
         <TextInput
+          bind:inputRef={alertInputElement}
           value={$alertStore.defaultValue}
           id="alert-input"
+          ariaLabel={$alertStore.msg}
           autocomplete="off"
           marginTop
-          list="alert-input-list" />
-        <Button
-          className="mt-4"
-          onclick={() => {
-            alertStore.set({
-              type: 'none',
-              //@ts-expect-error 'value' doesn't exist on Element, but target is HTMLInputElement here
-              msg: document.querySelector('#alert-input')?.value,
-            })
-          }}>OK</Button>
+          list="alert-input-list"
+          onkeydown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              submitInputAlert()
+            } else if (event.key === 'Escape') {
+              event.preventDefault()
+              closeInputAlert('')
+            }
+          }} />
+        <div class="flex gap-2 w-full mt-4">
+          <Button className="grow" onclick={submitInputAlert}>OK</Button>
+          <Button className="grow" styled="outlined" onclick={() => closeInputAlert('')}>{language.cancel}</Button>
+        </div>
         {#if $alertStore.datalist}
           <datalist id="alert-input-list">
             {#each $alertStore.datalist as item}

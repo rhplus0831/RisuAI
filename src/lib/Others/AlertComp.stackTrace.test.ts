@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 const translateStackTrace = vi.hoisted(() => vi.fn())
 
@@ -56,6 +57,65 @@ describe('AlertComp stack trace translation', () => {
 
       expect(target.textContent).toContain('translated second trace')
       expect(target.textContent).not.toContain('translated first trace')
+    } finally {
+      unmount(component)
+      target.remove()
+      alertStore.set({ type: 'none', msg: '' })
+    }
+  })
+})
+
+describe('AlertComp input dialog', () => {
+  beforeEach(() => {
+    translateStackTrace.mockReset()
+    alertStore.set({ type: 'none', msg: '' })
+  })
+
+  it('focuses the input and submits its value with Enter', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      alertStore.set({ type: 'input', msg: 'Character name', defaultValue: 'Risu' })
+      await tick()
+
+      const input = target.querySelector<HTMLInputElement>('#alert-input')
+      expect(input).toBeTruthy()
+      expect(document.activeElement).toBe(input)
+      expect(input?.getAttribute('aria-label')).toBe('Character name')
+
+      input!.value = 'Risu AI'
+      input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+
+      expect(get(alertStore)).toMatchObject({ type: 'none', msg: 'Risu AI' })
+    } finally {
+      unmount(component)
+      target.remove()
+    }
+  })
+
+  it('cancels with Escape or the visible cancel button', async () => {
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const component = mount(AlertComp, { target })
+
+    try {
+      alertStore.set({ type: 'input', msg: 'First prompt', defaultValue: 'keep me' })
+      await tick()
+      target
+        .querySelector<HTMLInputElement>('#alert-input')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
+
+      alertStore.set({ type: 'input', msg: 'Second prompt', defaultValue: 'keep me' })
+      await tick()
+      const cancel = Array.from(target.querySelectorAll('button')).find((button) =>
+        button.textContent?.includes('Cancel'),
+      )
+      expect(cancel).toBeTruthy()
+      cancel?.click()
+      expect(get(alertStore)).toMatchObject({ type: 'none', msg: '' })
     } finally {
       unmount(component)
       target.remove()
