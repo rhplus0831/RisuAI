@@ -112,6 +112,12 @@
     }
   }
 
+  function activateRoleButton(event: KeyboardEvent & { currentTarget: EventTarget & HTMLElement }): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    event.currentTarget.click()
+  }
+
   function createChat(): void {
     const previous = currentChatStateSnapshot()
     const len = chara.chats.length
@@ -596,11 +602,7 @@
                     data-risu-chat-action="folder-options"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
@@ -629,11 +631,7 @@
                     data-risu-chat-action="folder-edit"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={(e) => {
                       e.stopPropagation()
@@ -645,11 +643,7 @@
                     data-risu-chat-action="folder-delete"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
@@ -711,11 +705,7 @@
                           data-risu-chat-action="options"
                           role="button"
                           tabindex="0"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.click()
-                            }
-                          }}
+                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
@@ -737,11 +727,7 @@
                           data-risu-chat-action="edit"
                           role="button"
                           tabindex="0"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.click()
-                            }
-                          }}
+                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={(e) => {
                             e.stopPropagation()
@@ -753,11 +739,7 @@
                           data-risu-chat-action="export"
                           role="button"
                           tabindex="0"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.click()
-                            }
-                          }}
+                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
@@ -769,11 +751,7 @@
                           data-risu-chat-action="delete"
                           role="button"
                           tabindex="0"
-                          onkeydown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.currentTarget.click()
-                            }
-                          }}
+                          onkeydown={activateRoleButton}
                           class="text-textcolor2 hover:text-green-500 cursor-pointer"
                           onclick={async (e) => {
                             e.stopPropagation()
@@ -818,11 +796,7 @@
                     data-risu-chat-action="options"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
@@ -844,11 +818,7 @@
                     data-risu-chat-action="edit"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={(e) => {
                       e.stopPropagation()
@@ -860,11 +830,7 @@
                     data-risu-chat-action="export"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()
@@ -876,11 +842,7 @@
                     data-risu-chat-action="delete"
                     role="button"
                     tabindex="0"
-                    onkeydown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.currentTarget.click()
-                      }
-                    }}
+                    onkeydown={activateRoleButton}
                     class="text-textcolor2 hover:text-green-500 cursor-pointer"
                     onclick={async (e) => {
                       e.stopPropagation()

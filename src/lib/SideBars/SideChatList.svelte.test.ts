@@ -559,6 +559,28 @@ describe('SideChatList DOM contract harness', () => {
     expect(sidebarMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
 
+  it('activates chat and folder icon actions with Space without scrolling', async () => {
+    seedSidebarDatabase()
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const chatExport = rowActionButton(rowByChatId('chat-root-a'), 'export')
+    const chatSpace = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    chatExport.dispatchEvent(chatSpace)
+    await tick()
+
+    expect(chatSpace.defaultPrevented).toBe(true)
+    expect(sidebarMocks.exportChat).toHaveBeenCalledWith(0)
+
+    const folderDelete = rowActionButton(folderElementById('folder-a'), 'folder-delete')
+    const folderSpace = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true })
+    folderDelete.dispatchEvent(folderSpace)
+    await flushCommandWork()
+
+    expect(folderSpace.defaultPrevented).toBe(true)
+    expect(sidebarMocks.alertConfirm).toHaveBeenCalledWith('Remove Pinned Folder')
+  })
+
   it('remints copied message ids before dispatching a server-backed chat copy', async () => {
     const chara = seedSidebarDatabase()
     chara.chats[0].message = [
