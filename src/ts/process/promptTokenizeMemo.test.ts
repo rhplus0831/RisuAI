@@ -167,6 +167,33 @@ describe('prompt template tokenization memo', () => {
     debouncer.cancel()
   })
 
+  it('contains tokenization failures and continues with later edits', async () => {
+    vi.useFakeTimers()
+    const failure = new Error('tokenizer unavailable')
+    const tokenizeText = vi.fn(async (text: string, consti: boolean) => {
+      if (text === 'broken') throw failure
+      return text.length + (consti ? 100 : 0)
+    })
+    const results: Array<{ tokens: number; extokens: number }> = []
+    const onError = vi.fn()
+    const debouncer = createPromptTokenizeDebouncer({
+      debounceMs: 10,
+      tokenizeText,
+      onResult: (totals) => results.push(totals),
+      onError,
+    })
+
+    debouncer.schedule([plainPrompt('row', 'broken')])
+    await vi.advanceTimersByTimeAsync(10)
+    expect(onError).toHaveBeenCalledWith(failure)
+    expect(results).toEqual([])
+
+    debouncer.schedule([plainPrompt('row', 'working')])
+    await vi.advanceTimersByTimeAsync(10)
+    expect(results).toEqual([{ tokens: 107, extokens: 7 }])
+    debouncer.cancel()
+  })
+
   it('M13: reorder delete and add preserve memoized token totals', async () => {
     const memo = createPromptTokenizeMemo()
     const alpha = plainPrompt('alpha', 'alpha')

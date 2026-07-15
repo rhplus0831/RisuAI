@@ -123,6 +123,7 @@ export interface PromptTokenizeDebouncerOptions {
   memo?: PromptTokenizeMemo
   tokenizeText?: PromptTokenizeText
   onResult: (totals: PromptTokenizeTotals) => void
+  onError?: (error: unknown) => void
 }
 
 function promptItemTokenizedText(prompt: PromptItem): string | null {
@@ -218,9 +219,14 @@ export function createPromptTokenizeDebouncer(options: PromptTokenizeDebouncerOp
   let tokenizeRun = 0
 
   async function execute(prompts: PromptItem[], run: number) {
-    const totals = await memo.tokenize(prompts)
-    if (run !== tokenizeRun) return
-    options.onResult(totals)
+    try {
+      const totals = await memo.tokenize(prompts)
+      if (run !== tokenizeRun) return
+      options.onResult(totals)
+    } catch (error) {
+      if (run !== tokenizeRun) return
+      options.onError?.(error)
+    }
   }
 
   return {
