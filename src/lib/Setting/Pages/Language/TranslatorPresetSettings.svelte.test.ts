@@ -811,20 +811,30 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await clickDeletePreset()
 
     expect(commandSpies.deleteInputs).toEqual([{ baseRevision: 100, presetId: 'preset-a', selectPresetId: 'preset-b' }])
-    expect(commandSpies.runInputs.at(-1)?.rollback).toBeUndefined()
+    expect(commandSpies.runInputs.at(-1)?.rollback).toEqual(expect.any(Function))
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(200)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.options).toHaveLength(1)
+    expect(presetSelect?.value).toBe('0')
+    expect(presetSelect?.options.item(0)?.textContent).toBe('Preset B')
+    expect(promptTextarea().value).toBe('old prompt B')
+    expect(maxResponseInput().value).toBe('200')
 
     withTrustedResourceWrite(() => {
       getDatabase().translatorPresets = [
         {
           ...getDatabase().translatorPresets[0],
-          name: 'Preset A Edited',
-          prompt: 'newer prompt A',
-          maxResponse: 111,
+          name: 'Preset B Edited',
+          prompt: 'newer prompt B',
+          maxResponse: 222,
         },
-        { ...getDatabase().translatorPresets[1] },
         { id: 'preset-c', name: 'Preset C', prompt: 'new prompt C', maxResponse: 300 },
       ]
-      getDatabase().translatorPresetId = 2
+      getDatabase().translatorPresetId = 1
       getDatabase().translatorPrompt = 'new prompt C'
       getDatabase().translatorMaxResponse = 300
     })
@@ -832,14 +842,61 @@ describe('TranslatorPresetSettings server-backed edits', () => {
     await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
 
     expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b', 'preset-c'])
-    expect(getDatabase().translatorPresets[0]).toMatchObject({
-      name: 'Preset A Edited',
-      prompt: 'newer prompt A',
-      maxResponse: 111,
+    expect(getDatabase().translatorPresets[1]).toMatchObject({
+      name: 'Preset B Edited',
+      prompt: 'newer prompt B',
+      maxResponse: 222,
     })
     expect(getDatabase().translatorPresetId).toBe(2)
     expect(getDatabase().translatorPrompt).toBe('new prompt C')
     expect(getDatabase().translatorMaxResponse).toBe(300)
+  })
+
+  it('rolls back a rejected optimistic delete while it remains current', async () => {
+    commandSpies.deferNextDelete = true
+
+    await clickDeletePreset()
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-b'])
+    expect(getDatabase().translatorPresetId).toBe(0)
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().translatorPresetId).toBe(0)
+    expect(getDatabase().translatorPrompt).toBe('old prompt A')
+    expect(getDatabase().translatorMaxResponse).toBe(100)
+    expect(isCollectionAcknowledgementTainted('translatorPresets')).toBe(true)
+    expect(isSettingsGroupAcknowledgementTainted('language')).toBe(true)
+
+    const presetSelect = target.querySelector<HTMLSelectElement>('select')
+    expect(presetSelect?.options).toHaveLength(2)
+    expect(presetSelect?.value).toBe('0')
+    expect(promptTextarea().value).toBe('old prompt A')
+    expect(maxResponseInput().value).toBe('100')
+  })
+
+  it('restores a failed deletion without replacing a newer fallback edit or selection', async () => {
+    commandSpies.deferNextDelete = true
+
+    await clickDeletePreset()
+
+    withTrustedResourceWrite(() => {
+      getDatabase().translatorPresets = [
+        {
+          ...getDatabase().translatorPresets[0],
+          name: 'Preset B Edited',
+        },
+      ]
+    })
+
+    await failDeferredCommand(commandSpies.deferredDeleteResults, 'forced delete failure')
+
+    expect(getDatabase().translatorPresets.map((preset) => preset.id)).toEqual(['preset-a', 'preset-b'])
+    expect(getDatabase().translatorPresets[1].name).toBe('Preset B Edited')
+    expect(getDatabase().translatorPresetId).toBe(1)
+    expect(getDatabase().translatorPrompt).toBe('old prompt B')
+    expect(getDatabase().translatorMaxResponse).toBe(200)
   })
 
   it('flushes a pending preset edit when the component is destroyed', async () => {
