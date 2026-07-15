@@ -108,6 +108,31 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
+  it('keeps every custom API capability label readable in the drawer column', async () => {
+    getDatabase().modelProfiles[0] = {
+      id: 'profile-1',
+      name: 'Custom API profile',
+      providerId: 'custom-api',
+      modelId: 'custom-api',
+      providerOptions: { customApi: { flags: [] } },
+    } as any
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const editTrigger = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!editTrigger) throw new Error('Profile edit button not found')
+    editTrigger.click()
+    await tick()
+
+    const flags = target.querySelector<HTMLElement>('[data-model-custom-api-flags]')
+    const labels = Array.from(flags?.querySelectorAll('label span') ?? [])
+    expect(flags).toBeTruthy()
+    expect(flags?.classList.contains('grid-cols-1')).toBe(true)
+    expect(flags?.classList.contains('sm:grid-cols-2')).toBe(false)
+    expect(labels.length).toBeGreaterThan(10)
+    expect(labels.every((label) => label.classList.contains('break-all'))).toBe(true)
+  })
+
   it('does not dispatch an unchanged profile save', async () => {
     component = mount(ModelProfileList, { target })
     await tick()

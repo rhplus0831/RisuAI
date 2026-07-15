@@ -344,9 +344,11 @@
         </label>
         <div class="flex flex-col gap-2">
           <span class="text-sm text-textcolor2">{language.modelProfiles.customApiFlags}</span>
-          <div class="grid max-h-56 gap-2 overflow-y-auto rounded-md border border-darkborderc p-2 sm:grid-cols-2">
+          <div
+            data-model-custom-api-flags
+            class="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-darkborderc p-2">
             {#each flagOptions as option (option.flag)}
-              <label class="flex items-center gap-2 text-sm text-textcolor2">
+              <label class="flex min-w-0 items-center gap-2 text-sm text-textcolor2">
                 <input
                   type="checkbox"
                   class="h-4 w-4"
@@ -354,7 +356,7 @@
                   onchange={(event) => {
                     setCustomFlag(option.flag, event.currentTarget.checked)
                   }} />
-                <span>{option.label}</span>
+                <span class="min-w-0 break-all">{option.label}</span>
               </label>
             {/each}
           </div>
