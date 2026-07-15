@@ -78,7 +78,13 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 vi.mock('src/ts/gui/longtouch', () => ({
-  longpress: () => undefined,
+  longpress: (node: HTMLElement, callback: (event: MouseEvent) => void) => {
+    const handleTestLongPress = (event: Event) => callback(event as MouseEvent)
+    node.addEventListener('test-longpress', handleTestLongPress)
+    return {
+      destroy: () => node.removeEventListener('test-longpress', handleTestLongPress),
+    }
+  },
 }))
 
 vi.mock('src/ts/model/modellist', () => ({
@@ -571,6 +577,55 @@ describe('Chat parser dependencies', () => {
 
     expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith('row-0', { data: 'changed message' }, {})
     expect(getResourceDatabase().characters[0].chats[0].message[0].data).toBe('visible message 0')
+  })
+
+  it('saves an inline message edit when long press closes the editor', async () => {
+    const rows = makeRows(1)
+    seedDatabase(rows)
+    chatParserMocks.canUseServerCommands.mockReturnValue(true)
+    mountHarness(rows)
+    await settle()
+
+    target.querySelector<HTMLButtonElement>('.button-icon-edit')?.click()
+    await settle()
+
+    const textarea = target.querySelector<HTMLTextAreaElement>('.message-edit-area')
+    expect(textarea).not.toBeNull()
+    textarea!.value = 'long-press edit'
+    textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    vi.mocked(dispatchUpdateMessageScoped).mockClear()
+    textarea!.dispatchEvent(new MouseEvent('test-longpress', { bubbles: true }))
+    await settle()
+
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+    expect(dispatchUpdateMessageScoped).toHaveBeenCalledWith('row-0', { data: 'long-press edit' }, {})
+  })
+
+  it('keeps interactive message content out of click-to-edit mode', async () => {
+    const rows = makeRows(1)
+    seedDatabase(rows)
+    withTrustedResourceWrite(() => {
+      getResourceDatabase().clickToEdit = true
+    })
+    mountHarness(rows)
+    await settle()
+
+    const messageBody = target.querySelector<HTMLElement>('.chattext')
+    expect(messageBody).not.toBeNull()
+    const interactiveButton = document.createElement('button')
+    interactiveButton.type = 'button'
+    interactiveButton.textContent = 'message action'
+    messageBody!.appendChild(interactiveButton)
+
+    interactiveButton.click()
+    await settle()
+    expect(target.querySelector('.message-edit-area')).toBeNull()
+
+    target.querySelector<HTMLElement>('.chattext .risu-chat')?.click()
+    await settle()
+    expect(target.querySelector('.message-edit-area')).not.toBeNull()
   })
 
   it('deletes the confirmed message by stable id after the live transcript shifts', async () => {

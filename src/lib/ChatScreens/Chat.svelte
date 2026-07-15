@@ -331,6 +331,22 @@
     editMode = true
   }
 
+  function handleMessageBodyClick(event: MouseEvent): void {
+    if (!getDatabase().clickToEdit || idx < 0 || event.defaultPrevented) return
+
+    const target = event.target
+    if (
+      target instanceof Element &&
+      target.closest(
+        'a, button, input, textarea, select, option, label, summary, audio, video, [role="button"], [role="link"], [contenteditable]:not([contenteditable="false"]), [risu-trigger], [risu-btn]',
+      )
+    ) {
+      return
+    }
+
+    beginMessageEdit()
+  }
+
   async function saveMessageEdit() {
     if (translationInProgress) return
     if (!editMode) return
@@ -1494,7 +1510,7 @@
       popupEditor
       stableHeight={useStableMessageEditor}
       handleLongPress={() => {
-        editMode = false
+        void saveMessageEdit()
       }} />
   {:else if isComment}
     <div class="w-full flex justify-center text-textcolor2 italic mb-12">
@@ -1550,11 +1566,7 @@
       class="text chat-width chattext prose minw-0"
       class:prose-invert={$ColorSchemeTypeStore}
       bind:this={bodyRoot}
-      onclick={() => {
-        if (getDatabase().clickToEdit && idx > -1) {
-          beginMessageEdit()
-        }
-      }}
+      onclick={handleMessageBodyClick}
       style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
       style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem">
       {#key `${totalLengthPointer}|${chatReloadPointer}|${chatScopePointer}`}
