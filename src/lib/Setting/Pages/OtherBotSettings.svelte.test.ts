@@ -7,7 +7,7 @@ const otherBotMocks = vi.hoisted(() => ({
   alertInput: vi.fn(),
   alertMd: vi.fn(),
   alertNormal: vi.fn(),
-  drafts: new Map<string, { value: any }>(),
+  drafts: new Map<string, { value: any; project?: (value: any) => void }>(),
   globalFetch: vi.fn(),
   hypaEnabled: false,
   hypaPresets: [] as Array<Record<string, any>>,
@@ -33,30 +33,56 @@ vi.mock('src/ts/process/modules', () => ({
   moduleUpdate: vi.fn(),
 }))
 
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  createServerBackedSettingDraft: (key: string, fallback: unknown) => {
-    const clone = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T))
+vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+  const { fromStore, writable } = await import('svelte/store')
 
-    let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
-    if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
-    if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
-    if (key === 'wavespeedImage') {
-      value = new Proxy(clone(otherBotMocks.initialWavespeedImage), {
-        set(target, property, nextValue) {
-          if (property === 'loras') {
-            otherBotMocks.loraWrites.push(clone(nextValue))
-          }
-          return Reflect.set(target, property, nextValue)
+  return {
+    createServerBackedSettingDraft: (key: string, fallback: unknown) => {
+      const clone = <T>(value: T): T => (value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T))
+
+      let value = key === 'sdProvider' ? 'wavespeed' : clone(fallback)
+      if (key === 'hypaV3') value = otherBotMocks.hypaEnabled
+      if (key === 'hypaV3Presets') value = clone(otherBotMocks.hypaPresets)
+      if (key !== 'wavespeedImage') {
+        const draft = { value }
+        otherBotMocks.drafts.set(key, draft)
+        return draft
+      }
+
+      let current: Record<string, any>
+      let valueStore: ReturnType<typeof writable<Record<string, any>>>
+      const createReactiveValue = (nextValue: Record<string, any>) =>
+        new Proxy(clone(nextValue), {
+          set(target, property, propertyValue) {
+            if (property === 'loras') {
+              otherBotMocks.loraWrites.push(clone(propertyValue))
+            }
+            return Reflect.set(target, property, propertyValue)
+          },
+        })
+
+      current = createReactiveValue(otherBotMocks.initialWavespeedImage)
+      valueStore = writable(current)
+      const reactiveValue = fromStore(valueStore)
+      const draft = {
+        get value() {
+          return reactiveValue.current
         },
-      })
-    }
-
-    const draft = { value }
-    otherBotMocks.drafts.set(key, draft)
-    return draft
-  },
-  watchServerBackedSettings: vi.fn(() => vi.fn()),
-}))
+        set value(nextValue: Record<string, any>) {
+          current = createReactiveValue(nextValue)
+          valueStore.set(current)
+        },
+        project(nextValue: Record<string, any>) {
+          current = createReactiveValue(nextValue)
+          valueStore.set(current)
+        },
+      }
+      otherBotMocks.drafts.set(key, draft)
+      return draft
+    },
+    watchServerBackedSettings: vi.fn(() => vi.fn()),
+  }
+})
 
 vi.mock('src/ts/globalApi.svelte', () => ({
   downloadFile: vi.fn(),
@@ -208,6 +234,43 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
     expect(wavespeedDraft.value.loras).toEqual([
       { path: 'owner/updated-lora', scale: 0.7 },
       { path: 'https://example.com/second-lora.safetensors', scale: 1.4 },
+    ])
+  })
+
+  it('reconciles visible rows after an authoritative LoRA projection without echoing it', async () => {
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    buttonNamed(language.imageGeneration).click()
+    await tick()
+    buttonNamed('Refresh Models').click()
+    await vi.waitFor(() => {
+      expect(target.querySelectorAll<HTMLInputElement>('input[placeholder^="LoRA "]')).toHaveLength(3)
+    })
+
+    let loraInputs = target.querySelectorAll<HTMLInputElement>('input[placeholder^="LoRA "]')
+    loraInputs[0].value = 'owner/attempted-lora'
+    loraInputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect(otherBotMocks.loraWrites).toHaveLength(1))
+
+    const wavespeedDraft = otherBotMocks.drafts.get('wavespeedImage')!
+    wavespeedDraft.project?.({
+      ...wavespeedDraft.value,
+      loras: [{ path: 'owner/canonical-lora', scale: 2.3 }],
+    })
+
+    await vi.waitFor(() => {
+      loraInputs = target.querySelectorAll<HTMLInputElement>('input[placeholder^="LoRA "]')
+      expect(Array.from(loraInputs, (input) => input.value)).toEqual(['owner/canonical-lora', '', ''])
+    })
+    expect(otherBotMocks.loraWrites).toHaveLength(1)
+
+    loraInputs[1].value = 'owner/newer-lora'
+    loraInputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect(otherBotMocks.loraWrites).toHaveLength(2))
+    expect(wavespeedDraft.value.loras).toEqual([
+      { path: 'owner/canonical-lora', scale: 2.3 },
+      { path: 'owner/newer-lora', scale: 1 },
     ])
   })
 

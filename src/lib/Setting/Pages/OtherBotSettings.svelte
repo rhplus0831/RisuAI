@@ -187,11 +187,20 @@
     return rows
   }
 
+  function normalizeWavespeedLoras(loras: LoraItem[] | undefined): LoraItem[] {
+    return (loras ?? [])
+      .filter((item) => item.path && item.path.trim() !== '')
+      .map((item) => ({ path: item.path, scale: item.scale }))
+  }
+
+  function wavespeedLoraSnapshot(loras: LoraItem[] | undefined): string {
+    return JSON.stringify(normalizeWavespeedLoras(loras))
+  }
+
   let wavespeedModels = $state<WavespeedModel[]>([])
   let isWavespeedLoading = $state(false)
   let wavespeedSearchQuery = $state('')
   let wavespeedLoras = $state<LoraItem[]>(createWavespeedLoraRows(wavespeedImageDraft.value.loras))
-  let wavespeedLorasInitialized = false
 
   /**
    * Fetch models from WaveSpeed API dynamically
@@ -502,20 +511,25 @@
   }
 
   $effect(() => {
-    // Sync loras to DB, filtering out empty URLs
-    const normalizedLoras = wavespeedLoras
-      .filter((item) => item.path && item.path.trim() !== '')
-      .map((item) => ({
-        path: item.path,
-        scale: item.scale,
-      }))
+    const projectedLoras = normalizeWavespeedLoras(wavespeedImageDraft.value.loras)
+    const projectedSnapshot = JSON.stringify(projectedLoras)
 
-    if (!wavespeedLorasInitialized) {
-      wavespeedLorasInitialized = true
-      return
-    }
+    untrack(() => {
+      if (wavespeedLoraSnapshot(wavespeedLoras) === projectedSnapshot) return
+      wavespeedLoras = createWavespeedLoraRows(projectedLoras)
+    })
+  })
 
-    wavespeedImageDraft.value.loras = normalizedLoras
+  $effect(() => {
+    // Keep empty UI rows out of persisted settings, while still accepting
+    // authoritative draft changes such as command rollbacks and refreshes.
+    const normalizedLoras = normalizeWavespeedLoras(wavespeedLoras)
+    const rowsSnapshot = JSON.stringify(normalizedLoras)
+
+    untrack(() => {
+      if (wavespeedLoraSnapshot(wavespeedImageDraft.value.loras) === rowsSnapshot) return
+      wavespeedImageDraft.value.loras = normalizedLoras
+    })
   })
   // End wavespeed
 </script>
