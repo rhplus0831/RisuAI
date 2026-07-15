@@ -28,6 +28,7 @@
     type SeperateParametersImportSlotKind,
     type SeperateParametersImportTarget,
   } from 'src/ts/server/seperateParametersImport'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
   type SeperateParametersBaseKey = OptionalModelRole
@@ -98,6 +99,13 @@
 
   const onClose = () => {
     easyPanelStore.open = false
+  }
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    onClose()
   }
 
   function enableEasyPanelRequirements(): void {
@@ -243,17 +251,34 @@
   }
 </script>
 
-<div class="fixed z-50 w-dvw h-dvh top-0 left-0 pointer-events-none flex justify-stretch items-stretch">
+<!-- Backdrop activation is supplemental to the named close button and Escape handling. -->
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  data-modal-root
+  data-testid="easy-panel-backdrop"
+  class="fixed inset-0 z-50 bg-black/50 flex justify-stretch items-stretch"
+  onclick={(event) => {
+    if (event.target === event.currentTarget) onClose()
+  }}>
   <div
-    class="m-4 p-4 bg-bgcolor/80 backdrop-blur-sm rounded-lg shadow-lg pointer-events-auto flex-1 flex flex-col overflow-y-auto">
-    <h2 class="text-lg font-bold mb-2 flex items-center">
+    use:modalFocusTrap
+    class="m-4 p-4 bg-bgcolor/80 backdrop-blur-sm rounded-lg shadow-lg flex-1 flex flex-col overflow-y-auto"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-easy-panel-title"
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}>
+    <h2 id="risu-easy-panel-title" class="text-lg font-bold mb-2 flex items-center">
       {language.easyPanel}
       <div class="ml-2 bg-blue-800 p-1 rounded text-sm">Beta</div>
       <button
+        type="button"
+        data-modal-initial-focus
+        aria-label={language.close}
+        title={language.close}
         class="ml-auto p-1 rounded hover:bg-selected"
-        onclick={() => {
-          onClose()
-        }}>
+        onclick={onClose}>
         <XIcon size={28} class="ml-auto hover:bg-selected rounded"></XIcon>
       </button>
     </h2>
