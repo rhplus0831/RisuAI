@@ -60,6 +60,14 @@ async function flushAsync(): Promise<void> {
   await tick()
 }
 
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((settle) => {
+    resolve = settle
+  })
+  return { promise, resolve }
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -144,6 +152,82 @@ describe('ModelProfileList', () => {
     expect(commandSpies.runServerCommand).not.toHaveBeenCalled()
     expect(target.textContent).toContain(language.modelProfiles.editTargetMissing)
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()
+  })
+
+  it('locks profile fields and dismissal paths until a deferred save failure settles', async () => {
+    const pending = deferred<{ status: 'error'; error: string }>()
+    const confirm = vi.fn(() => true)
+    vi.stubGlobal('confirm', confirm)
+    commandSpies.runServerCommand.mockImplementationOnce((input: { command: (baseRevision: number) => unknown }) => {
+      input.command(123)
+      return pending.promise
+    })
+
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const profileEditButton = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!profileEditButton) throw new Error('Profile edit button not found')
+    profileEditButton.click()
+    await tick()
+
+    const nameInput = target.querySelector<HTMLInputElement>('input')
+    if (!nameInput) throw new Error('Profile name input not found')
+    nameInput.value = 'Pending profile name'
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    buttonByText(language.modelProfiles.save).click()
+    await flushAsync()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const backdrop = dialog?.parentElement
+    const form = dialog?.querySelector<HTMLFieldSetElement>('[data-model-profile-editable-form]')
+    const close = dialog?.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    const providerSelect = dialog?.querySelector<HTMLSelectElement>('select')
+    const cancel = buttonByText(language.modelProfiles.cancel)
+    if (!dialog || !backdrop || !form || !close || !providerSelect) throw new Error('Busy profile editor not found')
+
+    expect(dialog.getAttribute('aria-busy')).toBe('true')
+    expect(form.getAttribute('aria-busy')).toBe('true')
+    expect(form.disabled).toBe(true)
+    expect(nameInput.closest('fieldset[disabled]')).toBe(form)
+    expect(providerSelect.closest('fieldset[disabled]')).toBe(form)
+    expect(close.disabled).toBe(true)
+    expect(cancel.disabled).toBe(true)
+
+    backdrop.click()
+    close.click()
+    cancel.click()
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    dialog.dispatchEvent(escape)
+    await tick()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(confirm).not.toHaveBeenCalled()
+    expect(target.querySelector('[role="dialog"]')).toBe(dialog)
+
+    pending.resolve({ status: 'error', error: 'Profile save failed' })
+    await flushAsync()
+
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+    expect(form.getAttribute('aria-busy')).toBe('false')
+    expect(form.disabled).toBe(false)
+    expect(nameInput.closest('fieldset[disabled]')).toBeNull()
+    expect(providerSelect.closest('fieldset[disabled]')).toBeNull()
+    expect(close.disabled).toBe(false)
+    expect(cancel.disabled).toBe(false)
+    expect(target.textContent).toContain('Profile save failed')
+
+    nameInput.value = 'Editable after failure'
+    nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    expect(nameInput.value).toBe('Editable after failure')
+
+    close.click()
+    await tick()
+    expect(confirm).toHaveBeenCalledWith(language.modelProfiles.discardProfileChangesConfirm)
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
   })
 
   it('duplicates profiles with secrets for internal settings copies', async () => {

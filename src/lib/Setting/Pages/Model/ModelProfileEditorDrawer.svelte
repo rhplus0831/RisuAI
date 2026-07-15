@@ -318,6 +318,7 @@
   }
 
   function requestClose(): void {
+    if (busy) return
     if (isDirty && !window.confirm(language.modelProfiles.discardProfileChangesConfirm)) return
     onCancel()
   }
@@ -344,6 +345,7 @@
     role="dialog"
     aria-modal="true"
     aria-label={drawerTitle}
+    aria-busy={busy}
     tabindex="-1"
     onclick={(event) => {
       event.stopPropagation()
@@ -358,13 +360,20 @@
         type="button"
         data-modal-initial-focus
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
+        class:cursor-not-allowed={busy}
+        class:opacity-50={busy}
         aria-label={language.modelRoles.close}
+        disabled={busy}
         onclick={requestClose}>
         <XIcon size={20} />
       </button>
     </div>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+    <fieldset
+      data-model-profile-editable-form
+      class="m-0 flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto border-0 p-4"
+      disabled={busy}
+      aria-busy={busy}>
       {#if commandError}
         <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
       {/if}
@@ -448,7 +457,7 @@
           {language.modelProfiles.compatibilityRuntimeNotice}
         </div>
       {/if}
-    </div>
+    </fieldset>
 
     <div class="flex flex-wrap items-center justify-end gap-2 border-t border-darkborderc p-4">
       <Button size="sm" styled="outlined" disabled={busy} onclick={requestClose}>
