@@ -1,6 +1,7 @@
 <script lang="ts">
   import { language } from 'src/lang'
   import { pluginAlertModalStore } from 'src/ts/stores.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   const reasons: [string, string][] = $derived.by(() => {
     let v = pluginAlertModalStore.errors.map(
@@ -19,12 +20,30 @@
     })
     return v
   })
+
+  function closeWithoutInstalling(): void {
+    pluginAlertModalStore.open = false
+  }
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeWithoutInstalling()
+  }
 </script>
 
 {#if pluginAlertModalStore.open}
-  <dialog open class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-    <div class="bg-orange-800 rounded-lg shadow-xl max-w-md w-full p-6">
-      <h2 class="text-xl font-bold mb-4 text-textcolor">
+  <div data-modal-root class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div
+      use:modalFocusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-plugin-risk-dialog-title"
+      tabindex="-1"
+      onkeydown={handleDialogKeydown}
+      class="bg-orange-800 rounded-lg shadow-xl max-w-md w-full p-6">
+      <h2 id="risu-plugin-risk-dialog-title" class="text-xl font-bold mb-4 text-textcolor">
         {language.pluginRiskDetectedAlert}
       </h2>
 
@@ -38,7 +57,7 @@
       </ul>
 
       <details class="mb-4 text-gray-200">
-        <summary class="cursor-pointer text-gray-200 mb-2"> Dev Info </summary>
+        <summary tabindex="0" class="cursor-pointer text-gray-200 mb-2"> Dev Info </summary>
 
         {#each pluginAlertModalStore.errors as error}
           <p class="text-gray-200">{error.message}</p>
@@ -47,6 +66,7 @@
 
       <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
         <button
+          type="button"
           class="w-full bg-orange-600 hover:bg-orange-500 text-gray-100 font-semibold py-2 px-4 rounded-sm transition-colors sm:w-auto"
           onclick={() => {
             pluginAlertModalStore.open = false
@@ -56,11 +76,13 @@
         </button>
 
         <button
+          type="button"
+          data-modal-initial-focus
           class="w-full bg-gray-700 hover:bg-gray-600 text-gray-100 font-semibold py-2 px-4 rounded-sm transition-colors sm:w-auto"
-          onclick={() => (pluginAlertModalStore.open = false)}>
+          onclick={closeWithoutInstalling}>
           {language.doNotInstall}
         </button>
       </div>
     </div>
-  </dialog>
+  </div>
 {/if}
