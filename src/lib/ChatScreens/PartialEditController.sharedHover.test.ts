@@ -366,4 +366,27 @@ describe('PartialEditController shared hover handler', () => {
       messageId: 'message-a',
     })
   })
+
+  it('shows only the failure dialog when the rendered block has no source match', async () => {
+    const fixture = createHoverFixture({
+      text: 'rendered-only block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    stubElementFromPoint([fixture])
+    mountController(fixture.bodyRoot, { messageData: 'completely different source' })
+    await settleEffects()
+
+    movePointer(60, 112)
+    await flushHoverFrame()
+    const wrapper = getBlockButtonWrapper()
+    wrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.click()
+    await tick()
+
+    expect(document.querySelectorAll('.partial-match-failed-modal')).toHaveLength(1)
+    expect(document.querySelector('.partial-match-selection-modal')).toBeNull()
+    expect(wrapper.style.display).toBe('none')
+  })
 })

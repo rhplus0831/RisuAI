@@ -452,6 +452,9 @@
 
     if (matchingState.foundMatches.length === 0) {
       showMatchFailedModal = true
+      clearMatchingState()
+      hideBlockButton()
+      hideDragButton()
       return
     }
 
