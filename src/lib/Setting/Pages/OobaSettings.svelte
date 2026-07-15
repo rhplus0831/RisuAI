@@ -144,6 +144,8 @@
       <div class="flex flex-col p-2 rounded-sm border border-selected mt-2 gap-1">
         <div class="p-2">
           <button
+            type="button"
+            aria-label={`${language.add}: ${language.customStopWords}`}
             class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
             onclick={() => {
               const localStopStrings = localStopStringsDraft.value ?? []
@@ -158,6 +160,8 @@
             </div>
             <div>
               <button
+                type="button"
+                aria-label={`${language.remove}: ${language.customStopWords} ${i + 1}`}
                 class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-green-500 w-full"
                 onclick={() => {
                   const localStopStrings = localStopStringsDraft.value ?? []

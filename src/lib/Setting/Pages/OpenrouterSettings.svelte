@@ -76,11 +76,15 @@
       {/each}
       <div class="flex gap-2">
         <button
+          type="button"
+          aria-label={`${language.add}: ${language.openRouterProviderOrder}`}
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
             addProviderEntry('order')
           }}><PlusIcon /></button>
         <button
+          type="button"
+          aria-label={`${language.remove}: ${language.openRouterProviderOrder}`}
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
             removeProviderEntry('order')
@@ -98,11 +102,15 @@
       {/each}
       <div class="flex gap-2">
         <button
+          type="button"
+          aria-label={`${language.add}: ${language.openRouterProviderOnly}`}
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
             addProviderEntry('only')
           }}><PlusIcon /></button>
         <button
+          type="button"
+          aria-label={`${language.remove}: ${language.openRouterProviderOnly}`}
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
             removeProviderEntry('only')
@@ -120,11 +128,15 @@
       {/each}
       <div class="flex gap-2">
         <button
+          type="button"
+          aria-label={`${language.add}: ${language.openRouterProviderIgnore}`}
           class="bg-selected text-textcolor p-2 rounded-md"
           onclick={() => {
             addProviderEntry('ignore')
           }}><PlusIcon /></button>
         <button
+          type="button"
+          aria-label={`${language.remove}: ${language.openRouterProviderIgnore}`}
           class="bg-red-500 text-white p-2 rounded-md"
           onclick={() => {
             removeProviderEntry('ignore')

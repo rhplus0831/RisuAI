@@ -1,13 +1,10 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const customModelMocks = vi.hoisted(() => ({
-  draft: { value: [] as Array<Record<string, any>> },
-}))
-
-vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  createServerBackedSettingDraft: () => customModelMocks.draft,
-}))
+vi.mock('src/ts/server/settingsBridge.svelte', async () => {
+  const { customModelsDraft } = await import('./CustomModelsSettings.testState.svelte')
+  return { createServerBackedSettingDraft: () => customModelsDraft }
+})
 
 vi.mock('src/ts/process/modules', () => ({
   getModuleAssets: vi.fn(() => []),
@@ -22,6 +19,7 @@ vi.mock('src/ts/alert', () => ({
 }))
 
 import CustomModelsSettings from './CustomModelsSettings.svelte'
+import { customModelsDraft } from './CustomModelsSettings.testState.svelte'
 import { LLMFlags } from 'src/ts/model/types'
 import { language } from 'src/lang'
 
@@ -38,8 +36,14 @@ function buttonByText(text: string): HTMLButtonElement {
   return button
 }
 
+function buttonByLabel(label: string): HTMLButtonElement {
+  const button = target.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)
+  if (!button) throw new Error(`Button not found: ${label}`)
+  return button
+}
+
 beforeEach(() => {
-  customModelMocks.draft.value = [
+  customModelsDraft.value = [
     {
       id: 'xcustom:::all-flags',
       name: 'All Flags',
@@ -71,22 +75,42 @@ describe('CustomModelsSettings flags', () => {
       props: { noAccordion: true },
     })
 
-    buttonByText('All Flags').click()
+    const disclosure = buttonByLabel('All Flags')
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    disclosure.click()
     await tick()
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
     buttonByText(language.flags).click()
     await tick()
 
     for (const [name, flag] of Object.entries(LLMFlags)) {
       const button = buttonByText(name)
       expect(button.classList).not.toContain('bg-transparent')
-      expect(customModelMocks.draft.value[0].flags).toContain(flag)
+      expect(button.getAttribute('aria-pressed')).toBe('true')
+      expect(customModelsDraft.value[0].flags).toContain(flag)
     }
 
     const xHighEffort = buttonByText('claudeXHighEffort')
     xHighEffort.click()
-    expect(customModelMocks.draft.value[0].flags).not.toContain(LLMFlags.claudeXHighEffort)
+    await tick()
+    expect(xHighEffort.getAttribute('aria-pressed')).toBe('false')
+    expect(customModelsDraft.value[0].flags).not.toContain(LLMFlags.claudeXHighEffort)
 
     xHighEffort.click()
-    expect(customModelMocks.draft.value[0].flags).toContain(LLMFlags.claudeXHighEffort)
+    await tick()
+    expect(xHighEffort.getAttribute('aria-pressed')).toBe('true')
+    expect(customModelsDraft.value[0].flags).toContain(LLMFlags.claudeXHighEffort)
+  })
+
+  it('names model move, remove, and add actions for their target', () => {
+    component = mount(CustomModelsSettings, {
+      target,
+      props: { noAccordion: true },
+    })
+
+    expect(buttonByText(`${language.moveUp}: All Flags`)).toBeTruthy()
+    expect(buttonByText(`${language.moveDown}: All Flags`)).toBeTruthy()
+    expect(buttonByText(`${language.remove}: All Flags`)).toBeTruthy()
+    expect(buttonByLabel(`${language.add}: ${language.customModels}`).type).toBe('button')
   })
 })

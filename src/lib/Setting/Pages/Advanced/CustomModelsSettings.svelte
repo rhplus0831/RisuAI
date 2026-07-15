@@ -58,6 +58,7 @@
 {#snippet CustomFlagButton(index: number, name: string, flag: LLMFlags)}
   <Button
     className="mt-2"
+    selected={(customModelsDraft.value[index]?.flags ?? []).includes(flag)}
     onclick={(e) => {
       toggleCustomModelFlag(index, flag)
     }}
@@ -70,6 +71,9 @@
   {#each customModelsDraft.value as model, index (model.id)}
     <div class="flex flex-col mt-2">
       <button
+        type="button"
+        aria-label={model.name ?? 'Unnamed'}
+        aria-expanded={openedModels.has(model.id)}
         class="hover:bg-selected px-6 py-2 text-lg rounded-t-md border-selected border flex justify-between items-center"
         class:bg-selected={openedModels.has(model.id)}
         class:rounded-b-md={!openedModels.has(model.id)}
@@ -95,7 +99,8 @@
                 models[index - 1] = temp
               })
             }}>
-            <ArrowUp />
+            <span class="sr-only">{language.moveUp}: {model.name ?? 'Unnamed'}</span>
+            <ArrowUp aria-hidden="true" />
           </Button>
           <Button
             size="sm"
@@ -109,7 +114,8 @@
                 models[index + 1] = temp
               })
             }}>
-            <ArrowDown />
+            <span class="sr-only">{language.moveDown}: {model.name ?? 'Unnamed'}</span>
+            <ArrowDown aria-hidden="true" />
           </Button>
           <Button
             size="sm"
@@ -122,7 +128,8 @@
               openedModels.delete(model.id)
               openedModels = new Set(openedModels)
             }}>
-            <TrashIcon />
+            <span class="sr-only">{language.remove}: {model.name ?? 'Unnamed'}</span>
+            <TrashIcon aria-hidden="true" />
           </Button>
         </div>
       </button>
@@ -225,6 +232,8 @@
   {/each}
   <div class="flex flex-col mt-2">
     <button
+      type="button"
+      aria-label={`${language.add}: ${language.customModels}`}
       class="hover:bg-selected px-6 py-2 text-lg rounded-md border-selected border flex justify-center items-center cursor-pointer"
       onclick={() => {
         updateCustomModels((models) => {
