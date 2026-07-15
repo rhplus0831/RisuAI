@@ -195,6 +195,7 @@
     type RangeResultWithContext,
   } from 'src/ts/parser/partialEdit'
   import type { PartialEditMode, PartialEditSaveDetail } from './partialEditFreshness'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
     messageData: string
@@ -221,12 +222,22 @@
   }>()
 
   const MIN_DRAG_SELECTION_LENGTH = 5
+  const KEYBOARD_EDITABLE_BLOCK_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre'
 
   let isEditing = $state(false)
   let editText = $state('')
   let textareaRef: HTMLTextAreaElement | null = $state(null)
 
   let isConfirmingDelete = $state(false)
+  let modalReturnFocus: HTMLElement | null = null
+  let modalReturnBlock: HTMLElement | null = null
+
+  interface KeyboardBlockAttributes {
+    ariaKeyShortcuts: string | null
+    tabIndex: string | null
+  }
+
+  const keyboardBlockAttributes = new Map<HTMLElement, KeyboardBlockAttributes>()
 
   // Unified matching state: tracks both edit and delete operations.
   type MatchingMode = PartialEditMode | null
@@ -301,12 +312,87 @@
   let isInViewport = $state(false)
   let isBlockActive = $derived(blockEditEnabled && isInViewport)
   let isDragActive = $derived(dragEditEnabled && isInViewport)
+  let isKeyboardEditActive = $derived((blockEditEnabled || dragEditEnabled) && isInViewport)
 
   // Exclude action buttons when checking editable block text.
   function hasTextContent(el: HTMLElement): boolean {
     const clone = el.cloneNode(true) as HTMLElement
     clone.querySelectorAll('button').forEach((btn) => btn.remove())
     return !!clone.textContent?.trim()
+  }
+
+  function actionTargetSummary(text: string): string {
+    const normalized = text.replace(/\s+/g, ' ').trim()
+    return normalized.length > 80 ? `${normalized.slice(0, 80)}…` : normalized
+  }
+
+  function setFloatingActionNames(wrapper: HTMLDivElement, targetText: string): void {
+    const summary = actionTargetSummary(targetText)
+    const editLabel = summary
+      ? `${language.partialEdit.editButtonTooltip}: ${summary}`
+      : language.partialEdit.editButtonTooltip
+    const deleteLabel = summary
+      ? `${language.partialEdit.deleteButtonTooltip}: ${summary}`
+      : language.partialEdit.deleteButtonTooltip
+    const editButton = wrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')
+    const deleteButton = wrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-delete')
+
+    editButton?.setAttribute('aria-label', editLabel)
+    editButton?.setAttribute('title', editLabel)
+    deleteButton?.setAttribute('aria-label', deleteLabel)
+    deleteButton?.setAttribute('title', deleteLabel)
+  }
+
+  function rememberModalReturnFocus(button: HTMLElement): void {
+    modalReturnFocus = button
+    modalReturnBlock = currentHoveredBlock?.isConnected ? currentHoveredBlock : null
+  }
+
+  function revealModalReturnFocus(): void {
+    if (modalReturnBlock?.isConnected && blockButtonWrapper?.contains(modalReturnFocus)) {
+      showBlockButton(modalReturnBlock)
+      return
+    }
+
+    const wrapper = modalReturnFocus?.closest<HTMLElement>('.partial-edit-btn-wrapper')
+    if (wrapper?.isConnected) wrapper.style.display = 'flex'
+  }
+
+  function hasOpenPartialEditModal(): boolean {
+    return showMatchFailedModal || isConfirmingDelete || isEditing || matchingState.mode !== null
+  }
+
+  function restoreModalReturnFocus(): void {
+    const returnFocus = modalReturnFocus
+    const returnBlock = modalReturnBlock
+    modalReturnFocus = null
+    modalReturnBlock = null
+
+    if (returnFocus?.isConnected) {
+      returnFocus.focus()
+    } else if (returnBlock?.isConnected) {
+      returnBlock.focus()
+    }
+  }
+
+  function partialEditModalFocusTrap(node: HTMLElement) {
+    const trap = modalFocusTrap(node)
+
+    return {
+      destroy() {
+        trap.destroy()
+        queueMicrotask(() => {
+          if (!hasOpenPartialEditModal()) restoreModalReturnFocus()
+        })
+      },
+    }
+  }
+
+  function handleModalKeydown(event: KeyboardEvent, close: () => void): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
   }
 
   function createButton(
@@ -319,13 +405,13 @@
     wrapper.className = className
     wrapper.innerHTML = `
             <button type="button" class="partial-edit-btn partial-edit-btn-edit">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/>
                     <path d="m15 5 4 4"/>
                 </svg>
             </button>
             <button type="button" class="partial-edit-btn partial-edit-btn-delete">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M3 6h18"/>
                     <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
                     <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
@@ -335,19 +421,23 @@
             </button>
         `
 
-    const editBtn = wrapper.querySelector('.partial-edit-btn-edit')!
+    const editBtn = wrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')!
+    editBtn.setAttribute('aria-label', language.partialEdit.editButtonTooltip)
     editBtn.setAttribute('title', language.partialEdit.editButtonTooltip)
     editBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       e.preventDefault()
+      rememberModalReturnFocus(editBtn)
       onEdit()
     })
 
-    const deleteBtn = wrapper.querySelector('.partial-edit-btn-delete')!
+    const deleteBtn = wrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-delete')!
+    deleteBtn.setAttribute('aria-label', language.partialEdit.deleteButtonTooltip)
     deleteBtn.setAttribute('title', language.partialEdit.deleteButtonTooltip)
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation()
       e.preventDefault()
+      rememberModalReturnFocus(deleteBtn)
       onDelete()
     })
 
@@ -358,8 +448,11 @@
     return wrapper
   }
 
-  function showBlockButton(block: HTMLElement) {
-    if (currentHoveredBlock === block && blockButtonWrapper?.style.display === 'block') return
+  function showBlockButton(block: HTMLElement, options: { focusEdit?: boolean } = {}) {
+    if (currentHoveredBlock === block && blockButtonWrapper?.style.display === 'flex') {
+      if (options.focusEdit) blockButtonWrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.focus()
+      return
+    }
 
     currentHoveredBlock = block
 
@@ -378,6 +471,8 @@
       document.body.appendChild(blockButtonWrapper)
     }
 
+    setFloatingActionNames(blockButtonWrapper, block.textContent ?? '')
+
     const rect = block.getBoundingClientRect()
     const buttonHeight = 32
     blockButtonWrapper.style.position = 'fixed'
@@ -386,6 +481,7 @@
     blockButtonWrapper.style.display = 'flex'
     blockButtonWrapper.style.gap = '4px'
     blockButtonWrapper.style.zIndex = '1000'
+    if (options.focusEdit) blockButtonWrapper.querySelector<HTMLButtonElement>('.partial-edit-btn-edit')?.focus()
   }
 
   function hideBlockButton() {
@@ -404,6 +500,8 @@
       )
       document.body.appendChild(dragButtonWrapper)
     }
+
+    setFloatingActionNames(dragButtonWrapper, currentDragSelectedText)
 
     // 72px: 2 buttons (32px*2) + gap(4px) + margin
     const buttonTotalWidth = 72
@@ -527,7 +625,13 @@
       matchingState.targetElement.innerHTML = matchingState.originalHTML
     }
 
+    revealModalReturnFocus()
     clearMatchingState()
+  }
+
+  function closeMatchFailed(): void {
+    revealModalReturnFocus()
+    showMatchFailedModal = false
   }
 
   function handleSave() {
@@ -551,6 +655,7 @@
   }
 
   function closeEdit() {
+    revealModalReturnFocus()
     isEditing = false
     editText = ''
     clearMatchingState()
@@ -581,14 +686,14 @@
   }
 
   function closeDeleteConfirm() {
+    revealModalReturnFocus()
     isConfirmingDelete = false
     clearMatchingState()
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      handleCancel()
-    } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+  function handleEditTextareaKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault()
       handleSave()
     }
   }
@@ -616,6 +721,48 @@
     return mouseX >= rect.left && mouseX <= rect.right && mouseY >= extendedTop && mouseY < rect.top
   }
 
+  function keyboardEditableBlocks(root: HTMLElement): HTMLElement[] {
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>(KEYBOARD_EDITABLE_BLOCK_SELECTOR)).filter(
+      (block) => hasTextContent(block) && !block.closest('[data-partial-edit-ui]'),
+    )
+
+    return candidates.filter((block) => !block.querySelector(KEYBOARD_EDITABLE_BLOCK_SELECTOR))
+  }
+
+  function prepareKeyboardEditableBlocks(root: HTMLElement): void {
+    for (const block of keyboardEditableBlocks(root)) {
+      if (!keyboardBlockAttributes.has(block)) {
+        keyboardBlockAttributes.set(block, {
+          ariaKeyShortcuts: block.getAttribute('aria-keyshortcuts'),
+          tabIndex: block.getAttribute('tabindex'),
+        })
+      }
+      block.setAttribute('data-partial-edit-keyboard-block', '')
+      block.setAttribute('tabindex', '0')
+      const currentShortcuts = block.getAttribute('aria-keyshortcuts')?.split(/\s+/).filter(Boolean) ?? []
+      if (!currentShortcuts.includes('Enter')) currentShortcuts.push('Enter')
+      block.setAttribute('aria-keyshortcuts', currentShortcuts.join(' '))
+    }
+  }
+
+  function restoreKeyboardEditableBlocks(): void {
+    for (const [block, attributes] of keyboardBlockAttributes) {
+      if (attributes.tabIndex === null) block.removeAttribute('tabindex')
+      else block.setAttribute('tabindex', attributes.tabIndex)
+
+      if (attributes.ariaKeyShortcuts === null) block.removeAttribute('aria-keyshortcuts')
+      else block.setAttribute('aria-keyshortcuts', attributes.ariaKeyShortcuts)
+      block.removeAttribute('data-partial-edit-keyboard-block')
+    }
+    keyboardBlockAttributes.clear()
+  }
+
+  function keyboardBlockForEvent(root: HTMLElement, event: Event): HTMLElement | null {
+    if (!(event.target instanceof HTMLElement)) return null
+    const block = event.target.closest<HTMLElement>('[data-partial-edit-keyboard-block]')
+    return block && root.contains(block) ? block : null
+  }
+
   $effect(() => {
     if (!bodyRoot || (!blockEditEnabled && !dragEditEnabled)) return
 
@@ -638,6 +785,41 @@
     return () => {
       observer.disconnect()
       isInViewport = false
+    }
+  })
+
+  $effect(() => {
+    const root = bodyRoot
+    if (!root || !isKeyboardEditActive) return
+
+    prepareKeyboardEditableBlocks(root)
+    const observer = new MutationObserver(() => prepareKeyboardEditableBlocks(root))
+    observer.observe(root, { childList: true, subtree: true })
+
+    const handleFocusIn = (event: FocusEvent) => {
+      if (hasOpenPartialEditModal()) return
+      const block = keyboardBlockForEvent(root, event)
+      if (!block || event.target !== block) return
+      showBlockButton(block)
+    }
+
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const block = keyboardBlockForEvent(root, event)
+      if (!block || event.target !== block) return
+      event.preventDefault()
+      event.stopPropagation()
+      showBlockButton(block, { focusEdit: true })
+    }
+
+    root.addEventListener('focusin', handleFocusIn)
+    root.addEventListener('keydown', handleKeydown)
+
+    return () => {
+      observer.disconnect()
+      root.removeEventListener('focusin', handleFocusIn)
+      root.removeEventListener('keydown', handleKeydown)
+      restoreKeyboardEditableBlocks()
     }
   })
 
@@ -755,25 +937,36 @@
   })
 </script>
 
-{#snippet MatchSelectionModal(mode: MatchingMode, matches: RangeResultWithContext[], title: string)}
+{#snippet MatchSelectionModal(mode: PartialEditMode, matches: RangeResultWithContext[], title: string)}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
+    data-modal-root
+    data-partial-edit-ui
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) cancelMatchSelection()
     }}>
-    <div class="partial-match-selection-modal">
+    <div
+      use:partialEditModalFocusTrap
+      class="partial-match-selection-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="partial-{mode}-match-selection-title-{chatIndex}"
+      tabindex="-1"
+      onkeydown={(event) => handleModalKeydown(event, cancelMatchSelection)}>
       <div class="match-selection-header">
-        <span class="match-selection-title">{title}</span>
+        <h2 id="partial-{mode}-match-selection-title-{chatIndex}" class="match-selection-title">{title}</h2>
         <span class="match-count">{matches.length} {language.partialEdit.matchesFound}</span>
       </div>
       <div class="match-list">
         {#each matches as match, i}
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <div class="match-item" onclick={() => selectMatchAtIndex(i)}>
-            <div class="match-meta">
+          <button
+            type="button"
+            class="match-item"
+            data-modal-initial-focus={i === 0 ? '' : undefined}
+            onclick={() => selectMatchAtIndex(i)}>
+            <span class="match-meta">
               <span class="match-line">{language.partialEdit.lineNumber(match.lineNumber)}</span>
               <span
                 class="match-confidence"
@@ -783,22 +976,22 @@
                 {(match.confidence * 100).toFixed(0)}%
               </span>
               <span class="match-method">{match.method}</span>
-            </div>
+            </span>
             {#if match.contextBefore}
-              <div class="match-context-before">{match.contextBefore}</div>
+              <span class="match-context-before">{match.contextBefore}</span>
             {/if}
-            <div class="match-text">
+            <span class="match-text">
               {matchingState.sourceData.slice(match.start, match.end).slice(0, 150)}{matchingState.sourceData.slice(
                 match.start,
                 match.end,
               ).length > 150
                 ? '...'
                 : ''}
-            </div>
+            </span>
             {#if match.contextAfter}
-              <div class="match-context-after">{match.contextAfter}</div>
+              <span class="match-context-after">{match.contextAfter}</span>
             {/if}
-          </div>
+          </button>
         {/each}
       </div>
       <div class="partial-edit-buttons">
@@ -815,17 +1008,28 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
+    data-modal-root
+    data-partial-edit-ui
     class="partial-edit-overlay"
     onclick={(e) => {
-      if (e.target === e.currentTarget) showMatchFailedModal = false
+      if (e.target === e.currentTarget) closeMatchFailed()
     }}>
-    <div class="partial-match-failed-modal">
+    <div
+      use:partialEditModalFocusTrap
+      class="partial-match-failed-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="partial-match-failed-title-{chatIndex}"
+      tabindex="-1"
+      onkeydown={(event) => handleModalKeydown(event, closeMatchFailed)}>
       <div class="partial-match-failed-header">
-        <span class="partial-match-failed-title">{language.partialEdit.matchFailedTitle}</span>
+        <h2 id="partial-match-failed-title-{chatIndex}" class="partial-match-failed-title">
+          {language.partialEdit.matchFailedTitle}
+        </h2>
       </div>
       <p class="partial-match-failed-message">{language.partialEdit.matchFailedMessage}</p>
       <div class="partial-edit-buttons">
-        <button type="button" class="partial-edit-save-btn" onclick={() => (showMatchFailedModal = false)}>
+        <button type="button" data-modal-initial-focus class="partial-edit-save-btn" onclick={closeMatchFailed}>
           <CheckIcon size={14} />
           <span>{language.confirm}</span>
         </button>
@@ -838,13 +1042,24 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
+    data-modal-root
+    data-partial-edit-ui
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) handleCancelDelete()
     }}>
-    <div class="partial-delete-modal">
+    <div
+      use:partialEditModalFocusTrap
+      class="partial-delete-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="partial-delete-title-{chatIndex}"
+      tabindex="-1"
+      onkeydown={(event) => handleModalKeydown(event, handleCancelDelete)}>
       <div class="partial-delete-header">
-        <span class="partial-delete-title">{language.partialEdit.deleteModalTitle}</span>
+        <h2 id="partial-delete-title-{chatIndex}" class="partial-delete-title">
+          {language.partialEdit.deleteModalTitle}
+        </h2>
         <div class="partial-match-meta">
           <span class="partial-match-hint">
             {language.partialEdit.matchFound(matchingState.selectedRange.method)}
@@ -872,7 +1087,7 @@
           <CheckIcon size={14} />
           <span>{language.partialEdit.deleteYes}</span>
         </button>
-        <button type="button" class="partial-edit-cancel-btn" onclick={handleCancelDelete}>
+        <button type="button" data-modal-initial-focus class="partial-edit-cancel-btn" onclick={handleCancelDelete}>
           <XIcon size={14} />
           <span>{language.partialEdit.deleteNo}</span>
         </button>
@@ -891,13 +1106,24 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
+    data-modal-root
+    data-partial-edit-ui
     class="partial-edit-overlay"
     onclick={(e) => {
       if (e.target === e.currentTarget) handleCancel()
     }}>
-    <div class="partial-edit-modal">
+    <div
+      use:partialEditModalFocusTrap
+      class="partial-edit-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="partial-edit-title-{chatIndex}"
+      tabindex="-1"
+      onkeydown={(event) => handleModalKeydown(event, handleCancel)}>
       <div class="partial-edit-header">
-        <span class="partial-edit-title">{language.partialEdit.editModalTitle}</span>
+        <h2 id="partial-edit-title-{chatIndex}" class="partial-edit-title">
+          {language.partialEdit.editModalTitle}
+        </h2>
         <div class="partial-match-meta">
           <span class="partial-match-hint">
             {language.partialEdit.matchFound(matchingState.selectedRange.method)}
@@ -910,8 +1136,10 @@
       <textarea
         bind:this={textareaRef}
         bind:value={editText}
+        data-modal-initial-focus
         class="partial-edit-textarea"
-        onkeydown={handleKeydown}
+        aria-label={language.partialEdit.editModalTitle}
+        onkeydown={handleEditTextareaKeydown}
         oninput={adjustHeight}
         style:font-size="{0.875 * (getDatabase().zoomsize / 100)}rem"
         style:line-height="{(getDatabase().lineHeight ?? 1.25) * (getDatabase().zoomsize / 100)}rem"></textarea>
@@ -970,13 +1198,28 @@
     color: #ef4444;
   }
 
+  :global([data-partial-edit-keyboard-block]:focus-visible) {
+    outline: 2px solid #3b82f6;
+    outline-offset: 3px;
+  }
+
+  .partial-match-failed-modal,
+  .partial-delete-modal,
+  .partial-edit-modal,
+  .partial-match-selection-modal {
+    overflow-wrap: anywhere;
+  }
+
   .partial-match-failed-modal {
     background: var(--risu-theme-bgcolor, #fff);
     border-radius: 12px;
     padding: 20px;
     width: 50vw;
-    max-width: 500px;
-    min-width: 320px;
+    max-width: min(500px, calc(100vw - 24px));
+    min-width: min(320px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -993,6 +1236,7 @@
     font-weight: 600;
     font-size: 16px;
     color: var(--risu-theme-textcolor, #000);
+    margin: 0;
   }
 
   .partial-match-failed-message {
@@ -1007,8 +1251,11 @@
     border-radius: 12px;
     padding: 20px;
     width: 50vw;
-    max-width: 1600px;
-    min-width: 400px;
+    max-width: min(1600px, calc(100vw - 24px));
+    min-width: min(400px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -1019,12 +1266,15 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .partial-delete-title {
     font-weight: 600;
     font-size: 16px;
     color: var(--risu-theme-textcolor, #000);
+    margin: 0;
   }
 
   .partial-delete-message {
@@ -1074,6 +1324,9 @@
     align-items: center;
     justify-content: center;
     z-index: 10000;
+    padding: 12px;
+    overflow-y: auto;
+    box-sizing: border-box;
   }
 
   .partial-edit-modal {
@@ -1081,9 +1334,11 @@
     border-radius: 12px;
     padding: 20px;
     width: 50vw;
-    max-width: 1600px;
-    min-width: 400px;
-    max-height: 80vh;
+    max-width: min(1600px, calc(100vw - 24px));
+    min-width: min(400px, calc(100vw - 24px));
+    max-height: min(80vh, calc(100dvh - 24px));
+    overflow-y: auto;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -1094,12 +1349,15 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .partial-edit-title {
     font-weight: 600;
     font-size: 16px;
     color: var(--risu-theme-textcolor, #000);
+    margin: 0;
   }
 
   .partial-match-meta {
@@ -1150,6 +1408,7 @@
     display: flex;
     gap: 8px;
     justify-content: flex-end;
+    flex-wrap: wrap;
   }
 
   .partial-edit-save-btn,
@@ -1189,9 +1448,11 @@
     border-radius: 12px;
     padding: 20px;
     width: 50vw;
-    max-width: 1200px;
-    min-width: 400px;
-    max-height: 80vh;
+    max-width: min(1200px, calc(100vw - 24px));
+    min-width: min(400px, calc(100vw - 24px));
+    max-height: min(80vh, calc(100dvh - 24px));
+    overflow-y: auto;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -1202,6 +1463,8 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--risu-theme-darkborderc, #ddd);
   }
@@ -1210,6 +1473,7 @@
     font-weight: 600;
     font-size: 16px;
     color: var(--risu-theme-textcolor, #000);
+    margin: 0;
   }
 
   .match-count {
@@ -1240,6 +1504,10 @@
     background: var(--risu-theme-darkbg, #f9f9f9);
     cursor: pointer;
     transition: all 0.15s ease;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    text-align: left;
   }
 
   .match-item:hover {

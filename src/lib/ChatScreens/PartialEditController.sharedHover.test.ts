@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 
 vi.mock('src/ts/storage/database.svelte', () => ({
   getDatabase: () => ({ lineHeight: 1.25, zoomsize: 100 }),
@@ -136,6 +137,8 @@ function mountController(
     chatIndex?: number
     chatId?: string
     messageId?: string
+    blockEditEnabled?: boolean
+    dragEditEnabled?: boolean
     events?: Record<string, (event: CustomEvent<PartialEditSaveDetail>) => void>
   } = {},
 ): MountedComponent {
@@ -149,8 +152,8 @@ function mountController(
       chatId: options.chatId,
       messageId: options.messageId,
       bodyRoot,
-      blockEditEnabled: true,
-      dragEditEnabled: false,
+      blockEditEnabled: options.blockEditEnabled ?? true,
+      dragEditEnabled: options.dragEditEnabled ?? false,
     },
     events: options.events,
   })
@@ -192,6 +195,18 @@ function getBlockButtonWrapper(): HTMLDivElement {
   const wrapper = document.querySelector('.partial-edit-btn-wrapper') as HTMLDivElement | null
   expect(wrapper).not.toBeNull()
   return wrapper!
+}
+
+function pressKey(element: HTMLElement, key: string, options: KeyboardEventInit = {}): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key, ...options })
+  element.dispatchEvent(event)
+  return event
+}
+
+function getFloatingAction(action: 'delete' | 'edit'): HTMLButtonElement {
+  const button = getBlockButtonWrapper().querySelector<HTMLButtonElement>(`.partial-edit-btn-${action}`)
+  expect(button).not.toBeNull()
+  return button!
 }
 
 beforeEach(() => {
@@ -388,5 +403,216 @@ describe('PartialEditController shared hover handler', () => {
     expect(document.querySelectorAll('.partial-match-failed-modal')).toHaveLength(1)
     expect(document.querySelector('.partial-match-selection-modal')).toBeNull()
     expect(wrapper.style.display).toBe('none')
+  })
+})
+
+describe('PartialEditController keyboard and modal accessibility', () => {
+  it('offers keyboard block actions in drag-only mode and restores focus after Escape', async () => {
+    const fixture = createHoverFixture({
+      text: 'keyboard target block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    const controller = mountController(fixture.bodyRoot, {
+      messageData: 'alpha keyboard target block omega',
+      blockEditEnabled: false,
+      dragEditEnabled: true,
+    })
+    await settleEffects()
+
+    expect(fixture.block.getAttribute('tabindex')).toBe('0')
+    expect(fixture.block.getAttribute('aria-keyshortcuts')).toContain('Enter')
+
+    fixture.block.focus()
+    const wrapper = getBlockButtonWrapper()
+    expect(wrapper.style.display).toBe('flex')
+
+    const enter = pressKey(fixture.block, 'Enter')
+    const editAction = getFloatingAction('edit')
+    expect(enter.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(editAction)
+    expect(editAction.getAttribute('aria-label')).toContain('keyboard target block')
+
+    editAction.click()
+    await settleEffects()
+
+    const dialog = document.querySelector<HTMLElement>('.partial-edit-modal[role="dialog"]')
+    const textarea = dialog?.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(dialog?.getAttribute('aria-modal')).toBe('true')
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('partial-edit-title-0')
+    expect(textarea?.getAttribute('aria-label')).toBe('Partial Edit')
+    expect(fixture.bodyRoot.inert).toBe(true)
+    expect(document.activeElement).toBe(textarea)
+
+    const cancel = dialog?.querySelector<HTMLButtonElement>('.partial-edit-cancel-btn')
+    cancel?.focus()
+    const tab = pressKey(cancel!, 'Tab')
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(textarea)
+
+    const shiftTab = pressKey(textarea!, 'Tab', { shiftKey: true })
+    expect(shiftTab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(cancel)
+
+    fixture.block.focus()
+    expect(document.activeElement).toBe(textarea)
+
+    const escape = pressKey(textarea!, 'Escape')
+    expect(escape.defaultPrevented).toBe(true)
+    await settleEffects()
+
+    expect(document.querySelector('.partial-edit-modal')).toBeNull()
+    expect(fixture.bodyRoot.inert).toBe(false)
+    expect(wrapper.style.display).toBe('flex')
+    expect(document.activeElement).toBe(editAction)
+
+    unmountController(controller)
+    expect(fixture.block.hasAttribute('tabindex')).toBe(false)
+    expect(fixture.block.hasAttribute('aria-keyshortcuts')).toBe(false)
+  })
+
+  it('renders ambiguous matches as focusable native choices and keeps the original opener across dialog transitions', async () => {
+    const fixture = createHoverFixture({
+      text: 'duplicate target',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    mountController(fixture.bodyRoot, {
+      messageData: 'duplicate target\nbetween\nduplicate target',
+    })
+    await settleEffects()
+
+    fixture.block.focus()
+    pressKey(fixture.block, 'Enter')
+    const editAction = getFloatingAction('edit')
+    editAction.click()
+    await settleEffects()
+
+    const matchDialog = document.querySelector<HTMLElement>('.partial-match-selection-modal[role="dialog"]')
+    const matchChoices = Array.from(matchDialog?.querySelectorAll<HTMLButtonElement>('button.match-item') ?? [])
+    expect(matchDialog?.getAttribute('aria-modal')).toBe('true')
+    expect(matchChoices.length).toBeGreaterThan(1)
+    expect(matchChoices.every((choice) => choice.tagName === 'BUTTON')).toBe(true)
+    expect(matchChoices.every((choice) => choice.textContent?.includes('duplicate target'))).toBe(true)
+    expect(document.activeElement).toBe(matchChoices[0])
+
+    matchChoices[1].click()
+    await settleEffects()
+
+    const editDialog = document.querySelector<HTMLElement>('.partial-edit-modal[role="dialog"]')
+    const textarea = editDialog?.querySelector<HTMLTextAreaElement>('.partial-edit-textarea')
+    expect(editDialog).not.toBeNull()
+    expect(document.activeElement).toBe(textarea)
+
+    pressKey(textarea!, 'Escape')
+    await settleEffects()
+
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(editAction)
+  })
+
+  it('gives delete and match-failure dialogs owned Escape handling and safe initial focus', async () => {
+    const deleteFixture = createHoverFixture({
+      text: 'delete target block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    const deleteController = mountController(deleteFixture.bodyRoot, {
+      messageData: 'alpha delete target block omega',
+    })
+    await settleEffects()
+
+    deleteFixture.block.focus()
+    pressKey(deleteFixture.block, 'Enter')
+    const deleteAction = getFloatingAction('delete')
+    deleteAction.click()
+    await settleEffects()
+
+    const deleteDialog = document.querySelector<HTMLElement>('.partial-delete-modal[role="dialog"]')
+    const safeCancel = deleteDialog?.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    expect(deleteDialog?.getAttribute('aria-labelledby')).toBe('partial-delete-title-0')
+    expect(safeCancel?.textContent).toContain('No')
+    expect(document.activeElement).toBe(safeCancel)
+
+    pressKey(safeCancel!, 'Escape')
+    await settleEffects()
+    expect(document.querySelector('.partial-delete-modal')).toBeNull()
+    expect(document.activeElement).toBe(deleteAction)
+    unmountController(deleteController)
+
+    const failureFixture = createHoverFixture({
+      text: 'rendered-only keyboard block',
+      left: 40,
+      top: 180,
+      width: 180,
+      height: 48,
+    })
+    mountController(failureFixture.bodyRoot, { messageData: 'different source text' })
+    await settleEffects()
+
+    failureFixture.block.focus()
+    pressKey(failureFixture.block, 'Enter')
+    const failureEditAction = getFloatingAction('edit')
+    failureEditAction.click()
+    await settleEffects()
+
+    const failureDialog = document.querySelector<HTMLElement>('.partial-match-failed-modal[role="dialog"]')
+    const confirm = failureDialog?.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    expect(failureDialog?.getAttribute('aria-labelledby')).toBe('partial-match-failed-title-0')
+    expect(document.activeElement).toBe(confirm)
+
+    pressKey(confirm!, 'Escape')
+    await settleEffects()
+    expect(document.querySelector('.partial-match-failed-modal')).toBeNull()
+    expect(document.activeElement).toBe(failureEditAction)
+  })
+
+  it('caps every dialog to the padded viewport instead of enforcing a 400px mobile minimum', async () => {
+    const fixture = createHoverFixture({
+      text: 'responsive target block',
+      left: 40,
+      top: 100,
+      width: 180,
+      height: 48,
+    })
+    mountController(fixture.bodyRoot)
+    await settleEffects()
+
+    const componentSource = readFileSync('src/lib/ChatScreens/PartialEditController.svelte', 'utf8')
+    const declarationsFor = (selector: string): string => {
+      const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const matches = Array.from(componentSource.matchAll(new RegExp(`${escapedSelector}\\s*\\{([^}]+)\\}`, 'g')))
+      const responsiveDeclarations = matches
+        .map((match) => match[1])
+        .find((declarations) => declarations.includes('min-width'))
+      expect(responsiveDeclarations, `${selector} responsive CSS rule`).toBeTruthy()
+      return responsiveDeclarations!
+    }
+
+    const desktopMinimums = new Map([
+      ['.partial-match-failed-modal', '320px'],
+      ['.partial-delete-modal', '400px'],
+      ['.partial-edit-modal', '400px'],
+      ['.partial-match-selection-modal', '400px'],
+    ])
+
+    for (const [selector, desktopMinimum] of desktopMinimums) {
+      const declarations = declarationsFor(selector)
+      expect(declarations).toContain(`min-width: min(${desktopMinimum}, calc(100vw - 24px));`)
+      expect(declarations).toMatch(/max-width: min\([^;]+calc\(100vw - 24px\)\);/)
+      expect(declarations).toContain('box-sizing: border-box;')
+    }
+
+    for (const viewportWidth of [320, 360]) {
+      const availableWidth = viewportWidth - 24
+      expect(Math.min(400, availableWidth)).toBe(availableWidth)
+      expect(availableWidth).toBeLessThan(viewportWidth)
+    }
   })
 })
