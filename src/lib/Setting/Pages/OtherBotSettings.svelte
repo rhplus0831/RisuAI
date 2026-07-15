@@ -249,7 +249,7 @@
             supportsLoras: supportsLoras,
           }
         })
-        .sort((a, b) => a.name.localeCompare(b.model_id))
+        .sort((a, b) => a.name.localeCompare(b.name) || a.model_id.localeCompare(b.model_id))
 
       wavespeedModels = filteredModels
       alertNormal(`Successfully loaded ${filteredModels.length} models`)

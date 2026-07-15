@@ -200,6 +200,51 @@ describe('OtherBotSettings WaveSpeed LoRAs', () => {
       { path: 'https://example.com/second-lora.safetensors', scale: 1.4 },
     ])
   })
+
+  it('orders fetched models by display name instead of unrelated model ids', async () => {
+    otherBotMocks.globalFetch.mockResolvedValue({
+      ok: true,
+      data: {
+        code: 200,
+        data: [
+          {
+            type: 'text-to-image',
+            model_id: 'aaa-id',
+            name: 'Zulu Model',
+            base_price: 0.02,
+            api_schema: { api_schemas: [] },
+          },
+          {
+            type: 'text-to-image',
+            model_id: 'zzz-id',
+            name: 'Alpha Model',
+            base_price: 0.01,
+            api_schema: { api_schemas: [] },
+          },
+        ],
+      },
+    })
+    component = mount(OtherBotSettings, { target })
+    await tick()
+
+    buttonNamed(language.imageGeneration).click()
+    await tick()
+    buttonNamed('Refresh Models').click()
+
+    let modelSelect: HTMLSelectElement | undefined
+    await vi.waitFor(() => {
+      modelSelect = Array.from(target.querySelectorAll('select')).find((select) =>
+        Array.from(select.options).some((option) => option.value === 'aaa-id'),
+      )
+      expect(modelSelect).toBeTruthy()
+    })
+
+    expect(
+      Array.from(modelSelect!.options)
+        .map((option) => option.value)
+        .filter(Boolean),
+    ).toEqual(['zzz-id', 'aaa-id'])
+  })
 })
 
 describe('OtherBotSettings Hypa preset import', () => {
