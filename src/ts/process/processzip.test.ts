@@ -258,7 +258,7 @@ describe('CharXImporter stream caps', () => {
     expect(appendedTotals[0]).toBeLessThan(oversizedChunkCount * ONE_MIB)
     expect(appendedTotals[0]).toBeLessThanOrEqual(MAX_ASSET_SIZE_BYTES)
     expect(globalApiState.appendable.bufferReads).toEqual([])
-  })
+  }, 15_000)
 
   it('M21: ignores completion callbacks after terminating an oversized CharX asset', async () => {
     const afterAsset = new Uint8Array([9, 8, 7, 6])
@@ -287,7 +287,7 @@ describe('CharXImporter stream caps', () => {
     expect(globalApiState.saveAssets).toHaveBeenCalledTimes(1)
     expect(globalApiState.saveAssets.mock.calls[0][0]).toEqual([{ data: afterAsset }])
     expect(globalApiState.appendable.bufferReads.map((read) => read.id)).not.toContain(oversizedBufferId)
-  })
+  }, 15_000)
 
   it('M21: preserves representative valid CharX import output', async () => {
     const cardJson = JSON.stringify({

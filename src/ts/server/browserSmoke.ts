@@ -6,6 +6,7 @@ import { activeWriterSessionHeader } from './activeWriterSession'
 import { hydrateActiveChatFully } from './chatMessageHydration.svelte'
 import { patchRuntimeSettings, runServerCommand, type ServerCommandResult } from './commands'
 import { getNodeServerProxyAuth } from '../storage/fastifyStorage'
+import { alertNormal } from '../alert'
 
 declare global {
   interface Window {
@@ -23,6 +24,7 @@ declare global {
       refreshActiveChatMessages: () => Promise<void>
       swipeRerollBack: () => Promise<void>
       swipeRerollForward: () => Promise<void>
+      showAlert: (message: string) => void
     }
   }
 }
@@ -57,6 +59,7 @@ export function installFastifyBrowserSmokeHook() {
     refreshActiveChatMessages: () => hydrateActiveChatFully({ force: true }),
     swipeRerollBack: () => unReroll(),
     swipeRerollForward: () => reroll({ sendChatMain: async () => {}, closeMenu: () => {} }),
+    showAlert: (message) => alertNormal(message),
   }
 }
 

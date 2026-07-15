@@ -9,11 +9,6 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       svelte({
         preprocess: vitePreprocess(),
-        onwarn: (warning, handler) => {
-          // disable a11y warnings
-          if (warning.code.startsWith('a11y-')) return
-          handler(warning)
-        },
       }),
       tailwindcss(),
       wasm(),

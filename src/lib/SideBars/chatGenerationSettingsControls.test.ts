@@ -214,10 +214,7 @@ function stubDeferredFailedGenerationSettingsFetch(): {
 }
 
 async function waitForFetchCount(calls: CapturedFetch[], expected: number): Promise<void> {
-  for (let attempt = 0; attempt < 20 && calls.length < expected; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-  expect(calls).toHaveLength(expected)
+  await vi.waitFor(() => expect(calls).toHaveLength(expected), { timeout: 2_000 })
 }
 
 function generationSettingsSaves(calls: CapturedFetch[]): CapturedFetch[] {
@@ -225,10 +222,9 @@ function generationSettingsSaves(calls: CapturedFetch[]): CapturedFetch[] {
 }
 
 async function waitForGenerationSettingsSaveCount(calls: CapturedFetch[], expected: number): Promise<void> {
-  for (let attempt = 0; attempt < 20 && generationSettingsSaves(calls).length < expected; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-  expect(generationSettingsSaves(calls).length).toBeGreaterThanOrEqual(expected)
+  await vi.waitFor(() => expect(generationSettingsSaves(calls).length).toBeGreaterThanOrEqual(expected), {
+    timeout: 2_000,
+  })
 }
 
 function seedDb(): void {
@@ -490,11 +486,16 @@ beforeEach(() => {
   seedDb()
 })
 
-afterEach(() => {
+afterEach(async () => {
   if (component) {
-    unmount(component)
+    await unmount(component)
     component = undefined
   }
+  // Click handlers persist/refresh asynchronously after the first command
+  // response. Drain that work while this test's fetch stub and resource state
+  // are still installed so it cannot mutate the next test's DOM or call log.
+  await flushAsyncWork()
+  await flushAsyncWork()
   closePresetListModal()
   closePersonaListModal()
   target.remove()
@@ -1544,7 +1545,7 @@ describe('sidebar chat generation settings controls', () => {
     alertSpies.alertConfirm.mockResolvedValueOnce(true)
     togglePresetButton(1).click()
     await tick()
-    await flushAsyncWork()
+    await waitForGenerationSettingsSaveCount(calls, 1)
 
     expect(alertSpies.alertConfirm).toHaveBeenCalledWith('Apply these saved toggles to the current chat?')
     expect(activeChat().generationSettings?.sidebarToggles).toMatchObject({

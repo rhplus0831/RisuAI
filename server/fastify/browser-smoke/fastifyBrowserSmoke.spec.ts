@@ -28,6 +28,8 @@ declare global {
       activeWriterHeaders: () => Promise<Record<string, string>>
       getDatabaseSnapshot: () => Record<string, unknown>
       patchRuntimeSettings: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>
+      selectCharacter: (index: number) => void
+      showAlert: (message: string) => void
       waitForLoaded: () => Promise<void>
     }
   }
@@ -298,6 +300,58 @@ test('Fastify-served browser loads bootstrap, subscribes to events, and refreshe
       ),
     )
     .toEqual([])
+})
+
+test('core chat controls and blocking alerts remain accessible across responsive viewports', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('tos4', 'true'))
+
+  for (const viewport of [
+    { name: 'desktop', width: 1280, height: 800 },
+    { name: 'mobile', width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport)
+    await page.goto(harness.baseUrl)
+    await expect.poll(() => page.evaluate(() => Boolean(window.__RISU_FASTIFY_BROWSER_SMOKE__))).toBe(true)
+    await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.waitForLoaded())
+    await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.selectCharacter(0))
+
+    const chatRow = page.locator('button[data-risu-chat-id="chat-smoke"]').first()
+    const mobileRecentChat = page.getByRole('button', { name: /Open most recent chat Smoke Chat/ })
+    await expect.poll(async () => (await chatRow.isVisible()) || (await mobileRecentChat.isVisible())).toBe(true)
+    if (await chatRow.isVisible()) {
+      await chatRow.click()
+    } else {
+      await mobileRecentChat.click()
+    }
+
+    const composer = page.getByTestId('default-chat-composer')
+    await expect(composer).toBeVisible()
+    await expect(composer).toHaveAccessibleName(/.+/)
+    await expect(page.getByTestId('default-chat-send-button')).toHaveAccessibleName(/.+/)
+    await expect(page.getByTestId('default-chat-menu-button')).toHaveAccessibleName(/.+/)
+    await expect(page.locator('button button')).toHaveCount(0)
+
+    await composer.focus()
+    await page.evaluate(() => window.__RISU_FASTIFY_BROWSER_SMOKE__!.showAlert('Accessibility smoke alert'))
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog).toContainText('Accessibility smoke alert')
+    await expect.poll(() => dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true)
+    await page.keyboard.press('Tab')
+    await expect.poll(() => dialog.evaluate((node) => node.contains(document.activeElement))).toBe(true)
+    await expect(page).toHaveScreenshot(`blocking-alert-${viewport.name}.png`, {
+      animations: 'disabled',
+      caret: 'hide',
+    })
+    await page.getByRole('button', { name: 'OK' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(composer).toBeFocused()
+
+    await expect(page).toHaveScreenshot(`core-chat-${viewport.name}.png`, {
+      animations: 'disabled',
+      caret: 'hide',
+    })
+  }
 })
 
 async function startHarness(): Promise<Harness> {
