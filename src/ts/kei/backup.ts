@@ -63,7 +63,7 @@ export async function autoServerBackup() {
             requiresFullEncoderReload.state = true
             alertNormal('Successfully restored!')
           } else {
-            alertNormal('Error: ' + res.text())
+            alertNormal('Error: ' + (await res.text()))
           }
         }
       }
@@ -73,7 +73,7 @@ export async function autoServerBackup() {
       'You need to activate Risu-Kei in your account, or host your Risu-Kei server from github to use this feature.',
     )
   } else {
-    alertNormal('Error: ' + res.text())
+    alertNormal('Error: ' + (await res.text()))
   }
 }
 
