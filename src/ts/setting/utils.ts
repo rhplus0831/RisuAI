@@ -80,6 +80,10 @@ type DeferredSettingTarget =
 
 interface DeferredSettingEdit {
   path: string[]
+  runtimeEffect?: {
+    ctx: SettingContext
+    item: SettingItem
+  }
   value: unknown
 }
 
@@ -168,6 +172,8 @@ export function setDeferredSettingValue(
       previousRoot,
       deferredSettingPath(item),
       newValue,
+      item,
+      ctx,
       optimisticProjectionEpochs,
       options.delayMs ?? DEFERRED_SETTING_INPUT_DELAY_MS,
     ),
@@ -258,6 +264,8 @@ function queueDeferredSettingWrite(
   previousRoot: unknown,
   path: string[],
   value: unknown,
+  item: SettingItem,
+  ctx: SettingContext,
   optimisticProjectionEpochs: SettingsGroupProjectionEpochs | undefined,
   delayMs: number,
 ): boolean {
@@ -267,7 +275,11 @@ function queueDeferredSettingWrite(
   const edits = existing?.edits ?? new Map<string, DeferredSettingEdit>()
   const editKey = path.join('\u0000')
   if (path.length === 0) edits.clear()
-  edits.set(editKey, { path, value: cloneJsonValue(value) })
+  edits.set(editKey, {
+    path,
+    runtimeEffect: item.onChange ? { ctx, item } : undefined,
+    value: cloneJsonValue(value),
+  })
 
   let desiredRoot = cloneJsonValue((getDatabase() as unknown as Record<string, unknown>)[target.rootKey])
   for (const edit of edits.values()) {
@@ -349,6 +361,7 @@ function rollbackDeferredServerSetting(
 ): void {
   const currentRoot = (getDatabase() as unknown as Record<string, unknown>)[target.rootKey]
   let restoredRoot = cloneJsonValue(currentRoot)
+  const restoredRuntimeEffects: NonNullable<DeferredSettingEdit['runtimeEffect']>[] = []
   let changed = false
 
   for (const edit of edits.values()) {
@@ -357,6 +370,7 @@ function rollbackDeferredServerSetting(
     if (snapshotJson(currentValue) !== snapshotJson(attemptedValue)) continue
     const previousValue = valueAtDeferredSettingPath(previousRoot, edit.path)
     restoredRoot = applyDeferredSettingEdit(restoredRoot, { path: edit.path, value: previousValue })
+    if (edit.runtimeEffect) restoredRuntimeEffects.push(edit.runtimeEffect)
     changed = true
   }
 
@@ -364,6 +378,9 @@ function rollbackDeferredServerSetting(
   withTrustedResourceWrite(() => {
     ;(getDatabase() as unknown as Record<string, unknown>)[target.rootKey] = restoredRoot
   })
+  for (const { ctx, item } of restoredRuntimeEffects) {
+    item.onChange?.(getSettingValue(item, ctx), ctx)
+  }
 }
 
 function valueAtDeferredSettingPath(root: unknown, path: string[]): unknown {
@@ -515,9 +532,7 @@ function rollbackLocalSetting(
   ctx: SettingContext,
 ): void {
   if (getSettingValue(item, ctx) !== attemptedValue) return
-  withTrustedResourceWrite(() => {
-    setLocalSettingValue(item, previousValue, ctx)
-  })
+  writeLocalSettingValue(item, previousValue, ctx)
 }
 
 function serverPatchKeyForItem(item: SettingItem): string | null {

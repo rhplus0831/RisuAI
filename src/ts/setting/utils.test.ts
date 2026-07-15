@@ -233,6 +233,76 @@ describe('server-backed data-driven settings', () => {
     ])
   })
 
+  it('reapplies runtime side effects when an immediate setting patch rolls back', async () => {
+    const calls = stubSettingsFetch()
+    replaceResourceDatabase({ animationSpeed: 1 } as any)
+    const appliedRuntimeValues: Array<{ stored: unknown; value: unknown }> = []
+    const item: SettingItem = {
+      id: 'display.animationSpeed',
+      type: 'slider',
+      bindKey: 'animationSpeed' as keyof ReturnType<typeof getResourceDatabase>,
+      onChange: (value) => {
+        appliedRuntimeValues.push({ stored: getResourceDatabase().animationSpeed, value })
+      },
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setSettingValue(item, 0.25, ctx)
+
+    await vi.waitFor(() => {
+      expect(getResourceDatabase().animationSpeed).toBe(1)
+    })
+
+    expect(appliedRuntimeValues).toEqual([
+      { stored: 0.25, value: 0.25 },
+      { stored: 1, value: 1 },
+    ])
+    expect(calls).toEqual([
+      { url: '/api/v1/bootstrap', method: 'GET', body: null },
+      {
+        url: '/api/v1/commands/settings/display',
+        method: 'PATCH',
+        body: { baseRevision: 4, patch: { animationSpeed: 0.25 } },
+      },
+    ])
+  })
+
+  it('reapplies runtime side effects when a deferred setting patch rolls back', async () => {
+    vi.useFakeTimers()
+    const calls = stubSettingsFetch()
+    replaceResourceDatabase({ animationSpeed: 1 } as any)
+    const appliedRuntimeValues: Array<{ stored: unknown; value: unknown }> = []
+    const item: SettingItem = {
+      id: 'display.animationSpeed',
+      type: 'slider',
+      bindKey: 'animationSpeed' as keyof ReturnType<typeof getResourceDatabase>,
+      onChange: (value) => {
+        appliedRuntimeValues.push({ stored: getResourceDatabase().animationSpeed, value })
+      },
+    }
+    const ctx = { db: getResourceDatabase(), modelInfo: {}, subModelInfo: {} } as SettingContext
+
+    setDeferredSettingValue(item, 0.25, ctx)
+
+    await vi.advanceTimersByTimeAsync(DEFERRED_SETTING_INPUT_DELAY_MS)
+    await vi.waitFor(() => {
+      expect(getResourceDatabase().animationSpeed).toBe(1)
+    })
+
+    expect(appliedRuntimeValues).toEqual([
+      { stored: 0.25, value: 0.25 },
+      { stored: 1, value: 1 },
+    ])
+    expect(calls).toEqual([
+      { url: '/api/v1/bootstrap', method: 'GET', body: null },
+      {
+        url: '/api/v1/commands/settings/display',
+        method: 'PATCH',
+        body: { baseRevision: 4, patch: { animationSpeed: 0.25 } },
+      },
+    ])
+  })
+
   it('restores local state when a number clear would produce an undefined server patch', async () => {
     const calls = stubSettingsFetch()
     replaceResourceDatabase({ maxResponse: 100 } as any)
