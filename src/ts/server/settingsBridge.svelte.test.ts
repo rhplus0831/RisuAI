@@ -10,6 +10,7 @@ const recorded = vi.hoisted(() => ({
     rollback?: () => void
     keepalive?: boolean
   }>,
+  patchResults: [] as Array<unknown | Promise<unknown>>,
   objectPatches: [] as Array<{
     baseRevision: number
     group: string
@@ -86,7 +87,10 @@ vi.mock('./commands', () => ({
       keepalive?: boolean
     }) => {
       recorded.patches.push(args)
-      return { status: 'ok', revision: 1 }
+      const queued = recorded.patchResults.shift()
+      const result = queued ? await queued : { status: 'ok', revision: 1 }
+      if ((result as { status?: string }).status !== 'ok') args.rollback?.()
+      return result
     },
   ),
   runServerCommand: vi.fn(
@@ -237,6 +241,7 @@ async function applyProjectionSetting(key: string, value: unknown): Promise<void
 beforeEach(() => {
   vi.useFakeTimers()
   recorded.patches.length = 0
+  recorded.patchResults.length = 0
   recorded.objectPatches.length = 0
   recorded.objectResults.length = 0
   recorded.groupReads.length = 0
@@ -466,6 +471,60 @@ describe('settingsBridge coalescing', () => {
 
     expect(testDatabaseState.db.notification).toBe(false)
     expect(testDatabaseState.db.textTheme).toBe('newer local')
+  })
+
+  it('rebases a later same-key rollback after two immediate settings writes fail', async () => {
+    const firstResult = createDeferred<unknown>()
+    const secondResult = createDeferred<unknown>()
+    recorded.patchResults.push(firstResult.promise, secondResult.promise)
+    setupSettings({ textTheme: 'server baseline' })
+
+    applyServerBackedSettingsPatch({ textTheme: 'first attempt' })
+    applyServerBackedSettingsPatch({ textTheme: 'second attempt' })
+    await flushAndSettle()
+
+    expect(testDatabaseState.db.textTheme).toBe('second attempt')
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      { textTheme: 'first attempt' },
+      { textTheme: 'second attempt' },
+    ])
+
+    firstResult.resolve({ status: 'error', error: 'first failed' })
+    await flushAndSettle()
+    expect(testDatabaseState.db.textTheme).toBe('second attempt')
+
+    secondResult.resolve({ status: 'error', error: 'second failed' })
+    await flushAndSettle()
+    expect(testDatabaseState.db.textTheme).toBe('server baseline')
+  })
+
+  it('rebases a queued same-key rollback when an in-flight settings write fails', async () => {
+    const firstResult = createDeferred<unknown>()
+    const secondResult = createDeferred<unknown>()
+    recorded.patchResults.push(firstResult.promise, secondResult.promise)
+    setupSettings({ textTheme: 'server baseline' })
+    const stop = watchServerBackedSettings(['textTheme'], { delayMs: DELAY })
+    flushSync()
+
+    applyServerBackedSettingsPatch({ textTheme: 'first attempt' })
+    await flushAndSettle()
+    testDatabaseState.db.textTheme = 'second attempt'
+    flushSync()
+
+    firstResult.resolve({ status: 'error', error: 'first failed' })
+    await flushAndSettle()
+    expect(testDatabaseState.db.textTheme).toBe('second attempt')
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+    expect(recorded.patches.map((entry) => entry.patch)).toEqual([
+      { textTheme: 'first attempt' },
+      { textTheme: 'second attempt' },
+    ])
+
+    secondResult.resolve({ status: 'error', error: 'second failed' })
+    await flushAndSettle()
+    expect(testDatabaseState.db.textTheme).toBe('server baseline')
+    stop()
   })
 
   it('preserves the existing undefined/no-delete behavior when rolling back an added setting', async () => {

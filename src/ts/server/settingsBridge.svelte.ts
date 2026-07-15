@@ -37,6 +37,12 @@ interface PendingSettingsPatch {
   timer: ReturnType<typeof setTimeout> | null
 }
 
+interface PendingSettingsAttempt {
+  sequence: number
+  previous: SettingsPatch
+  attempted: SettingsPatch
+}
+
 interface HypaV3PresetRollbackResult {
   rolledBack: boolean
   insertedIndex?: number
@@ -49,6 +55,8 @@ const pendingSettingsPatch: PendingSettingsPatch = {
   projectionEpochs: {},
   timer: null,
 }
+const pendingSettingsAttempts: PendingSettingsAttempt[] = []
+let nextSettingsAttemptSequence = 0
 
 interface SparseObjectSettingQueue {
   key: string
@@ -244,11 +252,11 @@ function dispatchServerBackedSettingsPatch(
 ): void {
   if (Object.keys(commandPatch).length === 0) return
 
-  void patchServerBackedSettings({
+  dispatchTrackedServerBackedSettingsPatch({
     patch: commandPatch,
-    acknowledgeOptimistic: true,
     optimisticProjectionEpochs,
-    rollback: () => rollbackServerBackedSettings(previous, attempted),
+    previous,
+    attempted,
   })
 }
 
@@ -385,14 +393,93 @@ function dispatchPendingSettingsPatch(options: ServerCommandTransportOptions = {
 
   if (Object.keys(commandPatch).length === 0) return
 
-  void patchServerBackedSettings({
+  dispatchTrackedServerBackedSettingsPatch({
     patch: commandPatch,
-    acknowledgeOptimistic: true,
     optimisticProjectionEpochs,
     keepalive: options.keepalive,
     signal: options.signal,
-    rollback: () => rollbackServerBackedSettings(commandPrevious, commandAttempted),
+    previous: commandPrevious,
+    attempted: commandAttempted,
   })
+}
+
+function dispatchTrackedServerBackedSettingsPatch(input: {
+  patch: SettingsPatch
+  optimisticProjectionEpochs: SettingsGroupProjectionEpochs
+  previous: SettingsPatch
+  attempted: SettingsPatch
+  keepalive?: boolean
+  signal?: AbortSignal | null
+}): void {
+  const attempt = registerSettingsAttempt(input.previous, input.attempted)
+  const result = patchServerBackedSettings({
+    patch: input.patch,
+    acknowledgeOptimistic: true,
+    optimisticProjectionEpochs: input.optimisticProjectionEpochs,
+    keepalive: input.keepalive,
+    signal: input.signal,
+    rollback: () => rollbackSettingsAttempt(attempt),
+  })
+  void result.then(
+    () => clearSettingsAttempt(attempt),
+    () => clearSettingsAttempt(attempt),
+  )
+}
+
+function registerSettingsAttempt(previous: SettingsPatch, attempted: SettingsPatch): PendingSettingsAttempt {
+  const attempt = {
+    sequence: ++nextSettingsAttemptSequence,
+    previous,
+    attempted,
+  }
+  pendingSettingsAttempts.push(attempt)
+  return attempt
+}
+
+function rollbackSettingsAttempt(attempt: PendingSettingsAttempt): void {
+  rollbackServerBackedSettings(attempt.previous, attempt.attempted)
+  rebaseLaterSettingsAttempts(attempt)
+  clearSettingsAttempt(attempt)
+}
+
+function rebaseLaterSettingsAttempts(failed: PendingSettingsAttempt): void {
+  for (const key of Object.keys(failed.attempted)) {
+    let rebased = false
+    // Settings commands settle in dispatch order. Rebase only the first
+    // dependent successor for this key; if it also fails, it propagates the
+    // confirmed baseline to the next successor in the chain.
+    for (const later of pendingSettingsAttempts) {
+      if (later.sequence <= failed.sequence || !hasOwnKey(later.attempted, key)) continue
+      if (!hasOwnKey(later.previous, key)) continue
+      if (!isJsonSnapshotEqual(later.previous[key], failed.attempted[key])) continue
+
+      if (hasOwnKey(failed.previous, key)) {
+        later.previous[key] = cloneJsonValue(failed.previous[key])
+      } else {
+        delete later.previous[key]
+      }
+      rebased = true
+      break
+    }
+
+    if (
+      !rebased &&
+      hasOwnKey(pendingSettingsPatch.attempted, key) &&
+      hasOwnKey(pendingSettingsPatch.previous, key) &&
+      isJsonSnapshotEqual(pendingSettingsPatch.previous[key], failed.attempted[key])
+    ) {
+      if (hasOwnKey(failed.previous, key)) {
+        pendingSettingsPatch.previous[key] = cloneJsonValue(failed.previous[key])
+      } else {
+        delete pendingSettingsPatch.previous[key]
+      }
+    }
+  }
+}
+
+function clearSettingsAttempt(attempt: PendingSettingsAttempt): void {
+  const index = pendingSettingsAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingSettingsAttempts.splice(index, 1)
 }
 
 function prunePendingSettingsPatchProjectionEpochs(): void {
