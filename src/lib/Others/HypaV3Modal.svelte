@@ -1060,7 +1060,6 @@
               <!-- Previous Button -->
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-                tabindex="-1"
                 onclick={() => {
                   onSearch({ shiftKey: true, key: 'Enter' } as KeyboardEvent)
                 }}>
@@ -1070,7 +1069,6 @@
               <!-- Next Button -->
               <button
                 class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
-                tabindex="-1"
                 onclick={() => {
                   onSearch({ key: 'Enter' } as KeyboardEvent)
                 }}>

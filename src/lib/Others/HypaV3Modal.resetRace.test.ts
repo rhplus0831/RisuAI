@@ -237,6 +237,22 @@ describe('Hypa V3 async ownership', () => {
     expect(character.chats[1].hypaV3Data).toBe(destinationMemory)
   })
 
+  it('keeps search result navigation in the keyboard tab order', async () => {
+    seedDatabase(true)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const searchButton = buttonForIcon(target, 'lucide-search')
+    expect(searchButton).not.toBeNull()
+    searchButton!.click()
+    await settle()
+
+    const previousButton = buttonForIcon(target, 'lucide-chevron-up')
+    const nextButton = buttonForIcon(target, 'lucide-chevron-down')
+    expect(previousButton?.tabIndex).toBe(0)
+    expect(nextButton?.tabIndex).toBe(0)
+  })
+
   it('does not delete the summary that replaces a removed target during confirmation', async () => {
     seedDatabase(true)
     const pendingConfirmation = deferred<boolean>()
