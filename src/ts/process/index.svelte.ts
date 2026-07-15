@@ -23,6 +23,7 @@ import {
 import { guardActiveChatGenerationSettingsForSend } from '../activeChatGenerationSettings'
 import { alertError } from '../alert'
 import {
+  captureActiveChatTarget,
   isActiveChatTargetFresh,
   waitForPendingChatGenerationSettingsSave,
   type ActiveChatTarget,
@@ -54,6 +55,7 @@ export interface requestTokenPart {
 }
 
 export const doingChat = writable(false)
+export const activeGenerationTarget = writable<ActiveChatTarget | null>(null)
 export const chatProcessStage = writable(0)
 export const abortChat = writable(false)
 export let requestTokenParts: { [key: string]: requestTokenPart[] } = {}
@@ -166,6 +168,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   }
 
   let isDoing = get(doingChat)
+  const generationTarget = arg.expectedTarget ?? captureActiveChatTarget()
 
   if (!isExpectedTargetFresh(arg.expectedTarget)) {
     return false
@@ -198,6 +201,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
   //                     does not re-clear after the inner finally already did.
   let iOwnDoingChat = false
   if (!isDoing) {
+    activeGenerationTarget.set(generationTarget)
     doingChat.set(true)
     iOwnDoingChat = true
   }
@@ -523,6 +527,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     })
     if (stage4.status === 'resend') {
       // Handoff — see iOwnDoingChat contract above.
+      activeGenerationTarget.set(null)
       doingChat.set(false)
       iOwnDoingChat = false
       return await sendChat(chatProcessIndex, {
@@ -540,6 +545,7 @@ export async function sendChat(chatProcessIndex = -1, arg: SendChatArgs = {}): P
     return true
   } finally {
     if (iOwnDoingChat) {
+      activeGenerationTarget.set(null)
       doingChat.set(false)
     }
   }

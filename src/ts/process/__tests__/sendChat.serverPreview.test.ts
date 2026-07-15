@@ -79,7 +79,7 @@ import {
   serverCompletionFetch,
 } from '../__fixtures__/mocks/serverCompletionFetch'
 import { getResourceDatabase, replaceResourceDatabase } from '../../server/resourceState.svelte'
-import { abortChat, chatProcessStage, doingChat } from '../index.svelte'
+import { abortChat, activeGenerationTarget, chatProcessStage, doingChat } from '../index.svelte'
 import * as chatModule from '../index.svelte'
 import { dispatchSaveChatGenerationSettings } from '../../chatCommands'
 import { currentPersonaStateSnapshot, queueSelectedPersonaUpdate, updateSelectedPersonaField } from '../../persona'
@@ -102,6 +102,7 @@ beforeEach(() => {
   resetServerChatState()
   resetServerCompletionCalls()
   doingChat.set(false)
+  activeGenerationTarget.set(null)
   abortChat.set(false)
   chatProcessStage.set(0)
   localAssemblerState.throwIfEntered = false
@@ -322,6 +323,12 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     const sendPromise = chatModule.sendChat(-1)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(getServerChatCalls()).toHaveLength(0)
+    expect(get(activeGenerationTarget)).toEqual({
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId,
+      chatId: 'chat-1',
+    })
 
     resolveSettingsSave(
       new Response(
@@ -348,6 +355,7 @@ describe('sendChat preview path (server prompt assembly, 7-12c)', () => {
     )
 
     await expect(sendPromise).resolves.toBe(true)
+    expect(get(activeGenerationTarget)).toBeNull()
     expect(getServerChatCalls()).toHaveLength(1)
   })
 

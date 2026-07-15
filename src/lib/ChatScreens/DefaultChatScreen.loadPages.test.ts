@@ -120,6 +120,7 @@ vi.mock('src/ts/process/index.svelte', async () => {
   const { writable } = await import('svelte/store')
   return {
     abortActiveGeneration: loadPageMocks.abortActiveGeneration,
+    activeGenerationTarget: writable(null),
     chatProcessStage: writable(0),
     clearActiveGenerationAbortController: loadPageMocks.clearActiveGenerationAbortController,
     createActiveGenerationAbortController: loadPageMocks.createActiveGenerationAbortController,

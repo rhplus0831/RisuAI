@@ -6,8 +6,14 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+interface TestStore<T> {
+  set(value: T): void
+  subscribe(run: (value: T) => void): () => void
+}
+
 const shellMocks = vi.hoisted(() => ({
   abortActiveGeneration: vi.fn(),
+  activeGenerationTarget: undefined as TestStore<Record<string, unknown> | null> | undefined,
   alertError: vi.fn(),
   alertNormal: vi.fn(),
   alertWait: vi.fn(),
@@ -16,8 +22,10 @@ const shellMocks = vi.hoisted(() => ({
   applySuccessfulSendChatEffects: vi.fn(() => true),
   chatFoldedState: { data: null as null | Record<string, string> },
   chatFoldedStateMessageIndex: { index: -1 },
+  chatProcessStage: undefined as TestStore<number> | undefined,
   clearActiveGenerationAbortController: vi.fn(),
   createActiveGenerationAbortController: vi.fn(() => ({ signal: new AbortController().signal })),
+  doingChat: undefined as TestStore<boolean> | undefined,
   downloadFile: vi.fn(async () => undefined),
   getCharImage: vi.fn(() => ''),
   getInlayAsset: vi.fn(async () => null),
@@ -103,12 +111,16 @@ vi.mock('../../ts/alert', () => ({
 
 vi.mock('src/ts/process/index.svelte', async () => {
   const { writable } = await import('svelte/store')
+  shellMocks.activeGenerationTarget ??= writable(null)
+  shellMocks.chatProcessStage ??= writable(0)
+  shellMocks.doingChat ??= writable(false)
   return {
     abortActiveGeneration: shellMocks.abortActiveGeneration,
-    chatProcessStage: writable(0),
+    activeGenerationTarget: shellMocks.activeGenerationTarget,
+    chatProcessStage: shellMocks.chatProcessStage,
     clearActiveGenerationAbortController: shellMocks.clearActiveGenerationAbortController,
     createActiveGenerationAbortController: shellMocks.createActiveGenerationAbortController,
-    doingChat: writable(false),
+    doingChat: shellMocks.doingChat,
     sendChat: shellMocks.sendChat,
   }
 })
@@ -194,6 +206,14 @@ import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER, type Database } 
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => {
+    resolve = promiseResolve
+  })
+  return { promise, resolve }
+}
+
 let target: HTMLElement
 let component: MountedComponent | undefined
 
@@ -239,6 +259,22 @@ function makeHydratedCharacter() {
     [SERVER_CHARACTER_SHELL_MARKER]: undefined,
     firstMessage: 'Greeting from a hydrated character',
     alternateGreetings: [],
+  }
+}
+
+function makeHydratedCharacterWithTwoChats() {
+  const character = makeHydratedCharacter()
+  return {
+    ...character,
+    chats: [
+      character.chats[0],
+      {
+        ...character.chats[0],
+        id: 'chat-1',
+        name: 'Chat 1',
+        message: [],
+      },
+    ],
   }
 }
 
@@ -294,6 +330,8 @@ function greetingBubble(): HTMLElement | null {
 beforeEach(() => {
   shellMocks.hydrateActiveChat.mockClear()
   shellMocks.hydrationFailed = false
+  shellMocks.activeGenerationTarget!.set(null)
+  shellMocks.doingChat!.set(false)
   target = document.createElement('div')
   document.body.appendChild(target)
 })
@@ -363,5 +401,47 @@ describe('chat history hydration failure', () => {
     await tick()
 
     expect(shellMocks.hydrateActiveChat).toHaveBeenCalledWith({ force: true })
+  })
+})
+
+describe('generation control ownership', () => {
+  it('does not expose the previous chat abort control while its stream settles', async () => {
+    const stream = deferred<void>()
+    seedDatabase(makeHydratedCharacterWithTwoChats())
+    shellMocks.activeGenerationTarget!.set({
+      selectedCharID: 0,
+      chatPage: 0,
+      characterId: 'character-0',
+      chatId: 'chat-0',
+    })
+    shellMocks.doingChat!.set(true)
+    const settleStream = stream.promise.finally(() => {
+      shellMocks.doingChat!.set(false)
+      shellMocks.activeGenerationTarget!.set(null)
+    })
+
+    const error = tryMount()
+    await tick()
+
+    expect(error).toBeNull()
+    expect(target.querySelector('button[aria-labelledby="cancel"]')).toBeTruthy()
+
+    getResourceDatabase().characters[0].chatPage = 1
+    shellMocks.setCurrentRoute({
+      kind: 'character',
+      path: '/character/character-0/chat-1',
+      chaId: 'character-0',
+      chatId: 'chat-1',
+    })
+    await tick()
+
+    expect(target.querySelector('button[aria-labelledby="cancel"]')).toBeNull()
+    expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(true)
+
+    stream.resolve(undefined)
+    await settleStream
+    await tick()
+
+    expect(target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')?.disabled).toBe(false)
   })
 })

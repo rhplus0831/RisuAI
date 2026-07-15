@@ -45,6 +45,7 @@
   import { getCharImage } from '../../ts/characters'
   import {
     abortActiveGeneration,
+    activeGenerationTarget,
     chatProcessStage,
     clearActiveGenerationAbortController,
     createActiveGenerationAbortController,
@@ -189,6 +190,19 @@
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
+  let currentChatOwnsGeneration = $derived.by(() => {
+    const target = $activeGenerationTarget
+    if (!$doingChat || !target || !currentCharacter) return false
+    if (target.characterId !== undefined || currentCharacter.chaId !== undefined) {
+      if (target.characterId !== currentCharacter.chaId) return false
+    } else if (target.selectedCharID !== $selectedCharID) {
+      return false
+    }
+    if (target.chatId !== undefined || currentChatId !== undefined) {
+      return target.chatId === currentChatId
+    }
+    return target.chatPage === currentCharacter.chatPage
+  })
   let configuredChatLoadPages = $derived(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
   // The open chat ships as a message-less shell until the chat-messages resource
   // resolves; show a loading state over the message area until then so the
@@ -1346,7 +1360,7 @@
           }}
           style:height={inputHeight}></textarea>
 
-        {#if $doingChat || doingChatInputTranslate}
+        {#if currentChatOwnsGeneration || doingChatInputTranslate}
           <button
             aria-labelledby="cancel"
             class="peer-focus:border-textcolor flex justify-center border-y border-darkborderc items-center text-textcolor p-3 hover:bg-blue-500 hover:text-white transition-colors"
@@ -1358,7 +1372,8 @@
           <button
             data-testid="default-chat-send-button"
             onclick={send}
-            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send"
+            disabled={$doingChat}
+            class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-blue-500 hover:text-white transition-colors button-icon-send disabled:cursor-not-allowed disabled:opacity-50"
             style:height={inputHeight}>
             <Send />
           </button>
@@ -1539,6 +1554,7 @@
           {currentUsername}
           {userIcon}
           {userIconPortrait}
+          isGenerationActive={currentChatOwnsGeneration}
           bind:hasNewUnreadMessage={showNewMessageButton} />
 
         <!-- A bootstrap shell strips firstMessage/alternateGreetings (not in

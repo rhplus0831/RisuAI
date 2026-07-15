@@ -7,7 +7,7 @@
   import { get } from 'svelte/store'
   import { getTranscriptWindowRange } from './DefaultChatScreen.loadPages'
   import { getCharacterDisplayName } from 'src/ts/characterDisplayName'
-  import { chatProcessStage, doingChat } from 'src/ts/process/index.svelte'
+  import { chatProcessStage } from 'src/ts/process/index.svelte'
   import { didChatOwnerChange } from './ChatsUnread'
 
   const getCurrentChatRoomId = () => {
@@ -29,6 +29,7 @@
     userIcon,
     loadPages,
     userIconPortrait,
+    isGenerationActive = false,
     hasNewUnreadMessage = $bindable(false),
   }: {
     messages: Message[]
@@ -41,6 +42,7 @@
     userIcon: string
     loadPages: number
     userIconPortrait?: boolean
+    isGenerationActive?: boolean
     hasNewUnreadMessage?: boolean
   } = $props()
 
@@ -166,7 +168,7 @@
         role={row.message.role}
         name={row.name}
         isComment={row.message.isComment ?? false}
-        isGenerationLoading={$doingChat &&
+        isGenerationLoading={isGenerationActive &&
           row.idx === messages.length - 1 &&
           row.message.role === 'char' &&
           row.message.data === ''}
