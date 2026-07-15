@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const pluginSettingsMocks = vi.hoisted(() => ({
   alertSelect: vi.fn(),
+  setPluginArgument: vi.fn(),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -29,7 +30,7 @@ vi.mock('src/ts/plugins/plugins.svelte', () => ({
 vi.mock('src/ts/pluginCommands', () => ({
   deletePlugin: vi.fn(),
   mergePendingPluginStorageResource: vi.fn((value) => value),
-  setPluginArgument: vi.fn(),
+  setPluginArgument: pluginSettingsMocks.setPluginArgument,
   togglePluginEnabled: vi.fn(),
 }))
 
@@ -42,6 +43,7 @@ describe('PluginSettings', () => {
 
   beforeEach(() => {
     pluginSettingsMocks.alertSelect.mockReset()
+    pluginSettingsMocks.setPluginArgument.mockReset()
     target = document.createElement('div')
     document.body.appendChild(target)
     setDatabaseLite({
@@ -86,6 +88,41 @@ describe('PluginSettings', () => {
 
     const labels = Array.from(target.querySelectorAll('option')).map((option) => option.textContent?.trim())
     expect(labels).toEqual(['fast', 'slow'])
+  })
+
+  it('renders numeric integer checkboxes and persists numeric toggle values', async () => {
+    setDatabaseLite({
+      characters: [],
+      currentPluginProvider: '',
+      enabledModules: [],
+      modules: [],
+      plugins: [
+        {
+          name: 'plugin-int-checkbox',
+          displayName: 'Integer checkbox plugin',
+          script: 'Risuai.log("checkbox")',
+          arguments: { enabledFlag: 'int' },
+          realArg: { enabledFlag: 1 },
+          customLink: [],
+          argMeta: { enabledFlag: { checkbox: 'Enabled flag' } },
+          version: '3.0',
+          enabled: true,
+        },
+      ],
+    } as any)
+    component = mount(PluginSettings, { target })
+
+    const pluginRow = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Integer checkbox plugin'),
+    )
+    pluginRow?.click()
+    await tick()
+
+    const checkbox = target.querySelector<HTMLInputElement>('input[aria-label="Enabled flag"]')
+    expect(checkbox?.checked).toBe(true)
+
+    checkbox?.click()
+    expect(pluginSettingsMocks.setPluginArgument).toHaveBeenCalledWith('plugin-int-checkbox', 'enabledFlag', 0)
   })
 
   it('starts and cleans up the plugin starter download', async () => {

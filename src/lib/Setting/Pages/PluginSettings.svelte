@@ -225,9 +225,9 @@
             {:else if plugin.arguments[arg] === 'int'}
               {#if plugin?.argMeta?.[arg]?.checkbox}
                 <CheckInput
-                  check={getPluginArg(plugin.name, arg) === '1'}
+                  check={Number(getPluginArg(plugin.name, arg)) === 1}
                   onChange={(e) => {
-                    setPluginArg(plugin.name, arg, e ? '1' : '0')
+                    setPluginArg(plugin.name, arg, e ? 1 : 0)
                   }}
                   margin={false}
                   name={plugin?.argMeta?.[arg]?.checkbox === '1'
