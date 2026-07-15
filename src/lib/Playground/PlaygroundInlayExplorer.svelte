@@ -3,7 +3,7 @@
   import { SvelteSet } from 'svelte/reactivity'
 
   import { language } from 'src/lang'
-  import { alertConfirm } from 'src/ts/alert'
+  import { alertConfirm, alertError } from 'src/ts/alert'
   import { getInlayAssetBlob, listInlayAssets, removeInlayAsset, type InlayAsset } from 'src/ts/process/files/inlays'
   import Button from '../UI/GUI/Button.svelte'
   import CheckInput from '../UI/GUI/CheckInput.svelte'
@@ -75,15 +75,26 @@
     ) {
       return
     }
-    for (const id of selection) {
-      await removeInlayAsset(id)
-      if (previewURLs.has(id)) {
-        URL.revokeObjectURL(previewURLs.get(id)!)
-        previewURLs.delete(id)
+    const selectedIds = [...selection]
+    const results = await Promise.allSettled(selectedIds.map((id) => removeInlayAsset(id)))
+    const deletedIds = new Set<string>()
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const id = selectedIds[index]
+        deletedIds.add(id)
+        if (previewURLs.has(id)) {
+          URL.revokeObjectURL(previewURLs.get(id)!)
+          previewURLs.delete(id)
+        }
+        selection.delete(id)
       }
+    })
+    allAssets = allAssets.filter(([assetId]) => !deletedIds.has(assetId))
+
+    const failedResult = results.find((result) => result.status === 'rejected')
+    if (failedResult?.status === 'rejected') {
+      alertError(failedResult.reason)
     }
-    allAssets = allAssets.filter(([assetId]) => !selection.has(assetId))
-    selection.clear()
   }
 
   const formatSize = (bytes: number) => {

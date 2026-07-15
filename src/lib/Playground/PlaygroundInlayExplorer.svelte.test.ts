@@ -7,6 +7,11 @@ const inlayMocks = vi.hoisted(() => ({
   removeInlayAsset: vi.fn(),
 }))
 
+const alertMocks = vi.hoisted(() => ({
+  alertConfirm: vi.fn(),
+  alertError: vi.fn(),
+}))
+
 vi.mock('src/ts/process/files/inlays', () => ({
   getInlayAssetBlob: inlayMocks.getInlayAssetBlob,
   listInlayAssets: inlayMocks.listInlayAssets,
@@ -14,7 +19,8 @@ vi.mock('src/ts/process/files/inlays', () => ({
 }))
 
 vi.mock('src/ts/alert', () => ({
-  alertConfirm: vi.fn(async () => true),
+  alertConfirm: alertMocks.alertConfirm,
+  alertError: alertMocks.alertError,
 }))
 
 import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte'
@@ -38,6 +44,9 @@ beforeEach(() => {
   inlayMocks.getInlayAssetBlob.mockReset()
   inlayMocks.listInlayAssets.mockReset()
   inlayMocks.removeInlayAsset.mockReset()
+  alertMocks.alertConfirm.mockReset()
+  alertMocks.alertConfirm.mockResolvedValue(true)
+  alertMocks.alertError.mockReset()
   inlayMocks.listInlayAssets.mockResolvedValue(
     Array.from({ length: 40 }, (_, index) => [
       `asset-${index}`,
@@ -134,5 +143,40 @@ describe('PlaygroundInlayExplorer', () => {
     expect(createObjectURL).toHaveBeenCalledTimes(1)
     expect(revokeObjectURL).toHaveBeenCalledOnce()
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:newer-preview')
+  })
+
+  it('keeps successful bulk deletions when one selected asset fails', async () => {
+    inlayMocks.listInlayAssets.mockResolvedValue(
+      Array.from({ length: 3 }, (_, index) => [
+        `asset-${index}`,
+        { data: '', ext: 'json', name: `Asset ${index}`, type: 'signature' },
+      ]),
+    )
+    const deleteError = new Error('asset-1 failed')
+    inlayMocks.removeInlayAsset.mockImplementation(async (id: string) => {
+      if (id === 'asset-1') throw deleteError
+    })
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Total 3 assets'))
+
+    const selectAll = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Select All'),
+    )
+    selectAll!.click()
+    await tick()
+    const deleteSelected = Array.from(target.querySelectorAll('button')).find((button) =>
+      button.textContent?.includes('Delete Selected'),
+    )
+    deleteSelected!.click()
+
+    await vi.waitFor(() => expect(inlayMocks.removeInlayAsset).toHaveBeenCalledTimes(3))
+    await vi.waitFor(() => expect(target.textContent).toContain('Total 1 assets'))
+
+    expect(target.textContent).toContain('Asset 1')
+    expect(target.textContent).not.toContain('Asset 0')
+    expect(target.textContent).not.toContain('Asset 2')
+    expect(target.textContent).toContain('Deselect All (1)')
+    expect(alertMocks.alertError).toHaveBeenCalledWith(deleteError)
   })
 })
