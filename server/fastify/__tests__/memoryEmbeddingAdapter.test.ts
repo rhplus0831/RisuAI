@@ -256,6 +256,40 @@ describe('memory embedding provider adapter', () => {
     })
   })
 
+  it('preserves contextual query input type', async () => {
+    let body: unknown
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      body = JSON.parse(init.body as string)
+      return ok({ data: [{ data: [{ embedding: [1] }] }] })
+    })
+
+    await expect(
+      embedTextGroups({
+        request: voyageRequest(),
+        groups: [['query']],
+        inputType: 'query',
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toMatchObject({ dim: 1 })
+    expect(body).toMatchObject({ input_type: 'query' })
+  })
+
+  it('bounds upstream vector dimensions', async () => {
+    vi.stubGlobal('fetch', async () => ok({ data: [{ embedding: [1, 2, 3] }] }))
+
+    await expect(
+      embedTexts({
+        request: request(),
+        input: ['first'],
+        maxDimension: 2,
+        signal: new AbortController().signal,
+      }),
+    ).resolves.toEqual({
+      error: 'embedding dimension exceeds limit: 3 > 2',
+      code: 'invalid-response',
+    })
+  })
+
   it('validates Voyage contextual response shape', async () => {
     vi.stubGlobal('fetch', async () =>
       ok({

@@ -5,6 +5,11 @@ import {
   formatMemoryEmbeddingLimitViolation,
   type MemoryEmbeddingModelRequest,
 } from './memoryEmbeddingModel.js'
+import { readBoundedBodyJson } from './generation/body.js'
+
+export const MEMORY_EMBEDDING_MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+export const MEMORY_EMBEDDING_MAX_DIMENSION = 32_768
+export const MEMORY_EMBEDDING_MAX_VECTOR_VALUES = 2_000_000
 
 export type EmbeddingProviderErrorCode =
   | 'configuration'
@@ -31,6 +36,10 @@ export interface EmbedTextsOptions {
   input: readonly string[]
   expectedDim?: number
   signal: AbortSignal
+  fetchImpl?: typeof fetch
+  maxResponseBytes?: number
+  maxDimension?: number
+  maxVectorValues?: number
 }
 
 export interface EmbedTextGroupsOptions {
@@ -38,6 +47,11 @@ export interface EmbedTextGroupsOptions {
   groups: readonly (readonly string[])[]
   expectedDim?: number
   signal: AbortSignal
+  inputType?: 'query' | 'document'
+  fetchImpl?: typeof fetch
+  maxResponseBytes?: number
+  maxDimension?: number
+  maxVectorValues?: number
 }
 
 interface EmbeddingResponse {
@@ -77,11 +91,12 @@ export async function embedTexts(
 
   let response: Response
   try {
-    response = await fetch(opts.request.endpoint, {
+    response = await (opts.fetchImpl ?? fetch)(opts.request.endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
       signal: opts.signal,
+      redirect: 'error',
     })
   } catch (err) {
     if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
@@ -91,7 +106,10 @@ export async function embedTexts(
 
   let json: EmbeddingResponse
   try {
-    json = (await response.json()) as EmbeddingResponse
+    json = (await readBoundedBodyJson(
+      response,
+      opts.maxResponseBytes ?? MEMORY_EMBEDDING_MAX_RESPONSE_BYTES,
+    )) as EmbeddingResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { error: `invalid embedding JSON: ${msg}`, code: 'invalid-json' }
@@ -117,6 +135,12 @@ export async function embedTexts(
       }
     }
   }
+  const responseBoundError = validateVectorBounds(
+    normalized.vectors,
+    opts.maxDimension ?? MEMORY_EMBEDDING_MAX_DIMENSION,
+    opts.maxVectorValues ?? MEMORY_EMBEDDING_MAX_VECTOR_VALUES,
+  )
+  if (responseBoundError) return responseBoundError
 
   return { model: opts.request.model, vectors: normalized.vectors, dim }
 }
@@ -182,15 +206,16 @@ export async function embedTextGroups(
 
   let response: Response
   try {
-    response = await fetch(opts.request.endpoint, {
+    response = await (opts.fetchImpl ?? fetch)(opts.request.endpoint, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         inputs: groups,
         model: opts.request.wireModel ?? opts.request.model,
-        input_type: 'document',
+        input_type: opts.inputType ?? 'document',
       }),
       signal: opts.signal,
+      redirect: 'error',
     })
   } catch (err) {
     if (opts.signal.aborted) return { error: 'aborted', code: 'aborted' }
@@ -200,7 +225,10 @@ export async function embedTextGroups(
 
   let json: EmbeddingResponse
   try {
-    json = (await response.json()) as EmbeddingResponse
+    json = (await readBoundedBodyJson(
+      response,
+      opts.maxResponseBytes ?? MEMORY_EMBEDDING_MAX_RESPONSE_BYTES,
+    )) as EmbeddingResponse
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     return { error: `invalid embedding JSON: ${msg}`, code: 'invalid-json' }
@@ -231,8 +259,36 @@ export async function embedTextGroups(
       }
     }
   }
+  const responseBoundError = validateVectorBounds(
+    normalized.groups.flat(),
+    opts.maxDimension ?? MEMORY_EMBEDDING_MAX_DIMENSION,
+    opts.maxVectorValues ?? MEMORY_EMBEDDING_MAX_VECTOR_VALUES,
+  )
+  if (responseBoundError) return responseBoundError
 
   return { model: opts.request.model, groups: normalized.groups, dim }
+}
+
+function validateVectorBounds(
+  vectors: readonly Float32Array[],
+  maxDimension: number,
+  maxVectorValues: number,
+): MemoryEmbeddingProviderError | null {
+  const dimension = vectors[0]?.length ?? 0
+  if (dimension > maxDimension) {
+    return {
+      error: `embedding dimension exceeds limit: ${dimension} > ${maxDimension}`,
+      code: 'invalid-response',
+    }
+  }
+  const totalValues = vectors.reduce((total, vector) => total + vector.length, 0)
+  if (totalValues > maxVectorValues) {
+    return {
+      error: `embedding response exceeds vector value limit: ${totalValues} > ${maxVectorValues}`,
+      code: 'invalid-response',
+    }
+  }
+  return null
 }
 
 function normalizeEmbeddingData(

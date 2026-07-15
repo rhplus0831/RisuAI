@@ -18,6 +18,7 @@ import { registerBootstrapRoutes } from './routes/bootstrap.js'
 import { registerCommandRoutes } from './routes/commands.js'
 import { registerResourceReadRoutes } from './routes/resourceReads.js'
 import { registerEventsRoutes } from './routes/events.js'
+import { registerEmbeddingOperationRoutes, type EmbeddingOperationRouteOptions } from './routes/embeddingOperations.js'
 import { registerGenerationRoutes } from './routes/generation.js'
 import {
   registerGenerationChatRoutes,
@@ -80,6 +81,7 @@ export interface BuildAppOptions {
   mcpOAuthRefresh?: McpOAuthRefreshRouteOptions
   openAITranscription?: OpenAITranscriptionRouteOptions
   providerOperations?: ProviderOperationRouteOptions
+  embeddingOperations?: EmbeddingOperationRouteOptions
   /**
    * Periodic server-side asset GC. `false` disables the timer (tests that do
    * not exercise GC). An options object tunes the grace window / interval.
@@ -277,6 +279,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<BuiltApp> {
   registerPushNotificationRoutes(app, authState, pushNotifications)
   registerMcpOAuthRefreshRoutes(app, db, authState, opts.mcpOAuthRefresh)
   registerOpenAITranscriptionRoutes(app, db, authState, opts.openAITranscription)
+  registerEmbeddingOperationRoutes(app, db, authState, opts.embeddingOperations)
   registerProviderOperationRoutes(app, db, authState, opts.providerOperations)
   registerProxyRoutes(app, authState)
   registerStreamJobRoutes(app, authState, streamJobRegistry)

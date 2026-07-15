@@ -709,6 +709,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'embedding-operations',
+    methods: ['POST'],
+    path: '/api/v1/embedding-operations',
+    auth: {
+      decision: 'required',
+      reason: 'Remote embeddings can use server-owned provider credentials.',
+    },
+    activeWriter: {
+      decision: 'runtime-proxy',
+      reason: 'Embedding dispatch does not mutate local durable state.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'provider-operations',
     methods: ['POST'],
     path: '/api/v1/provider-operations',
