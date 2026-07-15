@@ -1242,15 +1242,15 @@ function canAppendAssemblyReplacement(
 
 /**
  * Persist the assembly-time chat-var delta the assembler computed
- * (`mutations.chatVarMutations`) and, when a submit-time
- * input trigger / `editinput` rewrote the transcript — the post-`editinput`
- * submit transcript (`submitMessages`), through a targeted command mutation:
+ * (`mutations.chatVarMutations`) and, when a submit-time input trigger,
+ * `editinput`, or before-main Agent Preset rewrote the transcript — the
+ * authoritative submit transcript (`submitMessages`), through a targeted command mutation:
  * one revision bump, one event, rollback on failure. The route owns these writes
  * and returns the new revision over SSE so the browser can reconcile its cached
  * command revision.
  *
  * The transcript is persisted only when `submitTranscriptChanged` is set; plain
- * sends leave user-message persistence to the browser.
+ * sends without an input transform leave user-message persistence to the browser.
  * When both the transcript and chat vars change, they ride one command (one
  * revision); a composite chat-transcript event reconciles both writes.
  * Returns the bumped revision, or `undefined` when there is nothing to write.

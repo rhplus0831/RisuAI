@@ -174,9 +174,12 @@ available to eligible later steps regardless of destination; before-main
 Runtime execution runs dependency levels up to preset `maxConcurrency`, applies
 per-step timeout/input/output limits, validates JSON-object outputs when
 requested, follows optional/required/fallback/stop failure policies, and writes
-step outputs to `promptOutput`, `intermediate`, or `finalOutput` destinations.
-At most one enabled after-main `finalOutput` modifier is allowed, it must be the
-last enabled after-main step, and it can modify final text before persistence.
+step outputs to `promptOutput`, `intermediate`, `userInput`, or `finalOutput`
+destinations. At most one enabled before-main `userInput` modifier is allowed;
+it must be the last enabled before-main step and replaces and persists the latest
+user message before main prompt assembly. At most one enabled after-main
+`finalOutput` modifier is allowed, it must be the last enabled after-main step,
+and it can modify final text before persistence.
 Provider tool-calling is intentionally not part of this path yet.
 
 ## Compatibility Caveats

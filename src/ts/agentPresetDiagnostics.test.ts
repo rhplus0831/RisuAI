@@ -31,6 +31,8 @@ describe('Agent Preset diagnostics', () => {
   it('normalizes the persisted server shape without retaining unknown nested values', () => {
     const normalized = normalizeAgentPresetGenerationDiagnostic(
       diagnostic('ap_a', {
+        userInputModifierStepId: 'aps_input',
+        userInputModified: true,
         steps: [
           {
             status: 'success',
@@ -68,7 +70,9 @@ describe('Agent Preset diagnostics', () => {
       presetId: 'ap_a',
       presetName: 'Research Agent',
       presetVersion: 2,
+      userInputModifierStepId: 'aps_input',
       promptOutputKeys: ['context'],
+      userInputModified: true,
       finalTextModified: false,
       steps: [
         {

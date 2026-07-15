@@ -202,6 +202,7 @@ export type AssembleMutationSource =
   | 'start_trigger'
   | 'input_trigger'
   | 'editinput'
+  | 'agent_preset'
   | 'output_trigger'
 
 export type ChatVarMutationValue = string | number | boolean | null
@@ -258,6 +259,7 @@ export interface AgentPresetRuntimeState {
   previousAgentOutputs: AgentPresetPreviousOutput[]
   promptOutputs: Record<string, string>
   outputRequired: Record<string, boolean>
+  userInputModified?: boolean
   finalTextModified?: boolean
   mainOutputText?: string
   failure?: AgentPresetPhaseFailure
@@ -373,19 +375,16 @@ export interface AssembleResult {
   /** Browser-visible state from before the server-owned mutations replay. */
   restoration?: AssembleRestorationPayload
   /**
-   * Submit-time transcript (after the input trigger + `editinput` rewrite,
-   * before the run-var / history passes) the route persists when
-   * {@link submitTranscriptChanged} is set. The browser sends the *raw* user
-   * text for a server-backed send and defers the transform to the server, so this
-   * is the authoritative post-`editinput` transcript the route writes. Route-only
-   * (not on the SSE wire).
+   * Submit-time transcript the route persists when {@link submitTranscriptChanged}
+   * is set. It contains the authoritative server-owned user-input transforms,
+   * including a successful before-main Agent Preset `userInput` destination.
+   * Route-only (not on the SSE wire).
    */
   submitMessages?: Message[]
   /**
-   * True when the submit-time input trigger rewrote the transcript or `editinput`
-   * transformed the user message — i.e. the route must persist {@link
-   * submitMessages}. Stays false for a plain send (no input trigger / editinput),
-   * so the route leaves message persistence to the browser exactly as before.
+   * True when the submit-time input trigger, `editinput`, or a before-main Agent
+   * Preset transformed the user message — i.e. the route must persist
+   * {@link submitMessages}. Stays false for a plain send with no input transform.
    */
   submitTranscriptChanged?: boolean
   /**
@@ -513,7 +512,9 @@ export interface AssemblyState {
   inputTriggerRewroteTranscript?: boolean
   /** `editinput` transformed the submitted user message. */
   editInputTransformed?: boolean
-  /** Post-`editinput` submit transcript snapshot before run-var processing. */
+  /** A before-main Agent Preset step replaced the latest user message. */
+  agentPresetInputTransformed?: boolean
+  /** Submit transcript snapshot used when a server-owned input transform changed it. */
   submitMessages?: Message[]
   messageMutations?: AssembleMessageMutation[]
   additionalSystemPromptMutations?: AssembleAdditionalSystemPromptMutation[]
@@ -1126,9 +1127,9 @@ export function buildRestorationPayload(state: AssemblyState): AssembleRestorati
 }
 
 /**
- * Snapshot the submit-time transcript right after the input trigger + `editinput`
- * rewrite, before `applyCurrentChatRunVars`. The route persists this when
- * {@link submitTranscriptChanged}.
+ * Snapshot the submit-time transcript after a server-owned input rewrite. The
+ * initial capture happens after the input trigger + `editinput`; a before-main
+ * user-input modifier refreshes it after Agent Preset execution.
  */
 function captureSubmitTranscript(state: AssemblyState): void {
   if (!submitTranscriptChanged(state)) return
@@ -1136,11 +1137,11 @@ function captureSubmitTranscript(state: AssemblyState): void {
 }
 
 /**
- * The route owns the post-`editinput` transcript write only when a submit hook
- * changed the transcript. Plain sends leave message persistence to the browser.
+ * The route owns the transcript write only when a submit hook or before-main
+ * Agent Preset changed the user input. Plain sends leave persistence to the browser.
  */
 function submitTranscriptChanged(state: AssemblyState): boolean {
-  return !!state.inputTriggerRewroteTranscript || !!state.editInputTransformed
+  return !!state.inputTriggerRewroteTranscript || !!state.editInputTransformed || !!state.agentPresetInputTransformed
 }
 
 /**
@@ -1222,6 +1223,8 @@ export async function runAgentPresetBeforeMainStage(state: AssemblyState, deps: 
     runtime.failure = beforeMain.blockingFailure
     throw agentPresetPhaseError(runtime, beforeMain.blockingFailure)
   }
+
+  applyAgentPresetUserInputModifier(state, resolution.plan, beforeMain)
 }
 
 function createAgentPresetRuntimeState(resolution: AgentPresetResolution): AgentPresetRuntimeState {
@@ -1246,12 +1249,42 @@ function createAgentPresetRuntimeState(resolution: AgentPresetResolution): Agent
 }
 
 function latestUserMessage(chat: Chat): string | undefined {
+  const index = latestUserMessageIndex(chat)
+  return index === -1 ? undefined : chat.message?.[index]?.data
+}
+
+function latestUserMessageIndex(chat: Chat): number {
   const messages = chat.message ?? []
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (message?.role === 'user' && typeof message.data === 'string') return message.data
+    if (message?.role === 'user' && typeof message.data === 'string') return index
   }
-  return undefined
+  return -1
+}
+
+function applyAgentPresetUserInputModifier(
+  state: AssemblyState,
+  plan: AgentPresetExecutionPlan,
+  beforeMain: AgentPresetPhaseExecutionResult,
+): void {
+  if (!plan.userInputModifierStepId) return
+  const modifier = beforeMain.stepResults.find(
+    (result) => result.status === 'success' && result.stepId === plan.userInputModifierStepId,
+  )
+  if (modifier?.status !== 'success') return
+
+  const index = latestUserMessageIndex(state.currentChat)
+  if (index === -1) return
+  const messages = (state.currentChat.message ??= [])
+  const current = messages[index]
+  if (!current || current.data === modifier.outputText) return
+
+  messages[index] = { ...current, data: modifier.outputText }
+  state.agentPresetInputTransformed = true
+  if (state.agentPreset) state.agentPreset.userInputModified = true
+  syncWorkingTranscript(state)
+  captureMessageReplacement(state, 'agent_preset')
+  captureSubmitTranscript(state)
 }
 
 function syncAgentPresetExpansionContext(state: AssemblyState): void {
@@ -2450,11 +2483,13 @@ function buildAgentPresetGenerationDiagnostics(runtime: AgentPresetRuntimeState)
           maxConcurrency: runtime.plan.maxConcurrency,
           beforeMainStepCount: runtime.plan.beforeMain.steps.length,
           afterMainStepCount: runtime.plan.afterMain.steps.length,
+          userInputModifierStepId: runtime.plan.userInputModifierStepId,
           finalOutputModifierStepId: runtime.plan.finalOutputModifierStepId,
         }
       : {}),
     promptOutputKeys: Object.keys(runtime.promptOutputs),
     steps,
+    userInputModified: runtime.userInputModified === true,
     finalTextModified: runtime.finalTextModified === true,
     ...(runtime.mainOutputText !== undefined
       ? { mainOutputPreview: boundedPreview(runtime.mainOutputText), mainOutputChars: runtime.mainOutputText.length }

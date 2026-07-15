@@ -321,7 +321,9 @@
       destination:
         draftStepPhase === 'beforeMain' && draftStepDestination === 'finalOutput'
           ? 'promptOutput'
-          : draftStepDestination,
+          : draftStepPhase === 'afterMain' && draftStepDestination === 'userInput'
+            ? 'intermediate'
+            : draftStepDestination,
       failurePolicy,
     }
   }
@@ -360,7 +362,10 @@
     draftStepOutputKey = typeof step.outputKey === 'string' ? step.outputKey : ''
     draftStepOutputFormat = step.outputFormat === 'jsonObject' ? 'jsonObject' : 'text'
     draftStepDestination =
-      step.destination === 'finalOutput' || step.destination === 'intermediate' || step.destination === 'promptOutput'
+      step.destination === 'finalOutput' ||
+      step.destination === 'userInput' ||
+      step.destination === 'intermediate' ||
+      step.destination === 'promptOutput'
         ? step.destination
         : draftStepPhase === 'beforeMain'
           ? 'promptOutput'
@@ -418,6 +423,9 @@
     if (draftStepPhase === 'beforeMain' && draftStepDestination === 'finalOutput') {
       draftStepDestination = 'promptOutput'
     }
+    if (draftStepPhase === 'afterMain' && draftStepDestination === 'userInput') {
+      draftStepDestination = 'intermediate'
+    }
     draftStepDependencies = draftStepDependencies.filter((dependencyId) =>
       dependencyOptions().some((option) => option.id === dependencyId),
     )
@@ -427,6 +435,10 @@
   function setDraftDestination(destination: AgentPresetStepDestination): void {
     if (draftStepPhase === 'beforeMain' && destination === 'finalOutput') {
       draftStepDestination = 'promptOutput'
+      return
+    }
+    if (draftStepPhase === 'afterMain' && destination === 'userInput') {
+      draftStepDestination = 'intermediate'
       return
     }
     draftStepDestination = destination
@@ -868,7 +880,9 @@
                   onchange={(event) => setDraftDestination(event.currentTarget.value as AgentPresetStepDestination)}>
                   <option value="promptOutput">{language.agentPresets.destinationPromptOutput}</option>
                   <option value="intermediate">{language.agentPresets.destinationIntermediate}</option>
-                  {#if draftStepPhase === 'afterMain'}
+                  {#if draftStepPhase === 'beforeMain'}
+                    <option value="userInput">{language.agentPresets.destinationUserInput}</option>
+                  {:else}
                     <option value="finalOutput">{language.agentPresets.destinationFinalOutput}</option>
                   {/if}
                 </SelectInput>

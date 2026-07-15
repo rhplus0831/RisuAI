@@ -276,7 +276,10 @@ the sidebar chat generation controls save the chat-scoped
 `agentPresetId`. Prepared-input checkboxes expose their matching `{{scope}}`
 placeholder, and `mainDraft` is shown only for after-main steps. Changing phase
 removes scopes and dependencies that are no longer valid. Step instructions can
-chain an eligible earlier output through `{{agent::outputKey}}`; missing,
+chain an eligible earlier output through `{{agent::outputKey}}`. Before-main
+steps offer `User input` as the direct modifier destination, while after-main
+steps offer `Final output`; each modifier must be the last enabled step in its
+phase. Missing,
 same-level, disabled, or future references appear as `Incomplete` and block
 generation. During chat generation, `AgentPresetProgress.svelte` consumes
 chat-scoped `agent_preset_progress` snapshots and shows the current phase,

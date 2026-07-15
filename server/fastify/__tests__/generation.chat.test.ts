@@ -3690,6 +3690,94 @@ describe('Phase 7-1 POST /api/v1/generate/chat', () => {
     })
   })
 
+  it('uses and persists a before-main Agent Preset user-input modifier before main dispatch', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    await seedDatabase(harness.app, assertion, {
+      ...(dbWithServerDispatch({
+        chats: [
+          {
+            id: 'chat-1',
+            message: [],
+            note: '',
+            name: 'Chat',
+            localLore: [],
+            generationSettings: {
+              configured: true,
+              personaId: DEFAULT_TEST_PERSONA_ID,
+              modelPresetId: DEFAULT_TEST_MODEL_PRESET_ID,
+              promptPresetId: DEFAULT_TEST_PROMPT_PRESET_ID,
+              agentPresetId: 'ap_input',
+              jailbreakToggle: false,
+              sidebarToggles: {},
+            },
+          },
+        ],
+      }) as Record<string, unknown>),
+      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
+      modelProfiles: [
+        {
+          id: 'debug-input',
+          name: 'Debug Input',
+          providerId: 'debug-echo',
+          modelId: 'debug-echo',
+          providerOptions: {
+            baseUrl: 'debug://agent-input',
+            requestModel: 'agent-input-model',
+          },
+        },
+      ],
+      agentPresets: [
+        {
+          id: 'ap_input',
+          name: 'Input Agent',
+          enabled: true,
+          version: 1,
+          steps: [
+            {
+              id: 'aps_input',
+              name: 'Rewrite Input',
+              enabled: true,
+              phase: 'beforeMain',
+              dependencies: [],
+              instruction: 'Rewrite the current user message for the main model.',
+              model: { mode: 'modelProfile', profileId: 'debug-input' },
+              runtime: { maxInputChars: 2_000, maxOutputChars: 500, timeoutMs: 5_000 },
+              inputScopes: ['currentUserMessage'],
+              outputKey: 'input',
+              outputFormat: 'text',
+              destination: 'userInput',
+              failurePolicy: { mode: 'required' },
+            },
+          ],
+        },
+      ],
+    })
+
+    const res = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/generate/chat',
+      headers: { 'risu-auth': assertion },
+      payload: { ...basePayload, userMessage: 'raw user input' },
+    })
+    expect(res.statusCode).toBe(200)
+
+    const events = parseEvents(res.body)
+    const prompt = events.find((event) => event.type === 'prompt')
+    expect(JSON.stringify(prompt?.data.messages)).toContain('agent-input-model')
+    expect(doneFrame(events).postGeneration?.revision).toBe(3)
+
+    const persisted = await persistedMessages(assertion)
+    expect(persisted[0]).toMatchObject({ role: 'user' })
+    expect(persisted[0]?.data).toContain('agent-input-model')
+    const assistant = persisted.at(-1)
+    const diagnostics = assistant?.generationInfo as { agentPreset?: Record<string, unknown> } | undefined
+    expect(diagnostics?.agentPreset).toMatchObject({
+      presetId: 'ap_input',
+      userInputModifierStepId: 'aps_input',
+      userInputModified: true,
+    })
+  })
+
   it('hydrates projected module stubs from the server module table before assembly runtime', async () => {
     await seedDatabase(harness.app, 'unused', {
       ...fixtureDatabase,

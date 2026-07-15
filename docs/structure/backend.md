@@ -165,17 +165,20 @@ then plans and selects memory, dispatches through `generation/`, and maps
 provider frames to chat SSE frames through `prompt/providerTransport.ts`.
 Selected prepared-input scopes are collected only when a step instruction uses
 the matching placeholder, such as `{{currentUserMessage}}`; `mainDraft` is
-after-main-only. Successful outputs can feed eligible later step instructions
-through `{{agent::outputKey}}`, while before-main `promptOutput` destinations
-also expand in the main prompt template. A before-main consumer can use only an
-earlier before-main dependency level; an after-main consumer can use completed
+after-main-only. A single last enabled before-main `userInput` destination can
+replace and persist the latest user message before the main prompt is assembled,
+parallel to the single last enabled after-main `finalOutput` modifier. Successful
+outputs can feed eligible later step instructions through
+`{{agent::outputKey}}`, while before-main `promptOutput` destinations also expand
+in the main prompt template. A before-main consumer can use only an earlier
+before-main dependency level; an after-main consumer can use completed
 before-main outputs and earlier after-main levels. Missing, disabled, self,
 same-level, or future output references classify the preset as `incomplete` and
-block generation. Successful streams run server
-post-generation before terminal `done`; after-main Agent Preset steps run after
-`editOutput` and before assistant-row persistence/run-vars/`onOutput`. Hidden
-Agent Preset diagnostics are stored under `generationInfo.agentPreset`, and
-required after-main failures surface as structured
+block generation. Successful streams run server post-generation before terminal
+`done`; after-main Agent Preset steps run after `editOutput` and before
+assistant-row persistence/run-vars/`onOutput`. Hidden Agent Preset diagnostics
+are stored under `generationInfo.agentPreset`, and required after-main failures
+surface as structured
 `done.postGeneration.agentPresetError`. Live before-main and after-main helper
 status is streamed through `agent_preset_progress` snapshots with phase-local
 completed/total counts and active step names; durable replay keeps only the

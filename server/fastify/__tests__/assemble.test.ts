@@ -413,6 +413,92 @@ describe('prompt summary hashes', () => {
     expect(result.formated?.map((row) => row.content).join('\n')).toContain('source-backed agent context')
   })
 
+  it('lets the last before-main modifier replace the latest user input before prompt rendering', async () => {
+    const db = makeDatabase({
+      maxContext: 100_000,
+      maxResponse: 50,
+      mainPrompt: 'MAIN',
+      formatingOrder: ['main', 'description', 'chats', 'lastChat'],
+      agentPresets: [
+        {
+          id: 'ap_input',
+          name: 'Input Agent',
+          enabled: true,
+          version: 1,
+          steps: [agentPresetStep({ id: 'aps_input', outputKey: 'input', destination: 'userInput' })],
+        },
+      ],
+      characters: [
+        makeCharacter({
+          chats: [
+            makeChat({
+              id: 'chat-1',
+              message: [
+                { role: 'user', data: 'older user turn', chatId: 'older-user' },
+                { role: 'char', data: 'older assistant turn', chatId: 'older-assistant' },
+              ] as Message[],
+              generationSettings: {
+                configured: true,
+                personaId: 'persona-default',
+                modelPresetId: 'model-preset-default',
+                promptPresetId: 'preset-default',
+                agentPresetId: 'ap_input',
+                jailbreakToggle: false,
+                sidebarToggles: {},
+              },
+            }),
+          ],
+        }),
+      ],
+    })
+    const executeAgentPresetStep = vi.fn(async (input) => {
+      expect(input.currentUserMessage).toBe('raw latest user turn')
+      return {
+        status: 'success' as const,
+        stepId: 'aps_input',
+        stepName: 'Gather Context',
+        outputKey: 'input',
+        outputText: 'rewritten latest user turn',
+        outputTruncated: false,
+        diagnostics: {
+          phase: 'beforeMain' as const,
+          outputFormat: 'text' as const,
+          destination: 'userInput' as const,
+          failurePolicy: 'required' as const,
+          inputChars: 20,
+          outputChars: 26,
+          startedAt: 1,
+          endedAt: 2,
+          durationMs: 1,
+          preparedInputSections: [],
+          preparedInputDiagnostics: [],
+          parseStatus: 'not_applicable' as const,
+        },
+      }
+    })
+
+    const result = await assemblePrompt(
+      baseInput({ userMessage: 'raw latest user turn' }),
+      depsFor(db, { executeAgentPresetStep }),
+    )
+
+    expect(result.stopSending).toBe(false)
+    if (result.stopSending) return
+    expect(result.formated?.filter((row) => row.role === 'user').map((row) => row.content)).toEqual([
+      'older user turn',
+      'rewritten latest user turn',
+    ])
+    expect(result.state?.agentPreset?.promptOutputs).toEqual({})
+    expect(result.state?.agentPreset?.userInputModified).toBe(true)
+    expect(result.submitTranscriptChanged).toBe(true)
+    expect(result.submitMessages?.at(-1)?.data).toBe('rewritten latest user turn')
+    expect(result.mutations?.messageMutations.at(-1)).toMatchObject({
+      type: 'replace_all',
+      source: 'agent_preset',
+    })
+    expect(db.characters[0].chats[0].message?.at(-1)?.data).toBe('older assistant turn')
+  })
+
   it('blocks assembly on required before-main Agent Preset failure', async () => {
     const db = makeDatabase({
       maxContext: 100_000,

@@ -213,6 +213,17 @@ function stepPhaseSelect(): HTMLSelectElement {
   return element!
 }
 
+function stepDestinationSelect(): HTMLSelectElement {
+  const element = [...target.querySelectorAll<HTMLSelectElement>('[data-risu-agent-preset-step-form] select')].find(
+    (select) => {
+      const optionValues = [...select.options].map((option) => option.value)
+      return optionValues.includes('promptOutput') && optionValues.includes('intermediate')
+    },
+  )
+  expect(element).toBeTruthy()
+  return element!
+}
+
 function stepTextInput(value: string): HTMLInputElement {
   const element = [...target.querySelectorAll<HTMLInputElement>('[data-risu-agent-preset-step-form] input')].find(
     (input) => input.type === 'text' && input.value === value,
@@ -526,6 +537,34 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).not.toContain(language.agentPresets.inputScopeLabels.mainDraft)
     expect(target.textContent).not.toContain(language.agentPresets.inputScopeDescriptions.mainDraft)
     expect(target.textContent).not.toContain('{{mainDraft}}')
+  })
+
+  it('offers user input only to before-main steps and saves it as the destination', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    stepEditButton().click()
+    await tick()
+
+    const destination = stepDestinationSelect()
+    expect([...destination.options].map((option) => option.value)).toEqual([
+      'promptOutput',
+      'intermediate',
+      'userInput',
+    ])
+    destination.value = 'userInput'
+    destination.dispatchEvent(new Event('change', { bubbles: true }))
+    await tick()
+
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.updateAgentPresetStep).toHaveBeenCalledWith('ap_a', 'aps_a', {
+      destination: 'userInput',
+    })
   })
 
   it('hides the preset save button while the step editor is open', async () => {

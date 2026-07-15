@@ -7,6 +7,7 @@ import {
   type AgentPresetStepRecord,
   type AgentPresetValidationIssue,
   isAgentPresetDirectOutputModifierStep,
+  isAgentPresetUserInputModifierStep,
   isValidAgentPresetOutputKey,
   validateAgentPresetRecord,
 } from './agentPresetRecords'
@@ -168,6 +169,7 @@ export interface AgentPresetExecutionPlan {
   beforeMain: AgentPresetPhasePlan
   afterMain: AgentPresetPhasePlan
   namedOutputRegistry: readonly AgentPresetNamedOutputRegistryEntry[]
+  userInputModifierStepId?: string
   finalOutputModifierStepId?: string
 }
 
@@ -466,6 +468,9 @@ function buildExecutionPlan(
   const beforeMain = phasePlan('beforeMain')
   const afterMain = phasePlan('afterMain')
   const stableSteps = enabledSteps.map((step) => plannedById.get(step.id) ?? plannedStepFallback(step))
+  const userInputModifier = enabledSteps.find(
+    (step) => step.phase === 'beforeMain' && isAgentPresetUserInputModifierStep(step),
+  )
   const finalOutputModifier = enabledSteps.find(
     (step) => step.phase === 'afterMain' && isAgentPresetDirectOutputModifierStep(step),
   )
@@ -485,6 +490,7 @@ function buildExecutionPlan(
       stepName: step.name,
       stableIndex,
     })),
+    ...(userInputModifier ? { userInputModifierStepId: userInputModifier.id } : {}),
     ...(finalOutputModifier ? { finalOutputModifierStepId: finalOutputModifier.id } : {}),
   }
 }

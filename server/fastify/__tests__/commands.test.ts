@@ -4287,6 +4287,64 @@ describe('Agent Preset command surface', () => {
     expect(copy.steps).toHaveLength(source.steps.length)
   })
 
+  it('accepts a last before-main user-input modifier and rejects invalid phase or ordering', async () => {
+    const { assertion } = await setupAuthedClient(harness.app)
+    const revision = await importDatabase(harness.app, assertion, {
+      agentPresets: [{ id: 'ap_input', name: 'Input Agent', enabled: true, version: 1, steps: [] }],
+    })
+
+    const modifier = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_input/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: revision,
+        step: {
+          name: 'Rewrite input',
+          phase: 'beforeMain',
+          instruction: 'Rewrite the latest user input.',
+          outputKey: 'input',
+          destination: 'userInput',
+        },
+      },
+    })
+    expect(modifier.statusCode).toBe(200)
+
+    const wrongPhase = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_input/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: modifier.json().revision,
+        step: {
+          name: 'Wrong phase',
+          phase: 'afterMain',
+          outputKey: 'wrong_phase',
+          destination: 'userInput',
+        },
+      },
+    })
+    expect(wrongPhase.statusCode).toBe(400)
+    expect(wrongPhase.json().error).toContain('Only before-main Agent Preset steps can modify user input')
+
+    const notLast = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/agent-presets/ap_input/steps',
+      headers: { 'risu-auth': assertion },
+      payload: {
+        baseRevision: modifier.json().revision,
+        step: {
+          name: 'Later context',
+          phase: 'beforeMain',
+          outputKey: 'later_context',
+          destination: 'intermediate',
+        },
+      },
+    })
+    expect(notLast.statusCode).toBe(400)
+    expect(notLast.json().error).toContain('user-input modifier must be the last')
+  })
+
   it('returns exact canonical field receipts for metadata and step PATCHes', async () => {
     const { assertion } = await setupAuthedClient(harness.app)
     const revision = await importDatabase(harness.app, assertion, {

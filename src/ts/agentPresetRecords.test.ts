@@ -151,4 +151,50 @@ describe('agent preset records', () => {
       expect.arrayContaining(['invalid_max_concurrency', 'invalid_runtime', 'invalid_after_main_modifier']),
     )
   })
+
+  it('validates before-main user-input modifier phase, uniqueness, and order', () => {
+    const valid = validateAgentPresetRecord(
+      preset({
+        steps: [
+          step({ id: 'aps_context', outputKey: 'context' }),
+          step({ id: 'aps_input', outputKey: 'input', destination: 'userInput' }),
+        ],
+      }),
+    )
+    expect(valid).toEqual([])
+
+    const wrongOrder = validateAgentPresetRecord(
+      preset({
+        steps: [
+          step({ id: 'aps_input', outputKey: 'input', destination: 'userInput' }),
+          step({ id: 'aps_context', outputKey: 'context' }),
+        ],
+      }),
+    )
+    expect(wrongOrder.map((issue) => issue.code)).toContain('invalid_before_main_modifier')
+
+    const wrongPhase = validateAgentPresetRecord(
+      preset({
+        steps: [
+          step({
+            id: 'aps_input',
+            phase: 'afterMain',
+            outputKey: 'input',
+            destination: 'userInput',
+          }),
+        ],
+      }),
+    )
+    expect(wrongPhase.map((issue) => issue.code)).toContain('invalid_destination')
+
+    const duplicate = validateAgentPresetRecord(
+      preset({
+        steps: [
+          step({ id: 'aps_input_a', outputKey: 'input_a', destination: 'userInput' }),
+          step({ id: 'aps_input_b', outputKey: 'input_b', destination: 'userInput' }),
+        ],
+      }),
+    )
+    expect(duplicate.map((issue) => issue.code)).toContain('invalid_before_main_modifier')
+  })
 })

@@ -13,7 +13,7 @@ export const AGENT_PRESET_STEP_INPUT_SCOPES = [
   'previousAgentOutputs',
   'mainDraft',
 ] as const
-export const AGENT_PRESET_STEP_DESTINATIONS = ['promptOutput', 'intermediate', 'finalOutput'] as const
+export const AGENT_PRESET_STEP_DESTINATIONS = ['promptOutput', 'intermediate', 'userInput', 'finalOutput'] as const
 
 export const AGENT_PRESET_MAX_CONCURRENCY_MIN = 1
 export const AGENT_PRESET_MAX_CONCURRENCY_MAX = 16
@@ -112,6 +112,7 @@ export type AgentPresetValidationIssueCode =
   | 'invalid_output_format'
   | 'invalid_destination'
   | 'invalid_failure_policy'
+  | 'invalid_before_main_modifier'
   | 'invalid_after_main_modifier'
   | 'unavailable_agent_output'
 
@@ -271,6 +272,7 @@ export function validateAgentPresetRecord(
   })
 
   issues.push(...validateAgentPresetDependencyGraph(enabledSteps, path))
+  issues.push(...validateBeforeMainUserInputModifier(enabledSteps, path))
   issues.push(...validateAfterMainFinalOutputModifier(enabledSteps, path))
 
   return issues
@@ -334,8 +336,13 @@ export function validateAgentPresetStepRecord(
       issue(
         'invalid_destination',
         `${path}.destination`,
-        'Agent Preset step destination must be promptOutput, intermediate, or finalOutput',
+        'Agent Preset step destination must be promptOutput, intermediate, userInput, or finalOutput',
       ),
+    )
+  }
+  if (step.destination === 'userInput' && step.phase !== 'beforeMain') {
+    issues.push(
+      issue('invalid_destination', `${path}.destination`, 'Only before-main Agent Preset steps can modify user input'),
     )
   }
   if (step.destination === 'finalOutput' && step.phase !== 'afterMain') {
@@ -356,6 +363,10 @@ export function isValidAgentPresetOutputKey(value: unknown): value is string {
 
 export function isAgentPresetDirectOutputModifierStep(step: Pick<AgentPresetStepRecord, 'destination'>): boolean {
   return step.destination === 'finalOutput'
+}
+
+export function isAgentPresetUserInputModifierStep(step: Pick<AgentPresetStepRecord, 'destination'>): boolean {
+  return step.destination === 'userInput'
 }
 
 function normalizeAgentPresetRecord(item: Record<string, unknown>): AgentPresetRecord | null {
@@ -422,7 +433,9 @@ function normalizeOutputFormat(value: unknown): AgentPresetStepOutputFormat {
 }
 
 function normalizeDestination(value: unknown, phase: AgentPresetStepPhase): AgentPresetStepDestination {
-  if (value === 'promptOutput' || value === 'intermediate' || value === 'finalOutput') return value
+  if (value === 'promptOutput' || value === 'intermediate' || value === 'userInput' || value === 'finalOutput') {
+    return value
+  }
   return phase === 'beforeMain' ? 'promptOutput' : 'intermediate'
 }
 
@@ -591,6 +604,34 @@ function validateAgentPresetDependencyGraph(
   return issues
 }
 
+function validateBeforeMainUserInputModifier(
+  enabledSteps: readonly AgentPresetStepRecord[],
+  path: string,
+): AgentPresetValidationIssue[] {
+  const issues: AgentPresetValidationIssue[] = []
+  const beforeMainSteps = enabledSteps.filter((step) => step.phase === 'beforeMain')
+  const modifiers = beforeMainSteps.filter(isAgentPresetUserInputModifierStep)
+  if (modifiers.length > 1) {
+    issues.push(
+      issue(
+        'invalid_before_main_modifier',
+        `${path}.steps`,
+        'Only one enabled before-main Agent Preset step can directly modify user input',
+      ),
+    )
+  }
+  if (modifiers.length === 1 && beforeMainSteps[beforeMainSteps.length - 1] !== modifiers[0]) {
+    issues.push(
+      issue(
+        'invalid_before_main_modifier',
+        `${path}.steps`,
+        'The enabled before-main user-input modifier must be the last enabled before-main step',
+      ),
+    )
+  }
+  return issues
+}
+
 function validateAfterMainFinalOutputModifier(
   enabledSteps: readonly AgentPresetStepRecord[],
   path: string,
@@ -642,7 +683,7 @@ function isAgentPresetStepInputScope(value: unknown): value is AgentPresetStepIn
 }
 
 function isAgentPresetStepDestination(value: unknown): value is AgentPresetStepDestination {
-  return value === 'promptOutput' || value === 'intermediate' || value === 'finalOutput'
+  return value === 'promptOutput' || value === 'intermediate' || value === 'userInput' || value === 'finalOutput'
 }
 
 function isValidAgentPresetStepModelSelection(value: unknown): value is AgentPresetStepModelSelection {

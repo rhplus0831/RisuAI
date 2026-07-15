@@ -2151,6 +2151,7 @@ export const languageEnglish = {
     destinationLabel: 'Destination',
     destinationPromptOutput: 'Prompt output',
     destinationIntermediate: 'Intermediate',
+    destinationUserInput: 'User input',
     destinationFinalOutput: 'Final output',
     failurePolicyLabel: 'Failure policy',
     failurePolicyRequired: 'Required',

@@ -824,7 +824,7 @@ function readOutputFormat(value: unknown, label: string): AgentPresetStepOutputF
 
 function readDestination(value: unknown, label: string): AgentPresetStepDestination {
   if (typeof value !== 'string' || !AGENT_PRESET_DESTINATION_SET.has(value)) {
-    throw new ValidationError(`${label} must be promptOutput, intermediate, or finalOutput`)
+    throw new ValidationError(`${label} must be promptOutput, intermediate, userInput, or finalOutput`)
   }
   return value as AgentPresetStepDestination
 }

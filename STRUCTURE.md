@@ -155,12 +155,16 @@ past decisions; they are not the source of current behavior.
   `{{agent::outputKey}}`; any successful step output can feed an eligible later
   step through the same output-key syntax. Before-main consumers can use earlier
   before-main dependency levels; after-main consumers can also use completed
-  before-main outputs. Missing, disabled, self, same-level, or future output
-  references make the preset `incomplete` and block generation. After-main
-  steps run after `editOutput` and before `onOutput`. Steps run by dependency
-  level up to preset `maxConcurrency`, can target prompt/intermediate/final
-  outputs, and store hidden diagnostics under generation metadata. The legacy
-  Context Agent runtime, settings page, `{{agent}}`, and `{{slot::agent}}` are
-  removed; old `agentContext*` fields may remain only as inert imported data.
+  before-main outputs. One last enabled before-main step can target `userInput`
+  to replace and persist the latest user message before main prompt assembly,
+  mirroring the last enabled after-main `finalOutput` modifier. Missing,
+  disabled, self, same-level, or future output references make the preset
+  `incomplete` and block generation. After-main steps run after `editOutput` and
+  before `onOutput`. Steps run by dependency level up to preset
+  `maxConcurrency`, can target `promptOutput`, `intermediate`, `userInput`, or
+  `finalOutput`, and store hidden diagnostics under generation metadata. The
+  legacy Context Agent runtime, settings page, `{{agent}}`, and
+  `{{slot::agent}}` are removed; old `agentContext*` fields may remain only as
+  inert imported data.
 - Root TypeScript is intentionally loose for browser code. Server checking is
   strict and uses the project-reference workflow in `AGENTS.md`.

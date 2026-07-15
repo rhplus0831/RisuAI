@@ -140,6 +140,33 @@ describe('agent preset resolver', () => {
     })
   })
 
+  it('plans a before-main user-input modifier separately from the final-output modifier', () => {
+    const result = resolveAgentPresetForChat({
+      database: db({
+        agentPresets: [
+          preset({
+            steps: [
+              step({ id: 'aps_context', outputKey: 'context' }),
+              step({ id: 'aps_input', outputKey: 'input', destination: 'userInput' }),
+              step({
+                id: 'aps_final',
+                phase: 'afterMain',
+                outputKey: 'final',
+                destination: 'finalOutput',
+              }),
+            ],
+          }),
+        ],
+      }),
+      generationSettings: { agentPresetId: 'ap_default' },
+    })
+
+    expect(result.status).toBe('ready')
+    if (result.status !== 'ready') throw new Error('expected ready modifier plan')
+    expect(result.plan.userInputModifierStepId).toBe('aps_input')
+    expect(result.plan.finalOutputModifierStepId).toBe('aps_final')
+  })
+
   it('rejects invalid DAGs, duplicate output keys, and final-output modifier ordering', () => {
     const cyclic = resolveAgentPresetForChat({
       database: db({

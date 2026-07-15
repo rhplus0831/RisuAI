@@ -60,9 +60,11 @@ export interface AgentPresetGenerationDiagnostic {
   maxConcurrency?: number
   beforeMainStepCount?: number
   afterMainStepCount?: number
+  userInputModifierStepId?: string
   finalOutputModifierStepId?: string
   promptOutputKeys: string[]
   steps: AgentPresetStepDiagnostic[]
+  userInputModified?: boolean
   finalTextModified?: boolean
   mainOutputPreview?: string
   mainOutputChars?: number
@@ -103,9 +105,11 @@ export function normalizeAgentPresetGenerationDiagnostic(
     maxConcurrency: readNumber(value.maxConcurrency),
     beforeMainStepCount: readNumber(value.beforeMainStepCount),
     afterMainStepCount: readNumber(value.afterMainStepCount),
+    userInputModifierStepId: readString(value.userInputModifierStepId),
     finalOutputModifierStepId: readString(value.finalOutputModifierStepId),
     promptOutputKeys: readStringArray(value.promptOutputKeys),
     steps: Array.isArray(value.steps) ? value.steps.flatMap(normalizeStepDiagnostic) : [],
+    userInputModified: readBoolean(value.userInputModified),
     finalTextModified: readBoolean(value.finalTextModified),
     mainOutputPreview: readString(value.mainOutputPreview, { allowEmpty: true }),
     mainOutputChars: readNumber(value.mainOutputChars),

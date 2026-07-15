@@ -76,6 +76,7 @@ export type ServerChatMutationSource =
   | 'start_trigger'
   | 'input_trigger'
   | 'editinput'
+  | 'agent_preset'
   | 'output_trigger'
 
 export type ServerChatVarMutationValue = string | number | boolean | null
