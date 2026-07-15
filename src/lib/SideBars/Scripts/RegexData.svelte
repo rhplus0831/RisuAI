@@ -94,12 +94,13 @@
       onclick={async () => {
         const d = await alertConfirm(language.removeConfirm + value.comment)
         if (d) {
-          if (!open) {
+          if (open) {
             onClose()
           }
           onRemove()
         }
-      }}>
+      }}
+      data-risu-regex-action="delete">
       <XIcon />
     </button>
   </div>
