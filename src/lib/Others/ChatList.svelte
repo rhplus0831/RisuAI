@@ -26,6 +26,7 @@
   } from 'src/ts/server/chatBridge.svelte'
   import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   let editMode = $state(false)
   let chatNameDrafts = $state({})
@@ -242,15 +243,42 @@
     if (!resolveActiveOwnerCharacter()) return
     importChat()
   }
+
+  /** @param {KeyboardEvent} event */
+  function handleDialogKeydown(event) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  }
+
+  /** @param {MouseEvent} event */
+  function handleBackdropClick(event) {
+    if (event.target === event.currentTarget) close()
+  }
 </script>
 
 {#if modalCharacter}
-  <div data-risu-chat-list="modal" class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
-    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto">
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    data-modal-root
+    data-risu-chat-list="modal"
+    class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
+    onclick={handleBackdropClick}>
+    <div
+      use:modalFocusTrap
+      class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-72 max-h-full overflow-y-auto"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="risu-chat-list-title"
+      tabindex="-1"
+      onkeydown={handleDialogKeydown}>
       <div class="flex items-center text-textcolor mb-4">
-        <h2 class="mt-0 mb-0">{language.chatList}</h2>
+        <h2 id="risu-chat-list-title" class="mt-0 mb-0">{language.chatList}</h2>
         <div class="grow flex justify-end">
           <button
+            data-modal-initial-focus
             data-risu-chat-action="close"
             aria-label={language.close}
             class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"

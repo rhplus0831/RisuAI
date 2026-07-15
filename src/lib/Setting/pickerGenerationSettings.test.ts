@@ -323,6 +323,20 @@ function mountPersonaPicker(mode: GenerationSettingsPickerMode, close = vi.fn())
   return close
 }
 
+async function settleModalFocus(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await tick()
+}
+
+function createModalOpener(label: string): HTMLButtonElement {
+  const opener = document.createElement('button')
+  opener.textContent = label
+  document.body.insertBefore(opener, target)
+  opener.focus()
+  return opener
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -345,6 +359,94 @@ afterEach(() => {
 })
 
 describe('generation settings picker mode', () => {
+  it('gives the preset picker a blocking focus contract and owned close interactions', async () => {
+    const opener = createModalOpener('Open presets')
+    const close = mountPresetPicker('global')
+    await settleModalFocus()
+
+    const dialog = pickerRoot('prompt', 'global')
+    const backdrop = dialog.closest<HTMLElement>('[data-modal-root]')
+    const initialFocus = dialog.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    expect(backdrop).toBeTruthy()
+    expect(dialog.getAttribute('role')).toBe('dialog')
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.getAttribute('aria-labelledby')).toBe('risu-preset-picker-title')
+    expect(opener.inert).toBe(true)
+    expect(document.activeElement).toBe(initialFocus)
+
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    )
+    const last = focusable.at(-1)
+    expect(last).toBeTruthy()
+    last!.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    last!.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(initialFocus)
+
+    dialog.click()
+    expect(close).not.toHaveBeenCalled()
+    backdrop!.click()
+    expect(close).toHaveBeenCalledOnce()
+    close.mockClear()
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    initialFocus!.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+
+    unmount(component!)
+    component = undefined
+    await settleModalFocus()
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
+  })
+
+  it('gives the persona picker a blocking focus contract and owned close interactions', async () => {
+    const opener = createModalOpener('Open personas')
+    const close = mountPersonaPicker('global')
+    await settleModalFocus()
+
+    const dialog = pickerRoot('persona', 'global')
+    const backdrop = dialog.closest<HTMLElement>('[data-modal-root]')
+    const initialFocus = dialog.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    expect(backdrop).toBeTruthy()
+    expect(dialog.getAttribute('role')).toBe('dialog')
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.getAttribute('aria-labelledby')).toBe('risu-persona-picker-title')
+    expect(opener.inert).toBe(true)
+    expect(document.activeElement).toBe(initialFocus)
+
+    const rows = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[data-risu-generation-picker-row]'))
+    const last = rows.at(-1)
+    expect(last).toBeTruthy()
+    last!.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    last!.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(initialFocus)
+
+    dialog.click()
+    expect(close).not.toHaveBeenCalled()
+    backdrop!.click()
+    expect(close).toHaveBeenCalledOnce()
+    close.mockClear()
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    initialFocus!.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+
+    unmount(component!)
+    component = undefined
+    await settleModalFocus()
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('allows Space in the prompt preset rename input', async () => {
     const close = mountPresetPicker('global')
 

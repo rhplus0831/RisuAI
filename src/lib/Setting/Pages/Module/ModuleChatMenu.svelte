@@ -28,25 +28,45 @@
         return score
       })
   }
+
+  function closeMenu(): void {
+    close('')
+  }
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeMenu()
+  }
+
+  function handleBackdropClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget) closeMenu()
+  }
 </script>
 
-<div data-modal-root class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  data-modal-root
+  class="fixed inset-0 z-[100] bg-black/50 flex justify-center items-center"
+  onclick={handleBackdropClick}>
   <div
     use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-full max-h-full overflow-y-auto"
     role="dialog"
     aria-modal="true"
     aria-labelledby="risu-module-chat-menu-title"
-    tabindex="-1">
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor">
       <h2 id="risu-module-chat-menu-title" class="mt-0 mb-0 text-lg">{language.modules}</h2>
       <div class="grow flex justify-end">
         <button
+          data-modal-initial-focus
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           aria-label={language.close}
-          onclick={() => {
-            close('')
-          }}>
+          onclick={closeMenu}>
           <XIcon size={24} />
         </button>
       </div>

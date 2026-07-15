@@ -11,6 +11,7 @@
     saveActiveChatGenerationSettingsSelection,
   } from 'src/ts/activeChatGenerationSettings'
   import type { ActiveChatTarget } from 'src/ts/chatCommands'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   interface Props {
     close?: any
@@ -54,18 +55,41 @@
     const personaId = nonEmptyId(getDatabase().personas[index]?.id)
     return !!personaId && personaId === activeChatPersonaId
   }
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  }
+
+  function handleBackdropClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget) close()
+  }
 </script>
 
-<div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  data-modal-root
+  class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center"
+  onclick={handleBackdropClick}>
   <div
+    use:modalFocusTrap
     class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-96 max-h-full overflow-y-auto"
     data-risu-generation-picker
     data-risu-picker-kind="persona"
-    data-risu-picker-mode={mode}>
+    data-risu-picker-mode={mode}
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="risu-persona-picker-title"
+    tabindex="-1"
+    onkeydown={handleDialogKeydown}>
     <div class="flex items-center text-textcolor mb-4">
-      <h2 class="mt-0 mb-0 font-bold">{language.persona}</h2>
+      <h2 id="risu-persona-picker-title" class="mt-0 mb-0 font-bold">{language.persona}</h2>
       <div class="grow flex justify-end">
         <button
+          data-modal-initial-focus
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer items-center"
           aria-label={language.close}
           onclick={close}>

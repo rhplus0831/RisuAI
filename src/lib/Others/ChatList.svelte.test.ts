@@ -386,6 +386,53 @@ describe('ChatList DOM contract harness', () => {
     setDatabaseLite({} as never)
   })
 
+  it('uses a blocking focus contract and owns Escape and backdrop close interactions', async () => {
+    seedModalDatabase()
+    const opener = document.createElement('button')
+    opener.textContent = 'Open chat list'
+    document.body.insertBefore(opener, target)
+    opener.focus()
+    const close = vi.fn()
+
+    component = mount(ChatList, { target, props: { close } })
+    await flushCommandWork()
+
+    const backdrop = modalRoot()
+    const dialog = backdrop.querySelector<HTMLElement>('[role="dialog"]')
+    const initialFocus = dialog?.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    if (!dialog || !initialFocus) throw new Error('Chat list dialog not found')
+    expect(backdrop.hasAttribute('data-modal-root')).toBe(true)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.getAttribute('aria-labelledby')).toBe('risu-chat-list-title')
+    expect(opener.inert).toBe(true)
+    expect(document.activeElement).toBe(initialFocus)
+
+    const last = dialog.querySelector<HTMLButtonElement>('[data-risu-chat-action="edit"]')
+    if (!last) throw new Error('Chat list final focus target not found')
+    last.focus()
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+    last.dispatchEvent(tab)
+    expect(tab.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(initialFocus)
+
+    dialog.click()
+    expect(close).not.toHaveBeenCalled()
+    backdrop.click()
+    expect(close).toHaveBeenCalledOnce()
+    close.mockClear()
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    initialFocus.dispatchEvent(escape)
+    expect(escape.defaultPrevented).toBe(true)
+    expect(close).toHaveBeenCalledOnce()
+
+    unmount(component)
+    component = undefined
+    await flushCommandWork()
+    expect(opener.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('renders seeded chat rows with the selected row selector', async () => {
     seedModalDatabase()
 
