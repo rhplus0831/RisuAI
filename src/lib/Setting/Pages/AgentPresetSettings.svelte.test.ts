@@ -190,7 +190,7 @@ function descriptionInput(): HTMLTextAreaElement {
 
 function metadataCheckbox(name: string): HTMLInputElement {
   const input = [...target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')].find(
-    (candidate) => candidate.alt === name,
+    (candidate) => candidate.getAttribute('aria-label') === name,
   )
   expect(input, `metadata checkbox ${name}`).toBeTruthy()
   return input!
@@ -240,7 +240,7 @@ function stepInstructionInput(): HTMLTextAreaElement {
 
 function stepCheckbox(name: string): HTMLInputElement {
   const element = [...target.querySelectorAll<HTMLInputElement>('[data-risu-agent-preset-step-form] input')].find(
-    (input) => input.type === 'checkbox' && input.alt === name,
+    (input) => input.type === 'checkbox' && input.getAttribute('aria-label') === name,
   )
   expect(element, `step checkbox ${name}`).toBeTruthy()
   return element!
