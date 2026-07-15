@@ -13,11 +13,13 @@
   let allAssets = $state<[string, InlayAsset][]>([])
   let displayCount = $state(PAGE_SIZE)
   let loading = $state(true)
+  let loadError = $state('')
   let loadMoreSentinel: HTMLDivElement | null = $state(null)
   // Object URLs to revoke on teardown.
   let previewURLs = $state<Map<string, string>>(new Map())
   let selection = $state<Set<string>>(new SvelteSet())
   const previewLoadRuns = new Map<string, number>()
+  let assetLoadRun = 0
   let destroyed = false
 
   const displayedAssets = $derived(allAssets.slice(0, displayCount))
@@ -28,11 +30,15 @@
     if (previewURLs.has(id)) return previewURLs.get(id)!
     const run = (previewLoadRuns.get(id) ?? 0) + 1
     previewLoadRuns.set(id, run)
-    const result = await getInlayAssetBlob(id)
-    if (result && !destroyed && previewLoadRuns.get(id) === run) {
-      const url = URL.createObjectURL(result.data)
-      previewURLs.set(id, url)
-      return url
+    try {
+      const result = await getInlayAssetBlob(id)
+      if (result && !destroyed && previewLoadRuns.get(id) === run) {
+        const url = URL.createObjectURL(result.data)
+        previewURLs.set(id, url)
+        return url
+      }
+    } catch (error) {
+      console.warn(`Failed to load inlay preview ${id}:`, error)
     }
     return previewURLs.get(id) ?? null
   }
@@ -57,7 +63,12 @@
     if (!(await alertConfirm(language.playground.inlayDeleteConfirm.replace('{name}', name)))) {
       return
     }
-    await removeInlayAsset(id)
+    try {
+      await removeInlayAsset(id)
+    } catch (error) {
+      alertError(error)
+      return
+    }
     if (previewURLs.has(id)) {
       URL.revokeObjectURL(previewURLs.get(id)!)
       previewURLs.delete(id)
@@ -152,17 +163,32 @@
 
   onDestroy(() => {
     destroyed = true
+    assetLoadRun += 1
     previewLoadRuns.clear()
     previewURLs.forEach((url) => URL.revokeObjectURL(url))
     observer?.disconnect()
   })
 
   const loadAssets = async () => {
+    const run = ++assetLoadRun
     loading = true
-    allAssets = await listInlayAssets()
-    loading = false
+    loadError = ''
+    try {
+      const assets = await listInlayAssets()
+      if (destroyed || run !== assetLoadRun) return
+      allAssets = assets
+      selection.clear()
+      displayCount = PAGE_SIZE
+    } catch (error) {
+      if (destroyed || run !== assetLoadRun) return
+      loadError = error instanceof Error ? error.message : String(error)
+    } finally {
+      if (!destroyed && run === assetLoadRun) {
+        loading = false
+      }
+    }
   }
-  loadAssets()
+  void loadAssets()
 </script>
 
 <h2 class="text-4xl text-textcolor mt-6 font-black relative">
@@ -185,7 +211,15 @@
   {/if}
 </header>
 
-{#if allAssets.length === 0 && !loading}
+{#if loadError}
+  <div class="flex flex-col items-center gap-3 py-12 text-center" role="alert">
+    <p class="text-lg text-textcolor">{language.playground.inlayLoadError}</p>
+    <p class="text-sm text-textcolor2">{loadError}</p>
+    <Button onclick={loadAssets} styled="outlined" size="sm">{language.retry}</Button>
+  </div>
+{:else if loading && allAssets.length === 0}
+  <div class="py-12 text-center text-textcolor2">{language.loading}</div>
+{:else if allAssets.length === 0}
   <div class="text-center py-12 text-textcolor2">
     <p class="text-lg">{language.playground.inlayEmpty}</p>
     <p class="text-sm mt-2">{language.playground.inlayEmptyDesc}</p>
@@ -206,6 +240,10 @@
               {#await getPreviewURL(id) then url}
                 {#if url}
                   <img alt={asset.name} class="w-full h-40 object-contain rounded bg-black/20" src={url} />
+                {:else}
+                  <div class="flex h-40 items-center justify-center rounded bg-black/20 text-sm text-textcolor2">
+                    {language.playground.inlayPreviewUnavailable}
+                  </div>
                 {/if}
               {/await}
             {:else if asset.type === 'video'}
@@ -214,6 +252,10 @@
                   <video class="w-full h-40 object-contain rounded bg-black/20" controls src={url}>
                     <track kind="captions" />
                   </video>
+                {:else}
+                  <div class="flex h-40 items-center justify-center rounded bg-black/20 text-sm text-textcolor2">
+                    {language.playground.inlayPreviewUnavailable}
+                  </div>
                 {/if}
               {/await}
             {:else if asset.type === 'audio'}
@@ -222,6 +264,10 @@
                   <audio class="w-full" controls src={url}>
                     <track kind="captions" />
                   </audio>
+                {:else}
+                  <div class="flex h-40 items-center justify-center rounded bg-black/20 text-sm text-textcolor2">
+                    {language.playground.inlayPreviewUnavailable}
+                  </div>
                 {/if}
               {/await}
             {/if}

@@ -74,6 +74,36 @@ afterEach(() => {
 })
 
 describe('PlaygroundInlayExplorer', () => {
+  it('shows a recoverable error when the initial asset list fails', async () => {
+    inlayMocks.listInlayAssets.mockRejectedValueOnce(new Error('IndexedDB unavailable')).mockResolvedValueOnce([])
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Could not load inlay assets'))
+
+    expect(target.textContent).toContain('IndexedDB unavailable')
+    const retry = Array.from(target.querySelectorAll('button')).find((button) => button.textContent?.includes('Retry'))
+    expect(retry).toBeTruthy()
+    retry!.click()
+
+    await vi.waitFor(() => expect(inlayMocks.listInlayAssets).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(target.textContent).toContain('No saved inlay assets'))
+    expect(target.textContent).not.toContain('Could not load inlay assets')
+  })
+
+  it('keeps the explorer usable when an individual preview fails', async () => {
+    inlayMocks.listInlayAssets.mockResolvedValue([
+      ['asset-1', { data: '', ext: 'png', name: 'Asset 1', type: 'image' }],
+    ])
+    inlayMocks.getInlayAssetBlob.mockRejectedValue(new Error('asset bytes missing'))
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    component = mount(PlaygroundInlayExplorer, { target })
+
+    await vi.waitFor(() => expect(target.textContent).toContain('Preview unavailable'))
+    expect(target.textContent).toContain('Asset 1')
+    expect(consoleWarn).toHaveBeenCalledWith('Failed to load inlay preview asset-1:', expect.any(Error))
+  })
+
   it('selects assets beyond the currently rendered page', async () => {
     component = mount(PlaygroundInlayExplorer, { target })
     await vi.waitFor(() => expect(target.textContent).toContain('Total 40 assets'))
@@ -178,5 +208,24 @@ describe('PlaygroundInlayExplorer', () => {
     expect(target.textContent).not.toContain('Asset 2')
     expect(target.textContent).toContain('Deselect All (1)')
     expect(alertMocks.alertError).toHaveBeenCalledWith(deleteError)
+  })
+
+  it('keeps a single asset visible and reports the error when deletion fails', async () => {
+    inlayMocks.listInlayAssets.mockResolvedValue([
+      ['asset-1', { data: '', ext: 'json', name: 'Asset 1', type: 'signature' }],
+    ])
+    const deleteError = new Error('delete failed')
+    inlayMocks.removeInlayAsset.mockRejectedValue(deleteError)
+
+    component = mount(PlaygroundInlayExplorer, { target })
+    await vi.waitFor(() => expect(target.textContent).toContain('Asset 1'))
+
+    const deleteButton = Array.from(target.querySelectorAll('button')).find((button) => button.textContent === 'Delete')
+    expect(deleteButton).toBeTruthy()
+    deleteButton!.click()
+
+    await vi.waitFor(() => expect(inlayMocks.removeInlayAsset).toHaveBeenCalledWith('asset-1'))
+    await vi.waitFor(() => expect(alertMocks.alertError).toHaveBeenCalledWith(deleteError))
+    expect(target.textContent).toContain('Asset 1')
   })
 })

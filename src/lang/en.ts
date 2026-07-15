@@ -733,6 +733,8 @@ export const languageEnglish = {
     inlayEmpty: 'No saved inlay assets',
     inlayEmptyDesc: 'Images, audio, and videos attached or generated in chats will appear here',
     inlayExplorer: 'Inlay Assets Explorer',
+    inlayLoadError: 'Could not load inlay assets',
+    inlayPreviewUnavailable: 'Preview unavailable',
     inlaySelectAll: 'Select All',
     inlayDeleteConfirm: 'Are you sure you want to delete {name}?',
     inlayDeleteMultipleConfirm: 'Are you sure you want to delete the selected {count} assets?',
