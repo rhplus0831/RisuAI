@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
+
   let currentSrc: string[] = $state([])
   let oldSrc: string[] = $state([])
   let showOldImage = $state(false)
   let styleType: string = $state('normal')
   let oldStyleType: string = $state('normal')
+  let sourceRun = 0
 
   interface Props {
     src?: string[] | Promise<string[]>
@@ -13,7 +16,9 @@
   let { src = [], classType }: Props = $props()
 
   async function processSrc(src: string[] | Promise<string[]>) {
+    const run = ++sourceRun
     const resultSrc = [...(await src)]
+    if (run !== sourceRun) return
 
     let styl = styleType
     if (resultSrc[0] === 'normal' || resultSrc[0] === 'emp') {
@@ -41,7 +46,11 @@
   }
 
   $effect.pre(() => {
-    processSrc(src)
+    void processSrc(src)
+  })
+
+  onDestroy(() => {
+    sourceRun += 1
   })
 </script>
 
