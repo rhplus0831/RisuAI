@@ -99,6 +99,7 @@
     resolveFreshBiasImportValue,
     type BiasImportOperation,
   } from 'src/ts/server/biasImport'
+  import { createLatestPromptTokenCounter } from './promptTokenCounter'
 
   const stopServerSettingsWatch = watchServerBackedSettings(['proxyRequestModel', 'useLegacyGUI'])
   onDestroy(stopServerSettingsWatch)
@@ -415,10 +416,15 @@
     return submenu === id || (submenu === -1 && hasSubmenu(id))
   }
 
+  const countPromptTokens = createLatestPromptTokenCounter((text) => tokenizeAccurate(text, true))
+
   async function loadTokenize() {
-    tokens.mainPrompt = await tokenizeAccurate(mainPromptDraft.value, true)
-    tokens.jailbreak = await tokenizeAccurate(jailbreakDraft.value, true)
-    tokens.globalNote = await tokenizeAccurate(globalNoteDraft.value, true)
+    const nextTokens = await countPromptTokens({
+      mainPrompt: mainPromptDraft.value,
+      jailbreak: jailbreakDraft.value,
+      globalNote: globalNoteDraft.value,
+    })
+    if (nextTokens) tokens = nextTokens
   }
 
   function toggleCustomFlag(flag: number): void {
