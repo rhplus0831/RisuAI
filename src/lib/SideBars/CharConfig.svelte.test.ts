@@ -251,6 +251,7 @@ vi.mock('./Scripts/TriggerList.svelte', async () => {
 import CharConfig from './CharConfig.svelte'
 import { CharConfigSubMenu, MobileGUI, selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite, type character } from 'src/ts/storage/database.svelte'
+import { language } from 'src/lang'
 
 function charConfigSource(): string {
   return readFileSync(resolve(process.cwd(), 'src/lib/SideBars/CharConfig.svelte'), 'utf8')
@@ -454,6 +455,37 @@ afterEach(() => {
   vi.unstubAllGlobals()
   vi.clearAllTimers()
   vi.useRealTimers()
+})
+
+describe('CharConfig desktop section navigation', () => {
+  it('names every section and exposes the selected section', async () => {
+    await mountCharConfig(0)
+    MobileGUI.set(false)
+    await settleComponent()
+
+    const expectedNames = {
+      profile: language.character,
+      display: language.characterDisplay,
+      lorebook: language.loreBook,
+      tts: 'TTS',
+      scripts: language.scripts,
+      advanced: language.advancedSettings,
+      manage: `${language.exportCharacter} / ${language.removeCharacter}`,
+    }
+    const sectionButtons = Array.from(target.querySelectorAll<HTMLButtonElement>('[data-char-config-section]'))
+    expect(sectionButtons).toHaveLength(7)
+    for (const button of sectionButtons) {
+      const section = button.dataset.charConfigSection as keyof typeof expectedNames
+      expect(button.getAttribute('aria-label')).toBe(expectedNames[section])
+      expect(button.title).toBe(expectedNames[section])
+      expect(button.getAttribute('aria-pressed')).toBe(section === 'profile' ? 'true' : 'false')
+    }
+
+    target.querySelector<HTMLButtonElement>('[data-char-config-section="scripts"]')?.click()
+    await settleComponent()
+    expect(target.querySelector('[data-char-config-section="profile"]')?.getAttribute('aria-pressed')).toBe('false')
+    expect(target.querySelector('[data-char-config-section="scripts"]')?.getAttribute('aria-pressed')).toBe('true')
+  })
 })
 
 describe('CharConfig character media callback freshness contracts', () => {

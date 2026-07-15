@@ -1056,6 +1056,11 @@
 {#if licensed !== 'private' && !$MobileGUI}
   <div class="flex mb-2" class:gap-2={iconButtonSize === 24} class:gap-1={iconButtonSize < 24}>
     <button
+      type="button"
+      data-char-config-section="profile"
+      aria-label={language.character}
+      title={language.character}
+      aria-pressed={$CharConfigSubMenu === 0}
       class={$CharConfigSubMenu === 0 ? 'text-textcolor ' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 0
@@ -1063,6 +1068,11 @@
       <UserIcon size={iconButtonSize} />
     </button>
     <button
+      type="button"
+      data-char-config-section="display"
+      aria-label={language.characterDisplay}
+      title={language.characterDisplay}
+      aria-pressed={$CharConfigSubMenu === 1}
       class={$CharConfigSubMenu === 1 ? 'text-textcolor' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 1
@@ -1070,6 +1080,11 @@
       <SmileIcon size={iconButtonSize} />
     </button>
     <button
+      type="button"
+      data-char-config-section="lorebook"
+      aria-label={language.loreBook}
+      title={language.loreBook}
+      aria-pressed={$CharConfigSubMenu === 3}
       class={$CharConfigSubMenu === 3 ? 'text-textcolor' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 3
@@ -1078,6 +1093,11 @@
     </button>
     {#if currentEditableCharacterTarget()}
       <button
+        type="button"
+        data-char-config-section="tts"
+        aria-label="TTS"
+        title="TTS"
+        aria-pressed={$CharConfigSubMenu === 5}
         class={$CharConfigSubMenu === 5 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
           $CharConfigSubMenu = 5
@@ -1085,6 +1105,11 @@
         <Volume2Icon size={iconButtonSize} />
       </button>
       <button
+        type="button"
+        data-char-config-section="scripts"
+        aria-label={language.scripts}
+        title={language.scripts}
+        aria-pressed={$CharConfigSubMenu === 4}
         class={$CharConfigSubMenu === 4 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
           $CharConfigSubMenu = 4
@@ -1093,6 +1118,11 @@
       </button>
     {/if}
     <button
+      type="button"
+      data-char-config-section="advanced"
+      aria-label={language.advancedSettings}
+      title={language.advancedSettings}
+      aria-pressed={$CharConfigSubMenu === 2}
       class={$CharConfigSubMenu === 2 ? 'text-textcolor' : 'text-textcolor2'}
       onclick={() => {
         $CharConfigSubMenu = 2
@@ -1101,6 +1131,11 @@
     </button>
     {#if currentEditableCharacterTarget()}
       <button
+        type="button"
+        data-char-config-section="manage"
+        aria-label={`${language.exportCharacter} / ${language.removeCharacter}`}
+        title={`${language.exportCharacter} / ${language.removeCharacter}`}
+        aria-pressed={$CharConfigSubMenu === 6}
         class={$CharConfigSubMenu === 6 ? 'text-textcolor' : 'text-textcolor2'}
         onclick={() => {
           $CharConfigSubMenu = 6
