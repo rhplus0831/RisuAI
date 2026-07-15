@@ -252,11 +252,9 @@ export async function selectCharacterAvatarImage(
             continue
           }
           if (allowedChunk.includes(chunk.key)) {
-            console.log(chunk.key, chunk.value)
             pngExif[chunk.key] = chunk.value
           }
         }
-        console.log(getDatabase().characters[charIndex].extentions)
       }
     } catch (error) {
       console.error(error)

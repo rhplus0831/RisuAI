@@ -1097,8 +1097,6 @@ export async function runScripted(
         }
         return ''
       })
-
-      console.log('Running Lua code:', code)
       if (ScriptingEngineState.type === 'lua') {
         await runLuaStringWithTimeout(ScriptingEngineState.engine, luaCodeWrapper(code), luaExecTimeoutMs)
       }

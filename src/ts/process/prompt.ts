@@ -363,7 +363,6 @@ export function stChatConvert(pre: any) {
           break
         }
         default: {
-          console.log(p)
           promptTemplate.push({
             type: 'plain',
             type2: 'normal',

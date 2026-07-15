@@ -297,8 +297,6 @@
 
       if (runMode === 'manual') {
         let outputObj: any[] = []
-        console.log(d.result)
-        console.log(jsonOutputTrimmer(d.result))
         const resultParsed = JSON.parse(jsonOutputTrimmer(d.result))
         if (output) {
           try {
@@ -317,7 +315,6 @@
           center: true,
           fontSize: fontSize, //0 = auto
         })
-        console.log(outputObj)
         output = JSON.stringify(outputObj, null, 2)
         loading = false
         render()

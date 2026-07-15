@@ -358,7 +358,6 @@ export const SafeDocument = {
   title: document.title,
   head: document.head,
   createElement: (tagName: string): HTMLElement => {
-    console.log('Creating element:', tagName)
     tagName = tagName.toLowerCase().trim()
     assertNonNetworkLoadingTag(tagName)
     if (!tagWhitelist.includes(tagName.toLowerCase())) {
@@ -377,7 +376,6 @@ export const SafeDocument = {
     return restrictElement(document.createTextNode(data))
   },
   createElementNS: (namespaceURI: string, qualifiedName: string): Element => {
-    console.log('Creating namespaced element:', qualifiedName)
     qualifiedName = qualifiedName.toLowerCase().trim()
     assertNonNetworkLoadingTag(qualifiedName)
     if (!tagWhitelist.includes(qualifiedName.toLowerCase())) {

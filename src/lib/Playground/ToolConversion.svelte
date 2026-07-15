@@ -18,8 +18,6 @@
         type: detectPromptJSONType(text),
       })
     }
-
-    console.log(files)
     files = files
   }
 

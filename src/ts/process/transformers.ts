@@ -88,23 +88,17 @@ export const runEmbedding = async (
       // Default dtype for webgpu is fp32, so we can use q8, which is the default dtype in wasm.
       dtype: 'q8',
       device: device,
-      progress_callback: (progress) => {
-        console.log(progress)
-      },
     })
     lastEmbeddingModelQuery = embeddingModelQuery
     console.log('extractor loaded')
   }
   let result = await extractor(texts, { pooling: 'mean', normalize: true })
-  console.log(texts, result)
   const data = result.data as Float32Array
-  console.log(data)
   const lenPerText = data.length / texts.length
   let res: Float32Array[] = []
   for (let i = 0; i < texts.length; i++) {
     res.push(data.subarray(i * lenPerText, (i + 1) * lenPerText))
   }
-  console.log(res)
   return res ?? []
 }
 
@@ -264,8 +258,6 @@ export const registerOnnxModelFromFile = async (
     )
   })
   if (!shouldContinue()) return
-
-  console.log(unziped)
 
   let fileIdMapped: { [key: string]: string } = {}
 

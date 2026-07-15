@@ -1117,7 +1117,6 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
           } else if (typeof prop === 'string' && canUseServerCommands() && unsupportedServerBridgeKeys.has(prop)) {
             return undefined
           } else if (target.pluginCustomStorage) {
-            console.log('Getting custom db property', prop.toString())
             return target.pluginCustomStorage[prop.toString()]
           }
           return undefined
@@ -1137,7 +1136,6 @@ export const getV2PluginAPIs = (plugin?: Pick<RisuPlugin, 'name' | 'script'>, as
             applyPluginDatabasePatch({ [prop]: value }, { full: false })
             return true
           } else {
-            console.log('Setting custom db property', prop.toString(), value)
             setPluginStorageValue(prop.toString(), value)
             return true
           }
@@ -1367,8 +1365,6 @@ export async function loadV2Plugin(plugins: RisuPlugin[]) {
       const safety = await checkCodeSafety(plugin.script)
       if (loadGeneration !== v2PluginLoadGeneration) return
       data = safety.modifiedCode
-      console.log('Safety check result:', safety)
-      console.log('Loading V2.1 Plugin', plugin.name, data)
 
       try {
         // Each script captures an API object whose network grant is bound to

@@ -66,7 +66,6 @@
         signal: abort.signal,
       })
       await processer.addText(input.data)
-      console.log(processer.vectors)
       const result = await processer.similaritySearchScored(input.query)
       if (captureRunInput().signature !== input.signature) return
       displayedInputSignature = input.signature
