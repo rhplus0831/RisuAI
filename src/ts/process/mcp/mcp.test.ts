@@ -9,6 +9,9 @@ const alertMocks = vi.hoisted(() => ({
 const moduleMocks = vi.hoisted(() => ({
   mcps: [] as string[],
 }))
+const mcpOAuthMocks = vi.hoisted(() => ({
+  requestStoredMcpOAuthRefresh: vi.fn(async () => 'stored-access-token'),
+}))
 
 vi.mock('src/ts/platform', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/platform')>()
@@ -20,6 +23,10 @@ vi.mock('src/ts/platform', async (importActual) => {
 
 vi.mock('../../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'mcp-auth-token',
+}))
+
+vi.mock('../../server/mcpOAuthRefresh', () => ({
+  requestStoredMcpOAuthRefresh: mcpOAuthMocks.requestStoredMcpOAuthRefresh,
 }))
 
 vi.mock('../modules', () => ({
@@ -59,6 +66,7 @@ import {
   importMCPModule,
   MCPs,
   persistMCPRefreshToken,
+  resolveMCPRefreshTokenSource,
 } from './mcp'
 import { MCPClient, type MCPTool } from './mcplib'
 import { registeredCustomPluginMCPs, registerMCPModule, unregisterMCPModule } from './pluginmcp'
@@ -267,6 +275,7 @@ beforeEach(() => {
   alertMocks.alertError.mockReset()
   alertMocks.alertInput.mockReset()
   alertMocks.alertNormal.mockReset()
+  mcpOAuthMocks.requestStoredMcpOAuthRefresh.mockClear()
   clearMCPRuntimeState()
   setResourceWriteGuardEnabled(false)
   setDatabaseLite({
@@ -385,6 +394,105 @@ describe('MCP client initialization lifecycle', () => {
 })
 
 describe('MCP runtime persistence', () => {
+  it('routes masked persisted rows by stable identity and raw rows directly', () => {
+    const identity = 'https://mcp.example/messages'
+    getDatabase().authRefreshes = [
+      {
+        url: identity,
+        clientId: 'client-id',
+        clientSecret: 'raw-client-secret',
+        refreshToken: 'raw-refresh-token',
+        tokenUrl: 'https://auth.example/token',
+      },
+    ]
+
+    expect(resolveMCPRefreshTokenSource(identity)).toEqual({
+      source: 'provided',
+      clientId: 'client-id',
+      clientSecret: 'raw-client-secret',
+      refreshToken: 'raw-refresh-token',
+      tokenUrl: 'https://auth.example/token',
+    })
+
+    getDatabase().authRefreshes[0].clientSecret = '__RISU_SECRET_MASKED__'
+    getDatabase().authRefreshes[0].refreshToken = '__RISU_SECRET_MASKED__'
+    expect(resolveMCPRefreshTokenSource(identity)).toEqual({ source: 'stored' })
+
+    getDatabase().authRefreshes[0].refreshToken = 'partially-raw-refresh-token'
+    expect(resolveMCPRefreshTokenSource(identity)).toEqual({ source: 'stored' })
+  })
+
+  it('uses the original stdio record identity for server-owned refresh', async () => {
+    const identity = 'stdio:{"url":"http://127.0.0.1:3010/messages"}'
+    getDatabase().authRefreshes = [
+      {
+        url: identity,
+        clientId: 'client-id',
+        clientSecret: '__RISU_SECRET_MASKED__',
+        refreshToken: '__RISU_SECRET_MASKED__',
+        tokenUrl: 'http://127.0.0.1:3010/token',
+      },
+    ]
+    moduleMocks.mcps = [identity]
+    let constructedClient: MCPClient | null = null
+    const checkHandshake = vi.spyOn(MCPClient.prototype, 'checkHandshake').mockImplementation(function (
+      this: MCPClient,
+    ) {
+      constructedClient = this
+      return Promise.resolve(mcpServerInfoFixture())
+    })
+
+    try {
+      await initializeMCPs()
+      expect(await constructedClient?.getRefreshToken?.()).toEqual({ source: 'stored' })
+      const cancellation = new AbortController()
+      await expect(constructedClient?.refreshStoredAccessToken?.(cancellation.signal)).resolves.toBe(
+        'stored-access-token',
+      )
+      expect(mcpOAuthMocks.requestStoredMcpOAuthRefresh).toHaveBeenCalledWith(identity, {
+        signal: cancellation.signal,
+      })
+    } finally {
+      checkHandshake.mockRestore()
+    }
+  })
+
+  it('upserts an existing refresh token by stable MCP URL', async () => {
+    const calls = stubCommandFetch()
+    getDatabase().authRefreshes = [
+      {
+        url: 'https://mcp.example',
+        clientId: 'old-client',
+        clientSecret: 'old-secret',
+        refreshToken: 'old-refresh',
+        tokenUrl: 'https://mcp.example/old-token',
+      },
+    ]
+
+    persistMCPRefreshToken('https://mcp.example', {
+      clientId: 'new-client',
+      clientSecret: 'new-secret',
+      refreshToken: 'new-refresh',
+      tokenUrl: 'https://mcp.example/new-token',
+    })
+
+    expect(getDatabase().authRefreshes).toEqual([
+      {
+        url: 'https://mcp.example',
+        clientId: 'new-client',
+        clientSecret: 'new-secret',
+        refreshToken: 'new-refresh',
+        tokenUrl: 'https://mcp.example/new-token',
+      },
+    ])
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
+    })
+    expect(
+      (calls.find((call) => call.url === '/api/v1/commands/settings/providers')?.body as any).patch.authRefreshes,
+    ).toHaveLength(1)
+  })
+
   it('routes MCP refresh token writes through the settings command in server-backed web mode', async () => {
     const calls = stubCommandFetch()
 
@@ -524,6 +632,84 @@ describe('MCP runtime persistence', () => {
         },
       ])
     })
+  })
+
+  it('restores a replaced token on failure without overwriting a newer unrelated edit', async () => {
+    const { calls, failProviderSettings } = stubDeferredProviderSettingsFailure()
+    const previousToken = {
+      url: 'https://mcp.example',
+      clientId: 'old-client',
+      clientSecret: 'old-secret',
+      refreshToken: 'old-refresh',
+      tokenUrl: 'https://mcp.example/old-token',
+    }
+    const unrelatedToken = {
+      url: 'https://unrelated.example',
+      clientId: 'unrelated-client',
+      clientSecret: 'unrelated-secret',
+      refreshToken: 'unrelated-refresh',
+      tokenUrl: 'https://unrelated.example/token',
+    }
+    getDatabase().authRefreshes = [previousToken]
+
+    persistMCPRefreshToken(previousToken.url, {
+      clientId: 'new-client',
+      clientSecret: 'new-secret',
+      refreshToken: 'new-refresh',
+      tokenUrl: 'https://mcp.example/new-token',
+    })
+    await vi.waitFor(() => {
+      expect(calls.some((call) => call.url === '/api/v1/commands/settings/providers')).toBe(true)
+    })
+    getDatabase().authRefreshes.push(unrelatedToken)
+    failProviderSettings()
+
+    await vi.waitFor(() => {
+      expect(getDatabase().authRefreshes).toEqual([previousToken, unrelatedToken])
+    })
+  })
+
+  it('rebases queued replacements for the same MCP URL after the first save fails', async () => {
+    const { calls, failFirstProviderSettings } = stubDeferredFirstProviderSettingsFailure()
+    const identity = 'https://mcp.example'
+    getDatabase().authRefreshes = [
+      {
+        url: identity,
+        clientId: 'original-client',
+        clientSecret: 'original-secret',
+        refreshToken: 'original-refresh',
+        tokenUrl: 'https://mcp.example/original-token',
+      },
+    ]
+    const first = {
+      url: identity,
+      clientId: 'first-client',
+      clientSecret: 'first-secret',
+      refreshToken: 'first-refresh',
+      tokenUrl: 'https://mcp.example/first-token',
+    }
+    const second = {
+      url: identity,
+      clientId: 'second-client',
+      clientSecret: 'second-secret',
+      refreshToken: 'second-refresh',
+      tokenUrl: 'https://mcp.example/second-token',
+    }
+
+    persistMCPRefreshToken(identity, first)
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/commands/settings/providers')).toHaveLength(1)
+    })
+    persistMCPRefreshToken(identity, second)
+    expect(getDatabase().authRefreshes).toEqual([second])
+    failFirstProviderSettings()
+
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/commands/settings/providers')).toHaveLength(2)
+    })
+    const providerCalls = calls.filter((call) => call.url === '/api/v1/commands/settings/providers')
+    expect(providerCalls[1].body).toMatchObject({ patch: { authRefreshes: [second] } })
+    await vi.waitFor(() => expect(getDatabase().authRefreshes).toEqual([second]))
   })
 
   it('rebases a queued refresh-token save after its predecessor fails', async () => {

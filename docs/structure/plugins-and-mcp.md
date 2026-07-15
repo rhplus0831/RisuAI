@@ -1,6 +1,6 @@
 # Plugins And MCP
 
-Last audited: 2026-07-14.
+Last audited: 2026-07-16.
 
 Plugins and MCP tooling are browser runtime features with server-backed records.
 Fastify stores plugin records, plugin storage, settings, and module state, but it
@@ -138,6 +138,7 @@ server provider boundary.
 | ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | `src/ts/process/mcp/mcp.ts`                                                                                | Runtime registry, URL parsing, tool discovery/calls, OAuth refresh persistence, module import helper. |
 | `src/ts/process/mcp/mcplib.ts`                                                                             | Remote Streamable HTTP MCP client with legacy SSE fallback.                                           |
+| `src/ts/server/mcpOAuthRefresh.ts`, `server/fastify/src/routes/mcpOAuthRefresh.ts`                          | Authenticated stable-identity bridge for server-owned persisted OAuth refresh credentials.            |
 | `src/ts/process/mcp/internalmcp.ts`                                                                        | Base class for internal MCP-like clients.                                                             |
 | `src/ts/process/mcp/pluginmcp.ts`                                                                          | Plugin-registered MCP modules using `plugin:` identifiers.                                            |
 | `src/ts/process/mcp/risuaccess/`                                                                           | Internal Risu access tools for characters, read-only chat history, and modules.                       |
@@ -185,8 +186,14 @@ dedicated command-backed module route rather than a direct browser mutation.
 
 OAuth refresh token persistence for remote MCP servers writes
 `Database.authRefreshes` through optimistic patches to the `providers` settings
-group via `/api/v1/commands/settings/providers`, with rollback on command
-failure. Google Search MCP credentials are currently unsupported in
+group via `/api/v1/commands/settings/providers`, upserting by exact MCP URL with
+rollback on command failure. Server projections mask the refresh token and
+client secret. A masked row is refreshed through authenticated
+`POST /api/v1/mcp/oauth/refresh` using only that stable MCP identity; Fastify
+loads the matching raw row and never returns refresh credentials to the
+browser. Newly authorized, not-yet-projected raw rows retain a bounded direct
+refresh path, and those credential-bearing requests are omitted from browser
+fetch diagnostics. Google Search MCP credentials are currently unsupported in
 server-backed web mode. Remote MCP tool results may contain text, image/audio
 base64, or resource payloads, but they are not server-persisted unless a later
 command stores them.

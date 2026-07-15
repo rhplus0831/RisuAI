@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const fetchNativeMock = vi.hoisted(() => vi.fn())
-
-vi.mock('../../globalApi.svelte', () => ({
-  fetchNative: fetchNativeMock,
+const oauthUiMocks = vi.hoisted(() => ({
+  alertInput: vi.fn(),
   openURL: vi.fn(),
 }))
 
+vi.mock('../../globalApi.svelte', () => ({
+  fetchNative: fetchNativeMock,
+  openURL: oauthUiMocks.openURL,
+}))
+
 vi.mock('../../alert', () => ({
-  alertInput: vi.fn(),
+  alertInput: oauthUiMocks.alertInput,
 }))
 
 import {
@@ -171,6 +175,8 @@ class FakeCustomTransport implements MCPCustomTransport {
 
 beforeEach(() => {
   fetchNativeMock.mockReset()
+  oauthUiMocks.alertInput.mockReset()
+  oauthUiMocks.openURL.mockReset()
 })
 
 afterEach(() => {
@@ -183,6 +189,7 @@ describe('MCPClient OAuth refresh', () => {
   function clientWithRefreshToken(): MCPClient {
     const client = new MCPClient('https://mcp.example/messages')
     client.getRefreshToken = async () => ({
+      source: 'provided',
       clientId: 'client-id',
       clientSecret: 'client-secret',
       refreshToken: 'refresh-token',
@@ -204,6 +211,9 @@ describe('MCPClient OAuth refresh', () => {
       expect.objectContaining({
         method: 'POST',
         body: expect.stringContaining('grant_type=refresh_token'),
+        requestTimeoutMs: 30000,
+        sensitive: true,
+        signal: expect.any(AbortSignal),
       }),
     )
   })
@@ -224,6 +234,152 @@ describe('MCPClient OAuth refresh', () => {
     expect(client.accessToken).toBeNull()
     expect(fetchNativeMock).toHaveBeenCalledTimes(2)
     expect(fetchNativeMock.mock.calls[1]?.[0]).toBe('https://mcp.example/.well-known/oauth-authorization-server')
+  })
+
+  it('uses the stored refresh callback without sending credentials to the upstream token endpoint', async () => {
+    const client = new MCPClient('https://mcp.example/messages')
+    client.getRefreshToken = async () => ({ source: 'stored' })
+    client.refreshStoredAccessToken = vi.fn(async () => 'stored-access-token')
+
+    await client.oauthLogin()
+
+    expect(client.accessToken).toBe('stored-access-token')
+    expect(client.refreshStoredAccessToken).toHaveBeenCalledWith(expect.any(AbortSignal))
+    expect(fetchNativeMock).not.toHaveBeenCalled()
+  })
+
+  it('falls through to discovery after an ordinary stored refresh failure', async () => {
+    const client = new MCPClient('https://mcp.example/messages')
+    client.getRefreshToken = async () => ({ source: 'stored' })
+    client.refreshStoredAccessToken = vi.fn(async () => {
+      throw new Error('sanitized stored refresh failure')
+    })
+    fetchNativeMock.mockRejectedValueOnce(new Error('OAuth discovery reached'))
+
+    await expect(client.oauthLogin()).rejects.toThrow('OAuth discovery reached')
+
+    expect(fetchNativeMock).toHaveBeenCalledOnce()
+    expect(fetchNativeMock.mock.calls[0]?.[0]).toBe('https://mcp.example/.well-known/oauth-authorization-server')
+  })
+
+  it('deduplicates concurrent refreshes', async () => {
+    let resolveRefresh!: (token: string) => void
+    const refresh = new Promise<string>((resolve) => {
+      resolveRefresh = resolve
+    })
+    const client = new MCPClient('https://mcp.example/messages')
+    client.getRefreshToken = async () => ({ source: 'stored' })
+    client.refreshStoredAccessToken = vi.fn(async () => await refresh)
+
+    const first = client.oauthLogin()
+    const second = client.oauthLogin()
+    expect(second).toBe(first)
+    resolveRefresh('deduplicated-access-token')
+
+    await Promise.all([first, second])
+    expect(client.refreshStoredAccessToken).toHaveBeenCalledOnce()
+    expect(client.accessToken).toBe('deduplicated-access-token')
+  })
+
+  it('destroy aborts refresh and fences a callback that resolves late', async () => {
+    let resolveRefresh!: (token: string) => void
+    const refresh = new Promise<string>((resolve) => {
+      resolveRefresh = resolve
+    })
+    let capturedSignal: AbortSignal | null = null
+    const client = new MCPClient('https://mcp.example/messages')
+    client.getRefreshToken = async () => ({ source: 'stored' })
+    client.refreshStoredAccessToken = vi.fn(async (signal) => {
+      capturedSignal = signal
+      return await refresh
+    })
+
+    const pending = client.oauthLogin()
+    await vi.waitFor(() => expect(capturedSignal).not.toBeNull())
+    client.destroy()
+    expect(capturedSignal?.aborted).toBe(true)
+    resolveRefresh('late-access-token')
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(client.accessToken).toBeNull()
+    expect(fetchNativeMock).not.toHaveBeenCalled()
+  })
+
+  it('does not fall through to discovery when refresh cancellation propagates', async () => {
+    const client = new MCPClient('https://mcp.example/messages')
+    client.getRefreshToken = async () => ({ source: 'stored' })
+    client.refreshStoredAccessToken = vi.fn(
+      async (signal) =>
+        await new Promise<string>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        }),
+    )
+
+    const pending = client.oauthLogin()
+    await vi.waitFor(() => expect(client.refreshStoredAccessToken).toHaveBeenCalledOnce())
+    client.destroy()
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchNativeMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('MCPClient OAuth handshake retry', () => {
+  const unauthorized = {
+    rpc: { jsonrpc: '2.0' as const, id: '', error: { code: 401, message: 'Unauthorized' } },
+    http: { status: 401, headers: {} },
+  }
+  const initialized = {
+    rpc: {
+      jsonrpc: '2.0' as const,
+      id: '',
+      result: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        serverInfo: { name: 'test-server', version: '1.0.0' },
+      },
+    },
+    http: { status: 200, headers: {} },
+  }
+
+  it('retries initialize exactly once after OAuth succeeds', async () => {
+    const client = new MCPClient('https://mcp.example/messages')
+    const request = vi
+      .spyOn(client, 'request')
+      .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(initialized)
+      .mockResolvedValueOnce({
+        rpc: { jsonrpc: '2.0', id: '', result: null },
+        http: { status: 202, headers: {} },
+      })
+    const oauthLogin = vi.spyOn(client, 'oauthLogin').mockResolvedValueOnce()
+
+    await expect(client.handshake()).resolves.toMatchObject({ serverInfo: { name: 'test-server' } })
+
+    expect(oauthLogin).toHaveBeenCalledOnce()
+    expect(request.mock.calls.filter(([method]) => method === 'initialize')).toHaveLength(2)
+  })
+
+  it('fails in a bounded way when the refreshed token is also rejected', async () => {
+    const client = new MCPClient('https://mcp.example/messages')
+    const request = vi.spyOn(client, 'request').mockResolvedValue(unauthorized)
+    const oauthLogin = vi.spyOn(client, 'oauthLogin').mockResolvedValueOnce()
+
+    await expect(client.handshake()).rejects.toThrow('MCP authentication failed after OAuth retry')
+
+    expect(oauthLogin).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('returns an authenticated initialize 401 without an anonymous recursive request', async () => {
+    fetchNativeMock.mockResolvedValueOnce(jsonRpcResponse({ error: 'unauthorized' }, 401))
+    const client = new MCPClient('https://mcp.example/messages', { accessToken: 'rejected-access-token' })
+
+    const result = await client.request('initialize', {}, { initMethod: 'init' })
+
+    expect(result.http.status).toBe(401)
+    expect(fetchNativeMock).toHaveBeenCalledOnce()
+    expect(client.accessToken).toBe('rejected-access-token')
   })
 })
 

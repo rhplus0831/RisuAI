@@ -1029,6 +1029,7 @@ export class AppendableBuffer {
  * @returns {ReadableStream<Uint8Array>} - The new readable stream.
  */
 const pipeFetchLog = (fetchLogIndex: number, readableStream: ReadableStream<Uint8Array>) => {
+  if (fetchLogIndex < 0) return readableStream
   const splited = readableStream.tee()
 
   ;(async () => {
@@ -1282,6 +1283,7 @@ export async function fetchNative(
     interceptor?: string
     requestTimeoutMs?: number
     networkRoute?: 'auto' | 'local_network'
+    sensitive?: boolean
   },
 ): Promise<Response> {
   const useInterceptor = !!arg.interceptor
@@ -1320,15 +1322,17 @@ export async function fetchNative(
   const throughProxy = useLocalNetworkRoute
   const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
   const requestSignal = timeoutSignal.signal
-  let fetchLogIndex = addFetchLog({
-    body: new TextDecoder().decode(realBody),
-    headers: arg.headers,
-    response: 'Streamed Fetch',
-    success: true,
-    url: url,
-    resType: 'stream',
-    chatId: arg.chatId,
-  })
+  const fetchLogIndex = arg.sensitive
+    ? -1
+    : addFetchLog({
+        body: new TextDecoder().decode(realBody),
+        headers: arg.headers,
+        response: 'Streamed Fetch',
+        success: true,
+        url: url,
+        resType: 'stream',
+        chatId: arg.chatId,
+      })
   try {
     if (window.userScriptFetch && !throughProxy) {
       return await window.userScriptFetch(url, {

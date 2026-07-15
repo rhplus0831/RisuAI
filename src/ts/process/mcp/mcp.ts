@@ -2,7 +2,7 @@ import {
   captureSettingsPatchProjectionEpochs,
   getResourceDatabase as getDatabase,
 } from 'src/ts/server/resourceState.svelte'
-import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
+import { MCPClient, type JsonRPC, type MCPRefreshTokenSource, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps } from '../modules'
 import {
   canUseServerCommands,
@@ -21,6 +21,8 @@ import {
   type CustomPluginMCPRegistryChange,
 } from './pluginmcp'
 import { applyAttemptedFieldRollback } from '../../server/staleStateGuards'
+import { isMaskedProviderSecret } from '../../providerSecretMask'
+import { requestStoredMcpOAuthRefresh } from '../../server/mcpOAuthRefresh'
 
 export type MCPToolWithURL = MCPTool & {
   mcpURL: string
@@ -59,7 +61,6 @@ type StoredMCPRefreshToken = MCPRefreshToken & {
 
 type PendingMCPRefreshTokenPersistence = {
   attempted: StoredMCPRefreshToken[]
-  attemptedIndex: number
   attemptedToken: StoredMCPRefreshToken
   commandInput: PatchServerBackedSettingsInput
   previous: StoredMCPRefreshToken[]
@@ -238,7 +239,7 @@ async function constructMCPClientForKey(mcp: string): Promise<void> {
   }
 
   const getRefresh: typeof MCPClient.prototype.getRefreshToken = async () => {
-    return getDatabase().authRefreshes.find((refresh) => refresh.url === mcp)
+    return resolveMCPRefreshTokenSource(mcp)
   }
 
   try {
@@ -249,11 +250,39 @@ async function constructMCPClientForKey(mcp: string): Promise<void> {
     const mcpClient = new MCPClient(mcpUrl)
     mcpClient.registerRefreshToken = registerRefresh
     mcpClient.getRefreshToken = getRefresh
+    mcpClient.refreshStoredAccessToken = async (signal) => await requestStoredMcpOAuthRefresh(mcp, { signal })
     await mcpClient.checkHandshake()
     MCPs[mcp] = mcpClient
     invalidateMCPToolClientIndex()
   } catch (error) {
     console.error(`MCP: Failed to initialize MCP at ${mcp}:`, error)
+  }
+}
+
+export function resolveMCPRefreshTokenSource(mcp: string): MCPRefreshTokenSource | null {
+  const matches = (getDatabase().authRefreshes ?? []).filter((refresh) => refresh.url === mcp)
+  if (matches.length !== 1) return null
+  const refresh = matches[0]
+  if (isMaskedProviderSecret(refresh.refreshToken) || isMaskedProviderSecret(refresh.clientSecret)) {
+    return { source: 'stored' }
+  }
+  if (
+    typeof refresh.tokenUrl !== 'string' ||
+    refresh.tokenUrl.trim().length === 0 ||
+    typeof refresh.clientId !== 'string' ||
+    refresh.clientId.trim().length === 0 ||
+    typeof refresh.clientSecret !== 'string' ||
+    typeof refresh.refreshToken !== 'string' ||
+    refresh.refreshToken.trim().length === 0
+  ) {
+    return null
+  }
+  return {
+    source: 'provided',
+    clientId: refresh.clientId,
+    clientSecret: refresh.clientSecret,
+    refreshToken: refresh.refreshToken,
+    tokenUrl: refresh.tokenUrl,
   }
 }
 
@@ -386,18 +415,15 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
     url: mcp,
     ...arg,
   })
-  let attemptedIndex = previous.length
+  const attemptedNext = upsertMCPRefreshToken(previous, attemptedToken)
   // The optimistic local write must run inside a trusted write scope so it
   // does not throw against the read-only server projection in Fastify mode.
   withTrustedResourceWrite(() => {
-    getDatabase().authRefreshes ??= []
-    attemptedIndex = getDatabase().authRefreshes.length
-    getDatabase().authRefreshes.push(cloneJsonValue(attemptedToken))
+    getDatabase().authRefreshes = cloneJsonValue(attemptedNext)
   })
 
   if (!canUseServerCommands()) return
 
-  const attemptedNext = cloneJsonValue(getDatabase().authRefreshes as StoredMCPRefreshToken[])
   const patch = { authRefreshes: attemptedNext }
   const commandInput: PatchServerBackedSettingsInput = {
     patch,
@@ -406,7 +432,6 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
   }
   const attempt: PendingMCPRefreshTokenPersistence = {
     attempted: attemptedNext,
-    attemptedIndex,
     attemptedToken,
     commandInput,
     previous,
@@ -427,6 +452,20 @@ function cloneJsonValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T
 }
 
+function upsertMCPRefreshToken(
+  snapshot: StoredMCPRefreshToken[],
+  attemptedToken: StoredMCPRefreshToken,
+): StoredMCPRefreshToken[] {
+  const firstMatchIndex = snapshot.findIndex((token) => token.url === attemptedToken.url)
+  const next = snapshot.filter((token) => token.url !== attemptedToken.url).map(cloneJsonValue)
+  const insertionIndex =
+    firstMatchIndex === -1
+      ? next.length
+      : snapshot.slice(0, firstMatchIndex).filter((token) => token.url !== attemptedToken.url).length
+  next.splice(insertionIndex, 0, cloneJsonValue(attemptedToken))
+  return next
+}
+
 function rollbackMCPRefreshTokenPersistence(attempt: PendingMCPRefreshTokenPersistence): void {
   withTrustedResourceWrite(() => {
     const rolledBack = applyAttemptedFieldRollback({
@@ -438,9 +477,7 @@ function rollbackMCPRefreshTokenPersistence(attempt: PendingMCPRefreshTokenPersi
 
     const liveAuthRefreshes = getDatabase().authRefreshes
     if (!Array.isArray(liveAuthRefreshes)) return
-    if (!sameJsonValue(liveAuthRefreshes[attempt.attemptedIndex], attempt.attemptedToken)) return
-
-    liveAuthRefreshes.splice(attempt.attemptedIndex, 1)
+    revertMCPRefreshTokenInSnapshot(liveAuthRefreshes, attempt)
   })
 
   rebaseLaterMCPRefreshTokenPersistences(attempt)
@@ -450,26 +487,24 @@ function rebaseLaterMCPRefreshTokenPersistences(failed: PendingMCPRefreshTokenPe
   for (const later of pendingMCPRefreshTokenPersistences) {
     if (later.sequence <= failed.sequence) continue
 
-    removeMCPRefreshTokenFromSnapshot(later.previous, failed.attemptedIndex, failed.attemptedToken)
-    const removedAttempted = removeMCPRefreshTokenFromSnapshot(
-      later.attempted,
-      failed.attemptedIndex,
-      failed.attemptedToken,
-    )
-    if (removedAttempted && later.attemptedIndex > failed.attemptedIndex) {
-      later.attemptedIndex -= 1
-    }
+    revertMCPRefreshTokenInSnapshot(later.previous, failed)
+    revertMCPRefreshTokenInSnapshot(later.attempted, failed)
     later.commandInput.optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(later.commandInput.patch)
   }
 }
 
-function removeMCPRefreshTokenFromSnapshot(
+function revertMCPRefreshTokenInSnapshot(
   snapshot: StoredMCPRefreshToken[],
-  index: number,
-  attemptedToken: StoredMCPRefreshToken,
+  attempt: PendingMCPRefreshTokenPersistence,
 ): boolean {
-  if (!sameJsonValue(snapshot[index], attemptedToken)) return false
-  snapshot.splice(index, 1)
+  const index = snapshot.findIndex(
+    (token) => token.url === attempt.attemptedToken.url && sameJsonValue(token, attempt.attemptedToken),
+  )
+  if (index === -1) return false
+  const previousMatches = attempt.previous
+    .filter((token) => token.url === attempt.attemptedToken.url)
+    .map(cloneJsonValue)
+  snapshot.splice(index, 1, ...previousMatches)
   return true
 }
 

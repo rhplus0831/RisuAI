@@ -87,4 +87,19 @@ describe('fetchNative diagnostics', () => {
       chatId: 'chat-fetch-native',
     })
   })
+
+  it('omits sensitive request credentials from fetch diagnostics', async () => {
+    const body = 'refresh_token=private-refresh&client_secret=private-secret'
+    const response = await fetchNative('https://auth.example.test/token', {
+      method: 'POST',
+      body,
+      headers: { authorization: 'Basic private-client' },
+      sensitive: true,
+    })
+
+    expect(response.status).toBe(201)
+    expect(fetchCalls).toHaveLength(1)
+    expect(new TextDecoder().decode(fetchCalls[0].init?.body as Uint8Array)).toBe(body)
+    expect(getFetchLogs()).toEqual([])
+  })
 })

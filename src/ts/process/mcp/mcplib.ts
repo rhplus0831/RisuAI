@@ -129,6 +129,23 @@ type MCPFetchOptions = {
   requestTimeoutMs?: number
 }
 
+export type MCPRefreshTokenSource =
+  | {
+      source: 'stored'
+    }
+  | {
+      source: 'provided'
+      clientId: string
+      clientSecret: string
+      refreshToken: string
+      tokenUrl: string
+    }
+
+type ActiveOAuthAttempt = {
+  controller: AbortController
+  promise: Promise<void>
+}
+
 type MCPCustomTransportMessageListener = (message: JsonRPC) => void | Promise<void>
 type MCPCustomTransportCloseListener = (reason?: unknown) => void
 type MCPCustomTransportErrorListener = (error: unknown) => void
@@ -189,6 +206,7 @@ export class MCPClient {
   }[] = []
   customTransport?: MCPCustomTransport
   private pendingCustomTransportRequests = new Set<(error: Error) => void>()
+  private activeOAuthAttempt: ActiveOAuthAttempt | null = null
   onDestroy: (() => void) | null = null
   serverInfo: {
     protocolVersion: string
@@ -212,14 +230,8 @@ export class MCPClient {
     | ((arg: { clientId: string; clientSecret: string; refreshToken: string; tokenUrl: string }) => void)
     | null = null
 
-  getRefreshToken:
-    | (() => Promise<{
-        clientId: string
-        clientSecret: string
-        refreshToken: string
-        tokenUrl: string
-      }>)
-    | null = null
+  getRefreshToken: (() => Promise<MCPRefreshTokenSource | null>) | null = null
+  refreshStoredAccessToken: ((signal: AbortSignal) => Promise<string>) | null = null
 
   constructor(
     url: string,
@@ -859,7 +871,9 @@ export class MCPClient {
         return responsePromise
       }
 
-      if ((this.sessionId && response.status === 404) || (this.accessToken && response.status === 401)) {
+      const shouldResetSession = !!this.sessionId && response.status === 404
+      const shouldResetAccessToken = !!this.accessToken && response.status === 401 && initMethod !== 'init'
+      if (shouldResetSession || shouldResetAccessToken) {
         this.destroy()
         return this.request(method, params, options)
       }
@@ -959,136 +973,36 @@ export class MCPClient {
     if (this.debug) {
       console.log('MCP Handshake', this.url, this.mcpClientObjectId)
     }
-    this.protocolVersion = '2025-03-26'
-    let { rpc: d, http } = await this.request(
-      'initialize',
-      {
-        protocolVersion: this.protocolVersion,
-        capabilities: {},
-        clientInfo: {
-          name: 'RS-MCP-CLIENT',
-          version: '1.0.0',
-        },
-      },
-      {
-        initMethod: 'init',
-      },
-    )
+    let didOAuthRetry = false
 
-    if (http.status === 404) {
-      console.warn('MCP: Streamed transport not supported, falling back to SSE')
-      this.protocolVersion = '2024-11-05'
+    while (true) {
+      const { rpc: d, http } = await this.performHandshakeAttempt()
 
-      const headers: Record<string, string> = {
-        Accept: 'text/event-stream',
-      }
-
-      if (this.sessionId) {
-        headers['Mcp-Session-Id'] = this.sessionId
-      }
-
-      if (this.accessToken) {
-        headers['Authorization'] = `Bearer ${this.accessToken}`
-      }
-
-      const timeoutMs = this.resolveTimeoutMs()
-      const connectionAbortController = new AbortController()
-      let connection: Response
-      try {
-        connection = await this.fetchNativeWithDeadline(
-          this.url,
-          {
-            method: 'GET',
-            headers: headers,
-            signal: connectionAbortController.signal,
-            requestTimeoutMs: timeoutMs,
-          },
-          timeoutMs,
-          connectionAbortController,
-        )
-      } catch (error) {
-        connectionAbortController.abort()
-        if (error instanceof MCPDeadlineError || error?.['name'] === 'AbortError') {
-          throw new Error(`MCP handshake timed out after ${timeoutMs}ms`)
+      if (http.status === 401) {
+        if (didOAuthRetry) {
+          this.destroy()
+          throw new Error('MCP authentication failed after OAuth retry')
         }
-        throw error
+        didOAuthRetry = true
+        this.resetSseTransport()
+        await this.oauthLogin()
+        continue
       }
 
-      if (connection.status !== 200) {
-        throw new Error(`Failed to connect to MCP server: ${connection.status} ${connection.statusText}`)
+      if (d?.error?.code === MCP_REQUEST_TIMEOUT_ERROR_CODE) {
+        throw new Error(d.error.message)
       }
 
-      if (!connection.body) {
-        throw new Error('Failed to connect to MCP server: missing SSE body')
+      if (!d?.result?.serverInfo) {
+        throw new Error('MCP Handshake Failed')
       }
 
-      void this.connectSSE(connection.body, connectionAbortController)
-
-      const connectionResult = await this.waitForSseResponse('connected', {
-        timeoutMs,
-        signal: connectionAbortController.signal,
-        http: {
-          status: connection.status,
-          headers: Object.fromEntries(connection.headers.entries()),
-        },
-        timeoutData: {
-          method: 'GET',
-          endpoint: this.url,
-        },
-        onTimeout: () => connectionAbortController.abort(),
-      })
-
-      if (connectionResult.rpc.error) {
-        connectionAbortController.abort()
-        throw new Error(connectionResult.rpc.error.message)
-      }
-
-      const endpoint = connectionResult.rpc.result.endpoint
-
-      if (!endpoint) {
-        throw new Error('Failed to get endpoint from MCP server')
-      }
-
-      const baseUrl = new URL(this.url).origin
-
-      this.sseEndpoint = `${baseUrl}${endpoint}`
-
-      let r = await this.request(
-        'initialize',
-        {
-          protocolVersion: this.protocolVersion,
-          capabilities: {},
-          clientInfo: {
-            name: 'RS-MCP-CLIENT',
-            version: '1.0.0',
-          },
-        },
-        {
-          initMethod: 'init',
-        },
-      )
-
-      d = r.rpc
-      http = r.http
-    }
-
-    if (http.status === 401) {
-      await this.oauthLogin()
-      return this.handshake()
-    }
-
-    if (d?.error?.code === MCP_REQUEST_TIMEOUT_ERROR_CODE) {
-      throw new Error(d.error.message)
-    }
-
-    if (d?.result?.serverInfo) {
       this.serverInfo = d.result
-
       await this.request('notifications/initialized', null, {
         notifications: true,
       })
 
-      if (d?.result?.protocolVersion !== '2025-03-26' && d?.result?.protocolVersion !== '2024-11-05') {
+      if (d.result.protocolVersion !== '2025-03-26' && d.result.protocolVersion !== '2024-11-05') {
         console.warn('MCP Server is using an unsupported protocol version', d.result.protocolVersion)
       } else {
         this.protocolVersion = d.result.protocolVersion
@@ -1098,93 +1012,250 @@ export class MCPClient {
         console.log('MCP Handshake Successful', this.serverInfo, this.mcpClientObjectId)
       }
       this.initialized = true
-
       return this.serverInfo
-    } else {
-      throw 'MCP Handshake Failed'
     }
   }
 
-  async oauthLogin() {
+  private async performHandshakeAttempt(): Promise<RPCRequestResult> {
+    this.protocolVersion = '2025-03-26'
+    let result = await this.request(
+      'initialize',
+      {
+        protocolVersion: this.protocolVersion,
+        capabilities: {},
+        clientInfo: {
+          name: 'RS-MCP-CLIENT',
+          version: '1.0.0',
+        },
+      },
+      { initMethod: 'init' },
+    )
+
+    if (result.http.status !== 404) return result
+
+    console.warn('MCP: Streamed transport not supported, falling back to SSE')
+    this.protocolVersion = '2024-11-05'
+    const headers: Record<string, string> = { Accept: 'text/event-stream' }
+    if (this.sessionId) headers['Mcp-Session-Id'] = this.sessionId
+    if (this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`
+
+    const timeoutMs = this.resolveTimeoutMs()
+    const connectionAbortController = new AbortController()
+    let connection: Response
+    try {
+      connection = await this.fetchNativeWithDeadline(
+        this.url,
+        {
+          method: 'GET',
+          headers,
+          signal: connectionAbortController.signal,
+          requestTimeoutMs: timeoutMs,
+        },
+        timeoutMs,
+        connectionAbortController,
+      )
+    } catch (error) {
+      connectionAbortController.abort()
+      if (error instanceof MCPDeadlineError || error?.['name'] === 'AbortError') {
+        throw new Error(`MCP handshake timed out after ${timeoutMs}ms`)
+      }
+      throw error
+    }
+
+    if (connection.status === 401) {
+      await connection.body?.cancel().catch(() => undefined)
+      return {
+        rpc: {
+          jsonrpc: '2.0',
+          id: '',
+          error: { code: 401, message: 'Unauthorized' },
+        },
+        http: {
+          status: 401,
+          headers: Object.fromEntries(connection.headers.entries()),
+        },
+      }
+    }
+    if (connection.status !== 200) {
+      throw new Error(`Failed to connect to MCP server: ${connection.status} ${connection.statusText}`)
+    }
+    if (!connection.body) {
+      throw new Error('Failed to connect to MCP server: missing SSE body')
+    }
+
+    void this.connectSSE(connection.body, connectionAbortController)
+    const connectionResult = await this.waitForSseResponse('connected', {
+      timeoutMs,
+      signal: connectionAbortController.signal,
+      http: {
+        status: connection.status,
+        headers: Object.fromEntries(connection.headers.entries()),
+      },
+      timeoutData: { method: 'GET', endpoint: this.url },
+      onTimeout: () => connectionAbortController.abort(),
+    })
+    if (connectionResult.rpc.error) {
+      connectionAbortController.abort()
+      throw new Error(connectionResult.rpc.error.message)
+    }
+
+    const endpoint = connectionResult.rpc.result.endpoint
+    if (!endpoint) throw new Error('Failed to get endpoint from MCP server')
+    this.sseEndpoint = `${new URL(this.url).origin}${endpoint}`
+    result = await this.request(
+      'initialize',
+      {
+        protocolVersion: this.protocolVersion,
+        capabilities: {},
+        clientInfo: {
+          name: 'RS-MCP-CLIENT',
+          version: '1.0.0',
+        },
+      },
+      { initMethod: 'init' },
+    )
+    return result
+  }
+
+  private resetSseTransport(): void {
+    this.sessionId = null
+    this.sseEndpoint = null
+    this.sseResponses = {}
+    for (const sse of this.sses) sse.abortController?.abort()
+    this.sseIdDone.clear()
+    this.sses = []
+  }
+
+  oauthLogin(): Promise<void> {
+    if (this.activeOAuthAttempt) return this.activeOAuthAttempt.promise
+
+    const attempt: ActiveOAuthAttempt = {
+      controller: new AbortController(),
+      promise: Promise.resolve(),
+    }
+    this.activeOAuthAttempt = attempt
+    attempt.promise = this.oauthLoginInner(attempt).finally(() => {
+      if (this.activeOAuthAttempt === attempt) this.activeOAuthAttempt = null
+    })
+    return attempt.promise
+  }
+
+  private async oauthLoginInner(attempt: ActiveOAuthAttempt): Promise<void> {
+    let refreshSource: MCPRefreshTokenSource | null = null
     if (this.getRefreshToken) {
-      const refreshTokenData = await this.getRefreshToken()
-      if (refreshTokenData) {
-        //get access token using refresh token
-        const tokenResponse = await fetchNative(refreshTokenData.tokenUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            grant_type: 'refresh_token',
-            refresh_token: refreshTokenData.refreshToken,
-            client_id: refreshTokenData.clientId,
-            client_secret: refreshTokenData.clientSecret,
-          }).toString(),
-        })
+      try {
+        refreshSource = await this.awaitOAuthStep(this.getRefreshToken(), attempt)
+      } catch (error) {
+        this.rethrowOAuthCancellation(error, attempt)
+      }
+    }
+
+    if (refreshSource?.source === 'stored' && this.refreshStoredAccessToken) {
+      try {
+        const accessToken = await this.awaitOAuthStep(this.refreshStoredAccessToken(attempt.controller.signal), attempt)
+        if (this.isValidOAuthAccessToken(accessToken)) {
+          this.assertOAuthAttemptActive(attempt)
+          this.accessToken = accessToken
+          return
+        }
+      } catch (error) {
+        this.rethrowOAuthCancellation(error, attempt)
+      }
+    } else if (refreshSource?.source === 'provided' && this.isValidProvidedRefreshSource(refreshSource)) {
+      try {
+        const tokenResponse = await this.awaitOAuthStep(
+          fetchNative(refreshSource.tokenUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              grant_type: 'refresh_token',
+              refresh_token: refreshSource.refreshToken,
+              client_id: refreshSource.clientId,
+              client_secret: refreshSource.clientSecret,
+            }).toString(),
+            signal: attempt.controller.signal,
+            requestTimeoutMs: this.requestTimeoutMs,
+            sensitive: true,
+          }),
+          attempt,
+        )
         if (tokenResponse.ok) {
-          try {
-            const tokenData: unknown = await tokenResponse.json()
-            const accessToken =
-              tokenData && typeof tokenData === 'object' && !Array.isArray(tokenData)
-                ? (tokenData as Record<string, unknown>).access_token
-                : undefined
-            if (typeof accessToken === 'string' && accessToken.trim().length > 0) {
-              this.accessToken = accessToken
-              return
+          const tokenData: unknown = await this.awaitOAuthStep(tokenResponse.json(), attempt)
+          const accessToken = this.readOAuthAccessToken(tokenData)
+          if (accessToken) {
+            const rotatedRefreshToken = this.readOAuthRefreshToken(tokenData)
+            if (rotatedRefreshToken && this.registerRefreshToken) {
+              this.assertOAuthAttemptActive(attempt)
+              this.registerRefreshToken({
+                clientId: refreshSource.clientId,
+                clientSecret: refreshSource.clientSecret,
+                refreshToken: rotatedRefreshToken,
+                tokenUrl: refreshSource.tokenUrl,
+              })
             }
-          } catch {
-            // Invalid refresh responses fall through to the full OAuth flow.
+            this.assertOAuthAttemptActive(attempt)
+            this.accessToken = accessToken
+            return
           }
         }
+      } catch (error) {
+        this.rethrowOAuthCancellation(error, attempt)
       }
     }
 
     const OauthDiscovery = new URL(this.url)
     OauthDiscovery.pathname = '/.well-known/oauth-authorization-server'
-    const oauthResponse = await fetchNative(OauthDiscovery.toString(), {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-      },
-    })
+    const oauthResponse = await this.awaitOAuthStep(
+      fetchNative(OauthDiscovery.toString(), {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+        signal: attempt.controller.signal,
+        requestTimeoutMs: this.requestTimeoutMs,
+      }),
+      attempt,
+    )
 
-    //default discovery URLS
     let discoveryURLS = {
       authorization_endpoint: OauthDiscovery.origin + '/authorize',
       token_endpoint: OauthDiscovery.origin + '/token',
       registration_endpoint: OauthDiscovery.origin + '/register',
     }
-
     if (oauthResponse.status === 200) {
-      discoveryURLS = await oauthResponse.json()
+      discoveryURLS = await this.awaitOAuthStep(oauthResponse.json(), attempt)
     }
 
     const redirectURL = 'https://account.sionyw.com/oauthhelper'
-
-    const registerResponse = await fetchNative(discoveryURLS.registration_endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        client_name: 'RS-MCP-CLIENT',
-        redirect_uris: [redirectURL],
-        response_types: ['code'],
-        grant_types: ['authorization_code'],
-        token_endpoint_auth_method: 'client_secret_basic',
+    const registerResponse = await this.awaitOAuthStep(
+      fetchNative(discoveryURLS.registration_endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          client_name: 'RS-MCP-CLIENT',
+          redirect_uris: [redirectURL],
+          response_types: ['code'],
+          grant_types: ['authorization_code'],
+          token_endpoint_auth_method: 'client_secret_basic',
+        }),
+        signal: attempt.controller.signal,
+        requestTimeoutMs: this.requestTimeoutMs,
       }),
-    })
-
+      attempt,
+    )
     if (registerResponse.status !== 201) {
       throw new Error('Failed to register client with OAuth server')
     }
 
-    const clientData = await registerResponse.json()
-
+    const clientData = await this.awaitOAuthStep(registerResponse.json(), attempt)
     const code_verifier = (v4() + v4()).replace(/-/g, '')
-    const sha256 = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code_verifier))
+    const sha256 = await this.awaitOAuthStep(
+      crypto.subtle.digest('SHA-256', new TextEncoder().encode(code_verifier)),
+      attempt,
+    )
     const code_challenge = Buffer.from(sha256)
       .toString('base64')
       .replace(/=/g, '')
@@ -1200,57 +1271,126 @@ export class MCPClient {
     authUrl.searchParams.set('code_challenge', code_challenge)
     authUrl.searchParams.set('code_challenge_method', 'S256')
 
+    this.assertOAuthAttemptActive(attempt)
     openURL(authUrl.toString())
-    const code = await alertInput('Input Authorization Code')
+    const code = await this.awaitOAuthStep(alertInput('Input Authorization Code'), attempt)
 
-    const authHelperResponse = await fetchNative('https://account.sionyw.com/oauthhelper/api', {
-      method: 'POST',
-      body: JSON.stringify({
-        code: code,
+    const authHelperResponse = await this.awaitOAuthStep(
+      fetchNative('https://account.sionyw.com/oauthhelper/api', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+        headers: { Accept: 'application/json' },
+        signal: attempt.controller.signal,
+        requestTimeoutMs: this.requestTimeoutMs,
+        sensitive: true,
       }),
-      headers: {
-        Accept: 'application/json',
-      },
-    })
-
-    const authHelperResponseJson = await authHelperResponse.json()
-
+      attempt,
+    )
+    const authHelperResponseJson = await this.awaitOAuthStep(authHelperResponse.json(), attempt)
     if (authHelperResponseJson.success !== true) {
       throw new Error('Failed to get authorization code from helper')
     }
 
     const payload = authHelperResponseJson.payload
-
-    const tokenResponse = await fetchNative(discoveryURLS.token_endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        grant_type: 'authorization_code',
-        code: payload.code || '',
-        redirect_uri: redirectURL,
-        client_id: clientData.client_id,
-        client_secret: clientData.client_secret,
-        code_verifier: code_verifier,
-      }).toString(),
-    })
-
+    const tokenResponse = await this.awaitOAuthStep(
+      fetchNative(discoveryURLS.token_endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: payload.code || '',
+          redirect_uri: redirectURL,
+          client_id: clientData.client_id,
+          client_secret: clientData.client_secret,
+          code_verifier,
+        }).toString(),
+        signal: attempt.controller.signal,
+        requestTimeoutMs: this.requestTimeoutMs,
+        sensitive: true,
+      }),
+      attempt,
+    )
     if (tokenResponse.status !== 200) {
       throw new Error('Failed to exchange authorization code for access token')
     }
 
-    const tokenData = await tokenResponse.json()
+    const tokenData = await this.awaitOAuthStep(tokenResponse.json(), attempt)
+    const accessToken = this.readOAuthAccessToken(tokenData)
+    const refreshToken = this.readOAuthRefreshToken(tokenData)
+    if (!accessToken) throw new Error('OAuth token response was malformed')
 
-    if (this.registerRefreshToken) {
+    if (refreshToken && this.registerRefreshToken) {
+      this.assertOAuthAttemptActive(attempt)
       this.registerRefreshToken({
         clientId: clientData.client_id,
         clientSecret: clientData.client_secret,
-        refreshToken: tokenData.refresh_token,
+        refreshToken,
         tokenUrl: discoveryURLS.token_endpoint,
       })
     }
-    this.accessToken = tokenData.access_token
+    this.assertOAuthAttemptActive(attempt)
+    this.accessToken = accessToken
+  }
+
+  private async awaitOAuthStep<T>(step: Promise<T>, attempt: ActiveOAuthAttempt): Promise<T> {
+    this.assertOAuthAttemptActive(attempt)
+    const signal = attempt.controller.signal
+    const value = await new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => reject(this.oauthAbortReason(signal))
+      signal.addEventListener('abort', onAbort, { once: true })
+      void step.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+    })
+    this.assertOAuthAttemptActive(attempt)
+    return value
+  }
+
+  private assertOAuthAttemptActive(attempt: ActiveOAuthAttempt): void {
+    if (this.activeOAuthAttempt === attempt && !attempt.controller.signal.aborted) return
+    throw this.oauthAbortReason(attempt.controller.signal)
+  }
+
+  private oauthAbortReason(signal: AbortSignal): Error {
+    return signal.reason instanceof Error ? signal.reason : new DOMException('MCP OAuth cancelled', 'AbortError')
+  }
+
+  private rethrowOAuthCancellation(error: unknown, attempt: ActiveOAuthAttempt): void {
+    if (attempt.controller.signal.aborted || this.activeOAuthAttempt !== attempt) {
+      this.assertOAuthAttemptActive(attempt)
+    }
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    if (error instanceof Error && error.name === 'AbortError') throw error
+  }
+
+  private isValidProvidedRefreshSource(source: Extract<MCPRefreshTokenSource, { source: 'provided' }>): boolean {
+    return (
+      typeof source.tokenUrl === 'string' &&
+      source.tokenUrl.trim().length > 0 &&
+      typeof source.clientId === 'string' &&
+      source.clientId.trim().length > 0 &&
+      typeof source.clientSecret === 'string' &&
+      typeof source.refreshToken === 'string' &&
+      source.refreshToken.trim().length > 0
+    )
+  }
+
+  private isValidOAuthAccessToken(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0 && value.length <= 64 * 1024
+  }
+
+  private readOAuthAccessToken(value: unknown): string | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const accessToken = (value as Record<string, unknown>).access_token
+    return this.isValidOAuthAccessToken(accessToken) ? accessToken : null
+  }
+
+  private readOAuthRefreshToken(value: unknown): string | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+    const refreshToken = (value as Record<string, unknown>).refresh_token
+    return typeof refreshToken === 'string' && refreshToken.trim().length > 0 && refreshToken.length <= 64 * 1024
+      ? refreshToken
+      : null
   }
 
   async getPromptList(): Promise<MCPPrompt[]> {
@@ -1354,16 +1494,12 @@ export class MCPClient {
   }
 
   destroy() {
+    const oauthAttempt = this.activeOAuthAttempt
+    this.activeOAuthAttempt = null
+    oauthAttempt?.controller.abort(new DOMException('MCP client destroyed', 'AbortError'))
     this.initialized = false
-    this.sessionId = null
     this.accessToken = null
-    this.sseEndpoint = null
-    this.sseResponses = {}
-    for (const sse of this.sses) {
-      sse.abortController?.abort()
-    }
-    this.sseIdDone.clear()
-    this.sses = []
+    this.resetSseTransport()
     const closeError = new Error('MCP custom transport closed')
     for (const rejectPendingRequest of Array.from(this.pendingCustomTransportRequests)) {
       rejectPendingRequest(closeError)
