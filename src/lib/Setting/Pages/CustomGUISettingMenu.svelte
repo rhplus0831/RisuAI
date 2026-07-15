@@ -110,8 +110,13 @@
             renderMainTree(tree)
             break
           case 2:
-            tree = removeTreeChain(tree, treeChain)
-            persistTree()
+            if (removeTreeChain(tree, treeChain)) {
+              selectedContatiner = rebaseTreeChainAfterRemoval(selectedContatiner, treeChain)
+              if (selectedContatiner !== 'root' && !resolveTreeChain(tree, selectedContatiner)) {
+                selectedContatiner = 'root'
+              }
+              persistTree()
+            }
             renderMainTree(tree)
             break
         }
@@ -124,18 +129,65 @@
     }
   }
 
-  function removeTreeChain(tree: CustomTree[], treeChain: string) {
-    let treeChainArray = treeChain.split('.')
-    let currentTree = tree
-    for (let i = 0; i < treeChainArray.length; i++) {
-      let index = parseInt(treeChainArray[i])
-      if (i === treeChainArray.length - 1) {
-        currentTree.splice(index, 1)
-      } else {
-        currentTree = currentTree[index].children
-      }
+  function parseTreeChain(treeChain: string): number[] | null {
+    if (!treeChain || treeChain === 'root') return null
+    const indexes = treeChain.split('.').map(Number)
+    return indexes.every((index) => Number.isInteger(index) && index >= 0) ? indexes : null
+  }
+
+  function resolveTreeChain(rootTree: CustomTree[], treeChain: string): CustomTree | null {
+    const indexes = parseTreeChain(treeChain)
+    if (!indexes) return null
+
+    let currentTree = rootTree
+    let node: CustomTree | undefined
+    for (const index of indexes) {
+      node = currentTree[index]
+      if (!node) return null
+      currentTree = node.children
     }
-    return tree
+    return node ?? null
+  }
+
+  function rebaseTreeChainAfterRemoval(selected: string, removed: string): string {
+    if (selected === 'root') return selected
+    const selectedIndexes = parseTreeChain(selected)
+    const removedIndexes = parseTreeChain(removed)
+    if (!selectedIndexes || !removedIndexes) return 'root'
+
+    const removedDepth = removedIndexes.length - 1
+    if (selectedIndexes.length <= removedDepth) return selected
+    for (let depth = 0; depth < removedDepth; depth += 1) {
+      if (selectedIndexes[depth] !== removedIndexes[depth]) return selected
+    }
+
+    if (selectedIndexes[removedDepth] === removedIndexes[removedDepth]) {
+      const parent = removedIndexes.slice(0, -1)
+      return parent.length > 0 ? parent.join('.') : 'root'
+    }
+    if (selectedIndexes[removedDepth] > removedIndexes[removedDepth]) {
+      selectedIndexes[removedDepth] -= 1
+      return selectedIndexes.join('.')
+    }
+    return selected
+  }
+
+  function removeTreeChain(rootTree: CustomTree[], treeChain: string): boolean {
+    const indexes = parseTreeChain(treeChain)
+    if (!indexes) return false
+
+    let currentTree = rootTree
+    for (let depth = 0; depth < indexes.length; depth += 1) {
+      const index = indexes[depth]
+      const node = currentTree[index]
+      if (!node) return false
+      if (depth === indexes.length - 1) {
+        currentTree.splice(index, 1)
+        return true
+      }
+      currentTree = node.children
+    }
+    return false
   }
 
   function renderMainTree(tree: CustomTree[]) {
@@ -168,22 +220,19 @@
     return tree
   }
 
-  function addContainerToTree(container: CustomTree, treeChain: string) {
+  function addContainerToTree(container: CustomTree, treeChain: string): boolean {
     if (treeChain === 'root') {
       tree.push(container)
-      return
+      return true
     }
 
-    let treeChainArray = treeChain.split('.')
-    let currentTree = tree
-    for (let i = 0; i < treeChainArray.length; i++) {
-      let index = parseInt(treeChainArray[i])
-      if (i === treeChainArray.length - 1) {
-        currentTree[index].children.push(container)
-      } else {
-        currentTree = currentTree[index].children
-      }
+    const target = resolveTreeChain(tree, treeChain)
+    if (!target) {
+      selectedContatiner = 'root'
+      return false
     }
+    target.children.push(container)
+    return true
   }
 
   function treeToHTML(tree: CustomTree[], indent: number = 0) {
@@ -318,7 +367,10 @@
         <button
           class="p-2 border border-black rounded-sm"
           onclick={() => {
-            addContainerToTree(safeStructuredClone(component), selectedContatiner)
+            if (!addContainerToTree(safeStructuredClone(component), selectedContatiner)) {
+              renderMainTree(tree)
+              return
+            }
             persistTree()
             renderMainTree(tree)
           }}>{component.type}</button>
@@ -328,7 +380,10 @@
         <button
           class="p-2 border border-black rounded-sm"
           onclick={() => {
-            addContainerToTree(safeStructuredClone(container), selectedContatiner)
+            if (!addContainerToTree(safeStructuredClone(container), selectedContatiner)) {
+              renderMainTree(tree)
+              return
+            }
             persistTree()
             renderMainTree(tree)
           }}>{container.type}</button>

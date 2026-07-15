@@ -103,6 +103,35 @@ describe('CustomGUISettingMenu persistence', () => {
     )
   })
 
+  it('keeps the selected container when a preceding sibling is deleted', async () => {
+    getDatabase().guiHTML = `
+      <div class="flex" data-risu-type="leftToRightContainer"></div>
+      <div class="flex" data-risu-type="topToBottomContainer"></div>
+    `
+    component = mount(CustomGUISettingMenu, { target })
+    await tick()
+
+    buttonByText('Menu').click()
+    await tick()
+    const secondContainer = target.querySelector<HTMLElement>('[x-tree="1"]')
+    if (!secondContainer) throw new Error('Second GUI container not found')
+    secondContainer.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+
+    const firstContainer = target.querySelector<HTMLElement>('[x-tree="0"]')
+    if (!firstContainer) throw new Error('First GUI container not found')
+    firstContainer.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 2 }))
+    await tick()
+
+    expect(() => buttonByText('fullWidthChat').click()).not.toThrow()
+    await tick()
+
+    const saved = new DOMParser().parseFromString(getDatabase().guiHTML, 'text/html').body
+    expect(saved.children).toHaveLength(1)
+    expect(saved.children[0].getAttribute('data-risu-type')).toBe('topToBottomContainer')
+    expect(saved.children[0].children).toHaveLength(1)
+    expect(saved.children[0].children[0].getAttribute('data-risu-type')).toBe('fullWidthChat')
+  })
+
   it('returns through the back button without waiting to save the latest edit', async () => {
     component = mount(CustomGUISettingMenu, { target })
     await tick()
