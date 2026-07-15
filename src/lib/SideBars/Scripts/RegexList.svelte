@@ -54,6 +54,12 @@
     }
   }
 
+  const removeById = (targetId: string) => {
+    const matchingIndices = value.flatMap((script, index) => (script.id === targetId ? [index] : []))
+    if (matchingIndices.length !== 1) return
+    value = value.filter((_, index) => index !== matchingIndices[0])
+  }
+
   onMount(createStb)
 
   onDestroy(() => {
@@ -73,16 +79,7 @@
       <div class="text-textcolor2">No Scripts</div>
     {/if}
     {#each value as customscript, i}
-      <RegexData
-        idx={i}
-        bind:value={value[i]}
-        {onOpen}
-        {onClose}
-        onRemove={() => {
-          let customscript = value
-          customscript.splice(i, 1)
-          value = customscript
-        }} />
+      <RegexData idx={i} bind:value={value[i]} {onOpen} {onClose} onRemove={removeById} />
     {/each}
   </div>
 {/key}

@@ -47,6 +47,7 @@ describe('RegexData deletion', () => {
     const onClose = vi.fn()
     const onRemove = vi.fn()
     const value = {
+      id: 'script-closed',
       comment: 'Closed script',
       in: '',
       out: '',
@@ -64,6 +65,6 @@ describe('RegexData deletion', () => {
 
     expect(regexDataMocks.alertConfirm).toHaveBeenCalledWith('Remove Closed script')
     expect(onClose).not.toHaveBeenCalled()
-    expect(onRemove).toHaveBeenCalledTimes(1)
+    expect(onRemove).toHaveBeenCalledWith('script-closed')
   })
 })

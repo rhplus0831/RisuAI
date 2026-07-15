@@ -11,10 +11,11 @@
   import OptionInput from '../../UI/GUI/OptionInput.svelte'
   import Accordion from 'src/lib/UI/Accordion.svelte'
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
+  import { v4 } from 'uuid'
 
   interface Props {
     value: customscript
-    onRemove?: () => void
+    onRemove?: (targetId: string) => void
     onClose?: () => void
     onOpen?: () => void
     idx: number
@@ -92,12 +93,14 @@
     <button
       class="valuer"
       onclick={async () => {
+        const targetId = value.id?.trim() || v4()
+        if (!value.id?.trim()) value.id = targetId
         const d = await alertConfirm(language.removeConfirm + value.comment)
         if (d) {
           if (open) {
             onClose()
           }
-          onRemove()
+          onRemove(targetId)
         }
       }}
       data-risu-regex-action="delete">

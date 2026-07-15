@@ -58,6 +58,12 @@
     }
   }
 
+  const removeById = (targetId: string) => {
+    const matchingIndices = value.flatMap((trigger, index) => (trigger.id === targetId ? [index] : []))
+    if (matchingIndices.length !== 1) return
+    value = value.filter((_, index) => index !== matchingIndices[0])
+  }
+
   onMount(createStb)
 
   onDestroy(() => {
@@ -77,17 +83,7 @@
       <div class="text-textcolor2">No Scripts</div>
     {/if}
     {#each value as triggerscript, i}
-      <TriggerData
-        idx={i}
-        bind:value={value[i]}
-        {lowLevelAble}
-        {onOpen}
-        {onClose}
-        onRemove={() => {
-          let triggerscript = value
-          triggerscript.splice(i, 1)
-          value = triggerscript
-        }} />
+      <TriggerData idx={i} bind:value={value[i]} {lowLevelAble} {onOpen} {onClose} onRemove={removeById} />
     {/each}
   </div>
   <button

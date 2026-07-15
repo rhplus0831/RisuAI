@@ -9,11 +9,12 @@
   import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
+  import { v4 } from 'uuid'
 
   interface Props {
     value: triggerscript
     lowLevelAble?: boolean
-    onRemove?: () => void
+    onRemove?: (targetId: string) => void
     onClose?: () => void
     onOpen?: () => void
     idx: number
@@ -49,12 +50,14 @@
     <button
       class="valuer"
       onclick={async () => {
+        const targetId = value.id?.trim() || v4()
+        if (!value.id?.trim()) value.id = targetId
         const d = await alertConfirm(language.removeConfirm + value.comment)
         if (d) {
           if (open) {
             onClose()
           }
-          onRemove()
+          onRemove(targetId)
         }
       }}
       data-risu-trigger-v1-action="delete">

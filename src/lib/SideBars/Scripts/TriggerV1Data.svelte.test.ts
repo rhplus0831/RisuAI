@@ -46,6 +46,7 @@ describe('TriggerV1Data deletion', () => {
     const onClose = vi.fn()
     const onRemove = vi.fn()
     const value = {
+      id: 'trigger-closed',
       comment: 'Closed trigger',
       type: 'start',
       conditions: [],
@@ -63,6 +64,6 @@ describe('TriggerV1Data deletion', () => {
 
     expect(triggerDataMocks.alertConfirm).toHaveBeenCalledWith('Remove Closed trigger')
     expect(onClose).not.toHaveBeenCalled()
-    expect(onRemove).toHaveBeenCalledTimes(1)
+    expect(onRemove).toHaveBeenCalledWith('trigger-closed')
   })
 })
