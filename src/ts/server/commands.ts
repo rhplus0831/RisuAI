@@ -1575,11 +1575,11 @@ async function withQueuedCommandDestructiveRefreshEpoch<T>(epoch: number, task: 
   }
 }
 
-function enqueueServerCommandExecution<T>(task: () => Promise<T>): Promise<T> {
+function enqueueServerCommandExecution<T>(task: (batch: ServerCommandReconciliationBatch) => Promise<T>): Promise<T> {
   const batch = getOrCreateServerCommandReconciliationBatch()
   queuedServerCommandExecutionCount += 1
 
-  const execution = serverCommandExecutionTail.then(task)
+  const execution = serverCommandExecutionTail.then(() => task(batch))
   const settledExecution = execution.then(
     (value) => {
       finishServerCommandExecution(batch)
@@ -4831,9 +4831,9 @@ export async function runServerCommandSequence(
   if (!canUseServerCommands() || commands.length === 0) return null
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
-  return enqueueServerCommandExecution(() =>
+  return enqueueServerCommandExecution((batch) =>
     withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () =>
-      executeServerCommandSequence(commands, rollback, rollbackEpoch),
+      executeServerCommandSequence(commands, rollback, rollbackEpoch, batch),
     ),
   )
 }
@@ -4842,14 +4842,26 @@ async function executeServerCommandSequence(
   commands: readonly ServerCommandFactory[],
   rollback: (() => void) | undefined,
   rollbackEpoch: number,
+  reconciliationBatch: ServerCommandReconciliationBatch,
 ): Promise<ServerCommandResult | null> {
+  const acceptedRevisions: number[] = []
   for (const command of commands) {
     // The sequence owns rollback so it runs exactly once for the first failed
     // step. executeServerCommand still normalizes thrown factories to an error
     // result and defers every accepted event into this sequence's active batch.
     const result = await executeServerCommand({ command }, rollbackEpoch)
-    if (result.status === 'ok') continue
+    if (result.status === 'ok') {
+      if (Number.isInteger(result.event?.revision)) acceptedRevisions.push(result.event.revision)
+      continue
+    }
 
+    // The sequence rollback restores every optimistic step, including steps
+    // the server already accepted. Their events must remain in the batch so
+    // reconciliation reads the authoritative resources again, but their local
+    // effects can no longer acknowledge the now-rolled-back projection.
+    for (const revision of acceptedRevisions) {
+      reconciliationBatch.pendingLocalEffects.delete(revision)
+    }
     runRollbackUnlessDestructiveRefreshChanged(rollback, rollbackEpoch)
     return result
   }

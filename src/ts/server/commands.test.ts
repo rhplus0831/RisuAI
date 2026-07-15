@@ -1035,6 +1035,8 @@ describe('server command API adapter', () => {
 
   it('fails a sequence fast and rolls back before reconciling its accepted events', async () => {
     const order: string[] = []
+    let reconciledRevisions: number[] = []
+    let reconciledLocalEffects: Array<[number, ServerCommandLocalEffect]> = []
     let responseIndex = 0
     const commandFetch = makeCommandFetch(() => {
       responseIndex += 1
@@ -1043,6 +1045,8 @@ describe('server command API adapter', () => {
         return {
           revision: 51,
           event: { type: 'settings.updated', revision: 51, resource: 'settings', id: 'runtime' },
+          acknowledgedKeys: ['maxContext'],
+          settings: { maxContext: 8_000 },
         }
       }
       order.push('conflict-response')
@@ -1050,8 +1054,10 @@ describe('server command API adapter', () => {
     })
     vi.stubGlobal('fetch', commandFetch.fetch)
     setCachedServerCommandRevision(50)
-    setServerCommandSuccessReconciler(() => {
+    setServerCommandSuccessReconciler((_event, events, localEffects) => {
       order.push('reconcile')
+      reconciledRevisions = events.map((event) => event.revision)
+      reconciledLocalEffects = Array.from(localEffects.entries())
     })
     const rollback = vi.fn(() => {
       order.push('rollback')
@@ -1064,7 +1070,14 @@ describe('server command API adapter', () => {
 
     const result = await runServerCommandSequence(
       [
-        (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxContext: 8_000 } }),
+        (baseRevision) =>
+          patchSettingsGroup({
+            group: 'runtime',
+            baseRevision,
+            patch: { maxContext: 8_000 },
+            acknowledgeOptimistic: true,
+            optimisticProjectionEpoch: 9,
+          }),
         (baseRevision) => patchRuntimeSettings({ baseRevision, patch: { maxResponse: 1_000 } }),
         skipped,
       ],
@@ -1079,6 +1092,8 @@ describe('server command API adapter', () => {
     expect(skipped).not.toHaveBeenCalled()
     expect(rollback).toHaveBeenCalledTimes(1)
     expect(order).toEqual(['accepted-response', 'conflict-response', 'rollback', 'reconcile'])
+    expect(reconciledRevisions).toEqual([51])
+    expect(reconciledLocalEffects).toEqual([])
     expect(peekCachedServerCommandRevision()).toBe(55)
   })
 
