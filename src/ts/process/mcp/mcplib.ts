@@ -129,6 +129,20 @@ type MCPFetchOptions = {
   requestTimeoutMs?: number
 }
 
+type MCPCustomTransportMessageListener = (message: JsonRPC) => void | Promise<void>
+type MCPCustomTransportCloseListener = (reason?: unknown) => void
+type MCPCustomTransportErrorListener = (error: unknown) => void
+
+export type MCPCustomTransport = {
+  send: (message: JsonRPC) => void | Promise<void>
+  addListener: (callback: MCPCustomTransportMessageListener) => void
+  removeListener: (callback: MCPCustomTransportMessageListener) => void
+  addCloseListener?: (callback: MCPCustomTransportCloseListener) => void
+  removeCloseListener?: (callback: MCPCustomTransportCloseListener) => void
+  addErrorListener?: (callback: MCPCustomTransportErrorListener) => void
+  removeErrorListener?: (callback: MCPCustomTransportErrorListener) => void
+}
+
 export type RPCToolCallTextContent = {
   type: 'text'
   text: string
@@ -173,11 +187,8 @@ export class MCPClient {
     stream: ReadableStream
     abortController?: AbortController
   }[] = []
-  customTransport?: {
-    send: (message: JsonRPC) => void | Promise<void>
-    addListener: (callback: (message: JsonRPC) => void | Promise<void>) => void
-    removeListener: (callback: (message: JsonRPC) => void | Promise<void>) => void
-  }
+  customTransport?: MCPCustomTransport
+  private pendingCustomTransportRequests = new Set<(error: Error) => void>()
   onDestroy: (() => void) | null = null
   serverInfo: {
     protocolVersion: string
@@ -289,6 +300,138 @@ export class MCPClient {
       status: http?.status ?? 408,
       headers: http?.headers ?? {},
       data,
+    })
+  }
+
+  private normalizeCustomTransportError(reason: unknown, fallbackMessage: string): Error {
+    if (reason instanceof Error) return reason
+    if (reason === undefined || reason === null || reason === '') return new Error(fallbackMessage)
+    return new Error(`${fallbackMessage}: ${String(reason)}`)
+  }
+
+  private requestWithCustomTransport(
+    transport: MCPCustomTransport,
+    body: JsonRPC,
+    notifications: boolean,
+    timeoutMs: number,
+  ): Promise<RPCRequestResult> {
+    return new Promise<RPCRequestResult>((resolve, reject) => {
+      let settled = false
+      let messageListenerAdded = false
+      let closeListenerAdded = false
+      let errorListenerAdded = false
+      let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+      const safelyRemove = (remove: (() => void) | undefined) => {
+        try {
+          remove?.()
+        } catch {
+          // Settlement must not be blocked by a transport cleanup failure.
+        }
+      }
+
+      const cleanup = () => {
+        if (messageListenerAdded) {
+          safelyRemove(() => transport.removeListener(messageListener))
+          messageListenerAdded = false
+        }
+        if (closeListenerAdded) {
+          safelyRemove(() => transport.removeCloseListener?.(closeListener))
+          closeListenerAdded = false
+        }
+        if (errorListenerAdded) {
+          safelyRemove(() => transport.removeErrorListener?.(errorListener))
+          errorListenerAdded = false
+        }
+        if (timeoutId !== undefined) {
+          clearTimeout(timeoutId)
+          timeoutId = undefined
+        }
+        this.pendingCustomTransportRequests.delete(rejectPendingRequest)
+      }
+
+      const resolveRequest = (result: RPCRequestResult) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve(result)
+      }
+
+      const rejectRequest = (error: Error) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(error)
+      }
+
+      const rejectPendingRequest = (error: Error) => {
+        rejectRequest(error)
+      }
+
+      const messageListener: MCPCustomTransportMessageListener = (message) => {
+        if (settled || message.id !== body.id) return
+        resolveRequest({
+          rpc: message,
+          http: {
+            status: 200,
+            headers: {},
+          },
+        })
+      }
+
+      const closeListener: MCPCustomTransportCloseListener = (reason) => {
+        rejectRequest(this.normalizeCustomTransportError(reason, 'MCP custom transport closed'))
+      }
+
+      const errorListener: MCPCustomTransportErrorListener = (error) => {
+        rejectRequest(this.normalizeCustomTransportError(error, 'MCP custom transport error'))
+      }
+
+      this.pendingCustomTransportRequests.add(rejectPendingRequest)
+      timeoutId = setTimeout(() => {
+        rejectRequest(new MCPDeadlineError(timeoutMs))
+      }, timeoutMs)
+
+      try {
+        if (!notifications) {
+          messageListenerAdded = true
+          transport.addListener(messageListener)
+          if (settled) return
+        }
+        if (transport.addCloseListener && transport.removeCloseListener) {
+          closeListenerAdded = true
+          transport.addCloseListener(closeListener)
+          if (settled) return
+        }
+        if (transport.addErrorListener && transport.removeErrorListener) {
+          errorListenerAdded = true
+          transport.addErrorListener(errorListener)
+          if (settled) return
+        }
+
+        const sendResult = transport.send(body)
+        void Promise.resolve(sendResult).then(
+          () => {
+            if (!notifications) return
+            resolveRequest({
+              rpc: {
+                jsonrpc: '2.0',
+                id: body.id ?? '',
+                result: null,
+              },
+              http: {
+                status: 200,
+                headers: {},
+              },
+            })
+          },
+          (error) => {
+            rejectRequest(this.normalizeCustomTransportError(error, 'MCP custom transport send failed'))
+          },
+        )
+      } catch (error) {
+        rejectRequest(this.normalizeCustomTransportError(error, 'MCP custom transport send failed'))
+      }
     })
   }
 
@@ -596,24 +739,12 @@ export class MCPClient {
     }
 
     if (this.customTransport) {
-      return new Promise<RPCRequestResult>((resolve) => {
-        const func = (message: JsonRPC) => {
-          if (message.id === body.id) {
-            resolve({
-              rpc: message,
-              http: {
-                status: 200,
-                headers: {},
-              },
-            })
-            this.customTransport.removeListener(func)
-          }
-        }
-        Promise.resolve(this.customTransport.addListener(func))
-          .then(() => this.customTransport.send(body as JsonRPC))
-          // Send errors are swallowed to preserve the existing fire-and-forget transport.
-          .catch(() => {})
-      })
+      return this.requestWithCustomTransport(
+        this.customTransport,
+        body as JsonRPC,
+        options.notifications === true,
+        timeoutMs,
+      )
     }
 
     try {
@@ -1223,6 +1354,10 @@ export class MCPClient {
     }
     this.sseIdDone.clear()
     this.sses = []
+    const closeError = new Error('MCP custom transport closed')
+    for (const rejectPendingRequest of Array.from(this.pendingCustomTransportRequests)) {
+      rejectPendingRequest(closeError)
+    }
     this.onDestroy?.()
   }
 

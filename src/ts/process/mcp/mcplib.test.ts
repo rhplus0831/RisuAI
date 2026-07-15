@@ -16,6 +16,7 @@ import {
   MCP_SSE_BUFFER_LIMIT_BYTES,
   MCP_SSE_DEDUP_ID_LIMIT,
   type JsonRPC,
+  type MCPCustomTransport,
   type SseEventDetail,
   WindowedSseIdDedup,
 } from './mcplib'
@@ -128,6 +129,43 @@ function dispatchMcpSse(client: MCPClient, data: JsonRPC) {
 async function flushPromises(times = 4) {
   for (let i = 0; i < times; i += 1) {
     await Promise.resolve()
+  }
+}
+
+class FakeCustomTransport implements MCPCustomTransport {
+  readonly messageListeners = new Set<(message: JsonRPC) => void | Promise<void>>()
+  readonly closeListeners = new Set<(reason?: unknown) => void>()
+  readonly errorListeners = new Set<(error: unknown) => void>()
+  readonly send = vi.fn(async (_message: JsonRPC) => {})
+  readonly addListener = vi.fn((listener: (message: JsonRPC) => void | Promise<void>) => {
+    this.messageListeners.add(listener)
+  })
+  readonly removeListener = vi.fn((listener: (message: JsonRPC) => void | Promise<void>) => {
+    this.messageListeners.delete(listener)
+  })
+  readonly addCloseListener = vi.fn((listener: (reason?: unknown) => void) => {
+    this.closeListeners.add(listener)
+  })
+  readonly removeCloseListener = vi.fn((listener: (reason?: unknown) => void) => {
+    this.closeListeners.delete(listener)
+  })
+  readonly addErrorListener = vi.fn((listener: (error: unknown) => void) => {
+    this.errorListeners.add(listener)
+  })
+  readonly removeErrorListener = vi.fn((listener: (error: unknown) => void) => {
+    this.errorListeners.delete(listener)
+  })
+
+  async emitMessage(message: JsonRPC) {
+    await Promise.all(Array.from(this.messageListeners, (listener) => listener(message)))
+  }
+
+  emitClose(reason?: unknown) {
+    for (const listener of Array.from(this.closeListeners)) listener(reason)
+  }
+
+  emitError(error: unknown) {
+    for (const listener of Array.from(this.errorListeners)) listener(error)
   }
 }
 
@@ -435,6 +473,158 @@ describe('MCPClient deadlines and SSE listener cleanup', () => {
     await flushPromises()
 
     expect(listeners.size).toBe(0)
+  })
+})
+
+describe('MCPClient custom transport request lifecycle', () => {
+  it('rejects a failed send immediately and removes every transport listener', async () => {
+    const transport = new FakeCustomTransport()
+    const sendError = new Error('custom send failed')
+    transport.send.mockRejectedValueOnce(sendError)
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+
+    const request = client.request('tools/list', {}, { id: 'send-failure', requestTimeoutMs: 1_000 })
+
+    await expect(request).rejects.toBe(sendError)
+    expect(transport.messageListeners.size).toBe(0)
+    expect(transport.closeListeners.size).toBe(0)
+    expect(transport.errorListeners.size).toBe(0)
+    expect(transport.removeListener).toHaveBeenCalledTimes(1)
+    expect(transport.removeCloseListener).toHaveBeenCalledTimes(1)
+    expect(transport.removeErrorListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('times out a hung send, cleans up, and ignores a late response callback', async () => {
+    vi.useFakeTimers()
+    const transport = new FakeCustomTransport()
+    transport.send.mockImplementationOnce(
+      () =>
+        new Promise<void>(() => {
+          /* hung custom transport send */
+        }),
+    )
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+
+    const request = client.request('tools/list', {}, { id: 'custom-timeout', requestTimeoutMs: 5 })
+    const lateResponse = Array.from(transport.messageListeners)[0]
+    expect(lateResponse).toEqual(expect.any(Function))
+    const rejection = expect(request).rejects.toThrow('MCP request timed out after 5ms')
+
+    await vi.advanceTimersByTimeAsync(5)
+    await rejection
+
+    expect(transport.messageListeners.size).toBe(0)
+    expect(transport.closeListeners.size).toBe(0)
+    expect(transport.errorListeners.size).toBe(0)
+    await lateResponse({
+      jsonrpc: '2.0',
+      id: 'custom-timeout',
+      result: { tools: [{ name: 'too late' }] },
+    })
+    expect(transport.removeListener).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects a pending request when the transport closes', async () => {
+    const transport = new FakeCustomTransport()
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+    const request = client.request('tools/list', {}, { id: 'transport-close', requestTimeoutMs: 1_000 })
+    const rejection = expect(request).rejects.toThrow('MCP custom transport closed: process exited')
+
+    transport.emitClose('process exited')
+
+    await rejection
+    expect(transport.messageListeners.size).toBe(0)
+    expect(transport.closeListeners.size).toBe(0)
+    expect(transport.errorListeners.size).toBe(0)
+  })
+
+  it('rejects a pending request with the transport error', async () => {
+    const transport = new FakeCustomTransport()
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+    const transportError = new Error('transport crashed')
+    const requestError = client
+      .request('tools/list', {}, { id: 'transport-error', requestTimeoutMs: 1_000 })
+      .catch((error) => error)
+
+    transport.emitError(transportError)
+
+    await expect(requestError).resolves.toBe(transportError)
+    expect(transport.messageListeners.size).toBe(0)
+    expect(transport.closeListeners.size).toBe(0)
+    expect(transport.errorListeners.size).toBe(0)
+  })
+
+  it('rejects pending custom transport requests when the client is destroyed', async () => {
+    const transport = new FakeCustomTransport()
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+    const request = client.request('tools/list', {}, { id: 'client-destroy', requestTimeoutMs: 1_000 })
+    const rejection = expect(request).rejects.toThrow('MCP custom transport closed')
+
+    client.destroy()
+
+    await rejection
+    expect(transport.messageListeners.size).toBe(0)
+    expect(transport.closeListeners.size).toBe(0)
+    expect(transport.errorListeners.size).toBe(0)
+  })
+
+  it('resolves notifications after send without leaving a response listener pending', async () => {
+    const transport = new FakeCustomTransport()
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+
+    const result = await client.request('notifications/initialized', null, {
+      notifications: true,
+      requestTimeoutMs: 1_000,
+    })
+
+    expect(result.rpc.result).toBeNull()
+    expect(transport.messageListeners.size).toBe(0)
+    expect(transport.closeListeners.size).toBe(0)
+    expect(transport.errorListeners.size).toBe(0)
+    expect(transport.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jsonrpc: '2.0',
+        method: 'notifications/initialized',
+      }),
+    )
+    expect(transport.send.mock.calls[0][0]).not.toHaveProperty('id')
+  })
+
+  it('settles a matching response once and removes listeners before later messages', async () => {
+    const transport = new FakeCustomTransport()
+    const client = new MCPClient('custom:test')
+    client.customTransport = transport
+    const request = client.request('tools/list', {}, { id: 'custom-success', requestTimeoutMs: 1_000 })
+    const responseListener = Array.from(transport.messageListeners)[0]
+
+    await transport.emitMessage({
+      jsonrpc: '2.0',
+      id: 'different-request',
+      result: { tools: [] },
+    })
+    expect(transport.messageListeners.size).toBe(1)
+
+    await transport.emitMessage({
+      jsonrpc: '2.0',
+      id: 'custom-success',
+      result: { tools: [{ name: 'current' }] },
+    })
+    const result = await request
+
+    expect(result.rpc.result).toEqual({ tools: [{ name: 'current' }] })
+    expect(transport.messageListeners.size).toBe(0)
+    await responseListener({
+      jsonrpc: '2.0',
+      id: 'custom-success',
+      result: { tools: [{ name: 'late' }] },
+    })
+    expect(result.rpc.result).toEqual({ tools: [{ name: 'current' }] })
   })
 })
 
