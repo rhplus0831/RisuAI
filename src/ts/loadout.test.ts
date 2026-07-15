@@ -369,6 +369,13 @@ function stubDeferredCommandFailure() {
   )
   return {
     calls,
+    accept: () =>
+      command.resolve(
+        jsonResponse({
+          revision: 11,
+          event: { type: 'test.command', revision: 11, resource: 'test' },
+        }),
+      ),
     reject: () => command.resolve(jsonResponse({ error: 'forced deferred failure' }, 500)),
   }
 }
@@ -470,8 +477,10 @@ describe('loadout projection command helpers', () => {
     const calls = stubCommandFetch()
     setResourceWriteGuardEnabled(true)
 
-    const created = saveCurrentLoadout('   ')
+    const creation = saveCurrentLoadout('   ')
+    const created = testDatabaseState.db.loadouts.at(-1) as Loadout
     await waitForCallCount(calls, 2)
+    await expect(creation).resolves.toStrictEqual(created)
     await flushCommandEffects()
 
     expect(created.name).toBe('New Loadout')
@@ -491,6 +500,29 @@ describe('loadout projection command helpers', () => {
         loadoutsProjectionEpoch: expect.any(Number),
       },
     ])
+  })
+
+  it('keeps create pending with its optimistic row until the server accepts it', async () => {
+    seedApplyLoadoutState()
+    const command = stubDeferredCommandFailure()
+    setResourceWriteGuardEnabled(true)
+
+    let settled = false
+    const creation = saveCurrentLoadout('Deferred Loadout').then((result) => {
+      settled = true
+      return result
+    })
+    const created = testDatabaseState.db.loadouts.at(-1) as Loadout
+
+    expect(created).toMatchObject({ name: 'Deferred Loadout' })
+    await waitForCallCount(command.calls, 2)
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    command.accept()
+
+    await expect(creation).resolves.toStrictEqual(created)
+    expect(testDatabaseState.db.loadouts.at(-1)).toStrictEqual(created)
   })
 
   it('saves split model and prompt preset ids when no legacy bot preset is selected', async () => {
@@ -519,7 +551,8 @@ describe('loadout projection command helpers', () => {
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setResourceWriteGuardEnabled(true)
 
-    const loadout = saveCurrentLoadout('Fresh Split Loadout')
+    const creation = saveCurrentLoadout('Fresh Split Loadout')
+    const loadout = testDatabaseState.db.loadouts.at(-1) as Loadout
 
     expect(loadout).toMatchObject({
       name: 'Fresh Split Loadout',
@@ -537,6 +570,7 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.loadouts[0]).toMatchObject(loadout)
 
     await waitForCallCount(calls, 2)
+    await expect(creation).resolves.toStrictEqual(loadout)
 
     expect(calls[1]).toMatchObject({
       url: '/api/v1/commands/loadouts',
@@ -680,7 +714,7 @@ describe('loadout projection command helpers', () => {
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setResourceWriteGuardEnabled(true)
 
-    applyLoadout(loadout)
+    const application = applyLoadout(loadout)
 
     expect(testDatabaseState.db.selectedPersona).toBe(1)
     expect(testDatabaseState.db.username).toBe('Persona B')
@@ -703,6 +737,7 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Battle Loadout')
 
     await waitForCallCount(calls, 7)
+    await expect(application).resolves.toBe('applied')
 
     expect(calls.map((call) => ({ url: call.url, method: call.method, body: call.body }))).toEqual([
       {
@@ -768,6 +803,52 @@ describe('loadout projection command helpers', () => {
         },
       },
     ])
+  })
+
+  it('keeps apply pending until the complete command sequence is accepted', async () => {
+    const loadout = seedApplyLoadoutState()
+    const command = stubDeferredCommandFailure()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    let settled = false
+    const application = applyLoadout(loadout, []).then((status) => {
+      settled = true
+      return status
+    })
+
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 123456, characterIds: ['char-a'] })
+    await waitForCallCount(command.calls, 2)
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    command.accept()
+
+    await expect(application).resolves.toBe('applied')
+  })
+
+  it('returns persistence failure only after a deferred apply command rolls back', async () => {
+    const loadout = seedApplyLoadoutState()
+    const command = stubDeferredCommandFailure()
+    vi.spyOn(Date, 'now').mockReturnValue(123456)
+    setResourceWriteGuardEnabled(true)
+
+    let settled = false
+    const application = applyLoadout(loadout, []).then((status) => {
+      settled = true
+      return status
+    })
+
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 123456, characterIds: ['char-a'] })
+    await waitForCallCount(command.calls, 2)
+    await Promise.resolve()
+    expect(settled).toBe(false)
+
+    command.reject()
+
+    await expect(application).resolves.toBe('persistence-failed')
+    expect(testDatabaseState.db.loadouts[0]).toMatchObject({ lastUsed: 100, characterIds: [] })
+    expect(testDatabaseState.db.lastLoadedLoadoutName).toBe('Before Loadout')
   })
 
   it('omits the current character from a touch when the loadout already contains it', async () => {
@@ -949,13 +1030,14 @@ describe('loadout projection command helpers', () => {
     vi.spyOn(Date, 'now').mockReturnValue(123456)
     setResourceWriteGuardEnabled(true)
 
-    applyLoadout(loadout)
+    const application = applyLoadout(loadout)
     expect(testDatabaseState.db.selectedPersona).toBe(1)
     expect(testDatabaseState.db.botPresetsId).toBe(1)
     expect(testDatabaseState.db.enabledModules).toEqual(['module-a', 'module-stay'])
     expect(testDatabaseState.db.globalChatVariables).toEqual({ mood: 'focused', scene: 'night' })
 
     await waitForCallCount(calls, 6)
+    await expect(application).resolves.toBe('persistence-failed')
     await flushCommandEffects()
 
     expect(calls.map((call) => call.url)).toEqual([
@@ -1403,8 +1485,9 @@ describe('loadout projection command helpers', () => {
     const failure = stubDeferredCommandFailure()
     setResourceWriteGuardEnabled(true)
 
-    const created = saveCurrentLoadout('Created Loadout')
+    const creation = saveCurrentLoadout('Created Loadout')
     await waitForCallCount(failure.calls, 2)
+    const created = testDatabaseState.db.loadouts.at(-1) as Loadout
     const authoritativeLoadouts = [makeLoadout({ id: 'loadout-a', name: 'Authoritative A' }), cloneJsonValue(created)]
     applyCollectionsResource(
       {
@@ -1414,6 +1497,7 @@ describe('loadout projection command helpers', () => {
       'loadouts',
     )
     failure.reject()
+    await expect(creation).resolves.toBeNull()
     await flushCommandEffects()
 
     expect(testDatabaseState.db.loadouts).toEqual(authoritativeLoadouts)
@@ -1507,7 +1591,8 @@ describe('loadout projection command helpers', () => {
     const calls = stubCommandFetch({ failCommands: true })
     setResourceWriteGuardEnabled(true)
 
-    const created = saveCurrentLoadout('Created Loadout')
+    const creation = saveCurrentLoadout('Created Loadout')
+    const created = testDatabaseState.db.loadouts.at(-1) as Loadout
     expect(testDatabaseState.db.loadouts.map((item) => item.id)).toEqual(['loadout-a', created.id])
     withTrustedResourceWrite(() => {
       testDatabaseState.db.loadouts[0].name = 'Edited Existing Loadout'
@@ -1515,6 +1600,7 @@ describe('loadout projection command helpers', () => {
     })
 
     await waitForCallCount(calls, 2)
+    await expect(creation).resolves.toBeNull()
     await flushCommandEffects()
 
     expect(calls[1]).toMatchObject({

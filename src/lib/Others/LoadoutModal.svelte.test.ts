@@ -48,7 +48,7 @@ beforeEach(() => {
   loadoutDatabase.loadouts = []
   loadoutMocks.applyLoadout.mockReset().mockResolvedValue('applied')
   loadoutMocks.deleteLoadout.mockReset()
-  loadoutMocks.saveCurrentLoadout.mockReset()
+  loadoutMocks.saveCurrentLoadout.mockReset().mockResolvedValue({ id: 'saved-loadout' })
   loadoutMocks.toggleLoadoutFavorite.mockReset()
   opener = document.createElement('button')
   opener.textContent = 'Open loadouts'
@@ -110,6 +110,58 @@ describe('LoadoutModal operations', () => {
     personaId: '',
   }
 
+  it('stays locked and open until a full apply is accepted, then closes', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    const application = deferred<'applied'>()
+    loadoutMocks.applyLoadout.mockReturnValue(application.promise)
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const apply = target.querySelector<HTMLButtonElement>(
+      '[data-risu-loadout-action="apply"][data-risu-loadout-id="loadout-a"]',
+    )
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const close = target.querySelector<HTMLButtonElement>('[data-modal-initial-focus]')
+    if (!apply || !dialog || !close) throw new Error('Loadout apply controls not found')
+
+    apply.click()
+    await settle()
+
+    expect(loadoutStore.open).toBe(true)
+    expect(dialog.getAttribute('aria-busy')).toBe('true')
+    expect(apply.disabled).toBe(true)
+    expect(close.disabled).toBe(true)
+
+    application.resolve('applied')
+    await settle()
+
+    expect(loadoutStore.open).toBe(false)
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('stays open and reports a failed apply after command settlement', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    const application = deferred<'persistence-failed'>()
+    loadoutMocks.applyLoadout.mockReturnValue(application.promise)
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const apply = target.querySelector<HTMLButtonElement>(
+      '[data-risu-loadout-action="apply"][data-risu-loadout-id="loadout-a"]',
+    )
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    if (!apply || !dialog) throw new Error('Loadout apply control not found')
+
+    apply.click()
+    await settle()
+    application.resolve('persistence-failed')
+    await settle()
+
+    expect(loadoutStore.open).toBe(true)
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not apply this loadout')
+  })
+
   it('stays open while applying and reports preset hydration failure', async () => {
     loadoutDatabase.loadouts = [savedLoadout]
     const application = deferred<'preset-hydration-failed'>()
@@ -138,23 +190,67 @@ describe('LoadoutModal operations', () => {
     expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not load the preset')
   })
 
-  it('clears the save name synchronously so duplicate activation creates one loadout', async () => {
+  it('keeps the save name and lock until create succeeds, then clears it', async () => {
+    const creation = deferred<{ id: string }>()
+    loadoutMocks.saveCurrentLoadout.mockReturnValue(creation.promise)
     component = mount(LoadoutModal, { target })
     await settle()
 
     const input = target.querySelector<HTMLInputElement>('input[type="text"]')
     const save = target.querySelector<HTMLButtonElement>('[data-risu-loadout-action="save"]')
-    if (!input || !save) throw new Error('Loadout save controls not found')
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    if (!input || !save || !dialog) throw new Error('Loadout save controls not found')
     input.value = '  Snapshot  '
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await tick()
 
     save.click()
     save.click()
+    await settle()
 
     expect(loadoutMocks.saveCurrentLoadout).toHaveBeenCalledOnce()
     expect(loadoutMocks.saveCurrentLoadout).toHaveBeenCalledWith('Snapshot')
-    await tick()
+    expect(input.value).toBe('  Snapshot  ')
+    expect(input.disabled).toBe(true)
+    expect(dialog.getAttribute('aria-busy')).toBe('true')
+
+    creation.resolve({ id: 'saved-loadout' })
+    await settle()
+
     expect(input.value).toBe('')
+    expect(input.disabled).toBe(false)
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+  })
+
+  it('restores the save controls and retains the name when create fails', async () => {
+    const creation = deferred<null>()
+    loadoutMocks.saveCurrentLoadout.mockReturnValue(creation.promise)
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const input = target.querySelector<HTMLInputElement>('input[type="text"]')
+    const save = target.querySelector<HTMLButtonElement>('[data-risu-loadout-action="save"]')
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    if (!input || !save || !dialog) throw new Error('Loadout save controls not found')
+    input.value = 'Retry Snapshot'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    save.click()
+    await settle()
+
+    expect(loadoutStore.open).toBe(true)
+    expect(input.value).toBe('Retry Snapshot')
+    expect(input.disabled).toBe(true)
+    expect(dialog.getAttribute('aria-busy')).toBe('true')
+
+    creation.resolve(null)
+    await settle()
+
+    expect(loadoutStore.open).toBe(true)
+    expect(input.value).toBe('Retry Snapshot')
+    expect(input.disabled).toBe(false)
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not apply this loadout')
   })
 })

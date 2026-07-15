@@ -1,4 +1,4 @@
-import { runOptimisticCommandSequence } from './chatCommands'
+import { runOptimisticCommandSequenceAsync } from './chatCommands'
 import {
   currentPersonaStateSnapshot,
   flushPendingSelectedPersonaUpdate,
@@ -103,7 +103,7 @@ export function makeLoadout(options: { name: string }): Loadout {
 
 type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
-export type LoadoutApplyStatus = 'applied' | 'superseded' | 'preset-hydration-failed'
+export type LoadoutApplyStatus = 'applied' | 'superseded' | 'preset-hydration-failed' | 'persistence-failed'
 
 type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
@@ -730,12 +730,19 @@ function rollbackUnacceptedLoadoutApplySteps(steps: LoadoutApplyStep[]): void {
   }
 }
 
+async function runLoadoutCommandAsync<T extends Record<string, unknown>>(
+  command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
+  rollback: () => void,
+): Promise<ServerCommandResult<T> | null> {
+  if (!canUseServerCommands()) return null
+  return runServerCommand({ command, rollback })
+}
+
 function runLoadoutCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
 ): void {
-  if (!canUseServerCommands()) return
-  void runServerCommand({ command, rollback })
+  void runLoadoutCommandAsync(command, rollback)
 }
 
 function toLoadoutSnapshot(loadout: Loadout): LoadoutSnapshot {
@@ -750,9 +757,9 @@ function dispatchCreateLoadout(
   loadout: Loadout,
   acknowledgeOptimistic: boolean,
   loadoutsProjectionEpoch: number,
-): void {
+): Promise<ServerCommandResult | null> {
   const attemptedLoadout = cloneJsonValue(loadout)
-  runLoadoutCommand(
+  return runLoadoutCommandAsync(
     (baseRevision) =>
       createLoadoutCommand({
         baseRevision,
@@ -1087,7 +1094,7 @@ export async function applyLoadout(
     ) {
       return 'superseded'
     }
-    return applyLoadoutNow(
+    const status = await applyLoadoutNow(
       loadout,
       apply,
       legacyPresetId,
@@ -1096,10 +1103,9 @@ export async function applyLoadout(
       activeChatAgentPresetTarget,
       currentCharacterId,
     )
-      ? 'applied'
-      : 'superseded'
+    return status
   }
-  return applyLoadoutNow(
+  const status = await applyLoadoutNow(
     loadout,
     apply,
     legacyPresetId,
@@ -1108,11 +1114,10 @@ export async function applyLoadout(
     activeChatAgentPresetTarget,
     currentCharacterId,
   )
-    ? 'applied'
-    : 'superseded'
+  return status
 }
 
-function applyLoadoutNow(
+async function applyLoadoutNow(
   loadout: Loadout,
   apply: LoadoutApplyOption[],
   legacyPresetId: string | null,
@@ -1120,9 +1125,10 @@ function applyLoadoutNow(
   legacySelectionIntent: number | null,
   activeChatAgentPresetTarget: ReturnType<typeof currentActiveChatRecord>,
   currentCharacterId: string | undefined,
-): boolean {
-  if (intent !== loadoutApplyIntent) return false
-  if (legacySelectionIntent !== null && !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)) return false
+): Promise<LoadoutApplyStatus> {
+  if (intent !== loadoutApplyIntent) return 'superseded'
+  if (legacySelectionIntent !== null && !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent))
+    return 'superseded'
   const requested = new Set(apply)
   const personaSelection = requested.has('persona') ? resolvePersonaSelection(loadout.personaId) : null
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
@@ -1140,7 +1146,7 @@ function applyLoadoutNow(
         ) ?? -1)
       : -1
   if (legacyPresetId && (presetIndex < 0 || !presetHasHydratedSettings(getDatabase().botPresets[presetIndex]))) {
-    return false
+    return 'superseded'
   }
   const previousModules = cloneJsonValue(getDatabase().enabledModules ?? [])
   const nextModules = cloneJsonValue(loadout.modules ?? [])
@@ -1414,20 +1420,20 @@ function applyLoadoutNow(
   if (personaSelection && personaRollback) {
     void flushPendingSelectedPersonaUpdate()
   }
-  runOptimisticCommandSequence(
+  const failure = await runOptimisticCommandSequenceAsync(
     steps.map((step) => step.command),
     () => rollbackUnacceptedLoadoutApplySteps(steps),
   )
-  return true
+  return failure === null ? 'applied' : 'persistence-failed'
 }
 
-export function saveCurrentLoadout(name: string) {
+export async function saveCurrentLoadout(name: string): Promise<Loadout | null> {
   const loadout = makeLoadout({ name })
   const acknowledgeOptimistic = isCanonicalLoadoutCollection(getDatabase().loadouts) && isCanonicalLoadout(loadout)
   const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
   withTrustedResourceWrite(() => {
     getDatabase().loadouts.push(loadout)
   })
-  dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
-  return loadout
+  const result = await dispatchCreateLoadout(loadout, acknowledgeOptimistic, loadoutsProjectionEpoch)
+  return result === null || result.status === 'ok' ? loadout : null
 }

@@ -25,10 +25,12 @@
 
   let saveName = $state('')
   let applyingLoadoutId: string | null = $state(null)
+  let savingLoadout = $state(false)
   let applyError = $state('')
+  let operationBusy = $derived(applyingLoadoutId !== null || savingLoadout)
 
   function close() {
-    if (applyingLoadoutId !== null) return
+    if (operationBusy) return
     loadoutModalStore.open = false
   }
 
@@ -66,7 +68,7 @@
   }
 
   async function onSelect(loadout: Loadout) {
-    if (applyingLoadoutId !== null) return
+    if (operationBusy) return
     const apply = (Object.keys(loadOptions) as LoadoutApplyOption[]).filter((k) => loadOptions[k])
     applyingLoadoutId = loadout.id
     applyError = ''
@@ -86,12 +88,25 @@
     }
   }
 
-  function saveLoadout(): void {
+  async function saveLoadout(): Promise<void> {
+    const originalName = saveName
     const name = saveName.trim()
-    if (!name || applyingLoadoutId !== null) return
+    if (!name || operationBusy) return
 
-    saveName = ''
-    saveCurrentLoadout(name)
+    savingLoadout = true
+    applyError = ''
+    try {
+      const saved = await saveCurrentLoadout(name)
+      if (saved) {
+        if (saveName === originalName) saveName = ''
+        return
+      }
+      applyError = language.loadoutApplyFailed
+    } catch {
+      applyError = language.loadoutApplyFailed
+    } finally {
+      savingLoadout = false
+    }
   }
 
   function toggleFavorite(loadout: Loadout, e: MouseEvent) {
@@ -118,7 +133,7 @@
   <div class="flex items-center gap-1 rounded-md bg-textcolor/5 hover:bg-textcolor/10 transition-colors">
     <button
       class="flex-1 min-w-0 text-left flex flex-col px-3 py-2.5 disabled:opacity-50"
-      disabled={applyingLoadoutId !== null}
+      disabled={operationBusy}
       data-risu-loadout-action="apply"
       data-risu-loadout-id={loadout.id}
       onclick={() => onSelect(loadout)}>
@@ -134,7 +149,7 @@
       class="shrink-0 pr-1 py-2.5 transition-colors {loadout.favorite
         ? 'text-yellow-400'
         : 'text-textcolor/20 hover:text-textcolor/50'}"
-      disabled={applyingLoadoutId !== null}
+      disabled={operationBusy}
       onclick={(e) => toggleFavorite(loadout, e)}
       aria-label={loadout.favorite ? 'Unfavorite' : 'Favorite'}
       title={loadout.favorite ? 'Unfavorite' : 'Favorite'}>
@@ -142,7 +157,7 @@
     </button>
     <button
       class="shrink-0 pr-3 py-2.5 transition-colors hover:text-red-400/50 text-textcolor/20"
-      disabled={applyingLoadoutId !== null}
+      disabled={operationBusy}
       onclick={(e) => removeLoadout(loadout)}
       aria-label={'Remove'}
       title={'Remove'}>
@@ -165,7 +180,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="risu-loadout-modal-title"
-    aria-busy={applyingLoadoutId !== null}
+    aria-busy={operationBusy}
     tabindex="-1"
     onkeydown={handleDialogKeydown}>
     <div class="flex items-center justify-between px-5 py-3 border-b border-textcolor/10 shrink-0">
@@ -173,7 +188,7 @@
       <button
         data-modal-initial-focus
         class="text-textcolor/50 hover:text-textcolor/90 transition-colors"
-        disabled={applyingLoadoutId !== null}
+        disabled={operationBusy}
         onclick={close}
         aria-label="Close">
         <XIcon size={18} />
@@ -188,14 +203,14 @@
           class="px-2.5 py-1 rounded text-xs font-medium transition-colors {loadOptions[k]
             ? 'bg-textcolor/15 text-textcolor/90'
             : 'bg-textcolor/5 text-textcolor/30 hover:bg-textcolor/10 hover:text-textcolor/50'}"
-          disabled={applyingLoadoutId !== null}
+          disabled={operationBusy}
           onclick={() => (loadOptions[k] = !loadOptions[k])}>
           {loadOptionLabels[k]}
         </button>
       {/each}
     </div>
 
-    {#if applyingLoadoutId !== null}
+    {#if operationBusy}
       <p class="px-5 pt-3 text-sm text-textcolor/60" role="status">{language.loading}...</p>
     {:else if applyError}
       <p class="px-5 pt-3 text-sm text-draculared" role="alert">{applyError}</p>
@@ -266,11 +281,11 @@
         type="text"
         bind:value={saveName}
         placeholder="Loadout name…"
-        disabled={applyingLoadoutId !== null}
+        disabled={operationBusy}
         class="flex-1 min-w-0 bg-textcolor/5 hover:bg-textcolor/8 focus:bg-textcolor/10 border border-textcolor/10 focus:border-textcolor/25 rounded px-3 py-1.5 text-sm text-textcolor/80 placeholder:text-textcolor/25 outline-none transition-colors" />
       <button
         class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded bg-textcolor/10 hover:bg-textcolor/15 text-textcolor/70 hover:text-textcolor/90 text-sm font-medium transition-colors disabled:opacity-30 disabled:pointer-events-none"
-        disabled={!saveName.trim() || applyingLoadoutId !== null}
+        disabled={!saveName.trim() || operationBusy}
         data-risu-loadout-action="save"
         onclick={saveLoadout}>
         <SaveIcon size={14} />
