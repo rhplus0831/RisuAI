@@ -1,6 +1,7 @@
 <script lang="ts">
   import { XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import type { SerializableHypaV3Data } from 'src/ts/process/memory/hypav3'
   import type { TagManagerState } from './types'
   import type { ServerSummaryPatchField } from './server-summary-patch'
@@ -88,6 +89,8 @@
     if (e.key === 'Enter') {
       saveEditingTag()
     } else if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
       cancelEditingTag()
     }
   }
@@ -97,17 +100,35 @@
       handleAddTagEnter()
     }
   }
+
+  function handleDialogKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeTagManager()
+  }
 </script>
 
 <!-- Tag Manager Modal -->
 {#if tagManagerState.isOpen && currentSummaryIndex() >= 0}
-  <div class="fixed inset-0 z-50 p-4 bg-black/70 flex items-center justify-center">
-    <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md">
+  <div data-modal-root class="fixed inset-0 z-50 p-4 bg-black/70 flex items-center justify-center">
+    <div
+      use:modalFocusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={language.hypaV3Modal.tagManagerTitle.replace('{0}', (currentSummaryIndex() + 1).toString())}
+      tabindex="-1"
+      class="bg-zinc-900 rounded-lg p-6 w-full max-w-md"
+      onkeydown={handleDialogKeydown}>
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-lg font-semibold text-zinc-300">
           {language.hypaV3Modal.tagManagerTitle.replace('{0}', (currentSummaryIndex() + 1).toString())}
         </h2>
-        <button class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={closeTagManager}>
+        <button
+          data-modal-initial-focus
+          class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+          aria-label={language.close}
+          onclick={closeTagManager}>
           <XIcon class="w-5 h-5" />
         </button>
       </div>

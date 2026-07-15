@@ -1,6 +1,7 @@
 <script lang="ts">
   import { PlusIcon, XIcon, SquarePenIcon, Trash2Icon, CheckIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import type { SerializableHypaV3Data } from 'src/ts/process/memory/hypav3'
   import type { Category, CategoryManagerState, SearchState, FilterState } from './types'
   import { createCategoryId } from './utils'
@@ -39,6 +40,13 @@
   function closeCategoryManager() {
     categoryManagerState.isOpen = false
     categoryManagerState.editingCategory = null
+  }
+
+  function handleDialogKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeCategoryManager()
   }
 
   function startEditCategory(category: Category) {
@@ -115,8 +123,15 @@
 
 <!-- Category Manager Modal -->
 {#if categoryManagerState.isOpen}
-  <div class="fixed inset-0 z-50 p-4 bg-black/70 flex items-center justify-center">
-    <div class="bg-zinc-900 rounded-lg p-6 w-full max-w-md">
+  <div data-modal-root class="fixed inset-0 z-50 p-4 bg-black/70 flex items-center justify-center">
+    <div
+      use:modalFocusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={language.hypaV3Modal.categoryManager}
+      tabindex="-1"
+      class="bg-zinc-900 rounded-lg p-6 w-full max-w-md"
+      onkeydown={handleDialogKeydown}>
       <div class="flex justify-between items-center mb-6">
         <h2 class="text-lg font-semibold text-zinc-300">{language.hypaV3Modal.categoryManager}</h2>
         <div class="flex items-center gap-2">
@@ -125,7 +140,11 @@
             <PlusIcon class="w-5 h-5" />
           </button>
           <!-- Close Button -->
-          <button class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors" onclick={closeCategoryManager}>
+          <button
+            data-modal-initial-focus
+            class="p-2 text-zinc-400 hover:text-zinc-200 transition-colors"
+            aria-label={language.close}
+            onclick={closeCategoryManager}>
             <XIcon class="w-5 h-5" />
           </button>
         </div>

@@ -7,6 +7,7 @@
   import { getCharacterByIndex, type character, type Chat } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import { translateHTML } from 'src/ts/translator/translator'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { alertConfirmTwice } from './HypaV3Modal/utils'
   import ModalHeader from './HypaV3Modal/modal-header.svelte'
   import ModalSummaryItem from './HypaV3Modal/modal-summary-item.svelte'
@@ -500,6 +501,13 @@
     tagManagerState.currentSummaryIndex = summaryIndex
     tagManagerState.currentSummaryId = (hypaV3Data.summaries[summaryIndex] as ServerSummaryView | undefined)?.serverId
     tagManagerState.isOpen = true
+  }
+
+  function handleModalKeydown(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    $hypaV3ModalOpen = false
   }
 
   // Search functionality
@@ -1002,16 +1010,22 @@
 </script>
 
 <!-- Modal Backdrop -->
-<div class="fixed inset-0 z-40 p-1 sm:p-2 bg-black/50">
+<div data-modal-root class="fixed inset-0 z-40 p-1 sm:p-2 bg-black/50">
   <!-- Modal Wrapper -->
   <div class="flex justify-center w-full h-full">
     <!-- Modal Window -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
+      use:modalFocusTrap
+      role="dialog"
+      aria-modal="true"
+      aria-label={language.hypaV3Modal.titleLabel}
+      tabindex="-1"
       class="flex flex-col w-full max-w-3xl p-3 rounded-lg sm:p-6 bg-zinc-900 {hypaV3Data.summaries.length === 0
         ? 'h-fit'
         : 'h-full'}"
+      onkeydown={handleModalKeydown}
       onclick={(e) => {
         e.stopPropagation()
         uiState.dropdownOpen = false

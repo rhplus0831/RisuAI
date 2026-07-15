@@ -1,4 +1,5 @@
 import { flushSync, mount, tick, unmount } from 'svelte'
+import { get } from 'svelte/store'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const resetMocks = vi.hoisted(() => ({
@@ -187,6 +188,7 @@ async function startBulkResummary(target: HTMLElement): Promise<void> {
 }
 
 describe('Hypa V3 async ownership', () => {
+  let background: HTMLElement
   let target: HTMLElement
   let component: MountedComponent | undefined
 
@@ -197,13 +199,16 @@ describe('Hypa V3 async ownership', () => {
     resetMocks.translateHTML.mockReset().mockResolvedValue('Default translation')
     seedDatabase()
     hypaV3ModalOpen.set(true)
+    background = document.createElement('div')
     target = document.createElement('div')
+    document.body.appendChild(background)
     document.body.appendChild(target)
   })
 
   afterEach(() => {
     if (component) unmount(component)
     hypaV3ModalOpen.set(false)
+    background.remove()
     target.remove()
   })
 
@@ -251,6 +256,99 @@ describe('Hypa V3 async ownership', () => {
     const nextButton = buttonForIcon(target, 'lucide-chevron-down')
     expect(previousButton?.tabIndex).toBe(0)
     expect(nextButton?.tabIndex).toBe(0)
+  })
+
+  it('traps focus across the main, category, and tag dialogs while preserving edit Escape', async () => {
+    seedDatabase(true)
+    const memory = getDatabase().characters[0].chats[0].hypaV3Data!
+    memory.summaries[0].tags = ['existing']
+    const opener = document.createElement('button')
+    background.appendChild(opener)
+    opener.focus()
+
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    const mainDialog = target.querySelector<HTMLElement>(
+      `[role="dialog"][aria-label="${language.hypaV3Modal.titleLabel}"]`,
+    )
+    const mainClose = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.closeAction}"]`,
+    )
+    expect(mainDialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(mainClose)
+    expect(background.inert).toBe(true)
+
+    const categoryTrigger = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.hypaV3Modal.categoryManagerAction}"]`,
+    )
+    expect(categoryTrigger).not.toBeNull()
+    categoryTrigger!.focus()
+    categoryTrigger!.click()
+    await settle()
+
+    const categoryDialog = target.querySelector<HTMLElement>(
+      `[role="dialog"][aria-label="${language.hypaV3Modal.categoryManager}"]`,
+    )
+    const categoryClose = categoryDialog?.querySelector<HTMLButtonElement>(`button[aria-label="${language.close}"]`)
+    expect(categoryDialog?.getAttribute('aria-modal')).toBe('true')
+    expect(mainDialog?.closest<HTMLElement>('[data-modal-root]')?.inert).toBe(true)
+    expect(document.activeElement).toBe(categoryClose)
+
+    mainClose!.focus()
+    expect(document.activeElement).toBe(categoryClose)
+    categoryClose!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await settle()
+
+    expect(categoryDialog?.isConnected).toBe(false)
+    expect(document.activeElement).toBe(categoryTrigger)
+
+    const tagTrigger = Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.trim() === '#existing',
+    )
+    expect(tagTrigger).toBeDefined()
+    tagTrigger!.focus()
+    tagTrigger!.click()
+    await settle()
+
+    const tagLabel = language.hypaV3Modal.tagManagerTitle.replace('{0}', '1')
+    const tagDialog = target.querySelector<HTMLElement>(`[role="dialog"][aria-label="${tagLabel}"]`)
+    const tagClose = tagDialog?.querySelector<HTMLButtonElement>(`button[aria-label="${language.close}"]`)
+    expect(tagDialog?.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(tagClose)
+
+    const editButton = buttonForIcon(tagDialog!, 'lucide-square-pen')
+    expect(editButton).not.toBeNull()
+    editButton!.click()
+    await settle()
+
+    const editInputs = Array.from(tagDialog!.querySelectorAll<HTMLInputElement>('input[type="text"]'))
+    expect(editInputs).toHaveLength(2)
+    const editInput = editInputs[1]
+    editInput.focus()
+    const cancelEdit = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    editInput.dispatchEvent(cancelEdit)
+    await settle()
+
+    expect(cancelEdit.defaultPrevented).toBe(true)
+    expect(tagDialog?.isConnected).toBe(true)
+    expect(target.textContent).toContain('#existing')
+
+    tagClose!.focus()
+    tagClose!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await settle()
+
+    expect(tagDialog?.isConnected).toBe(false)
+    expect(document.activeElement).toBe(tagTrigger)
+
+    tagTrigger!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(get(hypaV3ModalOpen)).toBe(false)
+    unmount(component)
+    component = undefined
+    await settle()
+
+    expect(background.inert).toBe(false)
+    expect(document.activeElement).toBe(opener)
   })
 
   it('advances only once when Enter submits a search', async () => {

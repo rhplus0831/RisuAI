@@ -214,6 +214,7 @@
 
     <!-- Close Modal Button -->
     <button
+      data-modal-initial-focus
       class="p-2 transition-colors text-zinc-400 hover:text-zinc-200"
       aria-label={language.hypaV3Modal.closeAction}
       title={language.hypaV3Modal.closeAction}
