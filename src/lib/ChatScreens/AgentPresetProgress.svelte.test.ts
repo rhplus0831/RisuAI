@@ -23,7 +23,12 @@ vi.mock('src/ts/process/modules', () => ({
   refreshModules: vi.fn(),
 }))
 
-import { clearAgentPresetProgress, updateAgentPresetProgress } from 'src/ts/process/agentPresetProgress'
+import {
+  beginAgentPresetProgress,
+  clearAgentPresetProgress,
+  updateAgentPresetProgress,
+  type AgentPresetProgressSession,
+} from 'src/ts/process/agentPresetProgress'
 import { selectedCharID } from 'src/ts/stores.svelte'
 import { testDatabaseState } from 'src/ts/__tests__/resourceDatabaseState'
 import AgentPresetProgress from './AgentPresetProgress.svelte'
@@ -34,6 +39,7 @@ type MountedComponent = Parameters<typeof unmount>[0]
 
 let target: HTMLElement
 let component: MountedComponent | undefined
+let progressSession: AgentPresetProgressSession
 
 beforeEach(() => {
   target = document.createElement('div')
@@ -42,6 +48,7 @@ beforeEach(() => {
     characters: [{ chatPage: 0, chats: [{ id: 'chat-1' }] }],
   } as never
   selectedCharID.set(0)
+  progressSession = beginAgentPresetProgress('chat-1')
 })
 
 afterEach(() => {
@@ -58,7 +65,7 @@ afterEach(() => {
 describe('AgentPresetProgress', () => {
   it('shows the active preset, concurrent steps, and determinate completion', async () => {
     component = mount(AgentPresetProgress, { target })
-    updateAgentPresetProgress({
+    updateAgentPresetProgress(progressSession, {
       type: 'agent_preset_progress',
       chatId: 'chat-1',
       presetId: 'preset-1',
@@ -82,7 +89,8 @@ describe('AgentPresetProgress', () => {
 
   it('hides progress for a different chat and after a terminal snapshot', async () => {
     component = mount(AgentPresetProgress, { target })
-    updateAgentPresetProgress({
+    progressSession = beginAgentPresetProgress('chat-2')
+    updateAgentPresetProgress(progressSession, {
       type: 'agent_preset_progress',
       chatId: 'chat-2',
       presetId: 'preset-1',
@@ -96,7 +104,8 @@ describe('AgentPresetProgress', () => {
     await tick()
     expect(target.querySelector('[role="status"]')).toBeNull()
 
-    updateAgentPresetProgress({
+    progressSession = beginAgentPresetProgress('chat-1')
+    updateAgentPresetProgress(progressSession, {
       type: 'agent_preset_progress',
       chatId: 'chat-1',
       presetId: 'preset-1',
@@ -110,7 +119,7 @@ describe('AgentPresetProgress', () => {
     await tick()
     expect(target.querySelector('[role="status"]')).toBeTruthy()
 
-    updateAgentPresetProgress({
+    updateAgentPresetProgress(progressSession, {
       type: 'agent_preset_progress',
       chatId: 'chat-1',
       presetId: 'preset-1',

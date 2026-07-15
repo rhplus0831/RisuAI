@@ -2,6 +2,7 @@ import { get } from 'svelte/store'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   agentPresetProgress,
+  beginAgentPresetProgress,
   clearAgentPresetProgress,
   getAgentPresetProgressPercent,
   updateAgentPresetProgress,
@@ -16,7 +17,8 @@ describe('Agent Preset progress state', () => {
   it('tracks phase snapshots and preserves the phase start time', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
-    updateAgentPresetProgress({
+    const session = beginAgentPresetProgress('chat-1')
+    updateAgentPresetProgress(session, {
       type: 'agent_preset_progress',
       chatId: 'chat-1',
       presetId: 'preset-1',
@@ -29,7 +31,7 @@ describe('Agent Preset progress state', () => {
     })
 
     vi.setSystemTime(1_500)
-    updateAgentPresetProgress({
+    updateAgentPresetProgress(session, {
       type: 'agent_preset_progress',
       chatId: 'chat-1',
       presetId: 'preset-1',
@@ -53,7 +55,8 @@ describe('Agent Preset progress state', () => {
     expect(getAgentPresetProgressPercent({ completedSteps: 9, totalSteps: 4 })).toBe(100)
     expect(getAgentPresetProgressPercent({ completedSteps: 1, totalSteps: 0 })).toBe(0)
 
-    updateAgentPresetProgress({
+    const session = beginAgentPresetProgress('chat-1')
+    updateAgentPresetProgress(session, {
       type: 'agent_preset_progress',
       chatId: 'chat-1',
       presetId: 'preset-1',

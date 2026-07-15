@@ -47,6 +47,39 @@ const baseInput: ServerChatInput = {
   userMessage: 'hi',
 }
 
+function controlledGenerationStream() {
+  const encoder = new TextEncoder()
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const response = new Response(
+    new ReadableStream<Uint8Array>({
+      start(value) {
+        controller = value
+      },
+    }),
+    {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    },
+  )
+  return {
+    response,
+    send(event: string, data: Record<string, unknown>) {
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+    },
+    close() {
+      controller.close()
+    },
+  }
+}
+
+function sendGenerationReadyFrames(stream: ReturnType<typeof controlledGenerationStream>, generationId: string) {
+  stream.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
+  stream.send('info', {
+    generationId,
+    generationInfo: { generationId, model: 'm' },
+  })
+}
+
 const incompleteChatSettingsBody = {
   statusCode: 409,
   error: 'chat_generation_settings_incomplete',
@@ -670,39 +703,8 @@ describe('requestServerChat', () => {
   })
 
   it('keeps a superseded chat stream from replacing or clearing the current post-generation progress', async () => {
-    const encoder = new TextEncoder()
-    const controlledStream = () => {
-      let controller!: ReadableStreamDefaultController<Uint8Array>
-      const response = new Response(
-        new ReadableStream<Uint8Array>({
-          start(value) {
-            controller = value
-          },
-        }),
-        {
-          status: 200,
-          headers: { 'content-type': 'text/event-stream' },
-        },
-      )
-      return {
-        response,
-        send(event: string, data: Record<string, unknown>) {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
-        },
-        close() {
-          controller.close()
-        },
-      }
-    }
-    const sendReadyFrames = (stream: ReturnType<typeof controlledStream>, generationId: string) => {
-      stream.send('prompt', { messages: [{ role: 'user', content: 'hi' }] })
-      stream.send('info', {
-        generationId,
-        generationInfo: { generationId, model: 'm' },
-      })
-    }
     const sendProgress = (
-      stream: ReturnType<typeof controlledStream>,
+      stream: ReturnType<typeof controlledGenerationStream>,
       ownerName: string,
       status: 'started' | 'running',
     ) => {
@@ -719,8 +721,8 @@ describe('requestServerChat', () => {
       })
     }
 
-    const first = controlledStream()
-    const second = controlledStream()
+    const first = controlledGenerationStream()
+    const second = controlledGenerationStream()
     const responses = [first.response, second.response]
     vi.stubGlobal(
       'fetch',
@@ -728,7 +730,7 @@ describe('requestServerChat', () => {
     )
 
     const firstPending = requestServerChatGeneration(baseInput, null)
-    sendReadyFrames(first, 'gen-first')
+    sendGenerationReadyFrames(first, 'gen-first')
     sendProgress(first, 'First Chat Script', 'started')
     const firstResult = await firstPending
     expect(firstResult.status).toBe('ok')
@@ -742,7 +744,7 @@ describe('requestServerChat', () => {
 
     const secondInput = { ...baseInput, characterId: 'char-2', chatId: 'chat-2' }
     const secondPending = requestServerChatGeneration(secondInput, null)
-    sendReadyFrames(second, 'gen-second')
+    sendGenerationReadyFrames(second, 'gen-second')
     sendProgress(second, 'Second Chat Script', 'running')
     const secondResult = await secondPending
     expect(secondResult.status).toBe('ok')
@@ -827,6 +829,71 @@ describe('requestServerChat', () => {
     } finally {
       unsubscribe()
     }
+  })
+
+  it('keeps a superseded chat stream from replacing or clearing the current Agent Preset progress', async () => {
+    const sendProgress = (
+      stream: ReturnType<typeof controlledGenerationStream>,
+      chatId: string,
+      presetName: string,
+      status: 'started' | 'running',
+    ) => {
+      stream.send('agent_preset_progress', {
+        chatId,
+        presetId: `preset-${chatId}`,
+        presetName,
+        phase: 'beforeMain',
+        status,
+        totalSteps: 2,
+        completedSteps: status === 'started' ? 0 : 1,
+        activeSteps: status === 'started' ? [] : [{ stepId: 'step-2', stepName: 'Review', outputKey: 'review' }],
+      })
+    }
+
+    const first = controlledGenerationStream()
+    const second = controlledGenerationStream()
+    const responses = [first.response, second.response]
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => responses.shift()!),
+    )
+
+    const firstPending = requestServerChatGeneration(baseInput, null)
+    sendGenerationReadyFrames(first, 'gen-agent-first')
+    sendProgress(first, 'chat-1', 'First Chat Preset', 'started')
+    const firstResult = await firstPending
+    expect(firstResult.status).toBe('ok')
+    if (firstResult.status !== 'ok') return
+    await vi.waitFor(() => {
+      expect(get(agentPresetProgress)).toMatchObject({ chatId: 'chat-1', presetName: 'First Chat Preset' })
+    })
+
+    const secondPending = requestServerChatGeneration({ ...baseInput, characterId: 'char-2', chatId: 'chat-2' }, null)
+    sendGenerationReadyFrames(second, 'gen-agent-second')
+    sendProgress(second, 'chat-2', 'Second Chat Preset', 'running')
+    const secondResult = await secondPending
+    expect(secondResult.status).toBe('ok')
+    if (secondResult.status !== 'ok') return
+    await vi.waitFor(() => {
+      expect(get(agentPresetProgress)).toMatchObject({ chatId: 'chat-2', presetName: 'Second Chat Preset' })
+    })
+
+    sendProgress(first, 'chat-1', 'Late First Chat Preset', 'running')
+    first.send('done', {
+      generationId: 'gen-agent-first',
+      generationInfo: { generationId: 'gen-agent-first' },
+    })
+    first.close()
+    await expect(firstResult.terminal).resolves.toMatchObject({ status: 'done' })
+    expect(get(agentPresetProgress)).toMatchObject({ chatId: 'chat-2', presetName: 'Second Chat Preset' })
+
+    second.send('done', {
+      generationId: 'gen-agent-second',
+      generationInfo: { generationId: 'gen-agent-second' },
+    })
+    second.close()
+    await expect(secondResult.terminal).resolves.toMatchObject({ status: 'done' })
+    expect(get(agentPresetProgress)).toBeNull()
   })
 
   it('ignores unknown events and captures warning events during generation streams', async () => {

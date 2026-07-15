@@ -6,15 +6,31 @@ export type ActiveAgentPresetProgress = Omit<AgentPresetProgressEvent, 'type'> &
   updatedAt: number
 }
 
+export interface AgentPresetProgressSession {
+  readonly chatId: string
+}
+
 const TERMINAL_PROGRESS_STATUSES = new Set<AgentPresetProgressEvent['status']>(['finished', 'error'])
 
 export const agentPresetProgress = writable<ActiveAgentPresetProgress | null>(null)
 
-export function clearAgentPresetProgress(): void {
+let activeSession: AgentPresetProgressSession | null = null
+
+export function beginAgentPresetProgress(chatId: string): AgentPresetProgressSession {
+  const session = { chatId }
+  activeSession = session
+  agentPresetProgress.set(null)
+  return session
+}
+
+export function clearAgentPresetProgress(session?: AgentPresetProgressSession): void {
+  if (session && activeSession !== session) return
+  activeSession = null
   agentPresetProgress.set(null)
 }
 
-export function updateAgentPresetProgress(event: AgentPresetProgressEvent): void {
+export function updateAgentPresetProgress(session: AgentPresetProgressSession, event: AgentPresetProgressEvent): void {
+  if (activeSession !== session || event.chatId !== session.chatId) return
   if (TERMINAL_PROGRESS_STATUSES.has(event.status)) {
     agentPresetProgress.update((current) => {
       const samePhase =
