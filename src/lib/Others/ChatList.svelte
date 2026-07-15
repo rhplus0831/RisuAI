@@ -19,7 +19,8 @@
     dispatchUpdateChat,
   } from 'src/ts/chatCommands'
   import { canUseServerCommands } from 'src/ts/server/commands'
-  import { watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import { syncServerBackedChatMetadataBaselines, watchServerBackedChatMetadata } from 'src/ts/server/chatBridge.svelte'
+  import { withTrustedResourceWrite } from 'src/ts/server/resourceWriteGuard.svelte'
   import { characterRoutePath, navigate } from 'src/ts/router'
 
   let editMode = $state(false)
@@ -44,7 +45,26 @@
 
   function updateChatName(chat, name) {
     if (!chat?.id || chat.name === name) return
+    if (!canUseServerCommands()) {
+      chat.name = name
+      return
+    }
+
     const previous = currentChatStateSnapshot()
+    const previousCharacter = previous.characters[previous.selectedCharID]
+    const previousChat = previousCharacter?.chats?.find((candidate) => candidate.id === chat.id)
+    let applied = false
+    withTrustedResourceWrite(() => {
+      const liveCharacter = previousCharacter?.chaId
+        ? getDatabase().characters?.find((candidate) => candidate.chaId === previousCharacter.chaId)
+        : getDatabase().characters?.[previous.selectedCharID]
+      const liveChat = liveCharacter?.chats?.find((candidate) => candidate.id === chat.id)
+      if (!liveChat || liveChat.name !== previousChat?.name) return
+      liveChat.name = name
+      applied = true
+    })
+    if (!applied) return
+    syncServerBackedChatMetadataBaselines()
     dispatchUpdateChat(chat.id, { name }, previous)
   }
 

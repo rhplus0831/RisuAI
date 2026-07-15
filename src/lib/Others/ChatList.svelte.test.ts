@@ -136,6 +136,7 @@ const chatListMocks = vi.hoisted(() => {
     }),
     updateChatFolderCommand: unusedCommand,
     updateMessageCommand: unusedCommand,
+    syncServerBackedChatMetadataBaselines: vi.fn(),
     watchServerBackedChatMetadata: vi.fn(() => vi.fn()),
     withTrustedResourceWrite: vi.fn((callback: () => void) => callback()),
   }
@@ -194,6 +195,7 @@ vi.mock('src/ts/router', () => ({
 }))
 
 vi.mock('src/ts/server/chatBridge.svelte', () => ({
+  syncServerBackedChatMetadataBaselines: chatListMocks.syncServerBackedChatMetadataBaselines,
   watchServerBackedChatMetadata: chatListMocks.watchServerBackedChatMetadata,
 }))
 
@@ -395,8 +397,9 @@ describe('ChatList DOM contract harness', () => {
     expectRowSelected('chat-c', false)
     expect(chatListMocks.watchServerBackedChatMetadata).toHaveBeenCalledOnce()
   })
-  it('dispatches chat rename through the update command helper without local fallback mutation', async () => {
+  it('paints a chat rename before dispatching the update command', async () => {
     seedModalDatabase()
+    chatListMocks.setServerCommandsEnabled(true)
 
     component = mount(ChatList, { target, props: { close: vi.fn() } })
     await tick()
@@ -413,8 +416,9 @@ describe('ChatList DOM contract harness', () => {
     input!.dispatchEvent(new Event('change', { bubbles: true }))
     await tick()
 
-    expect(chatListMocks.canUseServerCommands).not.toHaveBeenCalled()
-    expect(chatListMocks.withTrustedResourceWrite).not.toHaveBeenCalled()
+    expect(chatListMocks.canUseServerCommands).toHaveBeenCalledOnce()
+    expect(chatListMocks.withTrustedResourceWrite).toHaveBeenCalledOnce()
+    expect(chatListMocks.syncServerBackedChatMetadataBaselines).toHaveBeenCalledOnce()
     expect(chatListMocks.dispatchUpdateChat).toHaveBeenCalledOnce()
     const [chatId, patch, previous] = chatListMocks.dispatchUpdateChat.mock.calls[0]
     expect(chatId).toBe('chat-b')
@@ -428,7 +432,8 @@ describe('ChatList DOM contract harness', () => {
         },
       ],
     })
-    expect(selectedCharacter().chats[1].name).toBe('Modal Chat B')
+    expect(selectedCharacter().chats[1].name).toBe('Renamed Modal Chat B')
+    expect(input!.value).toBe('Renamed Modal Chat B')
   })
 
   it('navigates when selecting a modal row and reflects the route-applied selection', async () => {
