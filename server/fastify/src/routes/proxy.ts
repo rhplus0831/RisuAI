@@ -14,6 +14,7 @@ import {
 import { proxyFetchRateLimit } from '../routeRateLimits.js'
 
 const METHODS_WITHOUT_BODY = new Set(['GET', 'HEAD'])
+const PROXY_FETCH_METHODS = ['GET', 'POST', 'PUT', 'DELETE'] as const
 
 export function registerProxyRoutes(app: FastifyInstance, authState: AuthState): void {
   app.register(async (instance) => {
@@ -22,15 +23,14 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
       done(null, body)
     })
 
-    instance.post(
-      '/api/v1/proxy/fetch',
-      {
-        config: { rateLimit: proxyFetchRateLimit },
-        onRequest: async (req, reply) => {
-          await requireAuth(authState, req, reply)
-        },
+    instance.route({
+      method: PROXY_FETCH_METHODS,
+      url: '/api/v1/proxy/fetch',
+      config: { rateLimit: proxyFetchRateLimit },
+      onRequest: async (req, reply) => {
+        await requireAuth(authState, req, reply)
       },
-      async (req, reply) => {
+      handler: async (req, reply) => {
         const url = decodeRisuUrl(req.headers['risu-url'])
         if (!url) {
           reply.code(400)
@@ -97,6 +97,6 @@ export function registerProxyRoutes(app: FastifyInstance, authState: AuthState):
           req.raw.off('close', onClose)
         }
       },
-    )
+    })
   })
 }

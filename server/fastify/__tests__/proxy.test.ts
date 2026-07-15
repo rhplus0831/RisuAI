@@ -336,24 +336,30 @@ describe('Phase 3 POST /api/v1/proxy/fetch', () => {
     expect(res.body.toString('utf8')).toBe(plain)
   })
 
-  it('forwards POST body bytes upstream verbatim', async () => {
+  it.each([
+    { method: 'GET' as const, payload: undefined },
+    { method: 'POST' as const, payload: Buffer.from(JSON.stringify({ method: 'post' })) },
+    { method: 'PUT' as const, payload: Buffer.from(JSON.stringify({ method: 'put' })) },
+    { method: 'DELETE' as const, payload: undefined },
+  ])('forwards $method and its body upstream', async ({ method, payload }) => {
     const { assertion } = await setupAuthedClient(harness.app)
-    const payload = Buffer.from(JSON.stringify({ hello: 'world', n: 7 }))
     const res = await harness.app.inject({
-      method: 'POST',
+      method,
       url: '/api/v1/proxy/fetch',
       headers: {
         'risu-auth': assertion,
         'risu-url': encodeURIComponent(echo.url),
-        'content-type': 'application/json',
+        ...(payload ? { 'content-type': 'application/json' } : {}),
       },
-      payload,
+      ...(payload ? { payload } : {}),
     })
     expect(res.statusCode).toBe(200)
     expect(echo.requests).toHaveLength(1)
-    expect(echo.requests[0].method).toBe('POST')
-    expect(Buffer.compare(echo.requests[0].body, payload)).toBe(0)
-    expect(echo.requests[0].headers['content-type']).toBe('application/json')
+    expect(echo.requests[0].method).toBe(method)
+    expect(echo.requests[0].body).toEqual(payload ?? Buffer.alloc(0))
+    if (payload) {
+      expect(echo.requests[0].headers['content-type']).toBe('application/json')
+    }
   })
 
   it('L31: strips risu-* and host-class headers from the upstream request', async () => {

@@ -152,6 +152,44 @@ describe('Fastify proxy routing', () => {
     })
   })
 
+  it('preserves GET when globalFetch uses the buffered Fastify proxy', async () => {
+    const res = await globalFetch('https://provider.example.test/v1/models', {
+      method: 'GET',
+      headers: { authorization: 'Bearer test' },
+    })
+
+    expect(res.ok).toBe(true)
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0]).toMatchObject({
+      url: '/api/v1/proxy/fetch',
+      init: {
+        method: 'GET',
+      },
+    })
+    expect(fetchCalls[0].init?.body).toBeUndefined()
+  })
+
+  it.each([
+    { method: 'GET' as const, body: undefined },
+    { method: 'POST' as const, body: '{"method":"post"}' },
+    { method: 'PUT' as const, body: '{"method":"put"}' },
+    { method: 'DELETE' as const, body: undefined },
+  ])('preserves $method when fetchNative uses the local-network proxy', async ({ method, body }) => {
+    const response = await fetchNative('http://127.0.0.1:11434/resource', {
+      method,
+      ...(body === undefined ? {} : { body }),
+      headers: { authorization: 'Bearer test' },
+      networkRoute: 'local_network',
+    })
+
+    expect(response.ok).toBe(true)
+    expect(fetchCalls).toHaveLength(1)
+    expect(fetchCalls[0]).toMatchObject({
+      url: '/api/v1/proxy/fetch',
+      init: { method },
+    })
+  })
+
   it('routes local streaming proxy jobs through Fastify create and websocket endpoints', async () => {
     const resPromise = startStreamingProxyFetch()
     const socket = await waitForWebSocket()

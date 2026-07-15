@@ -780,7 +780,7 @@ export const PROTOCOL_ROUTE_MANIFEST = [
   },
   {
     id: 'proxy-fetch',
-    methods: ['POST'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     path: '/api/v1/proxy/fetch',
     auth: {
       decision: 'required',
