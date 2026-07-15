@@ -99,6 +99,7 @@
   let typingTimeout: ReturnType<typeof setTimeout> | null = null
   let typingRun = 0
   let dialogueEpoch = 0
+  let dialogueHydrated = $state(false)
 
   const atEnd = $derived(!isTyping && currentIndex >= dialogue.length - 1)
   const waitingForReply = $derived(atEnd && dialogue[dialogue.length - 1]?.speaker === 'You')
@@ -302,10 +303,12 @@
   }
 
   onMount(() => {
+    let mounted = true
     // Restore this device's saved dialogue, falling back to the localized intro.
     forageInstance
       .getItem<DialogueLine[]>('current_dialogue')
       .then((saved) => {
+        if (!mounted) return
         if (saved && saved.length > 0) {
           dialogue = saved
           currentIndex = dialogue.length - 1
@@ -316,10 +319,18 @@
         startTyping(dialogue[currentIndex].text)
       })
       .catch(() => {
+        if (!mounted) return
         dialogue = introDialogue[getDatabase().language] ?? introDialogue.en
         currentIndex = 0
         startTyping(dialogue[currentIndex].text)
       })
+      .finally(() => {
+        if (mounted) dialogueHydrated = true
+      })
+
+    return () => {
+      mounted = false
+    }
   })
 
   onDestroy(() => {
@@ -499,7 +510,7 @@
         </div>
       {/if}
 
-      {#if atEnd}
+      {#if atEnd && dialogueHydrated}
         <div class="mt-4 flex items-center gap-2" transition:fly={{ y: 8, duration: 200 }}>
           <input
             bind:this={userInputEl}

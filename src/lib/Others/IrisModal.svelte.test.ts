@@ -196,6 +196,34 @@ describe('IrisModal model availability', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('waits for saved dialogue hydration before accepting a submission', async () => {
+    const savedDialogue = [{ speaker: 'Iris', text: 'Restored conversation' }]
+    const restore = deferred<typeof savedDialogue | null>()
+    irisMocks.forageGetItem.mockReturnValueOnce(restore.promise)
+    irisMocks.requestChatData.mockResolvedValueOnce({ type: 'success', result: 'Reply after restore' })
+    component = mount(IrisModal, { target })
+    await settle()
+
+    expect(target.querySelector('input[type="text"]')).toBeNull()
+
+    restore.resolve(savedDialogue)
+    await settle()
+    await vi.runAllTimersAsync()
+    await settle()
+
+    expect(target.querySelector('input[type="text"]')).not.toBeNull()
+    await submitMessage('Question after restore')
+    await vi.waitFor(() => expect(irisMocks.requestChatData).toHaveBeenCalledOnce())
+    await settle()
+
+    const persistedDialogue = irisMocks.forageSetItem.mock.calls.at(-1)?.[1] as DialogueLineForTest[]
+    expect(persistedDialogue).toEqual([
+      { speaker: 'Iris', text: 'Restored conversation' },
+      { speaker: 'You', text: 'Question after restore' },
+      { speaker: 'Iris', text: 'Reply after restore' },
+    ])
+  })
+
   it('ignores a successful response after the dialogue is reset', async () => {
     const response = deferred<{ type: 'success'; result: string }>()
     irisMocks.requestChatData.mockReturnValue(response.promise)
