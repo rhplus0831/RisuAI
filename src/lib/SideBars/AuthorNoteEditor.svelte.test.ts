@@ -71,7 +71,7 @@ function makeCharacterWithTwoChats(): character {
     name: 'Chat B',
     note: 'second note',
     message: [],
-  })
+  } as unknown as (typeof chara.chats)[number])
   return chara
 }
 
