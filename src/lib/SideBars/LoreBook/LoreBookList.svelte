@@ -94,6 +94,19 @@
     return typeof entry?.id === 'string' && entry.id.trim() ? entry.id : null
   }
 
+  type LorebookOpenRef = string | loreBook
+
+  function openedRefForEntry(entry: loreBook): LorebookOpenRef {
+    const entryId = stableEntryId(entry)
+    if (entryId) return `entry:${entryId}`
+    if (entry.mode === 'folder' && typeof entry.key === 'string' && entry.key.trim()) {
+      return `folder:${entry.key}`
+    }
+    // Legacy id-less rows cannot be matched safely after cloning without
+    // risking that open state transfers to a reordered sibling.
+    return entry
+  }
+
   function snapshotJson(value: unknown): string {
     const snapshot = JSON.stringify(value)
     return snapshot === undefined ? '__undefined__' : snapshot
@@ -156,7 +169,7 @@
 
   function closeRemovedLorebookRefs(removedEntries: loreBook[]): void {
     for (const entry of removedEntries) {
-      if (!openedRefs.has(entry)) continue
+      if (!openedRefs.has(openedRefForEntry(entry))) continue
       onClose(entry.mode !== 'folder', entry)
     }
   }
@@ -426,11 +439,15 @@
   onMount(createStb)
 
   let openedDetails = 0 // Count only lorebook details (for drag deactivation)
-  let openedRefs = $state(new Set()) // Track both folders + lorebooks (for UI state)
+  let openedRefs = $state(new Set<LorebookOpenRef>()) // Track both folders + lorebooks (for UI state)
 
   let openFolders = $derived(() => {
     let count = 0
     for (const ref of openedRefs) {
+      if (typeof ref === 'string') {
+        if (ref.startsWith('folder:')) count++
+        continue
+      }
       if (ref && typeof ref === 'object' && 'mode' in ref && ref.mode === 'folder') {
         count++
       }
@@ -448,7 +465,7 @@
       }
     }
     if (bookRef) {
-      openedRefs.add(bookRef)
+      openedRefs.add(openedRefForEntry(bookRef))
       openedRefs = new Set(openedRefs)
     }
   }
@@ -460,7 +477,7 @@
       }
     }
     if (bookRef) {
-      openedRefs.delete(bookRef)
+      openedRefs.delete(openedRefForEntry(bookRef))
       openedRefs = new Set(openedRefs)
     }
   }
@@ -497,7 +514,7 @@
               onDraftChange={(value) => updateExternalLoreValue(i, value)}
               onDraftSettled={() => onEntrySettled(i)}
               idx={i}
-              isOpen={openedRefs.has(book)}
+              isOpen={openedRefs.has(openedRefForEntry(book))}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
               onRemove={(target) => removeLorebookTarget(externalLoreBooks, target, updateExternalCollection)}
@@ -528,7 +545,7 @@
               onDraftChange={(value) => updateCharacterGlobalLoreValue(i, value)}
               onDraftSettled={flushCharacterGlobalLoreValue}
               idx={i}
-              isOpen={openedRefs.has(book)}
+              isOpen={openedRefs.has(openedRefForEntry(book))}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
               onRemove={(target) => removeLorebookTarget(entries, target, updateCharacterGlobalLoreCollection)}
@@ -560,7 +577,7 @@
               onDraftChange={(value) => updateChatLoreValue(i, value)}
               onDraftSettled={flushChatLoreValue}
               idx={i}
-              isOpen={openedRefs.has(book)}
+              isOpen={openedRefs.has(openedRefForEntry(book))}
               openFolders={openFolders()}
               isLastInContainer={book === lastVisibleItem}
               onRemove={(target) => removeLorebookTarget(entries, target, updateChatLoreCollection)}

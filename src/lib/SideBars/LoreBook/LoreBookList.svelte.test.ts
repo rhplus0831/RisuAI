@@ -372,6 +372,28 @@ describe('LoreBookList', () => {
     expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
   })
 
+  it('keeps an id-backed detail open across a cloned collection projection', async () => {
+    const entries = [
+      makeLoreBook({ id: 'entry-a', comment: 'Entry A', content: 'Open content' }),
+      makeLoreBook({ id: 'entry-b', comment: 'Entry B' }),
+    ]
+    component = mountHarness(entries)
+    await tick()
+    const initialSortableCount = lorebookListMocks.SortableMock.create.mock.calls.length
+
+    toggleButtonForRow(rowByEntryId('entry-a')).click()
+    await tick()
+    expect(rowByEntryId('entry-a').textContent).toContain('Prompt')
+
+    component.setEntries(cloneEntries(entries))
+    await tick()
+
+    expect(rowByEntryId('entry-a').textContent).toContain('Prompt')
+    toggleButtonForRow(rowByEntryId('entry-a')).click()
+    await tick()
+    expect(lorebookListMocks.SortableMock.create).toHaveBeenCalledTimes(initialSortableCount + 1)
+  })
+
   it('reacts to resource-backed character lorebook replacement and dispatches deletion for the current character', async () => {
     setDatabaseLite({
       characters: [
