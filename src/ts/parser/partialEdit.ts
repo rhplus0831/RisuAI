@@ -526,7 +526,7 @@ export function findAllOriginalRangesFromText(
   }
 
   // Stage 4: Bigram similarity matching
-  if (plN.length > FUZZY_MAX || plN.length <= BIGRAM_MAX) {
+  if (plN.length > FUZZY_MAX && plN.length <= BIGRAM_MAX) {
     const step = Math.max(1, Math.floor(plN.length / 10))
     const uniqueCandidates = new Map<number, number>()
 
