@@ -222,6 +222,7 @@
     {/if}
     <div class="flex gap-2 items-center">
       <button
+        type="button"
         class="font-bold grow text-left"
         aria-expanded={isPluginExpanded(plugin.name)}
         aria-controls={pluginParamsId(plugin.name)}
@@ -237,6 +238,8 @@
       </button>
       {#if plugin.version === 2 || plugin.version === '2.1'}
         <button
+          type="button"
+          aria-label={language.pluginV2Warning}
           class="text-yellow-400 hover:gray-200 cursor-pointer"
           onclick={(e) => {
             e.stopPropagation()
@@ -251,6 +254,7 @@
           {#if typeof link.link === 'string' && (link.link.startsWith('http://') || link.link.startsWith('https://'))}
             <a
               href={link.link}
+              aria-label={link.hoverText || `${language.plugin}: ${plugin.displayName ?? plugin.name}`}
               target="_blank"
               rel="nofollow noopener noreferrer"
               class="text-textcolor2 hover:text-textcolor cursor-pointer"
@@ -267,6 +271,7 @@
       {#if plugin.updateURL}
         {@const updateState = pluginUpdateState(plugin)}
         <button
+          type="button"
           class:text-green-400={updateState.status === 'available'}
           class:textcolor2={updateState.status !== 'available'}
           class="hover:gray-200 cursor-pointer disabled:cursor-wait disabled:opacity-60"
@@ -283,6 +288,9 @@
       {/if}
 
       <button
+        type="button"
+        aria-label={`${language.enable}: ${plugin.displayName ?? plugin.name}`}
+        aria-pressed={plugin.enabled}
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
           e.stopPropagation()
@@ -298,6 +306,8 @@
       </button>
 
       <button
+        type="button"
+        aria-label={`${language.remove}: ${plugin.displayName ?? plugin.name}`}
         class="textcolor2 hover:gray-200 cursor-pointer"
         onclick={async (e) => {
           e.stopPropagation()
@@ -417,6 +427,8 @@
 </div>
 <div class="text-textcolor2 mt-2 flex gap-2">
   <button
+    type="button"
+    aria-label={`${language.import}: ${language.plugin}`}
     onclick={() => {
       importPlugin()
     }}
@@ -425,6 +437,8 @@
   </button>
 
   <button
+    type="button"
+    aria-label={language.pluginDevelopMode}
     onclick={async () => {
       const v = parseInt(
         await alertSelect(['Import plugin with hot reload', 'Download plugin template', language.cancel]),

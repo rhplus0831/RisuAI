@@ -43,6 +43,7 @@ vi.mock('src/ts/pluginCommands', () => ({
 }))
 
 import PluginSettings from './PluginSettings.svelte'
+import { language } from 'src/lang'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
 
 describe('PluginSettings', () => {
@@ -102,6 +103,50 @@ describe('PluginSettings', () => {
 
     const labels = Array.from(target.querySelectorAll('option')).map((option) => option.textContent?.trim())
     expect(labels).toEqual(['fast', 'slow'])
+  })
+
+  it('names plugin icon actions and exposes enabled state', () => {
+    setDatabaseLite({
+      characters: [],
+      currentPluginProvider: '',
+      enabledModules: [],
+      modules: [],
+      plugins: [
+        {
+          name: 'plugin-accessible',
+          displayName: 'Accessible Plugin',
+          script: 'Risuai.log("accessible")',
+          arguments: {},
+          realArg: {},
+          customLink: [{ link: 'https://example.test/docs', hoverText: 'Plugin documentation' }],
+          argMeta: {},
+          version: 2,
+          enabled: true,
+        },
+      ],
+    } as any)
+    component = mount(PluginSettings, { target })
+
+    const warningButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginV2Warning}"]`)
+    const link = target.querySelector<HTMLAnchorElement>('a[aria-label="Plugin documentation"]')
+    const enableButton = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.enable}: Accessible Plugin"]`,
+    )
+    const removeButton = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.remove}: Accessible Plugin"]`,
+    )
+    const importButton = target.querySelector<HTMLButtonElement>(
+      `button[aria-label="${language.import}: ${language.plugin}"]`,
+    )
+    const developButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginDevelopMode}"]`)
+
+    expect(warningButton?.type).toBe('button')
+    expect(link?.href).toBe('https://example.test/docs')
+    expect(enableButton?.type).toBe('button')
+    expect(enableButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(removeButton?.type).toBe('button')
+    expect(importButton?.type).toBe('button')
+    expect(developButton?.type).toBe('button')
   })
 
   it('renders numeric integer checkboxes and persists numeric toggle values', async () => {

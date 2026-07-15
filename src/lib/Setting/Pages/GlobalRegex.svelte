@@ -28,6 +28,8 @@
 <RegexList bind:value={globalScriptDraft.value} />
 <div class="text-textcolor2 mt-2 flex gap-2">
   <button
+    type="button"
+    aria-label={`${language.add}: ${language.globalRegexScript}`}
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={() => {
       globalScriptDraft.value = ensureClientScriptDefinitionIds([
@@ -41,11 +43,15 @@
       ])
     }}><PlusIcon /></button>
   <button
+    type="button"
+    aria-label={`${language.export}: ${language.globalRegexScript}`}
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={() => {
       exportRegex(globalScriptDraft.value)
     }}><DownloadIcon /></button>
   <button
+    type="button"
+    aria-label={`${language.import}: ${language.globalRegexScript}`}
     class="font-medium cursor-pointer hover:text-green-500"
     onclick={async () => {
       globalScriptDraft.value = ensureClientScriptDefinitionIds(await importRegex(globalScriptDraft.value))
