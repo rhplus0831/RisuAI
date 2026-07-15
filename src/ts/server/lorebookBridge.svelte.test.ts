@@ -13,6 +13,7 @@ import path from 'node:path'
 
 const recorded = vi.hoisted(() => ({
   commands: [] as Array<Record<string, unknown> & { rollback?: () => void }>,
+  commandResults: [] as Array<Promise<{ status: string; error?: string; revision?: number }>>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
 vi.mock('./commands', () => ({
@@ -26,7 +27,10 @@ vi.mock('./commands', () => ({
         ...(args.keepalive ? { keepalive: args.keepalive } : {}),
         ...(args.rollback ? { rollback: args.rollback } : {}),
       })
-      return { status: 'ok', revision: 1 }
+      const queuedResult = recorded.commandResults.shift()
+      const result = queuedResult ? await queuedResult : { status: 'ok', revision: 1 }
+      if (result.status !== 'ok') args.rollback?.()
+      return result
     },
   ),
   subscribeServerCommandLocalEffectApplied: () => () => {},
@@ -83,6 +87,7 @@ import {
 } from './resourceState.svelte'
 import {
   applyLorebookEntryDraftEdit,
+  applyLorebookEntryDraftRollback,
   applyServerCharacterLorebookResource,
   changedLorebookEntryDraftFields,
   clearDirtyLorebookEntryFieldsMatchingProjection,
@@ -117,6 +122,7 @@ import {
   scopedLorebookStateSnapshot,
   selectGlobalLorebook,
   setActiveChatLorebookLocalActivation,
+  subscribeLorebookEntryDraftRollbacks,
   watchServerBackedLorebooks,
 } from './lorebookBridge.svelte'
 import { withCloneInstrumentation } from '../__tests__/cloneCostHarness'
@@ -208,6 +214,14 @@ async function flushServerCommandRecording(): Promise<void> {
   await Promise.resolve()
 }
 
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((next) => {
+    resolve = next
+  })
+  return { promise, resolve }
+}
+
 function exportedFunctionSource(source: string, name: string): string {
   const start = source.indexOf(`export function ${name}`)
   expect(start).toBeGreaterThanOrEqual(0)
@@ -227,6 +241,7 @@ beforeEach(() => {
   resourceGuardState.epoch = 0
   resetLorebookHydration()
   recorded.commands.length = 0
+  recorded.commandResults.length = 0
 })
 
 afterEach(() => {
@@ -234,6 +249,7 @@ afterEach(() => {
   vi.useRealTimers()
   selectedCharID.set(-1)
   recorded.commands.length = 0
+  recorded.commandResults.length = 0
 })
 
 describe('Phase 2 lorebook entry dirty projection merge', () => {
@@ -290,6 +306,47 @@ describe('Phase 2 lorebook entry dirty projection merge', () => {
     expect(draft.content).toBe('server later content')
   })
 
+  it('applies failed-field rollbacks to a mounted draft without overwriting newer fields', () => {
+    const previous = loreEntry({ content: 'server content', comment: 'server comment' })
+    const attempted = loreEntry({ content: 'server content', comment: 'failed comment' })
+    const draft = loreEntry({ content: 'newer content', comment: 'failed comment' })
+
+    const rollback = applyLorebookEntryDraftRollback(
+      draft as any,
+      {
+        scopeKey: 'character:character-a',
+        entryId: 'entry-1',
+        previousEntry: previous as any,
+        attemptedEntry: attempted as any,
+        restoredFields: ['comment'],
+      },
+      'character:character-a',
+    )
+
+    expect(rollback.restoredFields).toEqual(['comment'])
+    expect(rollback.draft).toMatchObject({ content: 'newer content', comment: 'server comment' })
+  })
+
+  it('ignores a draft rollback from another lorebook scope with the same entry ID', () => {
+    const previous = loreEntry({ comment: 'server comment' })
+    const attempted = loreEntry({ comment: 'failed comment' })
+    const draft = loreEntry({ comment: 'failed comment' })
+
+    const rollback = applyLorebookEntryDraftRollback(
+      draft as any,
+      {
+        scopeKey: 'character:character-a',
+        entryId: 'entry-1',
+        previousEntry: previous as any,
+        attemptedEntry: attempted as any,
+        restoredFields: ['comment'],
+      },
+      'character:character-b',
+    )
+
+    expect(rollback).toEqual({ draft, restoredFields: [] })
+  })
+
   it('LoreBookData uses dirty projection merge instead of blind draft replacement', () => {
     const source = readFileSync(path.join(process.cwd(), 'src/lib/SideBars/LoreBook/LoreBookData.svelte'), 'utf8')
 
@@ -297,6 +354,9 @@ describe('Phase 2 lorebook entry dirty projection merge', () => {
     expect(source).toContain('changedLorebookEntryDraftFields')
     expect(source).toContain('clearDirtyLorebookEntryFieldsMatchingProjection')
     expect(source).toContain('mergeLorebookEntryProjectionDraft')
+    expect(source).toContain('subscribeLorebookEntryDraftRollbacks')
+    expect(source).toContain('applyLorebookEntryDraftRollback')
+    expect(source).toContain('entryDraftScopeKey')
   })
 
   it('LoreBookData clears matching dirty fields before the value/draft mismatch branch', () => {
@@ -1534,6 +1594,94 @@ describe('K4 lorebook editor entry draft scope', () => {
 
     await vi.advanceTimersByTimeAsync(DELAY * 10)
     expect(characterEntryCommands()).toHaveLength(1)
+  })
+
+  it('rolls back a failed field while a later different-field save remains visible and sparse', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    recorded.commandResults.push(firstResult.promise)
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const original = cloneEntries([(getDatabase().characters[0].globalLore as Entry[])[2]])[0]
+    let mountedDraft = cloneEntries([original])[0]
+    const stop = subscribeLorebookEntryDraftRollbacks((event) => {
+      mountedDraft = applyLorebookEntryDraftRollback(mountedDraft as any, event, 'character:c-k4').draft as Entry
+    })
+
+    const firstAttempt = { ...original, comment: 'failed comment' }
+    mountedDraft = cloneEntries([firstAttempt])[0]
+    applyLorebookEntryDraftEdit(scope, 2, firstAttempt as any, 0)
+    flushPendingLorebookEntryDraftEdit(scope)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushServerCommandRecording()
+
+    const secondAttempt = {
+      ...(getDatabase().characters[0].globalLore as Entry[])[2],
+      content: 'accepted newer content',
+    }
+    mountedDraft = cloneEntries([secondAttempt])[0]
+    applyLorebookEntryDraftEdit(scope, 2, secondAttempt as any, 0)
+    flushPendingLorebookEntryDraftEdit(scope)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushServerCommandRecording()
+
+    const commands = characterEntryCommands()
+    expect(commands).toHaveLength(2)
+    expect((commands[1].a as Record<string, unknown>).sparseUpdate).toEqual({
+      patch: { content: 'accepted newer content' },
+    })
+
+    firstResult.resolve({ status: 'error', error: 'first save failed' })
+    await flushServerCommandRecording()
+    await flushServerCommandRecording()
+
+    expect((getDatabase().characters[0].globalLore as Entry[])[2]).toMatchObject({
+      comment: original.comment,
+      content: 'accepted newer content',
+    })
+    expect(mountedDraft).toMatchObject({
+      comment: original.comment,
+      content: 'accepted newer content',
+    })
+    stop()
+  })
+
+  it('rebases a later same-field rollback after two entry draft saves fail', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    const secondResult = createDeferred<{ status: string; error?: string }>()
+    recorded.commandResults.push(firstResult.promise, secondResult.promise)
+    setupK4EditorDb()
+    const scope = { kind: 'character', characterId: 'c-k4' } as const
+    const originalContent = (getDatabase().characters[0].globalLore as Entry[])[2].content
+
+    applyLorebookEntryDraftEdit(
+      scope,
+      2,
+      { ...(getDatabase().characters[0].globalLore as Entry[])[2], content: 'first attempt' } as any,
+      0,
+    )
+    flushPendingLorebookEntryDraftEdit(scope)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushServerCommandRecording()
+
+    applyLorebookEntryDraftEdit(
+      scope,
+      2,
+      { ...(getDatabase().characters[0].globalLore as Entry[])[2], content: 'second attempt' } as any,
+      0,
+    )
+    flushPendingLorebookEntryDraftEdit(scope)
+    await vi.advanceTimersByTimeAsync(0)
+    await flushServerCommandRecording()
+
+    firstResult.resolve({ status: 'error', error: 'first save failed' })
+    await flushServerCommandRecording()
+    await flushServerCommandRecording()
+    expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe('second attempt')
+
+    secondResult.resolve({ status: 'error', error: 'second save failed' })
+    await flushServerCommandRecording()
+    await flushServerCommandRecording()
+    expect((getDatabase().characters[0].globalLore as Entry[])[2].content).toBe(originalContent)
   })
 
   it('M8: bridge flush sends pending lorebook replacements with keepalive and clears debounce', async () => {

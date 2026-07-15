@@ -23,13 +23,15 @@
   import { tokenizeAccurate } from 'src/ts/tokenizer'
   import LoreBookList from './LoreBookList.svelte'
   import {
+    applyLorebookEntryDraftRollback,
     changedLorebookEntryDraftFields,
     clearDirtyLorebookEntryFieldsMatchingProjection,
     mergeLorebookEntryProjectionDraft,
     setActiveChatLorebookLocalActivation,
+    subscribeLorebookEntryDraftRollbacks,
     type LorebookEntryDirtyField,
   } from 'src/ts/server/lorebookBridge.svelte'
-  import { onDestroy } from 'svelte'
+  import { onDestroy, onMount } from 'svelte'
 
   const tokenCountCache = new Map<string, number>()
   const MAX_TOKEN_COUNT_CACHE = 500
@@ -51,6 +53,7 @@
     onEntrySettled?: (index: number) => void
     onDraftChange?: ((entry: loreBook) => void) | null
     onDraftSettled?: () => void
+    entryDraftScopeKey?: string
   }
 
   let {
@@ -76,6 +79,7 @@
     onEntrySettled = () => {},
     onDraftChange = null,
     onDraftSettled = () => {},
+    entryDraftScopeKey = undefined,
   }: Props = $props()
 
   let open = $derived(isOpen)
@@ -128,6 +132,21 @@
     if (suppressDraftDispatch) return
     propagateDraft(false)
   })
+
+  onMount(() =>
+    subscribeLorebookEntryDraftRollbacks((event) => {
+      const rollback = applyLorebookEntryDraftRollback(draft, event, entryDraftScopeKey)
+      if (rollback.restoredFields.length === 0) return
+
+      for (const field of rollback.restoredFields) dirtyDraftFields.delete(field)
+      suppressDraftDispatch = true
+      draft = rollback.draft
+      lastDraftDispatchSnapshot = snapshotJson(draft)
+      queueMicrotask(() => {
+        suppressDraftDispatch = false
+      })
+    }),
+  )
 
   $effect(() => {
     if (!open || draft.mode === 'folder') {
@@ -371,6 +390,7 @@
         <div class="mt-4">
           <LoreBookList
             {externalLoreBooks}
+            {entryDraftScopeKey}
             showFolder={draft.key}
             {onCollectionChange}
             {onEntryChange}

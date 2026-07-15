@@ -120,6 +120,7 @@ vi.mock('src/ts/alert', () => ({
 
 vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   applyLorebookEntryDraftEdit: vi.fn(),
+  applyLorebookEntryDraftRollback: vi.fn((draft: loreBook) => ({ draft, restoredFields: [] })),
   applyServerCharacterLorebookResource: vi.fn(() => true),
   changedLorebookEntryDraftFields: vi.fn(() => []),
   clearDirtyLorebookEntryFieldsMatchingProjection: vi.fn(),
@@ -132,6 +133,7 @@ vi.mock('src/ts/server/lorebookBridge.svelte', () => ({
   replaceGlobalLorebookEntryCollection: vi.fn(),
   resetLorebookHydration: vi.fn(),
   setActiveChatLorebookLocalActivation: lorebookListMocks.setActiveChatLorebookLocalActivation,
+  subscribeLorebookEntryDraftRollbacks: vi.fn(() => () => {}),
 }))
 
 vi.mock('src/ts/tokenizer', () => ({

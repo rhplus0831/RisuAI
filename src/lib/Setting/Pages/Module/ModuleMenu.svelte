@@ -565,6 +565,7 @@
 {#if submenu === 1 && Array.isArray(currentModule.lorebook)}
   <LoreBookList
     externalLoreBooks={currentModule.lorebook}
+    entryDraftScopeKey={`module:${currentModule.id}`}
     onCollectionChange={updateModuleLorebookCollection}
     onEntryChange={updateModuleLorebookValue}
     onEntrySettled={flushModuleLorebookValue} />

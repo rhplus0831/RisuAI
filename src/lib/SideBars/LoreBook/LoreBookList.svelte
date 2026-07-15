@@ -26,6 +26,7 @@
     onCollectionChange?: (entries: loreBook[]) => void
     onEntryChange?: (index: number, entry: loreBook) => void
     onEntrySettled?: (index: number) => void
+    entryDraftScopeKey?: string
   }
 
   let {
@@ -43,6 +44,7 @@
       updateExternalCollection(entries)
     },
     onEntrySettled = () => {},
+    entryDraftScopeKey = undefined,
   }: Props = $props()
   let stb: Sortable = null
   let ele: HTMLDivElement = $state()
@@ -70,6 +72,21 @@
     const database = getDatabase()
     return database.loreBook?.[database.loreBookPage]?.data ?? []
   }
+
+  function internalEntryDraftScopeKey(): string | undefined {
+    if (externalLoreBooks) return undefined
+    if (submenu === 0) {
+      const characterId = selectedCharacter()?.chaId
+      return characterId ? `character:${characterId}` : undefined
+    }
+    if (submenu === 1) {
+      const chatId = selectedChat()?.id
+      return chatId ? `chat:${chatId}` : undefined
+    }
+    return undefined
+  }
+
+  let resolvedEntryDraftScopeKey = $derived(entryDraftScopeKey ?? internalEntryDraftScopeKey())
 
   function cloneLoreBooks(entries: loreBook[]): loreBook[] {
     return JSON.parse(JSON.stringify(entries ?? []))
@@ -510,6 +527,7 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
+              entryDraftScopeKey={resolvedEntryDraftScopeKey}
               value={externalLoreBooks[i]}
               onDraftChange={(value) => updateExternalLoreValue(i, value)}
               onDraftSettled={() => onEntrySettled(i)}
@@ -541,6 +559,7 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
+              entryDraftScopeKey={resolvedEntryDraftScopeKey}
               value={entries[i]}
               onDraftChange={(value) => updateCharacterGlobalLoreValue(i, value)}
               onDraftSettled={flushCharacterGlobalLoreValue}
@@ -573,6 +592,7 @@
           {#if (!showFolder && !book.folder) || showFolder === book.folder}
             <LoreBookData
               {idgroup}
+              entryDraftScopeKey={resolvedEntryDraftScopeKey}
               value={entries[i]}
               onDraftChange={(value) => updateChatLoreValue(i, value)}
               onDraftSettled={flushChatLoreValue}

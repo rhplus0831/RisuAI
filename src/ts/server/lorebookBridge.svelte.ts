@@ -89,13 +89,24 @@ type LorebookProjectionEpochs =
 interface PendingCollectionReplacement {
   key: string
   previous: LorebookReplacementSnapshot
+  attemptedEntries: loreBook[]
   source: LorebookReplacementSource
   projectionEpochs: LorebookProjectionEpochs
   timer: ReturnType<typeof setTimeout> | null
   command: (options?: ServerCommandTransportOptions) => Promise<ServerCommandResult<Record<string, unknown>>>
 }
 
+interface PendingLorebookEntryAttempt {
+  sequence: number
+  scopeKey: string
+  entryId: string
+  previous: LorebookEntryStateSnapshot
+  attemptedEntry: loreBook
+}
+
 const pendingReplacements = new Map<string, PendingCollectionReplacement>()
+const pendingLorebookEntryAttempts: PendingLorebookEntryAttempt[] = []
+let nextLorebookEntryAttemptSequence = 0
 const pendingEntryEditKeys = new Set<string>()
 const flushedEntryEditSnapshots = new Map<string, string>()
 const flushedEntryEditClearSnapshots = new Map<string, string>()
@@ -128,10 +139,13 @@ export function resetServerBackedLorebookBridgeForTests(): void {
     if (pending.timer) clearTimeout(pending.timer)
   }
   pendingReplacements.clear()
+  pendingLorebookEntryAttempts.length = 0
+  nextLorebookEntryAttemptSequence = 0
   pendingEntryEditKeys.clear()
   flushedEntryEditSnapshots.clear()
   flushedEntryEditClearSnapshots.clear()
   characterScopeLocalLoreSnapshots.clear()
+  lorebookEntryDraftRollbackListeners.clear()
   suppressRollbackDispatch = false
   selectedCharMirror = -1
 }
@@ -1133,8 +1147,9 @@ function queueScopedLorebookReplacement(
         ? (cloneJsonValue(attemptedEntries ?? []) as LorebookEntrySnapshot[])
         : cloneLorebookEntriesForCommand(attemptedEntries)
       const optimisticMetadata = lorebookOptimisticCommandMetadata(scope, effectiveProjectionEpochs, entrySnapshots)
+      const entryAttempt = registerLorebookEntryAttempt(rollbackSnapshot, attemptedEntries)
 
-      return runServerCommand({
+      const result = runServerCommand({
         command: (baseRevision): Promise<ServerCommandResult<Record<string, unknown>>> => {
           if (source === 'entry' && isLorebookEntryStateSnapshot(rollbackSnapshot)) {
             const entryCommand = lorebookEntryUpsertCommand(
@@ -1207,15 +1222,27 @@ function queueScopedLorebookReplacement(
         },
         rollback: () => {
           if (hasLorebookProjectionEpochChanged(effectiveProjectionEpochs)) return
-          rollbackLorebookReplacement(scope, rollbackSnapshot, attemptedEntries)
+          if (entryAttempt) {
+            rollbackLorebookEntryAttempt(entryAttempt)
+          } else {
+            rollbackLorebookReplacement(scope, rollbackSnapshot, attemptedEntries)
+          }
         },
         signal: options.signal,
         keepalive: options.keepalive,
       })
+      if (entryAttempt) {
+        void result.then(
+          () => clearLorebookEntryAttempt(entryAttempt),
+          () => clearLorebookEntryAttempt(entryAttempt),
+        )
+      }
+      return result
     },
     delayMs,
     source,
     projectionEpochs,
+    attemptedEntries,
   )
 }
 
@@ -1857,6 +1884,46 @@ export function collectLorebookCollectionSnapshots(scope: LorebookWatchScope): M
 
 export type LorebookEntryDirtyField = keyof loreBook & string
 
+export interface LorebookEntryDraftRollbackEvent {
+  scopeKey: string
+  entryId: string
+  previousEntry: loreBook
+  attemptedEntry: loreBook
+  restoredFields: LorebookEntryDirtyField[]
+}
+
+export interface LorebookEntryDraftRollbackResult {
+  draft: loreBook
+  restoredFields: LorebookEntryDirtyField[]
+}
+
+type LorebookEntryDraftRollbackListener = (event: LorebookEntryDraftRollbackEvent) => void
+
+const lorebookEntryDraftRollbackListeners = new Set<LorebookEntryDraftRollbackListener>()
+
+export function subscribeLorebookEntryDraftRollbacks(listener: LorebookEntryDraftRollbackListener): () => void {
+  lorebookEntryDraftRollbackListeners.add(listener)
+  return () => lorebookEntryDraftRollbackListeners.delete(listener)
+}
+
+export function applyLorebookEntryDraftRollback(
+  draft: loreBook,
+  event: LorebookEntryDraftRollbackEvent,
+  scopeKey: string | undefined,
+): LorebookEntryDraftRollbackResult {
+  if (!scopeKey || scopeKey !== event.scopeKey || draft.id !== event.entryId) {
+    return { draft, restoredFields: [] }
+  }
+  const nextDraft = cloneJsonValue(draft)
+  const restoredFields = restoreAttemptedLorebookEntryFields(
+    nextDraft,
+    event.previousEntry,
+    event.attemptedEntry,
+    event.restoredFields,
+  )
+  return { draft: restoredFields.length > 0 ? nextDraft : draft, restoredFields }
+}
+
 export function changedLorebookEntryDraftFields(
   previousEntry: loreBook,
   currentEntry: loreBook,
@@ -1868,7 +1935,10 @@ export function changedLorebookEntryDraftFields(
 
   for (const key of keys) {
     if (key === 'id') continue
-    if (snapshotJson(previous[key]) !== snapshotJson(current[key])) {
+    if (
+      Object.prototype.hasOwnProperty.call(previous, key) !== Object.prototype.hasOwnProperty.call(current, key) ||
+      snapshotJson(previous[key]) !== snapshotJson(current[key])
+    ) {
       changedFields.push(key as LorebookEntryDirtyField)
     }
   }
@@ -1901,6 +1971,58 @@ export function mergeLorebookEntryProjectionDraft(
     projection: projection as unknown as Record<string, unknown>,
     dirtyFields,
   }) as unknown as loreBook
+}
+
+function emitLorebookEntryDraftRollback(event: LorebookEntryDraftRollbackEvent): void {
+  for (const listener of lorebookEntryDraftRollbackListeners) {
+    try {
+      listener(event)
+    } catch (error) {
+      console.warn('Lorebook entry draft rollback listener failed', error)
+    }
+  }
+}
+
+function restoreAttemptedLorebookEntryFields(
+  target: loreBook,
+  previousEntry: loreBook,
+  attemptedEntry: loreBook,
+  fields: readonly LorebookEntryDirtyField[],
+): LorebookEntryDirtyField[] {
+  const targetRecord = target as unknown as Record<string, unknown>
+  const previousRecord = previousEntry as unknown as Record<string, unknown>
+  const restoredFields: LorebookEntryDirtyField[] = []
+
+  for (const field of fields) {
+    if (!sameLorebookEntryFieldValue(target, attemptedEntry, field)) continue
+    if (Object.prototype.hasOwnProperty.call(previousRecord, field)) {
+      targetRecord[field] = cloneJsonValue(previousRecord[field])
+    } else {
+      delete targetRecord[field]
+    }
+    restoredFields.push(field)
+  }
+  return restoredFields
+}
+
+function sameLorebookEntryFieldValue(left: loreBook, right: loreBook, field: LorebookEntryDirtyField): boolean {
+  const leftRecord = left as unknown as Record<string, unknown>
+  const rightRecord = right as unknown as Record<string, unknown>
+  return (
+    Object.prototype.hasOwnProperty.call(leftRecord, field) ===
+      Object.prototype.hasOwnProperty.call(rightRecord, field) &&
+    snapshotJson(leftRecord[field]) === snapshotJson(rightRecord[field])
+  )
+}
+
+function copyLorebookEntryFieldValue(target: loreBook, source: loreBook, field: LorebookEntryDirtyField): void {
+  const targetRecord = target as unknown as Record<string, unknown>
+  const sourceRecord = source as unknown as Record<string, unknown>
+  if (Object.prototype.hasOwnProperty.call(sourceRecord, field)) {
+    targetRecord[field] = cloneJsonValue(sourceRecord[field])
+  } else {
+    delete targetRecord[field]
+  }
 }
 
 function collectCharacterLorebookSnapshots(
@@ -2008,6 +2130,7 @@ function queueReplacement(
   delay: number,
   source: LorebookReplacementSource,
   projectionEpochs: LorebookProjectionEpochs,
+  attemptedEntries: loreBook[],
 ): void {
   const existing = pendingReplacements.get(key)
   if (existing?.timer) clearTimeout(existing.timer)
@@ -2024,6 +2147,7 @@ function queueReplacement(
   const pending: PendingCollectionReplacement = {
     key,
     previous: effectivePrevious,
+    attemptedEntries,
     source: effectiveSource,
     projectionEpochs: effectiveProjectionEpochs,
     command: (options = {}) => command(effectivePrevious, effectiveProjectionEpochs, options),
@@ -2077,6 +2201,87 @@ function runPendingReplacement(key: string, options: ServerCommandTransportOptio
     }
   }
   void pending.command(options)
+}
+
+function registerLorebookEntryAttempt(
+  snapshot: LorebookReplacementSnapshot,
+  attemptedEntries: loreBook[],
+): PendingLorebookEntryAttempt | null {
+  if (
+    !isLorebookEntryStateSnapshot(snapshot) ||
+    !snapshot.previousEntry ||
+    !isStableCommandId(snapshot.entryId) ||
+    snapshot.previousEntry.id !== snapshot.entryId
+  ) {
+    return null
+  }
+
+  const attemptedEntry = attemptedLorebookEntryForSnapshot(attemptedEntries, snapshot)
+  if (!attemptedEntry || attemptedEntry.id !== snapshot.entryId) return null
+  if (!sparseLorebookEntryUpdate(snapshot.previousEntry, attemptedEntry)) return null
+
+  const attempt: PendingLorebookEntryAttempt = {
+    sequence: ++nextLorebookEntryAttemptSequence,
+    scopeKey: snapshot.scopeKey,
+    entryId: snapshot.entryId,
+    previous: snapshot,
+    attemptedEntry: cloneJsonValue(attemptedEntry),
+  }
+  pendingLorebookEntryAttempts.push(attempt)
+  return attempt
+}
+
+function rollbackLorebookEntryAttempt(attempt: PendingLorebookEntryAttempt): void {
+  rollbackLorebookEntryByAttempt(attempt.previous, attempt.attemptedEntry)
+  rebaseLaterLorebookEntryAttempts(attempt)
+  clearLorebookEntryAttempt(attempt)
+}
+
+function rebaseLaterLorebookEntryAttempts(failed: PendingLorebookEntryAttempt): void {
+  const failedPrevious = failed.previous.previousEntry
+  if (!failedPrevious) return
+
+  for (const field of changedLorebookEntryDraftFields(failedPrevious, failed.attemptedEntry)) {
+    let rebased = false
+    for (const later of pendingLorebookEntryAttempts) {
+      const laterPrevious = later.previous.previousEntry
+      if (
+        later.sequence <= failed.sequence ||
+        later.scopeKey !== failed.scopeKey ||
+        later.entryId !== failed.entryId ||
+        !laterPrevious
+      ) {
+        continue
+      }
+      if (!changedLorebookEntryDraftFields(laterPrevious, later.attemptedEntry).includes(field)) continue
+      if (!sameLorebookEntryFieldValue(laterPrevious, failed.attemptedEntry, field)) continue
+      copyLorebookEntryFieldValue(laterPrevious, failedPrevious, field)
+      rebased = true
+      break
+    }
+
+    if (rebased) continue
+    const queued = pendingReplacements.get(failed.scopeKey)
+    if (
+      !queued ||
+      queued.source !== 'entry' ||
+      !isLorebookEntryStateSnapshot(queued.previous) ||
+      queued.previous.entryId !== failed.entryId ||
+      !queued.previous.previousEntry
+    ) {
+      continue
+    }
+    const queuedAttemptedEntry = attemptedLorebookEntryForSnapshot(queued.attemptedEntries, queued.previous)
+    if (!queuedAttemptedEntry || queuedAttemptedEntry.id !== failed.entryId) continue
+    if (!changedLorebookEntryDraftFields(queued.previous.previousEntry, queuedAttemptedEntry).includes(field)) continue
+    if (!sameLorebookEntryFieldValue(queued.previous.previousEntry, failed.attemptedEntry, field)) continue
+    copyLorebookEntryFieldValue(queued.previous.previousEntry, failedPrevious, field)
+  }
+}
+
+function clearLorebookEntryAttempt(attempt: PendingLorebookEntryAttempt): void {
+  const index = pendingLorebookEntryAttempts.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingLorebookEntryAttempts.splice(index, 1)
 }
 
 function scheduleFlushedEntrySuppressionClear(key: string, snapshot: string): void {
@@ -2415,9 +2620,39 @@ function rollbackLorebookEntryByAttempt(snapshot: LorebookEntryStateSnapshot, at
   const entryId =
     typeof attemptedEntry.id === 'string' && attemptedEntry.id.trim() ? attemptedEntry.id : snapshot.entryId
   if (!entryId) return
+  if (snapshot.previousEntry) {
+    const changedFields = changedLorebookEntryDraftFields(snapshot.previousEntry, attemptedEntry)
+    if (changedFields.length === 0) return
+
+    let restoredFields: LorebookEntryDirtyField[] = []
+    withSuppressedLorebookWatcher(() => {
+      withTrustedResourceWrite(() => {
+        const target = resolveLorebookCollectionFromKey(snapshot.scopeKey)
+        const liveEntry = target?.entries.find((entry) => entry.id === entryId)
+        if (!liveEntry) return
+        restoredFields = restoreAttemptedLorebookEntryFields(
+          liveEntry,
+          snapshot.previousEntry as loreBook,
+          attemptedEntry,
+          changedFields,
+        )
+      })
+    })
+    if (restoredFields.length > 0) {
+      emitLorebookEntryDraftRollback({
+        scopeKey: snapshot.scopeKey,
+        entryId,
+        previousEntry: cloneJsonValue(snapshot.previousEntry),
+        attemptedEntry: cloneJsonValue(attemptedEntry),
+        restoredFields,
+      })
+    }
+    return
+  }
+
   const rollbackEntry: LorebookListRollbackEntry = {
     key: entryId,
-    previous: snapshot.previousEntry ? cloneJsonValue(snapshot.previousEntry) : null,
+    previous: null,
     attempted: cloneJsonValue(attemptedEntry),
     previousIndex: snapshot.index,
   }
