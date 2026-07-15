@@ -695,6 +695,20 @@ export const PROTOCOL_ROUTE_MANIFEST = [
     streaming: 'none',
   },
   {
+    id: 'mcp-oauth-refresh',
+    methods: ['POST'],
+    path: '/api/v1/mcp/oauth/refresh',
+    auth: {
+      decision: 'required',
+      reason: 'MCP OAuth refresh uses a server-owned stored refresh credential selected by stable MCP identity.',
+    },
+    activeWriter: {
+      decision: 'runtime-proxy',
+      reason: 'Refreshes an upstream access token without mutating local durable state.',
+    },
+    streaming: 'none',
+  },
+  {
     id: 'provider-operations',
     methods: ['POST'],
     path: '/api/v1/provider-operations',

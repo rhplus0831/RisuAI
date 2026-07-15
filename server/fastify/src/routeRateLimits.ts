@@ -27,6 +27,11 @@ export const providerOperationRateLimit: RateLimitOptions = {
   timeWindow: MINUTE,
 }
 
+export const mcpOAuthRefreshRateLimit: RateLimitOptions = {
+  max: 30,
+  timeWindow: MINUTE,
+}
+
 export const proxyStreamCreateRateLimit: RateLimitOptions = {
   max: 30,
   timeWindow: MINUTE,
