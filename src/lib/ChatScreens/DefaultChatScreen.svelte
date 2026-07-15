@@ -167,6 +167,8 @@
   let messageInput: string = $state('')
   let messageInputTranslate: string = $state('')
   let openMenu = $state(false)
+  let chatMenuButton: HTMLButtonElement | null = $state(null)
+  let chatMenuElement: HTMLDivElement | null = $state(null)
   let loadPages = $state(normalizeChatDisplayTailCount(getDatabase().chatDisplayTailCount))
   let doingChatInputTranslate = $state(false)
   let toggleStickers: boolean = $state(false)
@@ -200,6 +202,7 @@
   })
   let currentChat = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.message ?? [])
   let currentChatId = $derived(currentCharacter?.chats[currentCharacter.chatPage]?.id)
+  let canContinueFromMenu = $derived(currentChat.length >= 2 && currentChat[currentChat.length - 1]?.role === 'char')
   let currentChatOwnsGeneration = $derived.by(() => {
     const target = $activeGenerationTarget
     if (!$doingChat || !target || !currentCharacter) return false
@@ -226,6 +229,80 @@
 
   async function retryActiveChatHydration() {
     await hydrateActiveChat({ force: true })
+  }
+
+  function getChatMenuItems(): HTMLButtonElement[] {
+    return Array.from(
+      chatMenuElement?.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]:not(:disabled)') ?? [],
+    )
+  }
+
+  function closeChatMenu(options: { restoreFocus?: boolean } = {}): void {
+    if (!openMenu) return
+
+    const focusWasInMenu = chatMenuElement?.contains(document.activeElement) ?? false
+    openMenu = false
+
+    void tick().then(() => {
+      if (!chatMenuButton?.isConnected) return
+
+      const activeElement = document.activeElement
+      const focusIsUnclaimed = !activeElement || activeElement === document.body
+      if (options.restoreFocus || (focusWasInMenu && focusIsUnclaimed)) {
+        chatMenuButton.focus()
+      }
+    })
+  }
+
+  function toggleChatMenu(event: MouseEvent): void {
+    event.stopPropagation()
+
+    if (openMenu) {
+      closeChatMenu({ restoreFocus: true })
+      return
+    }
+
+    openMenu = true
+    void tick().then(() => {
+      getChatMenuItems()[0]?.focus()
+    })
+  }
+
+  function handleChatMenuKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeChatMenu({ restoreFocus: true })
+      return
+    }
+
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+
+    const items = getChatMenuItems()
+    if (items.length === 0) return
+
+    event.preventDefault()
+    event.stopPropagation()
+
+    const currentIndex = items.indexOf(document.activeElement as HTMLButtonElement)
+    if (event.key === 'Home') {
+      items[0].focus()
+      return
+    }
+    if (event.key === 'End') {
+      items[items.length - 1].focus()
+      return
+    }
+
+    const nextIndex =
+      event.key === 'ArrowDown'
+        ? currentIndex < 0
+          ? 0
+          : (currentIndex + 1) % items.length
+        : currentIndex <= 0
+          ? items.length - 1
+          : currentIndex - 1
+    items[nextIndex].focus()
   }
 
   function scrollToBottom() {
@@ -864,7 +941,7 @@
     const targetIdentity = getActiveTranscriptWindowIdentity()
     await hydrateActiveChatFully()
     if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    await rerollNav({ sendChatMain, closeMenu: () => (openMenu = false) })
+    await rerollNav({ sendChatMain, closeMenu: closeChatMenu })
   }
 
   async function unReroll() {
@@ -884,7 +961,7 @@
     const targetIdentity = getActiveTranscriptWindowIdentity()
     await hydrateActiveChatFully()
     if (getActiveTranscriptWindowIdentity() !== targetIdentity) return
-    await newRerollNav({ sendChatMain, closeMenu: () => (openMenu = false) })
+    await newRerollNav({ sendChatMain, closeMenu: closeChatMenu })
   }
 
   async function selectRerollCandidate(index: number) {
@@ -1192,7 +1269,7 @@
   class="w-full h-full relative"
   style={customStyle}
   onclick={() => {
-    openMenu = false
+    closeChatMenu()
   }}>
   {#if showNewMessageButton}
     {#if getDatabase().newMessageButtonStyle === 'bottom-center' || !getDatabase().newMessageButtonStyle}
@@ -1400,13 +1477,14 @@
         {/if}
         {#if getDatabase().characters[$selectedCharID]?.chaId !== '§playground'}
           <button
+            bind:this={chatMenuButton}
+            type="button"
             data-testid="default-chat-menu-button"
             aria-label={language.menu}
             aria-expanded={openMenu}
-            onclick={(e) => {
-              openMenu = !openMenu
-              e.stopPropagation()
-            }}
+            aria-haspopup="menu"
+            aria-controls="default-chat-overflow-menu"
+            onclick={toggleChatMenu}
             class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-textcolor p-3 rounded-r-md hover:bg-blue-500 hover:text-white transition-colors"
             style:height={inputHeight}>
             <MenuIcon />
@@ -1647,153 +1725,180 @@
 
       {#if openMenu}
         <div
+          bind:this={chatMenuElement}
+          id="default-chat-overflow-menu"
+          data-testid="default-chat-overflow-menu"
+          role="menu"
+          tabindex="-1"
+          aria-label={language.menu}
           class="{getDatabase().fixedChatTextarea
             ? 'fixed'
             : 'absolute'} right-2 bottom-16 p-5 bg-darkbg flex flex-col gap-3 text-textcolor rounded-md"
+          onkeydown={handleChatMenuKeydown}
           onclick={(e) => {
             e.stopPropagation()
           }}>
           <!-- svelte-ignore block_empty -->
           {#if getDatabase().characters[$selectedCharID].ttsMode && getDatabase().characters[$selectedCharID].ttsMode !== 'none'}
-            <div
-              class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
               onclick={() => {
                 stopTTS()
               }}>
               <MicOffIcon />
               <span class="ml-2">{language.ttsStop}</span>
-            </div>
+            </button>
           {/if}
 
-          <div
-            class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
-            class:text-textcolor2={getDatabase().characters[$selectedCharID].chats[
-              getDatabase().characters[$selectedCharID].chatPage
-            ].message.length < 2 ||
-              getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                .message[
-                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                  .message.length - 1
-              ].role !== 'char'}
-            onclick={() => {
-              if (
-                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                  .message.length < 2 ||
-                getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                  .message[
-                  getDatabase().characters[$selectedCharID].chats[getDatabase().characters[$selectedCharID].chatPage]
-                    .message.length - 1
-                ].role !== 'char'
-              ) {
-                return
-              }
-              sendContinue()
-            }}>
+          <button
+            type="button"
+            role="menuitem"
+            data-default-chat-menu-item
+            disabled={!canContinueFromMenu}
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors disabled:cursor-not-allowed disabled:text-textcolor2"
+            onclick={sendContinue}>
             <StepForwardIcon />
             <span class="ml-2">{language.continueResponse}</span>
-          </div>
+          </button>
 
           {#if getDatabase().showMenuChatList}
-            <div
-              class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
               onclick={() => {
                 openChatList = true
-                openMenu = false
+                closeChatMenu()
               }}>
               <DatabaseIcon />
               <span class="ml-2">{language.chatList}</span>
-            </div>
+            </button>
           {/if}
 
           {#if getDatabase().enableRisuaiProTools}
-            <div
-              class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
               onclick={() => {
                 easyPanelStore.open = !easyPanelStore.open
               }}>
               <SparkleIcon />
               <span class="ml-2">{language.easyPanel}</span>
-            </div>
+            </button>
           {/if}
 
           {#each additionalChatMenu as menu}
-            <div
-              class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
               onclick={() => {
                 menu.callback()
-                openMenu = false
+                closeChatMenu()
               }}>
               <PluginDefinedIcon ico={menu} />
               <span class="ml-2">{menu.name}</span>
-            </div>
+            </button>
           {/each}
 
           {#if getDatabase().showMenuHypaMemoryModal && getDatabase().hypaV3}
-            <div
-              class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
               onclick={() => {
                 $hypaV3ModalOpen = true
-                openMenu = false
+                closeChatMenu()
               }}>
               <BrainIcon />
               <span class="ml-2">{language.hypaMemoryV3Modal}</span>
-            </div>
+            </button>
           {/if}
 
           {#if getDatabase().translator !== ''}
-            <div
-              class={'flex items-center cursor-pointer ' +
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={getDatabase().useAutoTranslateInput}
+              data-default-chat-menu-item
+              class={'flex w-full items-center cursor-pointer text-left ' +
                 (getDatabase().useAutoTranslateInput ? 'text-green-500' : 'lg:hover:text-green-500')}
               onclick={() => {
                 applyServerBackedSetting('useAutoTranslateInput', !getDatabase().useAutoTranslateInput)
               }}>
               <GlobeIcon />
               <span class="ml-2">{language.autoTranslateInput}</span>
-            </div>
+            </button>
           {/if}
 
-          <div
+          <button
+            type="button"
+            role="menuitem"
+            data-default-chat-menu-item
             data-testid="default-chat-screenshot-button"
-            class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
             onclick={() => {
               screenShot()
             }}>
             <CameraIcon />
             <span class="ml-2">{language.screenshot}</span>
-          </div>
+          </button>
 
-          <div
-            class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+          <button
+            type="button"
+            role="menuitem"
+            data-default-chat-menu-item
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
             onclick={postFileFromMenu}>
             <ImagePlusIcon />
             <span class="ml-2">{language.postFile}</span>
-          </div>
+          </button>
 
-          <div
-            class={'flex items-center cursor-pointer ' +
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={getDatabase().useAutoSuggestions}
+            data-default-chat-menu-item
+            class={'flex w-full items-center cursor-pointer text-left ' +
               (getDatabase().useAutoSuggestions ? 'text-green-500' : 'lg:hover:text-green-500')}
             onclick={async () => {
               applyServerBackedSetting('useAutoSuggestions', !getDatabase().useAutoSuggestions)
             }}>
             <ReplyIcon />
             <span class="ml-2">{language.autoSuggest}</span>
-          </div>
+          </button>
 
-          <div
-            class="flex items-center cursor-pointer hover:text-green-500 transition-colors"
+          <button
+            type="button"
+            role="menuitem"
+            data-default-chat-menu-item
+            class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
             onclick={() => {
               openModuleList = true
-              openMenu = false
+              closeChatMenu()
             }}>
             <PackageIcon />
             <span class="ml-2">{language.modules}</span>
-          </div>
+          </button>
 
           {#if getDatabase().sideMenuRerollButton}
-            <div class="flex items-center cursor-pointer hover:text-green-500 transition-colors" onclick={reroll}>
+            <button
+              type="button"
+              role="menuitem"
+              data-default-chat-menu-item
+              class="flex w-full items-center cursor-pointer text-left hover:text-green-500 transition-colors"
+              onclick={reroll}>
               <RefreshCcwIcon />
               <span class="ml-2">{language.reroll}</span>
-            </div>
+            </button>
           {/if}
         </div>
       {/if}

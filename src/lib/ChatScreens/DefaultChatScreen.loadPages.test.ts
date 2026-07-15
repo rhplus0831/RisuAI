@@ -528,6 +528,94 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('DefaultChatScreen overflow menu accessibility', () => {
+  it('exposes a named menu of native buttons and focuses the first enabled item', async () => {
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-menu-button"]')).toBeTruthy()
+    })
+
+    const menuButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!
+    menuButton.focus()
+    menuButton.click()
+    await settle()
+
+    const menu = target.querySelector<HTMLElement>('[data-testid="default-chat-overflow-menu"]')
+    expect(menu).toBeTruthy()
+    expect(menu?.getAttribute('role')).toBe('menu')
+    expect(menu?.getAttribute('aria-label')).toBe('menu')
+    expect(menuButton.getAttribute('aria-haspopup')).toBe('menu')
+    expect(menuButton.getAttribute('aria-controls')).toBe(menu?.id)
+    expect(menuButton.getAttribute('aria-expanded')).toBe('true')
+
+    const items = Array.from(menu!.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]'))
+    expect(items.length).toBeGreaterThan(0)
+    expect(items.every((item) => item.tagName === 'BUTTON')).toBe(true)
+    expect(items.every((item) => item.textContent?.trim())).toBe(true)
+    expect(items.every((item) => item.getAttribute('role')?.startsWith('menuitem'))).toBe(true)
+    expect(document.activeElement).toBe(items[0])
+  })
+
+  it('supports arrow, Home, and End navigation and restores opener focus on Escape', async () => {
+    seedDatabase([2])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-menu-button"]')).toBeTruthy()
+    })
+
+    const menuButton = target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!
+    menuButton.click()
+    await settle()
+
+    const enabledItems = Array.from(
+      target.querySelectorAll<HTMLButtonElement>('[data-default-chat-menu-item]:not(:disabled)'),
+    )
+    expect(enabledItems.length).toBeGreaterThan(2)
+    expect(document.activeElement).toBe(enabledItems[0])
+
+    enabledItems[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect(document.activeElement).toBe(enabledItems[1])
+
+    enabledItems[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    expect(document.activeElement).toBe(enabledItems.at(-1))
+
+    enabledItems.at(-1)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    expect(document.activeElement).toBe(enabledItems[0])
+
+    enabledItems[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    expect(document.activeElement).toBe(enabledItems.at(-1))
+
+    enabledItems.at(-1)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+
+    expect(target.querySelector('[data-testid="default-chat-overflow-menu"]')).toBeNull()
+    expect(menuButton.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(menuButton)
+  })
+
+  it('skips the unavailable continue action when placing initial focus', async () => {
+    seedDatabase([1])
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-menu-button"]')).toBeTruthy()
+    })
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-menu-button"]')!.click()
+    await settle()
+
+    const continueItem = findClickableByText('continueResponse') as HTMLButtonElement | undefined
+    const firstEnabledItem = target.querySelector<HTMLButtonElement>('[data-default-chat-menu-item]:not(:disabled)')
+    expect(continueItem).toBeInstanceOf(HTMLButtonElement)
+    expect(continueItem?.disabled).toBe(true)
+    expect(firstEnabledItem).toBeTruthy()
+    expect(document.activeElement).toBe(firstEnabledItem)
+  })
+})
+
 describe('DefaultChatScreen transcript window state', () => {
   it('offers the Stop TTS action for every active synthesis mode', async () => {
     seedDatabase([2])
