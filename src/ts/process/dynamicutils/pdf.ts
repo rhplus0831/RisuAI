@@ -160,16 +160,29 @@ export async function extractPdfText(pdfBuffer: ArrayBuffer): Promise<string[]> 
     cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/cmaps/',
     cMapPacked: true,
   })
-  const pdf = await loadingTask.promise
+  let pdf: Awaited<typeof loadingTask.promise> | null = null
   const texts: string[] = []
 
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i)
-    const content = await page.getTextContent()
-    const items = content.items as { str: string }[]
+  try {
+    pdf = await loadingTask.promise
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i)
+      try {
+        const content = await page.getTextContent()
+        const items = content.items as { str: string }[]
 
-    for (const item of items) {
-      texts.push(item.str)
+        for (const item of items) {
+          texts.push(item.str)
+        }
+      } finally {
+        page.cleanup()
+      }
+    }
+  } finally {
+    if (pdf) {
+      await Promise.resolve(pdf.destroy()).catch(() => undefined)
+    } else {
+      await Promise.resolve(loadingTask.destroy()).catch(() => undefined)
     }
   }
 
