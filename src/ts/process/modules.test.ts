@@ -10,6 +10,8 @@ const alertError = vi.hoisted(() => vi.fn())
 const alertConfirm = vi.hoisted(() => vi.fn())
 const saveAsset = vi.hoisted(() => vi.fn())
 const saveAssets = vi.hoisted(() => vi.fn())
+const decodeRPack = vi.hoisted(() => vi.fn(async (data: Uint8Array) => data))
+const sleep = vi.hoisted(() => vi.fn())
 const createGlobalModule = vi.hoisted(() => vi.fn())
 const getCurrentCharacter = vi.hoisted(() => vi.fn())
 const getCurrentChatMock = vi.hoisted(() => vi.fn())
@@ -93,7 +95,7 @@ vi.mock('../globalApi.svelte', () => ({
 
 vi.mock('../util', () => ({
   selectSingleFile: vi.fn(async () => selectedFileState.file),
-  sleep: vi.fn(),
+  sleep,
 }))
 
 vi.mock('./lorebook.svelte', () => ({
@@ -105,7 +107,7 @@ vi.mock('../media', () => ({
 }))
 
 vi.mock('../rpack/rpack_js', () => ({
-  decodeRPack: vi.fn(async (data: Uint8Array) => data),
+  decodeRPack,
   encodeRPack: vi.fn(async (data: Uint8Array) => data),
 }))
 
@@ -286,6 +288,9 @@ describe('module imports', () => {
     saveAsset.mockClear()
     saveAssets.mockReset()
     saveAssets.mockImplementation(async (assets: readonly unknown[]) => assets.map((_, index) => `asset-${index}`))
+    decodeRPack.mockReset()
+    decodeRPack.mockImplementation(async (data: Uint8Array) => data)
+    sleep.mockReset()
     createGlobalModule.mockClear()
     alertConfirm.mockReset()
     alertConfirm.mockResolvedValue(true)
@@ -469,6 +474,32 @@ describe('module imports', () => {
     expect(alertError).toHaveBeenCalledWith(language.errors.noData)
     expect(saveAssets).not.toHaveBeenCalled()
     expect(createGlobalModule).not.toHaveBeenCalled()
+  })
+
+  it('fails corrupt asset decoding immediately without retry delays', async () => {
+    decodeRPack
+      .mockImplementationOnce(async (data: Uint8Array) => data)
+      .mockRejectedValueOnce(new Error('corrupt asset payload'))
+    selectedFileState.file = {
+      name: 'module.risum',
+      data: buildRisum(
+        {
+          id: 'old-id',
+          name: 'Corrupt module',
+          description: 'Imported',
+          assets: [['portrait', '', 'portrait.webp']],
+        },
+        [new Uint8Array([7, 8, 9])],
+      ),
+    }
+
+    await importModule()
+
+    expect(decodeRPack).toHaveBeenCalledTimes(2)
+    expect(sleep).not.toHaveBeenCalled()
+    expect(saveAssets).not.toHaveBeenCalled()
+    expect(createGlobalModule).not.toHaveBeenCalled()
+    expect(alertError).toHaveBeenCalledWith(language.errors.noData)
   })
 
   it('routes JSON module imports through the global module command helper', async () => {

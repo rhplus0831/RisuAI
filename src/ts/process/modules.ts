@@ -372,7 +372,7 @@ export async function readModule(
             fileName: uploadFileNameForModuleAsset(module.assets[task.index][2] ?? '', decoded),
           })
         } catch (error) {
-          failed.push(task)
+          throw new Error(`Failed to decode module asset ${task.index + 1}`, { cause: error })
         }
         alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
       }
