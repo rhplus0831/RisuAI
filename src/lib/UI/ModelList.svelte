@@ -35,6 +35,11 @@
       groupedByProvider: true,
     }),
   )
+
+  function providerIdentity(provider: (typeof providers)[number]): string {
+    if (provider.providerName !== '@as-is') return `provider:${provider.providerName}`
+    return `as-is:${provider.models.map((model) => model.id).join('\u0000')}`
+  }
 </script>
 
 {#if openOptions}
@@ -67,7 +72,7 @@
       </div>
       <div class="border-t-1 border-y-selected mb-2"></div>
 
-      {#each providers as provider}
+      {#each providers as provider (providerIdentity(provider))}
         {#if provider.providerName === '@as-is'}
           {#each provider.models as model}
             <button
