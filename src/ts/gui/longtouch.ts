@@ -1,27 +1,33 @@
 export function longpress(node: HTMLElement, callback: (e: MouseEvent) => void) {
   const TIME_MS = 500
-  let timeoutPtr: number
+  let timeoutPtr: number | undefined
+
+  function cancelPendingLongPress() {
+    if (timeoutPtr !== undefined) {
+      window.clearTimeout(timeoutPtr)
+      timeoutPtr = undefined
+    }
+    window.removeEventListener('mousemove', cancelPendingLongPress)
+    window.removeEventListener('mouseup', cancelPendingLongPress)
+    window.removeEventListener('blur', cancelPendingLongPress)
+  }
+
   function handleMouseDown(e: MouseEvent) {
-    window.addEventListener('mousemove', handleMoveBeforeLong)
+    if (e.button !== 0) return
+    cancelPendingLongPress()
+    window.addEventListener('mousemove', cancelPendingLongPress)
+    window.addEventListener('mouseup', cancelPendingLongPress)
+    window.addEventListener('blur', cancelPendingLongPress)
     timeoutPtr = window.setTimeout(() => {
-      window.removeEventListener('mousemove', handleMoveBeforeLong)
+      cancelPendingLongPress()
       callback(e)
     }, TIME_MS)
   }
-  function handleMoveBeforeLong(e: MouseEvent) {
-    window.clearTimeout(timeoutPtr)
-    window.removeEventListener('mousemove', handleMoveBeforeLong)
-  }
-  function handleMouseUp(e: MouseEvent) {
-    window.clearTimeout(timeoutPtr)
-    window.removeEventListener('mousemove', handleMoveBeforeLong)
-  }
   node.addEventListener('mousedown', handleMouseDown)
-  node.addEventListener('mouseup', handleMouseUp)
   return {
     destroy: () => {
+      cancelPendingLongPress()
       node.removeEventListener('mousedown', handleMouseDown)
-      node.removeEventListener('mouseup', handleMouseUp)
     },
   }
 }
