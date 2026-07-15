@@ -170,7 +170,7 @@ function normalizeText(text: string, sourceMap: number[]): { norm: string; map: 
     if (ch === '\u2026') {
       const basePos = sourceMap[i]
       out.push('.', '.', '.')
-      map.push(basePos, basePos, basePos + 1)
+      map.push(basePos, basePos, basePos)
       i++
       continue
     }
