@@ -5,7 +5,7 @@
   import { getEmotion } from '../../ts/util'
 
   import { getDatabase } from 'src/ts/storage/database.svelte'
-  import { readResizePointer } from './ResizeBoxPointer'
+  import { clampResizeBoxSize, readResizePointer } from './ResizeBoxPointer'
 
   let box = $state()
   let isResizing = false
@@ -37,8 +37,8 @@
     const deltaX = initialX - pointer.x
     const deltaY = pointer.y - initialY
 
-    const newWidth = Math.min(initialWidth + deltaX, window.innerWidth * 0.8)
-    const newHeight = Math.min(initialHeight + deltaY, window.innerHeight * 0.8)
+    const newWidth = clampResizeBoxSize(initialWidth + deltaX, window.innerWidth)
+    const newHeight = clampResizeBoxSize(initialHeight + deltaY, window.innerHeight)
 
     ViewBoxsize.set({
       width: newWidth,
