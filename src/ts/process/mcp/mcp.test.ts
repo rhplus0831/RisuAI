@@ -183,6 +183,49 @@ function stubDeferredProviderSettingsFailure(): {
   }
 }
 
+function stubDeferredFirstProviderSettingsFailure(): {
+  calls: CapturedFetch[]
+  failFirstProviderSettings: () => void
+} {
+  const calls: CapturedFetch[] = []
+  const firstProviderSettingsResponse = createDeferred<Response>()
+  let providerSettingsCalls = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+      const url = String(input)
+      const body = typeof init.body === 'string' ? JSON.parse(init.body) : null
+      const headers = init.headers as Record<string, string> | undefined
+      calls.push({
+        url,
+        method: init.method ?? 'GET',
+        body,
+        authHeader: headers?.['risu-auth'] ?? null,
+      })
+      if (url === '/api/v1/bootstrap') {
+        return jsonResponse({ revision: 7 })
+      }
+      if (url === '/api/v1/commands/settings/providers') {
+        providerSettingsCalls += 1
+        if (providerSettingsCalls === 1) return firstProviderSettingsResponse.promise
+      }
+      const event: CommandEvent = {
+        type: 'settings.updated',
+        revision: 8,
+        resource: 'settings',
+      }
+      return jsonResponse({ revision: 8, event })
+    }) as unknown as typeof fetch,
+  )
+
+  return {
+    calls,
+    failFirstProviderSettings: () => {
+      firstProviderSettingsResponse.resolve(jsonResponse({ error: 'settings failed' }, 500))
+    },
+  }
+}
+
 function clearMCPRuntimeState() {
   for (const registry of [MCPs, callOnlyMCPs]) {
     for (const key of Object.keys(registry)) {
@@ -480,6 +523,43 @@ describe('MCP runtime persistence', () => {
           refreshToken: 'newer-refresh-mutated',
         },
       ])
+    })
+  })
+
+  it('rebases a queued refresh-token save after its predecessor fails', async () => {
+    const { calls, failFirstProviderSettings } = stubDeferredFirstProviderSettingsFailure()
+    const tokenA = {
+      url: 'https://mcp-a.example',
+      clientId: 'client-a',
+      clientSecret: 'secret-a',
+      refreshToken: 'refresh-a',
+      tokenUrl: 'https://mcp-a.example/token',
+    }
+    const tokenB = {
+      url: 'https://mcp-b.example',
+      clientId: 'client-b',
+      clientSecret: 'secret-b',
+      refreshToken: 'refresh-b',
+      tokenUrl: 'https://mcp-b.example/token',
+    }
+
+    persistMCPRefreshToken(tokenA.url, tokenA)
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/commands/settings/providers')).toHaveLength(1)
+    })
+    persistMCPRefreshToken(tokenB.url, tokenB)
+    expect(getDatabase().authRefreshes).toEqual([tokenA, tokenB])
+
+    failFirstProviderSettings()
+
+    await vi.waitFor(() => {
+      expect(calls.filter((call) => call.url === '/api/v1/commands/settings/providers')).toHaveLength(2)
+    })
+    const providerCalls = calls.filter((call) => call.url === '/api/v1/commands/settings/providers')
+    expect(providerCalls[0].body).toMatchObject({ patch: { authRefreshes: [tokenA] } })
+    expect(providerCalls[1].body).toMatchObject({ patch: { authRefreshes: [tokenB] } })
+    await vi.waitFor(() => {
+      expect(getDatabase().authRefreshes).toEqual([tokenB])
     })
   })
 })

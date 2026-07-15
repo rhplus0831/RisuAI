@@ -4,7 +4,11 @@ import {
 } from 'src/ts/server/resourceState.svelte'
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from './mcplib'
 import { getModuleMcps } from '../modules'
-import { canUseServerCommands, patchServerBackedSettings } from '../../server/commands'
+import {
+  canUseServerCommands,
+  patchServerBackedSettings,
+  type PatchServerBackedSettingsInput,
+} from '../../server/commands'
 import { withTrustedResourceWrite } from '../../server/resourceWriteGuard.svelte'
 import { alertError, alertInput, alertNormal } from 'src/ts/alert'
 import { v4 } from 'uuid'
@@ -52,6 +56,18 @@ type MCPRefreshToken = {
 type StoredMCPRefreshToken = MCPRefreshToken & {
   url: string
 }
+
+type PendingMCPRefreshTokenPersistence = {
+  attempted: StoredMCPRefreshToken[]
+  attemptedIndex: number
+  attemptedToken: StoredMCPRefreshToken
+  commandInput: PatchServerBackedSettingsInput
+  previous: StoredMCPRefreshToken[]
+  sequence: number
+}
+
+const pendingMCPRefreshTokenPersistences: PendingMCPRefreshTokenPersistence[] = []
+let nextMCPRefreshTokenPersistenceSequence = 0
 
 export async function initializeMCPs(additionalMCPs?: string[]) {
   beginMCPInitialization()
@@ -365,8 +381,8 @@ async function buildMCPToolClientIndex(): Promise<Map<string, MCPToolDispatchTar
 }
 
 export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void {
-  const previous = cloneJsonValue(getDatabase().authRefreshes ?? [])
-  const attemptedToken = cloneJsonValue({
+  const previous = cloneJsonValue(getDatabase().authRefreshes ?? []) as StoredMCPRefreshToken[]
+  const attemptedToken: StoredMCPRefreshToken = cloneJsonValue({
     url: mcp,
     ...arg,
   })
@@ -383,32 +399,87 @@ export function persistMCPRefreshToken(mcp: string, arg: MCPRefreshToken): void 
 
   const attemptedNext = cloneJsonValue(getDatabase().authRefreshes as StoredMCPRefreshToken[])
   const patch = { authRefreshes: attemptedNext }
-  void patchServerBackedSettings({
+  const commandInput: PatchServerBackedSettingsInput = {
     patch,
     acknowledgeOptimistic: true,
     optimisticProjectionEpochs: captureSettingsPatchProjectionEpochs(patch),
-    rollback: () => {
-      withTrustedResourceWrite(() => {
-        const rolledBack = applyAttemptedFieldRollback({
-          target: getDatabase() as unknown as Record<string, unknown>,
-          previous: { authRefreshes: previous },
-          attempted: { authRefreshes: attemptedNext },
-        })
-        if (rolledBack.includes('authRefreshes')) return
+  }
+  const attempt: PendingMCPRefreshTokenPersistence = {
+    attempted: attemptedNext,
+    attemptedIndex,
+    attemptedToken,
+    commandInput,
+    previous,
+    sequence: ++nextMCPRefreshTokenPersistenceSequence,
+  }
+  commandInput.rollback = () => rollbackMCPRefreshTokenPersistence(attempt)
+  pendingMCPRefreshTokenPersistences.push(attempt)
 
-        const liveAuthRefreshes = getDatabase().authRefreshes
-        if (!Array.isArray(liveAuthRefreshes)) return
-        if (JSON.stringify(liveAuthRefreshes[attemptedIndex]) !== JSON.stringify(attemptedToken)) return
-
-        liveAuthRefreshes.splice(attemptedIndex, 1)
-      })
-    },
-  })
+  const persistence = patchServerBackedSettings(commandInput)
+  void persistence.then(
+    () => finishMCPRefreshTokenPersistence(attempt),
+    () => finishMCPRefreshTokenPersistence(attempt),
+  )
 }
 
 function cloneJsonValue<T>(value: T): T {
   if (value === undefined) return value
   return JSON.parse(JSON.stringify(value)) as T
+}
+
+function rollbackMCPRefreshTokenPersistence(attempt: PendingMCPRefreshTokenPersistence): void {
+  withTrustedResourceWrite(() => {
+    const rolledBack = applyAttemptedFieldRollback({
+      target: getDatabase() as unknown as Record<string, unknown>,
+      previous: { authRefreshes: attempt.previous },
+      attempted: { authRefreshes: attempt.attempted },
+    })
+    if (rolledBack.includes('authRefreshes')) return
+
+    const liveAuthRefreshes = getDatabase().authRefreshes
+    if (!Array.isArray(liveAuthRefreshes)) return
+    if (!sameJsonValue(liveAuthRefreshes[attempt.attemptedIndex], attempt.attemptedToken)) return
+
+    liveAuthRefreshes.splice(attempt.attemptedIndex, 1)
+  })
+
+  rebaseLaterMCPRefreshTokenPersistences(attempt)
+}
+
+function rebaseLaterMCPRefreshTokenPersistences(failed: PendingMCPRefreshTokenPersistence): void {
+  for (const later of pendingMCPRefreshTokenPersistences) {
+    if (later.sequence <= failed.sequence) continue
+
+    removeMCPRefreshTokenFromSnapshot(later.previous, failed.attemptedIndex, failed.attemptedToken)
+    const removedAttempted = removeMCPRefreshTokenFromSnapshot(
+      later.attempted,
+      failed.attemptedIndex,
+      failed.attemptedToken,
+    )
+    if (removedAttempted && later.attemptedIndex > failed.attemptedIndex) {
+      later.attemptedIndex -= 1
+    }
+    later.commandInput.optimisticProjectionEpochs = captureSettingsPatchProjectionEpochs(later.commandInput.patch)
+  }
+}
+
+function removeMCPRefreshTokenFromSnapshot(
+  snapshot: StoredMCPRefreshToken[],
+  index: number,
+  attemptedToken: StoredMCPRefreshToken,
+): boolean {
+  if (!sameJsonValue(snapshot[index], attemptedToken)) return false
+  snapshot.splice(index, 1)
+  return true
+}
+
+function finishMCPRefreshTokenPersistence(attempt: PendingMCPRefreshTokenPersistence): void {
+  const index = pendingMCPRefreshTokenPersistences.findIndex((candidate) => candidate.sequence === attempt.sequence)
+  if (index !== -1) pendingMCPRefreshTokenPersistences.splice(index, 1)
+}
+
+function sameJsonValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 export async function getMCPTools(additionalMCPs?: string[]) {
