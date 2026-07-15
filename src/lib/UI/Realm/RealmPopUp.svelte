@@ -27,6 +27,21 @@
     closePopup()
   }
 
+  function realmActionFailureMessage(response: Response, body: string): string {
+    const detail = body.trim()
+    const prefix = `${language.errors.httpError} HTTP ${response.status}`
+    return detail.length > 0 ? `${prefix}: ${detail}` : prefix
+  }
+
+  async function presentRealmActionResponse(response: Response): Promise<void> {
+    const body = await response.text()
+    if (!response.ok) {
+      alertError(realmActionFailureMessage(response, body))
+      return
+    }
+    alertNormal(body)
+  }
+
   async function reportCharacter(event: MouseEvent): Promise<void> {
     event.stopPropagation()
     const targetId = openedData.id
@@ -40,7 +55,7 @@
         method: 'POST',
         body: JSON.stringify({ id: targetId, report }),
       })
-      alertNormal(await response.text())
+      await presentRealmActionResponse(response)
     } catch (error) {
       alertError(error)
     }
@@ -56,7 +71,7 @@
         method: 'POST',
         body: JSON.stringify({ id: targetId }),
       })
-      alertNormal(await response.text())
+      await presentRealmActionResponse(response)
     } catch (error) {
       alertError(error)
     }

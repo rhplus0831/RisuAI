@@ -195,6 +195,61 @@ describe('RealmPopUp report actions', () => {
   })
 })
 
+describe('RealmPopUp action responses', () => {
+  it('routes a 401 report response to a localized error without claiming success', async () => {
+    const response = new Response('authentication required', { status: 401 })
+    const text = vi.spyOn(response, 'text')
+    popupMocks.alertConfirm.mockResolvedValue(true)
+    popupMocks.alertInput.mockResolvedValue('actionable report')
+    popupMocks.authenticatedHubFetch.mockResolvedValue(response)
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    iconButton('lucide-flag').click()
+
+    await vi.waitFor(() =>
+      expect(popupMocks.alertError).toHaveBeenCalledWith(
+        `${language.errors.httpError} HTTP 401: authentication required`,
+      ),
+    )
+    expect(text).toHaveBeenCalledTimes(1)
+    expect(popupMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it('routes a 500 removal response to a localized error without claiming success', async () => {
+    const response = new Response('Realm unavailable', { status: 500 })
+    const text = vi.spyOn(response, 'text')
+    popupMocks.alertConfirm.mockResolvedValue(true)
+    popupMocks.authenticatedHubFetch.mockResolvedValue(response)
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    iconButton('lucide-trash').click()
+
+    await vi.waitFor(() =>
+      expect(popupMocks.alertError).toHaveBeenCalledWith(`${language.errors.httpError} HTTP 500: Realm unavailable`),
+    )
+    expect(text).toHaveBeenCalledTimes(1)
+    expect(popupMocks.alertNormal).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    { action: 'report', icon: 'lucide-flag', body: 'reported' },
+    { action: 'remove', icon: 'lucide-trash', body: 'removed' },
+  ])('reports a successful $action response body once', async ({ icon, body }) => {
+    const response = new Response(body, { status: 200 })
+    const text = vi.spyOn(response, 'text')
+    popupMocks.alertConfirm.mockResolvedValue(true)
+    popupMocks.alertInput.mockResolvedValue('actionable report')
+    popupMocks.authenticatedHubFetch.mockResolvedValue(response)
+    component = mount(RealmPopUp, { target, props: { openedData: card() } })
+
+    iconButton(icon).click()
+
+    await vi.waitFor(() => expect(popupMocks.alertNormal).toHaveBeenCalledWith(body))
+    expect(text).toHaveBeenCalledTimes(1)
+    expect(popupMocks.alertError).not.toHaveBeenCalled()
+  })
+})
+
 describe('RealmPopUp clipboard and modal accessibility', () => {
   it('reports clipboard failures instead of claiming success', async () => {
     popupMocks.clipboardWrite.mockRejectedValue(new Error('permission denied'))
