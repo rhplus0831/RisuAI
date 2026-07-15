@@ -325,6 +325,16 @@ afterEach(() => {
 })
 
 describe('API-backed client bootstrap', () => {
+  it('retries startup after the user acknowledges a transient bootstrap failure', async () => {
+    bootstrapApi.fetch.mockResolvedValueOnce({ status: 'unavailable' }).mockResolvedValueOnce(runtimeBootstrap())
+
+    await loadData()
+
+    expect(alertError).toHaveBeenCalledOnce()
+    expect(bootstrapApi.fetch).toHaveBeenCalledTimes(2)
+    expect(get(loadedStore)).toBe(true)
+  })
+
   it('starts plugin runtime synchronization after the initial plugin load', async () => {
     await loadData()
 

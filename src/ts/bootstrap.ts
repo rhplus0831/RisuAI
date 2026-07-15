@@ -157,7 +157,7 @@ function initialSelectedCharFromDatabase(db: Database): number {
 /**
  * Loads the application data.
  */
-export async function loadData() {
+export async function loadData(): Promise<void> {
   const loaded = get(loadedStore)
   if (!loaded) {
     try {
@@ -200,6 +200,8 @@ export async function loadData() {
       })
     } catch (error) {
       alertError(error)
+      await waitAlert()
+      if (!get(loadedStore)) await loadData()
     }
   }
 }
