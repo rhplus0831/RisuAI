@@ -28,17 +28,15 @@
   let fileB64 = $state('')
   let vttB64 = $state('')
   let vobj: TranscribeObj[] = $state([])
-  let mode = $state('llm')
+  let mode: 'llm' | 'whisper' | 'whisperLocal' = $state('llm')
   let sourceLang: string | null = $state(null)
+  let running = $state(false)
 
-  async function runLLMMode() {
-    outputText = 'Loading...\n\n'
-
+  async function runLLMMode(promptSnapshot: string, languageSnapshot: string): Promise<boolean> {
     const file = await selectSingleFile(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov'])
 
     if (!file) {
-      outputText = ''
-      return
+      return false
     }
 
     const videos = ['mp4', 'webm', 'mkv', 'avi', 'mov']
@@ -56,7 +54,7 @@
 
     let time = ''
 
-    if (prompt.includes('{{slot::time}}')) {
+    if (promptSnapshot.includes('{{slot::time}}')) {
       const video = document.createElement('video')
       let d = Number.NaN
       try {
@@ -82,8 +80,8 @@
         formated: [
           {
             role: 'user',
-            content: risuChatParser(prompt)
-              .replace(/{{slot}}/g, selLang)
+            content: risuChatParser(promptSnapshot)
+              .replace(/{{slot}}/g, languageSnapshot)
               .replace(/{{slot::time}}/g, time),
             multimodals: [media],
           },
@@ -96,12 +94,12 @@
 
     if (v.type === 'multiline') {
       alertError(v.result[0][1])
-      return
+      return false
     }
 
     if (v.type !== 'streaming') {
       alertError(v.result)
-      return
+      return false
     }
 
     const reader = v.result.getReader()
@@ -129,11 +127,15 @@
 
     const audio = new Audio(sendSound)
     audio.play().catch(() => {})
+    return true
   }
 
-  async function runWhisperMode() {
-    outputText = 'Loading...\n\n'
-
+  async function runWhisperMode(
+    runMode: 'whisper' | 'whisperLocal',
+    promptSnapshot: string,
+    languageSnapshot: string,
+    sourceLanguageSnapshot: string | null,
+  ): Promise<boolean> {
     const files = await selectFileByDom(['mp3', 'ogg', 'wav', 'flac', 'mp4', 'webm', 'mkv', 'avi', 'mov'])
 
     const file = files?.[0]
@@ -141,8 +143,7 @@
     let requestFile: File = null
 
     if (!file) {
-      outputText = ''
-      return
+      return false
     }
     const videos = ['mp4', 'webm', 'mkv', 'avi', 'mov']
 
@@ -152,7 +153,7 @@
       const d = await probeVideoDuration(file)
       if (isNaN(d)) {
         alertError('This video does not have a duration')
-        return
+        return false
       }
       duration = d
 
@@ -197,7 +198,7 @@
       requestFile = file
     }
 
-    if (mode === 'whisperLocal') {
+    if (runMode === 'whisperLocal') {
       try {
         const { pipeline } = await import('@huggingface/transformers')
         let stats: {
@@ -250,7 +251,7 @@
         await sleep(10)
         const res1 = await transcriber(combined, {
           return_timestamps: true,
-          language: sourceLang,
+          language: sourceLanguageSnapshot,
         })
         const res2 = Array.isArray(res1) ? res1[0] : res1
         const chunks = res2.chunks
@@ -262,8 +263,7 @@
         }
       } catch (error) {
         alertError(JSON.stringify(error))
-        outputText = ''
-        return
+        return false
       }
     } else {
       const formData = new FormData()
@@ -286,8 +286,8 @@
         formated: [
           {
             role: 'user',
-            content: risuChatParser(prompt)
-              .replace(/{{slot}}/g, selLang)
+            content: risuChatParser(promptSnapshot)
+              .replace(/{{slot}}/g, languageSnapshot)
               .replace(/{{slot::data}}/g, outputText),
           },
         ],
@@ -299,12 +299,12 @@
 
     if (v.type === 'multiline') {
       alertError(v.result[0][1])
-      return
+      return false
     }
 
     if (v.type !== 'streaming') {
       alertError(v.result)
-      return
+      return false
     }
 
     const reader = v.result.getReader()
@@ -337,6 +337,41 @@
 
     const audio = new Audio(sendSound)
     audio.play().catch(() => {})
+    return true
+  }
+
+  async function runSelectedMode(): Promise<void> {
+    if (running) return
+
+    const runMode = mode
+    const promptSnapshot = prompt
+    const languageSnapshot = selLang
+    const sourceLanguageSnapshot = sourceLang
+    running = true
+    outputText = 'Loading...\n\n'
+    fileB64 = ''
+    vttB64 = ''
+    vobj = []
+
+    try {
+      const completed =
+        runMode === 'llm'
+          ? await runLLMMode(promptSnapshot, languageSnapshot)
+          : await runWhisperMode(runMode, promptSnapshot, languageSnapshot, sourceLanguageSnapshot)
+      if (!completed) resetOutput()
+    } catch (error) {
+      resetOutput()
+      alertError(error)
+    } finally {
+      running = false
+    }
+  }
+
+  function resetOutput(): void {
+    outputText = ''
+    fileB64 = ''
+    vttB64 = ''
+    vobj = []
   }
 
   type TranscribeObj = {
@@ -366,7 +401,9 @@
         })
       }
     }
-    obj[obj.length - 1].end = '99:99.000'
+    if (obj.length > 0) {
+      obj[obj.length - 1].end = '99:99.000'
+    }
     return obj
   }
 
@@ -470,16 +507,7 @@
 {/if}
 
 {#if !outputText}
-  <Button
-    className="mt-4"
-    onclick={() => {
-      if (mode === 'llm') {
-        runLLMMode()
-      }
-      if (mode === 'whisper' || mode === 'whisperLocal') {
-        runWhisperMode()
-      }
-    }}>
+  <Button className="mt-4" disabled={running} onclick={runSelectedMode}>
     {language.run}
   </Button>
 {:else if vttB64 && fileB64}
@@ -501,13 +529,7 @@
 
   <span class="text-textcolor text-lg mt-4">{language.download}</span>
 
-  <Button
-    className="mt-4"
-    onclick={() => {
-      outputText = ''
-      fileB64 = ''
-      vttB64 = ''
-    }}>
+  <Button className="mt-4" onclick={resetOutput}>
     {language.reset}
   </Button>
 
