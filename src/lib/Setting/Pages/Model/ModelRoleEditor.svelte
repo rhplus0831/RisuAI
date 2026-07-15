@@ -14,6 +14,7 @@
     ModelRole,
     NormalizedModelRoleOverrides,
   } from 'src/ts/model/modelRoles'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
 
   type OptionalModelRole = Exclude<ModelRole, 'chatMain' | 'chatAux'>
   type RoleModelMode = 'inherit' | 'override'
@@ -89,16 +90,26 @@
   }
 
   let fallbackModels = $derived(fallbackKey ? (fallbackModelsDraft.value[fallbackKey] ?? []) : [])
+
+  function handleDialogKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return
+    event.preventDefault()
+    event.stopPropagation()
+    closeEditor()
+  }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="fixed inset-0 z-50 flex justify-end bg-black/50" role="button" tabindex="0" onclick={closeEditor}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={closeEditor}>
   <div
+    use:modalFocusTrap
     class="flex h-full w-full max-w-2xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
     aria-modal="true"
     aria-label={language.modelRoles.editRole(roleLabel)}
     tabindex="-1"
+    onkeydown={handleDialogKeydown}
     onclick={(event) => {
       event.stopPropagation()
     }}>
@@ -109,6 +120,7 @@
       </div>
       <button
         type="button"
+        data-modal-initial-focus
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
         aria-label={language.modelRoles.close}
         onclick={closeEditor}>

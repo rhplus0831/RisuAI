@@ -1092,4 +1092,42 @@ describe('AgentPresetSettings', () => {
     expect(target.textContent).toContain('Bulk history unavailable')
     expect(target.textContent).toContain(language.agentPresets.diagnosticsPending)
   })
+
+  it('contains drawer focus and restores the edit trigger after Escape', async () => {
+    seedDb([preset({ id: 'ap_a', name: 'Research Agent' })])
+    mountPage()
+    await tick()
+
+    const editTrigger = rowButton('ap_a', '[data-risu-agent-preset-edit]')
+    editTrigger.focus()
+    editTrigger.click()
+    await flushAsyncWork()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const backdrop = dialog?.parentElement
+    const initialFocus = dialog?.querySelector<HTMLElement>('[data-modal-initial-focus]')
+    if (!dialog || !backdrop || !initialFocus) throw new Error('Agent Preset editor modal not found')
+    expect(backdrop.hasAttribute('data-modal-root')).toBe(true)
+    expect(backdrop.hasAttribute('role')).toBe(false)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(initialFocus)
+
+    let backgroundBranch: HTMLElement = editTrigger
+    while (backgroundBranch.parentElement && backgroundBranch.parentElement !== backdrop.parentElement) {
+      backgroundBranch = backgroundBranch.parentElement
+    }
+    expect(backgroundBranch.inert).toBe(true)
+
+    editTrigger.focus()
+    expect(document.activeElement).toBe(initialFocus)
+
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    initialFocus.dispatchEvent(escape)
+    await flushAsyncWork()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
+    expect(backgroundBranch.inert).toBe(false)
+    expect(document.activeElement).toBe(editTrigger)
+  })
 })

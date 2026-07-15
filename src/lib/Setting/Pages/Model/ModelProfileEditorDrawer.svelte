@@ -23,6 +23,7 @@
     type ModelProfileSecretDraft,
   } from 'src/ts/model/modelProfileSecrets'
   import type { ModelRole } from 'src/ts/model/modelRoles'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import { LLMFormat, type LLMFlags as LLMFlagValue, type LLMTokenizer as LLMTokenizerValue } from 'src/ts/model/types'
   import type { ModelProfileSnapshot } from 'src/ts/server/commands'
   import ModelFallbackEditor from './ModelFallbackEditor.svelte'
@@ -328,13 +329,6 @@
     requestClose()
   }
 
-  function handleBackdropKeydown(event: KeyboardEvent): void {
-    if (event.target !== event.currentTarget) return
-    if (event.key !== 'Escape' && event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    requestClose()
-  }
-
   async function saveProfile(): Promise<void> {
     if (!canSave) return
     await onSave(snapshotForSave())
@@ -342,13 +336,10 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div
-  class="fixed inset-0 z-50 flex justify-end bg-black/50"
-  role="button"
-  tabindex="0"
-  onclick={requestClose}
-  onkeydown={handleBackdropKeydown}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={requestClose}>
   <div
+    use:modalFocusTrap
     class="flex h-full w-full max-w-3xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
     aria-modal="true"
@@ -365,6 +356,7 @@
       </div>
       <button
         type="button"
+        data-modal-initial-focus
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
         aria-label={language.modelRoles.close}
         onclick={requestClose}>

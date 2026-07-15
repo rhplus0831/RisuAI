@@ -7,6 +7,7 @@
   import SelectInput from 'src/lib/UI/GUI/SelectInput.svelte'
   import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
   import Help from 'src/lib/Others/Help.svelte'
+  import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
   import {
     createAgentPresetStep,
     deleteAgentPresetStep,
@@ -571,15 +572,9 @@
     onCancel()
   }
 
-  function handleBackdropKeydown(event: KeyboardEvent): void {
-    if (event.target !== event.currentTarget) return
-    if (event.key !== 'Escape' && event.key !== 'Enter' && event.key !== ' ') return
-    event.preventDefault()
-    requestClose()
-  }
-
   function handleDialogKeydown(event: KeyboardEvent): void {
     if (event.key !== 'Escape') return
+    event.preventDefault()
     event.stopPropagation()
     requestClose()
   }
@@ -589,13 +584,11 @@
   }
 </script>
 
-<div
-  class="fixed inset-0 z-50 flex justify-end bg-black/50"
-  role="button"
-  tabindex="0"
-  onclick={requestClose}
-  onkeydown={handleBackdropKeydown}>
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div data-modal-root class="fixed inset-0 z-50 flex justify-end bg-black/50" onclick={requestClose}>
   <div
+    use:modalFocusTrap
     class="flex h-full w-full max-w-4xl flex-col border-l border-darkborderc bg-bgcolor text-textcolor shadow-xl"
     role="dialog"
     aria-modal="true"
@@ -614,6 +607,7 @@
       </div>
       <button
         type="button"
+        data-modal-initial-focus
         class="flex h-9 w-9 shrink-0 items-center justify-center rounded-md hover:bg-darkbutton"
         aria-label={language.modelRoles.close}
         disabled={controlsLocked}

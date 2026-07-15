@@ -195,18 +195,17 @@ describe('ModelProfileList', () => {
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()
     expect(nameInput.value).toBe('Unsaved profile name')
 
-    const backdrop = target.querySelector<HTMLElement>('[role="dialog"]')?.parentElement
-    if (!backdrop) throw new Error('Profile editor backdrop not found')
-    backdrop.focus()
-    const backdropEscape = new KeyboardEvent('keydown', {
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    if (!dialog) throw new Error('Profile editor dialog not found')
+    const dialogEscape = new KeyboardEvent('keydown', {
       bubbles: true,
       cancelable: true,
       key: 'Escape',
     })
-    backdrop.dispatchEvent(backdropEscape)
+    dialog.dispatchEvent(dialogEscape)
     await tick()
 
-    expect(backdropEscape.defaultPrevented).toBe(true)
+    expect(dialogEscape.defaultPrevented).toBe(true)
     expect(confirm).toHaveBeenCalledTimes(2)
     expect(target.querySelector('[role="dialog"]')).not.toBeNull()
 
@@ -221,5 +220,43 @@ describe('ModelProfileList', () => {
     await tick()
 
     expect(target.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('contains focus in the drawer and restores the edit trigger after Escape', async () => {
+    component = mount(ModelProfileList, { target })
+    await tick()
+
+    const editTrigger = buttonsByText(language.modelProfiles.edit).at(-1)
+    if (!editTrigger) throw new Error('Profile edit button not found')
+    editTrigger.focus()
+    editTrigger.click()
+    await flushAsync()
+
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    const backdrop = dialog?.parentElement
+    const initialFocus = dialog?.querySelector<HTMLElement>('[data-modal-initial-focus]')
+    if (!dialog || !backdrop || !initialFocus) throw new Error('Profile editor modal not found')
+    expect(backdrop.hasAttribute('data-modal-root')).toBe(true)
+    expect(backdrop.hasAttribute('role')).toBe(false)
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(document.activeElement).toBe(initialFocus)
+
+    let backgroundBranch: HTMLElement = editTrigger
+    while (backgroundBranch.parentElement && backgroundBranch.parentElement !== backdrop.parentElement) {
+      backgroundBranch = backgroundBranch.parentElement
+    }
+    expect(backgroundBranch.inert).toBe(true)
+
+    editTrigger.focus()
+    expect(document.activeElement).toBe(initialFocus)
+
+    const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    initialFocus.dispatchEvent(escape)
+    await flushAsync()
+
+    expect(escape.defaultPrevented).toBe(true)
+    expect(target.querySelector('[role="dialog"]')).toBeNull()
+    expect(backgroundBranch.inert).toBe(false)
+    expect(document.activeElement).toBe(editTrigger)
   })
 })
