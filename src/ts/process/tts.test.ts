@@ -259,6 +259,16 @@ describe('Web Speech voice catalog', () => {
       }),
     ).toEqual(['Injected Voice'])
   })
+
+  it('silently skips Web Speech playback when the browser API is unavailable', async () => {
+    vi.stubGlobal('speechSynthesis', undefined)
+    vi.stubGlobal('SpeechSynthesisUtterance', undefined)
+    const { sayTTS } = await importTTS()
+
+    await sayTTS(makeCharacter({ ttsMode: 'webspeech' }), 'hello')
+
+    expect(testState.alertError).not.toHaveBeenCalled()
+  })
 })
 
 describe('TTS provider catalog request caching', () => {

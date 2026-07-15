@@ -266,7 +266,7 @@ export async function sayTTS(character: character, text: string) {
 
     switch (character.ttsMode) {
       case 'webspeech': {
-        if (speechSynthesis && SpeechSynthesisUtterance) {
+        if (typeof speechSynthesis !== 'undefined' && typeof SpeechSynthesisUtterance !== 'undefined') {
           const utterThis = new SpeechSynthesisUtterance(text)
           const voices = speechSynthesis.getVoices()
           let voiceIndex = 0
@@ -276,7 +276,7 @@ export async function sayTTS(character: character, text: string) {
             }
           }
           utterThis.voice = voices[voiceIndex]
-          const speak = speechSynthesis.speak(utterThis)
+          speechSynthesis.speak(utterThis)
         }
         break
       }
