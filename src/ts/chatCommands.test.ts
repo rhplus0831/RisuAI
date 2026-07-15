@@ -3892,6 +3892,25 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     getDatabase().characters[0].chats[0].message = jsonClone(messages)
   }
 
+  it('keeps an accepted scoped delete optimistically applied under the resource guard', async () => {
+    const calls = stubMessagePersistenceFetch()
+    const previousMessages: Message[] = [
+      { role: 'user', data: 'one', chatId: 'm-1' },
+      { role: 'char', data: 'two', chatId: 'm-2' },
+    ]
+    seedActiveMessages(previousMessages)
+    const previous = currentChatScopedSnapshot()
+    setResourceWriteGuardEnabled(true)
+
+    dispatchDeleteMessageScoped('m-1', previous)
+
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+    await waitForCallCount(calls, 2)
+    await vi.waitFor(() => {
+      expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
+    })
+  })
+
   it('failed empty char append command rolls back the appended message by id', async () => {
     const calls = stubFailingCommandFetch({
       matches: (url, init) => url === '/api/v1/commands/chats/chat-a/messages' && init.method === 'POST',
@@ -3959,9 +3978,8 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[1])]
-
     dispatchDeleteMessageScoped('m-1', previous)
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[1]])
     await waitForCallCount(calls, 2)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)
@@ -4005,9 +4023,9 @@ describe('Phase 4 chat-scoped message attempt rollback', () => {
     seedActiveMessages(previousMessages)
     const previous = currentChatScopedSnapshot()
 
-    getDatabase().characters[0].chats[0].message = [jsonClone(previousMessages[0])]
-
-    await dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
+    const command = dispatchTruncateMessagesScoped('chat-a', 'm-1', previous)
+    expect(getDatabase().characters[0].chats[0].message).toEqual([previousMessages[0]])
+    await command
     await waitForCallCount(calls, 2)
 
     expect(getDatabase().characters[0].chats[0].message).toEqual(previousMessages)

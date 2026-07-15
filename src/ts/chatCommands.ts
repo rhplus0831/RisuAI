@@ -3190,6 +3190,25 @@ function restoreScopedMessageListAttempt(previous: ChatScopedSnapshot, attempted
   })
 }
 
+function applyScopedMessageListAttempt(previous: ChatScopedSnapshot, attemptedMessages: Message[] | null): void {
+  if (!previous.chat || !attemptedMessages) return
+  const previousMessages = previous.chat.message ?? []
+  withTrustedResourceWrite(() => {
+    const liveChat = locateChatScopedSnapshot(previous)
+    if (!liveChat) return
+
+    // Apply a caller's derived attempt only while the captured transcript is
+    // still current. Callers that already mutated optimistically are a no-op,
+    // and a newer concurrent transcript is never replaced.
+    const liveMessages = liveChat.message ?? []
+    const liveSnapshot = snapshotJson(liveMessages)
+    if (liveSnapshot === snapshotJson(attemptedMessages)) return
+    if (liveSnapshot !== snapshotJson(previousMessages)) return
+
+    liveChat.message = cloneJsonValue(attemptedMessages)
+  })
+}
+
 function attemptedMessagesAfterDelete(previous: ChatScopedSnapshot, messageId: string): Message[] | null {
   const messages = cloneJsonValue(previous.chat?.message ?? [])
   const index = findMessageIndexById(messages, messageId)
@@ -3279,6 +3298,7 @@ export function dispatchDeleteMessage(messageId: string, previous: ChatStateSnap
 
 export function dispatchDeleteMessageScoped(messageId: string, previous: ChatScopedSnapshot): void {
   const attemptedMessages = attemptedMessagesAfterDelete(previous, messageId)
+  applyScopedMessageListAttempt(previous, attemptedMessages)
   dispatchDeleteMessageWith(messageId, () => restoreScopedMessageListAttempt(previous, attemptedMessages))
 }
 
@@ -3321,6 +3341,7 @@ export function dispatchTruncateMessagesScoped(
   options: TruncateMessagesOptions = {},
 ): Promise<ServerCommandResult | null> {
   const attemptedMessages = attemptedMessagesAfterTruncate(previous, afterMessageId)
+  applyScopedMessageListAttempt(previous, attemptedMessages)
   return dispatchTruncateMessagesWith(
     chatId,
     afterMessageId,
@@ -3365,6 +3386,7 @@ export function dispatchReplaceTailMessagesScoped(
 ): void {
   if (!prepareReplaceTailMessages(messages)) return
   const attemptedMessages = attemptedMessagesAfterReplaceTail(previous, afterMessageId, messages)
+  applyScopedMessageListAttempt(previous, attemptedMessages)
   runMessageCommand(
     (baseRevision) =>
       replaceTailMessagesCommand({
@@ -3401,6 +3423,7 @@ export function dispatchReplaceMessages(chatId: string, messages: Message[], pre
 export function dispatchReplaceMessagesScoped(chatId: string, messages: Message[], previous: ChatScopedSnapshot): void {
   if (!prepareReplaceMessages(messages)) return
   const attemptedMessages = cloneJsonValue(messages)
+  applyScopedMessageListAttempt(previous, attemptedMessages)
   runMessageCommand(
     (baseRevision) =>
       replaceMessagesCommand({
