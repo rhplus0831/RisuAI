@@ -5,6 +5,7 @@
   import { applyLoadout, deleteLoadout, saveCurrentLoadout, toggleLoadoutFavorite, type Loadout } from 'src/ts/loadout'
   import { getCurrentCharacter } from 'src/ts/storage/database.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { language } from 'src/lang'
 
   type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
@@ -23,8 +24,11 @@
   }
 
   let saveName = $state('')
+  let applyingLoadoutId: string | null = $state(null)
+  let applyError = $state('')
 
   function close() {
+    if (applyingLoadoutId !== null) return
     loadoutModalStore.open = false
   }
 
@@ -61,10 +65,33 @@
     return getSortedLoadouts()
   }
 
-  function onSelect(loadout: Loadout) {
+  async function onSelect(loadout: Loadout) {
+    if (applyingLoadoutId !== null) return
     const apply = (Object.keys(loadOptions) as LoadoutApplyOption[]).filter((k) => loadOptions[k])
-    applyLoadout(loadout, apply)
-    close()
+    applyingLoadoutId = loadout.id
+    applyError = ''
+    try {
+      const status = await applyLoadout(loadout, apply)
+      if (status === 'applied') {
+        applyingLoadoutId = null
+        close()
+        return
+      }
+      applyError =
+        status === 'preset-hydration-failed' ? language.loadoutPresetHydrationFailed : language.loadoutApplyFailed
+    } catch {
+      applyError = language.loadoutApplyFailed
+    } finally {
+      applyingLoadoutId = null
+    }
+  }
+
+  function saveLoadout(): void {
+    const name = saveName.trim()
+    if (!name || applyingLoadoutId !== null) return
+
+    saveName = ''
+    saveCurrentLoadout(name)
   }
 
   function toggleFavorite(loadout: Loadout, e: MouseEvent) {
@@ -89,7 +116,12 @@
 
 {#snippet loadoutCard(loadout: Loadout)}
   <div class="flex items-center gap-1 rounded-md bg-textcolor/5 hover:bg-textcolor/10 transition-colors">
-    <button class="flex-1 min-w-0 text-left flex flex-col px-3 py-2.5" onclick={() => onSelect(loadout)}>
+    <button
+      class="flex-1 min-w-0 text-left flex flex-col px-3 py-2.5 disabled:opacity-50"
+      disabled={applyingLoadoutId !== null}
+      data-risu-loadout-action="apply"
+      data-risu-loadout-id={loadout.id}
+      onclick={() => onSelect(loadout)}>
       <span class="text-sm font-medium text-textcolor/90 truncate">{loadout.name}</span>
       <span class="flex items-center gap-2 mt-0.5 text-xs text-textcolor/40 flex-wrap">
         {#if loadout.presetName}
@@ -102,6 +134,7 @@
       class="shrink-0 pr-1 py-2.5 transition-colors {loadout.favorite
         ? 'text-yellow-400'
         : 'text-textcolor/20 hover:text-textcolor/50'}"
+      disabled={applyingLoadoutId !== null}
       onclick={(e) => toggleFavorite(loadout, e)}
       aria-label={loadout.favorite ? 'Unfavorite' : 'Favorite'}
       title={loadout.favorite ? 'Unfavorite' : 'Favorite'}>
@@ -109,6 +142,7 @@
     </button>
     <button
       class="shrink-0 pr-3 py-2.5 transition-colors hover:text-red-400/50 text-textcolor/20"
+      disabled={applyingLoadoutId !== null}
       onclick={(e) => removeLoadout(loadout)}
       aria-label={'Remove'}
       title={'Remove'}>
@@ -131,6 +165,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="risu-loadout-modal-title"
+    aria-busy={applyingLoadoutId !== null}
     tabindex="-1"
     onkeydown={handleDialogKeydown}>
     <div class="flex items-center justify-between px-5 py-3 border-b border-textcolor/10 shrink-0">
@@ -138,6 +173,7 @@
       <button
         data-modal-initial-focus
         class="text-textcolor/50 hover:text-textcolor/90 transition-colors"
+        disabled={applyingLoadoutId !== null}
         onclick={close}
         aria-label="Close">
         <XIcon size={18} />
@@ -152,11 +188,18 @@
           class="px-2.5 py-1 rounded text-xs font-medium transition-colors {loadOptions[k]
             ? 'bg-textcolor/15 text-textcolor/90'
             : 'bg-textcolor/5 text-textcolor/30 hover:bg-textcolor/10 hover:text-textcolor/50'}"
+          disabled={applyingLoadoutId !== null}
           onclick={() => (loadOptions[k] = !loadOptions[k])}>
           {loadOptionLabels[k]}
         </button>
       {/each}
     </div>
+
+    {#if applyingLoadoutId !== null}
+      <p class="px-5 pt-3 text-sm text-textcolor/60" role="status">{language.loading}...</p>
+    {:else if applyError}
+      <p class="px-5 pt-3 text-sm text-draculared" role="alert">{applyError}</p>
+    {/if}
 
     <div class="overflow-y-auto flex-1 px-4 py-3 flex flex-col gap-5 break-any">
       {#if getRecentLoadouts().length > 0}
@@ -223,13 +266,13 @@
         type="text"
         bind:value={saveName}
         placeholder="Loadout name…"
+        disabled={applyingLoadoutId !== null}
         class="flex-1 min-w-0 bg-textcolor/5 hover:bg-textcolor/8 focus:bg-textcolor/10 border border-textcolor/10 focus:border-textcolor/25 rounded px-3 py-1.5 text-sm text-textcolor/80 placeholder:text-textcolor/25 outline-none transition-colors" />
       <button
         class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded bg-textcolor/10 hover:bg-textcolor/15 text-textcolor/70 hover:text-textcolor/90 text-sm font-medium transition-colors disabled:opacity-30 disabled:pointer-events-none"
-        disabled={!saveName.trim()}
-        onclick={() => {
-          saveCurrentLoadout(saveName.trim())
-        }}>
+        disabled={!saveName.trim() || applyingLoadoutId !== null}
+        data-risu-loadout-action="save"
+        onclick={saveLoadout}>
         <SaveIcon size={14} />
         Save
       </button>

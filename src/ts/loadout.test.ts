@@ -1168,6 +1168,97 @@ describe('loadout projection command helpers', () => {
     expect(testDatabaseState.db.promptTemplate).toEqual([{ id: 'live-prompt', type: 'plain', text: 'live prompt row' }])
   })
 
+  it('keeps the original character and chat target while legacy preset hydration is pending', async () => {
+    const loadout = seedApplyLoadoutState()
+    loadout.agentPresetId = 'agent-preset-target'
+    loadout.agentPresetName = 'Target Agent'
+    testDatabaseState.db.agentPresets = [
+      { id: 'agent-preset-old-a', name: 'Old A', enabled: true, version: 1, steps: [] },
+      { id: 'agent-preset-old-b', name: 'Old B', enabled: true, version: 1, steps: [] },
+      { id: 'agent-preset-target', name: 'Target Agent', enabled: true, version: 1, steps: [] },
+    ]
+    testDatabaseState.db.characters = [
+      {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-a',
+            name: 'Chat A',
+            note: '',
+            message: [],
+            localLore: [],
+            generationSettings: { agentPresetId: 'agent-preset-old-a', jailbreakToggle: false },
+          },
+        ],
+      },
+      {
+        chaId: 'char-b',
+        chatPage: 0,
+        chats: [
+          {
+            id: 'chat-b',
+            name: 'Chat B',
+            note: '',
+            message: [],
+            localLore: [],
+            generationSettings: { agentPresetId: 'agent-preset-old-b', jailbreakToggle: false },
+          },
+        ],
+      },
+    ] as any
+    testDatabaseState.db.botPresets[1] = {
+      id: 'preset-b',
+      name: 'Preset B',
+    } as never
+    const hydration = deferred<Response>()
+    const calls = stubApplyLoadoutFetch({ projectionResponse: hydration.promise })
+    setResourceWriteGuardEnabled(true)
+
+    const application = applyLoadout(loadout, ['preset'])
+    await waitForUrl(calls, '/api/v1/legacy-presets/preset-b')
+
+    selectedCharID.set(1)
+    hydration.resolve(
+      jsonResponse({
+        revision: 100,
+        preset: {
+          id: 'preset-b',
+          name: 'Preset B',
+          mainPrompt: 'hydrated preset-b main',
+          promptTemplate: [],
+        },
+      }),
+    )
+
+    await expect(application).resolves.toBe('applied')
+    expect(testDatabaseState.db.characters[0].chats[0].generationSettings?.agentPresetId).toBe('agent-preset-target')
+    expect(testDatabaseState.db.characters[1].chats[0].generationSettings?.agentPresetId).toBe('agent-preset-old-b')
+    expect(loadout.characterIds).toContain('char-a')
+    expect(loadout.characterIds).not.toContain('char-b')
+    await waitForUrl(calls, '/api/v1/commands/chats/chat-a/generation-settings')
+    expect(calls.map((call) => call.url)).not.toContain('/api/v1/commands/chats/chat-b/generation-settings')
+  })
+
+  it('returns a visible failure status when legacy preset hydration fails', async () => {
+    const loadout = seedApplyLoadoutState()
+    testDatabaseState.db.botPresets[1] = {
+      id: 'preset-b',
+      name: 'Preset B',
+    } as never
+    const hydration = deferred<Response>()
+    const calls = stubApplyLoadoutFetch({ projectionResponse: hydration.promise })
+    setResourceWriteGuardEnabled(true)
+
+    const application = applyLoadout(loadout, ['preset'])
+    await waitForUrl(calls, '/api/v1/legacy-presets/preset-b')
+    hydration.resolve(jsonResponse({ error: 'forced hydration failure' }, 500))
+
+    await expect(application).resolves.toBe('preset-hydration-failed')
+    expect(testDatabaseState.db.mainPrompt).toBe('live main')
+    expect(calls.some((call) => call.url.startsWith('/api/v1/commands/'))).toBe(false)
+  })
+
   it('suppresses PersonaSettings watcher echo for loadout-driven persona selection', async () => {
     const loadout = seedApplyLoadoutState()
     const calls = stubApplyLoadoutFetch()

@@ -2,19 +2,21 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const loadoutStore = vi.hoisted(() => ({ open: true }))
-
-vi.mock('src/ts/stores.svelte', () => ({
-  loadoutModalStore: loadoutStore,
-}))
-vi.mock('src/ts/server/resourceState.svelte', () => ({
-  getResourceDatabase: vi.fn(() => ({ loadouts: [] })),
-}))
-vi.mock('src/ts/loadout', () => ({
+const loadoutDatabase = vi.hoisted(() => ({ loadouts: [] as Array<Record<string, unknown>> }))
+const loadoutMocks = vi.hoisted(() => ({
   applyLoadout: vi.fn(),
   deleteLoadout: vi.fn(),
   saveCurrentLoadout: vi.fn(),
   toggleLoadoutFavorite: vi.fn(),
 }))
+
+vi.mock('src/ts/stores.svelte', () => ({
+  loadoutModalStore: loadoutStore,
+}))
+vi.mock('src/ts/server/resourceState.svelte', () => ({
+  getResourceDatabase: vi.fn(() => loadoutDatabase),
+}))
+vi.mock('src/ts/loadout', () => loadoutMocks)
 vi.mock('src/ts/storage/database.svelte', () => ({
   getCurrentCharacter: vi.fn(() => null),
 }))
@@ -27,6 +29,14 @@ let component: MountedComponent | undefined
 let opener: HTMLButtonElement
 let target: HTMLElement
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise
+  })
+  return { promise, resolve }
+}
+
 async function settle(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
@@ -35,6 +45,11 @@ async function settle(): Promise<void> {
 
 beforeEach(() => {
   loadoutStore.open = true
+  loadoutDatabase.loadouts = []
+  loadoutMocks.applyLoadout.mockReset().mockResolvedValue('applied')
+  loadoutMocks.deleteLoadout.mockReset()
+  loadoutMocks.saveCurrentLoadout.mockReset()
+  loadoutMocks.toggleLoadoutFavorite.mockReset()
   opener = document.createElement('button')
   opener.textContent = 'Open loadouts'
   target = document.createElement('div')
@@ -79,5 +94,67 @@ describe('LoadoutModal focus', () => {
     await settle()
     expect(opener.inert).toBe(false)
     expect(document.activeElement).toBe(opener)
+  })
+})
+
+describe('LoadoutModal operations', () => {
+  const savedLoadout = {
+    id: 'loadout-a',
+    name: 'Loadout A',
+    lastUsed: 100,
+    favorite: false,
+    characterIds: [],
+    modules: [],
+    globalVariables: {},
+    presetName: 'Preset A',
+    personaId: '',
+  }
+
+  it('stays open while applying and reports preset hydration failure', async () => {
+    loadoutDatabase.loadouts = [savedLoadout]
+    const application = deferred<'preset-hydration-failed'>()
+    loadoutMocks.applyLoadout.mockReturnValue(application.promise)
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const apply = target.querySelector<HTMLButtonElement>(
+      '[data-risu-loadout-action="apply"][data-risu-loadout-id="loadout-a"]',
+    )
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')
+    if (!apply || !dialog) throw new Error('Loadout apply control not found')
+
+    apply.click()
+    await tick()
+
+    expect(loadoutStore.open).toBe(true)
+    expect(dialog.getAttribute('aria-busy')).toBe('true')
+    expect(target.querySelector('[role="status"]')?.textContent).toContain('Loading')
+
+    application.resolve('preset-hydration-failed')
+    await settle()
+
+    expect(loadoutStore.open).toBe(true)
+    expect(dialog.getAttribute('aria-busy')).toBe('false')
+    expect(target.querySelector('[role="alert"]')?.textContent).toContain('Could not load the preset')
+  })
+
+  it('clears the save name synchronously so duplicate activation creates one loadout', async () => {
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const input = target.querySelector<HTMLInputElement>('input[type="text"]')
+    const save = target.querySelector<HTMLButtonElement>('[data-risu-loadout-action="save"]')
+    if (!input || !save) throw new Error('Loadout save controls not found')
+    input.value = '  Snapshot  '
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    save.click()
+    save.click()
+
+    expect(loadoutMocks.saveCurrentLoadout).toHaveBeenCalledOnce()
+    expect(loadoutMocks.saveCurrentLoadout).toHaveBeenCalledWith('Snapshot')
+    await tick()
+    expect(input.value).toBe('')
   })
 })

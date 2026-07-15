@@ -103,6 +103,8 @@ export function makeLoadout(options: { name: string }): Loadout {
 
 type LoadoutApplyOption = 'modules' | 'globalVariables' | 'preset' | 'persona'
 
+export type LoadoutApplyStatus = 'applied' | 'superseded' | 'preset-hydration-failed'
+
 type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
 
 interface LoadoutListRollbackEntry {
@@ -1056,12 +1058,14 @@ function changedModuleSteps(previousModules: string[], nextModules: string[]): L
 
 let loadoutApplyIntent = 0
 
-export function applyLoadout(
+export async function applyLoadout(
   loadout: Loadout,
   apply: LoadoutApplyOption[] = ['modules', 'globalVariables', 'preset', 'persona'],
-): void {
+): Promise<LoadoutApplyStatus> {
   const intent = ++loadoutApplyIntent
   const requested = new Set(apply)
+  const activeChatAgentPresetTarget = requested.has('preset') ? currentActiveChatRecord() : null
+  const currentCharacterId = getCurrentCharacter()?.chaId
   const legacySelectionIntent = requested.has('preset') ? beginLegacyPresetSelectionIntent() : null
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
   const legacyPreset =
@@ -1072,21 +1076,40 @@ export function applyLoadout(
         })
       : undefined
   const legacyPresetId = nonBlankId(legacyPreset?.id)
-  if (legacyPreset && !legacyPresetId) return
+  if (legacyPreset && !legacyPresetId) return 'preset-hydration-failed'
   if (legacyPresetId && !presetHasHydratedSettings(legacyPreset)) {
-    void ensureBotPresetHydratedById(legacyPresetId).then((hydrated) => {
-      if (
-        hydrated &&
-        intent === loadoutApplyIntent &&
-        legacySelectionIntent !== null &&
-        isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)
-      ) {
-        applyLoadoutNow(loadout, apply, legacyPresetId, intent, legacySelectionIntent)
-      }
-    })
-    return
+    const hydrated = await ensureBotPresetHydratedById(legacyPresetId)
+    if (!hydrated) return 'preset-hydration-failed'
+    if (
+      intent !== loadoutApplyIntent ||
+      legacySelectionIntent === null ||
+      !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)
+    ) {
+      return 'superseded'
+    }
+    return applyLoadoutNow(
+      loadout,
+      apply,
+      legacyPresetId,
+      intent,
+      legacySelectionIntent,
+      activeChatAgentPresetTarget,
+      currentCharacterId,
+    )
+      ? 'applied'
+      : 'superseded'
   }
-  applyLoadoutNow(loadout, apply, legacyPresetId, intent, legacySelectionIntent)
+  return applyLoadoutNow(
+    loadout,
+    apply,
+    legacyPresetId,
+    intent,
+    legacySelectionIntent,
+    activeChatAgentPresetTarget,
+    currentCharacterId,
+  )
+    ? 'applied'
+    : 'superseded'
 }
 
 function applyLoadoutNow(
@@ -1095,9 +1118,11 @@ function applyLoadoutNow(
   legacyPresetId: string | null,
   intent: number,
   legacySelectionIntent: number | null,
-): void {
-  if (intent !== loadoutApplyIntent) return
-  if (legacySelectionIntent !== null && !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)) return
+  activeChatAgentPresetTarget: ReturnType<typeof currentActiveChatRecord>,
+  currentCharacterId: string | undefined,
+): boolean {
+  if (intent !== loadoutApplyIntent) return false
+  if (legacySelectionIntent !== null && !isLegacyPresetSelectionIntentCurrent(legacySelectionIntent)) return false
   const requested = new Set(apply)
   const personaSelection = requested.has('persona') ? resolvePersonaSelection(loadout.personaId) : null
   const useSplitPresetSelection = requested.has('preset') && loadoutHasSplitPresetReference(loadout)
@@ -1107,7 +1132,6 @@ function applyLoadoutNow(
   const promptPresetSelection = useSplitPresetSelection
     ? resolveSplitPresetSelection(getDatabase().promptPresets, loadout.promptPresetId, loadout.promptPresetName)
     : null
-  const activeChatAgentPresetTarget = requested.has('preset') ? currentActiveChatRecord() : null
   const resolvedAgentPresetId = requested.has('preset') ? resolveLoadoutAgentPresetId(loadout) : undefined
   const presetIndex =
     requested.has('preset') && !useSplitPresetSelection
@@ -1116,14 +1140,13 @@ function applyLoadoutNow(
         ) ?? -1)
       : -1
   if (legacyPresetId && (presetIndex < 0 || !presetHasHydratedSettings(getDatabase().botPresets[presetIndex]))) {
-    return
+    return false
   }
   const previousModules = cloneJsonValue(getDatabase().enabledModules ?? [])
   const nextModules = cloneJsonValue(loadout.modules ?? [])
   const previousGlobalChatVariables = cloneJsonValue(getDatabase().globalChatVariables ?? {})
   const nextGlobalChatVariables = cloneJsonValue(loadout.globalVariables ?? {})
   const globalVariablesChanged = snapshotJson(previousGlobalChatVariables) !== snapshotJson(nextGlobalChatVariables)
-  const currentCharacterId = getCurrentCharacter()?.chaId
   const lastUsed = Date.now()
   const previousLoadout = getDatabase().loadouts?.find((item) => item.id === loadout.id)
   const loadoutsProjectionEpoch = captureCollectionProjectionEpoch('loadouts')
@@ -1395,6 +1418,7 @@ function applyLoadoutNow(
     steps.map((step) => step.command),
     () => rollbackUnacceptedLoadoutApplySteps(steps),
   )
+  return true
 }
 
 export function saveCurrentLoadout(name: string) {

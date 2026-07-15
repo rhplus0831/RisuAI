@@ -1874,6 +1874,8 @@ export const languageEnglish = {
   modelGridContext: (n: string) => `Context: ${n}`,
   loadouts: 'Loadouts',
   loadout: 'Loadout',
+  loadoutPresetHydrationFailed: 'Could not load the preset for this loadout. Please try again.',
+  loadoutApplyFailed: 'Could not apply this loadout. Please try again.',
 
   nanoGPTSelectFromList: 'Select from List',
   nanoGPTManualInput: 'Manual Input',
