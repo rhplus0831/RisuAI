@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MASKED_PROVIDER_SECRET } from '../providerSecretMask'
-import { requestTtsSynthesis, ttsGlobalCredential, TtsSynthesisRequestError } from './tts'
+import { requestTtsSynthesis, ttsGlobalCredential } from './tts'
 
 const mocks = vi.hoisted(() => ({
   getAuth: vi.fn(async () => 'signed-auth'),
@@ -58,7 +58,7 @@ describe('TTS synthesis client', () => {
   it('forwards cancellation and exposes only sanitized server error metadata', async () => {
     const controller = new AbortController()
     const fetchMock = vi.fn(
-      async () =>
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(JSON.stringify({ error: 'tts_upstream_failed', upstreamStatus: 429 }), {
           status: 502,
           headers: { 'content-type': 'application/json' },
@@ -75,13 +75,13 @@ describe('TTS synthesis client', () => {
         },
         { signal: controller.signal },
       ),
-    ).rejects.toMatchObject<TtsSynthesisRequestError>({
+    ).rejects.toMatchObject({
       name: 'TtsSynthesisRequestError',
       status: 502,
       code: 'tts_upstream_failed',
       upstreamStatus: 429,
     })
-    expect(fetchMock.mock.calls[0][1]?.signal).toBe(controller.signal)
+    expect(fetchMock.mock.calls.at(0)?.[1]?.signal).toBe(controller.signal)
   })
 
   it('rejects a non-audio success response', async () => {
