@@ -4,7 +4,7 @@
   import { type SerializableHypaV3Data, type SerializableSummary, summarize } from 'src/ts/process/memory/hypav3'
   import { alertNormalWait } from 'src/ts/alert'
   import { selectedCharID, hypaV3ModalOpen } from 'src/ts/stores.svelte'
-  import { getCharacterByIndex } from 'src/ts/storage/database.svelte'
+  import { getCharacterByIndex, type character, type Chat } from 'src/ts/storage/database.svelte'
   import { language } from 'src/lang'
   import { translateHTML } from 'src/ts/translator/translator'
   import { alertConfirmTwice } from './HypaV3Modal/utils'
@@ -52,6 +52,19 @@
 
   interface ServerSummaryView extends SerializableSummary {
     serverId: string
+  }
+
+  interface BulkResummaryOwner {
+    character: character
+    characterId: string
+    chat: Chat
+    chatId: string | undefined
+    data: SerializableHypaV3Data
+  }
+
+  interface BulkResummaryOperation {
+    token: number
+    owner: BulkResummaryOwner
   }
 
   let serverHypaV3Data = $state<SerializableHypaV3Data>(createInitialHypaV3Data())
@@ -326,6 +339,8 @@
   let searchState = $state<SearchState>(null)
   let filterSelected = $state(false)
   let bulkResummaryState = $state<BulkResummaryState | null>(null)
+  let bulkResummaryOperationToken = 0
+  let bulkResummaryOwner: BulkResummaryOwner | null = null
 
   let categoryManagerState = $state<CategoryManagerState>({
     isOpen: false,
@@ -356,6 +371,70 @@
   let uiState = $state<UIState>({
     collapsedSummaries: new Set(),
     dropdownOpen: false,
+  })
+
+  function captureBulkResummaryOwner(): BulkResummaryOwner {
+    return {
+      character: currentCharacter,
+      characterId: currentCharacter.chaId,
+      chat: currentChat,
+      chatId: currentChat.id,
+      data: hypaV3Data,
+    }
+  }
+
+  function matchesBulkResummaryOwner(
+    owner: BulkResummaryOwner,
+    character: character = currentCharacter,
+    chat: Chat = currentChat,
+    data: SerializableHypaV3Data = hypaV3Data,
+  ): boolean {
+    return (
+      character === owner.character &&
+      character.chaId === owner.characterId &&
+      chat === owner.chat &&
+      chat.id === owner.chatId &&
+      data === owner.data
+    )
+  }
+
+  function beginBulkResummaryOperation(owner: BulkResummaryOwner): BulkResummaryOperation {
+    bulkResummaryOperationToken += 1
+    bulkResummaryOwner = owner
+    return { token: bulkResummaryOperationToken, owner }
+  }
+
+  function beginExistingBulkResummaryOperation(): BulkResummaryOperation | null {
+    const owner = bulkResummaryOwner
+    if (!owner || !matchesBulkResummaryOwner(owner)) {
+      clearBulkResummary(true)
+      return null
+    }
+    return beginBulkResummaryOperation(owner)
+  }
+
+  function isCurrentBulkResummaryOperation(operation: BulkResummaryOperation): boolean {
+    return (
+      operation.token === bulkResummaryOperationToken &&
+      operation.owner === bulkResummaryOwner &&
+      matchesBulkResummaryOwner(operation.owner)
+    )
+  }
+
+  function clearBulkResummary(clearSelection: boolean): void {
+    bulkResummaryOperationToken += 1
+    bulkResummaryOwner = null
+    bulkResummaryState = null
+    if (clearSelection) bulkEditState.selectedSummaries = new Set()
+  }
+
+  $effect(() => {
+    const activeCharacter = currentCharacter
+    const activeChat = currentChat
+    const activeData = hypaV3Data
+    if (bulkResummaryOwner && !matchesBulkResummaryOwner(bulkResummaryOwner, activeCharacter, activeChat, activeData)) {
+      clearBulkResummary(true)
+    }
   })
 
   $effect.pre(() => {
@@ -474,6 +553,8 @@
     if (bulkEditState.selectedSummaries.size < 2) return
 
     const sortedIndices = Array.from(bulkEditState.selectedSummaries).sort((a, b) => a - b)
+    const owner = captureBulkResummaryOwner()
+    const operation = beginBulkResummaryOperation(owner)
 
     try {
       bulkResummaryState = {
@@ -485,7 +566,8 @@
         translation: null,
       }
 
-      const selectedSummaryTexts = sortedIndices.map((index) => hypaV3Data.summaries[index].text)
+      const selectedSummaries = sortedIndices.map((index) => owner.data.summaries[index])
+      const selectedSummaryTexts = selectedSummaries.map((summary) => summary.text)
 
       const oaiMessages: OpenAIChat[] = selectedSummaryTexts.map((text) => ({
         role: 'user',
@@ -493,14 +575,14 @@
       }))
 
       const mergedChatMemos: string[] = []
-      for (const index of sortedIndices) {
-        const summary = hypaV3Data.summaries[index]
+      for (const summary of selectedSummaries) {
         mergedChatMemos.push(...summary.chatMemos)
       }
 
       const uniqueChatMemos = [...new Set(mergedChatMemos)]
 
       const resummary = await summarize(oaiMessages, true)
+      if (!isCurrentBulkResummaryOperation(operation)) return
 
       bulkResummaryState = {
         isProcessing: false,
@@ -511,8 +593,9 @@
         translation: null,
       }
     } catch (error) {
+      if (!isCurrentBulkResummaryOperation(operation)) return
       console.error('Re-summarize Failed:', error)
-      bulkResummaryState = null
+      clearBulkResummary(false)
       await alertNormalWait(`Re-summarize Failed: ${error.message || error}`)
     }
   }
@@ -521,42 +604,56 @@
     if (serverBackedMemoryMode) return
     if (!bulkResummaryState || !bulkResummaryState.result) return
 
-    const sortedIndices = bulkResummaryState.selectedIndices
-    const minIndex = sortedIndices[0]
+    const resultState = bulkResummaryState
+    const owner = bulkResummaryOwner
+    if (!owner || !matchesBulkResummaryOwner(owner)) {
+      clearBulkResummary(true)
+      return
+    }
 
-    hypaV3Data.summaries[minIndex] = {
-      text: bulkResummaryState.result,
-      chatMemos: bulkResummaryState.mergedChatMemos,
-      isImportant: hypaV3Data.summaries[minIndex].isImportant,
-      categoryId: hypaV3Data.summaries[minIndex].categoryId,
-      tags: hypaV3Data.summaries[minIndex].tags,
+    const sortedIndices = resultState.selectedIndices
+    const minIndex = sortedIndices[0]
+    if (minIndex === undefined || sortedIndices.some((index) => !owner.data.summaries[index])) {
+      clearBulkResummary(true)
+      return
+    }
+    const firstSummary = owner.data.summaries[minIndex]
+
+    owner.data.summaries[minIndex] = {
+      text: resultState.result,
+      chatMemos: resultState.mergedChatMemos,
+      isImportant: firstSummary.isImportant,
+      categoryId: firstSummary.categoryId,
+      tags: firstSummary.tags,
     }
 
     for (let i = sortedIndices.length - 1; i > 0; i--) {
-      hypaV3Data.summaries.splice(sortedIndices[i], 1)
+      owner.data.summaries.splice(sortedIndices[i], 1)
     }
 
-    uiState.collapsedSummaries = new Set(hypaV3Data.summaries.map((_, index) => index))
+    uiState.collapsedSummaries = new Set(owner.data.summaries.map((_, index) => index))
 
-    bulkResummaryState = null
-    bulkEditState.selectedSummaries = new Set()
+    clearBulkResummary(true)
   }
 
   async function rerollBulkResummary() {
     if (!bulkResummaryState) return
 
-    const sortedIndices = bulkResummaryState.selectedIndices
+    const priorState = bulkResummaryState
+    const operation = beginExistingBulkResummaryOperation()
+    if (!operation) return
+    const sortedIndices = priorState.selectedIndices
 
     try {
       bulkResummaryState = {
-        ...bulkResummaryState,
+        ...priorState,
         isProcessing: true,
         result: null,
         isTranslating: false,
         translation: null,
       }
 
-      const selectedSummaryTexts = sortedIndices.map((index) => hypaV3Data.summaries[index].text)
+      const selectedSummaryTexts = sortedIndices.map((index) => operation.owner.data.summaries[index].text)
 
       const oaiMessages: OpenAIChat[] = selectedSummaryTexts.map((text) => ({
         role: 'user',
@@ -564,28 +661,34 @@
       }))
 
       const resummary = await summarize(oaiMessages, true)
+      if (!isCurrentBulkResummaryOperation(operation)) return
 
       bulkResummaryState = {
-        ...bulkResummaryState,
+        ...priorState,
         isProcessing: false,
         result: resummary,
         isTranslating: false,
         translation: null,
       }
     } catch (error) {
+      if (!isCurrentBulkResummaryOperation(operation)) return
       console.error('Re-summarize Retry Failed:', error)
-      bulkResummaryState = null
+      clearBulkResummary(false)
       await alertNormalWait(`Re-summarize Retry Failed: ${error.message || error}`)
     }
   }
 
   function cancelBulkResummary() {
-    bulkResummaryState = null
-    bulkEditState.selectedSummaries = new Set()
+    clearBulkResummary(true)
   }
 
   async function toggleBulkResummaryTranslation(regenerate: boolean = false) {
     if (!bulkResummaryState || !bulkResummaryState.result) return
+    const owner = bulkResummaryOwner
+    if (!owner || !matchesBulkResummaryOwner(owner)) {
+      clearBulkResummary(true)
+      return
+    }
 
     if (bulkResummaryState.isTranslating) return
 
@@ -594,17 +697,25 @@
       return
     }
 
-    bulkResummaryState.isTranslating = true
-    bulkResummaryState.translation = 'Loading...'
+    const operation = beginBulkResummaryOperation(owner)
+    const translationState = bulkResummaryState
+    if (!translationState || !translationState.result) return
+
+    translationState.isTranslating = true
+    translationState.translation = 'Loading...'
 
     try {
-      const result = await translateHTML(bulkResummaryState.result, false, '', -1, regenerate)
+      const result = await translateHTML(translationState.result, false, '', -1, regenerate)
+      if (!isCurrentBulkResummaryOperation(operation) || bulkResummaryState !== translationState) return
 
-      bulkResummaryState.translation = result
+      translationState.translation = result
     } catch (error) {
-      bulkResummaryState.translation = `Translation failed: ${error}`
+      if (!isCurrentBulkResummaryOperation(operation) || bulkResummaryState !== translationState) return
+      translationState.translation = `Translation failed: ${error}`
     } finally {
-      bulkResummaryState.isTranslating = false
+      if (isCurrentBulkResummaryOperation(operation) && bulkResummaryState === translationState) {
+        translationState.isTranslating = false
+      }
     }
   }
 

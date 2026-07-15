@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const resetMocks = vi.hoisted(() => ({
   alertConfirm: vi.fn<() => Promise<boolean>>(),
+  summarize: vi.fn<(...args: unknown[]) => Promise<string>>(),
+  translateHTML: vi.fn<(...args: unknown[]) => Promise<string>>(),
 }))
 
 vi.mock('src/ts/alert', async (importActual) => {
@@ -22,6 +24,14 @@ vi.mock('src/ts/process/modules', async (importActual) => {
   }
 })
 
+vi.mock('src/ts/process/memory/hypav3', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/process/memory/hypav3')>()
+  return {
+    ...actual,
+    summarize: resetMocks.summarize,
+  }
+})
+
 vi.mock('src/ts/process/request/serverMemory', () => ({
   canUseServerMemoryApi: () => false,
   cancelServerMemoryJob: vi.fn(),
@@ -35,7 +45,16 @@ vi.mock('src/ts/server/memoryJobEvents', () => ({
   subscribeServerMemoryJobEvents: () => () => undefined,
 }))
 
+vi.mock('src/ts/translator/translator', async (importActual) => {
+  const actual = await importActual<typeof import('src/ts/translator/translator')>()
+  return {
+    ...actual,
+    translateHTML: resetMocks.translateHTML,
+  }
+})
+
 import HypaV3Modal from './HypaV3Modal.svelte'
+import { language } from 'src/lang'
 import { hypaV3ModalOpen, selectedCharID } from 'src/ts/stores.svelte'
 import { getDatabase, setDatabaseLite } from 'src/ts/storage/database.svelte'
 
@@ -49,7 +68,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-function seedDatabase(): void {
+function seedDatabase(withSummaries = false): void {
   selectedCharID.set(0)
   setDatabaseLite({
     hypaV3PresetId: 0,
@@ -68,7 +87,20 @@ function seedDatabase(): void {
             note: '',
             localLore: [],
             hypaV3Data: {
-              summaries: [],
+              summaries: withSummaries
+                ? [
+                    {
+                      text: 'Chat A summary one',
+                      chatMemos: ['message-a'],
+                      isImportant: false,
+                    },
+                    {
+                      text: 'Chat A summary two',
+                      chatMemos: ['message-a'],
+                      isImportant: false,
+                    },
+                  ]
+                : [],
               categories: [{ id: 'category-a', name: 'Category A' }],
               lastSelectedSummaries: [],
             },
@@ -80,7 +112,20 @@ function seedDatabase(): void {
             note: '',
             localLore: [],
             hypaV3Data: {
-              summaries: [],
+              summaries: withSummaries
+                ? [
+                    {
+                      text: 'Chat B summary one',
+                      chatMemos: ['message-b'],
+                      isImportant: false,
+                    },
+                    {
+                      text: 'Chat B summary two',
+                      chatMemos: ['message-b'],
+                      isImportant: false,
+                    },
+                  ]
+                : [],
               categories: [{ id: 'category-b', name: 'Category B' }],
               lastSelectedSummaries: [],
             },
@@ -104,12 +149,52 @@ function buttonForIcon(target: HTMLElement, iconClass: string): HTMLButtonElemen
   return target.querySelector<SVGElement>(`svg.${iconClass}`)?.closest('button') ?? null
 }
 
-describe('Hypa V3 reset ownership', () => {
+function buttonByText(target: HTMLElement, text: string): HTMLButtonElement | null {
+  return (
+    Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) =>
+      button.textContent?.includes(text),
+    ) ?? null
+  )
+}
+
+function buttonByTitle(target: HTMLElement, title: string): HTMLButtonElement | null {
+  return (
+    Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find((button) => button.title === title) ?? null
+  )
+}
+
+function hasTextareaValue(target: HTMLElement, value: string): boolean {
+  return Array.from(target.querySelectorAll<HTMLTextAreaElement>('textarea')).some(
+    (textarea) => textarea.value === value,
+  )
+}
+
+async function startBulkResummary(target: HTMLElement): Promise<void> {
+  const bulkModeButton = buttonForIcon(target, 'lucide-square-pen')
+  expect(bulkModeButton).not.toBeNull()
+  bulkModeButton!.click()
+  await settle()
+
+  const summaryCheckboxes = Array.from(target.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+  expect(summaryCheckboxes).toHaveLength(2)
+  summaryCheckboxes.forEach((checkbox) => checkbox.click())
+  await settle()
+
+  const resummaryButton = buttonByText(target, language.hypaV3Modal.reSummarize)
+  expect(resummaryButton).not.toBeNull()
+  resummaryButton!.click()
+  await settle()
+}
+
+describe('Hypa V3 async ownership', () => {
   let target: HTMLElement
   let component: MountedComponent | undefined
 
   beforeEach(() => {
     vi.clearAllMocks()
+    resetMocks.alertConfirm.mockReset()
+    resetMocks.summarize.mockReset().mockResolvedValue('Default merged summary')
+    resetMocks.translateHTML.mockReset().mockResolvedValue('Default translation')
     seedDatabase()
     hypaV3ModalOpen.set(true)
     target = document.createElement('div')
@@ -150,5 +235,85 @@ describe('Hypa V3 reset ownership', () => {
 
     expect(character.chats[0].hypaV3Data).toBe(sourceMemory)
     expect(character.chats[1].hypaV3Data).toBe(destinationMemory)
+  })
+
+  it('does not resurrect a canceled bulk resummary after deferred completion', async () => {
+    seedDatabase(true)
+    const pendingSummary = deferred<string>()
+    resetMocks.summarize.mockReturnValueOnce(pendingSummary.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    await startBulkResummary(target)
+    expect(resetMocks.summarize).toHaveBeenCalledOnce()
+
+    const cancelButton = buttonByTitle(target, language.cancel)
+    expect(cancelButton).not.toBeNull()
+    cancelButton!.click()
+    await settle()
+
+    pendingSummary.resolve('Canceled stale summary')
+    await settle()
+
+    expect(hasTextareaValue(target, 'Canceled stale summary')).toBe(false)
+    expect(getDatabase().characters[0].chats[0].hypaV3Data?.summaries.map((summary) => summary.text)).toEqual([
+      'Chat A summary one',
+      'Chat A summary two',
+    ])
+  })
+
+  it('drops a deferred bulk resummary when its chat owner changes', async () => {
+    seedDatabase(true)
+    const pendingSummary = deferred<string>()
+    resetMocks.summarize.mockReturnValueOnce(pendingSummary.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    await startBulkResummary(target)
+    const character = getDatabase().characters[0]
+    character.chatPage = 1
+    await settle()
+
+    pendingSummary.resolve('Wrong chat summary')
+    await settle()
+
+    expect(hasTextareaValue(target, 'Wrong chat summary')).toBe(false)
+    expect(character.chats[0].hypaV3Data?.summaries.map((summary) => summary.text)).toEqual([
+      'Chat A summary one',
+      'Chat A summary two',
+    ])
+    expect(character.chats[1].hypaV3Data?.summaries.map((summary) => summary.text)).toEqual([
+      'Chat B summary one',
+      'Chat B summary two',
+    ])
+  })
+
+  it('ignores a deferred bulk translation after cancellation', async () => {
+    seedDatabase(true)
+    const pendingTranslation = deferred<string>()
+    resetMocks.summarize.mockResolvedValueOnce('Merged summary')
+    resetMocks.translateHTML.mockReturnValueOnce(pendingTranslation.promise)
+    component = mount(HypaV3Modal, { target }) as MountedComponent
+    await settle()
+
+    await startBulkResummary(target)
+    expect(hasTextareaValue(target, 'Merged summary')).toBe(true)
+
+    const translateButton = buttonByTitle(target, language.hypaV3Modal.translate)
+    expect(translateButton).not.toBeNull()
+    translateButton!.click()
+    await settle()
+    expect(resetMocks.translateHTML).toHaveBeenCalledOnce()
+
+    const cancelButton = buttonByTitle(target, language.cancel)
+    expect(cancelButton).not.toBeNull()
+    cancelButton!.click()
+    await settle()
+
+    pendingTranslation.resolve('Canceled stale translation')
+    await settle()
+
+    expect(hasTextareaValue(target, 'Merged summary')).toBe(false)
+    expect(hasTextareaValue(target, 'Canceled stale translation')).toBe(false)
   })
 })
