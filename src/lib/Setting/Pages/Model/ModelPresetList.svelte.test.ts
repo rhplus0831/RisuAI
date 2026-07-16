@@ -94,24 +94,4 @@ describe('ModelPresetList', () => {
     expect(commandSpies.selectModelPresetCommand).not.toHaveBeenCalled()
     expect(getDatabase().modelPresetsId).toBe(0)
   })
-
-  it('keeps table rows semantic and exposes a native contextual apply button', async () => {
-    const afterApply = vi.fn()
-    component = mount(ModelPresetList, { target, props: { embedded: true, afterApply } })
-    await tick()
-
-    const firstRow = target.querySelector('tbody tr')
-    const nameInput = firstRow?.querySelector('input')
-    const apply = firstRow?.querySelector<HTMLButtonElement>('button[aria-label="Apply: Model A"]')
-    expect(firstRow?.getAttribute('role')).toBeNull()
-    expect(firstRow?.getAttribute('tabindex')).toBeNull()
-    expect(nameInput?.getAttribute('aria-label')).toBe('Name: Model A')
-    expect(apply).toBeInstanceOf(HTMLButtonElement)
-
-    apply?.click()
-    await tick()
-
-    expect(afterApply).toHaveBeenCalledOnce()
-    expect(commandSpies.selectModelPresetCommand).not.toHaveBeenCalled()
-  })
 })

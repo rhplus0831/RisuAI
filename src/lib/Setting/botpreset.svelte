@@ -308,6 +308,9 @@
           }}>
         </div>
 
+        <!-- The native select button owns keyboard activation; this handler keeps the full row as the pointer target. -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer"
           class:bg-selected={isPresetSelected(preset, i)}
@@ -319,6 +322,9 @@
           data-risu-row-index={i}
           data-risu-selected={isPresetSelected(preset, i) ? 'true' : 'false'}
           draggable={!editMode ? 'true' : 'false'}
+          onclick={() => {
+            if (!editMode) selectPreset(preset, i)
+          }}
           ondragstart={(e) => {
             if (editMode) {
               e.preventDefault()
@@ -358,7 +364,8 @@
               class="flex min-w-0 grow items-center text-left"
               aria-pressed={isPresetSelected(preset, i)}
               aria-current={isPresetSelected(preset, i) ? 'true' : undefined}
-              onclick={() => {
+              onclick={(event) => {
+                event.stopPropagation()
                 selectPreset(preset, i)
               }}>
               {#if i < 9}

@@ -444,8 +444,8 @@ describe('PartialEditController shared hover handler', () => {
   })
 })
 
-describe('PartialEditController keyboard and modal accessibility', () => {
-  it('offers keyboard block actions in drag-only mode and restores focus after Escape', async () => {
+describe('PartialEditController modal accessibility', () => {
+  it('keeps modal focus contained and restores focus after Escape', async () => {
     const fixture = createHoverFixture({
       text: 'keyboard target block',
       left: 40,
@@ -453,24 +453,18 @@ describe('PartialEditController keyboard and modal accessibility', () => {
       width: 180,
       height: 48,
     })
+    stubElementFromPoint([fixture])
     const controller = mountController(fixture.bodyRoot, {
       messageData: 'alpha keyboard target block omega',
-      blockEditEnabled: false,
-      dragEditEnabled: true,
     })
     await settleEffects()
 
-    expect(fixture.block.getAttribute('tabindex')).toBe('0')
-    expect(fixture.block.getAttribute('aria-keyshortcuts')).toContain('Enter')
-
-    fixture.block.focus()
+    movePointer(60, 112)
+    await flushHoverFrame()
     const wrapper = getBlockButtonWrapper()
     expect(wrapper.style.display).toBe('flex')
 
-    const enter = pressKey(fixture.block, 'Enter')
     const editAction = getFloatingAction('edit')
-    expect(enter.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(editAction)
     expect(editAction.getAttribute('aria-label')).toContain('keyboard target block')
 
     editAction.click()
@@ -507,8 +501,6 @@ describe('PartialEditController keyboard and modal accessibility', () => {
     expect(document.activeElement).toBe(editAction)
 
     unmountController(controller)
-    expect(fixture.block.hasAttribute('tabindex')).toBe(false)
-    expect(fixture.block.hasAttribute('aria-keyshortcuts')).toBe(false)
   })
 
   it('renders ambiguous matches as focusable native choices and keeps the original opener across dialog transitions', async () => {
@@ -522,10 +514,11 @@ describe('PartialEditController keyboard and modal accessibility', () => {
     mountController(fixture.bodyRoot, {
       messageData: 'duplicate target\nbetween\nduplicate target',
     })
+    stubElementFromPoint([fixture])
     await settleEffects()
 
-    fixture.block.focus()
-    pressKey(fixture.block, 'Enter')
+    movePointer(60, 112)
+    await flushHoverFrame()
     const editAction = getFloatingAction('edit')
     editAction.click()
     await settleEffects()
@@ -564,10 +557,11 @@ describe('PartialEditController keyboard and modal accessibility', () => {
     const deleteController = mountController(deleteFixture.bodyRoot, {
       messageData: 'alpha delete target block omega',
     })
+    stubElementFromPoint([deleteFixture])
     await settleEffects()
 
-    deleteFixture.block.focus()
-    pressKey(deleteFixture.block, 'Enter')
+    movePointer(60, 112)
+    await flushHoverFrame()
     const deleteAction = getFloatingAction('delete')
     deleteAction.click()
     await settleEffects()
@@ -592,10 +586,14 @@ describe('PartialEditController keyboard and modal accessibility', () => {
       height: 48,
     })
     mountController(failureFixture.bodyRoot, { messageData: 'different source text' })
+    vi.mocked(document.elementFromPoint).mockImplementation((x: number, y: number) => {
+      const rect = failureFixture.block.getBoundingClientRect()
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom ? failureFixture.block : null
+    })
     await settleEffects()
 
-    failureFixture.block.focus()
-    pressKey(failureFixture.block, 'Enter')
+    movePointer(60, 192)
+    await flushHoverFrame()
     const failureEditAction = getFloatingAction('edit')
     failureEditAction.click()
     await settleEffects()

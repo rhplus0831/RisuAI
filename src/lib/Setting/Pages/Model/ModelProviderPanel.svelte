@@ -346,7 +346,7 @@
           <span class="text-sm text-textcolor2">{language.modelProfiles.customApiFlags}</span>
           <div
             data-model-custom-api-flags
-            class="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-darkborderc p-2">
+            class="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto rounded-md border border-darkborderc p-2 sm:grid-cols-2">
             {#each flagOptions as option (option.flag)}
               <label class="flex min-w-0 items-center gap-2 text-sm text-textcolor2">
                 <input

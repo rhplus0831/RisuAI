@@ -116,7 +116,7 @@ afterEach(() => {
 })
 
 describe('ModelProfileList', () => {
-  it('keeps every custom API capability label readable in the drawer column', async () => {
+  it('keeps custom API capability labels readable in the responsive drawer grid', async () => {
     getDatabase().modelProfiles[0] = {
       id: 'profile-1',
       name: 'Custom API profile',
@@ -136,7 +136,7 @@ describe('ModelProfileList', () => {
     const labels = Array.from(flags?.querySelectorAll('label span') ?? [])
     expect(flags).toBeTruthy()
     expect(flags?.classList.contains('grid-cols-1')).toBe(true)
-    expect(flags?.classList.contains('sm:grid-cols-2')).toBe(false)
+    expect(flags?.classList.contains('sm:grid-cols-2')).toBe(true)
     expect(labels.length).toBeGreaterThan(10)
     expect(labels.every((label) => label.classList.contains('break-all'))).toBe(true)
   })

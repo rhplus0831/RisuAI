@@ -12,7 +12,6 @@
     FolderPlusIcon,
     BookmarkCheckIcon,
     ArrowLeftIcon,
-    EllipsisVerticalIcon,
   } from '@lucide/svelte'
 
   import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
@@ -109,6 +108,21 @@
       return
     }
     changeChatTo(index)
+  }
+
+  function activateChatRow(index: number): void {
+    if (editMode) return
+    selectChat(index)
+    reloadGuiDisplay()
+  }
+
+  function toggleChatFolder(folder: ChatFolder): void {
+    if (editMode) return
+    const previous = currentChatStateSnapshot()
+    const folded = !folder.folded
+    if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded))) return
+    dispatchUpdateChatFolder(folder.id, { folded }, previous, rollbackServerBackedChatFolderRowMetadata)
+    reloadGuiDisplay()
   }
 
   function backToChatList(): void {
@@ -890,6 +904,9 @@
               data-risu-chat-folder-id={folder.id}
               data-risu-chat-folder-folded={folder.folded ? 'true' : 'false'}
               class="flex flex-col mb-2 border-solid border-1 border-darkborderc cursor-pointer rounded-md">
+              <!-- The nested native button retains keyboard semantics; the row handler restores the larger pointer target. -->
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 data-risu-chat-folder-header
                 class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
@@ -899,7 +916,8 @@
                 class:bg-blue-900={folder.color === 'blue'}
                 class:bg-indigo-900={folder.color === 'indigo'}
                 class:bg-purple-900={folder.color === 'purple'}
-                class:bg-pink-900={folder.color === 'pink'}>
+                class:bg-pink-900={folder.color === 'pink'}
+                onclick={() => toggleChatFolder(folder)}>
                 {#if editMode}
                   <TextInput
                     bind:value={() => folder.name, (value) => updateFolderName(folder, value)}
@@ -913,18 +931,9 @@
                     aria-expanded={!folder.folded}
                     aria-controls={`risu-chat-folder-panel-${folder.id}`}
                     class="min-w-0 grow cursor-pointer text-left"
-                    onclick={() => {
-                      const previous = currentChatStateSnapshot()
-                      const folded = !folder.folded
-                      if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.folded = folded)))
-                        return
-                      dispatchUpdateChatFolder(
-                        folder.id,
-                        { folded },
-                        previous,
-                        rollbackServerBackedChatFolderRowMetadata,
-                      )
-                      reloadGuiDisplay()
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      toggleChatFolder(folder)
                     }}>
                     <span>{folder.name}</span>
                   </button>
@@ -993,13 +1002,16 @@
                   <div></div>
                 {:else}
                   {#each chatsByFolderId.get(folder.id) ?? [] as { chat, index }}
+                    <!-- svelte-ignore a11y_click_events_have_key_events -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
                     <div
                       data-risu-chat-idx={index}
                       data-risu-chat-id={chat.id ?? ''}
                       data-risu-chat-folder-id={chat.folderId ?? ''}
                       data-risu-chat-selected={index === chara.chatPage ? 'true' : 'false'}
                       class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
-                      class:bg-selected={index === chara.chatPage}>
+                      class:bg-selected={index === chara.chatPage}
+                      onclick={() => activateChatRow(index)}>
                       {#if editMode}
                         <TextInput
                           bind:value={() => chat.name, (value) => updateChatName(chat, value)}
@@ -1012,9 +1024,9 @@
                           data-risu-chat-action="select"
                           aria-current={index === chara.chatPage ? 'page' : undefined}
                           class="min-w-0 grow cursor-pointer text-left"
-                          onclick={() => {
-                            selectChat(index)
-                            reloadGuiDisplay()
+                          onclick={(event) => {
+                            event.stopPropagation()
+                            activateChatRow(index)
                           }}>
                           <span>{chat.name}</span>
                         </button>
@@ -1026,12 +1038,12 @@
                             data-risu-chat-action="organize"
                             data-risu-chat-organizer-action={chat.id}
                             aria-label={`${language.options}: ${chat.name}`}
-                            class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                            onclick={(e) => {
-                              e.stopPropagation()
-                              void openChatOrganizerActions(chat, e.currentTarget)
+                            class="sr-only"
+                            onclick={(event) => {
+                              event.stopPropagation()
+                              void openChatOrganizerActions(chat, event.currentTarget)
                             }}>
-                            <EllipsisVerticalIcon size={18} aria-hidden="true" />
+                            {language.options}
                           </button>
                         {/if}
                         <button
@@ -1106,13 +1118,16 @@
         <div class="risu-chat flex flex-col">
           {#each chara.chats as chat, i}
             {#if chat.folderId == null}
+              <!-- svelte-ignore a11y_click_events_have_key_events -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
               <div
                 data-risu-chat-idx={i}
                 data-risu-chat-id={chat.id ?? ''}
                 data-risu-chat-folder-id={chat.folderId ?? ''}
                 data-risu-chat-selected={i === chara.chatPage ? 'true' : 'false'}
                 class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
-                class:bg-selected={i === chara.chatPage}>
+                class:bg-selected={i === chara.chatPage}
+                onclick={() => activateChatRow(i)}>
                 {#if editMode}
                   <TextInput
                     bind:value={() => chat.name, (value) => updateChatName(chat, value)}
@@ -1125,9 +1140,9 @@
                     data-risu-chat-action="select"
                     aria-current={i === chara.chatPage ? 'page' : undefined}
                     class="min-w-0 grow cursor-pointer text-left"
-                    onclick={() => {
-                      selectChat(i)
-                      reloadGuiDisplay()
+                    onclick={(event) => {
+                      event.stopPropagation()
+                      activateChatRow(i)
                     }}>
                     <span>{chat.name}</span>
                   </button>
@@ -1139,12 +1154,12 @@
                       data-risu-chat-action="organize"
                       data-risu-chat-organizer-action={chat.id}
                       aria-label={`${language.options}: ${chat.name}`}
-                      class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                      onclick={(e) => {
-                        e.stopPropagation()
-                        void openChatOrganizerActions(chat, e.currentTarget)
+                      class="sr-only"
+                      onclick={(event) => {
+                        event.stopPropagation()
+                        void openChatOrganizerActions(chat, event.currentTarget)
                       }}>
-                      <EllipsisVerticalIcon size={18} aria-hidden="true" />
+                      {language.options}
                     </button>
                   {/if}
                   <button

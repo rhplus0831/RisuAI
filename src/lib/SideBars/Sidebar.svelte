@@ -24,8 +24,6 @@
     HomeIcon,
     WrenchIcon,
     User2Icon,
-    EllipsisVerticalIcon,
-    ListTreeIcon,
   } from '@lucide/svelte'
   import { addCharacter, changeChar, getCharImage } from '../../ts/characters'
   import CharConfig from './CharConfig.svelte'
@@ -61,16 +59,6 @@
     SIDEBAR_CHARACTER_DRAG_TYPE,
   } from './sidebarDrag'
   import {
-    resolveSidebarOrganizerCreateFolder,
-    resolveSidebarOrganizerMoveOut,
-    resolveSidebarOrganizerMoveToFolder,
-    resolveSidebarOrganizerStep,
-    sidebarOrganizerFolderPartnerIds,
-    sidebarOrganizerFolderTargetIds,
-    type SidebarOrganizerItemReference,
-    type SidebarOrganizerMove,
-  } from './sidebarOrganizer'
-  import {
     characterRoutePath,
     closeSettingsRoute,
     navigate,
@@ -85,18 +73,6 @@
 
   type CharacterFolderColor = (typeof characterFolderColors)[number]
 
-  type CharacterOrganizerAction =
-    | { kind: 'move'; direction: 'up' | 'down'; label: string }
-    | { kind: 'moveToFolder'; label: string }
-    | { kind: 'moveOut'; label: string }
-    | { kind: 'createFolder'; label: string }
-
-  type FolderAction =
-    | { kind: 'move'; direction: 'up' | 'down'; label: string }
-    | { kind: 'rename'; label: string }
-    | { kind: 'color'; label: string }
-    | { kind: 'image'; label: string }
-
   function parseAlertSelection(value: unknown, optionCount: number): number | null {
     if (typeof value !== 'string') return null
 
@@ -106,22 +82,6 @@
     const selection = Number(normalized)
     if (!Number.isSafeInteger(selection) || selection < 0 || selection >= optionCount) return null
     return selection
-  }
-
-  function characterNameById(characterId: string): string {
-    const character = getDatabase().characters.find((candidate) => candidate?.chaId === characterId)
-    return character?.displayName?.trim() || character?.name?.trim() || characterId
-  }
-
-  function folderNameById(folderId: string): string {
-    const entry = getDatabase().characterOrder.find(
-      (candidate) => typeof candidate !== 'string' && candidate?.id === folderId,
-    )
-    return typeof entry === 'string' || !entry ? folderId : entry.name || folderId
-  }
-
-  function runOrganizerMove(move: SidebarOrganizerMove | null): boolean {
-    return move ? moveCharacterOrderItem(move.source, move.target) : false
   }
 
   function localizedFolderColor(color: CharacterFolderColor): string {
@@ -145,126 +105,26 @@
     }
   }
 
-  async function openCharacterOrganizerActions(characterId: string, characterName: string) {
-    const reference: SidebarOrganizerItemReference = { kind: 'character', characterId }
-    const order = getDatabase().characterOrder
-    const actions: CharacterOrganizerAction[] = []
-
-    if (resolveSidebarOrganizerStep(order, reference, 'up')) {
-      actions.push({ kind: 'move', direction: 'up', label: language.moveUp })
-    }
-    if (resolveSidebarOrganizerStep(order, reference, 'down')) {
-      actions.push({ kind: 'move', direction: 'down', label: language.moveDown })
-    }
-    if (sidebarOrganizerFolderTargetIds(order, reference).length > 0) {
-      actions.push({ kind: 'moveToFolder', label: language.moveToFolder })
-    }
-    if (resolveSidebarOrganizerMoveOut(order, reference)) {
-      actions.push({ kind: 'moveOut', label: language.moveOutOfFolder })
-    }
-    if (sidebarOrganizerFolderPartnerIds(order, reference).length > 0) {
-      actions.push({ kind: 'createFolder', label: language.createFolderWith })
-    }
-    if (actions.length === 0) return
-
+  async function openFolderActions(folderId: string, folderName: string): Promise<void> {
+    const folderActions = [language.renameFolder, language.changeFolderColor, language.changeFolderImage]
     const selectedAction = parseAlertSelection(
-      await alertSelect(
-        actions.map((action) => action.label),
-        language.characterActionsFor(characterName),
-      ),
-      actions.length,
+      await alertSelect(folderActions, language.folderActionsFor(folderName)),
+      folderActions.length,
     )
     if (selectedAction === null) return
 
-    const action = actions[selectedAction]
-    if (!action) return
-
-    if (action.kind === 'move') {
-      runOrganizerMove(resolveSidebarOrganizerStep(getDatabase().characterOrder, reference, action.direction))
-      return
-    }
-
-    if (action.kind === 'moveOut') {
-      runOrganizerMove(resolveSidebarOrganizerMoveOut(getDatabase().characterOrder, reference))
-      return
-    }
-
-    if (action.kind === 'moveToFolder') {
-      const targetFolderIds = sidebarOrganizerFolderTargetIds(getDatabase().characterOrder, reference)
-      if (targetFolderIds.length === 0) return
-      const selectedFolder = parseAlertSelection(
-        await alertSelect(targetFolderIds.map(folderNameById), language.chooseDestinationFolder),
-        targetFolderIds.length,
-      )
-      if (selectedFolder === null) return
-
-      const targetFolderId = targetFolderIds[selectedFolder]
-      if (!targetFolderId) return
-      runOrganizerMove(resolveSidebarOrganizerMoveToFolder(getDatabase().characterOrder, reference, targetFolderId))
-      return
-    }
-
-    const partnerIds = sidebarOrganizerFolderPartnerIds(getDatabase().characterOrder, reference)
-    if (partnerIds.length === 0) return
-    const selectedPartner = parseAlertSelection(
-      await alertSelect(partnerIds.map(characterNameById), language.chooseFolderPartner),
-      partnerIds.length,
-    )
-    if (selectedPartner === null) return
-
-    const partnerId = partnerIds[selectedPartner]
-    if (!partnerId) return
-    const positions = resolveSidebarOrganizerCreateFolder(getDatabase().characterOrder, reference, partnerId)
-    if (!positions) return
-    createCharacterOrderFolder(positions.source, positions.target, undefined, language.newCharacterFolderName)
-  }
-
-  async function openFolderActions(folderId: string, folderName: string) {
-    const reference: SidebarOrganizerItemReference = { kind: 'folder', folderId }
-    const actions: FolderAction[] = []
-
-    if (editMode && resolveSidebarOrganizerStep(getDatabase().characterOrder, reference, 'up')) {
-      actions.push({ kind: 'move', direction: 'up', label: language.moveUp })
-    }
-    if (editMode && resolveSidebarOrganizerStep(getDatabase().characterOrder, reference, 'down')) {
-      actions.push({ kind: 'move', direction: 'down', label: language.moveDown })
-    }
-    actions.push(
-      { kind: 'rename', label: language.renameFolder },
-      { kind: 'color', label: language.changeFolderColor },
-      { kind: 'image', label: language.changeFolderImage },
-    )
-
-    const selectedAction = parseAlertSelection(
-      await alertSelect(
-        actions.map((action) => action.label),
-        language.folderActionsFor(folderName),
-      ),
-      actions.length,
-    )
-    if (selectedAction === null) return
-
-    const action = actions[selectedAction]
-    if (!action) return
-
-    if (action.kind === 'move') {
-      runOrganizerMove(resolveSidebarOrganizerStep(getDatabase().characterOrder, reference, action.direction))
-      return
-    }
-
-    if (action.kind === 'rename') {
+    if (selectedAction === 0) {
       const value = await alertInput(language.changeFolderName, [], folderName)
       if (value) updateCharacterOrderFolder(folderId, { name: value })
       return
     }
 
-    if (action.kind === 'color') {
+    if (selectedAction === 1) {
       const selectedColor = parseAlertSelection(
         await alertSelect(characterFolderColors.map(localizedFolderColor), language.chooseFolderColor),
         characterFolderColors.length,
       )
       if (selectedColor === null) return
-
       const color = characterFolderColors[selectedColor]
       if (color) updateCharacterOrderFolder(folderId, { color })
       return
@@ -276,7 +136,6 @@
       imageActions.length,
     )
     if (selectedImageAction === null) return
-
     if (selectedImageAction === 0) {
       updateCharacterOrderFolder(folderId, { imgFile: null, img: '' })
     } else {
@@ -611,19 +470,6 @@
       class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0"
       data-risu-sidebar-character-controls
       inert={menuMode === 1}>
-      <button
-        type="button"
-        data-risu-sidebar-organizer-toggle
-        aria-label={language.organizeCharacters}
-        title={language.organizeCharacters}
-        aria-pressed={editMode}
-        class="sticky top-0 z-30 mt-2 flex h-8 min-h-8 w-14 min-w-14 cursor-pointer select-none items-center justify-center rounded-md border border-textcolor2 bg-bgcolor text-gray-300 shadow transition-colors hover:border-gray-300"
-        class:bg-blue-500={editMode}
-        onclick={() => {
-          editMode = !editMode
-        }}>
-        <ListTreeIcon size={20} aria-hidden="true" />
-      </button>
       <div
         class="h-4 min-h-4 w-14"
         role="listitem"
@@ -640,7 +486,6 @@
         ondragenter={preventCharacterDrag}>
       </div>
       {#each charImages as char, ind}
-        {@const characterId = char.type === 'normal' ? getDatabase().characters[char.index]?.chaId : undefined}
         <div
           class="group relative flex items-center px-2"
           role="listitem"
@@ -704,37 +549,6 @@
               {/key}
             {/if}
           </div>
-          {#if char.type === 'folder'}
-            <button
-              type="button"
-              draggable="false"
-              data-risu-sidebar-folder-actions={char.id}
-              aria-label={language.folderActionsFor(char.name)}
-              title={language.folderActionsFor(char.name)}
-              class="absolute -right-1 -top-1 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-selected bg-bgcolor text-textcolor shadow hover:bg-darkbg"
-              onclick={(event) => {
-                event.stopPropagation()
-                void openFolderActions(char.id, char.name)
-              }}
-              ondragstart={(event) => event.stopPropagation()}>
-              <EllipsisVerticalIcon size={18} aria-hidden="true" />
-            </button>
-          {:else if editMode && characterId && charImages.length > 1}
-            <button
-              type="button"
-              draggable="false"
-              data-risu-sidebar-organizer-action={characterId}
-              aria-label={language.characterActionsFor(char.name)}
-              title={language.characterActionsFor(char.name)}
-              class="absolute -right-1 -top-1 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-selected bg-bgcolor text-textcolor shadow hover:bg-darkbg"
-              onclick={(event) => {
-                event.stopPropagation()
-                void openCharacterOrganizerActions(characterId, char.name)
-              }}
-              ondragstart={(event) => event.stopPropagation()}>
-              <EllipsisVerticalIcon size={18} aria-hidden="true" />
-            </button>
-          {/if}
         </div>
         {#if char.type === 'folder' && openFolders.includes(char.id)}
           {#key char.color}
@@ -772,7 +586,6 @@
                 ondragenter={preventCharacterDrag}>
               </div>
               {#each char.folder as char2, ind}
-                {@const nestedCharacterId = getDatabase().characters[char2.index]?.chaId}
                 <div
                   class="group relative flex items-center px-2 z-10"
                   role="listitem"
@@ -800,22 +613,6 @@
                       chaId={getDatabase().characters[char2.index]?.chaId}
                       onClick={() => openCharacterRoute(char2.index)} />
                   </div>
-                  {#if editMode && nestedCharacterId}
-                    <button
-                      type="button"
-                      draggable="false"
-                      data-risu-sidebar-organizer-action={nestedCharacterId}
-                      aria-label={language.characterActionsFor(char2.name)}
-                      title={language.characterActionsFor(char2.name)}
-                      class="absolute -right-1 -top-1 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-selected bg-bgcolor text-textcolor shadow hover:bg-darkbg"
-                      onclick={(event) => {
-                        event.stopPropagation()
-                        void openCharacterOrganizerActions(nestedCharacterId, char2.name)
-                      }}
-                      ondragstart={(event) => event.stopPropagation()}>
-                      <EllipsisVerticalIcon size={18} aria-hidden="true" />
-                    </button>
-                  {/if}
                 </div>
                 <div
                   class="h-4 min-h-4 w-14 relative z-20"

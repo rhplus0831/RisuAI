@@ -4,8 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const sidebarKeyboardMocks = vi.hoisted(() => ({
   alertInput: vi.fn(),
   alertSelect: vi.fn(),
-  createCharacterOrderFolder: vi.fn(),
-  moveCharacterOrderItem: vi.fn(),
   navigate: vi.fn(),
   selectSingleFile: vi.fn(),
   updateCharacterOrderFolder: vi.fn(),
@@ -48,8 +46,6 @@ vi.mock('src/ts/characterCommands', async (importActual) => {
   const actual = await importActual<typeof import('src/ts/characterCommands')>()
   return {
     ...actual,
-    createCharacterOrderFolder: sidebarKeyboardMocks.createCharacterOrderFolder,
-    moveCharacterOrderItem: sidebarKeyboardMocks.moveCharacterOrderItem,
     updateCharacterOrderFolder: sidebarKeyboardMocks.updateCharacterOrderFolder,
   }
 })
@@ -132,47 +128,10 @@ function seedFolderSidebarDatabase(order: readonly ('folder-a' | 'folder-b')[] =
   } as never)
 }
 
-function seedOrganizerSidebarDatabase(characterOrder: unknown[]) {
-  setDatabaseLite({
-    characterOrder,
-    characters: ['a', 'b', 'c', 'd', 'e'].map((suffix) => ({
-      chaId: `char-${suffix}`,
-      name: `Character ${suffix.toUpperCase()}`,
-      image: '',
-      chatPage: 0,
-      chats: [],
-    })),
-    hamburgerButtonBottom: false,
-    menuSideBar: false,
-    roundIcons: false,
-    showFolderName: true,
-  } as never)
-}
-
 function openFolderContextMenu(folderName: string) {
   const folder = target.querySelector<HTMLElement>(`[role="button"][aria-label="${folderName}"]`)
   expect(folder).toBeTruthy()
   folder!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-}
-
-function openFolderActionButton(folderId: string) {
-  const button = target.querySelector<HTMLButtonElement>(`button[data-risu-sidebar-folder-actions="${folderId}"]`)
-  expect(button).toBeTruthy()
-  button!.click()
-  return button!
-}
-
-async function enableCharacterOrganizer() {
-  const toggle = target.querySelector<HTMLButtonElement>('button[data-risu-sidebar-organizer-toggle]')
-  expect(toggle).toBeTruthy()
-  expect(toggle!.tabIndex).toBe(0)
-  expect(toggle!.getAttribute('aria-pressed')).toBe('false')
-
-  toggle!.click()
-  await tick()
-
-  expect(toggle!.getAttribute('aria-pressed')).toBe('true')
-  return toggle!
 }
 
 function deferred<T>() {
@@ -279,118 +238,6 @@ describe('Sidebar character keyboard activation', () => {
     expect(menuButton!.getAttribute('aria-expanded')).toBe('false')
     expect(characterControls!.hasAttribute('inert')).toBe(false)
   })
-
-  it('does not expose an empty action menu when a lone character cannot be moved', async () => {
-    component = mount(Sidebar, { target })
-    await tick()
-
-    await enableCharacterOrganizer()
-
-    expect(target.querySelector('[data-risu-sidebar-organizer-action]')).toBeNull()
-    expect(sidebarKeyboardMocks.alertSelect).not.toHaveBeenCalled()
-  })
-
-  it('exposes native keyboard controls and reorders a nested character without dragging', async () => {
-    seedOrganizerSidebarDatabase([
-      {
-        id: 'folder-a',
-        name: 'Folder A',
-        color: 'blue',
-        data: ['char-a', 'char-b'],
-      },
-      'char-c',
-    ])
-    component = mount(Sidebar, { target })
-    await tick()
-
-    await enableCharacterOrganizer()
-    target.querySelector<HTMLElement>('[role="button"][aria-label="Folder A"]')!.click()
-    await tick()
-
-    const actionButton = target.querySelector<HTMLButtonElement>('button[data-risu-sidebar-organizer-action="char-b"]')
-    expect(actionButton).toBeTruthy()
-    expect(actionButton!.tabIndex).toBe(0)
-    expect(actionButton!.getAttribute('aria-label')).toBe(language.characterActionsFor('Character B'))
-
-    const selection = deferred<string>()
-    sidebarKeyboardMocks.alertSelect.mockReturnValueOnce(selection.promise)
-    actionButton!.click()
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(1))
-
-    const actions = sidebarKeyboardMocks.alertSelect.mock.calls[0][0] as string[]
-    selection.resolve(String(actions.indexOf(language.moveUp)))
-
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.moveCharacterOrderItem).toHaveBeenCalledTimes(1))
-    expect(sidebarKeyboardMocks.moveCharacterOrderItem).toHaveBeenCalledWith(
-      { folder: 'folder-a', index: 1 },
-      { folder: 'folder-a', index: 0 },
-    )
-  })
-
-  it('keeps a tapped destination bound to its folder ID across a live refresh', async () => {
-    seedOrganizerSidebarDatabase([
-      'char-a',
-      { id: 'folder-a', name: 'Folder A', color: 'blue', data: ['char-b'] },
-      { id: 'folder-b', name: 'Folder B', color: 'green', data: ['char-c'] },
-      'char-d',
-    ])
-    component = mount(Sidebar, { target })
-    await tick()
-    await enableCharacterOrganizer()
-
-    const actionSelection = deferred<string>()
-    const folderSelection = deferred<string>()
-    sidebarKeyboardMocks.alertSelect
-      .mockReturnValueOnce(actionSelection.promise)
-      .mockReturnValueOnce(folderSelection.promise)
-
-    target.querySelector<HTMLButtonElement>('button[data-risu-sidebar-organizer-action="char-a"]')!.click()
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(1))
-    const actions = sidebarKeyboardMocks.alertSelect.mock.calls[0][0] as string[]
-    actionSelection.resolve(String(actions.indexOf(language.moveToFolder)))
-
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(2))
-    const folderOptions = sidebarKeyboardMocks.alertSelect.mock.calls[1][0] as string[]
-    expect(folderOptions).toEqual(['Folder A', 'Folder B'])
-
-    seedOrganizerSidebarDatabase([
-      { id: 'folder-b', name: 'Folder B', color: 'green', data: ['char-c'] },
-      'char-d',
-      { id: 'folder-a', name: 'Folder A refreshed', color: 'blue', data: ['char-b', 'char-e'] },
-      'char-a',
-    ])
-    await tick()
-    folderSelection.resolve(String(folderOptions.indexOf('Folder A')))
-
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.moveCharacterOrderItem).toHaveBeenCalledTimes(1))
-    expect(sidebarKeyboardMocks.moveCharacterOrderItem).toHaveBeenCalledWith(
-      { index: 3 },
-      { folder: 'folder-a', index: 2 },
-    )
-  })
-
-  it('creates a localized folder from ordinary click actions', async () => {
-    seedOrganizerSidebarDatabase(['char-a', 'char-b'])
-    component = mount(Sidebar, { target })
-    await tick()
-    await enableCharacterOrganizer()
-
-    const actionSelection = deferred<string>()
-    sidebarKeyboardMocks.alertSelect.mockReturnValueOnce(actionSelection.promise).mockResolvedValueOnce('0')
-
-    target.querySelector<HTMLButtonElement>('button[data-risu-sidebar-organizer-action="char-a"]')!.click()
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertSelect).toHaveBeenCalledTimes(1))
-    const actions = sidebarKeyboardMocks.alertSelect.mock.calls[0][0] as string[]
-    actionSelection.resolve(String(actions.indexOf(language.createFolderWith)))
-
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.createCharacterOrderFolder).toHaveBeenCalledTimes(1))
-    expect(sidebarKeyboardMocks.createCharacterOrderFolder).toHaveBeenCalledWith(
-      { index: 0 },
-      { index: 1 },
-      undefined,
-      language.newCharacterFolderName,
-    )
-  })
 })
 
 describe('Sidebar character folder context menu', () => {
@@ -410,18 +257,6 @@ describe('Sidebar character folder context menu', () => {
 
     expect(sidebarKeyboardMocks.alertSelect.mock.calls[1][0]).toHaveLength(8)
     expect(sidebarKeyboardMocks.updateCharacterOrderFolder).not.toHaveBeenCalled()
-  })
-
-  it('exposes folder settings through an ordinary native button', async () => {
-    sidebarKeyboardMocks.alertSelect.mockResolvedValueOnce('0')
-    sidebarKeyboardMocks.alertInput.mockResolvedValueOnce(null)
-
-    const button = openFolderActionButton('folder-a')
-
-    expect(button.tabIndex).toBe(0)
-    expect(button.getAttribute('aria-label')).toBe(language.folderActionsFor('Folder A'))
-    await vi.waitFor(() => expect(sidebarKeyboardMocks.alertInput).toHaveBeenCalledTimes(1))
-    expect(sidebarKeyboardMocks.alertInput).toHaveBeenCalledWith(language.changeFolderName, [], 'Folder A')
   })
 
   it('ignores an invalid nested color selection', async () => {

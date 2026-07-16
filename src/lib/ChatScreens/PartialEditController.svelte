@@ -222,8 +222,6 @@
   }>()
 
   const MIN_DRAG_SELECTION_LENGTH = 5
-  const KEYBOARD_EDITABLE_BLOCK_SELECTOR = 'h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote, pre'
-
   let isEditing = $state(false)
   let editText = $state('')
   let textareaRef: HTMLTextAreaElement | null = $state(null)
@@ -233,13 +231,6 @@
   let isConfirmingDelete = $state(false)
   let modalReturnFocus: HTMLElement | null = null
   let modalReturnBlock: HTMLElement | null = null
-
-  interface KeyboardBlockAttributes {
-    ariaKeyShortcuts: string | null
-    tabIndex: string | null
-  }
-
-  const keyboardBlockAttributes = new Map<HTMLElement, KeyboardBlockAttributes>()
 
   // Unified matching state: tracks both edit and delete operations.
   type MatchingMode = PartialEditMode | null
@@ -314,8 +305,6 @@
   let isInViewport = $state(false)
   let isBlockActive = $derived(blockEditEnabled && isInViewport)
   let isDragActive = $derived(dragEditEnabled && isInViewport)
-  let isKeyboardEditActive = $derived((blockEditEnabled || dragEditEnabled) && isInViewport)
-
   // Exclude action buttons when checking editable block text.
   function hasTextContent(el: HTMLElement): boolean {
     const clone = el.cloneNode(true) as HTMLElement
@@ -741,48 +730,6 @@
     return mouseX >= rect.left && mouseX <= rect.right && mouseY >= extendedTop && mouseY < rect.top
   }
 
-  function keyboardEditableBlocks(root: HTMLElement): HTMLElement[] {
-    const candidates = Array.from(root.querySelectorAll<HTMLElement>(KEYBOARD_EDITABLE_BLOCK_SELECTOR)).filter(
-      (block) => hasTextContent(block) && !block.closest('[data-partial-edit-ui]'),
-    )
-
-    return candidates.filter((block) => !block.querySelector(KEYBOARD_EDITABLE_BLOCK_SELECTOR))
-  }
-
-  function prepareKeyboardEditableBlocks(root: HTMLElement): void {
-    for (const block of keyboardEditableBlocks(root)) {
-      if (!keyboardBlockAttributes.has(block)) {
-        keyboardBlockAttributes.set(block, {
-          ariaKeyShortcuts: block.getAttribute('aria-keyshortcuts'),
-          tabIndex: block.getAttribute('tabindex'),
-        })
-      }
-      block.setAttribute('data-partial-edit-keyboard-block', '')
-      block.setAttribute('tabindex', '0')
-      const currentShortcuts = block.getAttribute('aria-keyshortcuts')?.split(/\s+/).filter(Boolean) ?? []
-      if (!currentShortcuts.includes('Enter')) currentShortcuts.push('Enter')
-      block.setAttribute('aria-keyshortcuts', currentShortcuts.join(' '))
-    }
-  }
-
-  function restoreKeyboardEditableBlocks(): void {
-    for (const [block, attributes] of keyboardBlockAttributes) {
-      if (attributes.tabIndex === null) block.removeAttribute('tabindex')
-      else block.setAttribute('tabindex', attributes.tabIndex)
-
-      if (attributes.ariaKeyShortcuts === null) block.removeAttribute('aria-keyshortcuts')
-      else block.setAttribute('aria-keyshortcuts', attributes.ariaKeyShortcuts)
-      block.removeAttribute('data-partial-edit-keyboard-block')
-    }
-    keyboardBlockAttributes.clear()
-  }
-
-  function keyboardBlockForEvent(root: HTMLElement, event: Event): HTMLElement | null {
-    if (!(event.target instanceof HTMLElement)) return null
-    const block = event.target.closest<HTMLElement>('[data-partial-edit-keyboard-block]')
-    return block && root.contains(block) ? block : null
-  }
-
   $effect(() => {
     if (!bodyRoot || (!blockEditEnabled && !dragEditEnabled)) return
 
@@ -805,41 +752,6 @@
     return () => {
       observer.disconnect()
       isInViewport = false
-    }
-  })
-
-  $effect(() => {
-    const root = bodyRoot
-    if (!root || !isKeyboardEditActive) return
-
-    prepareKeyboardEditableBlocks(root)
-    const observer = new MutationObserver(() => prepareKeyboardEditableBlocks(root))
-    observer.observe(root, { childList: true, subtree: true })
-
-    const handleFocusIn = (event: FocusEvent) => {
-      if (hasOpenPartialEditModal()) return
-      const block = keyboardBlockForEvent(root, event)
-      if (!block || event.target !== block) return
-      showBlockButton(block)
-    }
-
-    const handleKeydown = (event: KeyboardEvent) => {
-      if (event.key !== 'Enter' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-      const block = keyboardBlockForEvent(root, event)
-      if (!block || event.target !== block) return
-      event.preventDefault()
-      event.stopPropagation()
-      showBlockButton(block, { focusEdit: true })
-    }
-
-    root.addEventListener('focusin', handleFocusIn)
-    root.addEventListener('keydown', handleKeydown)
-
-    return () => {
-      observer.disconnect()
-      root.removeEventListener('focusin', handleFocusIn)
-      root.removeEventListener('keydown', handleKeydown)
-      restoreKeyboardEditableBlocks()
     }
   })
 
@@ -1217,11 +1129,6 @@
     background: #fee2e2;
     border-color: #ef4444;
     color: #ef4444;
-  }
-
-  :global([data-partial-edit-keyboard-block]:focus-visible) {
-    outline: 2px solid #3b82f6;
-    outline-offset: 3px;
   }
 
   .partial-match-failed-modal,

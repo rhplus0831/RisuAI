@@ -31,14 +31,14 @@
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
-        class="min-w-0 grow px-6 py-2 text-left text-lg"
+        class="min-w-0 grow px-6 py-2 text-center text-lg"
         onclick={() => {
           open = !open
         }}>
         <span>{name}</span>
       </button>
       {#if help}
-        <span class="mr-6 shrink-0"><Help key={help} {name} /></span>
+        <span class="mr-2 shrink-0"><Help key={help} {name} /></span>
       {/if}
     </div>
     {#if open}
@@ -59,12 +59,12 @@
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
-        class="min-w-0 grow px-6 py-2 text-left text-lg"
+        class="min-w-0 grow px-6 py-2 text-center text-lg"
         onclick={() => {
           open = !open
         }}>{name}</button>
       {#if help}
-        <span class="mr-6 shrink-0"><Help key={help} {name} /></span>
+        <span class="mr-2 shrink-0"><Help key={help} {name} /></span>
       {/if}
     </div>
     {#if open}
