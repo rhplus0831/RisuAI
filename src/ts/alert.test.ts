@@ -63,7 +63,10 @@ import {
   alertNormal,
   alertPluginConfirm,
   alertProgress,
+  alertSelect,
+  alertToast,
   alertTOS,
+  alertWait,
   beginAlertWait,
   cardExportCancelMessage,
   clearAlertWait,
@@ -149,26 +152,31 @@ describe('confirmation queue', () => {
     await expect(result).resolves.toBe(true)
   })
 
-  it('cancels a replaced confirmation and resumes the queue only after the replacement closes', async () => {
-    const replacedResult = alertConfirm('Confirmation being replaced')
-    const queuedResult = alertConfirm('Confirmation waiting behind replacement')
+  it('keeps an unrelated notice behind the active confirmation', async () => {
+    let settled = false
+    const confirmationResult = alertConfirm('Confirmation being answered').then((result) => {
+      settled = true
+      return result
+    })
+    const owner = alertTestState.alertStoreValue.dialogOwner as symbol
 
     alertNormal('Unrelated urgent notice')
 
-    await expect(replacedResult).resolves.toBe(false)
-    expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Unrelated urgent notice' })
+    await Promise.resolve()
+    expect(settled).toBe(false)
+    expect(alertTestState.alertStoreValue).toMatchObject({
+      type: 'ask',
+      msg: 'Confirmation being answered',
+      dialogOwner: owner,
+    })
 
-    alertClear()
+    expect(resolveAlertConfirmation(owner, true)).toBe(true)
+    await expect(confirmationResult).resolves.toBe(true)
     await vi.waitFor(() =>
-      expect(alertTestState.alertStoreValue).toMatchObject({
-        type: 'ask',
-        msg: 'Confirmation waiting behind replacement',
-      }),
+      expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Unrelated urgent notice' }),
     )
 
-    const queuedOwner = alertTestState.alertStoreValue.dialogOwner as symbol
-    resolveAlertConfirmation(queuedOwner, false)
-    await expect(queuedResult).resolves.toBe(false)
+    alertClear()
   })
 
   it('ignores a stale response without resolving or hiding the active confirmation', async () => {
@@ -205,6 +213,98 @@ describe('confirmation queue', () => {
     const owner = alertTestState.alertStoreValue.dialogOwner as symbol
     resolveAlertConfirmation(owner, true)
     await expect(confirmationResult).resolves.toBe(true)
+  })
+})
+
+describe('passive alerts around response dialogs', () => {
+  it.each([
+    {
+      name: 'error',
+      show: () => alertError('Deferred error'),
+      expected: { type: 'error', msg: 'Deferred error' },
+    },
+    {
+      name: 'notice',
+      show: () => alertNormal('Deferred notice'),
+      expected: { type: 'normal', msg: 'Deferred notice' },
+    },
+    {
+      name: 'wait status',
+      show: () => alertWait('Deferred wait'),
+      expected: { type: 'wait', msg: 'Deferred wait' },
+    },
+    {
+      name: 'toast',
+      show: () => alertToast('Deferred toast'),
+      expected: { type: 'toast', msg: 'Deferred toast' },
+    },
+  ])('does not let a background $name consume an input result', async ({ show, expected }) => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const inputResult = alertInput('Name', undefined, 'default name')
+
+      show()
+
+      expect(alertTestState.alertStoreValue).toMatchObject({
+        type: 'input',
+        msg: 'Name',
+        defaultValue: 'default name',
+      })
+
+      alertStore.set({ type: 'none', msg: 'Risu' })
+      await expect(inputResult).resolves.toBe('Risu')
+      await vi.waitFor(() => expect(alertTestState.alertStoreValue).toMatchObject(expected))
+    } finally {
+      alertClear()
+      consoleErrorSpy.mockRestore()
+    }
+  })
+
+  it('preserves the latest background status transition until a select dialog returns', async () => {
+    const selectResult = alertSelect(['First', 'Second'], 'Choose one')
+
+    alertWait('Loading background result')
+    alertNormal('Background result is ready')
+
+    expect(alertTestState.alertStoreValue).toMatchObject({
+      type: 'select',
+      msg: '__DISPLAY__Choose one||First||Second',
+    })
+
+    alertStore.set({ type: 'none', msg: '1' })
+    await expect(selectResult).resolves.toBe('1')
+    await vi.waitFor(() =>
+      expect(alertTestState.alertStoreValue).toEqual({ type: 'normal', msg: 'Background result is ready' }),
+    )
+
+    alertClear()
+  })
+
+  it('clears a deferred background status without dismissing the active input', async () => {
+    const inputResult = alertInput('Keep editing')
+
+    alertWait('Short background task')
+    alertClear()
+
+    expect(alertTestState.alertStoreValue).toMatchObject({ type: 'input', msg: 'Keep editing' })
+
+    alertStore.set({ type: 'none', msg: 'finished input' })
+    await expect(inputResult).resolves.toBe('finished input')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(alertTestState.alertStoreValue).toEqual({ type: 'none', msg: 'finished input' })
+  })
+
+  it('can clear a deferred status after the input result but before that status is displayed', async () => {
+    const inputResult = alertInput('Finish before cleanup')
+
+    alertWait('Nearly finished background task')
+    alertStore.set({ type: 'none', msg: 'saved input' })
+    await expect(inputResult).resolves.toBe('saved input')
+
+    alertClear()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(alertTestState.alertStoreValue).toEqual({ type: 'none', msg: 'saved input' })
   })
 })
 

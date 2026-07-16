@@ -66,6 +66,58 @@ let activeConfirmation: ConfirmationRequest | undefined
 let confirmationQueueBlocked = false
 let confirmationResumeTimer: ReturnType<typeof setTimeout> | undefined
 
+const responseDialogTypes = new Set<alertData['type']>(['ask', 'pluginconfirm', 'input', 'select'])
+let deferredPassiveAlert: alertData | undefined
+let passiveAlertResumeTimer: ReturnType<typeof setTimeout> | undefined
+let passiveAlertStoreSubscribed = false
+
+function isResponseDialog(value: alertData) {
+  return responseDialogTypes.has(value.type)
+}
+
+function showDeferredPassiveAlert() {
+  passiveAlertResumeTimer = undefined
+  if (!deferredPassiveAlert || get(alertStoreImported).type !== 'none') return
+
+  const nextAlert = deferredPassiveAlert
+  deferredPassiveAlert = undefined
+  alertStoreImported.set(nextAlert)
+}
+
+function resumePassiveAlertAfterCurrentCallers() {
+  if (passiveAlertResumeTimer !== undefined) return
+
+  passiveAlertResumeTimer = setTimeout(showDeferredPassiveAlert, 0)
+}
+
+function handlePassiveAlertStoreValue(value: alertData) {
+  if (deferredPassiveAlert && value.type === 'none') {
+    // Let the dialog's awaiting caller consume its result before another alert
+    // is allowed to take ownership of the shared presentation store.
+    resumePassiveAlertAfterCurrentCallers()
+  }
+}
+
+function ensurePassiveAlertStoreSubscription() {
+  if (passiveAlertStoreSubscribed) return
+  passiveAlertStoreSubscribed = true
+  alertStoreImported.subscribe(handlePassiveAlertStoreValue)
+}
+
+function setPassiveAlert(data: alertData) {
+  const current = get(alertStoreImported)
+  if (deferredPassiveAlert || isResponseDialog(current)) {
+    // Passive alerts have historically shared last-write-wins semantics. Keep
+    // that behavior while preserving the result-bearing dialog already shown.
+    deferredPassiveAlert = data
+    ensurePassiveAlertStoreSubscription()
+    if (current.type === 'none') resumePassiveAlertAfterCurrentCallers()
+    return
+  }
+
+  alertStoreImported.set(data)
+}
+
 function displayConfirmation(request: ConfirmationRequest) {
   alertStoreImported.set({
     type: request.type,
@@ -201,7 +253,7 @@ export function alertError(msg: unknown) {
     submsg = db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
   }
 
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'error',
     msg: message,
     submsg: submsg,
@@ -229,7 +281,7 @@ export function waitAlert(): Promise<alertData> {
 }
 
 export function alertNormal(msg: string) {
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'normal',
     msg: msg,
   })
@@ -301,14 +353,14 @@ export function doingAlert() {
 }
 
 export function alertToast(msg: string) {
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'toast',
     msg: msg,
   })
 }
 
 export function alertWait(msg: string) {
-  alertStoreImported.set({
+  setPassiveAlert({
     type: 'wait',
     msg: msg,
   })
@@ -370,6 +422,14 @@ export function alertProgress(msg: string, progress: number | null, submsg?: str
 }
 
 export function alertClear() {
+  const current = get(alertStoreImported)
+  if (deferredPassiveAlert) {
+    // A background operation may finish while its wait alert is deferred. Its
+    // cleanup belongs to that pending status, not to the user's active dialog.
+    deferredPassiveAlert = undefined
+    if (isResponseDialog(current) || current.type === 'none') return
+  }
+
   alertStoreImported.set({
     type: 'none',
     msg: '',
