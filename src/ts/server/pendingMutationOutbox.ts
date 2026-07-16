@@ -106,6 +106,7 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/personas\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/model-presets\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
+  { method: 'PATCH', path: /^\/translator-presets\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/settings\/advanced\/global-scripts$/ },
   { method: 'PUT', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },
   { method: 'PATCH', path: /^\/(?:characters|modules)\/[^/?#]+\/(?:scripts|triggers)$/ },

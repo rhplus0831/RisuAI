@@ -247,6 +247,7 @@ describe('pending mutation outbox', () => {
   it.each([
     ['PATCH', '/model-presets/model-a'],
     ['PATCH', '/prompt-presets/prompt-a'],
+    ['PATCH', '/translator-presets/translator-a'],
     ['PATCH', '/settings/advanced/global-scripts'],
     ['PUT', '/characters/character-a/scripts'],
     ['PATCH', '/characters/character-a/triggers'],

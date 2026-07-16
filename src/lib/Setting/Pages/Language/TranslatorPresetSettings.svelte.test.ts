@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 const commandSpies = vi.hoisted(() => {
   const createDeferredCommandResult = () => {
@@ -244,6 +245,12 @@ import {
   withTrustedResourceWrite,
 } from 'src/ts/server/resourceWriteGuard.svelte'
 import { flushRegisteredPendingBridgePatches } from 'src/ts/server/pendingBridgeFlushRegistry'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from 'src/ts/server/pendingMutationOutbox'
 
 type MountedComponent = Parameters<typeof unmount>[0]
 
@@ -552,6 +559,44 @@ describe('TranslatorPresetSettings server-backed edits', () => {
         maxResponse: 100,
       },
     })
+  })
+
+  it('persists the exact translator preset PATCH at edit time and discards it on a net revert', async () => {
+    vi.useRealTimers()
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-translator-preset',
+      writerEpoch: 5,
+      databaseLineage: 'lineage-translator-preset',
+      requestedWriterWasActive: true,
+    })
+
+    try {
+      await editPrompt('durable prompt A')
+      await vi.waitFor(async () => {
+        expect((await listPendingMutations()).map((entry) => entry.intent)).toEqual([
+          {
+            version: 1,
+            requests: [
+              {
+                method: 'PATCH',
+                path: '/translator-presets/preset-a',
+                body: { patch: { prompt: 'durable prompt A' } },
+              },
+            ],
+          },
+        ])
+      })
+
+      await editPrompt('old prompt A')
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+      expect(commandSpies.updateInputs).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+      vi.useFakeTimers()
+    }
   })
 
   it('drops a pending field patch when rapid edits return to the first baseline', async () => {

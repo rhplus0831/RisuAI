@@ -24,6 +24,13 @@
     type TranslatorPresetSnapshot,
   } from 'src/ts/server/commands'
   import { registerPendingBridgePatchFlusher } from 'src/ts/server/pendingBridgeFlushRegistry'
+  import { dispatchDurableMutation } from 'src/ts/server/durableMutationDispatch'
+  import {
+    acknowledgePendingMutation,
+    stagePendingMutation,
+    type DurableMutationIntent,
+    type PendingMutationHandle,
+  } from 'src/ts/server/pendingMutationOutbox'
   import {
     captureCollectionProjectionEpoch,
     captureSettingsGroupProjectionEpoch,
@@ -66,6 +73,8 @@
     collectionProjectionEpoch: number
     languageSettingsProjectionEpoch: number
     selectedPresetId: string | null
+    intent: DurableMutationIntent | null
+    outbox: PendingMutationHandle | null
   }
 
   interface TranslatorPresetCreateAttempt {
@@ -239,6 +248,7 @@
   function cancelPendingTranslatorPresetUpdates(presetId: string): void {
     const pending = pendingTranslatorPresetUpdates.get(presetId)
     if (pending?.timer) clearTimeout(pending.timer)
+    if (pending?.outbox) void acknowledgePendingMutation(pending.outbox)
     pendingTranslatorPresetUpdates.delete(presetId)
     translatorPresetDirtyFieldsById.delete(presetId)
     translatorPresetRollbackBaselinesById.delete(presetId)
@@ -982,7 +992,13 @@
     const commandPatch = pending.patch
     const commandPrevious = pending.previous
     const commandAttempted = pending.attempted
+    const commandIntent = pending.intent
+    const commandOutbox = pending.outbox
     const commandFields = translatorPresetPatchDirtyFields(commandPatch)
+    if (!commandIntent || !commandOutbox || commandFields.length === 0) {
+      if (commandOutbox) void acknowledgePendingMutation(commandOutbox)
+      return Promise.resolve({ status: 'unavailable' })
+    }
     const optimisticAcknowledgement = translatorPresetPatchOptimisticAcknowledgement(pending)
     markTranslatorPresetFieldsUnsettled(commandPresetId, commandFields)
 
@@ -994,21 +1010,24 @@
       restoreTranslatorPresetUpdateState(commandPresetId, commandPrevious, commandAttempted, commandPatch)
     }
     const dispatch = () =>
-      runServerCommand({
-        command: (baseRevision) =>
-          updateTranslatorPresetCommand(
-            {
-              baseRevision,
-              presetId: commandPresetId,
-              patch: commandPatch,
-              optimisticAcknowledgement,
-            },
-            options.signal,
-            options.keepalive,
-          ),
-        rollback,
-        ...options,
-      })
+      dispatchDurableMutation(commandOutbox, commandIntent, (transport) =>
+        runServerCommand({
+          command: (baseRevision) =>
+            updateTranslatorPresetCommand(
+              {
+                baseRevision,
+                presetId: commandPresetId,
+                patch: commandPatch,
+                optimisticAcknowledgement,
+              },
+              options.signal,
+              options.keepalive,
+            ),
+          rollback,
+          ...options,
+          ...transport,
+        }),
+      )
     const dispatchAndSettle = async () => {
       const result = await dispatch()
       if (result.status === 'ok') {
@@ -1051,6 +1070,8 @@
       collectionProjectionEpoch: captureCollectionProjectionEpoch('translatorPresets'),
       languageSettingsProjectionEpoch: captureSettingsGroupProjectionEpoch('language'),
       selectedPresetId: selectedTranslatorPresetId(),
+      intent: null,
+      outbox: null,
     }
     const previousPreset = translatorPresetFromSnapshot(previous, presetId)
     const pendingPatch = pending.patch as Record<string, unknown>
@@ -1087,15 +1108,37 @@
 
     if (pending.timer) clearTimeout(pending.timer)
     if (translatorPresetPatchDirtyFields(pending.patch).length === 0) {
+      if (pending.outbox) void acknowledgePendingMutation(pending.outbox)
+      pending.intent = null
+      pending.outbox = null
       pending.timer = null
       pendingTranslatorPresetUpdates.delete(presetId)
       return
     }
 
+    pending.intent = translatorPresetUpdateDurableIntent(presetId, pending.patch)
+    pending.outbox = stagePendingMutation(`translator-preset:${presetId}`, pending.intent, pending.outbox)
+
     pendingTranslatorPresetUpdates.set(presetId, pending)
     pending.timer = setTimeout(() => {
       void dispatchPendingTranslatorPresetUpdate(pending)
     }, translatorPresetUpdateDelayMs)
+  }
+
+  function translatorPresetUpdateDurableIntent(
+    presetId: string,
+    patch: TranslatorPresetSnapshot,
+  ): DurableMutationIntent {
+    return {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: `/translator-presets/${encodeURIComponent(presetId)}`,
+          body: { patch: cloneJsonValue(patch) },
+        },
+      ],
+    }
   }
 
   $effect(() => {
