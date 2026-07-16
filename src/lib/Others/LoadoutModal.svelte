@@ -213,6 +213,8 @@
       {#each Object.keys(loadOptions) as key}
         {@const k = key as LoadoutApplyOption}
         <button
+          data-risu-loadout-option={k}
+          aria-pressed={loadOptions[k]}
           class="px-2.5 py-1 rounded text-xs font-medium transition-colors {loadOptions[k]
             ? 'bg-textcolor/15 text-textcolor/90'
             : 'bg-textcolor/5 text-textcolor/30 hover:bg-textcolor/10 hover:text-textcolor/50'}"

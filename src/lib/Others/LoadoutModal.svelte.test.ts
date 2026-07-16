@@ -114,6 +114,20 @@ describe('LoadoutModal operations', () => {
     personaId: '',
   }
 
+  it('exposes each apply scope state to assistive technology', async () => {
+    component = mount(LoadoutModal, { target })
+    await settle()
+
+    const modules = target.querySelector<HTMLButtonElement>('[data-risu-loadout-option="modules"]')
+    if (!modules) throw new Error('Loadout modules option not found')
+    expect(modules.getAttribute('aria-pressed')).toBe('true')
+
+    modules.click()
+    await tick()
+
+    expect(modules.getAttribute('aria-pressed')).toBe('false')
+  })
+
   it('stays locked and open until a full apply is accepted, then closes', async () => {
     loadoutDatabase.loadouts = [savedLoadout]
     const application = deferred<'applied'>()
