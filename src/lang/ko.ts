@@ -1,4 +1,5 @@
 export const languageKorean = {
+  unknownInteractionTime: '알 수 없음',
   secretInput: {
     savedPlaceholder: '저장된 인증 정보',
     savedStatus: '인증 정보가 저장되어 있습니다.',

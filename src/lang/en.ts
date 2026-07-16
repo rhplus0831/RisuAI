@@ -1,4 +1,5 @@
 export const languageEnglish = {
+  unknownInteractionTime: 'Unknown',
   realm: {
     searchCharacters: 'Search Realm characters',
     previousPage: 'Previous Realm page',

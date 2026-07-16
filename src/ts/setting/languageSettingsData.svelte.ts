@@ -23,7 +23,7 @@ export async function downloadLanguageTemplate(): Promise<void> {
 
   try {
     if (choice === 0) {
-      const languages = ['de', 'ko', 'cn', 'vi', 'zh-Hant']
+      const languages = ['de', 'es', 'ko', 'cn', 'vi', 'zh-Hant']
       const selectedLanguage = languages[parseInt(await alertSelect(languages))]
       if (!selectedLanguage) return
       changeLanguage(selectedLanguage)

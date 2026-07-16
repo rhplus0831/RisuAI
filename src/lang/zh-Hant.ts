@@ -1,4 +1,5 @@
 export const languageChineseTraditional = {
+  unknownInteractionTime: '未知',
   secretInput: {
     savedPlaceholder: '已儲存的憑證',
     savedStatus: '已儲存憑證。',

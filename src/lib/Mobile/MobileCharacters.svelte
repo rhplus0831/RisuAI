@@ -17,7 +17,23 @@
   interface MobileCharacterRowsOptions {
     hideTrash?: boolean
     agoFormatter: Pick<Intl.RelativeTimeFormat, 'format'>
+    unknownText: string
     now?: number
+  }
+
+  const relativeTimeLocaleByUiLanguage: Readonly<Record<string, string>> = {
+    cn: 'zh-CN',
+    de: 'de',
+    en: 'en',
+    es: 'es',
+    ko: 'ko',
+    vi: 'vi',
+    'zh-Hant': 'zh-TW',
+  }
+
+  export function resolveMobileRelativeTimeLocale(uiLanguage: unknown): string {
+    if (typeof uiLanguage !== 'string') return 'en'
+    return relativeTimeLocaleByUiLanguage[uiLanguage] ?? 'en'
   }
 
   export function normalizeMobileCharacterSearch(value: string) {
@@ -27,10 +43,11 @@
   export function makeMobileCharacterAgoText(
     time: number,
     agoFormatter: Pick<Intl.RelativeTimeFormat, 'format'>,
+    unknownText: string,
     now = Date.now(),
   ) {
     if (time === 0) {
-      return 'Unknown'
+      return unknownText
     }
     const diff = now - time
     if (diff < 3600000) {
@@ -59,7 +76,7 @@
 
   export function formatMobileCharacterRows(
     characters: readonly character[],
-    { hideTrash = false, agoFormatter, now = Date.now() }: MobileCharacterRowsOptions,
+    { hideTrash = false, agoFormatter, unknownText, now = Date.now() }: MobileCharacterRowsOptions,
   ): MobileCharacterRow[] {
     const rows = characters
       .map((c, i) => ({ c, i }))
@@ -77,7 +94,7 @@
           chats: c.chats.length,
           index: i,
           interaction,
-          agoText: makeMobileCharacterAgoText(interaction, agoFormatter, now),
+          agoText: makeMobileCharacterAgoText(interaction, agoFormatter, unknownText, now),
           sortedIndex: 0,
         }
       })
@@ -120,11 +137,17 @@
     hideTrash?: boolean
   }
 
-  const agoFormatter = new Intl.RelativeTimeFormat(navigator.languages, { style: 'short' })
-
   let { endGrid = () => {}, search, hideTrash = false }: Props = $props()
+  let relativeTimeLocale = $derived(resolveMobileRelativeTimeLocale(getDatabase().language))
+  let agoFormatter = $derived(new Intl.RelativeTimeFormat(relativeTimeLocale, { style: 'short' }))
   let normalizedSearch = $derived(normalizeMobileCharacterSearch(search ?? $MobileSearch))
-  let mobileCharacterRows = $derived(formatMobileCharacterRows(getDatabase().characters, { hideTrash, agoFormatter }))
+  let mobileCharacterRows = $derived(
+    formatMobileCharacterRows(getDatabase().characters, {
+      hideTrash,
+      agoFormatter,
+      unknownText: language.unknownInteractionTime,
+    }),
+  )
   let visibleMobileCharacterRows = $derived(filterMobileCharacterRows(mobileCharacterRows, normalizedSearch))
 
   function openCharacterRoute(index: number) {
@@ -161,7 +184,7 @@
           <span class="mr-1">{char.chats}</span>
           <MessageSquareIcon size={14} />
           <span class="mr-1 ml-1">|</span>
-          <span>{char.agoText}</span>
+          <span data-risu-mobile-character-ago>{char.agoText}</span>
         </div>
       </div>
     </button>

@@ -41,7 +41,11 @@ import MobileCharacters, {
   formatMobileCharacterRows,
   mobileCharacterRowKey,
   normalizeMobileCharacterSearch,
+  resolveMobileRelativeTimeLocale,
 } from '../Mobile/MobileCharacters.svelte'
+import { changeLanguage } from 'src/lang'
+import { languageKorean } from 'src/lang/ko'
+import { languageSpanish } from 'src/lang/es'
 import { MobileSearch } from 'src/ts/stores.svelte'
 import {
   getResourceDatabase as getDatabase,
@@ -207,6 +211,7 @@ beforeEach(() => {
   document.body.appendChild(target)
   vi.clearAllMocks()
   MobileSearch.set('')
+  changeLanguage('en')
   seedCatalog()
 })
 
@@ -218,6 +223,7 @@ afterEach(() => {
   target.remove()
   document.body.innerHTML = ''
   MobileSearch.set('')
+  changeLanguage('en')
 })
 
 describe('GridCatalog derived lists', () => {
@@ -422,7 +428,7 @@ describe('GridCatalog derived lists', () => {
           lastInteraction: 0,
         }),
       ] as any,
-      { hideTrash: true, agoFormatter, now },
+      { hideTrash: true, agoFormatter, unknownText: 'Time unavailable', now },
     )
 
     expect(rows.map((char) => char.name)).toEqual(['Alpha Tie', '베타', 'Zeta', 'Unnamed'])
@@ -432,7 +438,7 @@ describe('GridCatalog derived lists', () => {
       index: 0,
       agoText: '-1:hour',
     })
-    expect(rows.find((char) => char.name === 'Unnamed')?.agoText).toBe('Unknown')
+    expect(rows.find((char) => char.name === 'Unnamed')?.agoText).toBe('Time unavailable')
     expect(mobileCharacterRowKey(rows[3])).toBe('legacy-4')
     expect(filterMobileCharacterRows(rows, normalizeMobileCharacterSearch('AL PHA')).map((char) => char.name)).toEqual([
       'Alpha Tie',
@@ -455,10 +461,53 @@ describe('GridCatalog derived lists', () => {
           trashTime: 1,
         }),
       ] as any,
-      { hideTrash: false, agoFormatter, now },
+      { hideTrash: false, agoFormatter, unknownText: 'Time unavailable', now },
     )
 
     expect(rowsWithTrash.map((char) => char.name)).toEqual(['Trash Newest', 'Active'])
+  })
+
+  it('maps every supported UI language to a relative-time locale with an English fallback', () => {
+    expect(resolveMobileRelativeTimeLocale('en')).toBe('en')
+    expect(resolveMobileRelativeTimeLocale('de')).toBe('de')
+    expect(resolveMobileRelativeTimeLocale('es')).toBe('es')
+    expect(resolveMobileRelativeTimeLocale('ko')).toBe('ko')
+    expect(resolveMobileRelativeTimeLocale('cn')).toBe('zh-CN')
+    expect(resolveMobileRelativeTimeLocale('zh-Hant')).toBe('zh-TW')
+    expect(resolveMobileRelativeTimeLocale('vi')).toBe('vi')
+    expect(resolveMobileRelativeTimeLocale('unsupported')).toBe('en')
+    expect(resolveMobileRelativeTimeLocale(undefined)).toBe('en')
+  })
+
+  it('renders relative and unknown interaction times in the selected RisuAI UI language', async () => {
+    const interactionTime = Date.now() - 2 * 3_600_000
+    setDatabaseLite({
+      language: 'ko',
+      characters: [
+        makeCharacter({ chaId: 'known-time', name: 'Known Time', lastInteraction: interactionTime }),
+        makeCharacter({ chaId: 'unknown-time', name: 'Unknown Time', lastInteraction: 0 }),
+      ],
+    } as any)
+    changeLanguage('ko')
+
+    mountMobileCharacters()
+    await tick()
+
+    const agoText = (characterId: string) =>
+      target
+        .querySelector(`[data-risu-mobile-character-row][data-risu-row-id="${characterId}"]`)
+        ?.querySelector('[data-risu-mobile-character-ago]')
+        ?.textContent?.trim()
+
+    expect(agoText('known-time')).toBe(new Intl.RelativeTimeFormat('ko', { style: 'short' }).format(-2, 'hour'))
+    expect(agoText('unknown-time')).toBe(languageKorean.unknownInteractionTime)
+
+    getDatabase().language = 'es'
+    changeLanguage('es')
+    await tick()
+
+    expect(agoText('known-time')).toBe(new Intl.RelativeTimeFormat('es', { style: 'short' }).format(-2, 'hour'))
+    expect(agoText('unknown-time')).toBe(languageSpanish.unknownInteractionTime)
   })
 
   it('M6: MobileCharacters sorted rows recompute on corpus changes but not search-only changes', async () => {

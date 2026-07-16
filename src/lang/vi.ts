@@ -1,4 +1,5 @@
 export const languageVietnamese = {
+  unknownInteractionTime: 'Không rõ',
   secretInput: {
     savedPlaceholder: 'Thông tin xác thực đã lưu',
     savedStatus: 'Đã lưu thông tin xác thực.',

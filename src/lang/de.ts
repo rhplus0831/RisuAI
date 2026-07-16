@@ -1,4 +1,5 @@
 export const languageGerman = {
+  unknownInteractionTime: 'Unbekannt',
   secretInput: {
     savedPlaceholder: 'Gespeicherte Zugangsdaten',
     savedStatus: 'Zugangsdaten sind gespeichert.',

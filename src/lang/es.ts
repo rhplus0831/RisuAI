@@ -1,4 +1,5 @@
 export const languageSpanish = {
+  unknownInteractionTime: 'Desconocido',
   secretInput: {
     savedPlaceholder: 'Credencial guardada',
     savedStatus: 'Hay una credencial guardada.',

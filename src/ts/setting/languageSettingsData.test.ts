@@ -34,7 +34,6 @@ vi.mock('src/ts/process/modules', () => ({
 }))
 
 import { changeLanguage, language } from 'src/lang'
-import { languageKorean } from 'src/lang/ko'
 import { languageSpanish } from 'src/lang/es'
 import { getResourceDatabase, replaceResourceDatabase } from '../server/resourceState.svelte'
 import { downloadLanguageTemplate, languageSettingsItems } from './languageSettingsData.svelte'
@@ -62,17 +61,21 @@ describe('language settings actions', () => {
     expect(templateAction).toMatchObject({ type: 'button', labelKey: 'translateOwnLanguage' })
   })
 
-  it('downloads an existing-language template without changing the persisted or active locale', async () => {
+  it('offers and downloads the existing Spanish template without changing the persisted or active locale', async () => {
     languageSettingsMocks.alertSelect.mockResolvedValueOnce('0').mockResolvedValueOnce('1')
 
     await downloadLanguageTemplate()
 
     expect(getResourceDatabase().language).toBe('es')
     expect(language.UiLanguage).toBe(languageSpanish.UiLanguage)
+    expect(languageSettingsMocks.alertSelect).toHaveBeenNthCalledWith(
+      2,
+      expect.arrayContaining(['de', 'es', 'ko', 'cn', 'vi', 'zh-Hant']),
+    )
     expect(languageSettingsMocks.downloadFile).toHaveBeenCalledOnce()
     const [name, bytes] = languageSettingsMocks.downloadFile.mock.calls[0]
     expect(name).toBe('lang.json')
-    expect(JSON.parse(new TextDecoder().decode(bytes as Uint8Array)).UiLanguage).toBe(languageKorean.UiLanguage)
+    expect(JSON.parse(new TextDecoder().decode(bytes as Uint8Array)).UiLanguage).toBe(languageSpanish.UiLanguage)
     expect(languageSettingsMocks.alertNormal).toHaveBeenCalledWith(language.translationTemplateDownloaded)
   })
 })
