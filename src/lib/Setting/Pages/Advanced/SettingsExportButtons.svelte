@@ -3,6 +3,7 @@
   import Button from 'src/lib/UI/GUI/Button.svelte'
   import { alertError, alertMd, alertNormal } from 'src/ts/alert'
   import { downloadFile, getRequestLog } from 'src/ts/globalApi.svelte'
+  import { maskRegisteredProviderSecretsInPlace } from 'src/ts/providerSecretMask'
   import { getDatabase } from 'src/ts/storage/database.svelte'
 
   let bugReportExportBusy = $state(false)
@@ -17,6 +18,7 @@
           snapshot: true,
         }),
       )
+      maskRegisteredProviderSecretsInPlace(db)
 
       const keyToRemove = [
         'characters',

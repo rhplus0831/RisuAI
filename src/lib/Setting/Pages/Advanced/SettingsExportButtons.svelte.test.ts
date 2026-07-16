@@ -5,7 +5,8 @@ const exportMocks = vi.hoisted(() => ({
   alertError: vi.fn(),
   alertMd: vi.fn(),
   alertNormal: vi.fn(),
-  downloadFile: vi.fn(async () => undefined),
+  database: {} as Record<string, unknown>,
+  downloadFile: vi.fn(async (_name: string, _data: Uint8Array) => undefined),
   getRequestLog: vi.fn(() => ''),
 }))
 
@@ -21,14 +22,11 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 vi.mock('src/ts/storage/database.svelte', () => ({
-  getDatabase: () => ({
-    statics: {},
-    safeSetting: 'included',
-    apiKey: 'removed',
-  }),
+  getDatabase: () => exportMocks.database,
 }))
 
 import { language } from 'src/lang'
+import { MASKED_PROVIDER_SECRET } from 'src/ts/providerSecretMask'
 import SettingsExportButtons from './SettingsExportButtons.svelte'
 
 type MountedComponent = Parameters<typeof unmount>[0]
@@ -54,6 +52,11 @@ function deferred<T>() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  exportMocks.database = {
+    statics: {},
+    safeSetting: 'included',
+    apiKey: 'removed',
+  }
   exportMocks.downloadFile.mockResolvedValue(undefined)
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -68,6 +71,62 @@ afterEach(() => {
 })
 
 describe('SettingsExportButtons bug-report export', () => {
+  it('redacts optimistic top-level, nested, and row-owned provider secrets before download and clipboard copy', async () => {
+    exportMocks.database = {
+      statics: {},
+      safeSetting: 'included',
+      falToken: 'optimistic-fal-secret',
+      openaiCompatImage: {
+        key: 'optimistic-image-secret',
+        model: 'image-model',
+      },
+      modelProfiles: [
+        {
+          id: 'profile-a',
+          name: 'Profile A',
+          providerOptions: {
+            apiKey: 'optimistic-profile-secret',
+            vertex: { privateKey: 'optimistic-vertex-secret' },
+          },
+        },
+      ],
+    }
+    const writeText = vi.fn(async (_text: string) => undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    component = mount(SettingsExportButtons, { target })
+
+    bugReportButton().click()
+
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce())
+    const [, bytes] = exportMocks.downloadFile.mock.calls[0]
+    const downloadedJson = new TextDecoder().decode(bytes)
+    const clipboardJson = writeText.mock.calls[0][0]
+    const report = JSON.parse(downloadedJson)
+
+    expect(clipboardJson).toBe(downloadedJson)
+    expect(report).toMatchObject({
+      safeSetting: 'included',
+      falToken: MASKED_PROVIDER_SECRET,
+      openaiCompatImage: {
+        key: MASKED_PROVIDER_SECRET,
+        model: 'image-model',
+      },
+      modelProfiles: [
+        {
+          providerOptions: {
+            apiKey: MASKED_PROVIDER_SECRET,
+            vertex: { privateKey: MASKED_PROVIDER_SECRET },
+          },
+        },
+      ],
+    })
+    expect(downloadedJson).not.toContain('optimistic-')
+    expect(exportMocks.database.falToken).toBe('optimistic-fal-secret')
+  })
+
   it('reports a successful download when clipboard access is denied', async () => {
     const writeText = vi.fn(async () => {
       throw new Error('clipboard permission denied')

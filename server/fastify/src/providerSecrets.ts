@@ -1,14 +1,18 @@
 import { ValidationError } from './repository.js'
-import { MASKED_PROVIDER_SECRET } from '../../../src/ts/providerSecretMask.js'
+import {
+  MASKED_PROVIDER_SECRET,
+  PROVIDER_SECRET_PATHS,
+  PROVIDER_SECRET_PATH_WILDCARD,
+  maskRegisteredProviderSecretsInPlace,
+  type ProviderSecretPathSegment,
+} from '../../../src/ts/providerSecretMask.js'
 
 export { MASKED_PROVIDER_SECRET }
-
-const WILDCARD = Symbol('secret-path-wildcard')
 
 export const MASKED_PROVIDER_SECRET_ARRAY_ROW_REJECTED =
   'Masked provider secret placeholder cannot be resolved for an array row without stable identity'
 
-type PathSegment = string | typeof WILDCARD
+type PathSegment = ProviderSecretPathSegment
 
 const ARRAY_ROW_IDENTITY_KEYS: Record<string, string> = {
   authRefreshes: 'url',
@@ -18,51 +22,6 @@ const ARRAY_ROW_IDENTITY_KEYS: Record<string, string> = {
   modelProfiles: 'id',
   modelPresets: 'id',
 }
-
-const SECRET_PATHS: PathSegment[][] = [
-  ['account', 'token'],
-  ['authRefreshes', WILDCARD, 'clientSecret'],
-  ['authRefreshes', WILDCARD, 'refreshToken'],
-  ['botPresets', WILDCARD, 'openAIKey'],
-  ['botPresets', WILDCARD, 'proxyKey'],
-  ['characters', WILDCARD, 'oaiTTSConfig', 'apiKey'],
-  ['claudeAPIKey'],
-  ['cohereAPIKey'],
-  ['customModels', WILDCARD, 'key'],
-  ['deeplOptions', 'key'],
-  ['deeplXOptions', 'token'],
-  ['elevenLabKey'],
-  ['falToken'],
-  ['fishSpeechKey'],
-  ['google', 'accessToken'],
-  ['hordeConfig', 'apiKey'],
-  ['huggingfaceKey'],
-  ['hypaCustomSettings', 'key'],
-  ['hypaMemoryKey'],
-  ['hypaV3Key'],
-  ['mancerHeader'],
-  ['mistralKey'],
-  ['modelPresets', WILDCARD, 'openAIKey'],
-  ['modelPresets', WILDCARD, 'proxyKey'],
-  ['modelProfiles', WILDCARD, 'providerOptions', 'apiKey'],
-  ['modelProfiles', WILDCARD, 'providerOptions', 'vertex', 'privateKey'],
-  ['nanogptKey'],
-  ['NAIApiKey'],
-  ['novelai', 'token'],
-  ['novellistAPI'],
-  ['OaiCompAPIKeys', WILDCARD],
-  ['ollamaApiKey'],
-  ['openAIKey'],
-  ['openaiCompatImage', 'key'],
-  ['openrouterKey'],
-  ['proxyKey'],
-  ['stabilityKey'],
-  ['supaMemoryKey'],
-  ['vertexAccessToken'],
-  ['vertexPrivateKey'],
-  ['voyageApiKey'],
-  ['wavespeedImage', 'key'],
-]
 
 export function maskProviderSecrets<T>(database: T): T {
   if (!isRecord(database)) return database
@@ -77,11 +36,7 @@ export function maskProviderSecrets<T>(database: T): T {
  * object: the argument is mutated.
  */
 export function maskProviderSecretsInPlace<T>(database: T): T {
-  if (!isRecord(database)) return database
-  for (const path of SECRET_PATHS) {
-    maskPath(database, path)
-  }
-  return database
+  return maskRegisteredProviderSecretsInPlace(database)
 }
 
 export function resolveMaskedProviderSecretPlaceholders(
@@ -91,58 +46,17 @@ export function resolveMaskedProviderSecretPlaceholders(
   const resolved = cloneJsonValue(patch)
   if (!isRecord(database)) return resolved
 
-  for (const path of SECRET_PATHS) {
+  for (const path of PROVIDER_SECRET_PATHS) {
     resolvePath(database, resolved, path)
   }
   return resolved
 }
 
-function maskPath(target: unknown, path: PathSegment[]): void {
+function resolvePath(source: unknown, target: unknown, path: readonly PathSegment[], arrayKey?: string): void {
   if (path.length === 0) return
   const [segment, ...rest] = path
 
-  if (segment === WILDCARD) {
-    if (Array.isArray(target)) {
-      for (let i = 0; i < target.length; i += 1) {
-        if (rest.length === 0) {
-          if (typeof target[i] === 'string' && target[i].length > 0) {
-            target[i] = MASKED_PROVIDER_SECRET
-          }
-        } else {
-          maskPath(target[i], rest)
-        }
-      }
-      return
-    }
-    if (isRecord(target)) {
-      for (const key of Object.keys(target)) {
-        if (rest.length === 0) {
-          if (typeof target[key] === 'string' && target[key].length > 0) {
-            target[key] = MASKED_PROVIDER_SECRET
-          }
-        } else {
-          maskPath(target[key], rest)
-        }
-      }
-    }
-    return
-  }
-
-  if (!isRecord(target) || !(segment in target)) return
-  if (rest.length === 0) {
-    if (typeof target[segment] === 'string' && target[segment].length > 0) {
-      target[segment] = MASKED_PROVIDER_SECRET
-    }
-    return
-  }
-  maskPath(target[segment], rest)
-}
-
-function resolvePath(source: unknown, target: unknown, path: PathSegment[], arrayKey?: string): void {
-  if (path.length === 0) return
-  const [segment, ...rest] = path
-
-  if (segment === WILDCARD) {
+  if (segment === PROVIDER_SECRET_PATH_WILDCARD) {
     if (Array.isArray(target)) {
       resolveArrayWildcard(source, target, rest, arrayKey)
       return
@@ -171,7 +85,12 @@ function resolvePath(source: unknown, target: unknown, path: PathSegment[], arra
   resolvePath(isRecord(source) ? source[segment] : undefined, target[segment], rest, segment)
 }
 
-function resolveArrayWildcard(source: unknown, target: unknown[], rest: PathSegment[], arrayKey?: string): void {
+function resolveArrayWildcard(
+  source: unknown,
+  target: unknown[],
+  rest: readonly PathSegment[],
+  arrayKey?: string,
+): void {
   if (!target.some((row) => hasMaskedPlaceholderAtPath(row, rest))) return
 
   const identityKey = arrayKey ? ARRAY_ROW_IDENTITY_KEYS[arrayKey] : undefined
@@ -227,11 +146,11 @@ function readRowIdentity(row: unknown, identityKey: string, arrayKey?: string): 
   return row[identityKey]
 }
 
-function hasMaskedPlaceholderAtPath(target: unknown, path: PathSegment[]): boolean {
+function hasMaskedPlaceholderAtPath(target: unknown, path: readonly PathSegment[]): boolean {
   if (path.length === 0) return target === MASKED_PROVIDER_SECRET
   const [segment, ...rest] = path
 
-  if (segment === WILDCARD) {
+  if (segment === PROVIDER_SECRET_PATH_WILDCARD) {
     if (Array.isArray(target)) {
       return target.some((value) => hasMaskedPlaceholderAtPath(value, rest))
     }
