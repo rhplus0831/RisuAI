@@ -1614,6 +1614,55 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(translateTextarea.value).toBe('Manual target')
   })
 
+  it('sends from the translated composer with Shift+Enter when Enter-to-send is disabled', async () => {
+    seedDatabase([1])
+    getResourceDatabase().useAutoTranslateInput = true
+    getResourceDatabase().sendWithEnter = false
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('#messageInputTranslate')).toBeTruthy()
+    })
+    loadPageMocks.hydrateActiveChatFully.mockClear()
+
+    const translateTextarea = target.querySelector<HTMLTextAreaElement>('#messageInputTranslate')!
+    const keydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    translateTextarea.dispatchEvent(keydown)
+
+    expect(keydown.defaultPrevented).toBe(true)
+    await waitFor(() => expect(loadPageMocks.hydrateActiveChatFully).toHaveBeenCalledTimes(1))
+  })
+
+  it('does not send from the translated composer while Enter is committing IME composition', async () => {
+    seedDatabase([1])
+    getResourceDatabase().useAutoTranslateInput = true
+    getResourceDatabase().sendWithEnter = true
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('#messageInputTranslate')).toBeTruthy()
+    })
+    loadPageMocks.hydrateActiveChatFully.mockClear()
+
+    const translateTextarea = target.querySelector<HTMLTextAreaElement>('#messageInputTranslate')!
+    const keydown = new KeyboardEvent('keydown', {
+      key: 'Enter',
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    })
+    translateTextarea.dispatchEvent(keydown)
+    await settle()
+
+    expect(keydown.defaultPrevented).toBe(false)
+    expect(loadPageMocks.hydrateActiveChatFully).not.toHaveBeenCalled()
+  })
+
   it('ignores a delayed menu file result after composer text changes', async () => {
     seedDatabase([1])
     const upload =

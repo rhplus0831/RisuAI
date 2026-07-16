@@ -779,6 +779,11 @@
     return sendMain(true)
   }
 
+  function shouldSendFromComposerKeydown(event: KeyboardEvent): boolean {
+    if (event.key.toLocaleLowerCase() !== 'enter' || event.isComposing) return false
+    return getDatabase().sendWithEnter ? !event.shiftKey : event.shiftKey
+  }
+
   function shouldRunInputTranslationHook(
     continueResponse: boolean,
     currentCharacter: character | undefined,
@@ -1496,14 +1501,9 @@
           bind:value={messageInput}
           bind:this={inputEle}
           onkeydown={(e) => {
-            if (e.key.toLocaleLowerCase() === 'enter' && !e.isComposing) {
-              if (getDatabase().sendWithEnter && !e.shiftKey) {
-                send()
-                e.preventDefault()
-              } else if (!getDatabase().sendWithEnter && e.shiftKey) {
-                send()
-                e.preventDefault()
-              }
+            if (shouldSendFromComposerKeydown(e)) {
+              send()
+              e.preventDefault()
             }
             if (e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
               reroll()
@@ -1588,11 +1588,9 @@
             bind:value={messageInputTranslate}
             bind:this={inputTranslateEle}
             onkeydown={(e) => {
-              if (e.key.toLocaleLowerCase() === 'enter' && !e.shiftKey) {
-                if (getDatabase().sendWithEnter) {
-                  send()
-                  e.preventDefault()
-                }
+              if (shouldSendFromComposerKeydown(e)) {
+                send()
+                e.preventDefault()
               }
               if (e.key.toLocaleLowerCase() === 'm' && e.ctrlKey) {
                 reroll()
