@@ -14,6 +14,8 @@
     duplicateAgentPresetStep,
     reorderAgentPresetSteps,
     updateAgentPresetStep,
+    type AgentPresetGeneratedProjectionLatch,
+    type AgentPresetMutationOutcome,
   } from 'src/ts/agentPresets'
   import {
     AGENT_PRESET_MAX_CONCURRENCY_MAX,
@@ -37,7 +39,7 @@
     type AgentPresetStepPhase,
     type AgentPresetStepRecord,
   } from 'src/ts/agentPresetRecords'
-  import type { AgentPresetSnapshot, AgentPresetStepSnapshot, ServerCommandResult } from 'src/ts/server/commands'
+  import type { AgentPresetSnapshot, AgentPresetStepSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import AgentPresetDiagnosticsPanel from './AgentPresetDiagnosticsPanel.svelte'
   import { sparseAgentPresetStepPatch } from './agentPresetStepPatch'
@@ -49,6 +51,7 @@
     commandError?: string
     onSave: (preset: AgentPresetSnapshot) => void | Promise<void>
     onCancel: () => void
+    onQueuedProjection?: (latch: AgentPresetGeneratedProjectionLatch) => void
   }
 
   type StepEditorMode = 'new' | 'edit' | null
@@ -67,7 +70,15 @@
     'maxConcurrency',
   ]
 
-  let { mode, preset, busy = false, commandError = '', onSave, onCancel }: Props = $props()
+  let {
+    mode,
+    preset,
+    busy = false,
+    commandError = '',
+    onSave,
+    onCancel,
+    onQueuedProjection = () => undefined,
+  }: Props = $props()
 
   // svelte-ignore state_referenced_locally
   const initialPreset = preset
@@ -85,6 +96,7 @@
   let stepInitialSnapshotJson = $state('')
   let stepBusy = $state(false)
   let stepCommandError = $state('')
+  let stepMutationState = $state<'idle' | 'saving' | 'queued'>('idle')
   let draftStepName = $state('')
   let draftStepEnabled = $state(true)
   let draftStepPhase = $state<AgentPresetStepPhase>('beforeMain')
@@ -503,13 +515,17 @@
       return
     }
     stepBusy = true
+    stepMutationState = 'saving'
     stepCommandError = ''
     const result =
       stepEditorMode === 'new'
         ? await createAgentPresetStep(initialPresetId, finalSnapshot)
         : editingStepId
           ? await updateAgentPresetStep(initialPresetId, editingStepId, patch)
-          : ({ status: 'error', error: language.agentPresets.editStepTargetMissing } as ServerCommandResult)
+          : ({
+              status: 'failed',
+              result: { status: 'error', error: language.agentPresets.editStepTargetMissing },
+            } as AgentPresetMutationOutcome)
     stepBusy = false
     if (handleStepResult(result)) clearStepEditor()
   }
@@ -517,6 +533,7 @@
   async function duplicateStep(step: AgentPresetStepRecord): Promise<void> {
     if (!initialPresetId || stepBusy) return
     stepBusy = true
+    stepMutationState = 'saving'
     stepCommandError = ''
     const result = await duplicateAgentPresetStep(initialPresetId, step.id, {
       name: language.agentPresets.copyName(step.name),
@@ -529,6 +546,7 @@
     if (!initialPresetId || stepBusy) return
     if (!window.confirm(language.agentPresets.deleteStepConfirm(step.name))) return
     stepBusy = true
+    stepMutationState = 'saving'
     stepCommandError = ''
     const result = await deleteAgentPresetStep(initialPresetId, step.id)
     stepBusy = false
@@ -549,14 +567,25 @@
       candidate.phase === step.phase ? (nextPhaseIds[phaseCursor++] ?? candidate.id) : candidate.id,
     )
     stepBusy = true
+    stepMutationState = 'saving'
     stepCommandError = ''
     const result = await reorderAgentPresetSteps(initialPresetId, nextIds)
     stepBusy = false
     handleStepResult(result)
   }
 
-  function handleStepResult(result: ServerCommandResult<any>): boolean {
-    if (result.status === 'ok') return true
+  function handleStepResult(outcome: AgentPresetMutationOutcome<any>): boolean {
+    if (outcome.status === 'accepted') {
+      stepMutationState = 'idle'
+      return true
+    }
+    if (outcome.status === 'queued') {
+      stepMutationState = 'queued'
+      if (outcome.projectionLatch) onQueuedProjection(outcome.projectionLatch)
+      return true
+    }
+    const result = outcome.result
+    stepMutationState = 'idle'
     stepCommandError =
       result.status === 'conflict'
         ? language.agentPresets.commandConflict
@@ -775,6 +804,14 @@
 
         {#if stepCommandError}
           <div class="mt-3 rounded-md border border-draculared p-3 text-sm text-draculared">{stepCommandError}</div>
+        {/if}
+        {#if stepMutationState !== 'idle'}
+          <div
+            class="mt-3 rounded-md border border-darkborderc p-3 text-sm text-textcolor2"
+            role="status"
+            aria-live="polite">
+            {stepMutationState === 'saving' ? language.agentPresets.saving : language.agentPresets.commandQueued}
+          </div>
         {/if}
 
         {#if stepEditorMode}

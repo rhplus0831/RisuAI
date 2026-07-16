@@ -2408,6 +2408,7 @@ export const languageEnglish = {
     save: 'Save',
     cancel: 'Cancel',
     saving: 'Saving...',
+    commandQueued: 'Saved locally and queued. You do not need to submit this change again.',
     newPresetName: 'New Agent Preset',
     nameLabel: 'Name',
     descriptionLabel: 'Description',

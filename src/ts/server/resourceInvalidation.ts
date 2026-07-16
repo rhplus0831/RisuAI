@@ -49,6 +49,7 @@ import {
   settingsResourceState,
   type ServerCollectionName,
   type ServerCollectionsResourcePayload,
+  type ServerCharactersResourcePayload,
   type ServerLegacyPresetResourceBaseline,
 } from './resourceState.svelte'
 import { withServerResourceApply } from './resourceWriteGuard.svelte'
@@ -62,6 +63,13 @@ export type ServerResourceRefreshResult =
   | { status: 'unavailable' }
 
 export interface ServerResourceInvalidationHooks {
+  mergePendingAgentPresetSettings(value: Record<string, unknown>): Record<string, unknown>
+  mergePendingAgentPresetLoadouts(
+    value: NonNullable<ServerCollectionsResourcePayload['collections']['loadouts']>,
+  ): NonNullable<ServerCollectionsResourcePayload['collections']['loadouts']>
+  mergePendingAgentPresetCharacters(
+    value: ServerCharactersResourcePayload['characters'],
+  ): ServerCharactersResourcePayload['characters']
   mergePendingPluginCollection(
     value: NonNullable<ServerCollectionsResourcePayload['collections']['plugins']>,
   ): NonNullable<ServerCollectionsResourcePayload['collections']['plugins']>
@@ -188,8 +196,12 @@ export async function refreshAllServerResources(
     // before touching the first slice so partial failures also fail closed.
     createDestructiveRefreshToken('full-server-resource-refresh')
     try {
-      const mergedSettings = withPendingPluginProvider(settings, options.hooks?.mergePendingPluginProvider)
-      const mergedCollections = withPendingPluginCollections(collections, options.hooks)
+      const mergedSettings = withPendingAgentPresetSettings(
+        withPendingPluginProvider(settings, options.hooks?.mergePendingPluginProvider),
+        options.hooks?.mergePendingAgentPresetSettings,
+      )
+      const mergedCollections = withPendingCollections(collections, options.hooks)
+      const mergedCharacters = withPendingAgentPresetCharacters(characters, options.hooks)
       const { settingsApplied, collectionsApplied, charactersApplied } = withServerResourceApply(() => ({
         settingsApplied: applySettingsResource(mergedSettings),
         collectionsApplied: applyCollectionsResource(mergedCollections),
@@ -197,7 +209,7 @@ export async function refreshAllServerResources(
         // unknown resources. Character reads intentionally omit transcripts,
         // so retaining same-id resident bodies here could preserve stale chat
         // data across a restore. Leave the chats as API-hydration stubs.
-        charactersApplied: applyCharactersResource(characters, { preserveResidentChatBodies: false }),
+        charactersApplied: applyCharactersResource(mergedCharacters, { preserveResidentChatBodies: false }),
       }))
       if (collectionsApplied) resetPromptTemplateHydration()
       if (
@@ -962,14 +974,21 @@ function applyTargetedRead(
 ): boolean {
   switch (entry.kind) {
     case 'settings': {
-      const payload = withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider)
+      const payload = withPendingAgentPresetSettings(
+        withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider),
+        hooks?.mergePendingAgentPresetSettings,
+      )
       return payload.status !== 'ok' || applySettingsResource(payload) || settingsFullAlreadyAtLeast(payload.revision)
     }
     case 'settingsGroup': {
-      const payload =
+      const providerPayload =
         entry.group === 'providers'
           ? withPendingPluginProvider(entry.result, hooks?.mergePendingPluginProvider)
           : entry.result
+      const payload =
+        entry.group === 'agents'
+          ? withPendingAgentPresetSettings(providerPayload, hooks?.mergePendingAgentPresetSettings)
+          : providerPayload
       return (
         payload.status !== 'ok' ||
         applySettingsGroupResource(payload, SERVER_SETTINGS_KEYS_BY_GROUP[entry.group]) ||
@@ -979,8 +998,8 @@ function applyTargetedRead(
     case 'collection': {
       if (entry.result.status !== 'ok') return true
       const payload =
-        entry.name === 'pluginCustomStorage' || entry.name === 'plugins'
-          ? withPendingPluginCollections(entry.result, hooks)
+        entry.name === 'pluginCustomStorage' || entry.name === 'plugins' || entry.name === 'loadouts'
+          ? withPendingCollections(entry.result, hooks)
           : entry.result
       const applied = applyCollectionsResource(payload, entry.name)
       if (applied && entry.name === 'promptPresets') resetPromptTemplateHydration()
@@ -1007,18 +1026,18 @@ function applyTargetedRead(
         applyLegacyPresetCollectionResource(entry.result) ||
         (collectionsResourceState.revisions.botPresets ?? -1) > entry.result.revision
       )
-    case 'characters':
+    case 'characters': {
+      const payload = withPendingAgentPresetCharacters(entry.result, hooks)
+      return payload.status !== 'ok' || applyCharactersResource(payload) || charactersAlreadyAtLeast(payload.revision)
+    }
+    case 'character': {
+      const payload = withPendingAgentPresetCharacter(entry.result, hooks)
       return (
-        entry.result.status !== 'ok' ||
-        applyCharactersResource(entry.result) ||
-        charactersAlreadyAtLeast(entry.result.revision)
+        payload.status !== 'ok' ||
+        applyCharacterResource(payload) ||
+        characterAlreadyAtLeast(entry.characterId, payload.revision)
       )
-    case 'character':
-      return (
-        entry.result.status !== 'ok' ||
-        applyCharacterResource(entry.result) ||
-        characterAlreadyAtLeast(entry.characterId, entry.result.revision)
-      )
+    }
     case 'characterOrder':
       return (
         entry.result.status !== 'ok' ||
@@ -1128,7 +1147,7 @@ function characterIdForChat(chatId: string): string | undefined {
   return undefined
 }
 
-function withPendingPluginCollections<T extends ServerCollectionsResourcePayload>(
+function withPendingCollections<T extends ServerCollectionsResourcePayload>(
   payload: T,
   hooks: Partial<ServerResourceInvalidationHooks> | undefined,
 ): T {
@@ -1149,11 +1168,62 @@ function withPendingPluginCollections<T extends ServerCollectionsResourcePayload
       : authoritative
     changed = true
   }
+  if (Object.prototype.hasOwnProperty.call(collections, 'loadouts')) {
+    const authoritative = Array.isArray(collections.loadouts) ? collections.loadouts : []
+    collections.loadouts = hooks?.mergePendingAgentPresetLoadouts
+      ? hooks.mergePendingAgentPresetLoadouts(authoritative)
+      : authoritative
+    changed = true
+  }
   if (!changed) return payload
   return {
     ...payload,
     collections,
-  }
+  } as T
+}
+
+function withPendingAgentPresetSettings<T>(
+  payload: T,
+  mergePendingAgentPresetSettings: ServerResourceInvalidationHooks['mergePendingAgentPresetSettings'] | undefined,
+): T {
+  const settingsValue = (payload as { settings?: unknown }).settings
+  if (!settingsValue || typeof settingsValue !== 'object' || Array.isArray(settingsValue)) return payload
+  return {
+    ...payload,
+    settings: mergePendingAgentPresetSettings
+      ? mergePendingAgentPresetSettings(settingsValue as Record<string, unknown>)
+      : settingsValue,
+  } as T
+}
+
+function withPendingAgentPresetCharacters<T>(
+  payload: T,
+  hooks: Partial<ServerResourceInvalidationHooks> | undefined,
+): T {
+  const characters = (payload as { characters?: unknown }).characters
+  if (!Array.isArray(characters)) return payload
+  return {
+    ...payload,
+    characters: hooks?.mergePendingAgentPresetCharacters
+      ? hooks.mergePendingAgentPresetCharacters(characters as ServerCharactersResourcePayload['characters'])
+      : characters,
+  } as T
+}
+
+function withPendingAgentPresetCharacter<T>(
+  payload: T,
+  hooks: Partial<ServerResourceInvalidationHooks> | undefined,
+): T {
+  const character = (payload as { character?: unknown }).character
+  if (!character || typeof character !== 'object' || Array.isArray(character)) return payload
+  const merged = hooks?.mergePendingAgentPresetCharacters
+    ? hooks.mergePendingAgentPresetCharacters([character] as ServerCharactersResourcePayload['characters'])
+    : [character]
+  if (!merged[0]) return payload
+  return {
+    ...payload,
+    character: merged[0],
+  } as T
 }
 
 function withPendingPluginProvider<T>(

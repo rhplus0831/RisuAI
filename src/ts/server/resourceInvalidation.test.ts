@@ -19,6 +19,9 @@ const api = vi.hoisted(() => ({
 }))
 
 const sideEffects = vi.hoisted(() => ({
+  mergeAgentPresetSettings: vi.fn((value: Record<string, unknown>) => value),
+  mergeAgentPresetLoadouts: vi.fn((value: any[]) => value),
+  mergeAgentPresetCharacters: vi.fn((value: any[]) => value),
   mergePluginCollection: vi.fn((value: any[]) => value),
   mergePluginProvider: vi.fn((value: unknown) => (typeof value === 'string' ? value : '')),
   mergePluginStorage: vi.fn((value: Record<string, unknown>) => value),
@@ -100,6 +103,9 @@ import { SERVER_SETTINGS_KEYS_BY_GROUP } from './settingsGroups'
 import { captureDestructiveRefreshEpoch, hasDestructiveRefreshEpochChanged } from './staleStateGuards'
 
 const hooks: ServerResourceInvalidationHooks = {
+  mergePendingAgentPresetSettings: sideEffects.mergeAgentPresetSettings,
+  mergePendingAgentPresetLoadouts: sideEffects.mergeAgentPresetLoadouts,
+  mergePendingAgentPresetCharacters: sideEffects.mergeAgentPresetCharacters,
   mergePendingPluginCollection: sideEffects.mergePluginCollection,
   mergePendingPluginProvider: sideEffects.mergePluginProvider,
   mergePendingPluginStorage: sideEffects.mergePluginStorage,
@@ -194,6 +200,9 @@ beforeEach(() => {
   sideEffects.mergePluginCollection.mockImplementation((value: any[]) => value)
   sideEffects.mergePluginProvider.mockImplementation((value: unknown) => (typeof value === 'string' ? value : ''))
   sideEffects.mergePluginStorage.mockImplementation((value: Record<string, unknown>) => value)
+  sideEffects.mergeAgentPresetSettings.mockImplementation((value: Record<string, unknown>) => value)
+  sideEffects.mergeAgentPresetLoadouts.mockImplementation((value: any[]) => value)
+  sideEffects.mergeAgentPresetCharacters.mockImplementation((value: any[]) => value)
   promptHydration.ensure.mockResolvedValue(true)
 })
 
@@ -223,6 +232,69 @@ describe('API-backed resource invalidation', () => {
     expect(sideEffects.mergePluginStorage).toHaveBeenCalledWith({ authoritative: true })
     expect(promptHydration.reset).toHaveBeenCalledTimes(1)
     expect(languageSideEffects.change).toHaveBeenLastCalledWith('ko')
+  })
+
+  it('preserves pending Agent Preset settings and deletion cascades during a full refresh', async () => {
+    const authoritativeCharacter = metadataCharacter('char-a', 'Ada refreshed', 'chat-a')
+    authoritativeCharacter.chats[0].generationSettings = {
+      agentPresetId: 'agent-delete',
+    } as never
+    api.settings.mockResolvedValue({
+      status: 'ok',
+      revision: 5,
+      settings: {
+        language: 'ko',
+        agentPresets: [{ id: 'agent-delete', name: 'Authoritative name', enabled: true, version: 1, steps: [] }],
+        agentPresetDefaultId: 'agent-delete',
+      },
+    })
+    api.collections.mockResolvedValue({
+      status: 'ok',
+      revision: 5,
+      collections: {
+        ...completeCollections(),
+        loadouts: [
+          {
+            id: 'loadout-a',
+            name: 'Loadout A',
+            agentPresetId: 'agent-delete',
+            agentPresetName: 'Authoritative name',
+          },
+        ],
+      },
+    })
+    api.characters.mockResolvedValue({
+      status: 'ok',
+      revision: 5,
+      characters: [authoritativeCharacter],
+      characterOrder: ['char-a'],
+      currentChar: 0,
+    })
+    sideEffects.mergeAgentPresetSettings.mockImplementation((value) => ({
+      ...value,
+      agentPresets: [{ id: 'agent-delete', name: 'Pending name', enabled: true, version: 1, steps: [] }],
+    }))
+    sideEffects.mergeAgentPresetLoadouts.mockImplementation((value) =>
+      value.map(({ agentPresetId: _agentPresetId, agentPresetName: _agentPresetName, ...loadout }) => loadout),
+    )
+    sideEffects.mergeAgentPresetCharacters.mockImplementation((value) =>
+      value.map((character) => ({
+        ...character,
+        chats: character.chats.map((chat: any) => ({
+          ...chat,
+          generationSettings: {},
+        })),
+      })),
+    )
+
+    await expect(refreshAllServerResources({ hooks })).resolves.toEqual({ status: 'ok', revision: 5, scope: 'full' })
+
+    expect(getResourceDatabase().agentPresets[0].name).toBe('Pending name')
+    expect(getResourceDatabase().loadouts).toEqual([{ id: 'loadout-a', name: 'Loadout A' }])
+    expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual({})
+    expect(sideEffects.mergeAgentPresetSettings).toHaveBeenCalledOnce()
+    expect(sideEffects.mergeAgentPresetLoadouts).toHaveBeenCalledOnce()
+    expect(sideEffects.mergeAgentPresetCharacters).toHaveBeenCalledOnce()
   })
 
   it('retries inconsistent full reads and applies only a common revision', async () => {
@@ -562,15 +634,35 @@ describe('API-backed resource invalidation', () => {
     api.collection.mockResolvedValue({
       status: 'ok',
       revision: 2,
-      collections: { loadouts: [{ id: 'loadout-a', name: 'Loadout A' }] },
+      collections: {
+        loadouts: [
+          {
+            id: 'loadout-a',
+            name: 'Loadout A',
+            agentPresetId: 'agent-delete',
+            agentPresetName: 'Delete',
+          },
+        ],
+      },
     })
+    const authoritativeCharacter = metadataCharacter('char-a', 'Ada authoritative')
+    authoritativeCharacter.chats[0].generationSettings = { agentPresetId: 'agent-delete' } as never
     api.characters.mockResolvedValue({
       status: 'ok',
       revision: 2,
-      characters: [metadataCharacter('char-a', 'Ada authoritative')],
+      characters: [authoritativeCharacter],
       characterOrder: ['char-a'],
       currentChar: 0,
     })
+    sideEffects.mergeAgentPresetLoadouts.mockImplementation((value) =>
+      value.map(({ agentPresetId: _agentPresetId, agentPresetName: _agentPresetName, ...loadout }) => loadout),
+    )
+    sideEffects.mergeAgentPresetCharacters.mockImplementation((value) =>
+      value.map((character) => ({
+        ...character,
+        chats: character.chats.map((chat: any) => ({ ...chat, generationSettings: {} })),
+      })),
+    )
 
     await expect(
       refreshInvalidatedServerResources(
@@ -585,7 +677,39 @@ describe('API-backed resource invalidation', () => {
     expect(api.settings).not.toHaveBeenCalled()
     expect(api.collections).not.toHaveBeenCalled()
     expect(getResourceDatabase()).toMatchObject({ agentPresets, loadouts: [{ id: 'loadout-a' }] })
+    expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual({})
     expect(getResourceDatabase()).not.toHaveProperty('agentPresetDefaultId')
+    expect(sideEffects.mergeAgentPresetSettings).toHaveBeenCalledOnce()
+    expect(sideEffects.mergeAgentPresetLoadouts).toHaveBeenCalledOnce()
+    expect(sideEffects.mergeAgentPresetCharacters).toHaveBeenCalledOnce()
+  })
+
+  it('preserves pending Agent Preset chat cleanup on an unrelated targeted character read', async () => {
+    seedResources(1)
+    const authoritativeCharacter = metadataCharacter('char-a', 'Ada authoritative', 'chat-a')
+    authoritativeCharacter.chats[0].generationSettings = { agentPresetId: 'agent-delete' } as never
+    api.character.mockResolvedValue({
+      status: 'ok',
+      revision: 2,
+      character: authoritativeCharacter,
+    })
+    sideEffects.mergeAgentPresetCharacters.mockImplementation((value) =>
+      value.map((character) => ({
+        ...character,
+        chats: character.chats.map((chat: any) => ({ ...chat, generationSettings: {} })),
+      })),
+    )
+
+    await expect(
+      refreshInvalidatedServerResources(event(2, 'characterRow', { id: 'char-a' }), {
+        appliedRevision: 1,
+        hooks,
+      }),
+    ).resolves.toEqual({ status: 'ok', revision: 2, scope: 'targeted' })
+
+    expect(api.character).toHaveBeenCalledWith('char-a', undefined)
+    expect(getResourceDatabase().characters[0].chats[0].generationSettings).toEqual({})
+    expect(sideEffects.mergeAgentPresetCharacters).toHaveBeenCalledOnce()
   })
 
   it.each([

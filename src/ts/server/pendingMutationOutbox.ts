@@ -184,6 +184,17 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'POST', path: /^\/model-profiles\/convert-legacy$/ },
   { method: 'PUT', path: /^\/model-role-profiles$/ },
   { method: 'PUT', path: /^\/model-runtime-defaults$/ },
+  { method: 'POST', path: /^\/agent-presets$/ },
+  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/duplicate$/ },
+  { method: 'POST', path: /^\/agent-presets\/reorder$/ },
+  { method: 'POST', path: /^\/agent-presets\/default$/ },
+  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps$/ },
+  { method: 'PATCH', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps\/[^/?#]+\/duplicate$/ },
+  { method: 'POST', path: /^\/agent-presets\/[^/?#]+\/steps\/reorder$/ },
   { method: 'POST', path: /^\/prompt-presets$/ },
   { method: 'PATCH', path: /^\/prompt-presets\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/prompt-presets\/[^/?#]+$/ },
@@ -259,6 +270,30 @@ export function pendingMutationPluginOrderProjectionTarget(): string {
 
 export function pendingMutationPluginStorageProjectionTarget(key: string): string {
   return `plugin-storage:${encodeProjectionTargetPart(key)}`
+}
+
+export function pendingMutationAgentPresetRowProjectionTarget(presetId: string): string {
+  return `agent-preset-row:${encodeProjectionTargetPart(presetId)}`
+}
+
+export function pendingMutationAgentPresetCollectionProjectionTarget(): string {
+  return 'agent-preset-collection'
+}
+
+export function pendingMutationAgentPresetStepsProjectionTarget(presetId: string): string {
+  return `agent-preset-steps:${encodeProjectionTargetPart(presetId)}`
+}
+
+export function pendingMutationAgentPresetStepProjectionTarget(presetId: string, stepId: string): string {
+  return `agent-preset-step:${encodeProjectionTargetPart(presetId)}:${encodeProjectionTargetPart(stepId)}`
+}
+
+export function pendingMutationAgentPresetOrderProjectionTarget(): string {
+  return 'agent-preset-order'
+}
+
+export function pendingMutationAgentPresetDefaultProjectionTarget(): string {
+  return 'agent-preset-default'
 }
 
 export function pendingMutationLoadoutRowProjectionTarget(loadoutId: string): string {
@@ -1258,6 +1293,64 @@ function pendingMutationRequestProjectionTargets(request: DurableMutationRequest
       for (const key of deleteKeys) if (typeof key === 'string') keys.add(key)
     }
     return keys.size > 0 ? [...keys].map(pendingMutationPluginStorageProjectionTarget) : ['plugin-storage:collection']
+  }
+
+  if (request.method === 'POST' && request.path === '/agent-presets') {
+    return [pendingMutationAgentPresetCollectionProjectionTarget()]
+  }
+  if (request.method === 'POST' && request.path === '/agent-presets/reorder') {
+    return [pendingMutationAgentPresetOrderProjectionTarget()]
+  }
+  if (request.method === 'POST' && request.path === '/agent-presets/default') {
+    return [pendingMutationAgentPresetDefaultProjectionTarget()]
+  }
+
+  const agentPresetStepDuplicate =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/steps\/([^/]+)\/duplicate$/.exec(request.path) : null
+  if (agentPresetStepDuplicate) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetStepDuplicate[1]!))]
+  }
+
+  const agentPresetStepReorder =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/steps\/reorder$/.exec(request.path) : null
+  if (agentPresetStepReorder) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetStepReorder[1]!))]
+  }
+
+  const agentPresetStepCollection =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/steps$/.exec(request.path) : null
+  if (agentPresetStepCollection) {
+    return [pendingMutationAgentPresetStepsProjectionTarget(decodeProjectionTargetPart(agentPresetStepCollection[1]!))]
+  }
+
+  const agentPresetStepRow =
+    request.method === 'PATCH' || request.method === 'DELETE'
+      ? /^\/agent-presets\/([^/]+)\/steps\/([^/]+)$/.exec(request.path)
+      : null
+  if (agentPresetStepRow) {
+    const presetId = decodeProjectionTargetPart(agentPresetStepRow[1]!)
+    const targets = [
+      pendingMutationAgentPresetStepProjectionTarget(presetId, decodeProjectionTargetPart(agentPresetStepRow[2]!)),
+    ]
+    if (request.method === 'DELETE') targets.push(pendingMutationAgentPresetStepsProjectionTarget(presetId))
+    return targets
+  }
+
+  const agentPresetDuplicate =
+    request.method === 'POST' ? /^\/agent-presets\/([^/]+)\/duplicate$/.exec(request.path) : null
+  if (agentPresetDuplicate) return [pendingMutationAgentPresetCollectionProjectionTarget()]
+
+  const agentPresetRow =
+    request.method === 'PATCH' || request.method === 'DELETE' ? /^\/agent-presets\/([^/]+)$/.exec(request.path) : null
+  if (agentPresetRow) {
+    const targets = [pendingMutationAgentPresetRowProjectionTarget(decodeProjectionTargetPart(agentPresetRow[1]!))]
+    if (request.method === 'DELETE') {
+      targets.push(
+        pendingMutationAgentPresetOrderProjectionTarget(),
+        pendingMutationAgentPresetDefaultProjectionTarget(),
+      )
+    }
+    return targets
   }
 
   const deletedModule = request.method === 'DELETE' ? /^\/modules\/([^/]+)$/.exec(request.path) : null

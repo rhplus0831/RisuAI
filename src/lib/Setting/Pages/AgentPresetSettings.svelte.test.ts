@@ -2,30 +2,87 @@ import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type AgentPresetCommandMockResult = {
-  status: string
-  revision?: number
-  event?: { type: string; revision: number }
-  error?: string
+  status: 'accepted' | 'queued' | 'failed'
+  result: {
+    status: string
+    revision?: number
+    event?: { type: string; revision: number }
+    error?: string
+  }
+  projectionLatch?: {
+    kind: 'preset' | 'step'
+    key: string
+    baselineIds: string[]
+    expectedName: string
+    presetId?: string
+    expectedOutputKey?: string
+    semanticDescriptor?: string
+    compareOutputKey?: boolean
+  }
 }
 
+type AgentPresetProjectionLatchMock = NonNullable<AgentPresetCommandMockResult['projectionLatch']>
+
 const agentPresetSpies = vi.hoisted(() => ({
-  createAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  updateAgentPreset: vi.fn(
+  createAgentPreset: vi.fn(
     async (): Promise<AgentPresetCommandMockResult> => ({
-      status: 'ok',
-      revision: 1,
-      event: { type: 'ok', revision: 1 },
+      status: 'accepted',
+      result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
     }),
   ),
-  duplicateAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  deleteAgentPreset: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  reorderAgentPresets: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  setAgentPresetDefault: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  createAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  updateAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  duplicateAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  deleteAgentPresetStep: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
-  reorderAgentPresetSteps: vi.fn(async () => ({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })),
+  updateAgentPreset: vi.fn(
+    async (): Promise<AgentPresetCommandMockResult> => ({
+      status: 'accepted',
+      result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+    }),
+  ),
+  duplicateAgentPreset: vi.fn(
+    async (): Promise<AgentPresetCommandMockResult> => ({
+      status: 'accepted',
+      result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+    }),
+  ),
+  deleteAgentPreset: vi.fn(async () => ({
+    status: 'accepted',
+    result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+  })),
+  reorderAgentPresets: vi.fn(async () => ({
+    status: 'accepted',
+    result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+  })),
+  setAgentPresetDefault: vi.fn(async () => ({
+    status: 'accepted',
+    result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+  })),
+  createAgentPresetStep: vi.fn(
+    async (): Promise<AgentPresetCommandMockResult> => ({
+      status: 'accepted',
+      result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+    }),
+  ),
+  updateAgentPresetStep: vi.fn(async () => ({
+    status: 'accepted',
+    result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+  })),
+  duplicateAgentPresetStep: vi.fn(
+    async (): Promise<AgentPresetCommandMockResult> => ({
+      status: 'accepted',
+      result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+    }),
+  ),
+  deleteAgentPresetStep: vi.fn(async () => ({
+    status: 'accepted',
+    result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+  })),
+  reorderAgentPresetSteps: vi.fn(async () => ({
+    status: 'accepted',
+    result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+  })),
+  currentPendingAgentPresetGeneratedProjectionLatch: vi.fn((): AgentPresetProjectionLatchMock | null => null),
+  isAgentPresetGeneratedProjectionResolved: vi.fn((_latch: AgentPresetProjectionLatchMock) => false),
+  mergePendingAgentPresetSettingsResource: vi.fn((value) => value),
+  mergePendingAgentPresetLoadoutsResource: vi.fn((value) => value),
+  mergePendingAgentPresetCharactersResource: vi.fn((value) => value),
 }))
 const hydrationSpies = vi.hoisted(() => ({
   ensureAllChatsHydrated: vi.fn(async () => undefined),
@@ -256,6 +313,8 @@ beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
   Object.values(agentPresetSpies).forEach((spy) => spy.mockClear())
+  agentPresetSpies.currentPendingAgentPresetGeneratedProjectionLatch.mockReset().mockReturnValue(null)
+  agentPresetSpies.isAgentPresetGeneratedProjectionResolved.mockReset().mockReturnValue(false)
   hydrationSpies.ensureAllChatsHydrated.mockReset().mockResolvedValue(undefined)
   vi.stubGlobal(
     'confirm',
@@ -308,6 +367,74 @@ describe('AgentPresetSettings', () => {
         enabled: true,
       }),
     )
+  })
+
+  it('latches a queued create until its matching authoritative row arrives', async () => {
+    seedDb([])
+    const latch: AgentPresetProjectionLatchMock = {
+      kind: 'preset',
+      key: 'agent-preset:generated',
+      baselineIds: [],
+      expectedName: 'Research Preset',
+      semanticDescriptor: 'Expected description',
+    }
+    agentPresetSpies.createAgentPreset.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      projectionLatch: latch,
+    })
+    agentPresetSpies.isAgentPresetGeneratedProjectionResolved.mockImplementation((candidate) => {
+      const baselineIds = new Set(candidate.baselineIds)
+      return getDatabase().agentPresets.some(
+        (record) =>
+          !baselineIds.has(record.id) &&
+          record.name === candidate.expectedName &&
+          record.description === candidate.semanticDescriptor,
+      )
+    })
+    mountPage()
+    await tick()
+
+    button('[data-risu-agent-preset-create]').click()
+    await tick()
+    const input = nameInput()
+    input.value = 'Research Preset'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    const description = target.querySelector<HTMLTextAreaElement>('[data-risu-agent-preset-description-input]')!
+    description.value = 'Expected description'
+    description.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+    button('[data-risu-agent-preset-save]').click()
+    await flushAsyncWork()
+
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeNull()
+    expect(target.textContent).toContain(language.agentPresets.commandQueued)
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
+    button('[data-risu-agent-preset-create]').click()
+    expect(agentPresetSpies.createAgentPreset).toHaveBeenCalledTimes(1)
+
+    unmount(component!)
+    component = undefined
+    target.innerHTML = ''
+    agentPresetSpies.currentPendingAgentPresetGeneratedProjectionLatch.mockReturnValue(latch)
+    mountPage()
+    await tick()
+    expect(target.textContent).toContain(language.agentPresets.commandQueued)
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
+
+    getDatabase().agentPresets = [
+      preset({ id: 'ap_unrelated', name: 'Research Preset', description: 'Different description' }),
+    ]
+    await tick()
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
+
+    getDatabase().agentPresets = [
+      preset({ id: 'ap_unrelated', name: 'Research Preset', description: 'Different description' }),
+      preset({ id: 'ap_created', name: 'Research Preset', description: 'Expected description' }),
+    ]
+    await tick()
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(false)
+    expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
   })
 
   it('updates, duplicates, deletes, reorders, and selects defaults through command helpers', async () => {
@@ -372,7 +499,10 @@ describe('AgentPresetSettings', () => {
     expect(defaultSelect).toBeTruthy()
     expect(defaultSelect!.disabled).toBe(true)
 
-    resolveReorder({ status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } })
+    resolveReorder({
+      status: 'accepted',
+      result: { status: 'ok', revision: 1, event: { type: 'ok', revision: 1 } },
+    })
     await flushAsyncWork()
 
     expect(defaultSelect!.disabled).toBe(false)
@@ -463,7 +593,7 @@ describe('AgentPresetSettings', () => {
       const current = getDatabase().agentPresets[0]
       getDatabase().agentPresets = [{ ...current, name: 'Pending Agent' } as AgentPresetRecord]
       await pendingUpdate
-      return { status: 'error', error: 'rejected' }
+      return { status: 'failed', result: { status: 'error', error: 'rejected' } }
     })
     vi.mocked(window.confirm).mockReturnValue(false)
     mountPage()
@@ -763,6 +893,95 @@ describe('AgentPresetSettings', () => {
     expect(agentPresetSpies.updateAgentPresetStep).not.toHaveBeenCalled()
   })
 
+  it('closes and latches a queued step create until the matching step is projected', async () => {
+    const original = preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })
+    seedDb([original])
+    const latch: AgentPresetProjectionLatchMock = {
+      kind: 'step',
+      key: 'agent-preset:generated-step:ap_a',
+      presetId: 'ap_a',
+      baselineIds: ['aps_a'],
+      expectedName: 'Step 2',
+      expectedOutputKey: 'step_2',
+      semanticDescriptor: '',
+      compareOutputKey: true,
+    }
+    agentPresetSpies.createAgentPresetStep.mockResolvedValueOnce({
+      status: 'queued',
+      result: { status: 'unavailable' },
+      projectionLatch: latch,
+    })
+    agentPresetSpies.isAgentPresetGeneratedProjectionResolved.mockImplementation((candidate) => {
+      if (candidate.kind !== 'step') return false
+      const baselineIds = new Set(candidate.baselineIds)
+      const record = getDatabase().agentPresets.find((presetRecord) => presetRecord.id === candidate.presetId)
+      return !!record?.steps.some(
+        (stepRecord) =>
+          !baselineIds.has(stepRecord.id) &&
+          stepRecord.name === candidate.expectedName &&
+          (!candidate.expectedOutputKey || stepRecord.outputKey === candidate.expectedOutputKey) &&
+          stepRecord.instruction === candidate.semanticDescriptor,
+      )
+    })
+    mountPage()
+    await tick()
+
+    rowButton('ap_a', '[data-risu-agent-preset-edit]').click()
+    await tick()
+    target.querySelector<HTMLButtonElement>('[data-risu-agent-preset-step-editor] button')?.click()
+    await tick()
+    button('[data-risu-agent-preset-step-save]').click()
+    await flushAsyncWork()
+
+    expect(agentPresetSpies.createAgentPresetStep).toHaveBeenCalledTimes(1)
+    expect(target.querySelector('[data-risu-agent-preset-editor]')).toBeNull()
+    expect(target.textContent).toContain(language.agentPresets.commandQueued)
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
+
+    getDatabase().agentPresets = [
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep(),
+          baseStep({
+            id: 'aps_other',
+            name: 'Step 2',
+            outputKey: 'step_2',
+            instruction: 'Different instruction',
+          }),
+        ],
+      }),
+    ]
+    await tick()
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(true)
+
+    getDatabase().agentPresets = [
+      preset({
+        id: 'ap_a',
+        name: 'Research Agent',
+        steps: [
+          baseStep(),
+          baseStep({
+            id: 'aps_other',
+            name: 'Step 2',
+            outputKey: 'step_2',
+            instruction: 'Different instruction',
+          }),
+          baseStep({
+            id: 'aps_created',
+            name: 'Step 2',
+            outputKey: 'step_2',
+            instruction: '',
+          }),
+        ],
+      }),
+    ]
+    await tick()
+    expect(button('[data-risu-agent-preset-create]').disabled).toBe(false)
+    expect(target.textContent).not.toContain(language.agentPresets.commandQueued)
+  })
+
   it('sends only a changed step name and omits large unchanged fields', async () => {
     const instruction = 'Large unchanged agent instruction. '.repeat(10_000)
     seedDb([
@@ -812,7 +1031,10 @@ describe('AgentPresetSettings', () => {
     })
     agentPresetSpies.updateAgentPresetStep.mockImplementationOnce(async () => {
       await pendingUpdate
-      return { status: 'ok', revision: 2, event: { type: 'ok', revision: 2 } }
+      return {
+        status: 'accepted',
+        result: { status: 'ok', revision: 2, event: { type: 'ok', revision: 2 } },
+      }
     })
     seedDb([preset({ id: 'ap_a', name: 'Research Agent', steps: [baseStep()] })])
     mountPage()

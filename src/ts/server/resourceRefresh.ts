@@ -1,5 +1,10 @@
 import { selectedCharID } from '../stores.svelte'
 import {
+  mergePendingAgentPresetCharactersResource,
+  mergePendingAgentPresetLoadoutsResource,
+  mergePendingAgentPresetSettingsResource,
+} from '../agentPresets'
+import {
   mergePendingPluginCollectionResource,
   mergePendingPluginProviderResource,
   mergePendingPluginStorageResource,
@@ -43,6 +48,9 @@ let serverResourceRefreshPromise: Promise<ServerResourceRefreshResult> | null = 
 let serverResourceRefreshPending = false
 
 export const serverResourceInvalidationHooks: ServerResourceInvalidationHooks = {
+  mergePendingAgentPresetSettings: mergePendingAgentPresetSettingsResource,
+  mergePendingAgentPresetLoadouts: mergePendingAgentPresetLoadoutsResource,
+  mergePendingAgentPresetCharacters: mergePendingAgentPresetCharactersResource,
   mergePendingPluginCollection: mergePendingPluginCollectionResource,
   mergePendingPluginProvider: mergePendingPluginProviderResource,
   mergePendingPluginStorage: mergePendingPluginStorageResource,

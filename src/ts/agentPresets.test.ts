@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
@@ -17,10 +18,20 @@ vi.mock('./process/modules', () => ({
 }))
 
 import {
+  createAgentPreset,
+  createAgentPresetStep,
+  currentPendingAgentPresetGeneratedProjectionLatch,
   deleteAgentPreset,
   deleteAgentPresetStep,
+  duplicateAgentPreset,
+  duplicateAgentPresetStep,
+  isAgentPresetGeneratedProjectionResolved,
+  mergePendingAgentPresetCharactersResource,
+  mergePendingAgentPresetLoadoutsResource,
+  mergePendingAgentPresetSettingsResource,
   reorderAgentPresets,
   reorderAgentPresetSteps,
+  resetPendingAgentPresetMutationsForTests,
   setAgentPresetDefault,
   updateAgentPreset,
   updateAgentPresetStep,
@@ -33,6 +44,12 @@ import {
   setServerCommandSuccessReconciler,
 } from './server/commands'
 import { isSettingsGroupAcknowledgementTainted, resetServerResourceState } from './server/resourceState.svelte'
+import {
+  MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+} from './server/pendingMutationOutbox'
 import {
   getDatabase,
   setDatabaseLite,
@@ -57,6 +74,17 @@ function response(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'content-type': 'application/json' },
+  })
+}
+
+async function prepareDurableAgentPresetOutbox(suffix: string): Promise<void> {
+  vi.stubGlobal('indexedDB', new IDBFactory())
+  resetPendingMutationOutboxForTests()
+  await preparePendingMutationOutbox({
+    writerSessionId: `writer-agent-preset-${suffix}`,
+    writerEpoch: 1,
+    databaseLineage: `lineage-agent-preset-${suffix}`,
+    requestedWriterWasActive: true,
   })
 }
 
@@ -134,6 +162,8 @@ function seedAgentPresetDeleteReferences(): void {
 }
 
 beforeEach(() => {
+  resetPendingMutationOutboxForTests()
+  resetPendingAgentPresetMutationsForTests()
   setResourceWriteGuardEnabled(false)
   resetServerResourceState()
   setDatabaseLite({ agentPresets: [preset()], characters: [] } as never, 1)
@@ -145,6 +175,8 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  resetPendingMutationOutboxForTests()
+  resetPendingAgentPresetMutationsForTests()
   setResourceWriteGuardEnabled(false)
   setServerCommandSuccessReconciler(null)
   vi.unstubAllGlobals()
@@ -312,7 +344,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
 
-    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'rejected' })
+    await expect(resultPromise).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: 'rejected', reason: 'invalid-request' },
+    })
     expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_a', 'ap_b'])
     expect(getDatabase().agentPresetDefaultId).toBe('ap_a')
     expect(getDatabase().characters[0].chats[0]).toMatchObject({
@@ -344,7 +379,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     pendingResponse.resolve(response({ error: 'revision_conflict', currentRevision: 2 }, 409))
 
-    await expect(resultPromise).resolves.toEqual({ status: 'conflict', currentRevision: 2 })
+    await expect(resultPromise).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'conflict', currentRevision: 2 },
+    })
     expect(getDatabase().characters[0].chats[0].generationSettings?.agentPresetId).toBe('ap_b')
     expect(getDatabase().loadouts[0]).toMatchObject({
       agentPresetId: 'ap_b',
@@ -368,7 +406,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
 
-    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'rejected' })
+    await expect(resultPromise).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: 'rejected', reason: 'invalid-request' },
+    })
     expect(getDatabase().characters[0].chats).toEqual([])
     expect(getDatabase().loadouts).toEqual([])
     expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
@@ -388,7 +429,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     pendingResponse.resolve(response({ error: 'revision_conflict', currentRevision: 2 }, 409))
 
-    await expect(resultPromise).resolves.toEqual({ status: 'conflict', currentRevision: 2 })
+    await expect(resultPromise).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'conflict', currentRevision: 2 },
+    })
     expect(getDatabase().agentPresets[0]).toMatchObject({
       name: 'Newer local name',
       enabled: true,
@@ -416,7 +460,10 @@ describe('Agent Preset optimistic field rollback', () => {
     })
     pendingResponse.resolve(response({ error: 'rejected' }, 400))
 
-    await expect(resultPromise).resolves.toEqual({ status: 'error', error: 'rejected' })
+    await expect(resultPromise).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: 'rejected', reason: 'invalid-request' },
+    })
     expect(getDatabase().agentPresets[0].steps[0]).toMatchObject({
       outputKey: 'step_a',
       instruction: 'Newer local instruction',
@@ -449,7 +496,10 @@ describe('Agent Preset optimistic field rollback', () => {
       vi.fn(async () => response({ error: 'rejected' }, 400)),
     )
 
-    await expect(runCommand()).resolves.toEqual({ status: 'error', error: 'rejected' })
+    await expect(runCommand()).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: 'rejected', reason: 'invalid-request' },
+    })
 
     expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
   })
@@ -515,13 +565,496 @@ describe('Agent Preset optimistic field rollback', () => {
     pendingReorder.resolve(response({ error: 'revision_conflict', currentRevision: 2 }, 409))
 
     await expect(Promise.all([reorderResult, updateResult])).resolves.toEqual([
-      { status: 'conflict', currentRevision: 2 },
-      expect.objectContaining({ status: 'ok', revision: 3 }),
+      { status: 'failed', result: { status: 'conflict', currentRevision: 2 } },
+      { status: 'accepted', result: expect.objectContaining({ status: 'ok', revision: 3 }) },
     ])
     expect(getDatabase().agentPresets[0].steps.map((candidate) => candidate.id)).toEqual(['aps_b', 'aps_a'])
     expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Accepted instruction')
     expect(isSettingsGroupAcknowledgementTainted('agents')).toBe(true)
     expect(authoritativeAgentsRead).toHaveBeenCalledOnce()
     expect(localRevisionFence).not.toHaveBeenCalled()
+  })
+})
+
+describe('Agent Preset ordered mutation durability', () => {
+  it('rebases two terminal preset field attempts back to the authoritative baseline', async () => {
+    const pending = [deferred<Response>(), deferred<Response>()]
+    let requestIndex = 0
+    const fetchMock = vi.fn(() => pending[requestIndex++].promise)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = updateAgentPreset('ap_a', { name: 'Attempt A' })
+    const second = updateAgentPreset('ap_a', { name: 'Attempt B' })
+    expect(getDatabase().agentPresets[0].name).toBe('Attempt B')
+
+    pending[0].resolve(response({ error: 'first rejected' }, 400))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(getDatabase().agentPresets[0].name).toBe('Attempt B')
+
+    pending[1].resolve(response({ error: 'second rejected' }, 400))
+    await expect(Promise.all([first, second])).resolves.toMatchObject([{ status: 'failed' }, { status: 'failed' }])
+    expect(getDatabase().agentPresets[0].name).toBe('Preset A')
+  })
+
+  it('rebases two terminal step field attempts back to the authoritative baseline', async () => {
+    const pending = [deferred<Response>(), deferred<Response>()]
+    let requestIndex = 0
+    const fetchMock = vi.fn(() => pending[requestIndex++].promise)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const first = updateAgentPresetStep('ap_a', 'aps_a', { instruction: 'Attempt A' })
+    const second = updateAgentPresetStep('ap_a', 'aps_a', { instruction: 'Attempt B' })
+    expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Attempt B')
+
+    pending[0].resolve(response({ error: 'first rejected' }, 400))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Attempt B')
+
+    pending[1].resolve(response({ error: 'second rejected' }, 400))
+    await expect(Promise.all([first, second])).resolves.toMatchObject([{ status: 'failed' }, { status: 'failed' }])
+    expect(getDatabase().agentPresets[0].steps[0].instruction).toBe('Original instruction')
+  })
+
+  it('rebases terminal preset reorders and default selections independently', async () => {
+    setResourceWriteGuardEnabled(false)
+    setDatabaseLite(
+      {
+        agentPresets: [
+          preset(),
+          preset({ id: 'ap_b', name: 'Preset B', steps: [] }),
+          preset({ id: 'ap_c', name: 'Preset C', steps: [] }),
+        ],
+        agentPresetDefaultId: 'ap_a',
+        characters: [],
+      } as never,
+      1,
+    )
+    setResourceWriteGuardEnabled(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    const reorderA = reorderAgentPresets(['ap_b', 'ap_a', 'ap_c'])
+    const reorderB = reorderAgentPresets(['ap_c', 'ap_b', 'ap_a'])
+    await expect(Promise.all([reorderA, reorderB])).resolves.toMatchObject([{ status: 'failed' }, { status: 'failed' }])
+    expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_a', 'ap_b', 'ap_c'])
+
+    const defaultB = setAgentPresetDefault('ap_b')
+    const defaultC = setAgentPresetDefault('ap_c')
+    await expect(Promise.all([defaultB, defaultC])).resolves.toMatchObject([{ status: 'failed' }, { status: 'failed' }])
+    expect(getDatabase().agentPresetDefaultId).toBe('ap_a')
+  })
+
+  it('rebases a failed delete through a failed structural successor', async () => {
+    setResourceWriteGuardEnabled(false)
+    setDatabaseLite(
+      {
+        agentPresets: [
+          preset(),
+          preset({ id: 'ap_b', name: 'Preset B', steps: [] }),
+          preset({ id: 'ap_c', name: 'Preset C', steps: [] }),
+        ],
+        agentPresetDefaultId: 'ap_a',
+        characters: [],
+      } as never,
+      1,
+    )
+    setResourceWriteGuardEnabled(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'rejected' }, 400)),
+    )
+
+    const deleting = deleteAgentPreset('ap_a')
+    const reordering = reorderAgentPresets(['ap_c', 'ap_b'])
+    expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_c', 'ap_b'])
+
+    await expect(Promise.all([deleting, reordering])).resolves.toMatchObject([
+      { status: 'failed' },
+      { status: 'failed' },
+    ])
+    expect(getDatabase().agentPresets.map((candidate) => candidate.id)).toEqual(['ap_a', 'ap_b', 'ap_c'])
+    expect(getDatabase().agentPresetDefaultId).toBe('ap_a')
+  })
+
+  it('retains an exact sparse patch and overlays it on authoritative refreshes', async () => {
+    await prepareDurableAgentPresetOutbox('sparse-patch')
+    const pendingResponse = deferred<Response>()
+    const fetchMock = vi.fn(() => pendingResponse.promise)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const resultPromise = updateAgentPreset('ap_a', { name: 'Queued name' })
+    expect(getDatabase().agentPresets[0].name).toBe('Queued name')
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    pendingResponse.resolve(response({ error: 'temporary failure' }, 500))
+
+    await expect(resultPromise).resolves.toMatchObject({ status: 'queued' })
+    const pendingMutations = await listPendingMutations()
+    expect(pendingMutations).toHaveLength(1)
+    expect(pendingMutations[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/agent-presets/ap_a',
+          body: { patch: { name: 'Queued name' } },
+        },
+      ],
+    })
+
+    const merged = mergePendingAgentPresetSettingsResource({
+      agentPresets: [preset({ name: 'Authoritative name', description: 'Server description', enabled: false })],
+      agentPresetDefaultId: 'ap_a',
+    })
+    expect(merged.agentPresets[0]).toMatchObject({
+      name: 'Queued name',
+      description: 'Server description',
+      enabled: false,
+    })
+  })
+
+  it('drops terminal intents, removes their overlays, and restores the projection', async () => {
+    await prepareDurableAgentPresetOutbox('terminal')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'invalid patch' }, 400)),
+    )
+
+    await expect(updateAgentPreset('ap_a', { name: 'Rejected name' })).resolves.toMatchObject({
+      status: 'failed',
+      result: { status: 'error', reason: 'invalid-request' },
+    })
+    expect(getDatabase().agentPresets[0].name).toBe('Preset A')
+    expect(await listPendingMutations()).toEqual([])
+    expect(
+      mergePendingAgentPresetSettingsResource({ agentPresets: [preset({ name: 'Authoritative name' })] })
+        .agentPresets[0].name,
+    ).toBe('Authoritative name')
+  })
+
+  it('retires an accepted overlay before authoritative event reconciliation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        response(
+          {
+            revision: 2,
+            event: { type: 'agentPreset.updated', revision: 2, resource: 'agentPreset', id: 'ap_a' },
+            presetId: 'ap_a',
+          },
+          200,
+        ),
+      ),
+    )
+    let reconciledName = ''
+    setServerCommandSuccessReconciler(() => {
+      reconciledName = mergePendingAgentPresetSettingsResource({
+        agentPresets: [preset({ name: 'Server canonical name' })],
+      }).agentPresets[0].name
+    })
+
+    await expect(updateAgentPreset('ap_a', { name: 'Attempted name' })).resolves.toMatchObject({
+      status: 'accepted',
+    })
+    expect(reconciledName).toBe('Server canonical name')
+  })
+
+  it('drains a retained predecessor before accepting a later writer', async () => {
+    await prepareDurableAgentPresetOutbox('successor')
+    let commandCount = 0
+    const commandBodies: Array<Record<string, unknown>> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url.endsWith('/mutation-receipts/ack')) return response({ acknowledged: true }, 200)
+        if (!url.endsWith('/agent-presets/ap_a')) throw new Error(`Unexpected URL: ${url}`)
+        commandCount += 1
+        commandBodies.push(JSON.parse(String(init.body)))
+        if (commandCount === 1) return response({ error: 'temporary failure' }, 500)
+        const revision = commandCount
+        return response(
+          {
+            revision,
+            event: { type: 'agentPreset.updated', revision, resource: 'agentPreset', id: 'ap_a' },
+            presetId: 'ap_a',
+          },
+          200,
+        )
+      }),
+    )
+
+    await expect(updateAgentPreset('ap_a', { name: 'Queued predecessor' })).resolves.toMatchObject({
+      status: 'queued',
+    })
+    await expect(updateAgentPreset('ap_a', { name: 'Accepted successor' })).resolves.toMatchObject({
+      status: 'accepted',
+    })
+
+    expect(commandBodies).toEqual([
+      { baseRevision: 1, patch: { name: 'Queued predecessor' } },
+      { baseRevision: 1, patch: { name: 'Queued predecessor' } },
+      { baseRevision: 2, patch: { name: 'Accepted successor' } },
+    ])
+    expect(getDatabase().agentPresets[0].name).toBe('Accepted successor')
+    expect(await listPendingMutations()).toEqual([])
+  })
+
+  it('retires a drained predecessor overlay while retaining a queued successor overlay', async () => {
+    await prepareDurableAgentPresetOutbox('retained-successor-compaction')
+    let commandCount = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url.endsWith('/mutation-receipts/ack')) return response({ acknowledged: true }, 200)
+        if (!url.endsWith('/agent-presets/ap_a')) throw new Error(`Unexpected URL: ${url}`)
+        commandCount += 1
+        if (commandCount === 2) {
+          return response(
+            {
+              revision: 2,
+              event: { type: 'agentPreset.updated', revision: 2, resource: 'agentPreset', id: 'ap_a' },
+              presetId: 'ap_a',
+            },
+            200,
+          )
+        }
+        return response({ error: 'temporary failure' }, 500)
+      }),
+    )
+
+    await expect(updateAgentPreset('ap_a', { name: 'Accepted predecessor' })).resolves.toMatchObject({
+      status: 'queued',
+    })
+    await expect(updateAgentPreset('ap_a', { enabled: false })).resolves.toMatchObject({
+      status: 'queued',
+    })
+
+    const merged = mergePendingAgentPresetSettingsResource({
+      agentPresets: [preset({ name: 'Remote canonical name', enabled: true })],
+      agentPresetDefaultId: 'ap_a',
+    })
+    expect(merged.agentPresets[0]).toMatchObject({
+      name: 'Remote canonical name',
+      enabled: false,
+    })
+    const pendingMutations = await listPendingMutations()
+    expect(pendingMutations).toHaveLength(1)
+    expect(pendingMutations[0].intent.requests[0]).toMatchObject({
+      method: 'PATCH',
+      path: '/agent-presets/ap_a',
+      body: { patch: { enabled: false } },
+    })
+  })
+
+  it('keeps retained delete cascades projected across settings, loadout, and character refreshes', async () => {
+    await prepareDurableAgentPresetOutbox('delete-overlay')
+    seedAgentPresetDeleteReferences()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'temporary failure' }, 500)),
+    )
+
+    await expect(deleteAgentPreset('ap_a')).resolves.toMatchObject({ status: 'queued' })
+    const mergedSettings = mergePendingAgentPresetSettingsResource({
+      agentPresets: [preset(), preset({ id: 'ap_b', name: 'Preset B', steps: [] })],
+      agentPresetDefaultId: 'ap_a',
+    })
+    expect(mergedSettings.agentPresets.map((candidate) => candidate.id)).toEqual(['ap_b'])
+    expect(mergedSettings).not.toHaveProperty('agentPresetDefaultId')
+
+    const mergedLoadouts = mergePendingAgentPresetLoadoutsResource([
+      { id: 'loadout_a', agentPresetId: 'ap_a', agentPresetName: 'Preset A' },
+    ])
+    expect(mergedLoadouts).toEqual([{ id: 'loadout_a' }])
+    const mergedCharacters = mergePendingAgentPresetCharactersResource([
+      { chaId: 'char_a', chats: [{ id: 'chat_a', generationSettings: { agentPresetId: 'ap_a', other: true } }] },
+    ])
+    expect(mergedCharacters[0].chats[0].generationSettings).toEqual({ other: true })
+  })
+
+  it('fails oversized optimistic payload staging without leaving a projection', async () => {
+    await prepareDurableAgentPresetOutbox('oversized')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const oversized = 'x'.repeat(MAX_DURABLE_MUTATION_PAYLOAD_BYTES + 1)
+
+    await expect(updateAgentPreset('ap_a', { description: oversized })).resolves.toEqual({
+      status: 'failed',
+      result: { status: 'error', error: 'Pending Agent Preset mutation payload is too large' },
+    })
+    expect(getDatabase().agentPresets[0].description).toBeUndefined()
+    expect(await listPendingMutations()).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('clears a generated latch when staging cannot serialize its request', async () => {
+    await prepareDurableAgentPresetOutbox('generated-stage-error')
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createAgentPreset({ name: 'Unserializable', unsupported: 1n })).resolves.toMatchObject({
+      status: 'failed',
+      result: { status: 'error' },
+    })
+    expect(currentPendingAgentPresetGeneratedProjectionLatch()).toBeNull()
+    expect(await listPendingMutations()).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('Agent Preset generated-id projection latches', () => {
+  it('survives remount-style reads, suppresses duplicate submission, and ignores a same-name different row', async () => {
+    await prepareDurableAgentPresetOutbox('generated-preset')
+    const fetchMock = vi.fn(async () => response({ error: 'temporary failure' }, 500))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const attempted = { name: 'Same name', description: 'Expected description', enabled: false }
+    const outcome = await createAgentPreset(attempted)
+    expect(outcome).toMatchObject({ status: 'queued', projectionLatch: { kind: 'preset' } })
+    if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
+    const latch = outcome.projectionLatch
+    expect(currentPendingAgentPresetGeneratedProjectionLatch()).toEqual(latch)
+
+    await expect(createAgentPreset({ name: 'Second click', enabled: true })).resolves.toMatchObject({
+      status: 'queued',
+      projectionLatch: latch,
+    })
+    expect(fetchMock).toHaveBeenCalledOnce()
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets.push(
+        preset({ id: 'ap_unrelated', name: 'Same name', description: 'Different description', enabled: false }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
+    expect(currentPendingAgentPresetGeneratedProjectionLatch()).toEqual(latch)
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets.push(
+        preset({ id: 'ap_created', name: 'Same name', description: 'Expected description', enabled: false, steps: [] }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
+    expect(currentPendingAgentPresetGeneratedProjectionLatch()).toBeNull()
+  })
+
+  it('matches duplicated preset dependencies semantically after every step id is regenerated', async () => {
+    await prepareDurableAgentPresetOutbox('duplicate-preset')
+    const sourceSteps = [
+      step({ id: 'aps_source_a', outputKey: 'source_a' }),
+      step({ id: 'aps_source_b', name: 'Step B', outputKey: 'source_b', dependencies: ['aps_source_a'] }),
+    ]
+    setResourceWriteGuardEnabled(false)
+    setDatabaseLite({ agentPresets: [preset({ steps: sourceSteps })], characters: [] } as never, 1)
+    setResourceWriteGuardEnabled(true)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'temporary failure' }, 500)),
+    )
+
+    const outcome = await duplicateAgentPreset('ap_a', { name: 'Same duplicate' })
+    if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
+    const latch = outcome.projectionLatch
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets.push(
+        preset({
+          id: 'ap_unrelated',
+          name: 'Same duplicate',
+          steps: [
+            step({ id: 'aps_unrelated_a', outputKey: 'source_a' }),
+            step({
+              id: 'aps_unrelated_b',
+              name: 'Step B',
+              outputKey: 'source_b',
+              dependencies: ['aps_source_a'],
+            }),
+          ],
+        }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets.push(
+        preset({
+          id: 'ap_duplicate',
+          name: 'Same duplicate',
+          steps: [
+            step({ id: 'aps_duplicate_a', outputKey: 'source_a' }),
+            step({
+              id: 'aps_duplicate_b',
+              name: 'Step B',
+              outputKey: 'source_b',
+              dependencies: ['aps_duplicate_a'],
+            }),
+          ],
+        }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
+  })
+
+  it('keeps a queued step create latched until the full semantic step appears', async () => {
+    await prepareDurableAgentPresetOutbox('generated-step')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'temporary failure' }, 500)),
+    )
+    const attempted = {
+      name: 'Same step',
+      enabled: true,
+      phase: 'beforeMain' as const,
+      dependencies: [],
+      instruction: 'Expected instruction',
+      model: { mode: 'inheritMain' as const },
+      runtime: {},
+      inputScopes: [],
+      outputKey: 'same_step',
+      outputFormat: 'text' as const,
+      destination: 'promptOutput' as const,
+      failurePolicy: { mode: 'required' as const },
+    }
+    const outcome = await createAgentPresetStep('ap_a', attempted)
+    if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
+    const latch = outcome.projectionLatch
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets[0].steps.push(
+        step({ id: 'aps_unrelated', name: 'Same step', outputKey: 'same_step', instruction: 'Different instruction' }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets[0].steps.push(step({ id: 'aps_created', ...attempted }))
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
+  })
+
+  it('matches a duplicated step only after its canonical unique output key appears', async () => {
+    await prepareDurableAgentPresetOutbox('duplicate-step')
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ error: 'temporary failure' }, 500)),
+    )
+    const outcome = await duplicateAgentPresetStep('ap_a', 'aps_a', { name: 'Same step copy' })
+    if (outcome.status !== 'queued' || !outcome.projectionLatch) throw new Error('Expected a queued latch')
+    const latch = outcome.projectionLatch
+
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets[0].steps.push(
+        step({ id: 'aps_unrelated', name: 'Same step copy', outputKey: 'wrong_copy' }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(false)
+    withTrustedResourceWrite(() => {
+      getDatabase().agentPresets[0].steps.push(
+        step({ id: 'aps_duplicate', name: 'Same step copy', outputKey: 'step_a_copy' }),
+      )
+    })
+    expect(isAgentPresetGeneratedProjectionResolved(latch)).toBe(true)
   })
 })

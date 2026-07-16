@@ -10,10 +10,14 @@
     reorderAgentPresets,
     setAgentPresetDefault,
     updateAgentPreset,
+    currentPendingAgentPresetGeneratedProjectionLatch,
+    isAgentPresetGeneratedProjectionResolved,
+    type AgentPresetGeneratedProjectionLatch,
+    type AgentPresetMutationOutcome,
   } from 'src/ts/agentPresets'
   import { createAgentPresetStatusSummary, planAgentPreset } from 'src/ts/agentPresetResolver'
   import type { AgentPresetRecord, AgentPresetStepRecord } from 'src/ts/agentPresetRecords'
-  import type { AgentPresetSnapshot, ServerCommandResult } from 'src/ts/server/commands'
+  import type { AgentPresetSnapshot } from 'src/ts/server/commands'
   import { getDatabase } from 'src/ts/storage/database.svelte'
   import AgentPresetEditorDrawer from './AgentPresetEditorDrawer.svelte'
 
@@ -29,12 +33,23 @@
   let editorKey = $state(0)
   let busy = $state(false)
   let commandError = $state('')
+  const initialProjectionLatch = currentPendingAgentPresetGeneratedProjectionLatch()
+  let mutationState = $state<'idle' | 'saving' | 'queued'>(initialProjectionLatch ? 'queued' : 'idle')
+  let queuedProjectionLatch = $state<AgentPresetGeneratedProjectionLatch | null>(initialProjectionLatch)
 
   let presets = $derived(Array.isArray(getDatabase().agentPresets) ? getDatabase().agentPresets : [])
   let defaultPresetId = $derived(
     typeof getDatabase().agentPresetDefaultId === 'string' ? getDatabase().agentPresetDefaultId : '',
   )
   let editingPreset = $derived(editingPresetId ? presets.find((preset) => preset.id === editingPresetId) : undefined)
+  let mutationLocked = $derived(busy || queuedProjectionLatch !== null)
+
+  $effect(() => {
+    const latch = queuedProjectionLatch
+    if (!latch || !isAgentPresetGeneratedProjectionResolved(latch)) return
+    queuedProjectionLatch = null
+    mutationState = 'idle'
+  })
 
   function openCreateEditor(): void {
     editorMode = 'create'
@@ -59,22 +74,27 @@
   async function saveEditor(snapshot: AgentPresetSnapshot): Promise<void> {
     const modeAtSave = editorMode
     const presetIdAtSave = editingPresetId
-    if (!modeAtSave || busy) return
+    if (!modeAtSave || mutationLocked) return
     commandError = ''
     busy = true
+    mutationState = 'saving'
     const result =
       modeAtSave === 'create'
         ? await createAgentPreset(snapshot)
         : presetIdAtSave
           ? await updateAgentPreset(presetIdAtSave, snapshot)
-          : ({ status: 'error', error: language.agentPresets.editTargetMissing } as ServerCommandResult)
+          : ({
+              status: 'failed',
+              result: { status: 'error', error: language.agentPresets.editTargetMissing },
+            } as AgentPresetMutationOutcome)
     busy = false
     if (handleResult(result)) closeEditor()
   }
 
   async function duplicatePreset(preset: AgentPresetRecord): Promise<void> {
-    if (busy) return
+    if (mutationLocked) return
     busy = true
+    mutationState = 'saving'
     commandError = ''
     const result = await duplicateAgentPreset(preset.id, { name: language.agentPresets.copyName(preset.name) })
     busy = false
@@ -82,9 +102,10 @@
   }
 
   async function deletePreset(preset: AgentPresetRecord): Promise<void> {
-    if (busy) return
+    if (mutationLocked) return
     if (!window.confirm(language.agentPresets.deletePresetConfirm(preset.name))) return
     busy = true
+    mutationState = 'saving'
     commandError = ''
     const result = await deleteAgentPreset(preset.id)
     busy = false
@@ -92,7 +113,7 @@
   }
 
   async function movePreset(preset: AgentPresetRecord, delta: -1 | 1): Promise<void> {
-    if (busy) return
+    if (mutationLocked) return
     const index = presets.findIndex((candidate) => candidate.id === preset.id)
     const nextIndex = index + delta
     if (index < 0 || nextIndex < 0 || nextIndex >= presets.length) return
@@ -100,6 +121,7 @@
     const [moved] = nextIds.splice(index, 1)
     nextIds.splice(nextIndex, 0, moved)
     busy = true
+    mutationState = 'saving'
     commandError = ''
     const result = await reorderAgentPresets(nextIds)
     busy = false
@@ -107,16 +129,27 @@
   }
 
   async function selectDefaultPreset(agentPresetId: string): Promise<void> {
-    if (busy) return
+    if (mutationLocked) return
     busy = true
+    mutationState = 'saving'
     commandError = ''
     const result = await setAgentPresetDefault(agentPresetId || null)
     busy = false
     handleResult(result)
   }
 
-  function handleResult(result: ServerCommandResult<any>): boolean {
-    if (result.status === 'ok') return true
+  function handleResult(outcome: AgentPresetMutationOutcome<any>): boolean {
+    if (outcome.status === 'accepted') {
+      mutationState = 'idle'
+      return true
+    }
+    if (outcome.status === 'queued') {
+      mutationState = 'queued'
+      if (outcome.projectionLatch) queuedProjectionLatch = outcome.projectionLatch
+      return true
+    }
+    const result = outcome.result
+    mutationState = 'idle'
     commandError =
       result.status === 'conflict'
         ? language.agentPresets.commandConflict
@@ -124,6 +157,12 @@
           ? result.error
           : language.agentPresets.commandUnavailable
     return false
+  }
+
+  function latchQueuedProjection(latch: AgentPresetGeneratedProjectionLatch): void {
+    queuedProjectionLatch = latch
+    mutationState = 'queued'
+    closeEditor()
   }
 
   function enabledSteps(preset: AgentPresetRecord): AgentPresetStepRecord[] {
@@ -186,7 +225,7 @@
       <p class="text-sm text-textcolor2">{language.agentPresets.settingsDescription}</p>
     </div>
     <span data-risu-agent-preset-create>
-      <Button size="sm" disabled={busy} onclick={openCreateEditor}>
+      <Button size="sm" disabled={mutationLocked} onclick={openCreateEditor}>
         <span class="inline-flex items-center gap-2"><PlusIcon size={16} />{language.agentPresets.createPreset}</span>
       </Button>
     </span>
@@ -194,6 +233,11 @@
 
   {#if commandError}
     <div class="rounded-md border border-draculared p-3 text-sm text-draculared">{commandError}</div>
+  {/if}
+  {#if mutationState !== 'idle'}
+    <div class="rounded-md border border-darkborderc p-3 text-sm text-textcolor2" role="status" aria-live="polite">
+      {mutationState === 'saving' ? language.agentPresets.saving : language.agentPresets.commandQueued}
+    </div>
   {/if}
 
   <div class="flex flex-wrap items-center gap-3 rounded-md border border-darkborderc p-3">
@@ -203,7 +247,7 @@
         <SelectInput
           value={defaultPresetId}
           className="w-full"
-          disabled={busy}
+          disabled={mutationLocked}
           onchange={(event) => {
             void selectDefaultPreset(event.currentTarget.value)
           }}>
@@ -264,7 +308,7 @@
                     <Button
                       size="sm"
                       styled="outlined"
-                      disabled={busy || index === 0}
+                      disabled={mutationLocked || index === 0}
                       onclick={() => movePreset(preset, -1)}>
                       <span class="inline-flex items-center gap-1"
                         ><ArrowUpIcon size={14} />{language.agentPresets.moveUp}</span>
@@ -274,26 +318,34 @@
                     <Button
                       size="sm"
                       styled="outlined"
-                      disabled={busy || index === presets.length - 1}
+                      disabled={mutationLocked || index === presets.length - 1}
                       onclick={() => movePreset(preset, 1)}>
                       <span class="inline-flex items-center gap-1"
                         ><ArrowDownIcon size={14} />{language.agentPresets.moveDown}</span>
                     </Button>
                   </span>
                   <span data-risu-agent-preset-edit>
-                    <Button size="sm" styled="outlined" disabled={busy} onclick={() => openEditEditor(preset)}>
+                    <Button
+                      size="sm"
+                      styled="outlined"
+                      disabled={mutationLocked}
+                      onclick={() => openEditEditor(preset)}>
                       <span class="inline-flex items-center gap-1"
                         ><PencilIcon size={14} />{language.agentPresets.edit}</span>
                     </Button>
                   </span>
                   <span data-risu-agent-preset-duplicate>
-                    <Button size="sm" styled="outlined" disabled={busy} onclick={() => duplicatePreset(preset)}>
+                    <Button
+                      size="sm"
+                      styled="outlined"
+                      disabled={mutationLocked}
+                      onclick={() => duplicatePreset(preset)}>
                       <span class="inline-flex items-center gap-1"
                         ><CopyIcon size={14} />{language.agentPresets.duplicate}</span>
                     </Button>
                   </span>
                   <span data-risu-agent-preset-delete>
-                    <Button size="sm" styled="danger" disabled={busy} onclick={() => deletePreset(preset)}>
+                    <Button size="sm" styled="danger" disabled={mutationLocked} onclick={() => deletePreset(preset)}>
                       <span class="inline-flex items-center gap-1"
                         ><TrashIcon size={14} />{language.agentPresets.delete}</span>
                     </Button>
@@ -312,8 +364,9 @@
       <AgentPresetEditorDrawer
         mode={editorMode}
         preset={editingPreset}
-        {busy}
+        busy={mutationLocked}
         {commandError}
+        onQueuedProjection={latchQueuedProjection}
         onSave={saveEditor}
         onCancel={closeEditor} />
     {/key}

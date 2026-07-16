@@ -15,6 +15,12 @@ import {
   listPendingMutationReceiptAcknowledgements,
   listPendingMutations,
   isPendingMutationProjectionFenceCurrent,
+  pendingMutationAgentPresetCollectionProjectionTarget,
+  pendingMutationAgentPresetDefaultProjectionTarget,
+  pendingMutationAgentPresetOrderProjectionTarget,
+  pendingMutationAgentPresetRowProjectionTarget,
+  pendingMutationAgentPresetStepProjectionTarget,
+  pendingMutationAgentPresetStepsProjectionTarget,
   pendingMutationCharacterLorebooksProjectionTarget,
   pendingMutationCharacterScriptsProjectionTarget,
   pendingMutationCharacterTriggersProjectionTarget,
@@ -524,6 +530,34 @@ describe('pending mutation outbox', () => {
     ])
   })
 
+  it('maps Agent Preset rows, steps, ordering, and defaults to concrete projections', () => {
+    const targetsFor = (method: 'DELETE' | 'PATCH' | 'POST', path: string) =>
+      pendingMutationProjectionTargets({ version: 1, requests: [{ method, path, body: {} }] })
+    const presetRow = pendingMutationAgentPresetRowProjectionTarget('preset a')
+    const steps = pendingMutationAgentPresetStepsProjectionTarget('preset a')
+    const stepRow = pendingMutationAgentPresetStepProjectionTarget('preset a', 'step a')
+
+    expect(targetsFor('POST', '/agent-presets')).toEqual([pendingMutationAgentPresetCollectionProjectionTarget()])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/duplicate')).toEqual([
+      pendingMutationAgentPresetCollectionProjectionTarget(),
+    ])
+    expect(targetsFor('PATCH', '/agent-presets/preset%20a')).toEqual([presetRow])
+    expect(targetsFor('DELETE', '/agent-presets/preset%20a')).toEqual(
+      [
+        presetRow,
+        pendingMutationAgentPresetOrderProjectionTarget(),
+        pendingMutationAgentPresetDefaultProjectionTarget(),
+      ].sort(),
+    )
+    expect(targetsFor('POST', '/agent-presets/reorder')).toEqual([pendingMutationAgentPresetOrderProjectionTarget()])
+    expect(targetsFor('POST', '/agent-presets/default')).toEqual([pendingMutationAgentPresetDefaultProjectionTarget()])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/steps')).toEqual([steps])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/steps/step%20a/duplicate')).toEqual([steps])
+    expect(targetsFor('POST', '/agent-presets/preset%20a/steps/reorder')).toEqual([steps])
+    expect(targetsFor('PATCH', '/agent-presets/preset%20a/steps/step%20a')).toEqual([stepRow])
+    expect(targetsFor('DELETE', '/agent-presets/preset%20a/steps/step%20a')).toEqual([stepRow, steps].sort())
+  })
+
   it('fences concrete fields independently even when writers share a semantic key', async () => {
     const openAIKeyTarget = pendingMutationSettingsFieldProjectionTarget('openAIKey')
     const temperatureTarget = pendingMutationSettingsFieldProjectionTarget('temperature')
@@ -721,6 +755,17 @@ describe('pending mutation outbox', () => {
     ['POST', '/model-profiles/convert-legacy'],
     ['PUT', '/model-role-profiles'],
     ['PUT', '/model-runtime-defaults'],
+    ['POST', '/agent-presets'],
+    ['PATCH', '/agent-presets/preset-a'],
+    ['DELETE', '/agent-presets/preset-a'],
+    ['POST', '/agent-presets/preset-a/duplicate'],
+    ['POST', '/agent-presets/reorder'],
+    ['POST', '/agent-presets/default'],
+    ['POST', '/agent-presets/preset-a/steps'],
+    ['PATCH', '/agent-presets/preset-a/steps/step-a'],
+    ['DELETE', '/agent-presets/preset-a/steps/step-a'],
+    ['POST', '/agent-presets/preset-a/steps/step-a/duplicate'],
+    ['POST', '/agent-presets/preset-a/steps/reorder'],
     ['POST', '/prompt-presets'],
     ['PATCH', '/prompt-presets/prompt-a'],
     ['DELETE', '/prompt-presets/prompt-a'],
@@ -832,6 +877,12 @@ describe('pending mutation outbox', () => {
     ['POST', '/model-profiles/convert-legacy/extra'],
     ['PUT', '/model-role-profiles/extra'],
     ['PUT', '/model-runtime-defaults/extra'],
+    ['PUT', '/agent-presets'],
+    ['POST', '/agent-presets/preset-a'],
+    ['PATCH', '/agent-presets/preset-a/duplicate'],
+    ['POST', '/agent-presets/default/extra'],
+    ['POST', '/agent-presets/preset-a/steps/reorder/extra'],
+    ['PATCH', '/agent-presets/preset-a/steps'],
     ['POST', '/prompt-presets/select/extra'],
     ['DELETE', '/presets/preset-a/extra'],
     ['POST', '/modules/module-a'],

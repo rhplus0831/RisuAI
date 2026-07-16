@@ -47,6 +47,11 @@ vi.mock('../pluginCommands', () => ({
   mergePendingPluginProviderResource: vi.fn((value) => value),
   mergePendingPluginStorageResource: vi.fn((value) => value),
 }))
+vi.mock('../agentPresets', () => ({
+  mergePendingAgentPresetSettingsResource: vi.fn((value) => value),
+  mergePendingAgentPresetLoadoutsResource: vi.fn((value) => value),
+  mergePendingAgentPresetCharactersResource: vi.fn((value) => value),
+}))
 vi.mock('../process/reattach', () => ({
   setActiveGenerationJobs: sideEffects.setGenerationJobs,
   triggerOpenChatGenerationReattach: sideEffects.triggerReattach,
