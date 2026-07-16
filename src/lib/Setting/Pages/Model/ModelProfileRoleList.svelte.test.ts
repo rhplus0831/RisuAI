@@ -68,6 +68,13 @@ function setSelectValue(select: HTMLSelectElement, value: string): void {
   select.dispatchEvent(new Event('change', { bubbles: true }))
 }
 
+function roleModeSelect(roleIndex: number): HTMLSelectElement {
+  const row = target.querySelectorAll('tbody tr')[roleIndex]
+  const select = row?.querySelector('select')
+  if (!(select instanceof HTMLSelectElement)) throw new Error(`Role mode select not found at index ${roleIndex}`)
+  return select
+}
+
 beforeEach(() => {
   target = document.createElement('div')
   document.body.appendChild(target)
@@ -217,5 +224,87 @@ describe('ModelProfileRoleList', () => {
     await flushAsync()
 
     expect(Array.from(target.querySelectorAll('select')).every((select) => !select.disabled)).toBe(true)
+  })
+
+  it('rebases authoritative changes for untouched roles without discarding a dirty role', async () => {
+    commandSpies.updateModelRoleProfilesCommand.mockResolvedValue({ status: 'ok' })
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    setSelectValue(roleModeSelect(0), 'profile')
+    await tick()
+
+    getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
+      chatAux: { mode: 'profile', profileId: 'profile-1' },
+    })
+    await flushAsync()
+
+    expect(roleModeSelect(0).value).toBe('profile')
+    expect(roleModeSelect(1).value).toBe('profile')
+    expect(target.textContent).toContain(language.modelProfiles.unsavedRoleChanges)
+
+    buttonByText(language.modelProfiles.apply).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelRoleProfilesCommand).toHaveBeenCalledWith({
+      baseRevision: 123,
+      bindings: {
+        chatMain: { mode: 'profile', profileId: 'profile-1' },
+      },
+    })
+  })
+
+  it('preserves a dirty role when that authoritative binding changes to a different value', async () => {
+    commandSpies.updateModelRoleProfilesCommand.mockResolvedValue({ status: 'ok' })
+    getDatabase().modelProfiles = [
+      ...(getDatabase().modelProfiles ?? []),
+      {
+        id: 'profile-2',
+        name: 'Profile 2',
+        providerId: 'debug-echo',
+        modelId: 'echo_model',
+      },
+    ]
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    setSelectValue(roleModeSelect(0), 'profile')
+    await tick()
+
+    getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
+      chatMain: { mode: 'profile', profileId: 'profile-2' },
+    })
+    await flushAsync()
+
+    const profileSelect = target.querySelector('tbody tr:first-child select:nth-of-type(2)')
+    expect(profileSelect).toBeInstanceOf(HTMLSelectElement)
+    expect((profileSelect as HTMLSelectElement).value).toBe('profile-1')
+
+    buttonByText(language.modelProfiles.apply).click()
+    await flushAsync()
+
+    expect(commandSpies.updateModelRoleProfilesCommand).toHaveBeenCalledWith({
+      baseRevision: 123,
+      bindings: {
+        chatMain: { mode: 'profile', profileId: 'profile-1' },
+      },
+    })
+  })
+
+  it('clears a dirty role when the authoritative binding converges on the draft', async () => {
+    component = mount(ModelProfileRoleList, { target })
+    await tick()
+
+    setSelectValue(roleModeSelect(0), 'profile')
+    await tick()
+    expect(target.textContent).toContain(language.modelProfiles.unsavedRoleChanges)
+
+    getDatabase().modelRoleProfiles = normalizeModelRoleProfiles({
+      chatMain: { mode: 'profile', profileId: 'profile-1' },
+    })
+    await flushAsync()
+
+    expect(target.textContent).toContain(language.modelProfiles.noUnsavedRoleChanges)
+    expect(buttonByText(language.modelProfiles.apply).disabled).toBe(true)
   })
 })

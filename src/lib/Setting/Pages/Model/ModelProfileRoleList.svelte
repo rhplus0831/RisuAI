@@ -25,6 +25,7 @@
   type BindingMode = ModelRoleProfileBinding['mode']
 
   let draftBindings = $state<ModelRoleProfileMap>(normalizeModelRoleProfiles(undefined))
+  let serverBaselineBindings = $state<ModelRoleProfileMap>(normalizeModelRoleProfiles(undefined))
   let lastServerSnapshot = $state('')
   let applying = $state(false)
   let commandError = $state('')
@@ -50,7 +51,8 @@
     const snapshot = snapshotBindings(normalized)
     if (snapshot === lastServerSnapshot) return
 
-    draftBindings = cloneJsonValue(normalized)
+    draftBindings = rebaseDraftBindings(serverBaselineBindings, draftBindings, normalized)
+    serverBaselineBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshot
     commandError = ''
   })
@@ -67,11 +69,24 @@
     return JSON.stringify(MODEL_ROLES.map((role) => [role, bindings[role]]))
   }
 
+  function rebaseDraftBindings(
+    previousServer: ModelRoleProfileMap,
+    localDraft: ModelRoleProfileMap,
+    nextServer: ModelRoleProfileMap,
+  ): ModelRoleProfileMap {
+    const rebased = cloneJsonValue(localDraft)
+    for (const role of MODEL_ROLES) {
+      if (snapshotBinding(localDraft[role]) === snapshotBinding(previousServer[role])) {
+        rebased[role] = cloneJsonValue(nextServer[role])
+      }
+    }
+    return rebased
+  }
+
   function collectChangedBindings(): Partial<Record<ModelRole, ModelRoleProfileBinding>> {
-    const persisted = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     const changes: Partial<Record<ModelRole, ModelRoleProfileBinding>> = {}
     for (const role of MODEL_ROLES) {
-      if (snapshotBinding(draftBindings[role]) !== snapshotBinding(persisted[role])) {
+      if (snapshotBinding(draftBindings[role]) !== snapshotBinding(serverBaselineBindings[role])) {
         changes[role] = draftBindings[role]
       }
     }
@@ -189,6 +204,7 @@
   function resetDraft(): void {
     const normalized = normalizeModelRoleProfiles(getDatabase().modelRoleProfiles)
     draftBindings = cloneJsonValue(normalized)
+    serverBaselineBindings = cloneJsonValue(normalized)
     lastServerSnapshot = snapshotBindings(normalized)
     commandError = ''
   }
