@@ -29,6 +29,13 @@ import {
   markSettingsGroupAcknowledgementTainted,
 } from './resourceState.svelte'
 import { mergeProjectionIntoDirtyDraft } from './staleStateGuards'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './pendingMutationOutbox'
 
 /**
  * Prompt-template editor projection helpers.
@@ -133,6 +140,9 @@ interface PendingPromptItemUpdate {
   binding: PromptTemplateDraftBinding
   timer: ReturnType<typeof setTimeout> | null
   projectionFence: PromptTemplateOwnerMutationFence
+  sparseUpdate: SparsePromptItemUpdate
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
 }
 
 interface PendingPromptItemAttempt {
@@ -151,6 +161,8 @@ interface PendingPromptSettingsPatch {
   attempted: SettingsPatch
   projectionEpoch: number | null
   timer: ReturnType<typeof setTimeout> | null
+  intent: DurableMutationIntent | null
+  outbox: PendingMutationHandle | null
 }
 
 interface PendingPromptSettingsAttempt {
@@ -168,6 +180,8 @@ const pendingPromptSettingsPatch: PendingPromptSettingsPatch = {
   attempted: {},
   projectionEpoch: null,
   timer: null,
+  intent: null,
+  outbox: null,
 }
 const pendingPromptSettingsAttempts: PendingPromptSettingsAttempt[] = []
 let nextPromptItemAttemptSequence = 0
@@ -361,14 +375,25 @@ export function queuePromptItemProjectionUpdate(
   if (!canUseServerCommands()) return
 
   if (existing?.timer) clearTimeout(existing.timer)
+  const retainedPreviousItem = cloneJsonValue(existing?.previousItem ?? previousItem)
+  const sparseUpdate = sparsePromptItemUpdate(retainedPreviousItem, attemptedItem)
+  if (!sparseUpdate) {
+    if (existing) void acknowledgePendingMutation(existing.outbox)
+    pendingPromptItemUpdates.delete(pendingKey)
+    return
+  }
+  const intent = promptItemUpdateDurableIntent(promptPresetId, itemId, sparseUpdate)
   const pending: PendingPromptItemUpdate = {
     ownerId: promptPresetId,
     itemId,
-    previousItem: cloneJsonValue(existing?.previousItem ?? previousItem),
+    previousItem: retainedPreviousItem,
     attemptedItem,
     binding,
     timer: null,
     projectionFence: effectiveProjectionFence,
+    sparseUpdate,
+    intent,
+    outbox: stagePendingMutation(`prompt-item:${promptPresetId ?? '__legacy__'}:${itemId}`, intent, existing?.outbox),
   }
   pending.timer = setTimeout(() => runPendingPromptItemUpdate(pendingKey), delayMs)
   pendingPromptItemUpdates.set(pendingKey, pending)
@@ -378,7 +403,7 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
   if (!canUseServerCommands()) return
   for (const [key, value] of Object.entries(patch)) {
     if (!(key in pendingPromptSettingsPatch.previous)) {
-      pendingPromptSettingsPatch.previous[key] = previous[key]
+      pendingPromptSettingsPatch.previous[key] = cloneJsonValue(previous[key])
     }
     if (snapshotJson(value) === snapshotJson(pendingPromptSettingsPatch.previous[key])) {
       delete pendingPromptSettingsPatch.patch[key]
@@ -386,17 +411,19 @@ export function queuePromptSettingsProjectionPatch(patch: SettingsPatch, previou
       delete pendingPromptSettingsPatch.attempted[key]
       continue
     }
-    pendingPromptSettingsPatch.patch[key] = value
-    pendingPromptSettingsPatch.attempted[key] = value
+    pendingPromptSettingsPatch.patch[key] = cloneJsonValue(value)
+    pendingPromptSettingsPatch.attempted[key] = cloneJsonValue(value)
   }
 
   if (pendingPromptSettingsPatch.timer) clearTimeout(pendingPromptSettingsPatch.timer)
   if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
     pendingPromptSettingsPatch.projectionEpoch = null
     pendingPromptSettingsPatch.timer = null
+    cancelPendingPromptSettingsMutation()
     return
   }
   pendingPromptSettingsPatch.projectionEpoch ??= captureSettingsGroupProjectionEpoch('prompt')
+  stagePendingPromptSettingsMutation()
   pendingPromptSettingsPatch.timer = setTimeout(() => {
     runPendingPromptSettingsPatch()
   }, delayMs)
@@ -423,6 +450,9 @@ export function dropPendingPromptSettingsProjectionPatchKeys(keys: readonly stri
   }
   if (Object.keys(pendingPromptSettingsPatch.patch).length === 0) {
     pendingPromptSettingsPatch.projectionEpoch = null
+    cancelPendingPromptSettingsMutation()
+  } else if (dropped) {
+    stagePendingPromptSettingsMutation()
   }
 }
 
@@ -434,8 +464,9 @@ export function replacePendingPromptSettingsProjectionPatchValue(key: string, va
     return
   }
 
-  pendingPromptSettingsPatch.patch[key] = value
-  pendingPromptSettingsPatch.attempted[key] = value
+  pendingPromptSettingsPatch.patch[key] = cloneJsonValue(value)
+  pendingPromptSettingsPatch.attempted[key] = cloneJsonValue(value)
+  stagePendingPromptSettingsMutation()
 }
 
 export function flushPendingPromptTemplatePatches(options: ServerCommandTransportOptions = {}): void {
@@ -448,9 +479,41 @@ export function flushPendingPromptTemplatePatches(options: ServerCommandTranspor
 export function resetPromptTemplateSelectionDirtyState(): void {
   for (const pending of pendingPromptItemUpdates.values()) {
     if (pending.timer) clearTimeout(pending.timer)
+    void acknowledgePendingMutation(pending.outbox)
   }
   pendingPromptItemUpdates.clear()
   promptItemDirtyFieldsByOwnerAndId.clear()
+}
+
+function stagePendingPromptSettingsMutation(): void {
+  const intent = promptSettingsDurableIntent(pendingPromptSettingsPatch.patch)
+  pendingPromptSettingsPatch.intent = intent
+  pendingPromptSettingsPatch.outbox = stagePendingMutation(
+    'prompt-settings:bridge',
+    intent,
+    pendingPromptSettingsPatch.outbox,
+  )
+}
+
+function cancelPendingPromptSettingsMutation(): void {
+  if (pendingPromptSettingsPatch.outbox) {
+    void acknowledgePendingMutation(pendingPromptSettingsPatch.outbox)
+  }
+  pendingPromptSettingsPatch.intent = null
+  pendingPromptSettingsPatch.outbox = null
+}
+
+function promptSettingsDurableIntent(patch: SettingsPatch): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: '/settings/prompt',
+        body: { patch: cloneJsonValue(patch) },
+      },
+    ],
+  }
 }
 
 function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTransportOptions = {}): void {
@@ -461,32 +524,34 @@ function runPendingPromptItemUpdate(pendingKey: string, options: ServerCommandTr
 
   if (!isCurrentPromptTemplateOwner(pending.ownerId)) {
     promptItemDirtyFieldsByOwnerAndId.delete(pendingKey)
+    void acknowledgePendingMutation(pending.outbox)
     return
   }
 
-  const sparseUpdate = sparsePromptItemUpdate(pending.previousItem, pending.attemptedItem)
-  if (!sparseUpdate) return
   const optimisticAcknowledgement = capturePromptItemOptimisticAcknowledgement(pending.projectionFence)
   const attempt = registerPromptItemAttempt(pending)
 
-  void runServerCommand({
-    command: (baseRevision) =>
-      updatePromptItemCommand(
-        {
-          baseRevision,
-          ...(pending.ownerId ? { promptPresetId: pending.ownerId } : {}),
-          itemId: pending.itemId,
-          patch: sparseUpdate.patch,
-          ...(sparseUpdate.deleteKeys.length > 0 ? { deleteKeys: sparseUpdate.deleteKeys } : {}),
-          optimisticAcknowledgement,
-        },
-        options.signal,
-        options.keepalive,
-      ),
-    rollback: () => rollbackPromptItemAttempt(attempt),
-    signal: options.signal,
-    keepalive: options.keepalive,
-  }).then(
+  void dispatchDurableMutation(pending.outbox, pending.intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        updatePromptItemCommand(
+          {
+            baseRevision,
+            ...(pending.ownerId ? { promptPresetId: pending.ownerId } : {}),
+            itemId: pending.itemId,
+            patch: pending.sparseUpdate.patch,
+            ...(pending.sparseUpdate.deleteKeys.length > 0 ? { deleteKeys: pending.sparseUpdate.deleteKeys } : {}),
+            optimisticAcknowledgement,
+          },
+          options.signal,
+          options.keepalive,
+        ),
+      rollback: () => rollbackPromptItemAttempt(attempt),
+      signal: options.signal,
+      keepalive: options.keepalive,
+      ...transport,
+    }),
+  ).then(
     (result) => {
       clearPromptItemAttempt(attempt)
       if (result.status !== 'ok') return
@@ -509,31 +574,43 @@ function runPendingPromptSettingsPatch(options: ServerCommandTransportOptions = 
   const commandPrevious = pendingPromptSettingsPatch.previous
   const commandAttempted = pendingPromptSettingsPatch.attempted
   const commandProjectionEpoch = pendingPromptSettingsPatch.projectionEpoch
+  const stagedIntent = pendingPromptSettingsPatch.intent
+  const stagedOutbox = pendingPromptSettingsPatch.outbox
   pendingPromptSettingsPatch.patch = {}
   pendingPromptSettingsPatch.previous = {}
   pendingPromptSettingsPatch.attempted = {}
   pendingPromptSettingsPatch.projectionEpoch = null
+  pendingPromptSettingsPatch.intent = null
+  pendingPromptSettingsPatch.outbox = null
 
-  if (Object.keys(commandPatch).length === 0) return
+  if (Object.keys(commandPatch).length === 0) {
+    if (stagedOutbox) void acknowledgePendingMutation(stagedOutbox)
+    return
+  }
 
   const attempt = registerPromptSettingsAttempt(commandPrevious, commandAttempted, commandProjectionEpoch)
+  const intent = stagedIntent ?? promptSettingsDurableIntent(commandPatch)
+  const outbox = stagedOutbox ?? stagePendingMutation('prompt-settings:bridge', intent)
 
-  void runServerCommand({
-    command: (baseRevision) =>
-      patchPromptSettingsCommand(
-        {
-          baseRevision,
-          patch: commandPatch,
-          acknowledgeOptimistic: commandProjectionEpoch !== null,
-          optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
-        },
-        options.signal,
-        options.keepalive,
-      ),
-    rollback: () => rollbackPromptSettingsAttempt(attempt),
-    signal: options.signal,
-    keepalive: options.keepalive,
-  }).then(
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        patchPromptSettingsCommand(
+          {
+            baseRevision,
+            patch: commandPatch,
+            acknowledgeOptimistic: commandProjectionEpoch !== null,
+            optimisticProjectionEpoch: commandProjectionEpoch ?? undefined,
+          },
+          options.signal,
+          options.keepalive,
+        ),
+      rollback: () => rollbackPromptSettingsAttempt(attempt),
+      signal: options.signal,
+      keepalive: options.keepalive,
+      ...transport,
+    }),
+  ).then(
     () => clearPromptSettingsAttempt(attempt),
     () => clearPromptSettingsAttempt(attempt),
   )
@@ -905,6 +982,27 @@ function sparsePromptItemUpdate(previousItem: PromptItem, attemptedItem: PromptI
   }
 
   return Object.keys(patch).length > 0 || deleteKeys.length > 0 ? { patch, deleteKeys } : null
+}
+
+function promptItemUpdateDurableIntent(
+  ownerId: string | null,
+  itemId: string,
+  update: SparsePromptItemUpdate,
+): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/prompt-items/${encodeURIComponent(itemId)}`,
+        body: {
+          ...(ownerId ? { promptPresetId: ownerId } : {}),
+          patch: cloneJsonValue(update.patch),
+          ...(update.deleteKeys.length > 0 ? { deleteKeys: [...update.deleteKeys] } : {}),
+        },
+      },
+    ],
+  }
 }
 
 function markDirtyPromptItemFields(

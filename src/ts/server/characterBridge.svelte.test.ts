@@ -8,8 +8,15 @@ const recorded = vi.hoisted(() => ({
     keepalive?: boolean
   }>,
   characterResults: [] as Array<Promise<{ status: string; error?: string }>>,
+  characterTransports: [] as Array<{ mutationId?: string; databaseLineage?: string }>,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const durableState = vi.hoisted(() => ({
+  nextId: 0,
+  stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
+  dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
+  acknowledgements: [] as Array<Record<string, any>>,
+}))
 
 vi.mock('./commands', () => ({
   canUseServerCommands: () => true,
@@ -23,6 +30,36 @@ vi.mock('./resourceWriteGuard.svelte', () => ({
     return result
   },
   withTrustedResourceWrite: (fn: () => unknown) => fn(),
+}))
+
+vi.mock('./pendingMutationOutbox', () => ({
+  stagePendingMutation: (key: string, intent: Record<string, unknown>, previous?: Record<string, any> | null) => {
+    const reuse = previous?.phase === 'staged' && previous.key === key
+    if (reuse) previous.phase = 'superseded'
+    const handle = {
+      key,
+      mutationId: reuse ? previous!.mutationId : `character-mutation-${++durableState.nextId}`,
+      phase: 'staged',
+    }
+    durableState.stages.push({ key, intent: JSON.parse(JSON.stringify(intent)), handle })
+    return handle
+  },
+  acknowledgePendingMutation: async (handle: Record<string, any>) => {
+    durableState.acknowledgements.push(handle)
+    return 'deleted'
+  },
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  dispatchDurableMutation: async (
+    handle: Record<string, any>,
+    intent: Record<string, unknown>,
+    dispatch: (transport: { mutationId: string; databaseLineage: string }) => Promise<unknown>,
+  ) => {
+    handle.phase = 'dispatching'
+    durableState.dispatches.push({ handle, intent: JSON.parse(JSON.stringify(intent)) })
+    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+  },
 }))
 
 vi.mock('../characterCommands', () => {
@@ -55,12 +92,16 @@ vi.mock('../characterCommands', () => {
       patch: Record<string, unknown>,
       previous: unknown,
       rollback: (snapshot: unknown) => void,
-      options?: { keepalive?: boolean },
+      options?: { keepalive?: boolean; mutationId?: string; databaseLineage?: string },
     ) => {
       recorded.characterUpdates.push({
         characterId,
         patch: cloneJsonValue(sanitizeCharacterPatch(patch)),
         ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
+      })
+      recorded.characterTransports.push({
+        mutationId: options?.mutationId,
+        databaseLineage: options?.databaseLineage,
       })
       const result = recorded.characterResults.shift() ?? Promise.resolve({ status: 'ok' })
       return result.then((settled) => {
@@ -164,6 +205,11 @@ beforeEach(() => {
   resourceGuardState.epoch = 0
   recorded.characterUpdates.length = 0
   recorded.characterResults.length = 0
+  recorded.characterTransports.length = 0
+  durableState.nextId = 0
+  durableState.stages.length = 0
+  durableState.dispatches.length = 0
+  durableState.acknowledgements.length = 0
 })
 
 afterEach(() => {
@@ -480,6 +526,88 @@ describe('createServerBackedCharacterDraft seed gating', () => {
 })
 
 describe('watchServerBackedCharacterProfile baselines', () => {
+  it('stages the exact coalesced character payload and forwards its replay-safe transport id', async () => {
+    setupCharacter('Server baseline')
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].name = 'First queued name'
+    flushSync()
+    getDatabase().characters[0].name = 'Final queued name'
+    flushSync()
+
+    expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/characters/char-1',
+          body: { patch: { name: 'First queued name' } },
+        },
+      ],
+    })
+    expect(durableState.stages[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/characters/char-1',
+          body: { patch: { name: 'Final queued name' } },
+        },
+      ],
+    })
+    expect(durableState.stages[1].handle).not.toBe(durableState.stages[0].handle)
+    expect(durableState.stages[1].handle.mutationId).toBe(durableState.stages[0].handle.mutationId)
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(durableState.dispatches).toEqual([
+      {
+        handle: durableState.stages[1].handle,
+        intent: durableState.stages[1].intent,
+      },
+    ])
+    expect(recorded.characterTransports).toEqual([
+      {
+        mutationId: durableState.stages[1].handle.mutationId,
+        databaseLineage: 'test-lineage',
+      },
+    ])
+    stop()
+  })
+
+  it('keeps an in-flight character generation separate from the next queued edit', async () => {
+    const firstResult = createDeferred<{ status: string; error?: string }>()
+    recorded.characterResults.push(firstResult.promise)
+    setupCharacter('Server baseline')
+    const stop = watchServerBackedCharacterProfile({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].name = 'Generation A'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    getDatabase().characters[0].name = 'Generation B'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages[0].handle.mutationId).not.toBe(durableState.stages[1].handle.mutationId)
+    expect(durableState.dispatches.map((entry) => entry.handle)).toEqual([
+      durableState.stages[0].handle,
+      durableState.stages[1].handle,
+    ])
+    expect(recorded.characterUpdates.map((entry) => entry.patch)).toEqual([
+      { name: 'Generation A' },
+      { name: 'Generation B' },
+    ])
+
+    firstResult.resolve({ status: 'ok' })
+    await flushAndSettle()
+    stop()
+  })
+
   it('rebases a debounced same-field edit after two character saves fail', async () => {
     const firstResult = createDeferred<{ status: string; error?: string }>()
     const secondResult = createDeferred<{ status: string; error?: string }>()

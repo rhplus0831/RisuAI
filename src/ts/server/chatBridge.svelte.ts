@@ -22,12 +22,21 @@ import { selectedCharID } from '../stores.svelte'
 import type { Chat, ChatFolder } from '../storage/database.svelte'
 import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './pendingMutationOutbox'
 
 interface PendingChatPatch {
   chatId: string
   patch: ChatSnapshot
   rollback: ChatRowMetadataSnapshot
   timer: ReturnType<typeof setTimeout> | null
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
 }
 
 interface PendingFolderPatch {
@@ -35,6 +44,8 @@ interface PendingFolderPatch {
   patch: ChatFolderSnapshot
   rollback: ChatFolderRowMetadataSnapshot
   timer: ReturnType<typeof setTimeout> | null
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
 }
 
 interface InFlightChatPatch {
@@ -201,20 +212,24 @@ function queueChatPatch(chatId: string, patch: ChatSnapshot, rollback: ChatRowMe
   const pendingChatPatch = pendingChatPatches.get(chatId)
   if (pendingChatPatch?.timer) clearTimeout(pendingChatPatch.timer)
 
+  const commandPatch = sanitizeBridgeChatPatch({ ...(pendingChatPatch?.patch ?? {}), ...patch })
+  if (Object.keys(commandPatch).length === 0) {
+    if (pendingChatPatch) void acknowledgePendingMutation(pendingChatPatch.outbox)
+    pendingChatPatches.delete(chatId)
+    return
+  }
+
   // Keep the earliest pending rollback so a debounced merge still restores the
   // metadata as it was before the first queued change.
-  const nextPatch: PendingChatPatch = pendingChatPatch
-    ? {
-        ...pendingChatPatch,
-        patch: { ...pendingChatPatch.patch, ...patch },
-        timer: null,
-      }
-    : {
-        chatId,
-        patch,
-        rollback,
-        timer: null,
-      }
+  const intent = chatPatchDurableIntent(chatId, commandPatch)
+  const nextPatch: PendingChatPatch = {
+    chatId,
+    patch: commandPatch,
+    rollback: pendingChatPatch?.rollback ?? rollback,
+    timer: null,
+    intent,
+    outbox: stagePendingMutation(`chat-metadata:${chatId}`, intent, pendingChatPatch?.outbox),
+  }
 
   nextPatch.timer = setTimeout(() => runPendingChatPatch(chatId), delay)
   pendingChatPatches.set(chatId, nextPatch)
@@ -229,18 +244,22 @@ function queueFolderPatch(
   const pendingFolderPatch = pendingFolderPatches.get(folderId)
   if (pendingFolderPatch?.timer) clearTimeout(pendingFolderPatch.timer)
 
-  const nextPatch: PendingFolderPatch = pendingFolderPatch
-    ? {
-        ...pendingFolderPatch,
-        patch: { ...pendingFolderPatch.patch, ...patch },
-        timer: null,
-      }
-    : {
-        folderId,
-        patch,
-        rollback,
-        timer: null,
-      }
+  const commandPatch = cloneJsonValue({ ...(pendingFolderPatch?.patch ?? {}), ...patch })
+  if (Object.keys(commandPatch).length === 0) {
+    if (pendingFolderPatch) void acknowledgePendingMutation(pendingFolderPatch.outbox)
+    pendingFolderPatches.delete(folderId)
+    return
+  }
+
+  const intent = chatFolderPatchDurableIntent(folderId, commandPatch)
+  const nextPatch: PendingFolderPatch = {
+    folderId,
+    patch: commandPatch,
+    rollback: pendingFolderPatch?.rollback ?? rollback,
+    timer: null,
+    intent,
+    outbox: stagePendingMutation(`chat-folder-metadata:${folderId}`, intent, pendingFolderPatch?.outbox),
+  }
 
   nextPatch.timer = setTimeout(() => runPendingFolderPatch(folderId), delay)
   pendingFolderPatches.set(folderId, nextPatch)
@@ -261,20 +280,19 @@ function runPendingChatPatch(chatId: string, options: ServerCommandTransportOpti
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingChatPatches.delete(chatId)
   const inFlight = registerInFlightChatPatch(commandPatch)
-  const result = dispatchUpdateChatRow(
-    commandPatch.chatId,
-    commandPatch.patch,
-    commandPatch.rollback,
-    options,
-    (snapshot) => {
-      clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence)
-      rollbackServerBackedChatRowMetadata(snapshot)
-    },
-  )
-  if (!result) {
-    clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence)
-    return
-  }
+  const result = dispatchDurableMutation(commandPatch.outbox, commandPatch.intent, (transport) => {
+    const dispatched = dispatchUpdateChatRow(
+      commandPatch.chatId,
+      commandPatch.patch,
+      commandPatch.rollback,
+      { ...options, ...transport },
+      (snapshot) => {
+        clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence)
+        rollbackServerBackedChatRowMetadata(snapshot)
+      },
+    )
+    return dispatched ?? Promise.resolve({ status: 'unavailable' as const })
+  })
   void result.then(
     () => clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence),
     () => clearInFlightChatPatch(commandPatch.chatId, inFlight.sequence),
@@ -287,24 +305,58 @@ function runPendingFolderPatch(folderId: string, options: ServerCommandTransport
   if (commandPatch.timer) clearTimeout(commandPatch.timer)
   pendingFolderPatches.delete(folderId)
   const inFlight = registerInFlightFolderPatch(commandPatch)
-  const result = dispatchUpdateChatFolderRow(
-    commandPatch.folderId,
-    commandPatch.patch,
-    commandPatch.rollback,
-    options,
-    (snapshot) => {
-      clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence)
-      rollbackServerBackedChatFolderRowMetadata(snapshot)
-    },
-  )
-  if (!result) {
-    clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence)
-    return
-  }
+  const result = dispatchDurableMutation(commandPatch.outbox, commandPatch.intent, (transport) => {
+    const dispatched = dispatchUpdateChatFolderRow(
+      commandPatch.folderId,
+      commandPatch.patch,
+      commandPatch.rollback,
+      { ...options, ...transport },
+      (snapshot) => {
+        clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence)
+        rollbackServerBackedChatFolderRowMetadata(snapshot)
+      },
+    )
+    return dispatched ?? Promise.resolve({ status: 'unavailable' as const })
+  })
   void result.then(
     () => clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence),
     () => clearInFlightFolderPatch(commandPatch.folderId, inFlight.sequence),
   )
+}
+
+function sanitizeBridgeChatPatch(patch: ChatSnapshot): ChatSnapshot {
+  const sanitized: ChatSnapshot = {}
+  for (const [key, value] of Object.entries(patch)) {
+    if (!CHAT_PATCH_ALLOWED_KEYS.has(key) || value === undefined) continue
+    sanitized[key] = cloneJsonValue(value)
+  }
+  return sanitized
+}
+
+function chatPatchDurableIntent(chatId: string, patch: ChatSnapshot): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/chats/${encodeURIComponent(chatId)}`,
+        body: { patch: cloneJsonValue(patch), select: false },
+      },
+    ],
+  }
+}
+
+function chatFolderPatchDurableIntent(folderId: string, patch: ChatFolderSnapshot): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/chat-folders/${encodeURIComponent(folderId)}`,
+        body: { patch: cloneJsonValue(patch) },
+      },
+    ],
+  }
 }
 
 function registerInFlightChatPatch(pending: PendingChatPatch): InFlightChatPatch {

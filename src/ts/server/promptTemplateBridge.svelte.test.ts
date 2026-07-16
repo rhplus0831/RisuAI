@@ -12,6 +12,14 @@ const commandState = vi.hoisted(() => ({
   }>,
   beforeBuild: null as (() => void) | null,
   runResults: [] as Array<Promise<{ status: string; error?: string }>>,
+  transports: [] as Array<{ mutationId?: string; databaseLineage?: string }>,
+}))
+
+const durableState = vi.hoisted(() => ({
+  nextId: 0,
+  stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
+  dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
+  acknowledgements: [] as Array<Record<string, any>>,
 }))
 
 const resourceGuardState = vi.hoisted(() => ({
@@ -32,6 +40,8 @@ const commandMocks = vi.hoisted(() => ({
       command: (baseRevision: number) => Promise<Record<string, unknown>>
       rollback?: () => void
       keepalive?: boolean
+      mutationId?: string
+      databaseLineage?: string
     }) => {
       const beforeBuild = commandState.beforeBuild
       commandState.beforeBuild = null
@@ -45,6 +55,10 @@ const commandMocks = vi.hoisted(() => ({
         built,
         rollback: args.rollback,
         ...(args.keepalive ? { keepalive: args.keepalive } : {}),
+      })
+      commandState.transports.push({
+        mutationId: args.mutationId,
+        databaseLineage: args.databaseLineage,
       })
       const queuedResult = commandState.runResults.shift()
       const result = queuedResult ? await queuedResult : { status: 'ok', revision: 1 }
@@ -129,6 +143,41 @@ const hydrationState = vi.hoisted(() => {
 
 vi.mock('./commands', () => commandMocks)
 vi.mock('src/ts/server/commands', () => commandMocks)
+
+const pendingMutationOutboxMock = vi.hoisted(() => ({
+  stagePendingMutation: (key: string, intent: Record<string, unknown>, previous?: Record<string, any> | null) => {
+    const reuse = previous?.phase === 'staged' && previous.key === key
+    if (reuse) previous.phase = 'superseded'
+    const handle = {
+      key,
+      mutationId: reuse ? previous!.mutationId : `prompt-mutation-${++durableState.nextId}`,
+      phase: 'staged',
+    }
+    durableState.stages.push({ key, intent: JSON.parse(JSON.stringify(intent)), handle })
+    return handle
+  },
+  acknowledgePendingMutation: async (handle: Record<string, any>) => {
+    durableState.acknowledgements.push(handle)
+    return 'deleted'
+  },
+}))
+
+const durableMutationDispatchMock = vi.hoisted(() => ({
+  dispatchDurableMutation: async (
+    handle: Record<string, any>,
+    intent: Record<string, unknown>,
+    dispatch: (transport: { mutationId: string; databaseLineage: string }) => Promise<unknown>,
+  ) => {
+    handle.phase = 'dispatching'
+    durableState.dispatches.push({ handle, intent: JSON.parse(JSON.stringify(intent)) })
+    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+  },
+}))
+
+vi.mock('./pendingMutationOutbox', () => pendingMutationOutboxMock)
+vi.mock('src/ts/server/pendingMutationOutbox', () => pendingMutationOutboxMock)
+vi.mock('./durableMutationDispatch', () => durableMutationDispatchMock)
+vi.mock('src/ts/server/durableMutationDispatch', () => durableMutationDispatchMock)
 
 vi.mock('./resourceWriteGuard.svelte', () => ({
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
@@ -388,6 +437,11 @@ beforeEach(() => {
   commandState.commands.length = 0
   commandState.beforeBuild = null
   commandState.runResults.length = 0
+  commandState.transports.length = 0
+  durableState.nextId = 0
+  durableState.stages.length = 0
+  durableState.dispatches.length = 0
+  durableState.acknowledgements.length = 0
   commandMocks.patchPromptSettingsCommand.mockClear()
   commandMocks.updatePromptItemCommand.mockClear()
   commandMocks.createPromptItemCommand.mockClear()
@@ -893,6 +947,64 @@ describe('flushPendingPromptTemplatePatches', () => {
     expect(getResourceDatabase()).not.toHaveProperty('promptTemplate')
   })
 
+  it('stages the exact coalesced prompt-item payload and forwards its replay-safe transport id', async () => {
+    seedTemplate()
+    hydrationState.setOwner('prompt-a')
+    let draftItems = draftCopy()
+    const binding = draftBindingFor(
+      () => draftItems,
+      (items) => {
+        draftItems = items
+      },
+    )
+
+    draftItems[0] = item('p-0', 'first queued text')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'small'), 500, 'prompt-a')
+    draftItems[0] = item('p-0', 'final queued text')
+    queuePromptItemProjectionUpdate(binding, 'p-0', item('p-0', 'first queued text'), 500, 'prompt-a')
+
+    expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/p-0',
+          body: {
+            promptPresetId: 'prompt-a',
+            patch: { text: 'first queued text' },
+          },
+        },
+      ],
+    })
+    expect(durableState.stages[1].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/prompt-items/p-0',
+          body: {
+            promptPresetId: 'prompt-a',
+            patch: { text: 'final queued text' },
+          },
+        },
+      ],
+    })
+    expect(durableState.stages[1].handle).not.toBe(durableState.stages[0].handle)
+    expect(durableState.stages[1].handle.mutationId).toBe(durableState.stages[0].handle.mutationId)
+
+    flushPendingPromptTemplatePatches()
+    await flushMicrotasks()
+
+    expect(durableState.dispatches[0].handle).toBe(durableState.stages[1].handle)
+    expect(commandState.transports).toEqual([
+      {
+        mutationId: durableState.stages[1].handle.mutationId,
+        databaseLineage: 'test-lineage',
+      },
+    ])
+  })
+
   it('M8: flushes pending prompt item updates with keepalive and clears debounce', async () => {
     seedTemplate()
     hydrationState.setOwner('prompt-a')
@@ -960,6 +1072,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     expect(commandState.commands).toHaveLength(0)
     expect(textOf(draftItems[0])).toBe('stale owner edit')
+    expect(durableState.acknowledgements).toEqual([durableState.stages[0].handle])
   })
 
   it('L25: coalesced prompt item rollback restores the first pre-edit item', async () => {
@@ -1233,6 +1346,7 @@ describe('flushPendingPromptTemplatePatches', () => {
 
     expect(commandState.commands).toHaveLength(0)
     expect(commandMocks.updatePromptItemCommand).not.toHaveBeenCalled()
+    expect(durableState.acknowledgements).toEqual([durableState.stages[0].handle])
   })
 
   it('M8: PromptSettings component teardown flushes pending prompt-template patches', async () => {
@@ -1913,6 +2027,22 @@ describe('flushPendingPromptTemplatePatches', () => {
       acknowledgeOptimistic: true,
       optimisticProjectionEpoch: projectionEpoch,
     })
+    expect(durableState.stages[0].intent).toEqual({
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/settings/prompt',
+          body: { patch: { jsonSchemaEnabled: false } },
+        },
+      ],
+    })
+    expect(commandState.transports).toEqual([
+      {
+        mutationId: durableState.stages[0].handle.mutationId,
+        databaseLineage: 'test-lineage',
+      },
+    ])
 
     await vi.advanceTimersByTimeAsync(500)
     expect(commandState.commands).toHaveLength(1)
@@ -1957,6 +2087,7 @@ describe('flushPendingPromptTemplatePatches', () => {
     await vi.advanceTimersByTimeAsync(500)
 
     expect(commandState.commands).toHaveLength(0)
+    expect(durableState.acknowledgements).toEqual([durableState.stages[0].handle])
   })
 
   it('captures a fresh prompt settings epoch after a pending batch fully reverts', async () => {
@@ -2260,7 +2391,10 @@ describe('reconcilePromptTemplateDraft', () => {
     }
 
     queuePromptItemProjectionUpdate(binding, 'shared-row', item('shared-row', 'old preset server'), 500)
+    const stagedHandle = durableState.stages.at(-1)?.handle
     resetPromptTemplateSelectionDirtyState()
+
+    expect(durableState.acknowledgements).toEqual([stagedHandle])
 
     getResourceDatabase().promptTemplate = [item('shared-row', 'new preset projection')]
     commandState.revision = 6

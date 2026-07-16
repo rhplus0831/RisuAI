@@ -9,12 +9,14 @@ const recorded = vi.hoisted(() => ({
     keepalive?: boolean
   }>,
   chatRollbacks: [] as Array<() => void>,
+  chatTransports: [] as Array<{ mutationId?: string; databaseLineage?: string }>,
   folderUpdates: [] as Array<{
     folderId: string
     patch: Record<string, unknown>
     keepalive?: boolean
   }>,
   folderRollbacks: [] as Array<() => void>,
+  folderTransports: [] as Array<{ mutationId?: string; databaseLineage?: string }>,
   folderResult: null as Promise<{ status: 'ok' }> | null,
   folderAttempts: [] as Array<{
     sequence: number
@@ -30,6 +32,12 @@ const recorded = vi.hoisted(() => ({
   nextFolderAttemptSequence: 0,
 }))
 const resourceGuardState = vi.hoisted(() => ({ epoch: 0 }))
+const durableState = vi.hoisted(() => ({
+  nextId: 0,
+  stages: [] as Array<{ key: string; intent: Record<string, unknown>; handle: Record<string, any> }>,
+  dispatches: [] as Array<{ handle: Record<string, any>; intent: Record<string, unknown> }>,
+  acknowledgements: [] as Array<Record<string, any>>,
+}))
 const chatCommandState = vi.hoisted(() => ({
   getDb: null as null | (() => Record<string, unknown>),
   getSelectedCharId: null as null | (() => number),
@@ -43,6 +51,36 @@ vi.mock('./commands', () => ({
 vi.mock('./resourceWriteGuard.svelte', () => ({
   getServerResourceApplyEpoch: () => resourceGuardState.epoch,
   withTrustedResourceWrite: (callback: () => unknown) => callback(),
+}))
+
+vi.mock('./pendingMutationOutbox', () => ({
+  stagePendingMutation: (key: string, intent: Record<string, unknown>, previous?: Record<string, any> | null) => {
+    const reuse = previous?.phase === 'staged' && previous.key === key
+    if (reuse) previous.phase = 'superseded'
+    const handle = {
+      key,
+      mutationId: reuse ? previous!.mutationId : `chat-mutation-${++durableState.nextId}`,
+      phase: 'staged',
+    }
+    durableState.stages.push({ key, intent: JSON.parse(JSON.stringify(intent)), handle })
+    return handle
+  },
+  acknowledgePendingMutation: async (handle: Record<string, any>) => {
+    durableState.acknowledgements.push(handle)
+    return 'deleted'
+  },
+}))
+
+vi.mock('./durableMutationDispatch', () => ({
+  dispatchDurableMutation: async (
+    handle: Record<string, any>,
+    intent: Record<string, unknown>,
+    dispatch: (transport: { mutationId: string; databaseLineage: string }) => Promise<unknown>,
+  ) => {
+    handle.phase = 'dispatching'
+    durableState.dispatches.push({ handle, intent: JSON.parse(JSON.stringify(intent)) })
+    return dispatch({ mutationId: handle.mutationId, databaseLineage: 'test-lineage' })
+  },
 }))
 
 vi.mock('../chatCommands', () => {
@@ -72,7 +110,7 @@ vi.mock('../chatCommands', () => {
         chatId: string
         metadata: Record<string, unknown>
       },
-      options?: { keepalive?: boolean },
+      options?: { keepalive?: boolean; mutationId?: string; databaseLineage?: string },
       rollbackRowMetadata?: (snapshot: typeof rollback) => void,
     ) => {
       recorded.chatUpdates.push({
@@ -82,6 +120,10 @@ vi.mock('../chatCommands', () => {
       })
       recorded.chatRollbacks.push(() => {
         rollbackRowMetadata?.(rollback)
+      })
+      recorded.chatTransports.push({
+        mutationId: options?.mutationId,
+        databaseLineage: options?.databaseLineage,
       })
       return recorded.chatResult ?? Promise.resolve({ status: 'ok' as const })
     },
@@ -94,13 +136,17 @@ vi.mock('../chatCommands', () => {
         folderId: string
         metadata: Record<string, unknown>
       },
-      options?: { keepalive?: boolean },
+      options?: { keepalive?: boolean; mutationId?: string; databaseLineage?: string },
       rollbackFolderMetadata?: (snapshot: typeof rollback) => void,
     ) => {
       recorded.folderUpdates.push({
         folderId,
         patch: cloneJsonValue(patch),
         ...(options?.keepalive ? { keepalive: options.keepalive } : {}),
+      })
+      recorded.folderTransports.push({
+        mutationId: options?.mutationId,
+        databaseLineage: options?.databaseLineage,
       })
       const attemptedRollback = {
         ...rollback,
@@ -286,12 +332,18 @@ beforeEach(() => {
   chatCommandState.setSelectedCharId = (value) => selectedCharID.set(value)
   recorded.chatUpdates.length = 0
   recorded.chatRollbacks.length = 0
+  recorded.chatTransports.length = 0
   recorded.chatResult = null
   recorded.folderUpdates.length = 0
   recorded.folderRollbacks.length = 0
+  recorded.folderTransports.length = 0
   recorded.folderResult = null
   recorded.folderAttempts.length = 0
   recorded.nextFolderAttemptSequence = 0
+  durableState.nextId = 0
+  durableState.stages.length = 0
+  durableState.dispatches.length = 0
+  durableState.acknowledgements.length = 0
 })
 
 afterEach(() => {
@@ -301,6 +353,93 @@ afterEach(() => {
 })
 
 describe('watchServerBackedChatMetadata baselines', () => {
+  it('stages exact chat and folder payloads and forwards replay-safe transport ids', async () => {
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].chats[0].name = 'Queued Chat'
+    getDatabase().characters[0].chatFolders[0].folded = true
+    flushSync()
+
+    expect(durableState.stages.map(({ key, intent }) => ({ key, intent }))).toEqual([
+      {
+        key: 'chat-metadata:chat-1',
+        intent: {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/chats/chat-1',
+              body: { patch: { name: 'Queued Chat' }, select: false },
+            },
+          ],
+        },
+      },
+      {
+        key: 'chat-folder-metadata:folder-1',
+        intent: {
+          version: 1,
+          requests: [
+            {
+              method: 'PATCH',
+              path: '/chat-folders/folder-1',
+              body: { patch: { folded: true } },
+            },
+          ],
+        },
+      },
+    ])
+
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(recorded.chatTransports).toEqual([
+      {
+        mutationId: durableState.stages[0].handle.mutationId,
+        databaseLineage: 'test-lineage',
+      },
+    ])
+    expect(recorded.folderTransports).toEqual([
+      {
+        mutationId: durableState.stages[1].handle.mutationId,
+        databaseLineage: 'test-lineage',
+      },
+    ])
+    stop()
+  })
+
+  it('dispatches an in-flight chat generation independently from a newly queued generation', async () => {
+    const firstResult = deferred<{ status: 'ok' }>()
+    recorded.chatResult = firstResult.promise
+    setupChat()
+    const stop = watchServerBackedChatMetadata({ delayMs: DELAY })
+    flushSync()
+
+    getDatabase().characters[0].chats[0].name = 'Generation A'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    getDatabase().characters[0].chats[0].name = 'Generation B'
+    flushSync()
+    await vi.advanceTimersByTimeAsync(DELAY)
+
+    expect(durableState.stages).toHaveLength(2)
+    expect(durableState.stages[0].handle.mutationId).not.toBe(durableState.stages[1].handle.mutationId)
+    expect(durableState.dispatches.map((entry) => entry.handle)).toEqual([
+      durableState.stages[0].handle,
+      durableState.stages[1].handle,
+    ])
+    expect(recorded.chatUpdates.map((entry) => entry.patch)).toEqual([
+      { name: 'Generation A' },
+      { name: 'Generation B' },
+    ])
+
+    firstResult.resolve({ status: 'ok' })
+    await Promise.resolve()
+    await Promise.resolve()
+    stop()
+  })
+
   it('refreshes baseline on server projection updates before local chat edits', async () => {
     setupChat()
     const stop = watchServerBackedChatMetadata({ delayMs: DELAY })

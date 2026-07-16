@@ -14,12 +14,21 @@ import { getServerResourceApplyEpoch, withTrustedResourceWrite } from './resourc
 import { isServerCharacterShell, SERVER_CHARACTER_SHELL_MARKER } from '../storage/database.svelte'
 import { getResourceDatabase as getDatabase } from './resourceState.svelte'
 import { applyAttemptedFieldRollback, mergeProjectionIntoDirtyDraft } from './staleStateGuards'
+import { dispatchDurableMutation } from './durableMutationDispatch'
+import {
+  acknowledgePendingMutation,
+  stagePendingMutation,
+  type DurableMutationIntent,
+  type PendingMutationHandle,
+} from './pendingMutationOutbox'
 
 interface PendingCharacterPatch {
   characterId: string
   patch: CharacterSnapshot
   previous: CharacterStateSnapshot
   timer: ReturnType<typeof setTimeout> | null
+  intent: DurableMutationIntent
+  outbox: PendingMutationHandle
 }
 
 interface PendingCharacterAttempt {
@@ -298,18 +307,22 @@ function queueCharacterPatch(
   const pendingPatch = pendingPatches.get(characterId)
   if (pendingPatch?.timer) clearTimeout(pendingPatch.timer)
 
-  const nextPatch: PendingCharacterPatch = pendingPatch
-    ? {
-        ...pendingPatch,
-        patch: { ...pendingPatch.patch, ...patch },
-        timer: null,
-      }
-    : {
-        characterId,
-        patch,
-        previous,
-        timer: null,
-      }
+  const commandPatch = sanitizeCharacterPatch({ ...(pendingPatch?.patch ?? {}), ...patch })
+  if (Object.keys(commandPatch).length === 0) {
+    if (pendingPatch) void acknowledgePendingMutation(pendingPatch.outbox)
+    pendingPatches.delete(characterId)
+    return
+  }
+
+  const intent = characterPatchDurableIntent(characterId, commandPatch)
+  const nextPatch: PendingCharacterPatch = {
+    characterId,
+    patch: commandPatch,
+    previous: pendingPatch?.previous ?? previous,
+    timer: null,
+    intent,
+    outbox: stagePendingMutation(`character-profile:${characterId}`, intent, pendingPatch?.outbox),
+  }
 
   nextPatch.timer = setTimeout(() => runPendingCharacterPatch(characterId), delay)
   pendingPatches.set(characterId, nextPatch)
@@ -334,17 +347,33 @@ function runPendingCharacterPatch(characterId: string, options: ServerCommandTra
   } as CharacterStateSnapshot
 
   const attempt = registerCharacterAttempt(commandPatch.characterId, rollbackSnapshot)
-  const result = dispatchUpdateCharacter(
-    commandPatch.characterId,
-    commandPatch.patch,
-    rollbackSnapshot,
-    () => rollbackCharacterAttempt(attempt),
-    options,
-  )
-  void result?.then(
+  const result = dispatchDurableMutation(commandPatch.outbox, commandPatch.intent, (transport) => {
+    const dispatched = dispatchUpdateCharacter(
+      commandPatch.characterId,
+      commandPatch.patch,
+      rollbackSnapshot,
+      () => rollbackCharacterAttempt(attempt),
+      { ...options, ...transport },
+    )
+    return dispatched ?? Promise.resolve({ status: 'unavailable' as const })
+  })
+  void result.then(
     () => clearCharacterAttempt(attempt),
     () => clearCharacterAttempt(attempt),
   )
+}
+
+function characterPatchDurableIntent(characterId: string, patch: CharacterSnapshot): DurableMutationIntent {
+  return {
+    version: 1,
+    requests: [
+      {
+        method: 'PATCH',
+        path: `/characters/${encodeURIComponent(characterId)}`,
+        body: { patch: cloneJsonValue(patch) },
+      },
+    ],
+  }
 }
 
 function registerCharacterAttempt(characterId: string, snapshot: CharacterStateSnapshot): PendingCharacterAttempt {
