@@ -22,6 +22,7 @@ import {
 } from 'src/ts/server/scriptDefinitionBridge.svelte'
 import { type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'
+import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
 
@@ -655,7 +656,7 @@ export class CharacterHandler extends MCPToolHandler {
     })
     if (entryIndex === -1) {
       const newEntry: loreBook = {
-        id: crypto.randomUUID(),
+        id: createNonSecurityUuid(),
         key: alwaysActive ? '' : keys?.join(',') || '',
         content: content || '',
         comment: newName || name,

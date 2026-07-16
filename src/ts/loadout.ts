@@ -6,6 +6,7 @@ import {
   type PersonaStateSnapshot,
 } from './persona'
 import { safeStructuredClone } from './polyfill'
+import { createNonSecurityUuid } from './nonSecurityUuid'
 import {
   canUseServerCommands,
   createLoadoutCommand,
@@ -111,7 +112,7 @@ export type Loadout = {
 
 export function makeLoadout(options: { name: string }): Loadout {
   const character = getCurrentCharacter()
-  const id = crypto.randomUUID()
+  const id = createNonSecurityUuid()
   const legacyPreset = getDatabase().botPresets?.[getDatabase().botPresetsId]
   const modelPreset = getDatabase().modelPresets?.[getDatabase().modelPresetsId]
   const promptPreset = getDatabase().promptPresets?.[getDatabase().promptPresetsId]
@@ -1567,8 +1568,8 @@ function ensureBotPresetCommandIds(): void {
   const seen = new Set<string>()
   for (const preset of presets) {
     if (!preset) continue
-    const currentId = nonBlankId(preset.id) ?? crypto.randomUUID()
-    const nextId = seen.has(currentId) ? crypto.randomUUID() : currentId
+    const currentId = nonBlankId(preset.id) ?? createNonSecurityUuid()
+    const nextId = seen.has(currentId) ? createNonSecurityUuid() : currentId
     preset.id = nextId
     seen.add(nextId)
   }

@@ -2,6 +2,7 @@ import { decode as decodeMsgpack, encode as encodeMsgpack } from 'msgpackr/index
 import * as fflate from 'fflate'
 import { decryptBuffer, encryptBuffer } from 'src/ts/util'
 import { decodeRPack, encodeRPack } from 'src/ts/rpack/rpack_js.js'
+import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
 export interface TranslatorPreset {
   id?: string
@@ -120,8 +121,8 @@ export function normalizeTranslatorPresetState<T extends TranslatorPresetStateLi
       normalizedPreset,
     )
     const id =
-      typeof normalized.id === 'string' && normalized.id.trim().length > 0 ? normalized.id : crypto.randomUUID()
-    normalized.id = seen.has(id) ? crypto.randomUUID() : id
+      typeof normalized.id === 'string' && normalized.id.trim().length > 0 ? normalized.id : createNonSecurityUuid()
+    normalized.id = seen.has(id) ? createNonSecurityUuid() : id
     seen.add(normalized.id)
     return normalized
   })

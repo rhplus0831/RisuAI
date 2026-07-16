@@ -1,13 +1,16 @@
 import { mount, tick, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const customSidebarStore = vi.hoisted(() => ({ open: true }))
+const customSidebarMocks = vi.hoisted(() => ({
+  store: { open: true },
+  draft: { value: [] as Array<{ id: string; type: string; subType: string; label: string }> },
+}))
 
 vi.mock('src/ts/stores.svelte', () => ({
-  customSideBarConfigDialogStore: customSidebarStore,
+  customSideBarConfigDialogStore: customSidebarMocks.store,
 }))
 vi.mock('src/ts/server/settingsBridge.svelte', () => ({
-  createServerBackedSettingDraft: vi.fn(() => ({ value: [] })),
+  createServerBackedSettingDraft: vi.fn(() => customSidebarMocks.draft),
 }))
 vi.mock('src/ts/setting/utils', () => ({
   getFullSettingsData: vi.fn(() => []),
@@ -29,7 +32,8 @@ async function settle(): Promise<void> {
 }
 
 beforeEach(() => {
-  customSidebarStore.open = true
+  customSidebarMocks.store.open = true
+  customSidebarMocks.draft.value = []
   opener = document.createElement('button')
   opener.textContent = 'Open configuration'
   target = document.createElement('div')
@@ -44,6 +48,7 @@ afterEach(() => {
   opener.remove()
   target.remove()
   document.body.innerHTML = ''
+  vi.unstubAllGlobals()
 })
 
 describe('CustomSidebarConfig modal focus', () => {
@@ -68,12 +73,36 @@ describe('CustomSidebarConfig modal focus', () => {
     const escape = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
     close.dispatchEvent(escape)
     expect(escape.defaultPrevented).toBe(true)
-    expect(customSidebarStore.open).toBe(false)
+    expect(customSidebarMocks.store.open).toBe(false)
 
     unmount(component)
     component = undefined
     await settle()
     expect(opener.inert).toBe(false)
     expect(document.activeElement).toBe(opener)
+  })
+
+  it('adds a custom sidebar item when WebCrypto UUID methods are unavailable', async () => {
+    vi.stubGlobal('crypto', {})
+    component = mount(CustomSidebarConfig, { target })
+    await settle()
+
+    const buttonByText = (text: string) =>
+      Array.from(target.querySelectorAll<HTMLButtonElement>('button')).find(
+        (button) => button.textContent?.trim() === text,
+      )
+
+    buttonByText('Add Item')?.click()
+    await settle()
+    buttonByText(language.model)?.click()
+    await settle()
+
+    expect(customSidebarMocks.draft.value).toHaveLength(1)
+    expect(customSidebarMocks.draft.value[0]).toMatchObject({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      type: 'model',
+      subType: 'none',
+      label: language.model,
+    })
   })
 })

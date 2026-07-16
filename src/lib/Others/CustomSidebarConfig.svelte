@@ -7,6 +7,7 @@
   import type { CustomSideBarItem } from 'src/ts/storage/database.svelte'
   import { createServerBackedSettingDraft } from 'src/ts/server/settingsBridge.svelte'
   import { modalFocusTrap } from 'src/ts/gui/modalFocusTrap'
+  import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
   let configPage: 'list' | 'add' | 'addSettingsSubmenu' = $state('list')
   let search = $state('')
@@ -31,7 +32,7 @@
     customSidebarItemsDraft.value = [
       ...customSidebarItemsDraft.value,
       {
-        id: crypto.randomUUID(),
+        id: createNonSecurityUuid(),
         ...item,
       },
     ]

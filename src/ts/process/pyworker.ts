@@ -1,6 +1,7 @@
 // This web worker runs Python code using Pyodide.
 
 import { loadPyodide, version as pyodideVersion, type PyodideInterface } from 'pyodide'
+import { createNonSecurityUuid } from '../nonSecurityUuid'
 
 export type PyWorkerRequest =
   | {
@@ -72,7 +73,7 @@ function createHostModule(moduleFunctions: string[]): Record<string, (...args: u
   for (const method of moduleFunctions) {
     hostModule[method] = (...args: unknown[]) => {
       return new Promise((resolve, reject) => {
-        const callId = crypto.randomUUID()
+        const callId = createNonSecurityUuid()
         pendingHostCalls.set(callId, { resolve, reject })
         try {
           self.postMessage({

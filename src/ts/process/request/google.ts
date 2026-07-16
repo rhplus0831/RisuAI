@@ -11,6 +11,7 @@ import { addFetchLog } from 'src/ts/globalApi.svelte'
 import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from './request'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
 import { bodyIntercepterStore } from 'src/ts/stores.svelte'
+import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
 type GeminiFunctionCall = {
   id?: string
@@ -769,7 +770,7 @@ async function requestGoogle(
 
         if (part.inlineData) {
           const imgHTML = new Image()
-          const id = crypto.randomUUID()
+          const id = createNonSecurityUuid()
 
           if (part.inlineData.mimeType.startsWith('image/')) {
             imgHTML.src = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`

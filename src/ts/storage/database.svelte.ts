@@ -1,5 +1,6 @@
 import { get } from 'svelte/store'
 import { checkNullish, decryptBuffer, encryptBuffer, selectSingleFile } from '../util'
+import { createNonSecurityUuid } from '../nonSecurityUuid'
 import { changeLanguage, language } from '../../lang'
 import type { RisuPlugin } from '../plugins/plugins.svelte'
 import type { triggerscript as triggerscriptMain } from '../process/triggers'
@@ -152,11 +153,11 @@ export let appVer = 'Fastify Variant Version: Alpha' //<APP_VERSION_POINT>
 export let webAppSubVer = ''
 
 function createClientPresetId() {
-  return crypto.randomUUID()
+  return createNonSecurityUuid()
 }
 
 function createClientPromptItemId() {
-  return crypto.randomUUID()
+  return createNonSecurityUuid()
 }
 
 export function normalizePromptTemplateIds(data: Pick<Database, 'promptTemplate'>) {

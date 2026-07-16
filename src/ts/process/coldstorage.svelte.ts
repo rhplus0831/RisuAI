@@ -2,6 +2,7 @@ import { compress as fflateCompress, decompress as fflateDecompress } from 'ffla
 import { alertClear, alertError, alertWait } from '../alert'
 import { language } from 'src/lang'
 import { getDatabase, type character } from '../storage/database.svelte'
+import { createNonSecurityUuid } from '../nonSecurityUuid'
 
 export const coldStorageHeader = '\uEF01COLDSTORAGE\uEF01'
 
@@ -63,7 +64,7 @@ async function makeColdDataForCharacter(i: number, coldTime: number) {
     console.log(
       `Character ${getDatabase().characters[i].name ?? i} has not been interacted with since ${new Date(lastInteraction).toLocaleDateString()}, moving to cold storage`,
     )
-    const id = crypto.randomUUID()
+    const id = createNonSecurityUuid()
     const writeSuccess = await setColdStorageItem(id, {
       character: getDatabase().characters[i],
     })
@@ -155,7 +156,7 @@ async function makeColdDataForChat(i: number, j: number, coldTime: number) {
   }
 
   if (greatestTime < coldTime) {
-    const id = crypto.randomUUID()
+    const id = createNonSecurityUuid()
     const writeSuccess = await setColdStorageItem(id, {
       message: chat.message,
       hypaV3Data: chat.hypaV3Data,

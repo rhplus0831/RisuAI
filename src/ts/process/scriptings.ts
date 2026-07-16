@@ -22,6 +22,7 @@ import { writeInlayImage, getInlayAsset } from './files/inlays'
 import type { OpenAIChat, MultiModal } from './index.svelte'
 import { requestChatData, type StreamResponseChunk } from './request/request'
 import { v4 } from 'uuid'
+import { createNonSecurityUuid } from '../nonSecurityUuid'
 import { getModuleLorebooks, getModuleTriggers } from './modules'
 import { Mutex } from '../mutex'
 import { tokenize } from '../tokenizer'
@@ -2032,7 +2033,7 @@ class PyodideContext {
     this.initPromise ??= this.request({
       type: 'init',
       code,
-      id: crypto.randomUUID(),
+      id: createNonSecurityUuid(),
       moduleFunctions: Object.keys(this.apis),
     }).then(() => {
       this.inited = true
@@ -2049,7 +2050,7 @@ class PyodideContext {
       type: 'python',
       method,
       args,
-      id: crypto.randomUUID(),
+      id: createNonSecurityUuid(),
     })
   }
 

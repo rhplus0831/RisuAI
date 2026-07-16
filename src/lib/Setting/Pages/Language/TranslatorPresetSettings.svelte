@@ -10,6 +10,7 @@
   import { alertConfirm, alertError, alertInput, alertNormal } from 'src/ts/alert'
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import { getDatabase } from 'src/ts/storage/database.svelte'
+  import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
   import {
     canUseServerCommands,
     createTranslatorPresetCommand,
@@ -601,7 +602,7 @@
   }
 
   function createClientTranslatorPresetId(): string {
-    return crypto.randomUUID()
+    return createNonSecurityUuid()
   }
 
   function normalizeTranslatorPresets() {

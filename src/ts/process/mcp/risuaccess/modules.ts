@@ -17,6 +17,7 @@ import {
 import { currentGlobalModuleStateSnapshot, dispatchModuleInfoPatch, sanitizeModulePatch } from 'src/ts/moduleCommands'
 import type { customscript, loreBook, triggerscript } from 'src/ts/storage/database.svelte'
 import { pickHashRand } from 'src/ts/util'
+import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
@@ -620,7 +621,7 @@ export class ModuleHandler extends MCPToolHandler {
 
     if (index === -1) {
       const newEntry = {
-        id: crypto.randomUUID(),
+        id: createNonSecurityUuid(),
         key: alwaysActive ? '' : keys?.join(',') || '',
         content: content || '',
         comment: newName || name,

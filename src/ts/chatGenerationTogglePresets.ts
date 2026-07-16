@@ -18,6 +18,7 @@ import {
 import { applyServerBackedSettingsPatch } from './server/settingsBridge.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { isActiveChatTargetFresh } from './chatCommands'
+import { createNonSecurityUuid } from './nonSecurityUuid'
 
 const CHAT_GENERATION_TOGGLE_PRESETS_FIELD = 'chatGenerationTogglePresets' as const
 
@@ -51,7 +52,7 @@ export function saveCurrentChatGenerationTogglePreset(
 
   const now = Date.now()
   const preset: ChatGenerationTogglePreset = {
-    id: crypto.randomUUID(),
+    id: createNonSecurityUuid(),
     name: trimmedName,
     createdAt: now,
     updatedAt: now,

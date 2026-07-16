@@ -9,6 +9,7 @@
     type PromptItem,
   } from 'src/ts/process/prompt'
   import { templateCheck } from 'src/ts/process/templates/templateCheck'
+  import { createNonSecurityUuid } from 'src/ts/nonSecurityUuid'
 
   import { getResourceDatabase } from 'src/ts/server/resourceState.svelte'
   import Check from 'src/lib/UI/GUI/CheckInput.svelte'
@@ -202,7 +203,7 @@
 
   function promptItemId(item: PromptItem, ownerId: string | null = currentPromptTemplateOwnerId()): string {
     if (typeof item.id !== 'string' || item.id.length === 0) {
-      item.id = crypto.randomUUID()
+      item.id = createNonSecurityUuid()
       markPromptPresetTemplateIdsPendingServerSync(ownerId)
     }
     return item.id
@@ -403,7 +404,7 @@
 
   function createPromptItem(): PromptItem {
     return {
-      id: crypto.randomUUID(),
+      id: createNonSecurityUuid(),
       type: 'plain',
       text: '',
       role: 'system',
@@ -603,7 +604,7 @@
     ensurePromptTemplateDraftIds(ownerId)
     const draftItem = promptTemplateDraft.value[originalIndex]
     if (draftItem && (typeof draftItem.id !== 'string' || draftItem.id.length === 0)) {
-      draftItem.id = crypto.randomUUID()
+      draftItem.id = createNonSecurityUuid()
       markPromptPresetTemplateIdsPendingServerSync(ownerId)
     }
     const itemId = draftItem?.id ?? promptItemId(promptItem, ownerId)
@@ -624,7 +625,7 @@
     for (const item of promptTemplateDraft.value ?? []) {
       const id = typeof item.id === 'string' && item.id.length > 0 ? item.id : ''
       if (!id || seen.has(id)) {
-        item.id = crypto.randomUUID()
+        item.id = createNonSecurityUuid()
         changed = true
       }
       seen.add(item.id)
