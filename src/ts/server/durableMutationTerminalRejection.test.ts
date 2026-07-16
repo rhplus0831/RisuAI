@@ -7,6 +7,14 @@ vi.mock('../storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'test-auth-token',
 }))
 
+const recoveryApi = vi.hoisted(() => ({ scheduleReload: vi.fn() }))
+vi.mock('./activeWriterSession', () => ({
+  activeWriterSessionHeader: () => ({}),
+  handleActiveWriterStaleResponse: () => false,
+  schedulePendingMutationRecoveryReload: recoveryApi.scheduleReload,
+  scheduleServerOwnershipReload: vi.fn(),
+}))
+
 import {
   clearAppliedServerResourceRevision,
   clearCachedServerCommandRevision,
@@ -32,6 +40,7 @@ import { replayPendingMutations } from './pendingMutationReplay'
 const databaseLineage = 'database-terminal-rejection'
 
 beforeEach(async () => {
+  recoveryApi.scheduleReload.mockReset()
   vi.stubGlobal('indexedDB', new IDBFactory())
   resetPendingMutationOutboxForTests()
   clearAppliedServerResourceRevision()
@@ -215,7 +224,7 @@ describe('durable mutation terminal request rejection', () => {
     )
   })
 
-  it('discards an invalid predecessor and lets its prompt-item DELETE successor proceed', async () => {
+  it('discards an invalid predecessor and defers its prompt-item DELETE successor until recovery', async () => {
     const ownerKey = 'prompt-template-owner:preset-a'
     const patchIntent: DurableMutationIntent = {
       version: 1,
@@ -289,25 +298,16 @@ describe('durable mutation terminal request rejection', () => {
       }),
     )
 
-    expect(result).toMatchObject({ status: 'ok', revision: 31 })
+    expect(result).toEqual({ status: 'unavailable' })
     expect(calls).toEqual([
       {
         method: 'PATCH',
         mutationId: predecessor.mutationId,
         url: '/api/v1/commands/prompt-items/row-a',
       },
-      {
-        method: 'DELETE',
-        mutationId: successor.mutationId,
-        url: '/api/v1/commands/prompt-items/row-a',
-      },
-      {
-        method: 'POST',
-        mutationId: null,
-        url: '/api/v1/commands/mutation-receipts/ack',
-      },
     ])
-    expect(await listPendingMutations()).toEqual([])
+    expect(recoveryApi.scheduleReload).toHaveBeenCalledOnce()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([successor.mutationId])
   })
 })
 
