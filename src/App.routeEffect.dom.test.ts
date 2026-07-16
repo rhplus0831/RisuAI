@@ -24,6 +24,7 @@ const appRouteDomMocks = vi.hoisted(() => {
     pendingRouteApplication: false,
     readResource: () => {},
     resetSidebarTab: () => {},
+    setSidebarViewMode: (_view: 'chat' | 'character') => {},
   }
 
   return {
@@ -61,6 +62,7 @@ async function createRouteMock() {
       navigate: vi.fn(),
       openGridRoute: appRouteDomMocks.openGridRoute,
       parseRoute: vi.fn(() => characterRoute),
+      setCharacterSidebarViewMode: (view: 'chat' | 'character') => appRouteDomMocks.state.setSidebarViewMode(view),
       syncRouteFromState: vi.fn(),
     }
   }
@@ -401,6 +403,9 @@ describe('App route/refreeze mounted DOM behavior', () => {
     }
     appRouteDomMocks.state.resetSidebarTab = () => {
       botMakerMode.set(false)
+    }
+    appRouteDomMocks.state.setSidebarViewMode = (view) => {
+      botMakerMode.set(view === 'character')
     }
     if (appRouteDomMocks.state.exports) {
       appRouteDomMocks.state.exports.currentRoute.set(characterRoute)

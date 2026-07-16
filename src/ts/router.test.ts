@@ -322,6 +322,46 @@ describe('router settings history', () => {
 })
 
 describe('router character route freshness', () => {
+  it('restores a same-entry character sidebar view without carrying it into same-character route navigation', async () => {
+    const router = await importRouterAt('/character/char-a/chat-a')
+    const stores = await import('./stores.svelte')
+    const { getResourceDatabase, replaceResourceDatabase } = await import('./server/resourceState.svelte')
+    replaceResourceDatabase({
+      characters: [
+        {
+          chaId: 'char-a',
+          chatPage: 0,
+          chats: [
+            { id: 'chat-a', name: 'Chat A', message: [] },
+            { id: 'chat-b', name: 'Chat B', message: [] },
+          ],
+        },
+      ],
+    } as any)
+    stores.selectedCharID.set(0)
+    routerMocks.findCharacterIndexbyId.mockImplementation(
+      (characterId: string) =>
+        getResourceDatabase().characters?.findIndex((character: any) => character?.chaId === characterId) ?? -1,
+    )
+
+    await router.applyRouteToStores(get(router.currentRoute))
+    router.setCharacterSidebarViewMode('character')
+    expect(get(stores.botMakerMode)).toBe(true)
+
+    // A database-lineage recovery reload recreates the JS stores but retains
+    // the current browser history entry. Model that reset before reapplying the
+    // unchanged route.
+    stores.botMakerMode.set(false)
+    await router.applyRouteToStores(get(router.currentRoute))
+    expect(get(stores.botMakerMode)).toBe(true)
+
+    router.navigate('/character/char-a/chat-b')
+    await router.applyRouteToStores(get(router.currentRoute))
+
+    expect(routerMocks.changeChatTo).toHaveBeenCalledWith('chat-b')
+    expect(get(stores.botMakerMode)).toBe(false)
+  })
+
   it('routes character-only navigation to the active generation owner chat', async () => {
     const router = await importRouterAt('/')
     const { activeGenerationTarget, doingChat } = await import('./process/index.svelte')

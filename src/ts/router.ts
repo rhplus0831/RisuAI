@@ -41,6 +41,8 @@ const GRID_HISTORY_STATE_KEY = '__risuGridNavigation'
 const GRID_HISTORY_STATE_VERSION = 1
 const SETTINGS_HISTORY_STATE_KEY = '__risuSettingsNavigation'
 const SETTINGS_HISTORY_STATE_VERSION = 1
+const CHARACTER_SIDEBAR_VIEW_STATE_KEY = '__risuCharacterSidebarView'
+const CHARACTER_SIDEBAR_VIEW_STATE_VERSION = 1
 
 interface GridHistoryState {
   [GRID_HISTORY_STATE_KEY]: {
@@ -53,6 +55,14 @@ interface SettingsHistoryState {
   [SETTINGS_HISTORY_STATE_KEY]: {
     originPath: string
     version: typeof SETTINGS_HISTORY_STATE_VERSION
+  }
+}
+
+interface CharacterSidebarViewState {
+  [CHARACTER_SIDEBAR_VIEW_STATE_KEY]: {
+    characterId: string
+    routeKey: string
+    version: typeof CHARACTER_SIDEBAR_VIEW_STATE_VERSION
   }
 }
 
@@ -312,6 +322,30 @@ export function hasPendingRouteApplication(): boolean {
   return routeApplicationPending
 }
 
+/** Keep the character/chat sidebar choice on this exact history entry. */
+export function setCharacterSidebarViewMode(view: 'chat' | 'character'): void {
+  const characterView = view === 'character'
+  botMakerMode.set(characterView)
+  if (typeof window === 'undefined') return
+
+  const previousState = historyStateRecord(window.history.state)
+  if (!characterView) {
+    if (!Object.prototype.hasOwnProperty.call(previousState, CHARACTER_SIDEBAR_VIEW_STATE_KEY)) return
+    delete previousState[CHARACTER_SIDEBAR_VIEW_STATE_KEY]
+    replaceCurrentHistoryState(previousState)
+    return
+  }
+
+  const route = parseRoute(window.location.pathname)
+  if (route.kind !== 'character') return
+  previousState[CHARACTER_SIDEBAR_VIEW_STATE_KEY] = {
+    characterId: route.chaId,
+    routeKey: routeKey(route),
+    version: CHARACTER_SIDEBAR_VIEW_STATE_VERSION,
+  }
+  replaceCurrentHistoryState(previousState)
+}
+
 export async function applyRouteToStores(route: AppRoute): Promise<void> {
   const applicationEpoch = ++routeApplicationEpoch
   const isFreshRouteApplication = () => applicationEpoch === routeApplicationEpoch
@@ -371,6 +405,7 @@ export async function applyRouteToStores(route: AppRoute): Promise<void> {
       }
       case 'character': {
         await openCharacterRoute(route.chaId, route.chatId, isFreshRouteApplication)
+        restoreCharacterSidebarViewMode(route, isFreshRouteApplication)
         break
       }
       case 'not-found': {
@@ -613,6 +648,35 @@ function closeRouteBlockingViews(): void {
   CustomGUISettingMenuStore.set(false)
   botMakerMode.set(false)
   CharEmotion.set({})
+}
+
+function restoreCharacterSidebarViewMode(
+  route: Extract<AppRoute, { kind: 'character' }>,
+  isFresh: () => boolean,
+): void {
+  if (!isFresh() || !characterSidebarViewStateMatches(route)) return
+  const selectedCharacter = getDatabase().characters?.[get(selectedCharID)]
+  if (selectedCharacter?.chaId === route.chaId) botMakerMode.set(true)
+}
+
+function characterSidebarViewStateMatches(route: Extract<AppRoute, { kind: 'character' }>): boolean {
+  if (typeof window === 'undefined') return false
+  const candidate = historyStateRecord(window.history.state)[CHARACTER_SIDEBAR_VIEW_STATE_KEY]
+  if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return false
+  const state = candidate as Partial<CharacterSidebarViewState[typeof CHARACTER_SIDEBAR_VIEW_STATE_KEY]>
+  return (
+    state.version === CHARACTER_SIDEBAR_VIEW_STATE_VERSION &&
+    state.characterId === route.chaId &&
+    state.routeKey === routeKey(route)
+  )
+}
+
+function historyStateRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? { ...(value as Record<string, unknown>) } : {}
+}
+
+function replaceCurrentHistoryState(state: Record<string, unknown>): void {
+  window.history.replaceState(Object.keys(state).length === 0 ? null : state, '', window.location.href)
 }
 
 function commitPath(

@@ -63,6 +63,7 @@
     closeSettingsRoute,
     navigate,
     openSettingsRoute as openSettingsPath,
+    setCharacterSidebarViewMode,
   } from 'src/ts/router'
   let sideBarMode = $state(0)
   let editMode = $state(false)
@@ -723,7 +724,7 @@
         <button
           onclick={() => {
             devTool = false
-            botMakerMode.set(false)
+            setCharacterSidebarViewMode('chat')
           }}
           data-risu-sidebar-tab="chat"
           data-risu-sidebar-tab-active={!$botMakerMode && !devTool ? 'true' : 'false'}
@@ -733,7 +734,7 @@
         <button
           onclick={() => {
             devTool = false
-            botMakerMode.set(true)
+            setCharacterSidebarViewMode('character')
           }}
           data-risu-sidebar-tab="character"
           data-risu-sidebar-tab-active={$botMakerMode && !devTool ? 'true' : 'false'}
