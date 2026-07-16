@@ -250,6 +250,11 @@ vi.mock('src/lang', () => ({
     authorNote: "Author's Note",
     help: { chatNote: 'Chat note help' },
     hotkeyDesc: { popupEditor: 'Open popup editor' },
+    chooseDestinationFolder: 'Choose destination folder',
+    moveDown: 'Move down',
+    moveOutOfFolder: 'Move out of folder',
+    moveToFolder: 'Move to folder',
+    moveUp: 'Move up',
     newChat: 'New Chat',
     options: 'Options',
     personaBindedSuccess: 'Persona bound',
@@ -366,7 +371,7 @@ import {
   getResourceDatabase as getDatabase,
   replaceResourceDatabase as setDatabaseLite,
 } from 'src/ts/server/resourceState.svelte'
-import type { Chat, character } from 'src/ts/storage/database.svelte'
+import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
 import { restoreChatRowMetadata } from 'src/ts/chatCommands'
 import { language } from 'src/lang'
 
@@ -438,6 +443,14 @@ function seedSidebarDatabase(): character {
   } as never)
 
   return getDatabase().characters[0]
+}
+
+function appendCharacterCopy(source: character, characterId: string): character {
+  const copy = JSON.parse(JSON.stringify(source)) as character
+  copy.chaId = characterId
+  copy.name = `Copy ${characterId}`
+  getDatabase().characters.push(copy)
+  return getDatabase().characters.at(-1)!
 }
 
 function sidebarRoot(): HTMLElement {
@@ -639,6 +652,309 @@ describe('SideChatList DOM contract harness', () => {
         sidebarRoot().querySelector<HTMLElement>(`[data-risu-chat-action="${action}"]`)?.getAttribute('aria-label'),
       ).toBe(expectedName)
     }
+  })
+
+  it('reorders chats through keyboard-accessible organizer actions', async () => {
+    const chara = seedSidebarDatabase()
+    sidebarMocks.changeChatTo.mockImplementation((index: number) => {
+      chara.chatPage = index
+    })
+    sidebarMocks.alertSelect.mockResolvedValueOnce('0')
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const editList = sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!
+    editList.click()
+    await tick()
+    expect(editList.getAttribute('aria-pressed')).toBe('true')
+
+    const organizer = rowActionButton(rowByChatId('chat-root-b'), 'organize') as HTMLButtonElement
+    expect(organizer.getAttribute('aria-label')).toBe(`${language.options}: Root Chat B`)
+    organizer.focus()
+    organizer.click()
+    await flushCommandWork()
+
+    expect(chara.chats.map((chat) => chat.id)).toEqual(['chat-foldered', 'chat-root-b', 'chat-root-a'])
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual(['chat-foldered', 'chat-root-b', 'chat-root-a'])
+    expect(sidebarMocks.changeChatTo).toHaveBeenCalledWith(0)
+    expect(sidebarMocks.dispatchReorderChats).toHaveBeenCalledOnce()
+    expect(document.activeElement).toBe(rowActionButton(rowByChatId('chat-root-b'), 'organize'))
+  })
+
+  it('moves a chat into a folder through organizer choices', async () => {
+    seedSidebarDatabase()
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce('0')
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    rowActionButton(rowByChatId('chat-root-a'), 'organize').click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.alertSelect).toHaveBeenNthCalledWith(2, ['Pinned Folder'], language.chooseDestinationFolder)
+    expect(sidebarMocks.dispatchReorderChatsByIds).toHaveBeenCalledWith(
+      'char-a',
+      ['chat-foldered', 'chat-root-a', 'chat-root-b'],
+      {
+        'chat-foldered': 'folder-a',
+        'chat-root-a': 'folder-a',
+        'chat-root-b': null,
+      },
+      expect.anything(),
+      'chat-foldered',
+    )
+  })
+
+  it('reorders chat folders through their native options button', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatFolders.push({ id: 'folder-b', name: 'Second Folder', folded: false } as ChatFolder)
+    chara.chats.push(makeChat('chat-second-foldered', 'Second Foldered Chat', 'folder-b'))
+    sidebarMocks.setServerCommandsEnabled(true)
+    sidebarMocks.alertSelect.mockResolvedValueOnce('0')
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    const organizer = rowActionButton(folderElementById('folder-b'), 'folder-options') as HTMLButtonElement
+    organizer.focus()
+    organizer.click()
+    await flushCommandWork()
+
+    expect(sidebarMocks.dispatchReorderChatFoldersAndChatsByIds).toHaveBeenCalledWith(
+      'char-a',
+      ['folder-b', 'folder-a'],
+      ['chat-second-foldered', 'chat-foldered', 'chat-root-a', 'chat-root-b'],
+      {
+        'chat-foldered': 'folder-a',
+        'chat-root-a': null,
+        'chat-root-b': null,
+        'chat-second-foldered': 'folder-b',
+      },
+      expect.anything(),
+      'chat-foldered',
+    )
+    expect(document.activeElement).toBe(organizer)
+  })
+
+  it('keeps local chat order and selection aligned when organizing folders', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatFolders.push({ id: 'folder-b', name: 'Second Folder', folded: false } as ChatFolder)
+    chara.chats.push(makeChat('chat-second-foldered', 'Second Foldered Chat', 'folder-b'))
+    chara.chatPage = 3
+    sidebarMocks.changeChatTo.mockImplementation((index: number) => {
+      chara.chatPage = index
+    })
+    sidebarMocks.alertSelect.mockResolvedValueOnce('0')
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    const organizer = rowActionButton(folderElementById('folder-b'), 'folder-options') as HTMLButtonElement
+    organizer.focus()
+    organizer.click()
+    await flushCommandWork()
+
+    expect(chara.chatFolders.map((folder) => folder.id)).toEqual(['folder-b', 'folder-a'])
+    expect(chara.chats.map((chat) => chat.id)).toEqual([
+      'chat-second-foldered',
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
+    ])
+    expect(sidebarMocks.changeChatTo).toHaveBeenCalledWith(0)
+    expect(chara.chats[chara.chatPage]?.id).toBe('chat-second-foldered')
+    expect(chatRows().map((row) => row.dataset.risuChatId)).toEqual([
+      'chat-second-foldered',
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
+    ])
+    expect(document.activeElement).toBe(rowActionButton(folderElementById('folder-b'), 'folder-options'))
+  })
+
+  it('moves a chat into a folded folder and restores focus to its visible folder action', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chatFolders[0].folded = true
+    sidebarMocks.alertSelect.mockResolvedValueOnce('1').mockResolvedValueOnce('0')
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    const organizer = rowActionButton(rowByChatId('chat-root-a'), 'organize') as HTMLButtonElement
+    organizer.focus()
+    organizer.click()
+    await flushCommandWork()
+
+    expect(chara.chats.find((chat) => chat.id === 'chat-root-a')?.folderId).toBe('folder-a')
+    expect(folderPanelById('folder-a').hidden).toBe(true)
+    expect(document.activeElement).toBe(rowActionButton(folderElementById('folder-a'), 'folder-options'))
+  })
+
+  it('supports within-folder moves and moving a chat back to the root list', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats.push(makeChat('chat-foldered-second', 'Second Foldered Chat', 'folder-a'))
+    sidebarMocks.alertSelect.mockResolvedValueOnce('0').mockResolvedValueOnce('1')
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    rowActionButton(rowByChatId('chat-foldered-second'), 'organize').click()
+    await flushCommandWork()
+
+    expect(chara.chats.map((chat) => chat.id)).toEqual([
+      'chat-foldered-second',
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
+    ])
+
+    rowActionButton(rowByChatId('chat-foldered-second'), 'organize').click()
+    await flushCommandWork()
+
+    expect(chara.chats.find((chat) => chat.id === 'chat-foldered-second')?.folderId).toBeNull()
+    expect(chara.chats.map((chat) => chat.id)).toEqual([
+      'chat-foldered',
+      'chat-root-a',
+      'chat-root-b',
+      'chat-foldered-second',
+    ])
+  })
+
+  it('rebuilds organizer moves from current chats after an async choice', async () => {
+    const chara = seedSidebarDatabase()
+    let resolveSelection!: (selection: string) => void
+    sidebarMocks.alertSelect.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveSelection = resolve
+        }),
+    )
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    rowActionButton(rowByChatId('chat-root-b'), 'organize').click()
+    await Promise.resolve()
+    chara.chats.push(makeChat('chat-added', 'Added Chat'))
+    resolveSelection('0')
+    await flushCommandWork()
+
+    expect(chara.chats.map((chat) => chat.id)).toEqual(['chat-foldered', 'chat-root-b', 'chat-root-a', 'chat-added'])
+  })
+
+  it('does not finish a pending chat move after the selected character changes', async () => {
+    const original = seedSidebarDatabase()
+    let resolveFolderSelection!: (selection: string) => void
+    sidebarMocks.alertSelect.mockResolvedValueOnce('1').mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveFolderSelection = resolve
+        }),
+    )
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+    rowActionButton(rowByChatId('chat-root-a'), 'organize').click()
+    await Promise.resolve()
+    await tick()
+    expect(sidebarMocks.alertSelect).toHaveBeenCalledTimes(2)
+
+    const replacement = appendCharacterCopy(original, 'char-b')
+    selectedCharID.set(1)
+    await tick()
+    resolveFolderSelection('0')
+    await flushCommandWork()
+
+    expect(original.chats.map((chat) => [chat.id, chat.folderId])).toEqual([
+      ['chat-root-a', null],
+      ['chat-foldered', 'folder-a'],
+      ['chat-root-b', null],
+    ])
+    expect(replacement.chats.map((chat) => [chat.id, chat.folderId])).toEqual([
+      ['chat-root-a', null],
+      ['chat-foldered', 'folder-a'],
+      ['chat-root-b', null],
+    ])
+    expect(sidebarMocks.dispatchReorderChats).not.toHaveBeenCalled()
+    expect(sidebarMocks.dispatchReorderChatsByIds).not.toHaveBeenCalled()
+  })
+
+  it('does not finish a pending folder color change for a newly selected character', async () => {
+    const original = seedSidebarDatabase()
+    let resolveColorSelection!: (selection: string) => void
+    sidebarMocks.alertSelect.mockResolvedValueOnce('0').mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveColorSelection = resolve
+        }),
+    )
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    rowActionButton(folderElementById('folder-a'), 'folder-options').click()
+    await Promise.resolve()
+    await tick()
+    expect(sidebarMocks.alertSelect).toHaveBeenCalledTimes(2)
+
+    const replacement = appendCharacterCopy(original, 'char-b')
+    selectedCharID.set(1)
+    await tick()
+    resolveColorSelection('0')
+    await flushCommandWork()
+
+    expect(original.chatFolders[0].color).toBeUndefined()
+    expect(replacement.chatFolders[0].color).toBeUndefined()
+    expect(sidebarMocks.dispatchUpdateChatFolder).not.toHaveBeenCalled()
+  })
+
+  it('omits all reorder actions when a chat id is incomplete', async () => {
+    const chara = seedSidebarDatabase()
+    ;(chara.chats[0] as { id?: string }).id = undefined
+    chara.chatFolders.push({ id: 'folder-b', name: 'Second Folder', folded: false } as ChatFolder)
+    sidebarMocks.alertSelect.mockResolvedValueOnce(null)
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+
+    expect(sidebarRoot().querySelector('[data-risu-chat-action="organize"]')).toBeNull()
+    rowActionButton(folderElementById('folder-b'), 'folder-options').click()
+    await flushCommandWork()
+    expect(sidebarMocks.alertSelect).toHaveBeenNthCalledWith(
+      1,
+      [language.changeFolderColor],
+      `${language.options}: Second Folder`,
+    )
+    expect(sidebarMocks.dispatchReorderChatFoldersAndChatsByIds).not.toHaveBeenCalled()
+    expect(chara.chats).toHaveLength(3)
+  })
+
+  it('fails closed when organizer ids are duplicated', async () => {
+    const chara = seedSidebarDatabase()
+    chara.chats[0].id = 'chat-foldered'
+    chara.chatFolders.push({ id: 'folder-a', name: 'Duplicate Folder', folded: false } as ChatFolder)
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    sidebarRoot().querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')!.click()
+    await tick()
+
+    expect(sidebarRoot().querySelector('[data-risu-chat-action="organize"]')).toBeNull()
+    rowActionButton(folderElementById('folder-a'), 'folder-options').click()
+    await flushCommandWork()
+    expect(sidebarMocks.alertSelect).not.toHaveBeenCalled()
+    expect(sidebarMocks.dispatchReorderChatFoldersAndChatsByIds).not.toHaveBeenCalled()
+    expect(chara.chats).toHaveLength(3)
   })
 
   it('uses native sibling buttons for chat and folder actions', async () => {
@@ -1122,7 +1438,10 @@ describe('SideChatList DOM contract harness', () => {
     rowActionButton(folderElementById('folder-a'), 'folder-options').click()
     await flushCommandWork()
 
-    expect(sidebarMocks.alertSelect).toHaveBeenCalledWith([language.changeFolderColor])
+    expect(sidebarMocks.alertSelect).toHaveBeenCalledWith(
+      [language.changeFolderColor],
+      `${language.options}: Pinned Folder`,
+    )
     expect(sidebarMocks.dispatchUpdateChatFolder).not.toHaveBeenCalled()
     expect(selectedCharacter().chatFolders[0].color).toBeUndefined()
   })

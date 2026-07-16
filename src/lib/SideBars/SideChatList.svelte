@@ -12,6 +12,7 @@
     FolderPlusIcon,
     BookmarkCheckIcon,
     ArrowLeftIcon,
+    EllipsisVerticalIcon,
   } from '@lucide/svelte'
 
   import type { Chat, ChatFolder, character } from 'src/ts/storage/database.svelte'
@@ -81,6 +82,7 @@
 
   // Preserve source order and each chat's original array index within folder buckets.
   let chatsByFolderId = $derived(groupChatsByFolderId(chara.chats))
+  let organizerIdsStable = $derived(hasStableOrganizationIds())
 
   let chatRouteOpen = $derived(
     $currentRoute.kind === 'character' &&
@@ -112,6 +114,264 @@
     if (chara.chaId) {
       navigate(characterRoutePath(chara.chaId))
     }
+  }
+
+  type ChatOrganizerAction =
+    | { kind: 'move'; direction: 'up' | 'down'; label: string }
+    | { kind: 'moveToFolder'; label: string }
+    | { kind: 'moveOut'; label: string }
+
+  type ChatFolderOrganizerAction =
+    | { kind: 'move'; direction: 'up' | 'down'; label: string }
+    | { kind: 'color'; label: string }
+
+  function parseAlertSelection(value: unknown, optionCount: number): number | null {
+    if (typeof value !== 'string' || !/^\d+$/.test(value.trim())) return null
+    const selection = Number(value.trim())
+    return Number.isSafeInteger(selection) && selection >= 0 && selection < optionCount ? selection : null
+  }
+
+  function hasUniqueNonemptyIds(ids: Array<string | undefined>): ids is string[] {
+    return ids.every((id): id is string => typeof id === 'string' && id.length > 0) && new Set(ids).size === ids.length
+  }
+
+  function hasStableOrganizationIds(): boolean {
+    return (
+      hasUniqueNonemptyIds(chara.chats.map((chat) => chat.id)) &&
+      hasUniqueNonemptyIds((chara.chatFolders ?? []).map((folder) => folder.id))
+    )
+  }
+
+  function isCurrentOrganizerOwner(characterId: string): boolean {
+    return chara.chaId === characterId && getDatabase().characters?.[$selectedCharID]?.chaId === characterId
+  }
+
+  function organizerButtonForChat(chatId: string): HTMLButtonElement | undefined {
+    return Array.from(listEle?.querySelectorAll<HTMLButtonElement>('[data-risu-chat-organizer-action]') ?? []).find(
+      (button) => button.dataset.risuChatOrganizerAction === chatId,
+    )
+  }
+
+  function organizerButtonForFolder(folderId: string): HTMLButtonElement | undefined {
+    return Array.from(
+      folderEles?.querySelectorAll<HTMLButtonElement>('[data-risu-chat-folder-organizer-action]') ?? [],
+    ).find((button) => button.dataset.risuChatFolderOrganizerAction === folderId)
+  }
+
+  function restoreChatOrganizerFocus(chatId: string, targetFolderId: string | null): void {
+    const chatButton = organizerButtonForChat(chatId)
+    if (chatButton && !chatButton.closest('[hidden]')) {
+      chatButton.focus()
+      return
+    }
+    if (targetFolderId) {
+      organizerButtonForFolder(targetFolderId)?.focus()
+      return
+    }
+    listEle
+      ?.closest('[data-risu-chat-list]')
+      ?.querySelector<HTMLButtonElement>('[data-risu-chat-action="edit-list"]')
+      ?.focus()
+  }
+
+  function chatFolderAssignments(): Record<string, string | null> {
+    const assignments: Record<string, string | null> = {}
+    const validFolderIds = new Set((chara.chatFolders ?? []).map((folder) => folder.id))
+    for (const chat of chara.chats) {
+      if (chat.id) assignments[chat.id] = chat.folderId && validFolderIds.has(chat.folderId) ? chat.folderId : null
+    }
+    return assignments
+  }
+
+  function groupedChatIds(assignments: Record<string, string | null>): Map<string | null, string[]> {
+    const groups = new Map<string | null, string[]>()
+    for (const folder of chara.chatFolders ?? []) groups.set(folder.id, [])
+    groups.set(null, [])
+    for (const chat of chara.chats) {
+      if (!chat.id) continue
+      const folderId = assignments[chat.id] ?? null
+      const group = groups.get(folderId) ?? groups.get(null)!
+      group.push(chat.id)
+    }
+    return groups
+  }
+
+  function flattenChatGroups(
+    groups: Map<string | null, string[]>,
+    folderIds = (chara.chatFolders ?? []).map((folder) => folder.id),
+  ): string[] {
+    return [...folderIds.flatMap((folderId) => groups.get(folderId) ?? []), ...(groups.get(null) ?? [])]
+  }
+
+  function applyChatOrganization(chatIds: string[], assignments: Record<string, string | null>): void {
+    if (!chara.chaId) return
+    const previous = currentChatStateSnapshot()
+    const selectedChatId = chara.chats[chara.chatPage]?.id
+    if (canUseServerCommands()) {
+      dispatchReorderChatsByIds(chara.chaId, chatIds, assignments, previous, selectedChatId)
+      return
+    }
+
+    const chatsById = new Map(chara.chats.filter((chat) => chat.id).map((chat) => [chat.id!, chat]))
+    for (const [chatId, folderId] of Object.entries(assignments)) {
+      const chat = chatsById.get(chatId)
+      if (chat) chat.folderId = folderId
+    }
+    chara.chats = chatIds.map((chatId) => chatsById.get(chatId)).filter((chat): chat is Chat => Boolean(chat))
+    const selectedIndex = selectedChatId ? chatIds.indexOf(selectedChatId) : -1
+    if (selectedIndex >= 0) changeChatTo(selectedIndex)
+    reloadGuiDisplay()
+    dispatchReorderChats(chara.chaId, previous, selectedChatId)
+  }
+
+  async function openChatOrganizerActions(chat: Chat, focusOrigin?: HTMLButtonElement): Promise<void> {
+    const ownerCharacterId = chara.chaId
+    if (!ownerCharacterId || !isCurrentOrganizerOwner(ownerCharacterId) || !chat.id || !hasStableOrganizationIds())
+      return
+    const shouldRestoreFocus = focusOrigin === document.activeElement
+    const chatId = chat.id
+    const initialAssignments = chatFolderAssignments()
+    const initialSourceFolderId = initialAssignments[chatId] ?? null
+    const initialGroups = groupedChatIds(initialAssignments)
+    const initialSourceGroup = initialGroups.get(initialSourceFolderId) ?? []
+    const sourceIndex = initialSourceGroup.indexOf(chatId)
+    if (sourceIndex < 0) return
+
+    const actions: ChatOrganizerAction[] = []
+    if (sourceIndex > 0) actions.push({ kind: 'move', direction: 'up', label: language.moveUp })
+    if (sourceIndex < initialSourceGroup.length - 1) {
+      actions.push({ kind: 'move', direction: 'down', label: language.moveDown })
+    }
+    const initialDestinationFolders = (chara.chatFolders ?? []).filter((folder) => folder.id !== initialSourceFolderId)
+    if (initialDestinationFolders.length > 0) actions.push({ kind: 'moveToFolder', label: language.moveToFolder })
+    if (initialSourceFolderId !== null) actions.push({ kind: 'moveOut', label: language.moveOutOfFolder })
+    if (actions.length === 0) return
+
+    const actionSelection = await alertSelect(
+      actions.map((action) => action.label),
+      `${language.options}: ${chat.name}`,
+    )
+    if (!isCurrentOrganizerOwner(ownerCharacterId)) return
+    const selectedAction = parseAlertSelection(actionSelection, actions.length)
+    if (selectedAction === null) return
+    const action = actions[selectedAction]
+    if (!action) return
+
+    let requestedTargetFolderId: string | null | undefined
+    if (action.kind === 'moveToFolder') {
+      const currentSourceFolderId = chatFolderAssignments()[chatId] ?? null
+      const destinationFolders = (chara.chatFolders ?? []).filter((folder) => folder.id !== currentSourceFolderId)
+      const folderSelection = await alertSelect(
+        destinationFolders.map((folder) => folder.name),
+        language.chooseDestinationFolder,
+      )
+      if (!isCurrentOrganizerOwner(ownerCharacterId)) return
+      const selectedFolder = parseAlertSelection(folderSelection, destinationFolders.length)
+      if (selectedFolder === null) return
+      requestedTargetFolderId = destinationFolders[selectedFolder]?.id
+      if (!requestedTargetFolderId) return
+    }
+
+    const currentChat = chara.chats.find((candidate) => candidate.id === chatId)
+    if (!currentChat || !hasStableOrganizationIds()) return
+    const assignments = chatFolderAssignments()
+    const sourceFolderId = assignments[chatId] ?? null
+    const groups = groupedChatIds(assignments)
+    const sourceGroup = groups.get(sourceFolderId) ?? []
+    const currentSourceIndex = sourceGroup.indexOf(chatId)
+    if (currentSourceIndex < 0) return
+
+    if (action.kind === 'move') {
+      const targetIndex = currentSourceIndex + (action.direction === 'up' ? -1 : 1)
+      if (targetIndex < 0 || targetIndex >= sourceGroup.length) return
+      ;[sourceGroup[currentSourceIndex], sourceGroup[targetIndex]] = [
+        sourceGroup[targetIndex],
+        sourceGroup[currentSourceIndex],
+      ]
+    } else {
+      const targetFolderId = action.kind === 'moveOut' ? null : requestedTargetFolderId
+      if (targetFolderId === undefined || targetFolderId === sourceFolderId) return
+      sourceGroup.splice(currentSourceIndex, 1)
+      const targetGroup = groups.get(targetFolderId)
+      if (!targetGroup) return
+      targetGroup.push(chatId)
+      assignments[chatId] = targetFolderId
+    }
+
+    applyChatOrganization(flattenChatGroups(groups), assignments)
+    await tick()
+    if (!isCurrentOrganizerOwner(ownerCharacterId)) return
+    if (shouldRestoreFocus) restoreChatOrganizerFocus(chatId, assignments[chatId] ?? null)
+  }
+
+  async function openChatFolderOrganizerActions(folder: ChatFolder, focusOrigin?: HTMLButtonElement): Promise<void> {
+    const ownerCharacterId = chara.chaId
+    if (!ownerCharacterId || !isCurrentOrganizerOwner(ownerCharacterId)) return
+    const shouldRestoreFocus = focusOrigin === document.activeElement
+    const initialFolders = chara.chatFolders ?? []
+    if (!hasUniqueNonemptyIds(initialFolders.map((candidate) => candidate.id))) return
+    const folderIndex = initialFolders.findIndex((candidate) => candidate.id === folder.id)
+    if (folderIndex < 0) return
+    const actions: ChatFolderOrganizerAction[] = []
+    if (editMode && organizerIdsStable && folderIndex > 0) {
+      actions.push({ kind: 'move', direction: 'up', label: language.moveUp })
+    }
+    if (editMode && organizerIdsStable && folderIndex < initialFolders.length - 1) {
+      actions.push({ kind: 'move', direction: 'down', label: language.moveDown })
+    }
+    actions.push({ kind: 'color', label: language.changeFolderColor })
+
+    const actionSelection = await alertSelect(
+      actions.map((action) => action.label),
+      `${language.options}: ${folder.name}`,
+    )
+    if (!isCurrentOrganizerOwner(ownerCharacterId)) return
+    const selectedAction = parseAlertSelection(actionSelection, actions.length)
+    if (selectedAction === null) return
+    const action = actions[selectedAction]
+    if (!action) return
+
+    if (action.kind === 'color') {
+      const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
+      const colorSelectionValue = await alertSelect(colors)
+      if (!isCurrentOrganizerOwner(ownerCharacterId)) return
+      const colorSelection = parseAlertSelection(colorSelectionValue, colors.length)
+      if (colorSelection === null) return
+      const previous = currentChatStateSnapshot()
+      const color = colors[colorSelection]
+      if (!color || !applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color))) return
+      dispatchUpdateChatFolder(folder.id, { color }, previous, rollbackServerBackedChatFolderRowMetadata)
+      return
+    }
+
+    if (!hasStableOrganizationIds()) return
+    const folders = chara.chatFolders ?? []
+    const currentFolderIndex = folders.findIndex((candidate) => candidate.id === folder.id)
+    if (currentFolderIndex < 0) return
+    const targetIndex = currentFolderIndex + (action.direction === 'up' ? -1 : 1)
+    if (targetIndex < 0 || targetIndex >= folders.length) return
+    const folderIds = folders.map((candidate) => candidate.id)
+    ;[folderIds[currentFolderIndex], folderIds[targetIndex]] = [folderIds[targetIndex], folderIds[currentFolderIndex]]
+    const assignments = chatFolderAssignments()
+    const chatIds = flattenChatGroups(groupedChatIds(assignments), folderIds)
+    const previous = currentChatStateSnapshot()
+    const selectedChatId = chara.chats[chara.chatPage]?.id
+    const usingServerCommands = canUseServerCommands()
+    if (usingServerCommands && !chara.chaId) return
+    if (usingServerCommands) {
+      dispatchReorderChatFoldersAndChatsByIds(chara.chaId, folderIds, chatIds, assignments, previous, selectedChatId)
+    } else {
+      const foldersById = new Map(folders.map((candidate) => [candidate.id, candidate]))
+      const chatsById = new Map(chara.chats.map((candidate) => [candidate.id, candidate]))
+      chara.chatFolders = folderIds.map((folderId) => foldersById.get(folderId)).filter(Boolean) as ChatFolder[]
+      chara.chats = chatIds.map((chatId) => chatsById.get(chatId)).filter(Boolean) as Chat[]
+      const selectedIndex = selectedChatId ? chatIds.indexOf(selectedChatId) : -1
+      if (selectedIndex >= 0) changeChatTo(selectedIndex)
+      reloadGuiDisplay()
+    }
+    await tick()
+    if (!isCurrentOrganizerOwner(ownerCharacterId)) return
+    if (shouldRestoreFocus) organizerButtonForFolder(folder.id)?.focus()
   }
 
   function createChat(): void {
@@ -661,32 +921,12 @@
                   <button
                     type="button"
                     data-risu-chat-action="folder-options"
+                    data-risu-chat-folder-organizer-action={folder.id}
                     aria-label={`${language.options}: ${folder.name}`}
                     class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
-                    onclick={async (e) => {
+                    onclick={(e) => {
                       e.stopPropagation()
-                      const selection = await alertSelect([language.changeFolderColor])
-                      if (selection === null) return
-                      const sel = Number(selection)
-                      switch (sel) {
-                        case 0:
-                          const colors = ['red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink', 'default']
-                          const colorSelection = await alertSelect(colors)
-                          if (colorSelection === null) return
-                          const sel = Number(colorSelection)
-                          const previous = currentChatStateSnapshot()
-                          const color = colors[sel]
-                          if (!color) break
-                          if (!applyDirectOptimisticFolderMetadata(folder.id, (candidate) => (candidate.color = color)))
-                            break
-                          dispatchUpdateChatFolder(
-                            folder.id,
-                            { color },
-                            previous,
-                            rollbackServerBackedChatFolderRowMetadata,
-                          )
-                          break
-                      }
+                      void openChatFolderOrganizerActions(folder, e.currentTarget)
                     }}>
                     <MenuIcon size={18} />
                   </button>
@@ -768,6 +1008,20 @@
                         </button>
                       {/if}
                       <div class="ml-auto flex shrink-0 justify-end">
+                        {#if editMode && chat.id && organizerIdsStable}
+                          <button
+                            type="button"
+                            data-risu-chat-action="organize"
+                            data-risu-chat-organizer-action={chat.id}
+                            aria-label={`${language.options}: ${chat.name}`}
+                            class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                            onclick={(e) => {
+                              e.stopPropagation()
+                              void openChatOrganizerActions(chat, e.currentTarget)
+                            }}>
+                            <EllipsisVerticalIcon size={18} aria-hidden="true" />
+                          </button>
+                        {/if}
                         <button
                           type="button"
                           data-risu-chat-action="options"
@@ -867,6 +1121,20 @@
                   </button>
                 {/if}
                 <div class="ml-auto flex shrink-0 justify-end">
+                  {#if editMode && chat.id && organizerIdsStable}
+                    <button
+                      type="button"
+                      data-risu-chat-action="organize"
+                      data-risu-chat-organizer-action={chat.id}
+                      aria-label={`${language.options}: ${chat.name}`}
+                      class="text-textcolor2 hover:text-green-500 mr-1 cursor-pointer"
+                      onclick={(e) => {
+                        e.stopPropagation()
+                        void openChatOrganizerActions(chat, e.currentTarget)
+                      }}>
+                      <EllipsisVerticalIcon size={18} aria-hidden="true" />
+                    </button>
+                  {/if}
                   <button
                     type="button"
                     data-risu-chat-action="options"
@@ -961,6 +1229,7 @@
         <button
           data-risu-chat-action="edit-list"
           aria-label={language.chatListEdit}
+          aria-pressed={editMode}
           class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
           onclick={() => {
             editMode = !editMode
