@@ -20,6 +20,13 @@ function isFolder(entry: SidebarOrganizerOrderEntry | undefined): entry is Sideb
   return typeof entry === 'object' && entry !== null && typeof entry.id === 'string' && Array.isArray(entry.data)
 }
 
+function findFolder(
+  order: readonly SidebarOrganizerOrderEntry[],
+  folderId: string,
+): SidebarOrganizerFolder | undefined {
+  return order.find((entry): entry is SidebarOrganizerFolder => isFolder(entry) && entry.id === folderId)
+}
+
 export function resolveSidebarOrganizerPosition(
   order: readonly SidebarOrganizerOrderEntry[],
   reference: SidebarOrganizerItemReference,
@@ -52,9 +59,7 @@ export function resolveSidebarOrganizerStep(
   const source = resolveSidebarOrganizerPosition(order, reference)
   if (!source) return null
 
-  const containerLength = source.folder
-    ? order.find((entry) => isFolder(entry) && entry.id === source.folder)?.data.length
-    : order.length
+  const containerLength = source.folder ? findFolder(order, source.folder)?.data.length : order.length
   if (containerLength === undefined) return null
 
   if (direction === 'up') {
@@ -84,7 +89,7 @@ export function resolveSidebarOrganizerMoveToFolder(
   const source = resolveSidebarOrganizerPosition(order, reference)
   if (!source || source.folder === folderId) return null
 
-  const targetFolder = order.find((entry) => isFolder(entry) && entry.id === folderId)
+  const targetFolder = findFolder(order, folderId)
   if (!targetFolder || targetFolder.data.includes(reference.characterId)) return null
 
   return {
