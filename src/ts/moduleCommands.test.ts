@@ -671,6 +671,10 @@ describe('module command projection helpers', () => {
     ] as any
     setResourceWriteGuardEnabled(true)
 
+    withTrustedResourceWrite(() => {
+      getDatabase().modules[0].name = 'Latest optimistic module child edit'
+    })
+
     deleteGlobalModule('mod-a')
 
     expect(getDatabase().enabledModules).toEqual([])
@@ -687,6 +691,7 @@ describe('module command projection helpers', () => {
 
     expect(getDatabase().enabledModules).toEqual(['mod-a'])
     expect(getDatabase().modules.map((module) => module.id)).toEqual(['mod-a', 'mod-b'])
+    expect(getDatabase().modules[0].name).toBe('Latest optimistic module child edit')
     expect(getDatabase().characters[0].modules).toEqual(['mod-a', 'character-module'])
     expect(getDatabase().characters[0].chats[0].modules).toEqual(['mod-a', 'chat-module'])
     expect(getDatabase().characters[0].name).toBe('Concurrent character edit')

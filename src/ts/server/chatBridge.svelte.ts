@@ -30,7 +30,7 @@ import {
   type DurableMutationIntent,
   type PendingMutationHandle,
 } from './pendingMutationOutbox'
-import { characterOwnerMutationKey, chatResourceOwnerMutationKey } from './resourceOwnerMutationKeys'
+import { chatFolderResourceOwnerMutationKey, chatResourceOwnerMutationKey } from './resourceOwnerMutationKeys'
 
 interface PendingChatPatch {
   chatId: string
@@ -265,7 +265,7 @@ function queueFolderPatch(
     timer: null,
     intent,
     outbox: stagePendingMutation(
-      rollback.characterId ? characterOwnerMutationKey(rollback.characterId) : `chat-folder-metadata:${folderId}`,
+      chatFolderResourceOwnerMutationKey(folderId, rollback.characterId),
       intent,
       pendingFolderPatch?.outbox,
     ),

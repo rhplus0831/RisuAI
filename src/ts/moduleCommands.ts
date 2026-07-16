@@ -21,6 +21,7 @@ import {
   updateModuleCommand,
   type ModuleSnapshot,
   type ServerCommandResult,
+  type ServerCommandTransportOptions,
 } from './server/commands'
 import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
@@ -33,6 +34,10 @@ import {
   resolveActiveChatGenerationSettings,
 } from './activeChatGenerationSettings'
 import type { ChatGenerationSettings } from './chatGenerationSettings'
+import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
+import { stagePendingMutation, type DurableMutationIntent } from './server/pendingMutationOutbox'
+import { moduleOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 
 export interface GlobalModuleStateSnapshot {
   modules: RisuModule[]
@@ -368,9 +373,10 @@ export function restoreCharacterModuleState(snapshot: CharacterModuleStateSnapsh
 export function runModuleCommand<T extends Record<string, unknown>>(
   command: (baseRevision: number) => Promise<ServerCommandResult<T>>,
   rollback: () => void,
+  options: ServerCommandTransportOptions = {},
 ): Promise<ServerCommandResult<T>> {
   if (!canUseServerCommands()) return Promise.resolve({ status: 'unavailable' })
-  return runServerCommand({ command, rollback })
+  return runServerCommand({ command, rollback, ...options })
 }
 
 export function dispatchCreateModule(
@@ -455,24 +461,39 @@ export function dispatchModuleInfoPatch(
 
 export function dispatchDeleteModule(moduleId: string, previous: GlobalModuleStateSnapshot): void {
   if (!canUseServerCommands()) return
+  flushRegisteredPendingBridgePatches({})
   const rollbackEntries = moduleDeleteRollbackEntries(moduleId, previous)
   const operation = rollbackEntries.length > 0 ? issueGlobalModuleOperation(rollbackEntries) : null
-  runModuleCommand(
-    async (baseRevision) => {
-      const result = await deleteModuleCommand({
-        baseRevision,
-        moduleId,
-      })
-      if (operation && result.status === 'ok') {
-        clearGlobalModuleOperation(operation)
-      }
-      return result
-    },
-    () => {
-      if (operation) {
-        rollbackGlobalModuleEntries(rollbackEntries, operation)
-      }
-    },
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/modules/${encodeURIComponent(moduleId)}`,
+        body: {},
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runModuleCommand(
+      async (baseRevision) => {
+        const result = await deleteModuleCommand({
+          baseRevision,
+          moduleId,
+        })
+        if (operation && result.status === 'ok') {
+          clearGlobalModuleOperation(operation)
+        }
+        return result
+      },
+      () => {
+        if (operation) {
+          rollbackGlobalModuleEntries(rollbackEntries, operation)
+        }
+      },
+      transport,
+    ),
   )
 }
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { get } from 'svelte/store'
+import { IDBFactory } from 'fake-indexeddb'
 
 const alertConfirmState = vi.hoisted(() => ({
   messages: [] as string[],
@@ -56,7 +57,16 @@ import {
   updateCharacterOrderFolder,
 } from './characterCommands'
 import { setCharacterByIndex, type Database, type folder } from './storage/database.svelte'
-import { clearCachedServerCommandRevision } from './server/commands'
+import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './server/commands'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+  stagePendingMutation,
+  type DurableMutationIntent,
+} from './server/pendingMutationOutbox'
+import { replayPendingMutations } from './server/pendingMutationReplay'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase, replaceResourceDatabase } from './server/resourceState.svelte'
 import { selectedCharID, selIdState } from './stores.svelte'
@@ -558,7 +568,7 @@ describe('character list create/delete rollback', () => {
     testDatabaseState.db = {
       characters: [
         { chaId: 'char-a', name: 'A', chats: [] },
-        { chaId: 'char-b', name: 'B deleted', chats: [] },
+        { chaId: 'char-b', name: 'B latest optimistic profile edit', chats: [] },
         { chaId: 'char-c', name: 'C', chats: [] },
       ],
       characterOrder: ['char-a', { id: 'folder-1', name: 'Folder', color: 'blue', data: ['char-b', 'char-c'] }],
@@ -589,7 +599,7 @@ describe('character list create/delete rollback', () => {
     })
     expect(testDatabaseState.db.characters.map((character: any) => character.name)).toEqual([
       'A newer edit',
-      'B deleted',
+      'B latest optimistic profile edit',
       'C',
       'D appended',
     ])
@@ -723,6 +733,102 @@ describe('character list create/delete rollback', () => {
     const charBRows = testDatabaseState.db.characters.filter((character: any) => character.chaId === 'char-b')
     expect(charBRows).toEqual([{ chaId: 'char-b', name: 'Replacement B', chats: [] }])
     expect(testDatabaseState.db.characterOrder).toEqual(['char-a', 'char-c', 'char-b'])
+  })
+
+  it('holds character DELETE behind a transient profile PATCH and recovers in owner order', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-character-delete',
+      writerEpoch: 12,
+      databaseLineage: 'lineage-character-delete',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+    testDatabaseState.db = {
+      characters: [
+        { chaId: 'char-a', name: 'A', chats: [] },
+        { chaId: 'char-b', name: 'Latest optimistic profile edit', chats: [] },
+      ],
+      characterOrder: ['char-a', 'char-b'],
+      currentChar: 0,
+    } as any
+    selectedCharID.set(0)
+    setResourceWriteGuardEnabled(true)
+
+    const patchIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'PATCH',
+          path: '/characters/char-b',
+          body: { patch: { name: 'Latest optimistic profile edit' } },
+        },
+      ],
+    }
+    const predecessor = stagePendingMutation('character-owner:char-b', patchIntent)
+    await expect(predecessor.ready).resolves.toBe('persisted')
+    const previous = currentCharacterStateSnapshot()
+    withTrustedResourceWrite(() => {
+      testDatabaseState.db.characters.splice(1, 1)
+    })
+
+    let recover = false
+    let revision = 20
+    const commands: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-b') {
+          const method = init.method ?? 'GET'
+          commands.push(method)
+          if (!recover && method === 'PATCH') return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          if (!recover) throw new Error('DELETE overtook its profile predecessor')
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: method === 'DELETE' ? 'character.deleted' : 'character.updated',
+              revision,
+              resource: 'character',
+              id: 'char-b',
+            },
+            characterId: 'char-b',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchDeleteCharacter('char-b', previous)
+      await vi.waitFor(() => expect(commands).toEqual(['PATCH']))
+      expect(
+        (await listPendingMutations()).map((entry) => ({
+          key: entry.handle.key,
+          method: entry.intent.requests[0].method,
+        })),
+      ).toEqual([
+        { key: 'character-owner:char-b', method: 'PATCH' },
+        { key: 'character-owner:char-b', method: 'DELETE' },
+      ])
+
+      recover = true
+      const recoveryStart = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.slice(recoveryStart)).toEqual(['PATCH', 'DELETE'])
+      expect(await listPendingMutations()).toEqual([])
+
+      const commandCount = commands.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 0 })
+      expect(commands).toHaveLength(commandCount)
+      expect(testDatabaseState.db.characters.some((character) => character.chaId === 'char-b')).toBe(false)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 })
 

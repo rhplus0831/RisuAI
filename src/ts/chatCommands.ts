@@ -71,7 +71,7 @@ import {
   type PendingMutationHandle,
 } from './server/pendingMutationOutbox'
 import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
-import { chatResourceOwnerMutationKey } from './server/resourceOwnerMutationKeys'
+import { chatFolderResourceOwnerMutationKey, chatResourceOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 
 export interface ChatStateSnapshot {
   characters: character[]
@@ -3321,25 +3321,41 @@ function clearChatFolderMetadataAttempt(attempt: PendingChatFolderMetadataAttemp
 }
 
 export function dispatchDeleteChatFolder(folderId: string, previous: ChatStateSnapshot): void {
+  if (!canUseServerCommands()) return
+  flushRegisteredPendingBridgePatches({})
   const optimisticEpoch = captureDestructiveRefreshEpoch()
   const rollback = chatFolderDeleteRollbackFromState(folderId, previous)
   const optimisticRowEpoch = rollback?.characterId
     ? captureCharacterRowProjectionEpoch(rollback.characterId)
     : undefined
   const acknowledgeOptimistic = applyOptimisticDeletedChatFolderAttempt(folderId, previous)
-  runChatCommand(
-    (baseRevision) =>
-      deleteChatFolderCommand({
-        baseRevision,
-        folderId,
-        acknowledgeOptimistic,
-        optimisticEpoch,
-        optimisticRowEpoch,
-      }),
-    () =>
-      rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
-        restoreDeletedChatFolderAttempt(rollback),
-      ),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/chat-folders/${encodeURIComponent(folderId)}`,
+        body: {},
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(chatFolderResourceOwnerMutationKey(folderId, rollback?.characterId), intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runServerCommand({
+      command: (baseRevision) =>
+        deleteChatFolderCommand({
+          baseRevision,
+          folderId,
+          acknowledgeOptimistic,
+          optimisticEpoch,
+          optimisticRowEpoch,
+        }),
+      rollback: () =>
+        rollbackChatStructureUnlessCharacterRowChanged(rollback?.characterId, optimisticRowEpoch, () =>
+          restoreDeletedChatFolderAttempt(rollback),
+        ),
+      ...transport,
+    }),
   )
 }
 

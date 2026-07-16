@@ -981,7 +981,7 @@ describe('chat command projection helpers', () => {
 
   it('rolls back an optimistic folder delete while preserving newer chat changes', async () => {
     getDatabase().characters[0].chatFolders = [
-      { id: 'folder-a', name: 'Folder A', folded: false },
+      { id: 'folder-a', name: 'Latest optimistic folder child edit', folded: false },
       { id: 'folder-b', name: 'Folder B', folded: false },
     ]
     getDatabase().characters[0].chats = [
@@ -1018,6 +1018,7 @@ describe('chat command projection helpers', () => {
       name: 'Newer affected chat name',
       folderId: 'folder-a',
     })
+    expect(getDatabase().characters[0].chatFolders[0].name).toBe('Latest optimistic folder child edit')
     expect(getDatabase().characters[0].chats[2]).toMatchObject({
       name: 'Moved affected chat',
       folderId: 'folder-b',

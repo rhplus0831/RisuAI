@@ -19,6 +19,10 @@ import { withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import { getResourceDatabase as getDatabase } from './server/resourceState.svelte'
 import { applyAttemptedFieldRollback, applyAttemptedKeyedListRollback } from './server/staleStateGuards'
 import { recordHydratedCharacterLorebooks } from './server/lorebookBridge.svelte'
+import { dispatchDurableMutation } from './server/durableMutationDispatch'
+import { flushRegisteredPendingBridgePatches } from './server/pendingBridgeFlushRegistry'
+import { stagePendingMutation, type DurableMutationIntent } from './server/pendingMutationOutbox'
+import { characterOwnerMutationKey } from './server/resourceOwnerMutationKeys'
 import { selectedCharID } from './stores.svelte'
 import type { character, folder } from './storage/database.svelte'
 
@@ -921,13 +925,33 @@ export function dispatchDeleteCharacter(characterId: string, previous: Character
   const rollback = characterDeleteRollbackFromState(characterId, previous)
   repairCharacterOrderOptimistically({ dispatchReorder: false })
   normalizeCurrentCharacterPointerAfterDelete(characterId, previous)
-  runCharacterCommand(
-    (baseRevision) =>
-      deleteCharacterCommand({
-        baseRevision,
-        characterId,
-      }),
-    () => restoreDeletedCharacterAttempt(rollback),
+  if (!canUseServerCommands()) return
+
+  flushRegisteredPendingBridgePatches({})
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'DELETE',
+        path: `/characters/${encodeURIComponent(characterId)}`,
+        body: {},
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(characterOwnerMutationKey(characterId), intent)
+  void dispatchDurableMutation(
+    outbox,
+    intent,
+    (transport) =>
+      runCharacterCommand(
+        (baseRevision) =>
+          deleteCharacterCommand({
+            baseRevision,
+            characterId,
+          }),
+        () => restoreDeletedCharacterAttempt(rollback),
+        transport,
+      ) ?? Promise.resolve({ status: 'unavailable' as const }),
   )
 }
 
