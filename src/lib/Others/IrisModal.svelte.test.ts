@@ -97,6 +97,12 @@ async function resetFromBacklog(): Promise<void> {
   await settle()
 }
 
+function keyboardActivate(control: HTMLButtonElement, key: 'Enter' | ' '): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key })
+  if (control.dispatchEvent(event)) control.click()
+  return event
+}
+
 beforeEach(() => {
   vi.useFakeTimers()
   Object.defineProperty(Element.prototype, 'animate', {
@@ -206,6 +212,83 @@ describe('IrisModal model availability', () => {
     component = undefined
 
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('lets the focused close button handle Enter while dialogue is typing', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+
+    const close = target.querySelector<HTMLButtonElement>(':scope [role="dialog"] > button[aria-label="Close"]')
+    if (!close) throw new Error('Iris close button not found')
+    const event = keyboardActivate(close, 'Enter')
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(irisStore.open).toBe(false)
+  })
+
+  it('lets the focused backlog button handle Space without advancing dialogue', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+
+    const dialogue = target.querySelector<HTMLElement>('[aria-live="polite"]')
+    const log = target.querySelector<HTMLButtonElement>('button[title^="View backlog"]')
+    if (!dialogue || !log) throw new Error('Iris dialogue controls not found')
+    const textBeforeActivation = dialogue.textContent
+    const event = keyboardActivate(log, ' ')
+    await settle()
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(target.querySelectorAll('[role="dialog"]')).toHaveLength(2)
+    expect(dialogue.textContent).toBe(textBeforeActivation)
+  })
+
+  it('advances a focused dialogue control only once per keypress', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+    await vi.runAllTimersAsync()
+    await settle()
+    ;(
+      component as unknown as {
+        pushDialogue: (line: { speaker: string; text: string }) => void
+      }
+    ).pushDialogue({ speaker: 'Iris', text: 'First sentence. Second sentence.' })
+    await settle()
+
+    const dialogue = target.querySelector<HTMLElement>('[aria-live="polite"]')
+    if (!dialogue) throw new Error('Iris dialogue control not found')
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter' })
+    dialogue.dispatchEvent(event)
+    await settle()
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(dialogue.textContent?.trim()).toBe('First sentence.')
+  })
+
+  it('lets Escape from the focused message input close Iris', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+    await vi.runAllTimersAsync()
+    await settle()
+
+    const input = target.querySelector<HTMLInputElement>('input[type="text"]')
+    if (!input) throw new Error('Iris message input not found')
+    const event = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Escape' })
+    input.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+    expect(irisStore.open).toBe(false)
+  })
+
+  it('keeps the decorative sprite out of pointer hit testing and below Close', async () => {
+    component = mount(IrisModal, { target })
+    await settle()
+
+    const sprite = target.querySelector<HTMLElement>('[data-iris-sprite]')
+    const close = target.querySelector<HTMLButtonElement>(':scope [role="dialog"] > button[aria-label="Close"]')
+    if (!sprite || !close) throw new Error('Iris sprite or close button not found')
+
+    expect(sprite.classList.contains('pointer-events-none')).toBe(true)
+    expect(close.classList.contains('z-20')).toBe(true)
   })
 
   it('waits for saved dialogue hydration before accepting a submission', async () => {

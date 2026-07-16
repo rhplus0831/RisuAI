@@ -258,6 +258,13 @@
       hide()
       return
     }
+    if (
+      e.target instanceof Element &&
+      e.target !== e.currentTarget &&
+      e.target.closest('button, input, textarea, select, a[href], [role="button"], [contenteditable="true"]')
+    ) {
+      return
+    }
     if (e.key === 'l' || e.key === 'L') {
       showBacklog = !showBacklog
       return
@@ -279,9 +286,9 @@
   function handleInputKey(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault()
+      e.stopPropagation()
       submitUserInput()
     }
-    e.stopPropagation()
   }
 
   function openBacklog() {
@@ -489,7 +496,7 @@
   <button
     data-modal-initial-focus
     onclick={hide}
-    class="absolute right-4 top-4 flex items-center gap-1 rounded-md bg-black/40 px-2 py-1 text-xs text-white/50 transition hover:bg-black/60 hover:text-white/80"
+    class="absolute right-4 top-4 z-20 flex items-center gap-1 rounded-md bg-black/40 px-2 py-1 text-xs text-white/50 transition hover:bg-black/60 hover:text-white/80"
     aria-label="Close">
     <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -498,7 +505,10 @@
   </button>
 
   <!-- Character sprite -->
-  <div class="absolute bottom-55 left-1/2 -translate-x-1/2" transition:fly={{ y: 20, duration: 400 }}>
+  <div
+    data-iris-sprite
+    class="pointer-events-none absolute bottom-55 left-1/2 -translate-x-1/2"
+    transition:fly={{ y: 20, duration: 400 }}>
     <img src={IrisImage} alt="Iris" class="h-120 w-auto object-contain drop-shadow-2xl" />
   </div>
 
@@ -596,6 +606,7 @@
         onkeydown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
+            e.stopPropagation()
             advance()
           }
         }}
