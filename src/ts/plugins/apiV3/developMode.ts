@@ -1,14 +1,40 @@
 import { alertError } from 'src/ts/alert'
 import { importPlugin } from '../plugins.svelte'
-import { sleep } from 'src/ts/util'
 
-export async function hotReloadPluginFiles() {
-  const observerSupported = !('FileSystemObserver' in window)
+const HOT_RELOAD_INTERVAL_MS = 500
+
+export interface PluginHotReloadSession {
+  readonly done: Promise<void>
+  stop(): void
+}
+
+let activeHotReloadSession: PluginHotReloadSessionImpl | null = null
+
+function waitForNextPoll(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve()
+
+  return new Promise((resolve) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const finish = () => {
+      if (timer !== undefined) clearTimeout(timer)
+      signal.removeEventListener('abort', finish)
+      resolve()
+    }
+
+    timer = setTimeout(finish, HOT_RELOAD_INTERVAL_MS)
+    signal.addEventListener('abort', finish, { once: true })
+  })
+}
+
+async function runHotReloadSession(signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return
 
   if (!('showOpenFilePicker' in window)) {
-    alertError(
-      'Your browser does not support the File System Access API, which is required for hot-reloading plugin files.',
-    )
+    if (!signal.aborted) {
+      alertError(
+        'Your browser does not support the File System Access API, which is required for hot-reloading plugin files.',
+      )
+    }
     return
   }
 
@@ -25,32 +51,62 @@ export async function hotReloadPluginFiles() {
         },
       ],
     })
-  } catch (error) {
+  } catch {
     return
   }
 
+  if (signal.aborted || !fileHandle) return
+
   let lastModified = 0
-  const callback = async () => {
+  while (!signal.aborted) {
     try {
       const file = await fileHandle.getFile()
-      if (file.lastModified === lastModified) {
-        return
+      if (signal.aborted) return
+
+      if (file.lastModified !== lastModified) {
+        lastModified = file.lastModified
+        const content = await file.text()
+        if (signal.aborted) return
+
+        console.log('Detected change in plugin file, reloading...')
+        await importPlugin(content, {
+          isHotReload: true,
+          isUpdate: true,
+          isTypescript: file.name.endsWith('.ts'),
+        })
+        if (signal.aborted) return
       }
-      console.log('Detected change in plugin file, reloading...')
-      lastModified = file.lastModified
-      const content = await file.text()
-      await importPlugin(content, {
-        isHotReload: true,
-        isUpdate: true,
-        isTypescript: file.name.endsWith('.ts'),
-      })
-    } catch (e) {
-      console.error('Error reading file:', e)
+    } catch (error) {
+      if (signal.aborted) return
+      console.error('Error reading file:', error)
     }
+
+    await waitForNextPoll(signal)
+  }
+}
+
+class PluginHotReloadSessionImpl implements PluginHotReloadSession {
+  readonly #controller = new AbortController()
+  readonly done: Promise<void>
+
+  constructor() {
+    this.done = Promise.resolve()
+      .then(() => runHotReloadSession(this.#controller.signal))
+      .finally(() => {
+        if (activeHotReloadSession === this) activeHotReloadSession = null
+      })
   }
 
-  while (true) {
-    await callback()
-    await sleep(500)
+  stop(): void {
+    this.#controller.abort()
+    if (activeHotReloadSession === this) activeHotReloadSession = null
   }
+}
+
+export function hotReloadPluginFiles(): PluginHotReloadSession {
+  activeHotReloadSession?.stop()
+
+  const session = new PluginHotReloadSessionImpl()
+  activeHotReloadSession = session
+  return session
 }

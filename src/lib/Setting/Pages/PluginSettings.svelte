@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte'
   import { PlusIcon, TrashIcon, LinkIcon, CodeXmlIcon, PowerIcon, PowerOffIcon, RefreshCwIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { alertConfirm, alertMd, alertSelect } from 'src/ts/alert'
@@ -26,10 +27,13 @@
   import CheckInput from 'src/lib/UI/GUI/CheckInput.svelte'
   import RadioInput from 'src/lib/UI/GUI/RadioInput.svelte'
   import TextAreaInput from 'src/lib/UI/GUI/TextAreaInput.svelte'
-  import { hotReloadPluginFiles } from 'src/ts/plugins/apiV3/developMode'
+  import { hotReloadPluginFiles, type PluginHotReloadSession } from 'src/ts/plugins/apiV3/developMode'
 
   let expandedPluginNames = $state<string[]>([])
   let nextPluginMutationSequence = 0
+  let developModeRequestSequence = 0
+  let destroyed = false
+  let hotReloadSession: PluginHotReloadSession | null = null
 
   interface PluginMutationUiState {
     sequence: number
@@ -246,6 +250,45 @@
         break
     }
   }
+
+  async function handleDevelopModeAction(): Promise<void> {
+    const sequence = ++developModeRequestSequence
+    const selection = await alertSelect(['Import plugin with hot reload', 'Download plugin template'])
+    if (destroyed || sequence !== developModeRequestSequence || selection === null) return
+
+    switch (parseInt(selection)) {
+      case 0: {
+        const previousSession = hotReloadSession
+        hotReloadSession = null
+        previousSession?.stop()
+
+        const session = hotReloadPluginFiles()
+        hotReloadSession = session
+        const clearOwnedSession = () => {
+          if (hotReloadSession === session) hotReloadSession = null
+        }
+        void session.done.then(clearOwnedSession, clearOwnedSession)
+        break
+      }
+      case 1: {
+        const a = document.createElement('a')
+        a.href = '/plugin_start.7z'
+        a.download = 'plugin_starter.7z'
+        document.body.appendChild(a)
+        a.click()
+        a.remove()
+        break
+      }
+    }
+  }
+
+  onDestroy(() => {
+    destroyed = true
+    developModeRequestSequence++
+    const ownedSession = hotReloadSession
+    hotReloadSession = null
+    ownedSession?.stop()
+  })
 </script>
 
 <h2 class="mb-2 text-2xl font-bold mt-2">{language.plugin}</h2>
@@ -490,23 +533,8 @@
   <button
     type="button"
     aria-label={language.pluginDevelopMode}
-    onclick={async () => {
-      const v = parseInt(
-        await alertSelect(['Import plugin with hot reload', 'Download plugin template', language.cancel]),
-      )
-      switch (v) {
-        case 0:
-          await hotReloadPluginFiles()
-          break
-        case 1: {
-          const a = document.createElement('a')
-          a.href = '/plugin_start.7z'
-          a.download = 'plugin_starter.7z'
-          document.body.appendChild(a)
-          a.click()
-          a.remove()
-        }
-      }
+    onclick={() => {
+      void handleDevelopModeAction()
     }}
     class="hover:text-textcolor cursor-pointer">
     <CodeXmlIcon />

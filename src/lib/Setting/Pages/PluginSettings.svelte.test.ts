@@ -14,6 +14,7 @@ const pluginSettingsMocks = vi.hoisted(() => ({
   setPluginArgument: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
   togglePluginEnabled: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
   deletePlugin: vi.fn(async () => ({ status: 'accepted', result: { status: 'ok' } })),
+  hotReloadPluginFiles: vi.fn(),
 }))
 
 vi.mock('src/ts/process/modules', () => ({
@@ -47,6 +48,10 @@ vi.mock('src/ts/pluginCommands', () => ({
   togglePluginEnabled: pluginSettingsMocks.togglePluginEnabled,
 }))
 
+vi.mock('src/ts/plugins/apiV3/developMode', () => ({
+  hotReloadPluginFiles: pluginSettingsMocks.hotReloadPluginFiles,
+}))
+
 import PluginSettings from './PluginSettings.svelte'
 import { language } from 'src/lang'
 import { replaceResourceDatabase as setDatabaseLite } from 'src/ts/server/resourceState.svelte'
@@ -77,6 +82,7 @@ describe('PluginSettings', () => {
     pluginSettingsMocks.togglePluginEnabled.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
     pluginSettingsMocks.deletePlugin.mockReset()
     pluginSettingsMocks.deletePlugin.mockResolvedValue({ status: 'accepted', result: { status: 'ok' } })
+    pluginSettingsMocks.hotReloadPluginFiles.mockReset()
     target = document.createElement('div')
     document.body.appendChild(target)
     setDatabaseLite({
@@ -357,6 +363,61 @@ describe('PluginSettings', () => {
     await vi.waitFor(() => expect(click).toHaveBeenCalledOnce())
     expect(document.querySelector('a[download="plugin_starter.7z"]')).toBeNull()
     click.mockRestore()
+  })
+
+  it('treats a dismissed developer-mode selection as cancellation', async () => {
+    pluginSettingsMocks.alertSelect.mockResolvedValue(null)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    component = mount(PluginSettings, { target })
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginDevelopMode}"]`)?.click()
+
+    await vi.waitFor(() => expect(pluginSettingsMocks.alertSelect).toHaveBeenCalledOnce())
+    await tick()
+    expect(pluginSettingsMocks.hotReloadPluginFiles).not.toHaveBeenCalled()
+    expect(click).not.toHaveBeenCalled()
+    click.mockRestore()
+  })
+
+  it('stops only the currently owned hot-reload session when it is replaced or destroyed', async () => {
+    pluginSettingsMocks.alertSelect.mockResolvedValue('0')
+    const olderDone = deferred<void>()
+    const newerDone = deferred<void>()
+    const olderSession = { done: olderDone.promise, stop: vi.fn() }
+    const newerSession = { done: newerDone.promise, stop: vi.fn() }
+    pluginSettingsMocks.hotReloadPluginFiles.mockReturnValueOnce(olderSession).mockReturnValueOnce(newerSession)
+    component = mount(PluginSettings, { target })
+    const developButton = target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginDevelopMode}"]`)
+
+    developButton?.click()
+    await vi.waitFor(() => expect(pluginSettingsMocks.hotReloadPluginFiles).toHaveBeenCalledTimes(1))
+    developButton?.click()
+    await vi.waitFor(() => expect(pluginSettingsMocks.hotReloadPluginFiles).toHaveBeenCalledTimes(2))
+
+    expect(olderSession.stop).toHaveBeenCalledOnce()
+    expect(newerSession.stop).not.toHaveBeenCalled()
+
+    olderDone.resolve()
+    await tick()
+    unmount(component)
+    component = undefined
+
+    expect(newerSession.stop).toHaveBeenCalledOnce()
+  })
+
+  it('does not start hot reload after its settings owner is destroyed during selection', async () => {
+    const selection = deferred<string | null>()
+    pluginSettingsMocks.alertSelect.mockReturnValueOnce(selection.promise)
+    component = mount(PluginSettings, { target })
+
+    target.querySelector<HTMLButtonElement>(`button[aria-label="${language.pluginDevelopMode}"]`)?.click()
+    await vi.waitFor(() => expect(pluginSettingsMocks.alertSelect).toHaveBeenCalledOnce())
+    unmount(component)
+    component = undefined
+    selection.resolve('0')
+    await tick()
+
+    expect(pluginSettingsMocks.hotReloadPluginFiles).not.toHaveBeenCalled()
   })
 
   it('does not check plugin-authored update URLs until the user requests it', async () => {
