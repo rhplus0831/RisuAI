@@ -501,15 +501,29 @@ export function dispatchEnableModule(moduleId: string, enabled: boolean, previou
   if (!canUseServerCommands()) return
   const rollbackEntry = moduleEnableRollbackEntry(moduleId, enabled, previous)
   const operation = issueGlobalModuleOperation([rollbackEntry])
-  runModuleCommand(
-    async (baseRevision) => {
-      const result = await enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true)
-      if (result.status === 'ok') {
-        clearGlobalModuleOperation(operation)
-      }
-      return result
-    },
-    () => rollbackGlobalModuleEntries([rollbackEntry], operation),
+  const intent: DurableMutationIntent = {
+    version: 1,
+    requests: [
+      {
+        method: 'POST',
+        path: '/modules/enable',
+        body: { moduleId, enabled },
+      },
+    ],
+  }
+  const outbox = stagePendingMutation(moduleOwnerMutationKey(moduleId), intent)
+  void dispatchDurableMutation(outbox, intent, (transport) =>
+    runModuleCommand(
+      async (baseRevision) => {
+        const result = await enableModuleCommand({ baseRevision, moduleId, enabled }, undefined, true)
+        if (result.status === 'ok') {
+          clearGlobalModuleOperation(operation)
+        }
+        return result
+      },
+      () => rollbackGlobalModuleEntries([rollbackEntry], operation),
+      transport,
+    ),
   )
 }
 

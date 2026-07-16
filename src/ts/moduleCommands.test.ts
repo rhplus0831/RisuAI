@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { IDBFactory } from 'fake-indexeddb'
 
 vi.mock('./platform', async (importActual) => {
   const actual = await importActual<typeof import('./platform')>()
@@ -12,7 +13,16 @@ vi.mock('./storage/fastifyStorage', () => ({
   getNodeServerProxyAuth: async () => 'module-command-token',
 }))
 
-import { clearCachedServerCommandRevision } from './server/commands'
+import { clearCachedServerCommandRevision, setCachedServerCommandRevision } from './server/commands'
+import {
+  clearPendingMutationOutbox,
+  listPendingMutations,
+  preparePendingMutationOutbox,
+  resetPendingMutationOutboxForTests,
+  stagePendingMutation,
+  type DurableMutationIntent,
+} from './server/pendingMutationOutbox'
+import { replayPendingMutations } from './server/pendingMutationReplay'
 import { setResourceWriteGuardEnabled, withTrustedResourceWrite } from './server/resourceWriteGuard.svelte'
 import {
   getResourceDatabase as getDatabase,
@@ -488,6 +498,98 @@ describe('module command projection helpers', () => {
         },
       },
     ])
+  })
+
+  it('keeps a newer global enable behind a retained module delete', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-module-enable',
+      writerEpoch: 9,
+      databaseLineage: 'lineage-module-enable',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(20)
+    setResourceWriteGuardEnabled(true)
+
+    const deleteIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [
+        {
+          method: 'DELETE',
+          path: '/modules/mod-a',
+          body: {},
+        },
+      ],
+    }
+    const retainedDelete = stagePendingMutation('module-owner:mod-a', deleteIntent)
+    await expect(retainedDelete.ready).resolves.toBe('persisted')
+
+    let recover = false
+    let revision = 20
+    const commands: Array<{ method: string; mutationId: string | null }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') {
+          return jsonResponse({ acknowledged: true })
+        }
+
+        const method = init.method ?? 'GET'
+        const headers = init.headers as Record<string, string> | undefined
+        if (url === '/api/v1/commands/modules/mod-a' && method === 'DELETE') {
+          commands.push({ method, mutationId: headers?.['risu-mutation-id'] ?? null })
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 500)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'module.deleted', revision, resource: 'module', id: 'mod-a' },
+            moduleId: 'mod-a',
+          })
+        }
+        if (url === '/api/v1/commands/modules/enable' && method === 'POST') {
+          commands.push({ method, mutationId: headers?.['risu-mutation-id'] ?? null })
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: { type: 'module.enabled', revision, resource: 'module', id: 'mod-a' },
+            moduleId: 'mod-a',
+            enabled: true,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      setGlobalModuleEnabled('mod-a', true)
+      expect(getDatabase().enabledModules).toEqual(['mod-a'])
+
+      await vi.waitFor(() => expect(commands.map(({ method }) => method)).toEqual(['DELETE']))
+      await vi.waitFor(async () => {
+        expect(
+          (await listPendingMutations()).map((entry) => ({
+            key: entry.handle.key,
+            method: entry.intent.requests[0]?.method,
+            path: entry.intent.requests[0]?.path,
+          })),
+        ).toEqual([
+          { key: 'module-owner:mod-a', method: 'DELETE', path: '/modules/mod-a' },
+          { key: 'module-owner:mod-a', method: 'POST', path: '/modules/enable' },
+        ])
+      })
+      expect(getDatabase().enabledModules).toEqual(['mod-a'])
+
+      recover = true
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2 })
+      expect(commands.map(({ method }) => method)).toEqual(['DELETE', 'DELETE', 'POST'])
+      expect(commands.every(({ mutationId }) => mutationId !== null)).toBe(true)
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('optimistically applies global module textarea fields and rolls back on command failure', async () => {
