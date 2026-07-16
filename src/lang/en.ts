@@ -1470,6 +1470,7 @@ export const languageEnglish = {
   personaBindedSuccess: 'Persona is successfully binded',
   personaUnbindedSuccess: 'Persona is successfully unbinded',
   personaBindingFailed: 'Could not update the persona binding. Please try again.',
+  personaBindingQueued: 'The persona binding is saved on this device and queued. It will retry automatically.',
   parameters: 'Parameters',
   sizeAndSpeed: 'Size and Speed',
   useLegacyGUI: 'Use Legacy GUI',

@@ -254,6 +254,7 @@ vi.mock('src/lang', () => ({
     options: 'Options',
     personaBindedSuccess: 'Persona bound',
     personaBindingFailed: 'Persona binding failed',
+    personaBindingQueued: 'Persona binding queued',
     personaUnbindedSuccess: 'Persona unbound',
     removeConfirm: 'Remove ',
     remove: 'Remove',
@@ -1201,6 +1202,33 @@ describe('SideChatList DOM contract harness', () => {
     expect(options.getAttribute('aria-busy')).toBe('false')
     expect(sidebarMocks.alertError).not.toHaveBeenCalled()
     expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona bound')
+  })
+
+  it('reports a retained persona binding as queued without reverting the visible state', async () => {
+    seedSidebarDatabase()
+    getDatabase().personas = [{ id: 'persona-selected', name: 'Selected Persona' }] as never
+    sidebarMocks.setServerCommandsEnabled(true)
+    setResourceWriteGuardEnabled(true)
+    sidebarMocks.alertChatOptions.mockResolvedValueOnce(1)
+    sidebarMocks.alertConfirm.mockResolvedValueOnce(true)
+    sidebarMocks.runServerCommand.mockImplementationOnce(async (input) => input.command(10))
+    const command = sidebarMocks.createDeferredUpdateCommand()
+
+    component = mount(SideChatListHarness, { target })
+    await tick()
+
+    const options = rowActionButton(rowByChatId('chat-root-a'), 'options')
+    options.click()
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
+    command.resolve({ status: 'unavailable' })
+    await flushCommandWork()
+
+    expect(selectedCharacter().chats[0].bindedPersona).toBe('persona-selected')
+    expect(sidebarMocks.rollbackServerBackedChatRowMetadata).not.toHaveBeenCalled()
+    expect(sidebarMocks.alertError).not.toHaveBeenCalled()
+    expect(sidebarMocks.alertNormal).toHaveBeenCalledWith('Persona binding queued')
   })
 
   it('navigates when selecting a sidebar row and reflects the route-applied selection', async () => {

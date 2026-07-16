@@ -288,6 +288,12 @@
         return
       }
       if (result && result.status !== 'ok') {
+        const retainedBinding =
+          currentSidebarCharacter()?.chats?.find((candidate) => candidate.id === chatId)?.bindedPersona ?? ''
+        if (retainedBinding === bindedPersona) {
+          alertNormal(language.personaBindingQueued)
+          return
+        }
         alertError(language.personaBindingFailed)
         return
       }
