@@ -1479,6 +1479,8 @@ export const languageEnglish = {
   strictJsonSchema: 'Strict Schema',
   extractJson: 'Extract JSON',
   reloadSession: 'Newer version of save data is found. Reloading the session...',
+  pendingMutationReplayRetained:
+    'Some pending changes could not reach the server. They remain saved on this device and will be retried the next time the app starts.',
   fixMarkdownNewline: 'Fix Markdown Newline',
   customQuotes: 'Custom Quotes',
   leadingSingleQuote: 'Leading Single Quote',

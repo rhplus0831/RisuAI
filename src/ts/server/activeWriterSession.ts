@@ -17,6 +17,15 @@ export function peekActiveWriterSessionId(): string | null {
   return activeWriterSessionId
 }
 
+/** Adopt a durable outbox owner only when neither memory nor sessionStorage has an identity. */
+export function adoptPendingMutationWriterSessionId(sessionId: string): boolean {
+  if (!isUsableActiveWriterSessionId(sessionId)) return false
+  if (activeWriterSessionId || readStoredActiveWriterSessionId()) return false
+  activeWriterSessionId = sessionId
+  writeStoredActiveWriterSessionId(sessionId)
+  return true
+}
+
 export function activeWriterSessionHeader(): Record<string, string> {
   return {
     [ACTIVE_WRITER_SESSION_HEADER]: getActiveWriterSessionId(),
@@ -27,6 +36,10 @@ export function handleActiveWriterStaleResponse(response: Response): boolean {
   if (response.status !== 423) return false
   scheduleStaleSessionReload()
   return true
+}
+
+export function scheduleServerOwnershipReload(): void {
+  scheduleStaleSessionReload()
 }
 
 function createSessionId(): string {

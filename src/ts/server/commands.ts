@@ -30,7 +30,11 @@ import {
   serializeScriptDefinitionCollectionDigestInput,
   type ScriptDefinitionCollectionMutation,
 } from './scriptDefinitionMutations'
-import { activeWriterSessionHeader, handleActiveWriterStaleResponse } from './activeWriterSession'
+import {
+  activeWriterSessionHeader,
+  handleActiveWriterStaleResponse,
+  scheduleServerOwnershipReload,
+} from './activeWriterSession'
 import { isCanonicalLoadout } from './loadoutCanonical'
 import { SERVER_SETTINGS_GROUP_BY_KEY, type SettingsGroup, type SettingsGroupProjectionEpochs } from './settingsGroups'
 import {
@@ -42,11 +46,15 @@ import {
   notifyServerCommandLocalEffectApplied,
   subscribeServerCommandLocalEffectApplied,
 } from './commandLocalEffectEvents'
+import type { DurableMutationRequest } from './pendingMutationOutbox'
 
 export { notifyServerCommandLocalEffectApplied, subscribeServerCommandLocalEffectApplied }
 
 const COMMAND_ENDPOINT = '/api/v1/commands'
 const BOOTSTRAP_ENDPOINT = '/api/v1/bootstrap'
+const MUTATION_RECEIPT_ACK_ENDPOINT = '/api/v1/commands/mutation-receipts/ack'
+export const SERVER_MUTATION_ID_HEADER = 'risu-mutation-id'
+export const SERVER_DATABASE_LINEAGE_HEADER = 'risu-database-lineage'
 const AGENT_PRESET_COLLECTION_ACKNOWLEDGEMENT_CERTIFICATE = 'agent-preset-collection-v1'
 const PRESET_REORDER_ACKNOWLEDGEMENT_CERTIFICATE = 'preset-reorder-v1'
 
@@ -491,7 +499,11 @@ export type ServerCommandLocalEffect = (
 export type ServerCommandResult<T extends Record<string, unknown> = {}> =
   | ({ status: 'ok'; revision: number; event: CommandEvent } & T)
   | { status: 'conflict'; currentRevision: number }
-  | { status: 'error'; error: string }
+  | {
+      status: 'error'
+      error: string
+      reason?: 'database-lineage' | 'mutation-id-conflict' | 'stale-writer'
+    }
   | { status: 'unavailable' }
 
 export type SettingsPatch = Record<string, unknown>
@@ -531,6 +543,8 @@ export interface PatchServerBackedSettingsInput {
   rollback?: () => void
   signal?: AbortSignal | null
   keepalive?: boolean
+  mutationId?: string
+  databaseLineage?: string
 }
 
 export type PresetSnapshot = Record<string, unknown> & {
@@ -1526,6 +1540,8 @@ export interface RunServerPresetCommandInput<T extends Record<string, unknown> =
   rollback?: () => void
   signal?: AbortSignal | null
   keepalive?: boolean
+  mutationId?: string
+  databaseLineage?: string
 }
 
 export type ServerCommandFactory = (baseRevision: number) => Promise<ServerCommandResult>
@@ -1533,6 +1549,8 @@ export type ServerCommandFactory = (baseRevision: number) => Promise<ServerComma
 export interface ServerCommandTransportOptions {
   signal?: AbortSignal | null
   keepalive?: boolean
+  mutationId?: string
+  databaseLineage?: string
 }
 
 let cachedServerCommandRevision: number | null = null
@@ -1575,14 +1593,56 @@ const directServerCommandReconciliations = new Set<DirectServerCommandReconcilia
 // scope for every transport that the queued factory starts, so its eventual
 // local effect fails closed and triggers an authoritative reread.
 let activeQueuedCommandDestructiveRefreshEpoch: number | null = null
+let activeQueuedCommandMutation: { id: string; databaseLineage: string; requestIndex: number } | null = null
 
-async function withQueuedCommandDestructiveRefreshEpoch<T>(epoch: number, task: () => Promise<T>): Promise<T> {
+async function withQueuedCommandExecutionContext<T>(
+  epoch: number,
+  mutationId: string | undefined,
+  databaseLineage: string | undefined,
+  task: () => Promise<T>,
+): Promise<T> {
   const previousEpoch = activeQueuedCommandDestructiveRefreshEpoch
+  const previousMutation = activeQueuedCommandMutation
   activeQueuedCommandDestructiveRefreshEpoch = epoch
+  activeQueuedCommandMutation = mutationId
+    ? {
+        id: normalizeMutationId(mutationId),
+        databaseLineage: normalizeDatabaseLineage(databaseLineage),
+        requestIndex: 0,
+      }
+    : null
   try {
     return await task()
   } finally {
     activeQueuedCommandDestructiveRefreshEpoch = previousEpoch
+    activeQueuedCommandMutation = previousMutation
+  }
+}
+
+function normalizeMutationId(value: string): string {
+  const normalized = value.trim()
+  if (!/^[A-Za-z0-9._:-]{1,96}$/.test(normalized)) {
+    throw new TypeError('Server mutation id is invalid')
+  }
+  return normalized
+}
+
+function normalizeDatabaseLineage(value: string | undefined): string {
+  const normalized = value?.trim() ?? ''
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(normalized)) {
+    throw new TypeError('Server database lineage is invalid')
+  }
+  return normalized
+}
+
+function nextQueuedCommandMutationRequest(): { mutationId: string; databaseLineage: string } | null {
+  const context = activeQueuedCommandMutation
+  if (!context) return null
+  const index = context.requestIndex
+  context.requestIndex += 1
+  return {
+    mutationId: index === 0 ? context.id : `${context.id}.${index}`,
+    databaseLineage: context.databaseLineage,
   }
 }
 
@@ -1989,7 +2049,7 @@ export async function patchServerBackedSettings(input: PatchServerBackedSettings
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
-    withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () =>
+    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () =>
       executeServerBackedSettingsPatch(input, grouped, rollbackEpoch),
     ),
   )
@@ -4837,7 +4897,9 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution(() =>
-    withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () => executeServerCommand(input, rollbackEpoch)),
+    withQueuedCommandExecutionContext(rollbackEpoch, input.mutationId, input.databaseLineage, () =>
+      executeServerCommand(input, rollbackEpoch),
+    ),
   )
 }
 
@@ -4856,15 +4918,84 @@ export async function runServerCommand<T extends Record<string, unknown> = {}>(
 export async function runServerCommandSequence(
   commands: readonly ServerCommandFactory[],
   rollback?: () => void,
+  options: ServerCommandTransportOptions = {},
 ): Promise<ServerCommandResult | null> {
   if (!canUseServerCommands() || commands.length === 0) return null
 
   const rollbackEpoch = captureDestructiveRefreshEpoch()
   return enqueueServerCommandExecution((batch) =>
-    withQueuedCommandDestructiveRefreshEpoch(rollbackEpoch, () =>
+    withQueuedCommandExecutionContext(rollbackEpoch, options.mutationId, options.databaseLineage, () =>
       executeServerCommandSequence(commands, rollback, rollbackEpoch, batch),
     ),
   )
+}
+
+export type DurableMutationReplayResult =
+  | { status: 'ok' }
+  | { status: 'conflict'; currentRevision: number }
+  | {
+      status: 'error'
+      error: string
+      reason?: 'database-lineage' | 'mutation-id-conflict' | 'stale-writer'
+    }
+  | { status: 'unavailable' }
+
+/** Replay one encrypted outbox entry against the current revision cursor. */
+export async function replayDurableMutationRequests(
+  requests: readonly DurableMutationRequest[],
+  mutationId: string,
+  databaseLineage: string,
+): Promise<DurableMutationReplayResult> {
+  if (requests.length === 0) return { status: 'ok' }
+  const factories = requests.map(
+    (request): ServerCommandFactory =>
+      (baseRevision) =>
+        requestCommandJson(request.path, {
+          method: request.method,
+          body: { ...cloneJsonValue(request.body), baseRevision },
+        }),
+  )
+  const options = { mutationId, databaseLineage }
+  let failed = await runServerCommandSequence(factories, undefined, options)
+  // A different live writer may have advanced the revision while this tab was
+  // gone. The 409 response advances the cached cursor; replay the same stable
+  // receipt ids once so already-accepted prefix requests dedupe transactionally.
+  if (failed?.status === 'conflict') {
+    failed = await runServerCommandSequence(factories, undefined, options)
+  }
+  return failed ?? { status: 'ok' }
+}
+
+export async function acknowledgeServerMutationReceipts(
+  mutationId: string,
+  requestCount: number,
+  databaseLineage: string,
+): Promise<boolean> {
+  const normalizedMutationId = normalizeMutationId(mutationId)
+  const normalizedDatabaseLineage = normalizeDatabaseLineage(databaseLineage)
+  if (!Number.isInteger(requestCount) || requestCount < 1 || requestCount > 100) {
+    throw new RangeError('Server mutation receipt request count is invalid')
+  }
+  try {
+    const auth = await getNodeServerProxyAuth()
+    const response = await fetch(MUTATION_RECEIPT_ACK_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'risu-auth': auth,
+        ...activeWriterSessionHeader(),
+      },
+      body: JSON.stringify({
+        mutationId: normalizedMutationId,
+        requestCount,
+        databaseLineage: normalizedDatabaseLineage,
+      }),
+    })
+    return response.ok
+  } catch (error) {
+    console.warn('Unable to acknowledge durable server mutation receipts', error)
+    return false
+  }
 }
 
 async function executeServerCommandSequence(
@@ -4962,6 +5093,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
   if (!canUseServerCommands()) return { status: 'unavailable' }
 
   const auth = await getNodeServerProxyAuth()
+  const mutation = nextQueuedCommandMutationRequest()
   const directReconciliation = init.deferOwnEventUntilResponse
     ? beginDirectServerCommandReconciliation(init.deferOwnEventUntilResponse)
     : null
@@ -4976,6 +5108,12 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
           'content-type': 'application/json',
           'risu-auth': auth,
           ...activeWriterSessionHeader(),
+          ...(mutation
+            ? {
+                [SERVER_MUTATION_ID_HEADER]: mutation.mutationId,
+                [SERVER_DATABASE_LINEAGE_HEADER]: mutation.databaseLineage,
+              }
+            : {}),
         },
         body: JSON.stringify(init.body),
       }
@@ -4993,6 +5131,23 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
       // Non-JSON command errors are reported by HTTP status below.
     }
 
+    if (response.status === 409 && isDatabaseLineageConflict(body)) {
+      scheduleServerOwnershipReload()
+      return {
+        status: 'error',
+        error: errorMessageFromBody(body, 'HTTP 409'),
+        reason: 'database-lineage',
+      }
+    }
+
+    if (response.status === 409 && isMutationIdConflict(body)) {
+      return {
+        status: 'error',
+        error: errorMessageFromBody(body, 'HTTP 409'),
+        reason: 'mutation-id-conflict',
+      }
+    }
+
     if (response.status === 409) {
       const currentRevision = readCurrentRevision(body)
       if (currentRevision !== null) setCachedServerCommandRevision(currentRevision)
@@ -5002,7 +5157,7 @@ async function requestCommandJson<T extends Record<string, unknown> = {}>(
     }
 
     if (handleActiveWriterStaleResponse(response)) {
-      return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423') }
+      return { status: 'error', error: errorMessageFromBody(body, 'HTTP 423'), reason: 'stale-writer' }
     }
 
     if (!response.ok) {
@@ -7765,6 +7920,14 @@ function readCurrentRevision(body: unknown): number | null {
   if (!body || typeof body !== 'object') return null
   const currentRevision = (body as { currentRevision?: unknown }).currentRevision
   return Number.isInteger(currentRevision) ? (currentRevision as number) : null
+}
+
+function isDatabaseLineageConflict(body: unknown): boolean {
+  return !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'database_lineage_conflict'
+}
+
+function isMutationIdConflict(body: unknown): boolean {
+  return !!body && typeof body === 'object' && (body as { error?: unknown }).error === 'mutation_id_conflict'
 }
 
 function errorMessageFromBody(body: unknown, fallback: string): string {

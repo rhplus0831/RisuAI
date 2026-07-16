@@ -27,6 +27,12 @@ export interface ServerBootstrapRuntime {
   revision: number
   schemaVersion?: number
   assetBaseUrl?: string
+  /** True when this writer already owned the server before registration. */
+  requestedWriterWasActive?: boolean
+  /** Durable identity of the concrete server database/realm. */
+  databaseLineage?: string
+  /** Persistent ownership generation, incremented whenever the writer changes. */
+  writerEpoch?: number
   /**
    * Generations still running server-side, so a reloaded browser can re-attach to
    * the live stream of the open chat instead of only seeing the result after it
@@ -128,6 +134,10 @@ async function fetchServerBootstrapWithMode(input: {
     revision: revision as number,
     schemaVersion: Number.isInteger(record.schemaVersion) ? (record.schemaVersion as number) : undefined,
     assetBaseUrl: typeof record.assetBaseUrl === 'string' ? record.assetBaseUrl : undefined,
+    requestedWriterWasActive:
+      typeof record.requestedWriterWasActive === 'boolean' ? record.requestedWriterWasActive : undefined,
+    databaseLineage: typeof record.databaseLineage === 'string' ? record.databaseLineage : undefined,
+    writerEpoch: Number.isSafeInteger(record.writerEpoch) ? (record.writerEpoch as number) : undefined,
     activeGenerationJobs: parseActiveGenerationJobs(record.activeGenerationJobs),
     activeMessageTranslations: parseActiveMessageTranslations(record.activeMessageTranslations),
   }

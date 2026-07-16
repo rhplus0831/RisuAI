@@ -64,6 +64,12 @@ const runtimeApi = vi.hoisted(() => ({
 }))
 
 const bridgeApi = vi.hoisted(() => ({ stop: vi.fn(), start: vi.fn() }))
+const pendingMutationApi = vi.hoisted(() => ({
+  flushAcknowledgements: vi.fn(),
+  prepare: vi.fn(),
+  readOwner: vi.fn(),
+  replay: vi.fn(),
+}))
 const memoryApi = vi.hoisted(() => ({ publish: vi.fn(), applyProgress: vi.fn() }))
 const pushApi = vi.hoisted(() => ({ reconcile: vi.fn(async () => ({ status: 'applied' })) }))
 
@@ -111,6 +117,16 @@ vi.mock('./server/promptTemplateHydration', () => ({
 }))
 vi.mock('./server/bridgeFlush', () => ({
   startBridgePatchLifecycleFlush: bridgeApi.start,
+}))
+vi.mock('./server/pendingMutationReplay', () => ({
+  replayPendingMutations: pendingMutationApi.replay,
+}))
+vi.mock('./server/pendingMutationOutbox', () => ({
+  preparePendingMutationOutbox: pendingMutationApi.prepare,
+  readSinglePendingMutationOwner: pendingMutationApi.readOwner,
+}))
+vi.mock('./server/durableMutationDispatch', () => ({
+  flushPendingMutationReceiptAcknowledgements: pendingMutationApi.flushAcknowledgements,
 }))
 vi.mock('./process/reattach', () => ({
   setActiveGenerationJobs: runtimeApi.setActiveGenerationJobs,
@@ -224,6 +240,9 @@ function runtimeBootstrap(overrides: Record<string, unknown> = {}) {
     bootstrap: {
       initialized: true,
       revision: 4,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+      writerEpoch: 1,
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a' }],
       activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
       ...overrides,
@@ -292,6 +311,13 @@ beforeEach(() => {
   vi.clearAllMocks()
   eventApi.subscriptions = []
   bridgeApi.start.mockReturnValue(bridgeApi.stop)
+  pendingMutationApi.flushAcknowledgements.mockReset()
+  pendingMutationApi.flushAcknowledgements.mockResolvedValue(undefined)
+  pendingMutationApi.prepare.mockReset()
+  pendingMutationApi.prepare.mockResolvedValue(undefined)
+  pendingMutationApi.readOwner.mockReset()
+  pendingMutationApi.readOwner.mockResolvedValue(null)
+  pendingMutationApi.replay.mockResolvedValue({ attempted: 0, discarded: 0, retained: 0, succeeded: 0 })
   promptTemplateApi.ensure.mockClear()
   promptTemplateApi.ensure.mockResolvedValue(true)
   promptTemplateApi.hasOwnerEpochChanged.mockReset()
@@ -445,6 +471,20 @@ describe('API-backed client bootstrap', () => {
     await loadWebInitialDatabase()
 
     expect(bootstrapApi.fetch).toHaveBeenCalledTimes(1)
+    expect(pendingMutationApi.prepare).toHaveBeenCalledWith({
+      writerSessionId: expect.any(String),
+      writerEpoch: 1,
+      databaseLineage: 'database-a',
+      requestedWriterWasActive: true,
+    })
+    expect(pendingMutationApi.flushAcknowledgements).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.replay).toHaveBeenCalledOnce()
+    expect(pendingMutationApi.prepare.mock.invocationCallOrder[0]).toBeLessThan(
+      pendingMutationApi.replay.mock.invocationCallOrder[0],
+    )
+    expect(pendingMutationApi.replay.mock.invocationCallOrder[0]).toBeLessThan(
+      resourceApi.loadInitial.mock.invocationCallOrder[0],
+    )
     expect(resourceApi.loadInitial).toHaveBeenCalledWith({ hooks: resourceApi.hooks })
     expect(peekCachedServerCommandRevision()).toBe(5)
     expect(peekAppliedServerResourceRevision()).toBe(5)
@@ -454,6 +494,14 @@ describe('API-backed client bootstrap', () => {
     expect(hydrationApi.startChatMessageHydration).toHaveBeenCalledTimes(1)
     expect(promptTemplateApi.ensure).toHaveBeenCalledWith({ minimumRevision: 5 })
     expect(eventApi.subscriptions[0]?.sinceRevision).toBe(5)
+  })
+
+  it('warns when transient failures leave encrypted changes queued for a later start', async () => {
+    pendingMutationApi.replay.mockResolvedValue({ attempted: 1, discarded: 0, retained: 1, succeeded: 0 })
+
+    await loadWebInitialDatabase()
+
+    expect(alertError).toHaveBeenCalledWith(expect.stringContaining('pending changes'))
   })
 
   it('initializes a fresh server without refetching unchanged runtime metadata', async () => {

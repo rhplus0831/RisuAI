@@ -56,6 +56,9 @@ describe('server runtime bootstrap helper', () => {
       revision: 12,
       schemaVersion: 17,
       assetBaseUrl: '/api/v1/assets',
+      requestedWriterWasActive: true,
+      databaseLineage: 'database-a',
+      writerEpoch: 3,
       activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
       activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
     })
@@ -67,6 +70,9 @@ describe('server runtime bootstrap helper', () => {
         revision: 12,
         schemaVersion: 17,
         assetBaseUrl: '/api/v1/assets',
+        requestedWriterWasActive: true,
+        databaseLineage: 'database-a',
+        writerEpoch: 3,
         activeGenerationJobs: [{ chatId: 'chat-a', jobId: 'job-a', mode: 'continue' }],
         activeMessageTranslations: [{ chatId: 'chat-a', messageId: 'message-a' }],
       },
@@ -83,7 +89,12 @@ describe('server runtime bootstrap helper', () => {
   })
 
   it('performs read-only bootstrap without writer ownership or optional revision caching', async () => {
-    const calls = stubBootstrapFetch({ initialized: false, revision: 0 })
+    const calls = stubBootstrapFetch({
+      initialized: false,
+      revision: 0,
+      databaseLineage: 'database-a',
+      writerEpoch: 3,
+    })
 
     await expect(fetchServerBootstrapReadOnly(null, { cacheRevision: false })).resolves.toEqual({
       status: 'ok',
@@ -92,6 +103,9 @@ describe('server runtime bootstrap helper', () => {
         revision: 0,
         schemaVersion: undefined,
         assetBaseUrl: undefined,
+        requestedWriterWasActive: undefined,
+        databaseLineage: 'database-a',
+        writerEpoch: 3,
         activeGenerationJobs: [],
         activeMessageTranslations: [],
       },

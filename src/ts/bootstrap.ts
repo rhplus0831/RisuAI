@@ -34,8 +34,15 @@ import {
   type ServerCommandLocalEffect,
   type TranslatorPresetPatchLocalEffect,
 } from './server/commands'
-import { peekActiveWriterSessionId } from './server/activeWriterSession'
+import {
+  adoptPendingMutationWriterSessionId,
+  getActiveWriterSessionId,
+  peekActiveWriterSessionId,
+} from './server/activeWriterSession'
 import { startBridgePatchLifecycleFlush } from './server/bridgeFlush'
+import { replayPendingMutations } from './server/pendingMutationReplay'
+import { preparePendingMutationOutbox, readSinglePendingMutationOwner } from './server/pendingMutationOutbox'
+import { flushPendingMutationReceiptAcknowledgements } from './server/durableMutationDispatch'
 import {
   acknowledgeCreatedChatTranscriptLocalEffect,
   acknowledgeMessageMutationLocalEffect,
@@ -213,6 +220,10 @@ export async function loadData(): Promise<void> {
 
 export async function loadWebInitialDatabase() {
   LoadingStatusState.text = 'Loading Server Data...'
+  const pendingMutationOwner = await readSinglePendingMutationOwner()
+  if (pendingMutationOwner) {
+    adoptPendingMutationWriterSessionId(pendingMutationOwner.writerSessionId)
+  }
   const firstBootstrap = await fetchServerBootstrap()
   if (firstBootstrap.status !== 'ok') {
     throw new Error(firstBootstrap.status === 'unavailable' ? 'Server bootstrap is unavailable' : firstBootstrap.error)
@@ -220,6 +231,22 @@ export async function loadWebInitialDatabase() {
   const runtime = firstBootstrap.bootstrap.initialized
     ? firstBootstrap.bootstrap
     : await initializeFreshServerDatabase(firstBootstrap.bootstrap)
+
+  const { databaseLineage, requestedWriterWasActive, writerEpoch } = firstBootstrap.bootstrap
+  if (!databaseLineage || typeof requestedWriterWasActive !== 'boolean' || !Number.isSafeInteger(writerEpoch)) {
+    throw new Error('Server bootstrap is missing durable mutation ownership metadata')
+  }
+  await preparePendingMutationOutbox({
+    writerSessionId: getActiveWriterSessionId(),
+    writerEpoch: writerEpoch!,
+    databaseLineage,
+    requestedWriterWasActive,
+  })
+  await flushPendingMutationReceiptAcknowledgements()
+  const pendingMutationReplay = await replayPendingMutations()
+  if (pendingMutationReplay.retained > 0) {
+    alertError(language.pendingMutationReplayRetained)
+  }
 
   const resources = await loadInitialServerResources({ hooks: serverResourceInvalidationHooks })
   if (resources.status !== 'ok') {

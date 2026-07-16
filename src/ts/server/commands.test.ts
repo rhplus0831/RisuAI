@@ -15,6 +15,7 @@ vi.mock('../storage/fastifyStorage', () => ({
 }))
 
 import {
+  acknowledgeServerMutationReceipts,
   appendMessageCommand,
   bulkPluginStorageCommand,
   createAgentPresetCommand,
@@ -101,6 +102,7 @@ import {
   reorderAgentPresetsCommand,
   reorderAgentPresetStepsCommand,
   reorderPresetsCommand,
+  replayDurableMutationRequests,
   runServerCommand,
   runServerCommandSequence,
   runServerPresetCommand,
@@ -829,6 +831,147 @@ describe('server command API adapter', () => {
       patch: { maxResponse: 1_000 },
     })
     await expect(second).resolves.toMatchObject({ status: 'ok', revision: 12 })
+  })
+
+  it('uses stable per-request mutation ids for a durable multi-command replay', async () => {
+    const calls: Array<{ body: Record<string, unknown>; databaseLineage: string | null; mutationId: string | null }> =
+      []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string>
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>
+        calls.push({
+          body,
+          databaseLineage: headers['risu-database-lineage'] ?? null,
+          mutationId: headers['risu-mutation-id'] ?? null,
+        })
+        const revision = 21 + calls.length
+        return jsonResponse({
+          revision,
+          event: {
+            type: calls.length === 1 ? 'settings.updated' : 'character.updated',
+            revision,
+            resource: calls.length === 1 ? 'settings' : 'characterRow',
+          },
+        })
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(21)
+
+    const result = await replayDurableMutationRequests(
+      [
+        { method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 8_000 } } },
+        { method: 'PATCH', path: '/characters/char-a', body: { patch: { name: 'Recovered name' } } },
+      ],
+      'pending-replay-a',
+      'database-a',
+    )
+
+    expect(result).toEqual({ status: 'ok' })
+    expect(calls).toEqual([
+      {
+        body: { baseRevision: 21, patch: { maxContext: 8_000 } },
+        databaseLineage: 'database-a',
+        mutationId: 'pending-replay-a',
+      },
+      {
+        body: { baseRevision: 22, patch: { name: 'Recovered name' } },
+        databaseLineage: 'database-a',
+        mutationId: 'pending-replay-a.1',
+      },
+    ])
+  })
+
+  it('retries a durable conflict with live revisions while preserving receipt ids', async () => {
+    const calls: Array<{ body: Record<string, unknown>; mutationId: string | null }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        const headers = init.headers as Record<string, string>
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>
+        calls.push({ body, mutationId: headers['risu-mutation-id'] ?? null })
+        if (calls.length === 1 || calls.length === 3) {
+          return jsonResponse({
+            revision: 31,
+            event: { type: 'settings.updated', revision: 31, resource: 'settings' },
+          })
+        }
+        if (calls.length === 2) return jsonResponse({ error: 'revision_conflict', currentRevision: 32 }, 409)
+        return jsonResponse({
+          revision: 33,
+          event: { type: 'character.updated', revision: 33, resource: 'characterRow' },
+        })
+      }) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(30)
+
+    const result = await replayDurableMutationRequests(
+      [
+        { method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 9_000 } } },
+        { method: 'PATCH', path: '/characters/char-b', body: { patch: { name: 'Recovered' } } },
+      ],
+      'pending-replay-conflict',
+      'database-a',
+    )
+
+    expect(result).toEqual({ status: 'ok' })
+    expect(calls.map((call) => call.mutationId)).toEqual([
+      'pending-replay-conflict',
+      'pending-replay-conflict.1',
+      'pending-replay-conflict',
+      'pending-replay-conflict.1',
+    ])
+    expect(calls.map((call) => call.body.baseRevision)).toEqual([30, 31, 32, 32])
+  })
+
+  it('sends lineage-bound durable receipt acknowledgements', async () => {
+    let captured: RequestInit | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: RequestInfo | URL, init: RequestInit = {}) => {
+        captured = init
+        return jsonResponse({ acknowledged: 1, requested: 1 })
+      }) as unknown as typeof fetch,
+    )
+
+    await expect(acknowledgeServerMutationReceipts('pending-a', 1, 'database-a')).resolves.toBe(true)
+
+    expect(captured?.method).toBe('POST')
+    expect(JSON.parse(String(captured?.body))).toEqual({
+      mutationId: 'pending-a',
+      requestCount: 1,
+      databaseLineage: 'database-a',
+    })
+    expect(captured?.headers).toEqual(
+      expect.objectContaining({
+        'content-type': 'application/json',
+        'risu-auth': 'test-auth-token',
+        'risu-writer-session': expect.any(String),
+      }),
+    )
+  })
+
+  it('classifies a database lineage mismatch before generic revision conflict handling', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ error: 'database_lineage_conflict', databaseLineage: 'database-b' }, 409),
+      ) as unknown as typeof fetch,
+    )
+    setCachedServerCommandRevision(2)
+
+    await expect(
+      replayDurableMutationRequests(
+        [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxContext: 9_000 } } }],
+        'pending-old-lineage',
+        'database-a',
+      ),
+    ).resolves.toEqual({
+      status: 'error',
+      error: 'database_lineage_conflict',
+      reason: 'database-lineage',
+    })
   })
 
   it('carries the enqueue-time refresh epoch through a command that waits in the queue', async () => {
