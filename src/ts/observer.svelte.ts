@@ -1,4 +1,5 @@
 import { globalFetch } from './globalApi.svelte'
+import { language } from '../lang'
 
 let bgmElement: HTMLAudioElement | null = null
 let observedCodeBlocks = new WeakSet<HTMLElement>()
@@ -78,24 +79,40 @@ function nodeObserve(node: HTMLElement) {
 
       const menu = document.createElement('div')
       menu.id = 'code-contextmenu'
+      menu.setAttribute('role', 'menu')
       menu.setAttribute('class', 'fixed z-50 min-w-[160px] py-2 bg-gray-800 rounded-lg border border-gray-700')
 
-      const copyOption = document.createElement('div')
-      copyOption.textContent = 'Copy'
-      copyOption.setAttribute('class', 'px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer')
+      const copyOption = document.createElement('button')
+      copyOption.type = 'button'
+      copyOption.textContent = language.copy
+      copyOption.setAttribute('role', 'menuitem')
+      copyOption.setAttribute(
+        'class',
+        'block w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 cursor-pointer',
+      )
       copyOption.addEventListener('click', () => {
         navigator.clipboard.writeText(node.textContent ?? '')
         menu.remove()
       })
 
-      const downloadOption = document.createElement('div')
-      downloadOption.textContent = 'Download'
-      downloadOption.setAttribute('class', 'px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer')
+      const downloadOption = document.createElement('button')
+      downloadOption.type = 'button'
+      downloadOption.textContent = language.download
+      downloadOption.setAttribute('role', 'menuitem')
+      downloadOption.setAttribute(
+        'class',
+        'block w-full px-4 py-2 text-left text-sm text-gray-300 hover:bg-gray-700 cursor-pointer',
+      )
       downloadOption.addEventListener('click', () => {
         const a = document.createElement('a')
-        a.href = URL.createObjectURL(new Blob([node.textContent ?? ''], { type: 'text/plain' }))
-        a.download = 'code.' + (node.getAttribute('x-hl-lang') ?? hlLang)
-        a.click()
+        const url = URL.createObjectURL(new Blob([node.textContent ?? ''], { type: 'text/plain' }))
+        try {
+          a.href = url
+          a.download = 'code.' + (node.getAttribute('x-hl-lang') ?? hlLang)
+          a.click()
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url), 0)
+        }
         menu.remove()
       })
 
@@ -106,6 +123,7 @@ function nodeObserve(node: HTMLElement) {
       menu.style.top = e.clientY + 'px'
 
       document.body.appendChild(menu)
+      copyOption.focus()
 
       document.addEventListener(
         'click',

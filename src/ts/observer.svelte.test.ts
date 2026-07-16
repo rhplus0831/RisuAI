@@ -87,7 +87,7 @@ describe('startObserveDom', () => {
     expect(countListenerAdds(addListener, 'contextmenu')).toBe(1)
   })
 
-  it('keeps code-block context menu copy and download behavior', () => {
+  it('keeps code-block context menu copy and download behavior', async () => {
     const writeText = vi.fn()
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
@@ -95,7 +95,8 @@ describe('startObserveDom', () => {
     })
 
     const createObjectURL = vi.fn(() => 'blob:code-download')
-    vi.stubGlobal('URL', { createObjectURL })
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
     const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
 
     const staleMenu = document.createElement('div')
@@ -127,6 +128,9 @@ describe('startObserveDom', () => {
     const [copyOption, downloadOption] = Array.from(menu?.children ?? []) as HTMLElement[]
     expect(copyOption.textContent).toBe('Copy')
     expect(downloadOption.textContent).toBe('Download')
+    expect(copyOption).toBeInstanceOf(HTMLButtonElement)
+    expect(downloadOption).toBeInstanceOf(HTMLButtonElement)
+    expect(document.activeElement).toBe(copyOption)
 
     copyOption.click()
 
@@ -145,6 +149,7 @@ describe('startObserveDom', () => {
     nextDownloadOption.click()
 
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    await vi.waitFor(() => expect(revokeObjectURL).toHaveBeenCalledWith('blob:code-download'))
     expect(anchorClick).toHaveBeenCalledTimes(1)
     expect(document.getElementById('code-contextmenu')).toBeNull()
   })
