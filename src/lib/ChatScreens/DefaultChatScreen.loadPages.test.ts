@@ -1080,6 +1080,33 @@ describe('DefaultChatScreen transcript window state', () => {
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 
+  it('clears the composer, notifies the user, and stops generation when a plain send is durably queued', async () => {
+    seedDatabase([1])
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'queued',
+      messageId: 'queued-message',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = 'Keep durably'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('pendingChatMessageQueued')
+    })
+    expect(textarea.value).toBe('')
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+    expect(loadPageMocks.applySuccessfulSendChatEffects).not.toHaveBeenCalled()
+  })
+
   it('translates hook-enabled input into a user message without starting generation', async () => {
     seedDatabase([1])
     getResourceDatabase().characters[0].useInputTranslationHook = true
@@ -1113,6 +1140,39 @@ describe('DefaultChatScreen transcript window state', () => {
       }),
     )
     expect(textarea.value).toBe('')
+    expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
+  })
+
+  it('clears translated input and stops before generation when its append is durably queued', async () => {
+    seedDatabase([1])
+    getResourceDatabase().characters[0].useInputTranslationHook = true
+    vi.mocked(runInputTranslator).mockResolvedValueOnce('Translated queued draft')
+    loadPageMocks.appendCurrentChatUserMessageForSend.mockResolvedValueOnce({
+      status: 'queued',
+      messageId: 'translated-queued-message',
+    })
+    mountScreen()
+
+    await waitFor(() => {
+      expect(target.querySelector('[data-testid="default-chat-composer"]')).toBeTruthy()
+    })
+    const textarea = target.querySelector<HTMLTextAreaElement>('[data-testid="default-chat-composer"]')!
+    textarea.value = '대기할 원문'
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+    await tick()
+
+    target.querySelector<HTMLButtonElement>('[data-testid="default-chat-send-button"]')!.click()
+
+    await waitFor(() => {
+      expect(loadPageMocks.alertNormal).toHaveBeenCalledWith('pendingChatMessageQueued')
+    })
+    expect(loadPageMocks.appendCurrentChatUserMessageForSend).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'user', data: 'Translated queued draft' }),
+      expect.objectContaining({ expectedTarget: expectedActiveTarget(0) }),
+    )
+    expect(textarea.value).toBe('')
+    expect(target.querySelector('[data-testid="default-chat-input-translation-rollback"]')).toBeNull()
+    expect(loadPageMocks.alertError).not.toHaveBeenCalled()
     expect(loadPageMocks.sendChat).not.toHaveBeenCalled()
   })
 

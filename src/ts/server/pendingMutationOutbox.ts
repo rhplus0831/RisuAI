@@ -106,7 +106,7 @@ const OUTBOX_RECEIPT_ACK_STORE = 'receiptAcks'
 const OUTBOX_ENCRYPTION_KEY_ID = 'pending-mutation-aes-gcm-v1'
 const MAX_DURABLE_MUTATION_REQUESTS = 100
 const MAX_DURABLE_MUTATION_DEPENDENCY_KEYS = 32
-const MAX_DURABLE_MUTATION_PAYLOAD_BYTES = 16 * 1024 * 1024
+export const MAX_DURABLE_MUTATION_PAYLOAD_BYTES = 16 * 1024 * 1024
 const MAX_PENDING_MUTATION_KEY_LENGTH = 2_048
 const MUTATION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,96}$/
 const SCOPE_VALUE_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/
@@ -122,9 +122,18 @@ const ALLOWED_DURABLE_COMMANDS: ReadonlyArray<{
   { method: 'PATCH', path: /^\/characters\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/characters\/[^/?#]+$/ },
   { method: 'POST', path: /^\/characters\/select$/ },
+  { method: 'POST', path: /^\/characters\/[^/?#]+\/chats$/ },
+  { method: 'POST', path: /^\/characters\/[^/?#]+\/chat-folders$/ },
   { method: 'PATCH', path: /^\/chats\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/chats\/[^/?#]+$/ },
+  { method: 'POST', path: /^\/chats\/[^/?#]+\/fork$/ },
+  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages$/ },
+  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages\/truncate$/ },
+  { method: 'POST', path: /^\/chats\/[^/?#]+\/messages\/tail$/ },
+  { method: 'PUT', path: /^\/chats\/[^/?#]+\/messages$/ },
   { method: 'PUT', path: /^\/chats\/[^/?#]+\/generation-settings$/ },
+  { method: 'PATCH', path: /^\/messages\/[^/?#]+$/ },
+  { method: 'DELETE', path: /^\/messages\/[^/?#]+$/ },
   { method: 'PATCH', path: /^\/chat-folders\/[^/?#]+$/ },
   { method: 'DELETE', path: /^\/chat-folders\/[^/?#]+$/ },
   { method: 'POST', path: /^\/prompt-items$/ },

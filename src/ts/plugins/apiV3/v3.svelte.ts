@@ -1654,6 +1654,12 @@ const makeRisuaiAPIV3 = (
 
       if (message) {
         const appendResult = await appendCurrentChatUserMessageForSend(message)
+        if (appendResult.status === 'queued') {
+          // The exact append is already accepted and durable. Resolve the API
+          // call so plugin retry loops do not append a duplicate, but do not
+          // start generation before the server accepts the message.
+          return true
+        }
         if (appendResult.status !== 'ok') {
           throw new Error(appendResult.error)
         }

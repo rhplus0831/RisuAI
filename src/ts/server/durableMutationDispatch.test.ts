@@ -132,6 +132,77 @@ describe('durable mutation dispatch', () => {
     expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).not.toContain(stale.mutationId)
   })
 
+  it('evaluates a shared failure only after an earlier same-key durable lock releases', async () => {
+    const firstHandle = stagePendingMutation('settings:locked-batch', intent)
+    const laterHandle = stagePendingMutation('settings:locked-batch', intent)
+    const firstResponse = deferred<ReturnType<typeof acceptedResult>>()
+    const firstRequest = vi.fn(async () => firstResponse.promise)
+    const laterRequest = vi.fn(async () => acceptedResult())
+    const sharedFailure = { status: 'error' as const, error: 'batch stopped' }
+    const beforeExecuteResult = vi.fn(() => sharedFailure)
+
+    const first = dispatchDurableMutation(firstHandle, intent, wrappedDispatch(firstRequest))
+    const later = dispatchDurableMutation(laterHandle, intent, wrappedDispatch(laterRequest), {
+      beforeExecuteResult,
+    })
+
+    await vi.waitFor(() => expect(firstRequest).toHaveBeenCalledOnce())
+    expect(beforeExecuteResult).not.toHaveBeenCalled()
+    expect(laterRequest).not.toHaveBeenCalled()
+
+    firstResponse.resolve(acceptedResult())
+    await expect(first).resolves.toMatchObject({ status: 'ok' })
+    await expect(later).resolves.toEqual(sharedFailure)
+    expect(beforeExecuteResult).toHaveBeenCalledOnce()
+    expect(laterRequest).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([laterHandle.mutationId])
+  })
+
+  it('settles a shared batch failure without draining predecessors or sending', async () => {
+    const predecessor = stagePendingMutation('settings:runtime', intent)
+    await dispatchDurableMutation(
+      predecessor,
+      intent,
+      wrappedDispatch(async () => ({ status: 'error', error: 'offline' })),
+    )
+    commandApi.inlineReplay.mockClear()
+
+    const laterIntent: DurableMutationIntent = {
+      version: 1,
+      requests: [{ method: 'PATCH', path: '/settings/runtime', body: { patch: { maxResponse: 1_000 } } }],
+    }
+    const later = stagePendingMutation('settings:runtime', laterIntent)
+    const request = vi.fn(async () => acceptedResult())
+    const sharedTransientFailure = { status: 'error' as const, error: 'offline' }
+
+    await expect(
+      dispatchDurableMutation(later, laterIntent, wrappedDispatch(request), {
+        beforeExecuteResult: () => sharedTransientFailure,
+      }),
+    ).resolves.toEqual(sharedTransientFailure)
+
+    expect(request).not.toHaveBeenCalled()
+    expect(commandApi.inlineReplay).not.toHaveBeenCalled()
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).toEqual([
+      predecessor.mutationId,
+      later.mutationId,
+    ])
+
+    const terminal = stagePendingMutation('settings:terminal', intent)
+    const sharedTerminalFailure = {
+      status: 'error' as const,
+      error: 'invalid request',
+      reason: 'invalid-request' as const,
+    }
+    await expect(
+      dispatchDurableMutation(terminal, intent, wrappedDispatch(request), {
+        beforeExecuteResult: () => sharedTerminalFailure,
+      }),
+    ).resolves.toEqual(sharedTerminalFailure)
+    expect((await listPendingMutations()).map((entry) => entry.handle.mutationId)).not.toContain(terminal.mutationId)
+    expect(request).not.toHaveBeenCalled()
+  })
+
   it('still sends an ordinary autosave when durable browser storage is unavailable', async () => {
     const request = vi.fn(async () => acceptedResult())
     const unavailableHandle = {

@@ -68,6 +68,16 @@ function readSettings(): Record<string, unknown> {
   }
 }
 
+async function readChatMessages(chatId: string): Promise<Array<Record<string, unknown>>> {
+  const response = await harness.app.inject({
+    method: 'GET',
+    url: `/api/v1/chats/${encodeURIComponent(chatId)}/messages`,
+    headers: { 'risu-auth': assertion },
+  })
+  expect(response.statusCode, response.body).toBe(200)
+  return response.json().message as Array<Record<string, unknown>>
+}
+
 function receiptCount(): number {
   const db = openRawDatabase()
   try {
@@ -212,6 +222,122 @@ describe('transactional command mutation receipts', () => {
     expect(newIntent.statusCode, newIntent.body).toBe(400)
     expect(newIntent.json()).toMatchObject({ error: expect.stringContaining('customBackground') })
     expect(harness.commandEvents.list()).toHaveLength(1)
+  })
+
+  it('replays chat create, fork, and append receipts before duplicate-id validation', async () => {
+    revision = await importDatabase({
+      currentChar: 0,
+      characters: [
+        {
+          chaId: 'char-a',
+          name: 'Character A',
+          chatPage: 0,
+          chats: [{ id: 'chat-source', name: 'Source', note: '', localLore: [], message: [] }],
+          chatFolders: [],
+        },
+      ],
+      characterOrder: ['char-a'],
+    })
+    const lineageDb = openRawDatabase()
+    try {
+      databaseLineage = getDatabaseLineage(lineageDb)
+    } finally {
+      lineageDb.close()
+    }
+    harness.commandEvents.clear()
+
+    const durableHeaders = (mutationId: string) => ({
+      'risu-auth': assertion,
+      'risu-writer-session': 'writer-chat-lifecycle',
+      'risu-mutation-id': mutationId,
+      'risu-database-lineage': databaseLineage,
+    })
+    const createdChat = {
+      id: 'chat-created',
+      name: 'Durable created chat',
+      note: '',
+      localLore: [],
+      message: [],
+    }
+    const create = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: durableHeaders('chat-create-receipt'),
+      payload: { baseRevision: revision, chat: createdChat, select: true },
+    })
+    expect(create.statusCode, create.body).toBe(200)
+    const createBody = create.json() as Record<string, unknown>
+    const createReplay = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/characters/char-a/chats',
+      headers: durableHeaders('chat-create-receipt'),
+      payload: { baseRevision: (createBody.revision as number) + 100, chat: createdChat, select: true },
+    })
+    expect(createReplay.statusCode, createReplay.body).toBe(200)
+    expect(createReplay.json()).toEqual(createBody)
+
+    const forkedChat = {
+      id: 'chat-forked',
+      name: 'Durable fork',
+      note: '',
+      localLore: [],
+      message: [{ role: 'char', data: 'fork seed', chatId: 'message-fork-seed' }],
+    }
+    const fork = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-source/fork',
+      headers: durableHeaders('chat-fork-receipt'),
+      payload: { baseRevision: createBody.revision, chat: forkedChat, select: false },
+    })
+    expect(fork.statusCode, fork.body).toBe(200)
+    const forkBody = fork.json() as Record<string, unknown>
+    const forkReplay = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-source/fork',
+      headers: durableHeaders('chat-fork-receipt'),
+      payload: { baseRevision: (forkBody.revision as number) + 100, chat: forkedChat, select: false },
+    })
+    expect(forkReplay.statusCode, forkReplay.body).toBe(200)
+    expect(forkReplay.json()).toEqual(forkBody)
+
+    const appendedMessage = {
+      role: 'user',
+      data: 'durable append',
+      chatId: 'message-created-append',
+      time: 123,
+    }
+    const append = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-created/messages',
+      headers: durableHeaders('chat-append-receipt'),
+      payload: { baseRevision: forkBody.revision, message: appendedMessage },
+    })
+    expect(append.statusCode, append.body).toBe(200)
+    const appendBody = append.json() as Record<string, unknown>
+    const appendReplay = await harness.app.inject({
+      method: 'POST',
+      url: '/api/v1/commands/chats/chat-created/messages',
+      headers: durableHeaders('chat-append-receipt'),
+      payload: { baseRevision: (appendBody.revision as number) + 100, message: appendedMessage },
+    })
+    expect(appendReplay.statusCode, appendReplay.body).toBe(200)
+    expect(appendReplay.json()).toEqual(appendBody)
+
+    const characterResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/api/v1/characters/char-a',
+      headers: { 'risu-auth': assertion },
+    })
+    expect(characterResponse.statusCode, characterResponse.body).toBe(200)
+    const character = characterResponse.json().character as {
+      chats: Array<{ id: string }>
+    }
+    expect(character.chats.filter((chat) => chat.id === 'chat-created')).toHaveLength(1)
+    expect(character.chats.filter((chat) => chat.id === 'chat-forked')).toHaveLength(1)
+    await expect(readChatMessages('chat-created')).resolves.toEqual([appendedMessage])
+    await expect(readChatMessages('chat-forked')).resolves.toEqual(forkedChat.message)
+    expect(harness.commandEvents.list()).toHaveLength(3)
+    expect(receiptCount()).toBe(3)
   })
 
   it('replays across writer handoffs and rejects semantic mutation-id collisions globally', async () => {

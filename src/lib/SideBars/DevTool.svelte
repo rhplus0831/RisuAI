@@ -4,7 +4,7 @@
   import NumberInput from '../UI/GUI/NumberInput.svelte'
   import Button from '../UI/GUI/Button.svelte'
   import { getRequestLog } from 'src/ts/globalApi.svelte'
-  import { alertError, alertMd, alertWait } from 'src/ts/alert'
+  import { alertError, alertMd, alertNormal, alertWait } from 'src/ts/alert'
   import Accordion from '../UI/Accordion.svelte'
   import { getCharToken, getChatToken } from 'src/ts/tokenizer'
   import { tokenizePreset } from 'src/ts/process/prompt'
@@ -249,6 +249,10 @@
           expectedTarget: activeTarget,
         })
         if (!isActiveChatTargetFresh(activeTarget)) {
+          return
+        }
+        if (appended.status === 'queued') {
+          alertNormal(language.pendingChatMessageQueued)
           return
         }
         if (appended.status !== 'ok') {

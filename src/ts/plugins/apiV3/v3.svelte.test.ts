@@ -471,6 +471,30 @@ describe('V3 chat command bridge', () => {
     expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
   })
 
+  it('sendChat accepts a durably queued append without starting generation or inviting a retry', async () => {
+    const plugin = seedV3Plugin('plugin-a')
+    mockDbState.db.plugins = [plugin]
+    mockDbState.db.characters = {
+      'char-a': {
+        chaId: 'char-a',
+        chatPage: 0,
+        chats: [{ id: 'chat-a', message: [] }],
+      },
+    }
+    vi.mocked(appendCurrentChatUserMessageForSend).mockResolvedValueOnce({
+      status: 'queued',
+      messageId: 'msg-plugin-queued',
+    })
+    const api = __v3PluginLifecycleTestHooks.createApi(plugin) as any
+
+    await expect(api.sendChat('queued from plugin')).resolves.toBe(true)
+
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledTimes(1)
+    expect(appendCurrentChatUserMessageForSend).toHaveBeenCalledWith('queued from plugin')
+    expect(processSendChat).not.toHaveBeenCalled()
+    expect(mockDbState.db.characters['char-a'].chats[0].message).toEqual([])
+  })
+
   it('setChatToIndex rejects unsupported chat fields before projection mutation', () => {
     mockServerCommands.canUse = true
     const existingChat = {

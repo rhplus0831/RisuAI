@@ -1481,6 +1481,8 @@ export const languageEnglish = {
   reloadSession: 'Newer version of save data is found. Reloading the session...',
   pendingMutationRecoveryReload:
     'A queued change could not be applied safely. Reloading to restore the latest server state...',
+  pendingChatMessageQueued:
+    'Your message is saved on this device and queued. It will be sent when the server is available; generation has not started.',
   pendingMutationReplayRetained:
     'Some pending changes still could not reach the server. They remain saved on this device and must be retried before the app can load.',
   pendingMutationDiscarded:

@@ -51,6 +51,15 @@ export type PreparedDurableMutationExecutionOutcome<T extends Record<string, unk
       settlement: Extract<DurableMutationSettlement, 'retained' | 'superseded' | 'unavailable'>
     }
 
+export interface DurableMutationDispatchOptions<T extends Record<string, unknown> = {}> {
+  /**
+   * Reuse a failure already observed by an earlier synchronously reserved
+   * queue slot. The check runs under the durable key/mutation locks before
+   * predecessor draining, so later batch rows settle without another request.
+   */
+  beforeExecuteResult?: () => Exclude<ServerCommandResult<T>, { status: 'ok' }> | undefined
+}
+
 /**
  * Wait for the exact encrypted generation, acquire an origin-wide lock, then
  * start the network request. Page-exit callers rely on the already-staged row
@@ -60,6 +69,7 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
   handle: PendingMutationHandle,
   intent: DurableMutationIntent,
   dispatch: (options: ServerCommandTransportOptions) => Promise<ServerCommandResult<T>>,
+  options: DurableMutationDispatchOptions<T> = {},
 ): Promise<ServerCommandResult<T>> {
   if (!handle.databaseLineage) return dispatch({})
   // Freeze synchronously before the caller can stage a successor, and enqueue
@@ -73,6 +83,11 @@ export function dispatchDurableMutation<T extends Record<string, unknown> = {}>(
         if (persistence === 'superseded') return { status: 'unavailable' }
         if (persistence === 'persisted' && !(await isPendingMutationCurrent(handle))) {
           return { status: 'unavailable' }
+        }
+        const shortCircuitResult = options.beforeExecuteResult?.()
+        if (shortCircuitResult) {
+          settlement = await settleDurableMutation(handle, intent, shortCircuitResult)
+          return shortCircuitResult
         }
         if (persistence === 'persisted' && !(await drainPendingMutationPredecessors(handle))) {
           settlement = 'retained'

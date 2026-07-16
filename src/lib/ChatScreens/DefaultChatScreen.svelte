@@ -814,6 +814,13 @@
       if (!isActiveChatTargetFresh(input.activeTarget)) {
         return
       }
+      if (appended.status === 'queued') {
+        clearComposerForCurrentOperation(input.composerOperation)
+        alertNormal(language.pendingChatMessageQueued)
+        await sleep(10)
+        updateInputSizeAll()
+        return
+      }
       if (appended.status !== 'ok') {
         restoreComposerForCurrentOperation(input.composerOperation)
         alertError(appended.error)
@@ -944,6 +951,12 @@
       if (userMessage) {
         const appended = await appendCurrentChatUserMessageForSend(userMessage, { expectedTarget: activeTarget })
         if (!isActiveChatTargetFresh(activeTarget)) {
+          return
+        }
+        if (appended.status === 'queued') {
+          clearComposerForCurrentOperation(composerOperation)
+          alertNormal(language.pendingChatMessageQueued)
+          await sleep(10)
           return
         }
         if (appended.status !== 'ok') {

@@ -59,7 +59,10 @@ import {
   currentChatScriptstateSnapshot,
   currentChatSelectionSnapshot,
   currentChatStateSnapshot,
+  dispatchAppendMessage,
   dispatchCreateChat,
+  dispatchCreateChatForImport,
+  dispatchCreateImportedChats,
   dispatchCreateChatFolder,
   dispatchDeleteChat,
   dispatchDeleteChatFolder,
@@ -110,6 +113,7 @@ import {
   beginPendingMutationDispatch,
   clearPendingMutationOutbox,
   listPendingMutations,
+  MAX_DURABLE_MUTATION_PAYLOAD_BYTES,
   preparePendingMutationOutbox,
   resetPendingMutationOutboxForTests,
   stagePendingMutation,
@@ -3277,6 +3281,580 @@ describe('chat command projection helpers', () => {
       },
     })
     expect(calls[1].body).not.toHaveProperty('messages')
+  })
+
+  it('reports a retryable durable user append as queued and keeps its exact optimistic row', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-user-append',
+      writerEpoch: 31,
+      databaseLineage: 'lineage-chat-user-append',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    seedReadyActiveChatGenerationSettings()
+    setResourceWriteGuardEnabled(true)
+    let liveBody: Record<string, unknown> | undefined
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/chats/chat-a/messages') {
+          liveBody = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const result = await appendCurrentChatUserMessageForSend({
+        role: 'user',
+        data: 'keep this queued message',
+        time: 444,
+        name: null,
+      })
+
+      expect(result).toEqual({ status: 'queued', messageId: expect.any(String) })
+      const projectedMessage = getDatabase().characters[0].chats[0].message.at(-1)
+      expect(projectedMessage).toEqual({
+        role: 'user',
+        data: 'keep this queued message',
+        time: 444,
+        name: null,
+        chatId: result.status === 'queued' ? result.messageId : undefined,
+      })
+
+      const pending = await listPendingMutations()
+      expect(pending).toHaveLength(1)
+      expect(pending[0]).toMatchObject({
+        handle: { key: 'character-owner:char-a' },
+        intent: {
+          version: 1,
+          requests: [
+            {
+              method: 'POST',
+              path: '/chats/chat-a/messages',
+              body: { message: projectedMessage },
+            },
+          ],
+        },
+      })
+      const { baseRevision: _baseRevision, ...exactLiveBody } = liveBody ?? {}
+      expect(exactLiveBody).toEqual(pending[0].intent.requests[0].body)
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('accepts a retained single-chat import without rolling back or inviting a duplicate retry', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-import',
+      writerEpoch: 32,
+      databaseLineage: 'lineage-chat-import',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const importedChat = {
+      id: 'chat-imported',
+      name: 'Imported chat',
+      note: '',
+      localLore: [],
+      message: [{ role: 'user', data: 'imported row', chatId: 'message-imported' }],
+    } as Chat
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(importedChat)
+      getDatabase().characters[0].chatPage = 0
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a/chats') {
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(dispatchCreateChatForImport('char-a', importedChat, previous)).resolves.toEqual({ status: 'ok' })
+      expect(getDatabase().characters[0].chats[0]).toEqual(importedChat)
+      expect(await listPendingMutations()).toMatchObject([
+        {
+          handle: { key: 'character-owner:char-a' },
+          intent: {
+            version: 1,
+            requests: [
+              {
+                method: 'POST',
+                path: '/characters/char-a/chats',
+                body: { chat: importedChat, select: true },
+              },
+            ],
+          },
+        },
+      ])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('pre-stages every multi-chat import item and retains later rows without sending after a retryable failure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-batch-import',
+      writerEpoch: 34,
+      databaseLineage: 'lineage-chat-batch-import',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const folder = { id: 'folder-imported', name: 'Imported folder', folded: false } as ChatFolder
+    const chats = [
+      {
+        id: 'chat-imported-a',
+        name: 'Imported A',
+        note: '',
+        localLore: [],
+        folderId: 'folder-imported',
+        message: [],
+      },
+      {
+        id: 'chat-imported-b',
+        name: 'Imported B',
+        note: '',
+        localLore: [],
+        message: [{ role: 'user', data: 'batch row', chatId: 'message-batch' }],
+      },
+    ] as Chat[]
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders.push(folder)
+      getDatabase().characters[0].chats.unshift(...chats)
+    })
+
+    const commandUrls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a/chat-folders') {
+          commandUrls.push(url)
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(dispatchCreateImportedChats('char-a', [folder], chats, previous)).resolves.toEqual({
+        status: 'ok',
+      })
+      expect(getDatabase().characters[0].chatFolders.at(-1)).toEqual(folder)
+      expect(getDatabase().characters[0].chats.slice(0, 2)).toEqual(chats)
+      expect(commandUrls).toEqual(['/api/v1/commands/characters/char-a/chat-folders'])
+      const pending = await listPendingMutations()
+      expect(pending).toHaveLength(3)
+      expect(pending.map((entry) => entry.handle.key)).toEqual([
+        'character-owner:char-a',
+        'character-owner:char-a',
+        'character-owner:char-a',
+      ])
+      expect(pending.map((entry) => entry.intent)).toEqual([
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'POST',
+              path: '/characters/char-a/chat-folders',
+              body: { folder },
+            },
+          ],
+        },
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'POST',
+              path: '/characters/char-a/chats',
+              body: { chat: chats[0], select: false },
+            },
+          ],
+        },
+        {
+          version: 1,
+          requests: [
+            {
+              method: 'POST',
+              path: '/characters/char-a/chats',
+              body: { chat: chats[1], select: false },
+            },
+          ],
+        },
+      ])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('reserves every import queue slot before durable readiness so a later create cannot overtake', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-batch-order',
+      writerEpoch: 37,
+      databaseLineage: 'lineage-chat-batch-order',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const encryptionGate = createDeferred<void>()
+    const originalEncrypt = globalThis.crypto.subtle.encrypt.bind(globalThis.crypto.subtle)
+    const encryptSpy = vi
+      .spyOn(globalThis.crypto.subtle, 'encrypt')
+      .mockImplementation(async (algorithm, key, data) => {
+        await encryptionGate.promise
+        return originalEncrypt(algorithm, key, data)
+      })
+    const previous = currentChatStateSnapshot()
+    const folder = { id: 'folder-batch-order', name: 'Batch folder', folded: false } as ChatFolder
+    const importedChat = {
+      id: 'chat-batch-order',
+      name: 'Batch chat',
+      note: '',
+      localLore: [],
+      folderId: folder.id,
+      message: [],
+    } as Chat
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chatFolders.push(folder)
+      getDatabase().characters[0].chats.unshift(importedChat)
+    })
+
+    let revision = 10
+    const commandUrls: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        if (url === '/api/v1/commands/characters/char-a/chat-folders') {
+          commandUrls.push(url)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'chatFolder.created',
+              revision,
+              resource: 'chatFolder',
+              id: folder.id,
+              parentId: 'char-a',
+            },
+            folderId: folder.id,
+          })
+        }
+        if (url === '/api/v1/commands/characters/char-a/chats') {
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          const chatId = body.chat?.id as string
+          commandUrls.push(`${url}:${chatId}`)
+          revision += 1
+          return jsonResponse({
+            revision,
+            event: {
+              type: 'chat.created',
+              revision,
+              resource: 'chatTranscript',
+              id: chatId,
+              parentId: 'char-a',
+            },
+            chatId,
+            selectedChatId: body.select === false ? 'chat-a' : chatId,
+            generationSettings: null,
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      const importPromise = dispatchCreateImportedChats('char-a', [folder], [importedChat], previous)
+      const laterPrevious = currentChatStateSnapshot()
+      const laterChat = {
+        id: 'chat-created-after-batch',
+        name: 'Later chat',
+        note: '',
+        localLore: [],
+        message: [],
+      } as Chat
+      expect(applyOptimisticCreatedChat('char-a', laterChat, laterPrevious)).toBe(true)
+      dispatchCreateChat('char-a', laterChat, laterPrevious)
+
+      await Promise.resolve()
+      expect(commandUrls).toEqual([])
+      encryptionGate.resolve()
+
+      await expect(importPromise).resolves.toEqual({ status: 'ok' })
+      await vi.waitFor(() => expect(commandUrls).toHaveLength(3))
+      expect(commandUrls).toEqual([
+        '/api/v1/commands/characters/char-a/chat-folders',
+        '/api/v1/commands/characters/char-a/chats:chat-batch-order',
+        '/api/v1/commands/characters/char-a/chats:chat-created-after-batch',
+      ])
+      await vi.waitFor(async () => expect(await listPendingMutations()).toEqual([]))
+    } finally {
+      encryptionGate.resolve()
+      encryptSpy.mockRestore()
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('durably pre-stages imports containing more than one hundred chats', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-large-batch-import',
+      writerEpoch: 35,
+      databaseLineage: 'lineage-chat-large-batch-import',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const chats = Array.from({ length: 101 }, (_, index) => ({
+      id: `chat-large-import-${index}`,
+      name: `Imported ${index}`,
+      note: '',
+      localLore: [],
+      message: [],
+    })) as Chat[]
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(...chats)
+    })
+    let createCalls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a/chats') {
+          createCalls += 1
+          return jsonResponse({ error: 'temporarily unavailable' }, 503)
+        }
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(dispatchCreateImportedChats('char-a', [], chats, previous)).resolves.toEqual({ status: 'ok' })
+      expect(createCalls).toBe(1)
+      expect(getDatabase().characters[0].chats.slice(0, chats.length)).toEqual(chats)
+      const pending = await listPendingMutations()
+      expect(pending).toHaveLength(101)
+      expect(pending.every((entry) => entry.handle.key === 'character-owner:char-a')).toBe(true)
+      expect(pending.every((entry) => entry.intent.requests.length === 1)).toBe(true)
+      expect(pending.at(-1)?.intent.requests[0]).toEqual({
+        method: 'POST',
+        path: '/characters/char-a/chats',
+        body: { chat: chats.at(-1), select: false },
+      })
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('falls back an oversized import to one live sequence and rolls back the projection on failure', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-oversized-import',
+      writerEpoch: 36,
+      databaseLineage: 'lineage-chat-oversized-import',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const oversizedChat = {
+      id: 'chat-oversized-import',
+      name: 'Oversized import',
+      note: '',
+      localLore: [],
+      message: [
+        {
+          role: 'user',
+          data: 'x'.repeat(MAX_DURABLE_MUTATION_PAYLOAD_BYTES + 1_024),
+          chatId: 'message-oversized-import',
+        },
+      ],
+    } as Chat
+    withTrustedResourceWrite(() => {
+      getDatabase().characters[0].chats.unshift(oversizedChat)
+    })
+    let mutationIdHeader: string | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/characters/char-a/chats') {
+          mutationIdHeader = (init.headers as Record<string, string> | undefined)?.['risu-mutation-id']
+          return jsonResponse({ error: 'oversized import failed' }, 503)
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      await expect(dispatchCreateImportedChats('char-a', [], [oversizedChat], previous)).resolves.toEqual({
+        status: 'error',
+        error: 'oversized import failed',
+      })
+      expect(mutationIdHeader).toBeUndefined()
+      expect(getDatabase().characters[0].chats.some((chat) => chat.id === oversizedChat.id)).toBe(false)
+      expect(getDatabase().characters[0].chats.map((chat) => chat.id)).toEqual(['chat-a', 'chat-b'])
+      expect(await listPendingMutations()).toEqual([])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
+  })
+
+  it('replays a retained chat create before a later append on the same explicit character owner', async () => {
+    vi.stubGlobal('indexedDB', new IDBFactory())
+    resetPendingMutationOutboxForTests()
+    await preparePendingMutationOutbox({
+      writerSessionId: 'writer-chat-create-append',
+      writerEpoch: 33,
+      databaseLineage: 'lineage-chat-create-append',
+      requestedWriterWasActive: true,
+    })
+    setCachedServerCommandRevision(10)
+    const previous = currentChatStateSnapshot()
+    const createdChat = {
+      id: 'chat-created-queued',
+      name: 'Queued chat',
+      note: '',
+      localLore: [],
+      message: [],
+    } as Chat
+    expect(applyOptimisticCreatedChat('char-a', createdChat, previous)).toBe(true)
+
+    let recover = false
+    let nextRevision = 10
+    const commandCalls: Array<{
+      method: string
+      path: string
+      body: Record<string, unknown>
+      mutationId: string | null
+    }> = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
+        const url = String(input)
+        if (url === '/api/v1/commands/mutation-receipts/ack') return jsonResponse({ acknowledged: true })
+        const path = url.replace('/api/v1/commands', '')
+        if (path === '/characters/char-a/chats' || path === '/chats/chat-created-queued/messages') {
+          const headers = init.headers as Record<string, string> | undefined
+          const body = typeof init.body === 'string' ? JSON.parse(init.body) : {}
+          commandCalls.push({
+            method: init.method ?? 'GET',
+            path,
+            body,
+            mutationId: headers?.['risu-mutation-id'] ?? null,
+          })
+          if (!recover) return jsonResponse({ error: 'temporarily unavailable' }, 503)
+          nextRevision += 1
+          if (path === '/characters/char-a/chats') {
+            return jsonResponse({
+              revision: nextRevision,
+              event: {
+                type: 'chat.created',
+                revision: nextRevision,
+                resource: 'chatTranscript',
+                id: 'chat-created-queued',
+                parentId: 'char-a',
+              },
+              chatId: 'chat-created-queued',
+              selectedChatId: 'chat-created-queued',
+              generationSettings: null,
+            })
+          }
+          return jsonResponse({
+            revision: nextRevision,
+            event: {
+              type: 'message.created',
+              revision: nextRevision,
+              resource: 'message',
+              id: 'message-after-create',
+              parentId: 'chat-created-queued',
+            },
+            chatId: 'chat-created-queued',
+            messageId: 'message-after-create',
+          })
+        }
+        return jsonResponse({ error: `unexpected ${url}` }, 404)
+      }) as unknown as typeof fetch,
+    )
+
+    try {
+      dispatchCreateChat('char-a', createdChat, previous)
+      await vi.waitFor(() => expect(commandCalls).toHaveLength(1))
+
+      const appendPrevious = currentChatStateSnapshot()
+      const message = {
+        role: 'user',
+        data: 'after retained create',
+        chatId: 'message-after-create',
+        time: 555,
+      } as Message
+      withTrustedResourceWrite(() => {
+        getDatabase().characters[0].chats[0].message.push(message)
+      })
+      dispatchAppendMessage('chat-created-queued', message, appendPrevious)
+
+      await vi.waitFor(() => expect(commandCalls).toHaveLength(2))
+      expect(commandCalls.map((call) => call.path)).toEqual(['/characters/char-a/chats', '/characters/char-a/chats'])
+      expect(commandCalls[1].mutationId).toBe(commandCalls[0].mutationId)
+
+      const pending = await listPendingMutations()
+      expect(pending.map((entry) => entry.handle.key)).toEqual(['character-owner:char-a', 'character-owner:char-a'])
+      expect(pending.map((entry) => entry.intent.requests[0])).toEqual([
+        {
+          method: 'POST',
+          path: '/characters/char-a/chats',
+          body: { chat: createdChat, select: true },
+        },
+        {
+          method: 'POST',
+          path: '/chats/chat-created-queued/messages',
+          body: { message },
+        },
+      ])
+
+      recover = true
+      const replayStart = commandCalls.length
+      await expect(replayPendingMutations()).resolves.toMatchObject({ succeeded: 2, retained: 0 })
+      expect(commandCalls.slice(replayStart).map((call) => call.path)).toEqual([
+        '/characters/char-a/chats',
+        '/chats/chat-created-queued/messages',
+      ])
+      expect(await listPendingMutations()).toEqual([])
+      expect(getDatabase().characters[0].chats[0].message).toEqual([message])
+    } finally {
+      await clearPendingMutationOutbox()
+      resetPendingMutationOutboxForTests()
+    }
   })
 
   it('rolls back helper scriptstate edits without touching concurrent message edits', async () => {

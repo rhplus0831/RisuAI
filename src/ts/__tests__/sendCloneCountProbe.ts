@@ -268,7 +268,10 @@ async function submitPlainUserMessage(userMessage: string): Promise<void> {
     time: Date.now(),
     name: null,
   })
-  if (result.status !== 'ok') {
+  if (result.status === 'queued') {
+    throw new Error('plain-send append was queued during the online clone-count probe')
+  }
+  if (result.status === 'error') {
     throw new Error(`plain-send append failed: ${result.error}`)
   }
 }
